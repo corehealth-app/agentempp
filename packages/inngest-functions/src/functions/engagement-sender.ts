@@ -14,7 +14,7 @@ import { createWorkerDeps } from '../lib/env.js'
  *   6. Persiste em messages
  */
 export const engagementSenderFn = inngest.createFunction(
-  { id: 'engagement-sender', retries: 1, concurrency: { limit: 10 } },
+  { id: 'engagement-sender', retries: 1, concurrency: { limit: 5 } },
   { event: 'engagement.tick' },
   async ({ event, step, logger }) => {
     const { slot } = event.data

@@ -1,9 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { RuleEditor } from './editor'
+
+const TIPO_LABELS: Record<string, string> = {
+  regras_gerais: 'Regras Gerais',
+  coleta_dados: 'Coleta de Dados',
+  recomposicao: 'Recomposição',
+  ganho_massa: 'Ganho de Massa',
+  manutencao: 'Manutenção',
+}
 
 export default async function RuleEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,18 +31,16 @@ export default async function RuleEditPage({ params }: { params: Promise<{ id: s
     .limit(20)
 
   return (
-    <div className="space-y-6 p-6 max-w-5xl">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <Badge variant="outline">{rule.tipo}</Badge>
-          <h1 className="text-2xl font-bold">{rule.topic}</h1>
-          <p className="text-sm text-muted-foreground font-mono">{rule.slug}</p>
-        </div>
-        <div className="text-right text-xs text-muted-foreground">
-          atualizado em {formatDateTime(rule.updated_at)}
-          <br />~{rule.token_estimate ?? 0} tokens
-        </div>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Persona', href: '/prompts' },
+          { label: TIPO_LABELS[rule.tipo] ?? rule.tipo, href: `/prompts?tipo=${rule.tipo}` },
+          { label: rule.topic },
+        ]}
+        title={rule.topic}
+        description={`${rule.slug} · ~${rule.token_estimate ?? 0} tokens · atualizado em ${formatDateTime(rule.updated_at)}`}
+      />
 
       <RuleEditor
         id={rule.id}
@@ -46,40 +51,46 @@ export default async function RuleEditPage({ params }: { params: Promise<{ id: s
         displayOrder={rule.display_order}
       />
 
-      {/* Histórico */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Histórico de versões</CardTitle>
-          <CardDescription>Últimas 20 alterações registradas pelo trigger</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!versions || versions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sem histórico ainda.</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {versions.map((v) => (
-                <li
-                  key={v.version_num}
-                  className="flex items-center justify-between border-b py-1 last:border-0"
-                >
-                  <span>
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                      v{v.version_num}
-                    </code>{' '}
-                    <Badge variant="outline" className="text-xs">
-                      {v.status}
-                    </Badge>{' '}
-                    {v.change_reason ?? '(sem motivo)'}
+      <ContentCard
+        title="Histórico de versões"
+        description="Últimas 20 alterações registradas pelo trigger imutável"
+      >
+        {!versions || versions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sem histórico ainda.</p>
+        ) : (
+          <ul className="divide-y divide-border -mx-5 -my-5">
+            {versions.map((v) => (
+              <li
+                key={v.version_num}
+                className="flex items-center justify-between gap-3 px-5 py-3 text-sm hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <code className="font-mono text-xs bg-muted text-foreground px-2 py-0.5 rounded shrink-0">
+                    v{v.version_num}
+                  </code>
+                  <span
+                    className={`text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded-full shrink-0 ${
+                      v.status === 'active'
+                        ? 'bg-moss-100 text-moss-700'
+                        : v.status === 'draft'
+                          ? 'bg-cream-300 text-foreground/80'
+                          : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {v.status}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDateTime(v.changed_at)}
+                  <span className="text-foreground/80 truncate">
+                    {v.change_reason ?? <span className="text-muted-foreground italic">sem motivo</span>}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                  {formatDateTime(v.changed_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </ContentCard>
     </div>
   )
 }

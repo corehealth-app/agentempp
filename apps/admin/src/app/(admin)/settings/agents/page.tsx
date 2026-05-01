@@ -1,5 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { AgentConfigForm } from './form'
 
@@ -52,44 +51,38 @@ export default async function AgentsPage() {
     .order('stage')
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold">Sub-agentes</h1>
-        <p className="text-muted-foreground">
-          Configuração de modelo, temperatura e tokens por estágio. Cada mudança gera uma versão
-          em <code>agent_configs_versions</code>.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        breadcrumbs={[{ label: 'Persona' }, { label: 'Sub-agentes' }]}
+        title="Sub-agentes"
+        description="Configuração de modelo, temperatura e tokens por estágio. Cada mudança gera uma versão em agent_configs_versions."
+      />
 
       <div className="grid gap-4">
         {(configs ?? []).map((cfg) => (
-          <Card key={cfg.id}>
-            <CardHeader className="flex flex-row items-start justify-between space-y-0">
-              <div className="space-y-1">
-                <CardTitle className="text-lg">
-                  {STAGE_LABELS[cfg.stage]?.label ?? cfg.stage}
-                </CardTitle>
-                <CardDescription>
-                  {STAGE_LABELS[cfg.stage]?.description}
-                </CardDescription>
-              </div>
+          <ContentCard
+            key={cfg.id}
+            title={STAGE_LABELS[cfg.stage]?.label ?? cfg.stage}
+            description={STAGE_LABELS[cfg.stage]?.description}
+            actions={
               <div className="flex flex-col items-end gap-1">
-                <Badge variant="default">v{cfg.version}</Badge>
-                <span className="text-xs text-muted-foreground">{cfg.name}</span>
+                <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono px-2 py-1 rounded-full bg-moss-100 text-moss-700">
+                  v{cfg.version}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">{cfg.name}</span>
               </div>
-            </CardHeader>
-            <CardContent>
-              <AgentConfigForm
-                id={cfg.id}
-                stage={cfg.stage}
-                model={cfg.model}
-                temperature={Number(cfg.temperature)}
-                maxTokens={cfg.max_tokens}
-                waitSeconds={cfg.wait_seconds}
-                modelOptions={POPULAR_MODELS}
-              />
-            </CardContent>
-          </Card>
+            }
+          >
+            <AgentConfigForm
+              id={cfg.id}
+              stage={cfg.stage}
+              model={cfg.model}
+              temperature={Number(cfg.temperature)}
+              maxTokens={cfg.max_tokens}
+              waitSeconds={cfg.wait_seconds}
+              modelOptions={POPULAR_MODELS}
+            />
+          </ContentCard>
         ))}
       </div>
     </div>

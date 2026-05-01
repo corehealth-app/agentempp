@@ -4,23 +4,23 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    AGENTE MPP — ADMIN
-   Estrutura inspirada no padrão PiperKey (sidebar + glass cards + breadcrumbs)
-   Paleta: cream / ink / moss (mantida)
-   Tipografia: Fraunces (display) · Geist (sans) · Geist Mono (data)
+   Estrutura PiperKey: sidebar + glass cards + breadcrumbs
+   Fontes (idênticas ao PiperKey): Inter (body) · Outfit (display + h1-h6)
+   Paleta (mantida): cream / ink / moss
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @layer base {
   :root {
     /* === Surface === */
-    --background: 36 27% 96%;        /* cream #FAF8F3 */
-    --foreground: 40 9% 6%;          /* ink #0F0F0E */
+    --background: 36 27% 96%;
+    --foreground: 40 9% 6%;
     --card: 0 0% 100%;
     --card-foreground: 40 9% 6%;
     --popover: 0 0% 100%;
     --popover-foreground: 40 9% 6%;
 
-    /* === Primary (moss / verde-musgo profundo) === */
-    --primary: 162 41% 21%;          /* #1F4D3F */
+    /* === Primary (moss) === */
+    --primary: 162 41% 21%;
     --primary-foreground: 36 27% 96%;
 
     /* === Secondary === */
@@ -37,17 +37,17 @@
     --ring: 162 41% 21%;
     --radius: 0.5rem;
 
-    /* === Sidebar (PiperKey-style, paleta cream/ink/moss) === */
-    --sidebar-background: 36 35% 98%;   /* cream-50 #FDFCF8 */
+    /* === Sidebar === */
+    --sidebar-background: 36 35% 98%;
     --sidebar-foreground: 40 8% 28%;
-    --sidebar-primary: 162 41% 21%;     /* moss */
+    --sidebar-primary: 162 41% 21%;
     --sidebar-primary-foreground: 36 27% 96%;
     --sidebar-accent: 36 25% 92%;
     --sidebar-accent-foreground: 162 41% 21%;
     --sidebar-border: 36 14% 88%;
     --sidebar-ring: 162 41% 21%;
 
-    /* === Glass / nav-card === */
+    /* === Glass === */
     --glass-background: 0 0% 100% / 1;
     --glass-background-elevated: 36 35% 98% / 1;
     --glass-background-subtle: 36 25% 96% / 1;
@@ -56,7 +56,6 @@
     --glass-shadow: 40 9% 6% / 0.06;
     --glass-inner-shadow: 0 0% 0% / 0;
 
-    /* === Bronze (raro) === */
     --bronze: 38 35% 54%;
   }
 
@@ -105,30 +104,51 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "ss01", "cv11", "tnum";
+    font-family: var(--font-sans), 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 
-  h1, h2, h3, h4 {
-    font-family: var(--font-display);
-    letter-spacing: -0.025em;
-    font-feature-settings: "ss01", "cv01", "ss03";
-  }
-
-  .num {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
+  /* === Headings: Outfit (PiperKey-style) === */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display), 'Outfit', system-ui, sans-serif;
     letter-spacing: -0.02em;
   }
 
-  .display {
-    font-family: var(--font-display);
-    font-weight: 400;
-    letter-spacing: -0.04em;
-    line-height: 0.96;
+  /* === Display typography (responsive) === */
+  .text-display {
+    font-family: var(--font-display), 'Outfit', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  .text-display-xl {
+    font-family: var(--font-display), 'Outfit', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.05;
+  }
+  .text-display-lg {
+    font-family: var(--font-display), 'Outfit', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1.1;
+  }
+  .text-display-sm {
+    font-family: var(--font-display), 'Outfit', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  /* === Mono utility (system stack) === */
+  .num,
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
 
   .section-eyebrow {
-    font-family: var(--font-mono);
+    font-family: var(--font-mono), ui-monospace, monospace;
     text-transform: uppercase;
     letter-spacing: 0.16em;
     font-size: 0.6875rem;
@@ -154,14 +174,13 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   COMPONENTES — padrão PiperKey adaptado
+   COMPONENTES — padrão PiperKey
    ═══════════════════════════════════════════════════════════════════════════ */
 @layer components {
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
-  /* glass-card: card sólido em light mode (estilo PiperKey light) */
   .glass-card {
     background: hsl(var(--glass-background));
     border: 1px solid hsl(var(--glass-border));
@@ -186,7 +205,6 @@
     border-radius: 0.75rem;
   }
 
-  /* nav-card-glass: itens da sidebar */
   .nav-card-glass {
     background: hsl(36 30% 96% / 0.6);
     border: 1px solid transparent;
@@ -228,18 +246,15 @@
     color: hsl(var(--sidebar-primary));
   }
 
-  /* page-header-card: container do título da página */
   .page-header-card {
     @apply glass-card;
     padding: 1.5rem;
   }
 
-  /* content-card: wrapper de conteúdo */
   .content-card {
     @apply glass-card overflow-hidden;
   }
 
-  /* nav-scroll: scroll-bar fina pra navegação */
   .nav-scroll {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;

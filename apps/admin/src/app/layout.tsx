@@ -1,14 +1,19 @@
 import type { Metadata } from 'next'
-import { Fraunces } from 'next/font/google'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
+import { Inter, Outfit } from 'next/font/google'
 import { Toaster } from '@/components/ui/toaster'
 import './globals.css'
 
-const fraunces = Fraunces({
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+})
+
+const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-display',
-  weight: ['400', '500', '600', '700'],
+  weight: ['500', '600', '700'],
   display: 'swap',
 })
 
@@ -23,15 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="pt-BR"
       suppressHydrationWarning
-      className={`${fraunces.variable} ${GeistSans.variable} ${GeistMono.variable}`}
-      style={
-        {
-          ['--font-sans' as string]: GeistSans.style.fontFamily,
-          ['--font-mono' as string]: GeistMono.style.fontFamily,
-        } as React.CSSProperties
-      }
+      className={`${inter.variable} ${outfit.variable}`}
     >
-      <body className="min-h-screen bg-background text-foreground font-sans paper antialiased">
+      <body className="min-h-screen bg-background text-foreground font-sans antialiased">
         {children}
         <Toaster
           theme="light"
@@ -40,7 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               background: 'hsl(var(--card))',
               color: 'hsl(var(--foreground))',
               border: '1px solid hsl(var(--border))',
-              borderRadius: '4px',
+              borderRadius: '8px',
               fontFamily: 'var(--font-sans)',
             },
           }}

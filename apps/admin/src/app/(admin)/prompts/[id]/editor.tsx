@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ContentCard } from '@/components/page-header'
 import { Save, Trash2 } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -93,11 +93,8 @@ export function RuleEditor(props: Props) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Editor</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <ContentCard title="Editor">
+      <div className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5 md:col-span-2">
             <Label>Tópico</Label>
@@ -167,7 +164,7 @@ export function RuleEditor(props: Props) {
           />
         </div>
 
-        <div className="flex justify-between pt-2 border-t">
+        <div className="flex justify-between pt-3 border-t border-border">
           <Button variant="outline" onClick={onDelete} disabled={pending}>
             <Trash2 className="h-4 w-4 mr-1" />
             Apagar
@@ -177,7 +174,7 @@ export function RuleEditor(props: Props) {
             Salvar nova versão
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </ContentCard>
   )
 }

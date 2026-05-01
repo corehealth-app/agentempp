@@ -7,9 +7,20 @@ export default {
     container: { center: true, padding: '2rem', screens: { '2xl': '1400px' } },
     extend: {
       fontFamily: {
-        display: ['var(--font-display)', 'Fraunces', 'Georgia', 'serif'],
-        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+        // Inter (body) + Outfit (display) — mesmas do PiperKey
+        sans: ['var(--font-sans)', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Outfit', 'system-ui', 'sans-serif'],
+        // Mono system stack (PiperKey usa default tailwind)
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'Liberation Mono',
+          'Courier New',
+          'monospace',
+        ],
       },
       colors: {
         border: 'hsl(var(--border))',
@@ -60,8 +71,8 @@ export default {
       },
       borderRadius: {
         lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 0.0625rem)',
-        sm: 'calc(var(--radius) - 0.125rem)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       letterSpacing: {
         tightest: '-0.06em',

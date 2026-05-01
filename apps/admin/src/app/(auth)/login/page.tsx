@@ -127,7 +127,7 @@ export default function LoginPage() {
 
           <div className="space-y-3">
             <div className="section-eyebrow">Painel administrativo</div>
-            <h1 className="display text-5xl text-ink-900">
+            <h1 className="text-display-xl text-ink-900">
               {sent ? 'Verifique seu email' : 'Entrar'}
             </h1>
             <p className="text-ink-500 text-pretty">

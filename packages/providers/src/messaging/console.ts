@@ -102,10 +102,22 @@ export class ConsoleProvider implements MessagingProvider {
     // no-op
   }
 
+  async showTypingFor(_providerMessageId: string): Promise<void> {
+    this.write(this.color('   ✏️  digitando…', 'dim'))
+  }
+
   async setTyping(_to: string, state: 'typing' | 'recording' | 'idle'): Promise<void> {
     if (state !== 'idle') {
       this.write(this.color(`   ${state === 'recording' ? '🎙️ gravando…' : '✏️ digitando…'}`, 'dim'))
     }
+  }
+
+  async react(to: string, providerMessageId: string, emoji: string): Promise<SendResult> {
+    const id = this.newId()
+    this.write(
+      `\n${this.color('🟢 Reaction →', 'cyan')} ${this.color(to, 'dim')} ${emoji || '(remove)'} on ${this.color(providerMessageId, 'dim')}\n`,
+    )
+    return { providerMessageId: id, status: 'sent' }
   }
 
   /**

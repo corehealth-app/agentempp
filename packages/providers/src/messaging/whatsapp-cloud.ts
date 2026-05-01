@@ -145,10 +145,46 @@ export class WhatsAppCloudProvider implements MessagingProvider {
     })
   }
 
-  async setTyping(_to: string, state: 'typing' | 'recording' | 'idle'): Promise<void> {
-    // typing_indicator é experimental; implementação completa requer typing_indicator request
-    if (state === 'idle') return
-    // No-op silencioso por enquanto.
+  /**
+   * Mostra "digitando..." real do WhatsApp.
+   * Cloud API: marca como lida + typing_indicator no mesmo POST.
+   * O indicador some sozinho em ~25s ou ao enviar a próxima mensagem.
+   */
+  async showTypingFor(providerMessageId: string): Promise<void> {
+    await fetch(`${this.base}/${this.cfg.phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.cfg.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: providerMessageId,
+        typing_indicator: { type: 'text' },
+      }),
+    })
+  }
+
+  /** @deprecated Cloud API exige message_id da última msg do user. Use showTypingFor. */
+  async setTyping(_to: string, _state: 'typing' | 'recording' | 'idle'): Promise<void> {
+    // No-op no Cloud API. Use showTypingFor(providerMessageId).
+  }
+
+  /**
+   * Reage a uma mensagem do user com emoji.
+   * Passar emoji='' remove a reação.
+   */
+  async react(to: string, providerMessageId: string, emoji: string): Promise<SendResult> {
+    return this.post({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'reaction',
+      reaction: {
+        message_id: providerMessageId,
+        emoji,
+      },
+    })
   }
 
   parseInbound(payload: unknown): NormalizedInbound[] {

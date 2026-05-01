@@ -1,14 +1,15 @@
 // Edge Function: webhook-whatsapp
-// Recebe eventos do WhatsApp Cloud API e dispara processamento via Inngest.
-//
-// GET  → handshake de verify (hub.mode=subscribe + hub.verify_token + hub.challenge)
-// POST → recebe eventos. Valida HMAC, dedupe, persiste msg in, dispara Inngest.
+// Recebe eventos do WhatsApp Cloud API e EMPILHA mensagens em buffer
+// (debounce 8s) antes de disparar o agente — evita 1 LLM call por linha
+// quando o user manda várias msgs rápidas em sequência.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const INNGEST_EVENT_KEY = Deno.env.get('INNGEST_EVENT_KEY')
+
+const BUFFER_DEBOUNCE_MS = 8000 // 8s — agrega msgs próximas
 
 async function getCredential(
   supabase: ReturnType<typeof createClient>,
@@ -43,7 +44,6 @@ async function verifyMetaSignature(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')}`
   if (signature.length !== expected.length) return false
-  // timing-safe comparison
   let mismatch = 0
   for (let i = 0; i < signature.length; i++) {
     mismatch |= signature.charCodeAt(i) ^ expected.charCodeAt(i)
@@ -51,16 +51,21 @@ async function verifyMetaSignature(
   return mismatch === 0
 }
 
-async function sendInngestEvent(eventName: string, data: Record<string, unknown>): Promise<void> {
-  if (!INNGEST_EVENT_KEY) {
-    console.warn('INNGEST_EVENT_KEY missing — skipping event dispatch')
-    return
-  }
+async function sendInngestEvent(
+  eventName: string,
+  data: Record<string, unknown>,
+  delayMs?: number,
+): Promise<void> {
+  if (!INNGEST_EVENT_KEY) return
   try {
+    const body: Record<string, unknown> = { name: eventName, data }
+    if (delayMs && delayMs > 0) {
+      body.ts = Date.now() + delayMs
+    }
     const r = await fetch(`https://inn.gs/e/${INNGEST_EVENT_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: eventName, data }),
+      body: JSON.stringify(body),
     })
     if (!r.ok) console.error('Inngest dispatch failed', r.status, await r.text())
   } catch (e) {
@@ -83,11 +88,9 @@ Deno.serve(async (req: Request) => {
     if (mode === 'subscribe' && token === verifyToken && challenge) {
       return new Response(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } })
     }
-    console.warn('Verify falhou', { mode, gotToken: !!token, expected: !!verifyToken })
     return new Response('forbidden', { status: 403 })
   }
 
-  // ===== POST: webhook event =====
   if (req.method !== 'POST') return new Response('method', { status: 405 })
 
   const rawBody = await req.text()
@@ -96,31 +99,9 @@ Deno.serve(async (req: Request) => {
 
   const sig = req.headers.get('x-hub-signature-256') ?? ''
   const ok = await verifyMetaSignature(appSecret, sig, rawBody)
-  if (!ok) {
-    console.warn('HMAC inválido')
-    return new Response('forbidden', { status: 403 })
-  }
+  if (!ok) return new Response('forbidden', { status: 403 })
 
-  let payload: {
-    entry?: Array<{
-      changes?: Array<{
-        field?: string
-        value?: {
-          messages?: Array<{
-            id: string
-            from: string
-            type: string
-            timestamp: string
-            text?: { body: string }
-            image?: { id: string; caption?: string; mime_type: string }
-            audio?: { id: string; mime_type: string }
-            video?: { id: string; mime_type: string }
-          }>
-          statuses?: Array<{ id: string; status: string; timestamp: string }>
-        }
-      }>
-    }>
-  }
+  let payload: any
   try {
     payload = JSON.parse(rawBody)
   } catch {
@@ -189,21 +170,50 @@ Deno.serve(async (req: Request) => {
           raw_payload: msg,
         })
 
-        // dispara processamento via Inngest
-        await sendInngestEvent('message.received', {
-          userId,
-          wpp: msg.from,
-          providerMessageId: msg.id,
-          contentType,
-          text: msg.text?.body ?? msg.image?.caption,
+        // ============================================================
+        //  EMPILHAMENTO: push no buffer com debounce
+        // ============================================================
+        const flushAt = new Date(Date.now() + BUFFER_DEBOUNCE_MS).toISOString()
+        const newMsgEntry = {
+          provider_message_id: msg.id,
+          content_type: contentType,
+          text: msg.text?.body ?? msg.image?.caption ?? null,
           mediaUrl: msg.image?.id ?? msg.audio?.id,
-          provider: 'whatsapp_cloud',
-          timestamp: new Date(Number.parseInt(msg.timestamp, 10) * 1000).toISOString(),
-        })
+          received_at: new Date().toISOString(),
+        }
+
+        // Tenta upsert: se já existe buffer pro user, append e estende flush_after
+        const { data: existing } = await supabase
+          .from('message_buffer')
+          .select('messages')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        const accumulated = existing
+          ? [...((existing.messages as unknown[]) ?? []), newMsgEntry]
+          : [newMsgEntry]
+
+        await supabase.from('message_buffer').upsert(
+          {
+            user_id: userId,
+            messages: accumulated,
+            buffered_at: new Date().toISOString(),
+            flush_after: flushAt,
+          },
+          { onConflict: 'user_id' },
+        )
+
+        // Dispara evento com delay — Inngest aciona buffer-flush em 8s
+        // Cada msg dispara um evento, mas o worker é idempotente:
+        // só processa se ainda houver buffer com flush_after expirado.
+        await sendInngestEvent(
+          'buffer.flush',
+          { userId, count: accumulated.length, fired_at: new Date().toISOString() },
+          BUFFER_DEBOUNCE_MS + 200,
+        )
       }
     }
   }
 
-  // Meta exige resposta 200 rápida (<5s)
   return new Response('ok', { status: 200 })
 })

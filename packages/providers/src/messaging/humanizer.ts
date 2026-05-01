@@ -70,41 +70,48 @@ export function delayForChunk(chunk: string, opts: Required<HumanizeOpts>): numb
   return Math.min(opts.maxDelay, Math.max(opts.minDelay, ms))
 }
 
+interface SendHumanizedExtra {
+  /** ID da última msg recebida do user — usado p/ typing indicator real do WhatsApp */
+  inReplyTo?: string
+}
+
 /**
  * Envia uma mensagem ao usuário em modo humanizado:
- *   1. Quebra em chunks
- *   2. Para cada chunk: typing indicator → delay proporcional → sendText
- *   3. Aguarda entre chunks
+ *   1. Quebra em chunks por \n\n
+ *   2. (opcional) showTypingFor(inReplyTo) ANTES do primeiro chunk — único typing real
+ *   3. Para cada chunk: delay proporcional → sendText (1º com replyTo)
+ *   4. Pequeno gap entre chunks
  */
 export async function sendHumanized(
   provider: MessagingProvider,
   to: string,
   text: string,
-  opts?: HumanizeOpts & SendOpts,
+  opts?: HumanizeOpts & SendOpts & SendHumanizedExtra,
 ): Promise<SendResult[]> {
   const config = { ...DEFAULT_OPTS, ...opts }
   const chunks = chunkMessage(text)
   const results: SendResult[] = []
 
+  // Typing indicator real só é possível 1× (Cloud API). Mostra antes do 1º chunk.
+  if (config.showTyping && opts?.inReplyTo && provider.showTypingFor) {
+    await provider.showTypingFor(opts.inReplyTo).catch(() => {})
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
     if (!chunk) continue
-    if (config.showTyping) {
-      await provider.setTyping(to, 'typing').catch(() => {})
-    }
+
     await sleep(delayForChunk(chunk, config))
 
-    const result = await provider.sendText(to, chunk, opts)
+    // Só o primeiro chunk pode usar quoted reply
+    const sendOpts: SendOpts | undefined =
+      i === 0 && opts?.replyTo ? { replyTo: opts.replyTo } : undefined
+    const result = await provider.sendText(to, chunk, sendOpts)
     results.push(result)
 
-    // Pequeno gap entre chunks (não para o último)
     if (i < chunks.length - 1) {
       await sleep(300)
     }
-  }
-
-  if (config.showTyping) {
-    await provider.setTyping(to, 'idle').catch(() => {})
   }
   return results
 }

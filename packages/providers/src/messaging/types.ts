@@ -62,12 +62,23 @@ export interface MessagingProvider {
   sendImage(to: string, url: string, caption?: string): Promise<SendResult>
   sendTemplate(to: string, template: HSMTemplate): Promise<SendResult>
 
+  // Reações (emoji em mensagem específica)
+  /** emoji '' (string vazia) remove a reação */
+  react(to: string, providerMessageId: string, emoji: string): Promise<SendResult>
+
   // Mídia
   uploadMedia(file: Blob, mimeType: string): Promise<string>
   downloadMedia(mediaId: string): Promise<Blob>
 
   // Estado da conversa
   markRead(providerMessageId: string): Promise<void>
+  /**
+   * Mostra o "digitando..." real do WhatsApp na conversa.
+   * Esse indicador some sozinho após ~25s ou quando a próxima mensagem é enviada.
+   * Idempotente — chamar múltiplas vezes só re-arma o timer.
+   */
+  showTypingFor(providerMessageId: string): Promise<void>
+  /** @deprecated use showTypingFor — Cloud API só permite typing ao receber msg */
   setTyping(to: string, state: 'typing' | 'recording' | 'idle'): Promise<void>
 
   // Webhook

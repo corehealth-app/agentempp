@@ -39,7 +39,9 @@ export class GroqSTT {
     const file =
       p.audio instanceof Blob
         ? new File([p.audio], p.filename ?? 'audio.ogg', { type: p.audio.type || 'audio/ogg' })
-        : new File([p.audio], p.filename ?? 'audio.ogg', { type: 'audio/ogg' })
+        : new File([new Uint8Array(p.audio as Uint8Array | Buffer)], p.filename ?? 'audio.ogg', {
+            type: 'audio/ogg',
+          })
 
     const result = await this.client.audio.transcriptions.create({
       file,

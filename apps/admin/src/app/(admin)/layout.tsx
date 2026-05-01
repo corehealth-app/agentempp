@@ -1,6 +1,8 @@
 import { Sidebar } from '@/components/sidebar'
+import { StatusBar } from '@/components/status-bar'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -47,6 +49,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         userName={(adminRow as { name?: string | null }).name ?? undefined}
       />
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <Suspense fallback={<div className="h-9 border-b border-border" />}>
+          <StatusBar />
+        </Suspense>
         <main className="flex-1 min-h-0 px-4 sm:px-6 py-4 overflow-y-auto pb-20 lg:pb-4">
           {children}
         </main>

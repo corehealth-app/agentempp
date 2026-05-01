@@ -16,6 +16,8 @@ import {
   MessageSquare,
   Settings,
   Sparkles,
+  Trophy,
+  TrendingUp,
   UserCog,
   Users,
   X,
@@ -47,19 +49,29 @@ interface NavCategory {
 
 const NAV_CATEGORIES: NavCategory[] = [
   {
-    label: 'PRINCIPAL',
+    label: 'OPERAÇÃO',
     items: [
-      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { label: 'Mensagens', href: '/messages', icon: MessageSquare },
-      { label: 'Avaliações LLM', href: '/evaluations', icon: Sparkles },
+      { label: 'Hoje', href: '/dashboard', icon: LayoutDashboard },
+      { label: 'Conversas', href: '/messages', icon: MessageSquare },
+      { label: 'Pacientes', href: '/users', icon: Users },
     ],
   },
   {
-    label: 'PERSONA',
+    label: 'CRESCIMENTO',
+    items: [
+      { label: 'Conquistas', href: '/crescimento/conquistas', icon: Trophy },
+      { label: 'Funil & Cohorts', href: '/crescimento/funil', icon: TrendingUp },
+      { label: 'Receita', href: '/crescimento/receita', icon: CreditCard },
+    ],
+  },
+  {
+    label: 'AGENTE',
     items: [
       { label: 'Regras', href: '/prompts', icon: FileText },
       { label: 'Playground', href: '/prompts/playground', icon: Bot },
       { label: 'Sub-agentes', href: '/settings/agents', icon: Cpu },
+      { label: 'Avaliações LLM', href: '/evaluations', icon: Sparkles },
+      { label: 'Auditoria', href: '/audit', icon: Activity },
     ],
   },
   {
@@ -69,13 +81,6 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Crons', href: '/settings/crons', icon: Clock },
       { label: 'Billing', href: '/settings/billing', icon: CreditCard },
       { label: 'Admins', href: '/settings/admins', icon: UserCog },
-    ],
-  },
-  {
-    label: 'OPERAÇÃO',
-    items: [
-      { label: 'Usuários', href: '/users', icon: Users },
-      { label: 'Auditoria', href: '/audit', icon: Activity },
     ],
   },
 ]

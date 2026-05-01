@@ -2,12 +2,18 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowRight, Check } from 'lucide-react'
+import { ArrowRight, Check, Lock, Mail } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
+type Mode = 'password' | 'magic'
+
 export default function LoginPage() {
+  const router = useRouter()
+  const [mode, setMode] = useState<Mode>('password')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
 
@@ -15,24 +21,36 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    })
-    setLoading(false)
-    if (error) {
-      toast.error(error.message)
-      return
+
+    if (mode === 'password') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      setLoading(false)
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+      toast.success('Entrando…')
+      router.push('/dashboard')
+      router.refresh()
+    } else {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      })
+      setLoading(false)
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+      setSent(true)
+      toast.success('Link de acesso enviado')
     }
-    setSent(true)
-    toast.success('Link de acesso enviado')
   }
 
   return (
     <div className="min-h-screen flex">
       {/* === Left: brand panel === */}
       <aside className="hidden lg:flex lg:w-1/2 bg-ink-900 text-cream-100 relative overflow-hidden">
-        {/* dot grid background */}
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
@@ -42,12 +60,12 @@ export default function LoginPage() {
           }}
           aria-hidden
         />
-
-        {/* moss accent */}
-        <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-moss-700/20 blur-3xl" aria-hidden />
+        <div
+          className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-moss-700/20 blur-3xl"
+          aria-hidden
+        />
 
         <div className="relative z-10 flex flex-col justify-between w-full p-12">
-          {/* Header */}
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-sm bg-cream-100 text-ink-900 flex items-center justify-center font-display text-xl font-medium">
               M
@@ -60,7 +78,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Quote / value prop */}
           <div className="space-y-8 max-w-md">
             <div className="chapter-num text-cream-100/40">— Método Muscular Power Plant</div>
             <blockquote className="font-display text-3xl leading-tight text-balance">
@@ -75,7 +92,6 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Footer */}
           <div className="grid grid-cols-3 gap-6 text-xs font-mono text-cream-100/40 uppercase tracking-widest">
             <div>
               <div className="text-cream-100/80 num text-base mb-1">88</div>
@@ -109,7 +125,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Header */}
           <div className="space-y-3">
             <div className="section-eyebrow">Painel administrativo</div>
             <h1 className="display text-5xl text-ink-900">
@@ -118,7 +133,9 @@ export default function LoginPage() {
             <p className="text-ink-500 text-pretty">
               {sent
                 ? 'Enviamos um link de acesso. Pode demorar alguns segundos.'
-                : 'Receba um link mágico no seu email. Sem senhas.'}
+                : mode === 'password'
+                  ? 'Entre com email e senha cadastrada.'
+                  : 'Receba um link mágico no seu email. Sem senhas.'}
             </p>
           </div>
 
@@ -138,47 +155,106 @@ export default function LoginPage() {
                 }}
                 className="text-sm text-ink-500 hover:text-ink-900 underline underline-offset-4 focus-ring rounded px-1 -mx-1"
               >
-                Usar outro email
+                Voltar
               </button>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <label htmlFor="email" className="section-eyebrow">
-                  Email autorizado
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="seu@corehealth.com"
-                  required
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 font-mono text-sm bg-cream-50 border-ink-300 focus:border-ink-900"
-                />
+            <>
+              {/* Tabs */}
+              <div className="flex gap-1 p-1 bg-cream-200 rounded-sm w-fit">
+                <button
+                  type="button"
+                  onClick={() => setMode('password')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-mono uppercase tracking-wider transition ${
+                    mode === 'password'
+                      ? 'bg-cream-50 text-ink-900 shadow-sm'
+                      : 'text-ink-500 hover:text-ink-900'
+                  }`}
+                >
+                  <Lock className="h-3 w-3" />
+                  Senha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('magic')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-mono uppercase tracking-wider transition ${
+                    mode === 'magic'
+                      ? 'bg-cream-50 text-ink-900 shadow-sm'
+                      : 'text-ink-500 hover:text-ink-900'
+                  }`}
+                >
+                  <Mail className="h-3 w-3" />
+                  Magic Link
+                </button>
               </div>
-              <Button
-                type="submit"
-                className="w-full h-12 bg-ink-900 hover:bg-ink-800 text-cream-100 group rounded-sm font-medium tracking-tight"
-                disabled={loading}
-              >
-                {loading ? (
-                  'Enviando…'
-                ) : (
-                  <>
-                    Receber link de acesso
-                    <ArrowRight className="h-4 w-4 ml-2 transition-transform group-hover:translate-x-0.5" />
-                  </>
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-2">
+                  <label htmlFor="email" className="section-eyebrow">
+                    Email autorizado
+                  </label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="seu@corehealth.com"
+                    required
+                    autoFocus
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-12 font-mono text-sm bg-cream-50 border-ink-300 focus:border-ink-900"
+                  />
+                </div>
+
+                {mode === 'password' && (
+                  <div className="space-y-2 animate-fade-in">
+                    <label htmlFor="password" className="section-eyebrow">
+                      Senha
+                    </label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-12 font-mono text-sm bg-cream-50 border-ink-300 focus:border-ink-900"
+                    />
+                  </div>
                 )}
-              </Button>
-              <p className="text-xs text-ink-500 leading-relaxed pt-2">
-                Apenas emails cadastrados em <code className="font-mono text-[11px] text-ink-700 bg-cream-200 px-1.5 py-0.5 rounded">admin_users</code> têm acesso ao painel. Pacientes conversam direto pelo WhatsApp.
-              </p>
-            </form>
+
+                <Button
+                  type="submit"
+                  className="w-full h-12 bg-ink-900 hover:bg-ink-800 text-cream-100 group rounded-sm font-medium tracking-tight"
+                  disabled={loading}
+                >
+                  {loading
+                    ? 'Aguarde…'
+                    : mode === 'password'
+                      ? (
+                          <>
+                            Entrar
+                            <ArrowRight className="h-4 w-4 ml-2 transition-transform group-hover:translate-x-0.5" />
+                          </>
+                        )
+                      : (
+                          <>
+                            Receber link de acesso
+                            <ArrowRight className="h-4 w-4 ml-2 transition-transform group-hover:translate-x-0.5" />
+                          </>
+                        )}
+                </Button>
+
+                <p className="text-xs text-ink-500 leading-relaxed pt-2">
+                  Apenas emails cadastrados em{' '}
+                  <code className="font-mono text-[11px] text-ink-700 bg-cream-200 px-1.5 py-0.5 rounded">
+                    admin_users
+                  </code>{' '}
+                  têm acesso ao painel. Pacientes conversam direto pelo WhatsApp.
+                </p>
+              </form>
+            </>
           )}
 
-          {/* Footer note */}
           <div className="hairline pt-6 flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-ink-500">
             <span>v1.0 · MMXXVI</span>
             <span>—</span>

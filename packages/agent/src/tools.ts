@@ -53,7 +53,8 @@ export const cadastraDadosIniciais: ToolDefinition = {
     if (args.birth_date) updates.birth_date = args.birth_date
     if (args.height_cm != null) updates.height_cm = args.height_cm
     if (args.weight_kg != null) updates.weight_kg = args.weight_kg
-    if (args.body_fat_percent != null) updates.body_fat_percent = args.body_fat_percent
+    if (args.body_fat_percent != null && args.body_fat_percent > 0)
+      updates.body_fat_percent = args.body_fat_percent
     if (args.activity_level) updates.activity_level = args.activity_level
     if (args.training_frequency != null) updates.training_frequency = args.training_frequency
     if (args.water_intake) updates.water_intake = args.water_intake
@@ -79,7 +80,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
       .from('v_user_metrics')
       .select('*')
       .eq('user_id', ctx.userId)
-      .single()
+      .maybeSingle()
 
     return {
       success: true,

@@ -144,7 +144,12 @@ export async function processMessage(
           success: true,
         })
       } catch (e) {
-        const err = e instanceof Error ? e.message : String(e)
+        const err =
+          e instanceof Error
+            ? e.message
+            : e && typeof e === 'object'
+              ? JSON.stringify(e)
+              : String(e)
         toolCallsSummary.push({ name: tc.name, arguments: parsed, error: err })
         messages.push({
           role: 'tool',

@@ -1,0 +1,21 @@
+[
+  {
+    "name": "registrar refeição texto",
+    "stage": "recomposicao",
+    "input": "almocei 150g de arroz, 100g de feijão e 120g de frango grelhado",
+    "expected": {
+      "min_score": 7,
+      "must_contain_any": ["kcal", "calor", "arroz"],
+      "should_call_tools": ["registra_refeicao"]
+    }
+  },
+  {
+    "name": "consultar progresso",
+    "stage": "recomposicao",
+    "input": "como estou indo?",
+    "expected": {
+      "min_score": 7,
+      "should_call_tools": ["consulta_progresso"]
+    }
+  }
+]

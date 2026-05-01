@@ -1,0 +1,27 @@
+[
+  {
+    "name": "boas-vindas com nome",
+    "input": "Oi, meu nome é Carlos",
+    "expected": {
+      "min_score": 7,
+      "must_contain_any": ["Carlos", "MPP", "boas-vindas", "olá"],
+      "should_call_tools": ["cadastra_dados_iniciais"]
+    }
+  },
+  {
+    "name": "responder sexo",
+    "input": "Sou homem",
+    "expected": {
+      "min_score": 7,
+      "should_call_tools": ["cadastra_dados_iniciais"]
+    }
+  },
+  {
+    "name": "responder peso e altura",
+    "input": "tenho 80kg e 1,75m",
+    "expected": {
+      "min_score": 7,
+      "should_call_tools": ["cadastra_dados_iniciais"]
+    }
+  }
+]

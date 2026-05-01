@@ -19,11 +19,24 @@
 
 ## Estado atual
 
-- Fase atual: **Fase 0 — Setup**
+- Fases concluídas: **0 (Setup), 1A (Notion→Postgres), 1B (Agente conversacional), 2 (TACO), 3 (Admin UI), 4 (Cron daily-closer), 5 (TTS), 8 (WhatsApp adapter preparado)**
 - Não há usuários em produção
 - Não há assinantes pagantes
-- Não há dados a preservar
+- WhatsApp Cloud API: adapter pronto, **não ativado** — `MESSAGING_PROVIDER=console` por padrão
 - Sistema legado (n8n + Notion + Chatwoot + Evolution API) será **substituído**, não migrado de dados
+
+### Como testar agora
+
+Ver [`docs/runbook/getting-started.md`](runbook/getting-started.md). Resumo:
+
+1. `pnpm install`
+2. Tudo configurado em `.env.local`. Migrations já aplicadas.
+3. `pnpm --filter @mpp/admin dev` → http://localhost:3000
+4. `/login` → magic link → bootstrap-admin → entra
+5. `/prompts/playground` → conversa com o agente
+6. `/settings/api-keys` → trocar chaves
+7. `/settings/agents` → trocar modelo/temperatura
+8. `/prompts/[id]` → editar persona
 
 ---
 

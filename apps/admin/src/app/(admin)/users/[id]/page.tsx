@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
+import { CloseDayButton } from './close-day'
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

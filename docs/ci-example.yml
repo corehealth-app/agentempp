@@ -1,0 +1,46 @@
+# Exemplo de workflow CI — copie para .github/workflows/ci.yml manualmente
+# Não foi criado automaticamente para evitar acionar o hook de segurança
+# do agente; revise e adicione conforme sua org permitir.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm --filter @mpp/core test
+
+      - name: Build admin
+        run: pnpm --filter @mpp/admin build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+          SUPABASE_SERVICE_ROLE_KEY: dummy
+
+  # Opcional: gate de eval — só roda em PRs que mexem em prompts
+  # eval:
+  #   runs-on: ubuntu-latest
+  #   if: contains(github.event.pull_request.changed_files, 'prompts/')
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: pnpm --filter @mpp/eval eval
+  #       env:
+  #         SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+  #         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STAGING_SERVICE_ROLE }}
+  #         OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

@@ -171,35 +171,24 @@ export async function processMessage(
 
   if (!lastResult) throw new Error('No completion produced')
 
-  // 6. persistir mensagens
-  await deps.supabase.from('messages').insert([
-    {
-      user_id: userId,
-      direction: 'in',
-      role: 'user',
-      content_type: input.contentType,
-      content: input.text ?? null,
-      media_url: input.mediaUrl ?? null,
-      provider: input.provider,
-      provider_message_id: input.providerMessageId,
-      raw_payload: { from: input.from, contentType: input.contentType, text: input.text },
-      created_at: input.timestamp.toISOString(),
-    },
-    {
-      user_id: userId,
-      direction: 'out',
-      role: 'assistant',
-      content_type: 'text',
-      content: finalText,
-      provider: input.provider,
-      agent_stage: stage,
-      model_used: lastResult.model,
-      prompt_tokens: totalPromptTokens,
-      completion_tokens: totalCompletionTokens,
-      cost_usd: totalCost,
-      latency_ms: Date.now() - start,
-    },
-  ])
+  // 6. persistir mensagem OUT (a IN já é persistida pelo webhook)
+  const { error: insErr } = await deps.supabase.from('messages').insert({
+    user_id: userId,
+    direction: 'out',
+    role: 'assistant',
+    content_type: 'text',
+    content: finalText,
+    provider: input.provider,
+    agent_stage: stage,
+    model_used: lastResult.model,
+    prompt_tokens: totalPromptTokens,
+    completion_tokens: totalCompletionTokens,
+    cost_usd: totalCost,
+    latency_ms: Date.now() - start,
+  })
+  if (insErr) {
+    console.error('[pipeline] failed to persist OUT message', insErr)
+  }
 
   await deps.supabase
     .from('users')

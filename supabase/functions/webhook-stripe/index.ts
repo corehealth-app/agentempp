@@ -213,6 +213,11 @@ async function handleSubscriptionCanceled(sub: Stripe.Subscription) {
     .eq('provider_subscription_id', sub.id)
 }
 
+function tsToIso(ts: number | null | undefined): string | null {
+  if (!ts || typeof ts !== 'number' || !Number.isFinite(ts)) return null
+  return new Date(ts * 1000).toISOString()
+}
+
 async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
   const lookup = sub.items.data[0]?.price?.lookup_key ?? ''
   const plan = lookup.includes('anual')
@@ -221,6 +226,8 @@ async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
       ? 'trial'
       : 'mensal'
 
+  // Subscription pode estar 'incomplete' (sem first invoice paga ainda),
+  // 'incomplete_expired', 'unpaid', etc. Mapeamos pro enum do nosso domínio.
   const status =
     sub.status === 'active'
       ? 'active'
@@ -228,25 +235,28 @@ async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
         ? 'trial'
         : sub.status === 'past_due'
           ? 'past_due'
-          : sub.status === 'canceled'
+          : sub.status === 'canceled' || sub.status === 'incomplete_expired'
             ? 'canceled'
-            : 'expired'
+            : sub.status === 'incomplete' || sub.status === 'unpaid'
+              ? 'past_due'
+              : 'expired'
 
-  await supabase.from('subscriptions').upsert(
+  const { error } = await supabase.from('subscriptions').upsert(
     {
       user_id: userId,
       provider: 'stripe',
       provider_subscription_id: sub.id,
       plan,
       status,
-      current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-      trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+      current_period_start: tsToIso(sub.current_period_start),
+      current_period_end: tsToIso(sub.current_period_end),
+      trial_ends_at: tsToIso(sub.trial_end),
       cancel_at_period_end: sub.cancel_at_period_end,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'provider_subscription_id' },
   )
+  if (error) console.error('[webhook-stripe] upsert error:', error)
 }
 
 async function markSubscriptionStatus(providerSubId: string, status: string) {

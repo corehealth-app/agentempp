@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "seed:notion": "tsx seed-from-notion.ts",
+    "seed:taco-minimal": "tsx seed-taco-minimal.ts",
     "validate:prompts": "tsx validate-active-prompts.ts"
   },
   "dependencies": {

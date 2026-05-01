@@ -7,6 +7,7 @@
  */
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
+import { calcMealMacros } from './meal-pipeline.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -121,34 +122,37 @@ export const defineProtocolo: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
-// registra_refeicao — versão simples (sem TACO ainda)
+// registra_refeicao — usa TACO determinísticamente (ADR-006)
 // ----------------------------------------------------------------------------
 export const registraRefeicao: ToolDefinition = {
   name: 'registra_refeicao',
   description:
-    'Registra uma refeição com itens, calorias e macros. Use quando o usuário relatar uma refeição (texto ou foto).',
+    'Registra uma refeição. Você fornece apenas os nomes dos alimentos e quantidades em gramas. Os macros (kcal/proteína/carbo/gordura) são calculados automaticamente via base nutricional TACO. NÃO calcule macros manualmente — esta tool faz isso.',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
       .optional(),
-    items: z.array(
-      z.object({
-        food_name: z.string(),
-        quantity_g: z.number().optional(),
-        kcal: z.number(),
-        protein_g: z.number(),
-        carbs_g: z.number().optional(),
-        fat_g: z.number().optional(),
-      }),
-    ),
+    items: z
+      .array(
+        z.object({
+          food_name: z
+            .string()
+            .describe('Nome do alimento em português (ex: "arroz branco cozido")'),
+          quantity_g: z.number().describe('Quantidade em gramas'),
+        }),
+      )
+      .describe('Lista de itens consumidos'),
   }),
   execute: async (args, ctx) => {
     const today = new Date().toISOString().split('T')[0]!
 
+    // Calcula macros via TACO
+    const calc = await calcMealMacros(ctx.supabase, args.items)
+
     // Garante snapshot do dia
     const { data: snap } = await ctx.supabase
       .from('daily_snapshots')
-      .select('id, calories_consumed, protein_g, carbs_g, fat_g')
+      .select('id, calories_consumed, protein_g, carbs_g, fat_g, calories_target, protein_target')
       .eq('user_id', ctx.userId)
       .eq('date', today)
       .maybeSingle()
@@ -166,24 +170,20 @@ export const registraRefeicao: ToolDefinition = {
       snapshotId = created.id
     }
 
-    // Insere meal_logs
-    const totals = { kcal: 0, p: 0, c: 0, f: 0 }
-    for (const item of args.items) {
-      totals.kcal += item.kcal
-      totals.p += item.protein_g
-      totals.c += item.carbs_g ?? 0
-      totals.f += item.fat_g ?? 0
+    // Insere cada item em meal_logs
+    for (const item of calc.items) {
       await ctx.supabase.from('meal_logs').insert({
         user_id: ctx.userId,
         snapshot_id: snapshotId,
         meal_type: args.meal_type ?? null,
-        food_name: item.food_name,
-        quantity_g: item.quantity_g ?? null,
+        food_name: item.matched_taco_name || item.food_name,
+        quantity_g: item.quantity_g,
         kcal: item.kcal,
         protein_g: item.protein_g,
-        carbs_g: item.carbs_g ?? null,
-        fat_g: item.fat_g ?? null,
-        source: 'agent_estimate',
+        carbs_g: item.carbs_g,
+        fat_g: item.fat_g,
+        source: item.source,
+        confidence: item.similarity,
       })
     }
 
@@ -191,21 +191,33 @@ export const registraRefeicao: ToolDefinition = {
     const { data: updated, error: updErr } = await ctx.supabase
       .from('daily_snapshots')
       .update({
-        calories_consumed: (snap?.calories_consumed ?? 0) + totals.kcal,
-        protein_g: Number(snap?.protein_g ?? 0) + totals.p,
-        carbs_g: Number(snap?.carbs_g ?? 0) + totals.c,
-        fat_g: Number(snap?.fat_g ?? 0) + totals.f,
+        calories_consumed: Math.round((snap?.calories_consumed ?? 0) + calc.totals.kcal),
+        protein_g: +(Number(snap?.protein_g ?? 0) + calc.totals.protein_g).toFixed(2),
+        carbs_g: +(Number(snap?.carbs_g ?? 0) + calc.totals.carbs_g).toFixed(2),
+        fat_g: +(Number(snap?.fat_g ?? 0) + calc.totals.fat_g).toFixed(2),
         updated_at: new Date().toISOString(),
       })
       .eq('id', snapshotId)
-      .select('calories_consumed, protein_g, calories_target, protein_target')
+      .select('calories_consumed, protein_g, calories_target, protein_target, daily_balance')
       .single()
     if (updErr) throw updErr
 
     return {
       success: true,
-      meal_totals: totals,
+      meal: {
+        items: calc.items.map((i) => ({
+          name: i.matched_taco_name || i.food_name,
+          quantity_g: i.quantity_g,
+          kcal: i.kcal,
+          protein_g: i.protein_g,
+          carbs_g: i.carbs_g,
+          fat_g: i.fat_g,
+          source: i.source,
+        })),
+        totals: calc.totals,
+      },
       day_totals: updated,
+      warnings: calc.warnings,
     }
   },
 }

@@ -42,10 +42,16 @@ export async function processMessage(
   // 1. ensure user
   const userId = await ensureUser(deps.supabase, input.from)
 
-  // 2. load context
+  // 2. verifica subscription (gate de acesso)
+  const subscriptionStatus = await checkSubscription(deps.supabase, userId)
+  if (!subscriptionStatus.canAccess) {
+    return buildBlockedResponse(input, subscriptionStatus.reason ?? 'sem assinatura ativa')
+  }
+
+  // 3. load context
   const ctx = await loadContext(deps.supabase, userId)
 
-  // 3. resolve stage
+  // 4. resolve stage
   const stage = resolveStage(ctx.profile)
 
   // 4. load active prompt
@@ -215,6 +221,67 @@ export async function processMessage(
 /** Garante que o valor é JSON-safe (sem Date, undefined, function, etc). */
 function jsonify(value: unknown): import('@mpp/db').Json {
   return JSON.parse(JSON.stringify(value)) as import('@mpp/db').Json
+}
+
+/**
+ * Verifica se o user tem subscription ativa ou trial.
+ * Permite acesso sempre que:
+ *   - Modo dev (NODE_ENV !== 'production')
+ *   - Sem registro de subscription (greenfield, primeiro acesso) — passa
+ *   - status = 'active' ou 'trial'
+ *
+ * Bloqueia se status = 'past_due', 'canceled', 'expired'.
+ */
+async function checkSubscription(
+  supabase: ServiceClient,
+  userId: string,
+): Promise<{ canAccess: boolean; reason?: string; status?: string }> {
+  // Em dev/staging, libera tudo
+  if (process.env.NODE_ENV !== 'production') {
+    return { canAccess: true }
+  }
+
+  // Bypass via flag
+  if (process.env.SUBSCRIPTION_GATE === 'off') {
+    return { canAccess: true }
+  }
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('status, current_period_end, trial_ends_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!sub) {
+    // Sem registro — primeiro acesso. Permite (worker cria trial depois).
+    return { canAccess: true, status: 'no_subscription' }
+  }
+
+  if (sub.status === 'active' || sub.status === 'trial') {
+    return { canAccess: true, status: sub.status }
+  }
+
+  return {
+    canAccess: false,
+    status: sub.status,
+    reason: `subscription ${sub.status}`,
+  }
+}
+
+function buildBlockedResponse(input: AgentInput, reason: string): AgentOutput {
+  return {
+    text: `Sua assinatura precisa ser renovada para continuar usando o coach. Acesse seu painel ou fale com a equipe. (motivo: ${reason})`,
+    preferAudio: input.contentType === 'audio',
+    toolCalls: [],
+    stage: 'manutencao',
+    modelUsed: 'none',
+    promptTokens: 0,
+    completionTokens: 0,
+    costUsd: 0,
+    latencyMs: 0,
+  }
 }
 
 async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string> {

@@ -250,13 +250,177 @@ export const consultaProgresso: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// registra_treino
+// ----------------------------------------------------------------------------
+export const registraTreino: ToolDefinition = {
+  name: 'registra_treino',
+  description:
+    'Registra um treino executado (musculação, cardio, etc). Use quando usuário relatar treino concluído.',
+  parameters: z.object({
+    workout_type: z
+      .string()
+      .describe('Ex: "peito_triceps", "perna_completa", "cardio", "corrida"'),
+    duration_min: z.number().int().positive(),
+    intensity: z.enum(['leve', 'moderada', 'alta']).optional(),
+    estimated_kcal: z.number().int().nonnegative().optional(),
+    notes: z.string().optional(),
+  }),
+  execute: async (args, ctx) => {
+    const today = new Date().toISOString().split('T')[0]!
+
+    const { data: snap } = await ctx.supabase
+      .from('daily_snapshots')
+      .select('id, exercise_calories')
+      .eq('user_id', ctx.userId)
+      .eq('date', today)
+      .maybeSingle()
+
+    let snapshotId: string
+    if (snap) {
+      snapshotId = snap.id
+    } else {
+      const { data: created, error } = await ctx.supabase
+        .from('daily_snapshots')
+        .insert({ user_id: ctx.userId, date: today })
+        .select('id')
+        .single()
+      if (error) throw error
+      snapshotId = created.id
+    }
+
+    await ctx.supabase.from('workout_logs').insert({
+      user_id: ctx.userId,
+      snapshot_id: snapshotId,
+      workout_type: args.workout_type,
+      duration_min: args.duration_min,
+      intensity: args.intensity,
+      estimated_kcal: args.estimated_kcal,
+      notes: args.notes,
+    })
+
+    await ctx.supabase
+      .from('daily_snapshots')
+      .update({
+        exercise_calories: (snap?.exercise_calories ?? 0) + (args.estimated_kcal ?? 0),
+        training_done: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', snapshotId)
+
+    return { success: true }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// atualiza_data_user — nome, timezone, city
+// ----------------------------------------------------------------------------
+export const atualizaDataUser: ToolDefinition = {
+  name: 'atualiza_data_user',
+  description:
+    'Atualiza dados básicos do usuário: nome (preferido), timezone (IANA, ex: America/Sao_Paulo) e cidade.',
+  parameters: z.object({
+    name: z.string().optional(),
+    timezone: z.string().optional(),
+    city: z.string().optional(),
+  }),
+  execute: async (args, ctx) => {
+    const updates: {
+      name?: string
+      timezone?: string
+      metadata?: import('@mpp/db').Json
+      updated_at: string
+    } = { updated_at: new Date().toISOString() }
+    if (args.name) updates.name = args.name
+    if (args.timezone) updates.timezone = args.timezone
+    if (args.city) {
+      const { data: user } = await ctx.supabase
+        .from('users')
+        .select('metadata')
+        .eq('id', ctx.userId)
+        .maybeSingle()
+      const metadata = ((user?.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>
+      metadata.city = args.city
+      updates.metadata = JSON.parse(JSON.stringify(metadata))
+    }
+    const { error } = await ctx.supabase.from('users').update(updates).eq('id', ctx.userId)
+    if (error) throw error
+    return { success: true, updated: Object.keys(updates) }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// encerra_atendimento — escala para humano
+// ----------------------------------------------------------------------------
+export const encerraAtendimento: ToolDefinition = {
+  name: 'encerra_atendimento',
+  description:
+    'Sinaliza que o usuário pediu/precisa de atendimento humano. Marca o user com label "humano" e registra evento para a equipe ser notificada.',
+  parameters: z.object({
+    motivo: z.string().describe('Razão pela qual está escalando'),
+  }),
+  execute: async (args, ctx) => {
+    const { data: user } = await ctx.supabase
+      .from('users')
+      .select('metadata')
+      .eq('id', ctx.userId)
+      .maybeSingle()
+    const metadata = (user?.metadata as Record<string, unknown>) ?? {}
+    const labels = (metadata.labels as string[] | undefined) ?? []
+    if (!labels.includes('humano')) labels.push('humano')
+    metadata.labels = labels
+    metadata.escalated_at = new Date().toISOString()
+    metadata.escalation_reason = args.motivo
+
+    await ctx.supabase
+      .from('users')
+      .update({ metadata: JSON.parse(JSON.stringify(metadata)) })
+      .eq('id', ctx.userId)
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'human.escalation_requested',
+      properties: { motivo: args.motivo, wpp: ctx.userWpp },
+    })
+
+    return { success: true, labels }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// delete_user — direito ao esquecimento (LGPD)
+// ----------------------------------------------------------------------------
+export const deleteUser: ToolDefinition = {
+  name: 'delete_user',
+  description:
+    'Apaga TODOS os dados do usuário (LGPD). Use APENAS quando o usuário pedir explicitamente "apagar minha conta", "deletar meus dados" ou "reset_chat". Cascata em CASCADE remove perfil, progresso, mensagens, snapshots.',
+  parameters: z.object({
+    confirmacao: z.literal('confirmo').describe('Deve ser exatamente "confirmo"'),
+  }),
+  execute: async (args, ctx) => {
+    if (args.confirmacao !== 'confirmo') {
+      throw new Error('Confirmação inválida')
+    }
+    await ctx.supabase.from('users').update({ status: 'deleted' }).eq('id', ctx.userId)
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'user.delete_requested',
+      properties: { wpp: ctx.userWpp, requested_at: new Date().toISOString() },
+    })
+    return { success: true, message: 'Dados marcados para exclusão. Job batch fará purge físico.' }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // Registry
 // ----------------------------------------------------------------------------
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
   registraRefeicao,
+  registraTreino,
   consultaProgresso,
+  atualizaDataUser,
+  encerraAtendimento,
+  deleteUser,
 ]
 
 export function getToolByName(name: string): ToolDefinition | undefined {

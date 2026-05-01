@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   Cpu,
+  CreditCard,
   FileText,
   Key,
   LayoutDashboard,
@@ -66,6 +67,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { label: 'API Keys', href: '/settings/api-keys', icon: Key },
       { label: 'Crons', href: '/settings/crons', icon: Clock },
+      { label: 'Billing', href: '/settings/billing', icon: CreditCard },
       { label: 'Admins', href: '/settings/admins', icon: UserCog },
     ],
   },

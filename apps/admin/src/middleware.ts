@@ -31,8 +31,10 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname
   const isAuthPage = path === '/login' || path.startsWith('/auth/')
+  // Endpoints públicos (Inngest valida via signing key, não JWT)
+  const isPublicApi = path.startsWith('/api/inngest')
 
-  if (!user && !isAuthPage) {
+  if (!user && !isAuthPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

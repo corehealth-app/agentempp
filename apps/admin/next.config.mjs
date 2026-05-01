@@ -3,7 +3,13 @@ const nextConfig = {
   experimental: {
     typedRoutes: false,
   },
-  transpilePackages: ['@mpp/agent', '@mpp/core', '@mpp/db', '@mpp/providers'],
+  transpilePackages: [
+    '@mpp/agent',
+    '@mpp/core',
+    '@mpp/db',
+    '@mpp/inngest-functions',
+    '@mpp/providers',
+  ],
   webpack: (config) => {
     // Permite imports com .js apontando para arquivos .ts (ESM-style nos packages workspace)
     config.resolve.extensionAlias = {

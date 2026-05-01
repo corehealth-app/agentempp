@@ -1,41 +1,71 @@
+import { ChevronRight, Home } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
-export function PageHeader({
-  chapter,
-  eyebrow,
-  title,
-  description,
-  actions,
-  className,
-}: {
-  chapter?: string
-  eyebrow?: string
+interface BreadcrumbItem {
+  label: string
+  href?: string
+}
+
+interface PageHeaderProps {
   title: string
   description?: string
+  breadcrumbs?: BreadcrumbItem[]
   actions?: React.ReactNode
+  children?: React.ReactNode
   className?: string
-}) {
+  compact?: boolean
+}
+
+export function PageHeader({
+  title,
+  description,
+  breadcrumbs,
+  actions,
+  children,
+  className,
+  compact = false,
+}: PageHeaderProps) {
   return (
-    <header className={cn('mb-10 flex items-start justify-between gap-6', className)}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3 mb-3">
-          {chapter && (
-            <span className="font-mono text-xs text-ink-500 tabular-nums tracking-widest">
-              CAPÍTULO {chapter}
-            </span>
+    <div className={cn('glass-card', compact ? 'p-4' : 'p-6', className)}>
+      {/* Breadcrumbs */}
+      {breadcrumbs && breadcrumbs.length > 0 && (
+        <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
+          <Link href="/dashboard" className="hover:text-foreground transition-colors">
+            <Home className="w-4 h-4" />
+          </Link>
+          {breadcrumbs.map((crumb, index) => (
+            <div key={index} className="flex items-center gap-1">
+              <ChevronRight className="w-4 h-4" />
+              {crumb.href ? (
+                <Link href={crumb.href} className="hover:text-foreground transition-colors">
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span className="text-foreground">{crumb.label}</span>
+              )}
+            </div>
+          ))}
+        </nav>
+      )}
+
+      {/* Header row */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl md:text-3xl text-foreground tracking-tight leading-tight text-balance">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1.5 text-sm text-muted-foreground text-pretty max-w-2xl">
+              {description}
+            </p>
           )}
-          {chapter && eyebrow && <span className="text-ink-400">·</span>}
-          {eyebrow && <span className="section-eyebrow">{eyebrow}</span>}
         </div>
-        <h1 className="font-display text-4xl md:text-5xl text-ink-900 tracking-tight text-balance leading-[1.05]">
-          {title}
-        </h1>
-        {description && (
-          <p className="mt-3 text-ink-600 text-pretty max-w-2xl">{description}</p>
-        )}
+        {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}
       </div>
-      {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}
-    </header>
+
+      {children && <div className="mt-4">{children}</div>}
+    </div>
   )
 }
 
@@ -43,43 +73,84 @@ export function StatCard({
   label,
   value,
   subtitle,
-  trend,
+  icon: Icon,
   variant = 'default',
 }: {
   label: string
   value: string
   subtitle?: string
-  trend?: 'up' | 'down' | 'flat'
+  icon?: React.ComponentType<{ className?: string }>
   variant?: 'default' | 'feature' | 'inverted'
 }) {
   return (
     <div
       className={cn(
-        'border border-border p-5 rounded-sm transition-colors',
-        variant === 'default' && 'bg-cream-50 hover:border-ink-300',
-        variant === 'feature' && 'bg-moss-700 text-cream-100 border-moss-700',
-        variant === 'inverted' && 'bg-ink-900 text-cream-100 border-ink-900',
+        'glass-card p-5 transition-colors',
+        variant === 'feature' && '!bg-moss-700 !text-cream-100 !border-moss-700',
+        variant === 'inverted' && '!bg-ink-900 !text-cream-100 !border-ink-900',
       )}
     >
-      <div
-        className={cn(
-          'section-eyebrow mb-3 truncate',
-          variant !== 'default' && '!text-cream-100/50',
+      <div className="flex items-center justify-between mb-3">
+        <span
+          className={cn(
+            'text-[10px] font-mono uppercase tracking-widest',
+            variant === 'default' ? 'text-muted-foreground' : 'text-cream-100/60',
+          )}
+        >
+          {label}
+        </span>
+        {Icon && (
+          <Icon
+            className={cn(
+              'h-4 w-4',
+              variant === 'default' ? 'text-muted-foreground' : 'text-cream-100/60',
+            )}
+          />
         )}
-      >
-        {label}
       </div>
-      <div className="font-display text-3xl tracking-tight tabular-nums">{value}</div>
+      <div className="font-display text-3xl tracking-tight tabular-nums leading-none">{value}</div>
       {subtitle && (
         <div
           className={cn(
-            'mt-1.5 text-xs font-mono',
-            variant === 'default' ? 'text-ink-500' : 'text-cream-100/60',
+            'mt-2 text-xs font-mono',
+            variant === 'default' ? 'text-muted-foreground' : 'text-cream-100/60',
           )}
         >
           {subtitle}
         </div>
       )}
+    </div>
+  )
+}
+
+export function ContentCard({
+  children,
+  className,
+  title,
+  description,
+  actions,
+}: {
+  children: React.ReactNode
+  className?: string
+  title?: string
+  description?: string
+  actions?: React.ReactNode
+}) {
+  if (!title) {
+    return <div className={cn('content-card', className)}>{children}</div>
+  }
+  return (
+    <div className={cn('content-card', className)}>
+      <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border bg-muted/30">
+        <div className="min-w-0">
+          <h3 className="font-display text-base text-foreground tracking-tight">{title}</h3>
+          {description && (
+            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+          )}
+        </div>
+        {actions && <div className="shrink-0">{actions}</div>}
+      </div>
+      <div className="p-5">{children}</div>
     </div>
   )
 }

@@ -1,10 +1,19 @@
-import { PageHeader, StatCard } from '@/components/page-header'
+import { ContentCard, PageHeader, StatCard } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatNumber, formatUSD } from '@/lib/utils'
 import {
+  Activity,
   AlertCircle,
+  Bot,
   CheckCircle2,
   Circle,
+  CreditCard,
+  DollarSign,
+  Dumbbell,
+  MessageSquare,
+  UtensilsCrossed,
+  Users,
+  Zap,
 } from 'lucide-react'
 
 interface KPIs {
@@ -40,211 +49,186 @@ export default async function DashboardPage() {
     .limit(1)
     .maybeSingle()
 
-  const avgCostPerOut = (k.messages_out ?? 0) > 0
-    ? Number(k.cost_usd_total ?? 0) / (k.messages_out ?? 1)
-    : 0
+  const avgCostPerOut =
+    (k.messages_out ?? 0) > 0 ? Number(k.cost_usd_total ?? 0) / (k.messages_out ?? 1) : 0
 
   return (
-    <div className="px-10 py-12 max-w-[1280px]">
+    <div className="space-y-4">
       <PageHeader
-        chapter="01"
-        eyebrow="Visão geral · últimos 7 dias"
+        breadcrumbs={[{ label: 'Dashboard' }]}
         title="Dashboard"
-        description="Estado do método e do agente. Métricas atualizadas a cada requisição."
+        description="Visão geral dos últimos 7 dias do método e do agente."
       />
 
       {/* === Status row === */}
-      <section className="mb-10">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="border border-border bg-cream-50 p-5 rounded-sm">
-            <div className="flex items-center justify-between mb-3">
-              <span className="section-eyebrow">Status do agente</span>
-              <CheckCircle2 className="h-4 w-4 text-moss-500" />
-            </div>
-            <div className="font-display text-2xl text-ink-900 tracking-tight">Operacional</div>
-            <div className="mt-1 text-xs font-mono text-ink-500">
-              MESSAGING_PROVIDER=console
-            </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="glass-card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="section-eyebrow">Status do agente</span>
+            <CheckCircle2 className="h-4 w-4 text-moss-500" />
           </div>
-
-          <div className="border border-border bg-cream-50 p-5 rounded-sm">
-            <div className="flex items-center justify-between mb-3">
-              <span className="section-eyebrow">Quality WhatsApp</span>
-              {phoneStatus ? (
-                <Circle
-                  className={`h-3 w-3 ${
-                    phoneStatus.quality_rating === 'GREEN'
-                      ? 'fill-moss-500 text-moss-500'
-                      : phoneStatus.quality_rating === 'YELLOW'
-                        ? 'fill-amber-500 text-amber-500'
-                        : 'fill-red-500 text-red-500'
-                  }`}
-                />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-ink-400" />
-              )}
-            </div>
-            <div className="font-display text-2xl text-ink-900 tracking-tight">
-              {phoneStatus?.quality_rating ?? 'N/D'}
-            </div>
-            <div className="mt-1 text-xs font-mono text-ink-500">
-              {phoneStatus?.messaging_limit_tier ?? 'WhatsApp não conectado'}
-            </div>
-          </div>
-
-          <div className="border border-border bg-cream-50 p-5 rounded-sm">
-            <div className="flex items-center justify-between mb-3">
-              <span className="section-eyebrow">Latência média</span>
-              <span className="font-mono text-xs text-ink-500">p50</span>
-            </div>
-            <div className="font-display text-2xl text-ink-900 tracking-tight">
-              <span className="num">{formatNumber(k.avg_latency_ms ?? 0)}</span>
-              <span className="text-base text-ink-500 ml-1.5 font-sans">ms</span>
-            </div>
-            <div className="mt-1 text-xs font-mono text-ink-500">por turno do agente</div>
+          <div className="font-display text-2xl text-foreground tracking-tight">Operacional</div>
+          <div className="mt-1 text-xs font-mono text-muted-foreground">
+            MESSAGING_PROVIDER=console
           </div>
         </div>
-      </section>
+
+        <div className="glass-card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="section-eyebrow">Quality WhatsApp</span>
+            {phoneStatus ? (
+              <Circle
+                className={`h-3 w-3 ${
+                  phoneStatus.quality_rating === 'GREEN'
+                    ? 'fill-moss-500 text-moss-500'
+                    : phoneStatus.quality_rating === 'YELLOW'
+                      ? 'fill-amber-500 text-amber-500'
+                      : 'fill-red-500 text-red-500'
+                }`}
+              />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+          <div className="font-display text-2xl text-foreground tracking-tight">
+            {phoneStatus?.quality_rating ?? 'N/D'}
+          </div>
+          <div className="mt-1 text-xs font-mono text-muted-foreground">
+            {phoneStatus?.messaging_limit_tier ?? 'WhatsApp não conectado'}
+          </div>
+        </div>
+
+        <div className="glass-card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="section-eyebrow">Latência média</span>
+            <Zap className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="font-display text-2xl text-foreground tracking-tight">
+            <span className="num">{formatNumber(k.avg_latency_ms ?? 0)}</span>
+            <span className="text-base text-muted-foreground ml-1.5 font-sans">ms</span>
+          </div>
+          <div className="mt-1 text-xs font-mono text-muted-foreground">por turno do agente</div>
+        </div>
+      </div>
 
       {/* === KPIs row === */}
-      <section className="mb-10">
-        <div className="flex items-baseline gap-3 mb-4 px-1">
-          <span className="font-mono text-xs text-ink-500 tabular-nums">§ 1.1</span>
-          <h2 className="font-display text-xl text-ink-900 tracking-tight">Métricas principais</h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Usuários ativos"
-            value={`${formatNumber(k.users_active_period ?? 0)}`}
-            subtitle={`de ${formatNumber(k.users_total ?? 0)} totais`}
-          />
-          <StatCard
-            label="Mensagens trocadas"
-            value={formatNumber((k.messages_in ?? 0) + (k.messages_out ?? 0))}
-            subtitle={`${formatNumber(k.messages_in ?? 0)} in · ${formatNumber(k.messages_out ?? 0)} out`}
-          />
-          <StatCard
-            label="Custo IA acumulado"
-            value={formatUSD(Number(k.cost_usd_total ?? 0), 2)}
-            subtitle={`média ${formatUSD(avgCostPerOut, 5)}/turno`}
-            variant="feature"
-          />
-          <StatCard
-            label="Assinaturas"
-            value={formatNumber(k.subscriptions_active ?? 0)}
-            subtitle="ativas + trial"
-          />
-        </div>
-      </section>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Usuários ativos"
+          value={`${formatNumber(k.users_active_period ?? 0)}`}
+          subtitle={`de ${formatNumber(k.users_total ?? 0)} totais`}
+          icon={Users}
+        />
+        <StatCard
+          label="Mensagens trocadas"
+          value={formatNumber((k.messages_in ?? 0) + (k.messages_out ?? 0))}
+          subtitle={`${formatNumber(k.messages_in ?? 0)} in · ${formatNumber(k.messages_out ?? 0)} out`}
+          icon={MessageSquare}
+        />
+        <StatCard
+          label="Custo IA acumulado"
+          value={formatUSD(Number(k.cost_usd_total ?? 0), 2)}
+          subtitle={`média ${formatUSD(avgCostPerOut, 5)}/turno`}
+          variant="feature"
+          icon={DollarSign}
+        />
+        <StatCard
+          label="Assinaturas"
+          value={formatNumber(k.subscriptions_active ?? 0)}
+          subtitle="ativas + trial"
+          icon={CreditCard}
+        />
+      </div>
 
-      {/* === Atividade row === */}
-      <section className="mb-10">
-        <div className="flex items-baseline gap-3 mb-4 px-1">
-          <span className="font-mono text-xs text-ink-500 tabular-nums">§ 1.2</span>
-          <h2 className="font-display text-xl text-ink-900 tracking-tight">Atividade no método</h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Refeições registradas" value={formatNumber(k.meals_logged ?? 0)} />
-          <StatCard label="Treinos" value={formatNumber(k.workouts_logged ?? 0)} />
-          <StatCard
-            label="Tool calls"
-            value={formatNumber(k.tools_called ?? 0)}
-            subtitle={
-              k.tools_failed
-                ? `${formatNumber(k.tools_failed)} falharam`
-                : 'todas com sucesso'
-            }
-          />
-          <StatCard
-            label="Custo médio/turno"
-            value={formatUSD(avgCostPerOut, 5)}
-            subtitle="só LLM, sem TTS/STT"
-          />
-        </div>
-      </section>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Refeições registradas"
+          value={formatNumber(k.meals_logged ?? 0)}
+          icon={UtensilsCrossed}
+        />
+        <StatCard
+          label="Treinos"
+          value={formatNumber(k.workouts_logged ?? 0)}
+          icon={Dumbbell}
+        />
+        <StatCard
+          label="Tool calls"
+          value={formatNumber(k.tools_called ?? 0)}
+          subtitle={
+            k.tools_failed
+              ? `${formatNumber(k.tools_failed)} falharam`
+              : 'todas com sucesso'
+          }
+          icon={Activity}
+        />
+        <StatCard
+          label="Custo médio/turno"
+          value={formatUSD(avgCostPerOut, 5)}
+          subtitle="só LLM, sem TTS/STT"
+          icon={Bot}
+        />
+      </div>
 
-      {/* === Two-column data === */}
-      <section className="grid gap-3 lg:grid-cols-2 mb-10">
-        {/* Top models */}
-        <div className="border border-border bg-cream-50 rounded-sm">
-          <div className="border-b border-border px-5 py-3 flex items-baseline gap-3">
-            <span className="font-mono text-xs text-ink-500 tabular-nums">§ 1.3</span>
-            <h3 className="font-display text-base text-ink-900">Modelos mais usados</h3>
-          </div>
-          <div className="p-5">
-            {(k.top_models ?? []).length === 0 ? (
-              <p className="text-sm text-ink-500">Sem dados ainda.</p>
-            ) : (
-              <ul className="space-y-2">
-                {(k.top_models ?? []).map((m, idx) => {
-                  const max = Math.max(...(k.top_models ?? []).map((x) => x.calls))
-                  const pct = (m.calls / max) * 100
-                  return (
-                    <li key={m.model} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-2">
-                          <span className="font-mono text-ink-400 tabular-nums">
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
-                          <code className="font-mono text-[11px] text-ink-700">{m.model}</code>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ContentCard title="Modelos mais usados" description="Distribuição por modelo no período">
+          {(k.top_models ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sem dados ainda.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {(k.top_models ?? []).map((m, idx) => {
+                const max = Math.max(...(k.top_models ?? []).map((x) => x.calls))
+                const pct = (m.calls / max) * 100
+                return (
+                  <li key={m.model} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-muted-foreground tabular-nums">
+                          {String(idx + 1).padStart(2, '0')}
                         </span>
-                        <span className="font-mono text-xs tabular-nums text-ink-900">
-                          {formatNumber(m.calls)}
-                        </span>
-                      </div>
-                      <div className="h-px bg-cream-200 relative overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-moss-500"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-
-        {/* Recent messages */}
-        <div className="border border-border bg-cream-50 rounded-sm">
-          <div className="border-b border-border px-5 py-3 flex items-baseline gap-3">
-            <span className="font-mono text-xs text-ink-500 tabular-nums">§ 1.4</span>
-            <h3 className="font-display text-base text-ink-900">Mensagens recentes</h3>
-          </div>
-          <div className="p-5">
-            {!recentMessages || recentMessages.length === 0 ? (
-              <p className="text-sm text-ink-500">Sem mensagens ainda.</p>
-            ) : (
-              <ul className="space-y-2">
-                {recentMessages.map((m) => (
-                  <li key={m.id} className="flex items-start gap-3 text-xs leading-tight">
-                    <span
-                      className={`shrink-0 mt-1 inline-block h-1.5 w-1.5 rounded-full ${m.direction === 'in' ? 'bg-moss-500' : 'bg-bronze'}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[10px] uppercase tracking-widest font-mono text-ink-500 mb-0.5">
-                        {m.direction === 'in' ? 'usuário' : 'agente'}
-                        {m.agent_stage ? ` · ${m.agent_stage.replace('_', ' ')}` : ''}
-                      </div>
-                      <div className="text-ink-700 truncate">
-                        {m.content?.slice(0, 100) ?? '(mídia)'}
-                      </div>
+                        <code className="font-mono text-[11px] text-foreground">{m.model}</code>
+                      </span>
+                      <span className="font-mono text-xs tabular-nums">
+                        {formatNumber(m.calls)}
+                      </span>
+                    </div>
+                    <div className="h-1 bg-muted rounded-full relative overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-moss-500 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </section>
+                )
+              })}
+            </ul>
+          )}
+        </ContentCard>
 
-      {/* Footer note */}
-      <footer className="hairline pt-6 flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-ink-500">
-        <span>Atualizado em tempo real</span>
-        <span>—</span>
-        <span>Agente MPP · CoreHealth</span>
-      </footer>
+        <ContentCard title="Mensagens recentes" description="Últimas 8 entradas/saídas">
+          {!recentMessages || recentMessages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sem mensagens.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {recentMessages.map((m) => (
+                <li key={m.id} className="flex items-start gap-3 text-xs leading-tight">
+                  <span
+                    className={`shrink-0 mt-1 inline-block h-1.5 w-1.5 rounded-full ${m.direction === 'in' ? 'bg-moss-500' : 'bg-bronze'}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground mb-0.5">
+                      {m.direction === 'in' ? 'usuário' : 'agente'}
+                      {m.agent_stage ? ` · ${m.agent_stage.replace('_', ' ')}` : ''}
+                    </div>
+                    <div className="text-foreground truncate">
+                      {m.content?.slice(0, 100) ?? '(mídia)'}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </ContentCard>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { PageHeader } from '@/components/page-header'
+import { ContentCard, PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ChevronRight, Sparkles } from 'lucide-react'
@@ -12,7 +12,7 @@ const TIPO_LABELS: Record<string, string> = {
   manutencao: 'Manutenção',
 }
 
-const TIPO_ACCENTS: Record<string, string> = {
+const TIPO_DOTS: Record<string, string> = {
   regras_gerais: 'bg-ink-700',
   coleta_dados: 'bg-moss-500',
   recomposicao: 'bg-moss-700',
@@ -49,7 +49,6 @@ export default async function PromptsPage({
 
   const totalRules = Object.values(byTipo).reduce((a, b) => a + b, 0)
 
-  // Agrupa por tipo se sem filtro
   const grouped = !params.tipo
     ? Object.entries(
         (rules ?? []).reduce<Record<string, typeof rules>>((acc, r) => {
@@ -61,15 +60,14 @@ export default async function PromptsPage({
     : null
 
   return (
-    <div className="px-10 py-12 max-w-[1100px]">
+    <div className="space-y-4">
       <PageHeader
-        chapter="04"
-        eyebrow="Persona · regras de comportamento"
+        breadcrumbs={[{ label: 'Persona' }, { label: 'Regras' }]}
         title="Persona do agente"
         description={`${totalRules} regras compõem o comportamento. Cada edição cria uma versão imutável em agent_rules_versions.`}
         actions={
           <Link href="/prompts/playground">
-            <Button className="bg-ink-900 hover:bg-ink-800 text-cream-100 rounded-sm">
+            <Button>
               <Sparkles className="h-4 w-4 mr-2" />
               Playground
             </Button>
@@ -77,14 +75,13 @@ export default async function PromptsPage({
         }
       />
 
-      {/* Filter pills */}
-      <div className="mb-8 flex flex-wrap gap-2">
+      <div className="glass-card p-3 flex flex-wrap gap-2">
         <Link
           href="/prompts"
-          className={`text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border transition-colors ${
+          className={`text-xs font-medium px-3 py-1.5 rounded-md border transition-colors ${
             !params.tipo
-              ? 'bg-ink-900 text-cream-100 border-ink-900'
-              : 'bg-cream-50 text-ink-700 border-border hover:bg-cream-200'
+              ? 'bg-foreground text-background border-foreground'
+              : 'bg-card text-foreground/80 border-border hover:bg-muted'
           }`}
         >
           Todas · {totalRules}
@@ -95,50 +92,44 @@ export default async function PromptsPage({
             <Link
               key={tipo}
               href={`/prompts?tipo=${tipo}`}
-              className={`text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border transition-colors flex items-center gap-2 ${
+              className={`text-xs font-medium px-3 py-1.5 rounded-md border transition-colors flex items-center gap-2 ${
                 params.tipo === tipo
-                  ? 'bg-ink-900 text-cream-100 border-ink-900'
-                  : 'bg-cream-50 text-ink-700 border-border hover:bg-cream-200'
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'bg-card text-foreground/80 border-border hover:bg-muted'
               }`}
             >
               <span
-                className={`h-1.5 w-1.5 rounded-full ${TIPO_ACCENTS[tipo] ?? 'bg-ink-500'}`}
+                className={`h-1.5 w-1.5 rounded-full ${TIPO_DOTS[tipo] ?? 'bg-foreground'}`}
               />
               {TIPO_LABELS[tipo] ?? tipo} · {n}
             </Link>
           ))}
       </div>
 
-      {/* Lista */}
       {grouped ? (
-        <div className="space-y-10">
+        <div className="space-y-4">
           {grouped.map(([tipo, list]) => (
-            <section key={tipo}>
-              <div className="flex items-center gap-3 mb-4 px-1">
-                <span
-                  className={`h-2 w-2 rounded-full ${TIPO_ACCENTS[tipo] ?? 'bg-ink-500'}`}
-                />
-                <h2 className="font-display text-xl text-ink-900 tracking-tight">
-                  {TIPO_LABELS[tipo] ?? tipo}
-                </h2>
-                <span className="font-mono text-xs text-ink-500 tabular-nums">
-                  {list?.length ?? 0} regras
-                </span>
-              </div>
-              <ul className="border border-border bg-cream-50 rounded-sm divide-y divide-border">
+            <ContentCard
+              key={tipo}
+              title={TIPO_LABELS[tipo] ?? tipo}
+              description={`${list?.length ?? 0} regras ativas`}
+            >
+              <ul className="divide-y divide-border -mx-5 -my-5">
                 {(list ?? []).map((r, idx) => (
                   <RuleRow key={r.id} rule={r} idx={idx} />
                 ))}
               </ul>
-            </section>
+            </ContentCard>
           ))}
         </div>
       ) : (
-        <ul className="border border-border bg-cream-50 rounded-sm divide-y divide-border">
-          {(rules ?? []).map((r, idx) => (
-            <RuleRow key={r.id} rule={r} idx={idx} />
-          ))}
-        </ul>
+        <ContentCard>
+          <ul className="divide-y divide-border -mx-5 -my-5">
+            {(rules ?? []).map((r, idx) => (
+              <RuleRow key={r.id} rule={r} idx={idx} />
+            ))}
+          </ul>
+        </ContentCard>
       )}
     </div>
   )
@@ -155,18 +146,18 @@ function RuleRow({
     <li>
       <Link
         href={`/prompts/${rule.id}`}
-        className="group flex items-center gap-4 px-5 py-4 hover:bg-cream-200/60 transition-colors"
+        className="group flex items-center gap-4 px-5 py-3.5 hover:bg-muted/50 transition-colors"
       >
-        <span className="font-mono text-xs text-ink-400 tabular-nums shrink-0 w-6">
+        <span className="font-mono text-xs text-muted-foreground tabular-nums shrink-0 w-6">
           {String(idx + 1).padStart(2, '0')}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-ink-900 truncate">{rule.topic}</div>
-          <div className="text-xs font-mono text-ink-500 mt-0.5 truncate">
+          <div className="font-medium text-foreground truncate">{rule.topic}</div>
+          <div className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
             {rule.slug} · ~{rule.token_estimate ?? 0} tokens
           </div>
         </div>
-        <ChevronRight className="h-4 w-4 text-ink-400 group-hover:text-ink-700 group-hover:translate-x-0.5 transition-all" />
+        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
       </Link>
     </li>
   )

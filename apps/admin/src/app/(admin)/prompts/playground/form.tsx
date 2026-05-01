@@ -1,10 +1,8 @@
 'use client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Send, Trash2 } from 'lucide-react'
-import { useRef, useState, useTransition } from 'react'
+import { Send, RotateCcw, User, Bot } from 'lucide-react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { runPlayground, resetPlaygroundUser } from './actions'
 
@@ -27,6 +25,10 @@ export function PlaygroundForm() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, startTransition] = useTransition()
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [turns])
 
   function send() {
     if (!input.trim() || pending) return
@@ -55,80 +57,133 @@ export function PlaygroundForm() {
           },
         },
       ])
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-      }, 100)
     })
   }
 
   async function reset() {
-    if (!confirm(`Apagar usuário ${wpp} e todas as mensagens dele?`)) return
+    if (!confirm(`Apagar usuário ${wpp} e iniciar nova conversa?`)) return
     const r = await resetPlaygroundUser(wpp)
     if (r.error) toast.error(r.error)
     else {
-      toast.success('Usuário resetado')
+      toast.success('Conversa resetada')
       setTurns([])
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 items-end">
-        <div className="flex-1 space-y-1.5">
-          <Label htmlFor="wpp">Número simulado (E.164 sem +)</Label>
-          <Input id="wpp" value={wpp} onChange={(e) => setWpp(e.target.value)} />
+    <div className="border border-border bg-cream-50 rounded-sm overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-border bg-cream-100 px-5 py-3 flex items-center gap-3">
+        <div className="flex-1 flex items-center gap-3">
+          <span className="section-eyebrow">Número simulado</span>
+          <Input
+            value={wpp}
+            onChange={(e) => setWpp(e.target.value)}
+            className="h-8 max-w-[200px] font-mono text-xs bg-cream-50 border-border"
+          />
         </div>
-        <Button variant="outline" onClick={reset}>
-          <Trash2 className="h-4 w-4 mr-1" />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={reset}
+          className="text-ink-500 hover:text-ink-900 hover:bg-cream-200 rounded-sm"
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
           Resetar
         </Button>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="border rounded-lg bg-muted/30 h-[500px] overflow-y-auto p-4 space-y-3"
-      >
+      {/* Conversation */}
+      <div ref={scrollRef} className="h-[520px] overflow-y-auto px-5 py-6 space-y-6">
         {turns.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-            Comece digitando uma mensagem abaixo. O agente responderá usando o stage apropriado.
+          <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-ink-400 mb-3">
+              Pronto para conversar
+            </div>
+            <h3 className="font-display text-2xl text-ink-900 tracking-tight mb-2">
+              Comece uma conversa
+            </h3>
+            <p className="text-sm text-ink-500">
+              Cada mensagem aqui passa pela mesma pipeline que o WhatsApp usaria — incluindo
+              regras, tools e cálculo TACO.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2 justify-center">
+              {[
+                'Oi, meu nome é Eduardo',
+                'almocei 150g de arroz e 120g de frango',
+                'como estou indo?',
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setInput(suggestion)}
+                  className="text-xs px-3 py-1.5 rounded-sm border border-border bg-cream-50 hover:bg-cream-200 transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           turns.map((t, i) => (
             <div
               key={i}
-              className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex gap-3 ${t.role === 'user' ? 'flex-row-reverse' : ''} animate-fade-up`}
             >
               <div
-                className={`max-w-[80%] rounded-lg p-3 ${
+                className={`shrink-0 h-7 w-7 rounded-sm flex items-center justify-center ${
                   t.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-card border'
+                    ? 'bg-ink-900 text-cream-100'
+                    : 'bg-moss-700 text-cream-100'
                 }`}
               >
-                <div className="whitespace-pre-wrap text-sm">{t.content}</div>
+                {t.role === 'user' ? (
+                  <User className="h-3.5 w-3.5" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+              </div>
+              <div className={`max-w-[78%] ${t.role === 'user' ? 'text-right' : ''}`}>
+                <div className="text-[10px] uppercase tracking-widest font-mono text-ink-500 mb-1">
+                  {t.role === 'user' ? 'Você' : `Agente · ${t.meta?.stage ?? ''}`}
+                </div>
+                <div
+                  className={`text-sm whitespace-pre-wrap rounded-sm px-4 py-3 ${
+                    t.role === 'user'
+                      ? 'bg-ink-900 text-cream-100'
+                      : 'bg-cream-100 border border-border text-ink-900'
+                  }`}
+                >
+                  {t.content}
+                </div>
                 {t.meta && (
-                  <div className="mt-2 pt-2 border-t border-border/50 text-xs opacity-70 space-y-0.5">
-                    <div>
-                      stage=<code>{t.meta.stage}</code> · model=
-                      <code className="text-[10px]">{t.meta.model}</code>
-                    </div>
-                    <div>
-                      tokens={t.meta.tokens.in}+{t.meta.tokens.out} · ${' '}
-                      {t.meta.cost_usd?.toFixed(5) ?? '?'} · {t.meta.latency_ms}ms
-                    </div>
+                  <div className="mt-1.5 flex items-center gap-3 text-[10px] font-mono text-ink-500 flex-wrap">
+                    <span>
+                      <span className="num">{t.meta.tokens.in + t.meta.tokens.out}</span> tok
+                    </span>
+                    <span>·</span>
+                    <span>
+                      $<span className="num">{t.meta.cost_usd?.toFixed(5) ?? '?'}</span>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      <span className="num">{t.meta.latency_ms}</span>ms
+                    </span>
                     {t.meta.tools.length > 0 && (
-                      <div>
-                        tools:{' '}
+                      <>
+                        <span>·</span>
                         {t.meta.tools.map((tool) => (
                           <code
                             key={tool.name}
-                            className={`text-[10px] mr-1 ${tool.success ? '' : 'text-red-500'}`}
+                            className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              tool.success
+                                ? 'bg-moss-100 text-moss-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}
                           >
                             {tool.name}
-                            {!tool.success && '✗'}
                           </code>
                         ))}
-                      </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -137,32 +192,46 @@ export function PlaygroundForm() {
           ))
         )}
         {pending && (
-          <div className="flex justify-start">
-            <div className="bg-card border rounded-lg p-3 text-sm text-muted-foreground">
-              ✏️ pensando…
+          <div className="flex gap-3 animate-fade-in">
+            <div className="shrink-0 h-7 w-7 rounded-sm bg-moss-700 text-cream-100 flex items-center justify-center">
+              <Bot className="h-3.5 w-3.5" />
+            </div>
+            <div className="bg-cream-100 border border-border rounded-sm px-4 py-3 text-sm text-ink-500 italic">
+              <span className="inline-flex gap-1">
+                <span className="h-1 w-1 rounded-full bg-ink-500 animate-pulse" />
+                <span className="h-1 w-1 rounded-full bg-ink-500 animate-pulse [animation-delay:0.2s]" />
+                <span className="h-1 w-1 rounded-full bg-ink-500 animate-pulse [animation-delay:0.4s]" />
+              </span>
             </div>
           </div>
         )}
       </div>
 
-      <div className="flex gap-2 items-end">
-        <Textarea
-          rows={2}
-          value={input}
-          placeholder="Mensagem (Enter para enviar, Shift+Enter para nova linha)"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          disabled={pending}
-          className="resize-none"
-        />
-        <Button onClick={send} disabled={pending || !input.trim()}>
-          <Send className="h-4 w-4" />
-        </Button>
+      {/* Input */}
+      <div className="border-t border-border bg-cream-100 p-3">
+        <div className="flex gap-2 items-end">
+          <textarea
+            rows={2}
+            value={input}
+            placeholder="Mensagem (Enter para enviar)"
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                send()
+              }
+            }}
+            disabled={pending}
+            className="flex-1 resize-none bg-cream-50 border border-border rounded-sm px-3 py-2 text-sm placeholder:text-ink-400 focus:outline-none focus:border-ink-900"
+          />
+          <Button
+            onClick={send}
+            disabled={pending || !input.trim()}
+            className="h-[60px] w-[60px] shrink-0 bg-ink-900 hover:bg-ink-800 text-cream-100 rounded-sm"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   )

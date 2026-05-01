@@ -1,8 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { createServiceClient } from '@/lib/supabase/server'
-import { Edit3, FileText } from 'lucide-react'
+import { ChevronRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
 const TIPO_LABELS: Record<string, string> = {
@@ -13,18 +12,18 @@ const TIPO_LABELS: Record<string, string> = {
   manutencao: 'Manutenção',
 }
 
-const TIPO_COLORS: Record<string, string> = {
-  regras_gerais: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-  coleta_dados: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  recomposicao: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  ganho_massa: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  manutencao: 'bg-green-500/10 text-green-600 dark:text-green-400',
+const TIPO_ACCENTS: Record<string, string> = {
+  regras_gerais: 'bg-ink-700',
+  coleta_dados: 'bg-moss-500',
+  recomposicao: 'bg-moss-700',
+  ganho_massa: 'bg-bronze',
+  manutencao: 'bg-moss-400',
 }
 
 export default async function PromptsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tipo?: string; q?: string }>
+  searchParams: Promise<{ tipo?: string }>
 }) {
   const params = await searchParams
   const supabase = createServiceClient()
@@ -36,100 +35,139 @@ export default async function PromptsPage({
     .order('display_order')
 
   if (params.tipo) query = query.eq('tipo', params.tipo as 'regras_gerais')
-  if (params.q) query = query.ilike('topic', `%${params.q}%`)
 
   const { data: rules } = await query
 
-  // Conta por tipo
   const { data: counts } = await supabase
     .from('agent_rules')
     .select('tipo')
     .eq('status', 'active')
-
   const byTipo = (counts ?? []).reduce<Record<string, number>>((acc, r) => {
     acc[r.tipo] = (acc[r.tipo] ?? 0) + 1
     return acc
   }, {})
 
+  const totalRules = Object.values(byTipo).reduce((a, b) => a + b, 0)
+
+  // Agrupa por tipo se sem filtro
+  const grouped = !params.tipo
+    ? Object.entries(
+        (rules ?? []).reduce<Record<string, typeof rules>>((acc, r) => {
+          if (!acc[r.tipo]) acc[r.tipo] = []
+          acc[r.tipo]!.push(r)
+          return acc
+        }, {}),
+      )
+    : null
+
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Persona / Regras do Agente</h1>
-          <p className="text-muted-foreground">
-            {rules?.length ?? 0} regras compõem o comportamento do agente. Edição cria versão
-            imutável em <code>agent_rules_versions</code>.
-          </p>
-        </div>
-        <Link href="/prompts/playground">
-          <Button>
-            <FileText className="h-4 w-4 mr-1" />
-            Playground
-          </Button>
+    <div className="px-10 py-12 max-w-[1100px]">
+      <PageHeader
+        chapter="04"
+        eyebrow="Persona · regras de comportamento"
+        title="Persona do agente"
+        description={`${totalRules} regras compõem o comportamento. Cada edição cria uma versão imutável em agent_rules_versions.`}
+        actions={
+          <Link href="/prompts/playground">
+            <Button className="bg-ink-900 hover:bg-ink-800 text-cream-100 rounded-sm">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Playground
+            </Button>
+          </Link>
+        }
+      />
+
+      {/* Filter pills */}
+      <div className="mb-8 flex flex-wrap gap-2">
+        <Link
+          href="/prompts"
+          className={`text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border transition-colors ${
+            !params.tipo
+              ? 'bg-ink-900 text-cream-100 border-ink-900'
+              : 'bg-cream-50 text-ink-700 border-border hover:bg-cream-200'
+          }`}
+        >
+          Todas · {totalRules}
         </Link>
+        {Object.entries(byTipo)
+          .sort()
+          .map(([tipo, n]) => (
+            <Link
+              key={tipo}
+              href={`/prompts?tipo=${tipo}`}
+              className={`text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border transition-colors flex items-center gap-2 ${
+                params.tipo === tipo
+                  ? 'bg-ink-900 text-cream-100 border-ink-900'
+                  : 'bg-cream-50 text-ink-700 border-border hover:bg-cream-200'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${TIPO_ACCENTS[tipo] ?? 'bg-ink-500'}`}
+              />
+              {TIPO_LABELS[tipo] ?? tipo} · {n}
+            </Link>
+          ))}
       </div>
 
-      {/* Filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Filtrar por tipo</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Link href="/prompts">
-            <Badge variant={!params.tipo ? 'default' : 'outline'} className="cursor-pointer">
-              Todas ({Object.values(byTipo).reduce((a, b) => a + b, 0)})
-            </Badge>
-          </Link>
-          {Object.entries(byTipo)
-            .sort()
-            .map(([tipo, n]) => (
-              <Link key={tipo} href={`/prompts?tipo=${tipo}`}>
-                <Badge
-                  variant={params.tipo === tipo ? 'default' : 'outline'}
-                  className="cursor-pointer"
-                >
-                  {TIPO_LABELS[tipo] ?? tipo} ({n})
-                </Badge>
-              </Link>
-            ))}
-        </CardContent>
-      </Card>
-
       {/* Lista */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Regras ativas</CardTitle>
-          <CardDescription>Clique em uma regra para editar</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y">
-            {(rules ?? []).map((r) => (
-              <li key={r.id}>
-                <Link
-                  href={`/prompts/${r.id}`}
-                  className="flex items-center justify-between gap-4 py-3 hover:bg-muted/50 px-2 rounded transition"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${TIPO_COLORS[r.tipo] ?? ''}`}
-                      >
-                        {TIPO_LABELS[r.tipo] ?? r.tipo}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ~{r.token_estimate ?? 0} tokens
-                      </span>
-                    </div>
-                    <div className="font-medium truncate">{r.topic}</div>
-                    <div className="text-xs text-muted-foreground truncate">{r.slug}</div>
-                  </div>
-                  <Edit3 className="h-4 w-4 text-muted-foreground shrink-0" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      {grouped ? (
+        <div className="space-y-10">
+          {grouped.map(([tipo, list]) => (
+            <section key={tipo}>
+              <div className="flex items-center gap-3 mb-4 px-1">
+                <span
+                  className={`h-2 w-2 rounded-full ${TIPO_ACCENTS[tipo] ?? 'bg-ink-500'}`}
+                />
+                <h2 className="font-display text-xl text-ink-900 tracking-tight">
+                  {TIPO_LABELS[tipo] ?? tipo}
+                </h2>
+                <span className="font-mono text-xs text-ink-500 tabular-nums">
+                  {list?.length ?? 0} regras
+                </span>
+              </div>
+              <ul className="border border-border bg-cream-50 rounded-sm divide-y divide-border">
+                {(list ?? []).map((r, idx) => (
+                  <RuleRow key={r.id} rule={r} idx={idx} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <ul className="border border-border bg-cream-50 rounded-sm divide-y divide-border">
+          {(rules ?? []).map((r, idx) => (
+            <RuleRow key={r.id} rule={r} idx={idx} />
+          ))}
+        </ul>
+      )}
     </div>
+  )
+}
+
+function RuleRow({
+  rule,
+  idx,
+}: {
+  rule: { id: string; topic: string; slug: string; tipo: string; token_estimate: number | null }
+  idx: number
+}) {
+  return (
+    <li>
+      <Link
+        href={`/prompts/${rule.id}`}
+        className="group flex items-center gap-4 px-5 py-4 hover:bg-cream-200/60 transition-colors"
+      >
+        <span className="font-mono text-xs text-ink-400 tabular-nums shrink-0 w-6">
+          {String(idx + 1).padStart(2, '0')}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-ink-900 truncate">{rule.topic}</div>
+          <div className="text-xs font-mono text-ink-500 mt-0.5 truncate">
+            {rule.slug} · ~{rule.token_estimate ?? 0} tokens
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 text-ink-400 group-hover:text-ink-700 group-hover:translate-x-0.5 transition-all" />
+      </Link>
+    </li>
   )
 }

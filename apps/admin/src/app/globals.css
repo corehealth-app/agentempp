@@ -2,54 +2,164 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AGENTE MPP — ADMIN
+   Estética: editorial científico × dashboard de método
+   Tipografia: Fraunces (display) · Geist (sans) · Geist Mono (data)
+   Paleta: cream / ink / moss / bronze (raro)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* === Surface === */
+    --background: 36 27% 96%;        /* cream #FAF8F3 */
+    --foreground: 40 9% 6%;          /* ink #0F0F0E */
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 40 9% 6%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 142 76% 36%;
-    --primary-foreground: 355 100% 100%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 142 76% 36%;
-    --radius: 0.5rem;
+    --popover-foreground: 40 9% 6%;
+
+    /* === Primary (moss / verde-musgo profundo) === */
+    --primary: 162 41% 21%;          /* #1F4D3F */
+    --primary-foreground: 36 27% 96%;
+
+    /* === Secondary === */
+    --secondary: 36 18% 90%;
+    --secondary-foreground: 40 9% 6%;
+
+    --muted: 36 18% 92%;
+    --muted-foreground: 40 8% 38%;
+
+    --accent: 162 30% 35%;           /* moss-600 */
+    --accent-foreground: 36 27% 96%;
+
+    --destructive: 5 47% 44%;        /* signal red #A8453A */
+    --destructive-foreground: 36 27% 96%;
+
+    --border: 36 14% 86%;
+    --input: 36 14% 86%;
+    --ring: 162 41% 21%;
+
+    --radius: 0.25rem;               /* mais editorial / menos bubbly */
+
+    /* === Editorial extras === */
+    --bronze: 38 35% 54%;            /* #B8965B raro */
+    --paper-grain: 0;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 142 70% 45%;
-    --primary-foreground: 144 80% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 142 70% 45%;
+    --background: 40 9% 6%;          /* ink #0F0F0E */
+    --foreground: 36 27% 96%;
+    --card: 40 9% 9%;
+    --card-foreground: 36 27% 96%;
+    --popover: 40 9% 9%;
+    --popover-foreground: 36 27% 96%;
+    --primary: 162 30% 50%;
+    --primary-foreground: 40 9% 6%;
+    --secondary: 40 6% 14%;
+    --secondary-foreground: 36 27% 96%;
+    --muted: 40 6% 14%;
+    --muted-foreground: 40 8% 60%;
+    --accent: 162 25% 30%;
+    --accent-foreground: 36 27% 96%;
+    --destructive: 5 50% 55%;
+    --destructive-foreground: 36 27% 96%;
+    --border: 40 6% 16%;
+    --input: 40 6% 16%;
+    --ring: 162 30% 50%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv11", "tnum";
+  }
+
+  /* Headings — Fraunces, com peso editorial */
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+    font-feature-settings: "ss01", "cv01", "ss03";
+  }
+
+  /* Numbers em Fraunces tabulares ou Geist Mono */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Display extra-large */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.04em;
+    line-height: 0.96;
+  }
+
+  /* Tipografia editorial: small caps de seção */
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Paper grain sutil no background */
+  .paper {
+    background-image:
+      radial-gradient(circle at 20% 50%, hsla(40, 30%, 50%, 0.03) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, hsla(162, 30%, 30%, 0.02) 0%, transparent 50%);
+  }
+
+  /* Marker editorial — número à esquerda do título */
+  .chapter-num {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: hsl(var(--muted-foreground));
+    text-transform: uppercase;
+  }
+
+  /* Hairline divider editorial */
+  .hairline {
+    border-color: hsl(var(--border));
+    border-top-width: 1px;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
   }
 }
 
-@layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+@layer components {
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
 }

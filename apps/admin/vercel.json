@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @mpp/admin build",
+  "outputDirectory": ".next",
+  "installCommand": "echo skip",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD ./ ../../packages",
+  "regions": ["gru1"]
+}

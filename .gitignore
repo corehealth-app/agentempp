@@ -83,3 +83,4 @@ supabase/.env
 # =============================================================================
 packages/db/src/generated/
 *.generated.ts
+.vercel

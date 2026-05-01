@@ -1,0 +1,45 @@
+import type { AgentStage } from '@mpp/core'
+
+/**
+ * Entrada normalizada para o agente.
+ */
+export interface AgentInput {
+  /** Identificador externo do remetente (ex: WhatsApp E.164 sem +). */
+  from: string
+  /** ID estável da mensagem no provider, para idempotência. */
+  providerMessageId: string
+  /** Conteúdo principal. */
+  text?: string
+  /** Para mídia (imagem/áudio). */
+  mediaUrl?: string
+  mediaMimeType?: string
+  contentType: 'text' | 'audio' | 'image'
+  /** Provider de origem (whatsapp_cloud, console, ...). */
+  provider: string
+  /** Timestamp do provider. */
+  timestamp: Date
+}
+
+/**
+ * Resposta do agente após processar.
+ */
+export interface AgentOutput {
+  text: string
+  /** Se houve sugestão de output em áudio. */
+  preferAudio: boolean
+  toolCalls: Array<{ name: string; arguments: unknown; result?: unknown; error?: string }>
+  stage: AgentStage
+  modelUsed: string
+  promptTokens: number
+  completionTokens: number
+  costUsd: number | null
+  latencyMs: number
+}
+
+/**
+ * Resolução de qual sub-agente usar baseado no estado do user.
+ */
+export interface StageResolution {
+  stage: AgentStage
+  reason: string
+}

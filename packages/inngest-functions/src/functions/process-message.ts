@@ -58,10 +58,19 @@ export const processMessageFn = inngest.createFunction(
         if (!process.env.GROQ_API_KEY) {
           return { ok: false as const, reason: 'GROQ_API_KEY ausente', text: null, latency_ms: 0 }
         }
-        const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
-        const blob = await messaging.downloadMedia(mediaUrl)
-        const r = await stt.transcribe({ audio: blob, language: 'pt' })
-        return { ok: true as const, text: r.text, latency_ms: r.latencyMs }
+        try {
+          const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
+          const blob = await messaging.downloadMedia(mediaUrl)
+          const r = await stt.transcribe({ audio: blob, language: 'pt' })
+          return { ok: true as const, text: r.text, latency_ms: r.latencyMs }
+        } catch (e) {
+          return {
+            ok: false as const,
+            reason: e instanceof Error ? e.message : String(e),
+            text: null,
+            latency_ms: 0,
+          }
+        }
       })
       if (sttRes.ok) {
         enrichedText = sttRes.text || text
@@ -77,20 +86,27 @@ export const processMessageFn = inngest.createFunction(
         if (!process.env.OPENROUTER_API_KEY) {
           return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente' }
         }
-        const vision = new GeminiVision({
-          apiKey: process.env.OPENROUTER_API_KEY,
-          heliconeApiKey: process.env.HELICONE_API_KEY,
-        })
-        const blob = await messaging.downloadMedia(mediaUrl)
-        const buf = Buffer.from(await blob.arrayBuffer())
-        const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
-        const r = await vision.analyzeMeal(dataUri, text ?? undefined)
-        return {
-          ok: true as const,
-          items: r.items,
-          meal_context: r.meal_context,
-          raw_response: r.raw_response,
-          latency_ms: r.latencyMs,
+        try {
+          const vision = new GeminiVision({
+            apiKey: process.env.OPENROUTER_API_KEY,
+            heliconeApiKey: process.env.HELICONE_API_KEY,
+          })
+          const blob = await messaging.downloadMedia(mediaUrl)
+          const buf = Buffer.from(await blob.arrayBuffer())
+          const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
+          const r = await vision.analyzeMeal(dataUri, text ?? undefined)
+          return {
+            ok: true as const,
+            items: r.items,
+            meal_context: r.meal_context,
+            raw_response: r.raw_response,
+            latency_ms: r.latencyMs,
+          }
+        } catch (e) {
+          return {
+            ok: false as const,
+            reason: e instanceof Error ? e.message : String(e),
+          }
         }
       })
       if (vRes.ok) {

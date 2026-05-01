@@ -119,9 +119,15 @@ export class WhatsAppCloudProvider implements MessagingProvider {
 
   async downloadMedia(mediaId: string): Promise<Blob> {
     // 1. resolve URL
-    const meta = await fetch(`${this.base}/${mediaId}`, {
+    const metaRes = await fetch(`${this.base}/${mediaId}`, {
       headers: { Authorization: `Bearer ${this.cfg.accessToken}` },
-    }).then((r) => r.json() as Promise<{ url: string }>)
+    })
+    const meta = (await metaRes.json()) as { url?: string; error?: { message?: string } }
+    if (!metaRes.ok || !meta.url) {
+      throw new Error(
+        `downloadMedia: failed to resolve mediaId=${mediaId} (${metaRes.status} ${meta.error?.message ?? 'sem url'})`,
+      )
+    }
     // 2. baixa bytes
     const r = await fetch(meta.url, {
       headers: { Authorization: `Bearer ${this.cfg.accessToken}` },

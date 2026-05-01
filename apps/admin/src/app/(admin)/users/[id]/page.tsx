@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { Bot, User as UserIcon } from 'lucide-react'
+import { CheckoutButton } from './checkout-button'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -17,25 +18,47 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const { data: user } = await svc.from('users').select('*').eq('id', id).maybeSingle()
   if (!user) notFound()
 
-  const [{ data: profile }, { data: progress }, { data: messages }, { data: snapshots }] =
-    await Promise.all([
-      svc.from('user_profiles').select('*').eq('user_id', id).maybeSingle(),
-      svc.from('user_progress').select('*').eq('user_id', id).maybeSingle(),
-      svc
-        .from('messages')
-        .select(
-          'id, direction, content, content_type, agent_stage, model_used, cost_usd, created_at',
-        )
-        .eq('user_id', id)
-        .order('created_at', { ascending: false })
-        .limit(50),
-      svc
-        .from('daily_snapshots')
-        .select('*')
-        .eq('user_id', id)
-        .order('date', { ascending: false })
-        .limit(14),
-    ])
+  const [
+    { data: profile },
+    { data: progress },
+    { data: messages },
+    { data: snapshots },
+    { data: subscription },
+  ] = await Promise.all([
+    svc.from('user_profiles').select('*').eq('user_id', id).maybeSingle(),
+    svc.from('user_progress').select('*').eq('user_id', id).maybeSingle(),
+    svc
+      .from('messages')
+      .select(
+        'id, direction, content, content_type, agent_stage, model_used, cost_usd, created_at',
+      )
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    svc
+      .from('daily_snapshots')
+      .select('*')
+      .eq('user_id', id)
+      .order('date', { ascending: false })
+      .limit(14),
+    svc
+      .from('subscriptions')
+      .select('id, plan, status, current_period_end, trial_ends_at, cancel_at_period_end')
+      .eq('user_id', id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const sub = subscription as
+    | {
+        id: string
+        plan: string
+        status: string
+        current_period_end: string | null
+        trial_ends_at: string | null
+        cancel_at_period_end: boolean
+      }
+    | null
 
   return (
     <div className="space-y-4">
@@ -115,6 +138,47 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           </div>
         </ContentCard>
       </div>
+
+      <ContentCard
+        title="Assinatura"
+        description={
+          sub
+            ? `${sub.plan} · ${sub.status}${sub.cancel_at_period_end ? ' · cancelando no fim do período' : ''}`
+            : 'Sem assinatura ativa — gere um link de checkout abaixo'
+        }
+      >
+        {sub ? (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-3 text-sm">
+              <Field label="Plano" value={sub.plan} mono />
+              <Field label="Status" value={sub.status} mono />
+              <Field
+                label="Próx. cobrança"
+                value={
+                  sub.current_period_end
+                    ? new Date(sub.current_period_end).toLocaleDateString('pt-BR')
+                    : null
+                }
+                mono
+              />
+              <Field
+                label="Trial até"
+                value={
+                  sub.trial_ends_at
+                    ? new Date(sub.trial_ends_at).toLocaleDateString('pt-BR')
+                    : null
+                }
+                mono
+              />
+            </div>
+            <div className="pt-3 border-t border-border">
+              <CheckoutButton userId={id} />
+            </div>
+          </div>
+        ) : (
+          <CheckoutButton userId={id} />
+        )}
+      </ContentCard>
 
       <ContentCard
         title="Últimos 14 dias"

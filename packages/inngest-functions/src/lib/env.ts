@@ -1,6 +1,7 @@
 /**
- * Helper único para construir os clients (Supabase, LLM) lendo do env.
- * Workers Inngest podem rodar em Vercel ou local — buscam env vars padrão.
+ * Helper único para construir clients (Supabase, LLM) lendo do env.
+ * Credenciais "secundárias" (TTS, Meta) podem ser carregadas sob demanda
+ * via loadCredentials() — busca em service_credentials caso env esteja vazio.
  */
 import { processMessage } from '@mpp/agent'
 import { createServiceClient } from '@mpp/db'
@@ -28,6 +29,29 @@ export function createWorkerDeps(): WorkerDeps {
       heliconeApiKey: process.env.HELICONE_API_KEY,
     }),
   }
+}
+
+/**
+ * Carrega uma credencial: env → service_credentials (DB).
+ * Retorna null se não existir em nenhum lugar.
+ */
+export async function loadCredential(
+  supabase: ServiceClient,
+  envKey: string,
+  service: string,
+  keyName: string,
+): Promise<string | null> {
+  const fromEnv = process.env[envKey]
+  if (fromEnv) return fromEnv
+
+  const { data } = await supabase
+    .from('service_credentials')
+    .select('value')
+    .eq('service', service)
+    .eq('key_name', keyName)
+    .eq('is_active', true)
+    .maybeSingle()
+  return (data as { value: string } | null)?.value ?? null
 }
 
 export { processMessage }

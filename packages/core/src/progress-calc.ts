@@ -1,39 +1,31 @@
 /**
  * Gamificação: XP, level, streak, blocos 7700, badges.
  * Replica a lógica do nó "Code Calcula Avanço" do n8n original.
+ *
+ * Todas as funções aceitam um CalcConfig opcional. Sem ele usa
+ * DEFAULT_CALC_CONFIG.
  */
 import type { DailySnapshot, UserProgress } from './types.js'
+import {
+  DEFAULT_CALC_CONFIG,
+  type BadgeDef,
+  type CalcConfig,
+  type LevelDef,
+} from './calc-config.js'
 
-export const KCAL_BLOCK = 7700 // 1 kg de gordura
+/** @deprecated use config.kcal_block */
+export const KCAL_BLOCK = DEFAULT_CALC_CONFIG.kcal_block
 
-export const LEVELS = [
-  { level: 1, name: 'Início', min: 0, max: 99 },
-  { level: 2, name: 'Constância', min: 100, max: 249 },
-  { level: 3, name: 'Foco', min: 250, max: 499 },
-  { level: 4, name: 'Disciplina', min: 500, max: 999 },
-  { level: 5, name: 'Performance', min: 1000, max: 1999 },
-  { level: 6, name: 'Domínio', min: 2000, max: 3499 },
-  { level: 7, name: 'Elite MPP', min: 3500, max: Number.POSITIVE_INFINITY },
-] as const
+/** @deprecated use config.levels */
+export const LEVELS = DEFAULT_CALC_CONFIG.levels
 
-export interface BadgeDefinition {
-  key: string
-  predicate: (p: UserProgress, blocksCompletedDelta: number) => boolean
-}
-
-const BADGE_DEFINITIONS: BadgeDefinition[] = [
-  { key: 'Primeira Semana', predicate: (p) => p.currentStreak >= 7 },
-  { key: 'Mês de Ferro', predicate: (p) => p.currentStreak >= 30 },
-  { key: 'Atleta Real', predicate: (p) => p.currentStreak >= 90 },
-  { key: 'Primeiro Bloco', predicate: (p) => p.blocksCompleted >= 1 },
-  { key: 'XP Master', predicate: (p) => p.xpTotal >= 1000 },
-  { key: 'Elite', predicate: (p) => p.xpTotal >= 3500 },
-]
-
-export function levelForXP(xp: number): { level: number; name: string } {
-  // Garante que sempre encontra: o último nível tem max = Infinity
-  for (let i = LEVELS.length - 1; i >= 0; i--) {
-    const l = LEVELS[i]
+export function levelForXP(
+  xp: number,
+  config: CalcConfig = DEFAULT_CALC_CONFIG,
+): { level: number; name: string } {
+  const levels = config.levels
+  for (let i = levels.length - 1; i >= 0; i--) {
+    const l = levels[i] as LevelDef | undefined
     if (l && xp >= l.min) return { level: l.level, name: l.name }
   }
   return { level: 1, name: 'Início' }
@@ -53,13 +45,30 @@ function subDays(date: Date, days: number): Date {
   return d
 }
 
+function badgeMatches(badge: BadgeDef, p: UserProgress): boolean {
+  switch (badge.type) {
+    case 'streak':
+      return p.currentStreak >= badge.threshold
+    case 'blocks':
+      return p.blocksCompleted >= badge.threshold
+    case 'xp':
+      return p.xpTotal >= badge.threshold
+    default:
+      return false
+  }
+}
+
 /**
  * Aplica um snapshot diário ao progresso anterior, retornando o próximo estado.
  */
-export function computeProgress(snapshot: DailySnapshot, prev: UserProgress): UserProgress {
+export function computeProgress(
+  snapshot: DailySnapshot,
+  prev: UserProgress,
+  config: CalcConfig = DEFAULT_CALC_CONFIG,
+): UserProgress {
   // XP e level
   const xpTotal = prev.xpTotal + snapshot.xpEarned
-  const { level } = levelForXP(xpTotal)
+  const { level } = levelForXP(xpTotal, config)
 
   // Streak
   const yesterday = subDays(snapshot.date, 1)
@@ -71,9 +80,9 @@ export function computeProgress(snapshot: DailySnapshot, prev: UserProgress): Us
   // Bloco 7700: déficit acumulado dentro do bloco atual
   const newDeficit = Math.max(0, -snapshot.dailyBalance)
   const totalDeficit = prev.deficitBlock + newDeficit
-  const blocksDelta = Math.floor(totalDeficit / KCAL_BLOCK)
+  const blocksDelta = Math.floor(totalDeficit / config.kcal_block)
   const blocksCompleted = prev.blocksCompleted + blocksDelta
-  const deficitBlock = totalDeficit % KCAL_BLOCK
+  const deficitBlock = totalDeficit % config.kcal_block
 
   // Badges
   const next: UserProgress = {
@@ -87,11 +96,27 @@ export function computeProgress(snapshot: DailySnapshot, prev: UserProgress): Us
     lastActiveDate: snapshot.date,
   }
 
-  for (const badge of BADGE_DEFINITIONS) {
-    if (!next.badgesEarned.includes(badge.key) && badge.predicate(next, blocksDelta)) {
+  for (const badge of config.badges) {
+    if (!next.badgesEarned.includes(badge.key) && badgeMatches(badge, next)) {
       next.badgesEarned.push(badge.key)
     }
   }
 
   return next
+}
+
+/**
+ * Calcula XP a ser ganho num dia, dado se treinou e quanta proteína consumiu.
+ * Antes era hardcoded `10 + (training ? 5 : 0) + (protein >= 100 ? 5 : 0)`.
+ */
+export function calcDailyXP(
+  args: { trainingDone: boolean; proteinG: number },
+  config: CalcConfig = DEFAULT_CALC_CONFIG,
+): number {
+  const r = config.xp_rules
+  return (
+    r.base +
+    (args.trainingDone ? r.training_bonus : 0) +
+    (args.proteinG >= r.protein_threshold_g ? r.protein_bonus : 0)
+  )
 }

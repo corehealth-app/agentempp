@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import {
   Activity,
   Bot,
+  Calculator,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -78,6 +79,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     label: 'CONFIGURAÇÃO',
     items: [
       { label: 'Global', href: '/settings/global', icon: Settings },
+      { label: 'Cálculos', href: '/settings/calc', icon: Calculator },
       { label: 'API Keys', href: '/settings/api-keys', icon: Key },
       { label: 'Stripe', href: '/settings/stripe', icon: CreditCard },
       { label: 'Crons', href: '/settings/crons', icon: Clock },

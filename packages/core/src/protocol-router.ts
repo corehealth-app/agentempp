@@ -5,58 +5,53 @@
  * Fluxo:
  *   1. Se BF disponível → decide por BF
  *   2. Senão → decide por IMC
- *   3. Treino < 3x/sem é blocker para "ganho_massa"
+ *   3. Treino abaixo de training_min é blocker para "ganho_massa"
  *   4. Default sempre é "recomposicao" (mais conservador)
  */
 import type { ProtocolDecision, UserMetrics, UserProfile } from './types.js'
+import { DEFAULT_CALC_CONFIG, type CalcConfig } from './calc-config.js'
 
-const TRAINING_MIN = 3
-const IMC_LIMIT_RECOMP = 25
-
-interface BFLimits {
-  recomp: number
-  gain: number
-}
-
-const BF_LIMITS: Record<'masculino' | 'feminino', BFLimits> = {
-  masculino: { recomp: 20, gain: 19 },
-  feminino: { recomp: 28, gain: 27 },
-}
-
-export function calcBFGoal(bf: number): number {
-  if (bf > 30) return Math.round(bf - 10)
-  if (bf > 20) return 20
-  if (bf > 18) return 18
-  if (bf > 15) return 15
+export function calcBFGoal(bf: number, config: CalcConfig = DEFAULT_CALC_CONFIG): number {
+  for (const rule of config.bf_goal_rules) {
+    if (bf > rule.above) {
+      if ('subtract' in rule) return Math.round(bf - rule.subtract)
+      return rule.target
+    }
+  }
+  // Fallback (não deveria chegar aqui se houver regra com above:0)
   return 10
 }
 
-export function calcIMCGoal(imc: number): number {
-  for (const meta of [25, 23, 22, 21]) {
+export function calcIMCGoal(imc: number, config: CalcConfig = DEFAULT_CALC_CONFIG): number {
+  for (const meta of config.imc_goal_steps) {
     if (imc - meta >= 1) return meta
   }
-  return 21
+  return config.imc_goal_steps[config.imc_goal_steps.length - 1] ?? 21
 }
 
-export function resolveProtocol(profile: UserProfile, metrics: UserMetrics): ProtocolDecision {
+export function resolveProtocol(
+  profile: UserProfile,
+  metrics: UserMetrics,
+  config: CalcConfig = DEFAULT_CALC_CONFIG,
+): ProtocolDecision {
   if (!profile.sex) {
     throw new Error('Cannot resolve protocol without sex defined')
   }
 
-  const limits = BF_LIMITS[profile.sex]
+  const limits = config.bf_limits[profile.sex]
   const blockers: string[] = []
 
   const trainingFreq = profile.trainingFrequency ?? 0
-  if (trainingFreq < TRAINING_MIN) {
+  if (trainingFreq < config.training_min) {
     blockers.push(
-      `musculação insuficiente (atual: ${trainingFreq}x/semana, mínimo: ${TRAINING_MIN}x)`,
+      `musculação insuficiente (atual: ${trainingFreq}x/semana, mínimo: ${config.training_min}x)`,
     )
   }
 
   // ----- Decisão por BF (preferencial) -----
   if (profile.bodyFatPercent != null) {
     const bf = profile.bodyFatPercent
-    const goalValue = calcBFGoal(bf)
+    const goalValue = calcBFGoal(bf, config)
 
     if (bf >= limits.recomp) {
       return {
@@ -92,9 +87,9 @@ export function resolveProtocol(profile: UserProfile, metrics: UserMetrics): Pro
     throw new Error('Cannot resolve protocol without BF or IMC')
   }
 
-  const goalValue = calcIMCGoal(metrics.imc)
+  const goalValue = calcIMCGoal(metrics.imc, config)
 
-  if (metrics.imc >= IMC_LIMIT_RECOMP) {
+  if (metrics.imc >= config.imc_limit_recomp) {
     return {
       protocol: 'recomposicao',
       canChoose: false,

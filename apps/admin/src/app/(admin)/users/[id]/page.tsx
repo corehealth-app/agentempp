@@ -5,7 +5,6 @@ import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { CheckoutButton } from './checkout-button'
-import { DangerButtons } from './danger-buttons'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -300,16 +299,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         )}
       </ContentCard>
 
-      <ContentCard
-        title="Zona de perigo"
-        description="Resetar mantém o paciente e zera onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
-      >
-        <DangerButtons
-          userId={user.id}
-          userName={user.name}
-          userWpp={user.wpp}
-        />
-      </ContentCard>
+      {/* DangerButtons temporariamente OUT pra confirmar se é a causa */}
     </div>
   )
 }

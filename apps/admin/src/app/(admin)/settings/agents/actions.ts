@@ -6,8 +6,19 @@ interface UpdateInput {
   id: string
   model: string
   temperature: number
+  top_p?: number | null
+  frequency_penalty?: number
+  presence_penalty?: number
   max_tokens: number
   wait_seconds: number
+  max_tool_iterations?: number
+  buffer_debounce_ms?: number
+  llm_timeout_ms?: number
+  vision_timeout_ms?: number
+  stt_timeout_ms?: number
+  allowed_tools?: string[] | null
+  helicone_cache?: boolean
+  streaming?: boolean
 }
 
 export async function updateAgentConfig(input: UpdateInput) {
@@ -32,15 +43,36 @@ export async function updateAgentConfig(input: UpdateInput) {
       .eq('id', input.id)
       .single()
 
-    const { error } = await svc
+    const updates: Record<string, unknown> = {
+      model: input.model,
+      temperature: input.temperature,
+      max_tokens: input.max_tokens,
+      wait_seconds: input.wait_seconds,
+      updated_at: new Date().toISOString(),
+    }
+    if (input.top_p !== undefined) updates.top_p = input.top_p
+    if (input.frequency_penalty !== undefined) updates.frequency_penalty = input.frequency_penalty
+    if (input.presence_penalty !== undefined) updates.presence_penalty = input.presence_penalty
+    if (input.max_tool_iterations !== undefined)
+      updates.max_tool_iterations = input.max_tool_iterations
+    if (input.buffer_debounce_ms !== undefined)
+      updates.buffer_debounce_ms = input.buffer_debounce_ms
+    if (input.llm_timeout_ms !== undefined) updates.llm_timeout_ms = input.llm_timeout_ms
+    if (input.vision_timeout_ms !== undefined) updates.vision_timeout_ms = input.vision_timeout_ms
+    if (input.stt_timeout_ms !== undefined) updates.stt_timeout_ms = input.stt_timeout_ms
+    if (input.allowed_tools !== undefined) updates.allowed_tools = input.allowed_tools
+    if (input.helicone_cache !== undefined) updates.helicone_cache = input.helicone_cache
+    if (input.streaming !== undefined) updates.streaming = input.streaming
+
+    const { error } = await (svc as unknown as {
+      from: (t: string) => {
+        update: (u: Record<string, unknown>) => {
+          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+        }
+      }
+    })
       .from('agent_configs')
-      .update({
-        model: input.model,
-        temperature: input.temperature,
-        max_tokens: input.max_tokens,
-        wait_seconds: input.wait_seconds,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updates)
       .eq('id', input.id)
     if (error) return { error: error.message }
 
@@ -51,7 +83,7 @@ export async function updateAgentConfig(input: UpdateInput) {
       entity: 'agent_configs',
       entity_id: input.id,
       before: before ? JSON.parse(JSON.stringify(before)) : null,
-      after: JSON.parse(JSON.stringify(input)),
+      after: JSON.parse(JSON.stringify(updates)),
     })
 
     revalidatePath('/settings/agents')

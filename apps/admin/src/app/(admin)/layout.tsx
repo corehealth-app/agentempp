@@ -1,3 +1,5 @@
+import { CommandPalette } from '@/components/command-palette'
+import { KeyboardShortcuts } from '@/components/keyboard-shortcuts'
 import { Sidebar } from '@/components/sidebar'
 import { StatusBar } from '@/components/status-bar'
 import { createClient } from '@/lib/supabase/server'
@@ -56,6 +58,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {children}
         </main>
       </div>
+      <CommandPalette />
+      <KeyboardShortcuts />
     </div>
   )
 }

@@ -81,6 +81,34 @@ export default async function AgentsPage() {
               maxTokens={cfg.max_tokens}
               waitSeconds={cfg.wait_seconds}
               modelOptions={POPULAR_MODELS}
+              {...(() => {
+                const c = cfg as unknown as {
+                  top_p?: number | null
+                  frequency_penalty?: number
+                  presence_penalty?: number
+                  max_tool_iterations?: number
+                  buffer_debounce_ms?: number
+                  llm_timeout_ms?: number
+                  vision_timeout_ms?: number
+                  stt_timeout_ms?: number
+                  allowed_tools?: string[] | null
+                  helicone_cache?: boolean
+                  streaming?: boolean
+                }
+                return {
+                  top_p: c.top_p ?? null,
+                  frequency_penalty: Number(c.frequency_penalty ?? 0),
+                  presence_penalty: Number(c.presence_penalty ?? 0),
+                  maxToolIterations: c.max_tool_iterations ?? 5,
+                  bufferDebounceMs: c.buffer_debounce_ms ?? 8000,
+                  llmTimeoutMs: c.llm_timeout_ms ?? 90000,
+                  visionTimeoutMs: c.vision_timeout_ms ?? 60000,
+                  sttTimeoutMs: c.stt_timeout_ms ?? 30000,
+                  allowedTools: c.allowed_tools ?? null,
+                  heliconeCache: c.helicone_cache ?? false,
+                  streaming: c.streaming ?? false,
+                }
+              })()}
             />
           </ContentCard>
         ))}

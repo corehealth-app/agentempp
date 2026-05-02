@@ -60,14 +60,20 @@ export async function processMessage(
   // 4. resolve stage
   const stage = resolveStage(ctx.profile)
 
-  // 4. load active prompt
+  // 4. load active prompt + config
   const promptRow = await loadActivePrompt(deps.supabase, stage)
   if (!promptRow) {
     throw new Error(`No active prompt found for stage ${stage}`)
   }
 
   // 5. call agent (with tool loop)
-  const tools = buildToolSchemas(ALL_TOOLS)
+  // Filtra tools pelo allowed_tools do config (se NULL = todas)
+  const allowedTools = (promptRow as { allowed_tools?: string[] | null }).allowed_tools
+  const filteredTools =
+    allowedTools && allowedTools.length > 0
+      ? ALL_TOOLS.filter((t) => allowedTools.includes(t.name))
+      : ALL_TOOLS
+  const tools = buildToolSchemas(filteredTools)
 
   // Detector de repetição: pega últimas 2 OUTs e marca pro LLM evitar
   // repetir trechos. Útil principalmente pra balanço-em-todo-turno.
@@ -102,7 +108,9 @@ export async function processMessage(
   let lastResult: Awaited<ReturnType<typeof deps.llm.complete>> | null = null
   let finalText = ''
 
-  const max = deps.maxToolIterations ?? 5
+  // max_tool_iterations: prioriza config do DB, fallback pro deps, fallback pra 5
+  const configMax = (promptRow as { max_tool_iterations?: number }).max_tool_iterations
+  const max = configMax ?? deps.maxToolIterations ?? 5
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,

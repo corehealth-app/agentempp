@@ -3,6 +3,7 @@ import { Bot, ChevronRight, MessageSquare, User as UserIcon } from 'lucide-react
 import { PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatUSD } from '@/lib/utils'
+import { MessagesRealtimeListener } from './realtime-listener'
 
 interface Message {
   id: string
@@ -111,10 +112,21 @@ export default async function ConversasPage({
 
   return (
     <div className="space-y-3">
+      <MessagesRealtimeListener />
       <PageHeader
         breadcrumbs={[{ label: 'Operação' }, { label: 'Conversas' }]}
         title="Conversas"
-        description="Inbox unificada por paciente. Últimas 200 mensagens."
+        description={
+          <span className="inline-flex items-center gap-2">
+            Inbox unificada por paciente. Últimas 200 mensagens.
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-moss-700">
+              <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-moss-500">
+                <span className="absolute inset-0 rounded-full animate-ping opacity-60 bg-moss-500" />
+              </span>
+              live
+            </span>
+          </span>
+        }
       />
 
       <div className="grid gap-3 lg:grid-cols-[340px_1fr] min-h-[600px]">

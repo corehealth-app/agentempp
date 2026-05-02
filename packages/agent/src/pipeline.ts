@@ -68,7 +68,26 @@ export async function processMessage(
 
   // 5. call agent (with tool loop)
   const tools = buildToolSchemas(ALL_TOOLS)
-  const baseSystem = `${promptRow.system_prompt}\n\n## Contexto do usuário\n${formatUserContext(ctx)}`
+
+  // Detector de repetição: pega últimas 2 OUTs e marca pro LLM evitar
+  // repetir trechos. Útil principalmente pra balanço-em-todo-turno.
+  const lastTwoOuts = ctx.recentMessages
+    .filter((m) => m.role === 'assistant')
+    .slice(-2)
+    .map((m) => m.content)
+
+  const repetitionGuard =
+    lastTwoOuts.length >= 1
+      ? `\n\n## Anti-repetição (CRÍTICO)\n` +
+        `Suas últimas respostas foram:\n` +
+        lastTwoOuts.map((t, i) => `[${i + 1}] "${t.slice(0, 200).replace(/\n/g, ' ')}"`).join('\n') +
+        `\n\n→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão acima.\n` +
+        `→ Se nada de novo aconteceu (user só disse "oi" ou similar), responda CURTO. Não force conteúdo.\n` +
+        `→ Varie a saudação. Banco de aberturas curtas (escolha uma quando fizer sentido):\n` +
+        `   "Boa.", "Show.", "Beleza.", "Pronto.", "Saquei.", "Recebi.", "Hmm.", (sem nada/direto na resposta)`
+      : ''
+
+  const baseSystem = `${promptRow.system_prompt}\n\n## Contexto do usuário\n${formatUserContext(ctx)}${repetitionGuard}`
 
   const messages: ChatCompletionMessageParam[] = ctx.recentMessages.map((m) => ({
     role: m.role,

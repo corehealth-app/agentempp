@@ -80,14 +80,6 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             />
           </span>
         }
-        actions={
-          <DangerZone
-            userId={user.id}
-            userName={user.name ?? null}
-            userWpp={user.wpp}
-            layout="compact"
-          />
-        }
       />
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -306,6 +298,18 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             ))}
           </ul>
         )}
+      </ContentCard>
+
+      <ContentCard
+        title="Zona de perigo"
+        description="Resetar mantém o paciente e zera onboarding. Excluir apaga tudo permanentemente."
+      >
+        <DangerZone
+          userId={user.id}
+          userName={user.name ?? null}
+          userWpp={user.wpp}
+          layout="full"
+        />
       </ContentCard>
     </div>
   )

@@ -1,12 +1,11 @@
-import Link from 'next/link'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { CountryBadge } from '@/components/country-badge'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
-import { Bot, MessageSquare, User as UserIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Bot, User as UserIcon } from 'lucide-react'
 import { CheckoutButton } from './checkout-button'
+import { DangerButtons } from './danger-buttons'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -302,15 +301,14 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       </ContentCard>
 
       <ContentCard
-        title="Ações"
-        description="Resetar conversa ou excluir paciente — disponível na inbox"
+        title="Zona de perigo"
+        description="Resetar mantém o paciente e zera onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
       >
-        <Link href={`/messages?user=${user.id}`}>
-          <Button variant="outline">
-            <MessageSquare className="h-4 w-4 mr-1.5" />
-            Abrir conversa (com Zona de perigo na sidebar)
-          </Button>
-        </Link>
+        <DangerButtons
+          userId={user.id}
+          userName={user.name}
+          userWpp={user.wpp}
+        />
       </ContentCard>
     </div>
   )

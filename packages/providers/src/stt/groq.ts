@@ -30,6 +30,8 @@ export class GroqSTT {
     this.client = new OpenAI({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL ?? 'https://api.groq.com/openai/v1',
+      timeout: 30_000, // áudio até ~10min costuma transcrever em <15s
+      maxRetries: 1,
     })
   }
 

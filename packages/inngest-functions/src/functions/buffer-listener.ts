@@ -81,7 +81,12 @@ export const bufferListenerFn = inngest.createFunction(
       const hasAudio = msgs.some((m) => m.content_type === 'audio')
       const hasImage = msgs.some((m) => m.content_type === 'image')
       const contentType = hasAudio ? 'audio' : hasImage ? 'image' : 'text'
-      const mediaUrl = msgs.find((m) => m.mediaUrl)?.mediaUrl ?? undefined
+
+      // Múltiplas mídias: array com TODAS na ordem em que chegaram
+      const mediaUrls = msgs
+        .filter((m) => m.mediaUrl && m.content_type === contentType)
+        .map((m) => m.mediaUrl as string)
+      const mediaUrl = mediaUrls[0]
 
       await inngest.send({
         name: 'message.received',
@@ -92,6 +97,7 @@ export const bufferListenerFn = inngest.createFunction(
           contentType,
           text: aggregated || undefined,
           mediaUrl: mediaUrl ?? undefined,
+          mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
           provider: 'whatsapp_cloud',
           timestamp: latest.received_at,
         },

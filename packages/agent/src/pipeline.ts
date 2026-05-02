@@ -31,6 +31,12 @@ interface UserContext {
   userName: string | null
   profile: UserProfile
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  /** Resumo persistente do paciente (gerado periodicamente). */
+  summary: string | null
+  /** Tempo desde a última msg IN, em horas. */
+  hoursSinceLastIn: number | null
+  /** True se hoursSinceLastIn > 7 dias — pipeline gera reentrada warm. */
+  isReentry: boolean
 }
 
 export async function processMessage(
@@ -300,10 +306,21 @@ async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string>
   return created.id
 }
 
+const RECENT_MESSAGES_LIMIT = 50
+const REENTRY_THRESHOLD_HOURS = 24 * 7 // 7 dias
+
 async function loadContext(supabase: ServiceClient, userId: string): Promise<UserContext> {
-  const { data: user } = await supabase
+  // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
+  // novas (summary, last_active_at) — adicionadas na migration 0016.
+  const { data: user } = await (supabase as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (col: string, val: string) => { single: () => Promise<{ data: unknown }> }
+      }
+    }
+  })
     .from('users')
-    .select('id, name')
+    .select('id, name, summary, last_active_at')
     .eq('id', userId)
     .single()
   const { data: profile } = await supabase
@@ -313,10 +330,10 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     .single()
   const { data: msgs } = await supabase
     .from('messages')
-    .select('direction, content, content_type')
+    .select('direction, content, content_type, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(RECENT_MESSAGES_LIMIT)
 
   const recentMessages = (msgs ?? [])
     .reverse()
@@ -325,6 +342,25 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
       role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
       content: m.content as string,
     }))
+
+  const userTyped = user as
+    | { id: string; name: string | null; summary: string | null; last_active_at: string | null }
+    | null
+  // Calcula gap de tempo desde última msg IN (penúltima, pq a atual já entrou)
+  let hoursSinceLastIn: number | null = null
+  if (userTyped?.last_active_at) {
+    // last_active_at já foi atualizado pela trigger com a msg ATUAL.
+    // Gap = penúltima IN.
+    const inMsgs = (msgs ?? [])
+      .filter((m) => m.direction === 'in' && m.created_at)
+      .sort((a, b) => (b.created_at as string).localeCompare(a.created_at as string))
+    if (inMsgs.length >= 2) {
+      const prevIn = new Date(inMsgs[1]!.created_at as string).getTime()
+      const currentIn = new Date(inMsgs[0]!.created_at as string).getTime()
+      hoursSinceLastIn = (currentIn - prevIn) / 3600_000
+    }
+  }
+  const isReentry = hoursSinceLastIn != null && hoursSinceLastIn > REENTRY_THRESHOLD_HOURS
 
   const profileTyped: UserProfile = {
     sex: profile?.sex ?? null,
@@ -344,9 +380,12 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
 
   return {
     userId,
-    userName: user?.name ?? null,
+    userName: userTyped?.name ?? null,
     profile: profileTyped,
     recentMessages,
+    summary: userTyped?.summary ?? null,
+    hoursSinceLastIn,
+    isReentry,
   }
 }
 
@@ -384,6 +423,26 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
 
 function formatUserContext(ctx: UserContext): string {
   const m = computeMetrics(ctx.profile)
+  const sections: string[] = []
+
+  // Reentrada warm: instrução pro LLM no topo
+  if (ctx.isReentry && ctx.hoursSinceLastIn != null) {
+    const days = Math.floor(ctx.hoursSinceLastIn / 24)
+    sections.push(
+      `### REENTRADA APÓS PAUSA\n` +
+        `O usuário voltou após ${days} dia(s) sem mandar mensagem. ` +
+        `Cumprimente de volta de forma calorosa e breve, faça um resumo curto de onde paramos ` +
+        `(use o "Resumo do paciente" abaixo se disponível) e pergunte como ele está hoje. ` +
+        `NÃO recomece o onboarding nem repita perguntas já respondidas.`,
+    )
+  }
+
+  // Resumo persistente do paciente (gerado por cron LLM)
+  if (ctx.summary && ctx.summary.trim().length > 0) {
+    sections.push(`### Resumo do paciente\n${ctx.summary}`)
+  }
+
+  // Estado factual atual
   const lines = [
     `- Nome: ${ctx.userName ?? '(não informado ainda)'}`,
     `- Sexo: ${ctx.profile.sex ?? 'desconhecido'}`,
@@ -398,7 +457,6 @@ function formatUserContext(ctx: UserContext): string {
   if (m.bmr != null) lines.push(`- BMR estimado: ${Math.round(m.bmr)} kcal`)
   if (m.imc != null) lines.push(`- IMC: ${m.imc.toFixed(1)}`)
 
-  // Se onboarding completo, computa decisão de protocolo (info para o LLM contextualizar)
   if (ctx.profile.sex && (ctx.profile.bodyFatPercent != null || m.imc != null)) {
     try {
       const dec = resolveProtocol(ctx.profile, m)
@@ -409,5 +467,19 @@ function formatUserContext(ctx: UserContext): string {
       // ignora
     }
   }
-  return lines.join('\n')
+  sections.push(lines.join('\n'))
+
+  // Regras hard sobre mídias e respostas
+  sections.push(
+    `### Regras importantes\n` +
+      `1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ` +
+      `ou contiver "[falhou ao baixar/analisar]", peça ao usuário pra reenviar ou descrever por texto.\n` +
+      `2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n ` +
+      `(o sistema quebra em chunks naturais).\n` +
+      `3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
+      `momentos de validação emocional, não como prefixo automático.\n` +
+      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.`,
+  )
+
+  return sections.join('\n\n')
 }

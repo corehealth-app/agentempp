@@ -65,6 +65,11 @@ export class OpenRouterLLM {
       apiKey: cfg.apiKey,
       baseURL,
       defaultHeaders: headers,
+      // Timeout 90s pra cada LLM call (default OpenAI SDK é 10min, ridículo
+      // pra agente síncrono). Pipeline pode fazer 2-3 iterações; 90s × 3 = 270s
+      // ainda dentro do maxDuration=300s do Vercel.
+      timeout: 90_000,
+      maxRetries: 1,
     })
   }
 

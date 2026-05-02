@@ -27,10 +27,26 @@ export const processMessageFn = inngest.createFunction(
   },
   { event: 'message.received' },
   async ({ event, step, logger }) => {
-    const { userId, wpp, providerMessageId, contentType, text, mediaUrl, provider, timestamp } =
-      event.data
+    const {
+      userId,
+      wpp,
+      providerMessageId,
+      contentType,
+      text,
+      mediaUrl,
+      mediaUrls,
+      provider,
+      timestamp,
+    } = event.data
 
-    logger.info('Processing', { userId, contentType, hasMedia: !!mediaUrl })
+    // Suporta múltiplas mídias: prioriza mediaUrls[]; cai pro mediaUrl singular
+    const allMediaUrls = mediaUrls && mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : []
+
+    logger.info('Processing', {
+      userId,
+      contentType,
+      mediaCount: allMediaUrls.length,
+    })
 
     const messaging = createMessagingProvider({
       MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
@@ -49,18 +65,43 @@ export const processMessageFn = inngest.createFunction(
       return { acked: true }
     })
 
+    // === Step 1.5: pausa? ===
+    // Se o user está com paused_until > now, NÃO processa — só reage com 💤
+    const pauseCheck = await step.run('check-pause', async (): Promise<{ paused: boolean; until: string | null }> => {
+      const { supabase } = createWorkerDeps()
+      const { data: u } = await supabase
+        .from('users')
+        .select('status, metadata')
+        .eq('id', userId)
+        .maybeSingle()
+      if (!u) return { paused: false, until: null }
+      const meta = (u as { metadata: Record<string, unknown> | null }).metadata
+      const pausedUntil = meta?.paused_until as string | undefined
+      if (pausedUntil && new Date(pausedUntil) > new Date()) {
+        return { paused: true, until: pausedUntil }
+      }
+      return { paused: false, until: null }
+    })
+
+    if (pauseCheck.paused) {
+      logger.info('User pausado, ignorando msg', { userId, until: pauseCheck.until })
+      await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
+      return { ok: true, paused: true, until: pauseCheck.until }
+    }
+
     // === Step 2: media prep — STT ou Vision ===
     let enrichedText: string | undefined = text
     let mediaSummary: { kind: 'audio' | 'image'; latency_ms: number } | null = null
 
-    if (contentType === 'audio' && mediaUrl) {
+    if (contentType === 'audio' && allMediaUrls.length > 0) {
       const sttRes = await step.run('stt-transcribe', async () => {
         if (!process.env.GROQ_API_KEY) {
           return { ok: false as const, reason: 'GROQ_API_KEY ausente', text: null, latency_ms: 0 }
         }
         try {
           const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
-          const blob = await messaging.downloadMedia(mediaUrl)
+          // Áudio: transcreve só o primeiro (cada áudio = um turno semântico)
+          const blob = await messaging.downloadMedia(allMediaUrls[0]!)
           const r = await stt.transcribe({ audio: blob, language: 'pt' })
           return { ok: true as const, text: r.text, latency_ms: r.latencyMs }
         } catch (e) {
@@ -81,50 +122,83 @@ export const processMessageFn = inngest.createFunction(
       }
     }
 
-    if (contentType === 'image' && mediaUrl) {
+    if (contentType === 'image' && allMediaUrls.length > 0) {
       const vRes = await step.run('vision-analyze', async () => {
         if (!process.env.OPENROUTER_API_KEY) {
-          return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente' }
+          return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente', images: [] }
         }
         try {
           const vision = new GeminiVision({
             apiKey: process.env.OPENROUTER_API_KEY,
             heliconeApiKey: process.env.HELICONE_API_KEY,
           })
-          const blob = await messaging.downloadMedia(mediaUrl)
-          const buf = Buffer.from(await blob.arrayBuffer())
-          const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
-          const r = await vision.analyzeMeal(dataUri, text ?? undefined)
-          return {
-            ok: true as const,
-            items: r.items,
-            meal_context: r.meal_context,
-            raw_response: r.raw_response,
-            latency_ms: r.latencyMs,
-          }
+          const start = Date.now()
+          // Processa TODAS as imagens em paralelo
+          const analyses = await Promise.all(
+            allMediaUrls.map(async (url) => {
+              const blob = await messaging.downloadMedia(url)
+              const buf = Buffer.from(await blob.arrayBuffer())
+              const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
+              return vision.analyzeImage(dataUri, { userMessage: text ?? undefined })
+            }),
+          )
+          return { ok: true as const, images: analyses, latency_ms: Date.now() - start }
         } catch (e) {
           return {
             ok: false as const,
             reason: e instanceof Error ? e.message : String(e),
+            images: [],
           }
         }
       })
-      if (vRes.ok) {
-        const itemsTxt = vRes.items
-          .map(
-            (it) =>
-              `- ${it.name}: ${it.quantity_g_estimate}g (confiança ${(it.confidence * 100).toFixed(0)}%)${it.notes ? ` — ${it.notes}` : ''}`,
-          )
-          .join('\n')
+      if (vRes.ok && vRes.images.length > 0) {
+        // Formata cada imagem segundo seu tipo
+        const blocks: string[] = []
+        for (let i = 0; i < vRes.images.length; i++) {
+          const img = vRes.images[i]!
+          const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
+          if (img.type === 'meal') {
+            const itemsTxt =
+              img.items
+                .map(
+                  (it) =>
+                    `  - ${it.name}: ${it.quantity_g_estimate}g (conf ${(it.confidence * 100).toFixed(0)}%)`,
+                )
+                .join('\n') || '  (nenhum alimento identificado)'
+            blocks.push(
+              `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}`,
+            )
+          } else if (img.type === 'body') {
+            blocks.push(
+              `${idx} [corporal · ${img.view}]:\n  BF% estimado: ${img.bf_percent_estimate ?? 'n/d'} (conf ${(img.bf_confidence * 100).toFixed(0)}%)\n  ${img.composition_notes}${img.posture_notes ? `\n  postura: ${img.posture_notes}` : ''}`,
+            )
+          } else if (img.type === 'scale') {
+            blocks.push(
+              `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
+            )
+          } else {
+            blocks.push(`${idx} [outra]:\n  ${img.description}`)
+          }
+        }
         enrichedText =
-          `[Foto de refeição enviada pelo usuário]\n` +
-          (vRes.meal_context ? `Contexto: ${vRes.meal_context}\n` : '') +
-          `Itens identificados (análise visual automática):\n${itemsTxt}\n` +
-          (text ? `\nLegenda do usuário: "${text}"` : '')
+          `[${vRes.images.length} foto(s) recebida(s) — análise visual automática abaixo]\n\n` +
+          blocks.join('\n\n') +
+          (text ? `\n\nLegenda do usuário: "${text}"` : '')
         mediaSummary = { kind: 'image', latency_ms: vRes.latency_ms }
-        logger.info('Vision done', { items: vRes.items.length, latency: vRes.latency_ms })
+        logger.info('Vision done', {
+          count: vRes.images.length,
+          types: vRes.images.map((i) => i.type),
+          latency: vRes.latency_ms,
+        })
       } else {
-        logger.warn('Vision skipped', { reason: vRes.reason })
+        logger.warn('Vision skipped', { reason: vRes.ok ? 'sem imagens' : vRes.reason })
+        if (text) {
+          // Se não conseguiu ler mas tem caption, usa só a caption
+          enrichedText = text
+        } else {
+          // Sem texto e sem vision: avisa o LLM explicitamente que recebeu foto mas não conseguiu ler
+          enrichedText = `[${allMediaUrls.length} foto(s) recebida(s) — falhou ao baixar/analisar. Peça ao usuário pra reenviar ou descrever por texto. NÃO INVENTE o conteúdo.]`
+        }
       }
     }
 

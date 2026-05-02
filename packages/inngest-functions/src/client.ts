@@ -17,6 +17,8 @@ type Events = {
       contentType: 'text' | 'audio' | 'image'
       text?: string
       mediaUrl?: string
+      /** Quando há múltiplas mídias agregadas pelo buffer (ex: 3 fotos corporais). */
+      mediaUrls?: string[]
       provider: string
       timestamp: string
     }

@@ -49,20 +49,25 @@ export const cadastraDadosIniciais: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const updates: Record<string, unknown> = {}
-    if (args.sex) updates.sex = args.sex
-    if (args.birth_date) updates.birth_date = args.birth_date
-    if (args.height_cm != null) updates.height_cm = args.height_cm
-    if (args.weight_kg != null) updates.weight_kg = args.weight_kg
-    if (args.body_fat_percent != null && args.body_fat_percent > 0)
-      updates.body_fat_percent = args.body_fat_percent
-    if (args.activity_level) updates.activity_level = args.activity_level
-    if (args.training_frequency != null) updates.training_frequency = args.training_frequency
-    if (args.water_intake) updates.water_intake = args.water_intake
-    if (args.hunger_level) updates.hunger_level = args.hunger_level
-    if (args.wake_time) updates.wake_time = args.wake_time
-    if (args.bedtime) updates.bedtime = args.bedtime
-    if (args.onboarding_step != null) updates.onboarding_step = args.onboarding_step
-    if (args.onboarding_completed != null)
+    // Helper: aceita só números > 0 (LLM costuma mandar 0 como placeholder)
+    const numPositive = (v: unknown): boolean => typeof v === 'number' && v > 0
+    const strNonEmpty = (v: unknown): boolean => typeof v === 'string' && v.trim().length > 0
+
+    if (strNonEmpty(args.sex)) updates.sex = args.sex
+    if (strNonEmpty(args.birth_date)) updates.birth_date = args.birth_date
+    if (numPositive(args.height_cm)) updates.height_cm = args.height_cm
+    if (numPositive(args.weight_kg)) updates.weight_kg = args.weight_kg
+    if (numPositive(args.body_fat_percent)) updates.body_fat_percent = args.body_fat_percent
+    if (strNonEmpty(args.activity_level)) updates.activity_level = args.activity_level
+    if (numPositive(args.training_frequency))
+      updates.training_frequency = args.training_frequency
+    if (strNonEmpty(args.water_intake)) updates.water_intake = args.water_intake
+    if (strNonEmpty(args.hunger_level)) updates.hunger_level = args.hunger_level
+    if (strNonEmpty(args.wake_time)) updates.wake_time = args.wake_time
+    if (strNonEmpty(args.bedtime)) updates.bedtime = args.bedtime
+    if (typeof args.onboarding_step === 'number' && args.onboarding_step >= 0)
+      updates.onboarding_step = args.onboarding_step
+    if (typeof args.onboarding_completed === 'boolean')
       updates.onboarding_completed = args.onboarding_completed
     updates.updated_at = new Date().toISOString()
 
@@ -411,6 +416,59 @@ export const deleteUser: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// pausar_agente — coloca o agente em modo silencioso por N dias
+// ----------------------------------------------------------------------------
+export const pausarAgente: ToolDefinition = {
+  name: 'pausar_agente',
+  description:
+    'Pausa o agente para este usuário por N dias. Durante a pausa, mensagens recebidas são reagidas com 💤 e crons de engajamento são ignorados. Use quando o usuário pedir explicitamente "férias", "pausar 1 semana", "parar por uns dias", etc. NUNCA pause sem o usuário pedir.',
+  parameters: z.object({
+    days: z.number().int().min(1).max(60).describe('Quantos dias pausar (1-60)'),
+    reason: z.string().optional().describe('Motivo opcional, livre.'),
+  }),
+  execute: async (args, ctx) => {
+    const { error } = await (ctx.supabase as unknown as {
+      rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+    }).rpc('pause_user', { p_user_id: ctx.userId, p_days: args.days })
+    if (error) throw error
+    const until = new Date(Date.now() + args.days * 86400_000)
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'agent.paused',
+      properties: { days: args.days, until: until.toISOString(), reason: args.reason ?? null },
+    })
+    return {
+      success: true,
+      paused_until: until.toISOString(),
+      paused_days: args.days,
+      message: `Agente pausado até ${until.toLocaleDateString('pt-BR')}.`,
+    }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// retomar_agente — remove pausa e volta ao normal
+// ----------------------------------------------------------------------------
+export const retomarAgente: ToolDefinition = {
+  name: 'retomar_agente',
+  description:
+    'Remove uma pausa ativa e retoma o atendimento normal. Use quando o usuário pedir "voltar", "destravar", "retomar agora" antes do prazo da pausa.',
+  parameters: z.object({}),
+  execute: async (_args, ctx) => {
+    const { error } = await (ctx.supabase as unknown as {
+      rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+    }).rpc('resume_user', { p_user_id: ctx.userId })
+    if (error) throw error
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'agent.resumed',
+      properties: { resumed_at: new Date().toISOString() },
+    })
+    return { success: true, message: 'Pausa removida, atendimento retomado.' }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // Registry
 // ----------------------------------------------------------------------------
 export const ALL_TOOLS: ToolDefinition[] = [
@@ -422,6 +480,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   atualizaDataUser,
   encerraAtendimento,
   deleteUser,
+  pausarAgente,
+  retomarAgente,
 ]
 
 export function getToolByName(name: string): ToolDefinition | undefined {

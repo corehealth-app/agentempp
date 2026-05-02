@@ -10,10 +10,14 @@ export interface AgentInput {
   providerMessageId: string
   /** Conteúdo principal. */
   text?: string
-  /** Para mídia (imagem/áudio). */
+  /** Para mídia única (compatibilidade). */
   mediaUrl?: string
   mediaMimeType?: string
+  /** Múltiplas mídias do mesmo turno (ex: 3 fotos corporais). */
+  mediaUrls?: string[]
   contentType: 'text' | 'audio' | 'image'
+  /** Hint do agente pra classificar imagem (vision). */
+  imageHint?: 'meal' | 'body' | 'scale' | 'other'
   /** Provider de origem (whatsapp_cloud, console, ...). */
   provider: string
   /** Timestamp do provider. */

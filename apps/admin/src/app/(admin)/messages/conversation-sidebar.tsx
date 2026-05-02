@@ -222,6 +222,16 @@ export function ConversationSidebar({
             {new Date(user.metadata.paused_until as string).toLocaleDateString('pt-BR')}
           </div>
         ) : null}
+
+        {/* Resetar / Excluir — sempre visíveis logo abaixo da identidade */}
+        <div className="pt-3 border-t border-border">
+          <DangerZone
+            userId={user.id}
+            userName={user.name}
+            userWpp={user.wpp}
+            layout="compact"
+          />
+        </div>
       </div>
 
       {/* Tags */}
@@ -403,22 +413,6 @@ export function ConversationSidebar({
         </div>
       )}
 
-      {/* Danger zone — sempre visível */}
-      <div className="content-card p-4 space-y-3 border-rose-500/20 border">
-        <div className="text-[10px] font-mono uppercase tracking-widest text-rose-600">
-          Zona de perigo
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Resetar mantém o paciente e zera onboarding (testar fluxo do zero).
-          Excluir apaga tudo permanentemente (cascade).
-        </p>
-        <DangerZone
-          userId={user.id}
-          userName={user.name}
-          userWpp={user.wpp}
-          layout="compact"
-        />
-      </div>
     </div>
   )
 }

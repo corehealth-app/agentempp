@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import type { ReviewFlag } from './types'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -100,14 +101,6 @@ export async function updateUserNameAction(userId: string, name: string) {
   revalidatePath('/messages')
   return { ok: true }
 }
-
-export type ReviewFlag =
-  | 'hallucination'
-  | 'great_response'
-  | 'needs_review'
-  | 'wrong_tool'
-  | 'tone_off'
-  | 'too_long'
 
 export async function flagMessageAction(
   messageId: string,

@@ -14,11 +14,8 @@ import {
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { formatUSD } from '@/lib/utils'
-import {
-  flagMessageAction,
-  reprocessMessageAction,
-  type ReviewFlag,
-} from './actions'
+import { flagMessageAction, reprocessMessageAction } from './actions'
+import type { ReviewFlag } from './types'
 import { MediaPreview } from './media-preview'
 import { ToolCallBadge } from './tool-call-badge'
 

@@ -1,5 +1,6 @@
-import { computeProgress } from '@mpp/core'
+import { calcDailyXP, computeProgress } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
+import { loadCalcConfig } from '@mpp/agent'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 
@@ -126,8 +127,11 @@ async function closeUserDay(
     .eq('user_id', userId)
     .maybeSingle()
 
-  // XP base por dia: 10 + 5 se treinou + bônus por proteína atingida
-  const xpEarned = 10 + (trainingDone ? 5 : 0) + (proteinG >= 100 ? 5 : 0)
+  // Carrega config editável (cache 60s). Constantes vêm de global_config calc.*
+  const calcConfig = await loadCalcConfig(supabase)
+
+  // XP base por dia: regras configuráveis via /settings/calc
+  const xpEarned = calcDailyXP({ trainingDone, proteinG }, calcConfig)
 
   // Upsert daily_snapshot
   const snapshotData = {
@@ -185,7 +189,7 @@ async function closeUserDay(
     dailyBalance: snap.daily_balance ?? 0,
   }
 
-  const next = computeProgress(dailySnap, prev)
+  const next = computeProgress(dailySnap, prev, calcConfig)
 
   await supabase
     .from('user_progress')

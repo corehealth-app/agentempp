@@ -18,19 +18,16 @@ interface ConfigRow {
 const TTL_MS = 60_000
 let cached: { config: CalcConfig; expiresAt: number } | null = null
 
-interface SupabaseLike {
-  from: (table: string) => {
-    select: (cols: string) => {
-      like: (col: string, pat: string) => Promise<{ data: ConfigRow[] | null; error: unknown }>
-    }
-  }
-}
-
-export async function loadCalcConfig(svc: SupabaseLike): Promise<CalcConfig> {
+// Aceita qualquer Supabase client tipado ou não — o método from() é genérico.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function loadCalcConfig(svc: any): Promise<CalcConfig> {
   const now = Date.now()
   if (cached && cached.expiresAt > now) return cached.config
 
-  const { data, error } = await svc.from('global_config').select('key, value').like('key', 'calc.%')
+  const { data, error } = (await svc
+    .from('global_config')
+    .select('key, value')
+    .like('key', 'calc.%')) as { data: ConfigRow[] | null; error: unknown }
   if (error || !data || data.length === 0) {
     // Fallback seguro: usa defaults se DB falhar
     cached = { config: DEFAULT_CALC_CONFIG, expiresAt: now + TTL_MS }

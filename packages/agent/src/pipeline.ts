@@ -10,6 +10,7 @@
  *   6. persistTurn    — salva mensagens in/out
  */
 import { computeMetrics, resolveProtocol } from '@mpp/core'
+import { loadCalcConfig } from './calc-config-loader.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterLLM } from '@mpp/providers'
@@ -99,7 +100,10 @@ export async function processMessage(
         `   "Boa.", "Show.", "Beleza.", "Pronto.", "Saquei.", "Recebi.", "Hmm.", (sem nada/direto na resposta)`
       : ''
 
-  const baseSystem = `${promptRow.system_prompt}\n\n## Contexto do usuário\n${formatUserContext(ctx)}${repetitionGuard}`
+  // Carrega config editável de cálculos (cache 60s) — afeta metrics e protocol
+  const calcConfig = await loadCalcConfig(deps.supabase)
+
+  const baseSystem = `${promptRow.system_prompt}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
 
   const messages: ChatCompletionMessageParam[] = ctx.recentMessages.map((m) => ({
     role: m.role,
@@ -470,8 +474,11 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
   }))
 }
 
-function formatUserContext(ctx: UserContext): string {
-  const m = computeMetrics(ctx.profile)
+function formatUserContext(
+  ctx: UserContext,
+  calcConfig?: import('@mpp/core').CalcConfig,
+): string {
+  const m = computeMetrics(ctx.profile, new Date(), calcConfig)
   const sections: string[] = []
 
   // Reentrada warm: instrução pro LLM no topo
@@ -559,7 +566,7 @@ function formatUserContext(ctx: UserContext): string {
 
   if (ctx.profile.sex && (ctx.profile.bodyFatPercent != null || m.imc != null)) {
     try {
-      const dec = resolveProtocol(ctx.profile, m)
+      const dec = resolveProtocol(ctx.profile, m, calcConfig)
       lines.push(
         `- Decisão automática: protocol=${dec.protocol} canChoose=${dec.canChoose} blockers=[${dec.blockers.join('; ') || 'nenhum'}] goal=${dec.goalType}=${dec.goalValue}`,
       )

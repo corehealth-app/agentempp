@@ -84,3 +84,10 @@ supabase/.env
 packages/db/src/generated/
 *.generated.ts
 .vercel
+
+# Playwright MCP artifacts
+.playwright-mcp/
+*.playwright-mcp.png
+crons-*.png
+calc-*.png
+*-page.yml

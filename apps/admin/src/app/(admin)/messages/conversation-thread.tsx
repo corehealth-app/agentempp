@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { formatUSD } from '@/lib/utils'
 import {
   flagMessageAction,
@@ -86,7 +85,7 @@ export function ConversationThread({
   return (
     <>
       {/* Header do thread */}
-      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+      <div className="shrink-0 flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-3 min-w-0">
           <div className="shrink-0 h-9 w-9 rounded-full bg-ink-900 text-cream-100 flex items-center justify-center text-xs font-medium">
             {(user.name ?? 'U').slice(0, 2).toUpperCase()}

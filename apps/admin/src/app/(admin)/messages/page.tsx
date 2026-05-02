@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronRight, MessageSquare, Search } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { MessagesRealtimeListener } from './realtime-listener'
@@ -175,26 +175,29 @@ export default async function ConversasPage({
   const silentCount = [...summaries.values()].filter((c) => c.status === 'silent').length
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col h-full">
       <MessagesRealtimeListener />
-      <PageHeader
-        breadcrumbs={[{ label: 'Operação' }, { label: 'Conversas' }]}
-        title="Conversas"
-        description={
-          <span className="inline-flex items-center gap-2">
-            Observatório do agente em tempo real.
-            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-moss-700">
-              <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-moss-500">
-                <span className="absolute inset-0 rounded-full animate-ping opacity-60 bg-moss-500" />
+      <div className="shrink-0 mb-3">
+        <PageHeader
+          compact
+          breadcrumbs={[{ label: 'Operação' }, { label: 'Conversas' }]}
+          title="Conversas"
+          description={
+            <span className="inline-flex items-center gap-2">
+              Observatório do agente em tempo real.
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-moss-700">
+                <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-moss-500">
+                  <span className="absolute inset-0 rounded-full animate-ping opacity-60 bg-moss-500" />
+                </span>
+                live
               </span>
-              live
             </span>
-          </span>
-        }
-        actions={<SearchTrigger />}
-      />
+          }
+          actions={<SearchTrigger />}
+        />
+      </div>
 
-      <div className="grid gap-3 lg:grid-cols-[300px_1fr_300px] min-h-[600px]">
+      <div className="grid grid-rows-1 gap-3 lg:grid-cols-[300px_1fr_300px] flex-1 min-h-0 [&>*]:min-h-0 [&>*]:h-full">
         {/* === Esquerda: lista === */}
         <div className="flex flex-col content-card overflow-hidden">
           <div className="flex flex-wrap gap-1 p-2 border-b border-border bg-muted/30">

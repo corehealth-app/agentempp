@@ -140,7 +140,7 @@ export function ConversationSidebar({
   }
 
   return (
-    <div className="space-y-3 overflow-y-auto">
+    <div className="space-y-3 overflow-y-auto pr-1 -mr-1">
       {/* Identidade + ações */}
       <div className="content-card p-4 space-y-3">
         <div className="flex items-center justify-between">

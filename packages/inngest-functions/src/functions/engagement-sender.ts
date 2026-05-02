@@ -1,3 +1,4 @@
+import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 
@@ -60,15 +61,39 @@ export const engagementSenderFn = inngest.createFunction(
 
 async function maybeEngageUser(
   userId: string,
-  _wpp: string,
+  wpp: string,
   userTimezone: string,
   slot: string,
 ): Promise<{ sent: boolean; reason?: string }> {
   const { supabase, llm } = createWorkerDeps()
 
+  async function logEvent(event: string, properties: Record<string, unknown>) {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event,
+      properties: { slot, wpp, ...properties },
+    })
+  }
+
+  // Pausa ativa? respeita
+  const { data: u } = await supabase
+    .from('users')
+    .select('metadata, status')
+    .eq('id', userId)
+    .maybeSingle()
+  const meta = (u as { metadata: Record<string, unknown> | null } | null)?.metadata
+  const pausedUntil = meta?.paused_until as string | undefined
+  if (pausedUntil && new Date(pausedUntil) > new Date()) {
+    await logEvent('engagement.skipped', { reason: 'paused', paused_until: pausedUntil })
+    return { sent: false, reason: 'paciente pausado' }
+  }
+
   // Hora local do user
   const localHour = getLocalHour(userTimezone)
-  if (localHour < 6 || localHour > 22) return { sent: false, reason: 'horário noturno' }
+  if (localHour < 6 || localHour > 22) {
+    await logEvent('engagement.skipped', { reason: 'noturno', local_hour: localHour })
+    return { sent: false, reason: 'horário noturno' }
+  }
 
   // Já interagiu hoje?
   const todayLocal = getLocalDate(userTimezone)
@@ -79,7 +104,10 @@ async function maybeEngageUser(
     .eq('user_id', userId)
     .gte('created_at', startOfDay)
 
-  if ((msgsToday ?? 0) > 0) return { sent: false, reason: 'já interagiu hoje' }
+  if ((msgsToday ?? 0) > 0) {
+    await logEvent('engagement.skipped', { reason: 'já interagiu hoje', msgs_today: msgsToday })
+    return { sent: false, reason: 'já interagiu hoje' }
+  }
 
   // Carrega config do agente engajamento
   const { data: prompt } = await supabase
@@ -122,27 +150,66 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     metadata: { Stage: 'engajamento', Slot: slot },
   })
 
-  // Persiste como outbound
+  const text = (result.content ?? '').trim()
+  if (!text) {
+    await logEvent('engagement.skipped', { reason: 'LLM vazio' })
+    return { sent: false, reason: 'LLM vazio' }
+  }
+
+  // ENVIA pelo WhatsApp via messaging provider
+  const messaging = createMessagingProvider({
+    MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+    META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
+    META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN,
+    META_APP_SECRET: process.env.META_APP_SECRET,
+    META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
+  })
+
+  let deliveryStatus: 'sent' | 'failed' = 'sent'
+  let deliveryError: string | undefined
+  try {
+    const sendResults = await sendHumanized(messaging, wpp, text, {
+      showTyping: false, // engagement não responde a uma msg recebida
+      minDelay: 800,
+      maxDelay: 3000,
+      charsPerSecond: 55,
+    })
+    if (sendResults.some((r) => r.status !== 'sent')) {
+      deliveryStatus = 'failed'
+      deliveryError = sendResults.find((r) => r.error)?.error
+    }
+  } catch (e) {
+    deliveryStatus = 'failed'
+    deliveryError = e instanceof Error ? e.message : String(e)
+  }
+
+  // Persiste OUT (com delivery_status real)
   await supabase.from('messages').insert({
     user_id: userId,
     direction: 'out',
     role: 'assistant',
     content_type: 'text',
-    content: result.content ?? '',
-    provider: process.env.MESSAGING_PROVIDER ?? 'console',
+    content: text,
+    provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
     agent_stage: 'engajamento',
     model_used: result.model,
     prompt_tokens: result.promptTokens,
     completion_tokens: result.completionTokens,
     cost_usd: result.costUsd,
     latency_ms: result.latencyMs,
+    delivery_status: deliveryStatus,
+    delivery_error: deliveryError ? { msg: deliveryError } : null,
     raw_payload: { engagement_slot: slot },
   })
 
-  // TODO: quando WhatsApp Cloud estiver ativo, enviar via provider.sendText()
-  // Por ora apenas registra no DB.
+  await logEvent(deliveryStatus === 'sent' ? 'engagement.sent' : 'engagement.failed', {
+    chars: text.length,
+    cost_usd: result.costUsd,
+    model: result.model,
+    error: deliveryError,
+  })
 
-  return { sent: true }
+  return { sent: deliveryStatus === 'sent', reason: deliveryError }
 }
 
 function getLocalHour(tz: string): number {

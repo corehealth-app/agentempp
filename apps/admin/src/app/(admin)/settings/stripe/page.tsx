@@ -69,28 +69,38 @@ export default async function StripeSettingsPage() {
       {/* === Catálogo de produtos === */}
       <ContentCard
         title="Catálogo de produtos"
-        description="Produtos+preços que serão criados no Stripe (idempotente por lookup_key)"
+        description="1 produto por plano, N preços por moeda. Idempotente por lookup_key."
       >
-        <div className="space-y-2">
+        <div className="space-y-3">
           {STRIPE_CATALOG.map((item) => (
-            <div
-              key={item.lookup_key}
-              className="glass-subtle p-3 flex items-center gap-4"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm">{item.name}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{item.description}</div>
-                <code className="text-[10px] font-mono text-muted-foreground/70 mt-1 inline-block">
-                  lookup_key: {item.lookup_key}
-                </code>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="font-display text-lg tracking-tight">
-                  R$ {(item.price_brl_cents / 100).toFixed(2)}
+            <div key={item.plan} className="glass-subtle p-3 space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">{item.name}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{item.description}</div>
                 </div>
-                <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground shrink-0">
                   /{item.interval} · trial {item.trial_days}d
                 </div>
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-3 pt-2 border-t border-border/40">
+                {item.prices.map((p) => {
+                  const symbol =
+                    p.currency === 'brl' ? 'R$' : p.currency === 'usd' ? 'US$' : '€'
+                  return (
+                    <div
+                      key={p.lookup_key}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <code className="font-mono text-[10px] text-muted-foreground truncate">
+                        {p.lookup_key}
+                      </code>
+                      <span className="font-mono tabular-nums text-foreground shrink-0">
+                        {symbol} {(p.unit_amount / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}

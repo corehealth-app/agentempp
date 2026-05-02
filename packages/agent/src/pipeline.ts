@@ -153,7 +153,12 @@ export async function processMessage(
     })
 
     // Executa cada tool
-    const toolCtx: ToolContext = { supabase: deps.supabase, userId, userWpp: input.from }
+    const toolCtx: ToolContext = {
+      supabase: deps.supabase,
+      userId,
+      userWpp: input.from,
+      userCountry: ctx.country ?? 'BR',
+    }
     for (const tc of result.toolCalls) {
       const tool = getToolByName(tc.name)
       if (!tool) {
@@ -487,10 +492,43 @@ function formatUserContext(ctx: UserContext): string {
   }
 
   // País — instrução explícita pro LLM saber se já tem confirmação
+  const country = ctx.country ?? 'BR'
+  const personaName =
+    country === 'US' || country === 'GB' || country === 'CA' || country === 'AU'
+      ? 'Dr. Robert Menescal'
+      : 'Dr. Roberto Menescal'
+  const countryToLanguage: Record<string, string> = {
+    BR: 'pt-BR',
+    PT: 'pt-PT',
+    US: 'en',
+    GB: 'en',
+    CA: 'en',
+    AU: 'en',
+    ES: 'es',
+    MX: 'es',
+    AR: 'es',
+    CL: 'es',
+    CO: 'es',
+    PE: 'es',
+    UY: 'es',
+    PY: 'es',
+    BO: 'es',
+    EC: 'es',
+    VE: 'es',
+    FR: 'fr',
+    DE: 'de',
+    IT: 'it',
+  }
+  const language = countryToLanguage[country] ?? 'pt-BR'
+
   if (ctx.countryConfirmed) {
     sections.push(
       `### País de residência\n` +
-        `Confirmado pelo paciente: **${ctx.country}**. NÃO pergunte de novo.`,
+        `Confirmado pelo paciente: **${country}** (idioma: ${language}). ` +
+        `Persona: ${personaName}. NÃO pergunte de novo. ` +
+        (country !== 'BR'
+          ? `Responda no idioma do paciente (${language}). Sistema é otimizado pra Brasil — alimentos e medidas locais podem ser imprecisos.`
+          : ''),
     )
   } else {
     const guess = ctx.countryDetectedFromWpp

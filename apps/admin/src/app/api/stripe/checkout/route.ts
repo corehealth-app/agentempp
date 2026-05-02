@@ -37,13 +37,27 @@ export async function POST(req: Request) {
   }
 
   const svc = createServiceClient()
-  const { data: target } = await svc
+  const { data: target } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (col: string, val: string) => {
+          maybeSingle: () => Promise<{ data: unknown }>
+        }
+      }
+    }
+  })
     .from('users')
-    .select('id, wpp, email, name')
+    .select('id, wpp, email, name, country')
     .eq('id', body.user_id)
     .maybeSingle()
   const targetUser = target as
-    | { id: string; wpp: string; email: string | null; name: string | null }
+    | {
+        id: string
+        wpp: string
+        email: string | null
+        name: string | null
+        country: string | null
+      }
     | null
   if (!targetUser) {
     return NextResponse.json({ error: 'user not found' }, { status: 404 })
@@ -58,6 +72,7 @@ export async function POST(req: Request) {
       user_wpp: targetUser.wpp,
       user_email: targetUser.email,
       user_name: targetUser.name,
+      user_country: targetUser.country,
       success_url: `${origin}/users/${targetUser.id}?stripe=success`,
       cancel_url: `${origin}/users/${targetUser.id}?stripe=cancel`,
     })

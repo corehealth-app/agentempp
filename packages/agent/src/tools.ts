@@ -13,6 +13,8 @@ export interface ToolContext {
   supabase: ServiceClient
   userId: string
   userWpp: string
+  /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
+  userCountry?: string
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -153,7 +155,7 @@ export const registraRefeicao: ToolDefinition = {
     const today = new Date().toISOString().split('T')[0]!
 
     // Calcula macros via TACO
-    const calc = await calcMealMacros(ctx.supabase, args.items)
+    const calc = await calcMealMacros(ctx.supabase, args.items, ctx.userCountry ?? 'BR')
 
     // Garante snapshot do dia
     const { data: snap } = await ctx.supabase

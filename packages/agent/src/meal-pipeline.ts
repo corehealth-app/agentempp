@@ -46,6 +46,7 @@ export interface MealCalcResult {
 async function matchFood(
   supabase: ServiceClient,
   name: string,
+  country: string = 'BR',
 ): Promise<{
   id: number | null
   name_pt: string | null
@@ -56,12 +57,14 @@ async function matchFood(
   fat_g: number | null
   fiber_g: number | null
 }> {
-  // Normaliza: lowercase + remove acentos via Postgres
-  // Usa similarity() do pg_trgm; ordem desc, limit 1
-  const { data, error } = await supabase.rpc('search_food_trgm', {
+  // Normaliza + filtra por país (BR=TACO; US=USDA quando populado, etc.)
+  const { data, error } = await (supabase as unknown as {
+    rpc: (n: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
+  }).rpc('search_food_trgm', {
     search_term: name.toLowerCase(),
     min_similarity: 0.2,
     max_results: 1,
+    p_country: country,
   })
 
   const empty = {
@@ -75,9 +78,20 @@ async function matchFood(
     fiber_g: null,
   }
 
-  if (error || !data || data.length === 0) return empty
+  type Row = {
+    id: number | null
+    name_pt: string | null
+    similarity: number | null
+    kcal_per_100g: number | string | null
+    protein_g: number | string | null
+    carbs_g: number | string | null
+    fat_g: number | string | null
+    fiber_g: number | string | null
+  }
+  const rows = (data ?? []) as Row[]
+  if (error || rows.length === 0) return empty
 
-  const top = data[0]
+  const top = rows[0]
   if (!top) return empty
   return {
     id: top.id ?? null,
@@ -99,13 +113,14 @@ async function matchFood(
 export async function calcMealMacros(
   supabase: ServiceClient,
   items: MealItemInput[],
+  country: string = 'BR',
 ): Promise<MealCalcResult> {
   const matched: MealItemMatched[] = []
   const warnings: string[] = []
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (const it of items) {
-    const m = await matchFood(supabase, it.food_name)
+    const m = await matchFood(supabase, it.food_name, country)
     const factor = it.quantity_g / 100
 
     if (m.id != null && m.kcal_per_100g != null && m.similarity >= 0.3) {

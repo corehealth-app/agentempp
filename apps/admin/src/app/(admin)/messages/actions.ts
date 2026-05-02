@@ -145,6 +145,171 @@ export async function flagMessageAction(
 }
 
 /**
+ * Reseta a conversa de um paciente: apaga messages, message_buffer,
+ * tools_audit, meal_logs, workout_logs, daily_snapshots, user_progress,
+ * subscription_events. **Mantém** users + user_profiles + subscriptions
+ * (zera onboarding pra refazer do zero).
+ *
+ * Útil pra testar fluxo de onboarding sem precisar criar paciente novo.
+ */
+export async function resetUserConversationAction(userId: string) {
+  const ctx = await requireAdmin()
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { data: u } = await ctx.svc
+    .from('users')
+    .select('id, name, wpp')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!u) return { error: 'user não encontrado' }
+
+  // Tabelas filhas que vamos limpar (mantém user + profile + subscriptions ativas)
+  const tables = [
+    'messages',
+    'message_buffer',
+    'tools_audit',
+    'meal_logs',
+    'workout_logs',
+    'daily_snapshots',
+    'reevaluations',
+    'message_embeddings',
+  ]
+  for (const t of tables) {
+    await (ctx.svc as unknown as {
+      from: (t: string) => {
+        delete: () => { eq: (col: string, val: string) => Promise<unknown> }
+      }
+    })
+      .from(t)
+      .delete()
+      .eq('user_id', userId)
+      .catch(() => {}) // tabelas podem não ter user_id ou outro cleanup
+  }
+
+  // Reseta user_profiles (mantém row mas zera campos)
+  await ctx.svc
+    .from('user_profiles')
+    .update({
+      sex: null,
+      birth_date: null,
+      height_cm: null,
+      weight_kg: null,
+      body_fat_percent: null,
+      activity_level: null,
+      training_frequency: null,
+      water_intake: null,
+      hunger_level: null,
+      wake_time: null,
+      bedtime: null,
+      current_protocol: null,
+      goal_type: null,
+      goal_value: null,
+      deficit_level: null,
+      onboarding_completed: false,
+      onboarding_step: 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+
+  // Reseta user_progress
+  await ctx.svc
+    .from('user_progress')
+    .update({
+      xp_total: 0,
+      level: 1,
+      current_streak: 0,
+      longest_streak: 0,
+      blocks_completed: 0,
+      deficit_block: 0,
+      current_weight: null,
+      current_bf_percent: null,
+      badges_earned: [],
+      last_active_date: null,
+      next_reevaluation: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+
+  // Reseta users: limpa name + summary + tags + admin_notes + country_confirmed,
+  // mantém wpp + status. country fica como detect (pra agente perguntar de novo).
+  await (ctx.svc as unknown as {
+    from: (t: string) => {
+      update: (u: Record<string, unknown>) => {
+        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+      }
+    }
+  })
+    .from('users')
+    .update({
+      name: null,
+      summary: null,
+      summary_updated_at: null,
+      tags: [],
+      admin_notes: null,
+      country_confirmed: false,
+      last_active_at: null,
+      metadata: {},
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+
+  await ctx.svc.from('audit_log').insert({
+    actor_id: ctx.user.id,
+    actor_email: ctx.user.email,
+    action: 'user.reset_conversation',
+    entity: 'users',
+    entity_id: userId,
+    before: { name: u.name, wpp: u.wpp },
+  })
+
+  await ctx.svc.from('product_events').insert({
+    user_id: userId,
+    event: 'user.conversation_reset',
+    properties: { actor: ctx.user.email, wpp: u.wpp },
+  })
+
+  revalidatePath('/messages')
+  revalidatePath('/users')
+  revalidatePath(`/users/${userId}`)
+  return { ok: true, wpp: u.wpp }
+}
+
+/**
+ * Apaga o paciente completamente: cascade DELETE no users → todas tabelas
+ * filhas via FK. Para testar fluxo do zero como se fosse 1ª interação.
+ */
+export async function deleteUserAction(userId: string) {
+  const ctx = await requireAdmin()
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { data: u } = await ctx.svc
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!u) return { error: 'user não encontrado' }
+
+  // Snapshot pra audit antes de cascade
+  const before = JSON.parse(JSON.stringify(u))
+
+  const { error } = await ctx.svc.from('users').delete().eq('id', userId)
+  if (error) return { error: error.message }
+
+  await ctx.svc.from('audit_log').insert({
+    actor_id: ctx.user.id,
+    actor_email: ctx.user.email,
+    action: 'user.delete_full',
+    entity: 'users',
+    entity_id: userId,
+    before,
+  })
+
+  revalidatePath('/messages')
+  revalidatePath('/users')
+  return { ok: true }
+}
+
+/**
  * Força reprocessamento de uma mensagem IN: re-dispara o evento Inngest
  * message.received com os dados da mensagem original.
  */

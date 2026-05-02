@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CountryBadge } from '@/components/country-badge'
+import { DangerZone } from './danger-zone'
 import {
   pauseUserAction,
   resumeUserAction,
@@ -401,6 +402,23 @@ export function ConversationSidebar({
           </a>
         </div>
       )}
+
+      {/* Danger zone — sempre visível */}
+      <div className="content-card p-4 space-y-3 border-rose-500/20 border">
+        <div className="text-[10px] font-mono uppercase tracking-widest text-rose-600">
+          Zona de perigo
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Resetar mantém o paciente e zera onboarding (testar fluxo do zero).
+          Excluir apaga tudo permanentemente (cascade).
+        </p>
+        <DangerZone
+          userId={user.id}
+          userName={user.name}
+          userWpp={user.wpp}
+          layout="compact"
+        />
+      </div>
     </div>
   )
 }

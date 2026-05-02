@@ -5,6 +5,7 @@ import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { CheckoutButton } from './checkout-button'
+import { DangerZone } from '../../messages/danger-zone'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -78,6 +79,14 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
               confirmed={!!(user as { country_confirmed?: boolean }).country_confirmed}
             />
           </span>
+        }
+        actions={
+          <DangerZone
+            userId={user.id}
+            userName={user.name ?? null}
+            userWpp={user.wpp}
+            layout="compact"
+          />
         }
       />
 

@@ -2,6 +2,7 @@ import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
+import { DiffViewer } from './diff-viewer'
 import { RuleEditor } from './editor'
 
 const TIPO_LABELS: Record<string, string> = {
@@ -50,6 +51,19 @@ export default async function RuleEditPage({ params }: { params: Promise<{ id: s
         status={rule.status}
         displayOrder={rule.display_order}
       />
+
+      {versions && versions.length > 0 && (
+        <DiffViewer
+          ruleId={rule.id}
+          versions={versions.map((v) => ({
+            version_num: v.version_num,
+            status: v.status,
+            change_reason: v.change_reason,
+            changed_at: v.changed_at,
+          }))}
+          currentContent={rule.content}
+        />
+      )}
 
       <ContentCard
         title="Histórico de versões"

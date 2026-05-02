@@ -1,10 +1,11 @@
 'use client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send, RotateCcw, User, Bot } from 'lucide-react'
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { Activity, Bot, DollarSign, RotateCcw, Send, User, Wrench, Zap } from 'lucide-react'
+import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { runPlayground, resetPlaygroundUser } from './actions'
+import { resetPlaygroundUser, runPlayground } from './actions'
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -70,10 +71,25 @@ export function PlaygroundForm() {
     }
   }
 
+  // Métricas acumuladas
+  const stats = useMemo(() => {
+    const meta = turns.filter((t) => t.meta).map((t) => t.meta!)
+    const totalTokens = meta.reduce((s, m) => s + m.tokens.in + m.tokens.out, 0)
+    const totalCost = meta.reduce((s, m) => s + (m.cost_usd ?? 0), 0)
+    const avgLatency =
+      meta.length > 0 ? Math.round(meta.reduce((s, m) => s + m.latency_ms, 0) / meta.length) : 0
+    const lastStage = meta.at(-1)?.stage ?? null
+    const lastModel = meta.at(-1)?.model ?? null
+    const tools = meta.flatMap((m) => m.tools)
+    return { totalTokens, totalCost, avgLatency, lastStage, lastModel, tools }
+  }, [turns])
+
   return (
-    <div className="border border-border bg-cream-50 rounded-sm overflow-hidden">
-      {/* Header */}
-      <div className="border-b border-border bg-cream-100 px-5 py-3 flex items-center gap-3">
+    <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
+      {/* === Coluna principal: chat === */}
+      <div className="border border-border bg-cream-50 rounded-sm overflow-hidden">
+        {/* Header */}
+        <div className="border-b border-border bg-cream-100 px-5 py-3 flex items-center gap-3">
         <div className="flex-1 flex items-center gap-3">
           <span className="section-eyebrow">Número simulado</span>
           <Input
@@ -232,7 +248,117 @@ export function PlaygroundForm() {
             <Send className="h-4 w-4" />
           </Button>
         </div>
+        </div>
       </div>
+
+      {/* === Sidebar: métricas + config ativa === */}
+      <div className="space-y-3">
+        <div className="content-card p-4 space-y-3">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            Métricas da sessão
+          </div>
+          <Stat
+            icon={Activity}
+            label="Tokens totais"
+            value={stats.totalTokens.toLocaleString('pt-BR')}
+          />
+          <Stat icon={DollarSign} label="Custo total" value={`$${stats.totalCost.toFixed(5)}`} />
+          <Stat icon={Zap} label="Latência média" value={`${stats.avgLatency} ms`} />
+          <Stat icon={Wrench} label="Tool calls" value={stats.tools.length.toString()} />
+        </div>
+
+        <div className="content-card p-4 space-y-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            Estado atual
+          </div>
+          <div className="space-y-1.5 text-xs">
+            <Row label="Stage">
+              {stats.lastStage ? (
+                <code className="font-mono text-foreground">{stats.lastStage}</code>
+              ) : (
+                <span className="text-muted-foreground">aguardando</span>
+              )}
+            </Row>
+            <Row label="Modelo">
+              {stats.lastModel ? (
+                <code className="font-mono text-foreground text-[11px]">{stats.lastModel}</code>
+              ) : (
+                <span className="text-muted-foreground">aguardando</span>
+              )}
+            </Row>
+            <Row label="Turnos">{turns.length}</Row>
+          </div>
+          <Link
+            href="/settings/agents"
+            className="block mt-3 text-[11px] text-moss-700 hover:underline"
+          >
+            Editar configuração →
+          </Link>
+        </div>
+
+        <div className="content-card p-4 space-y-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            Tools usadas
+          </div>
+          {stats.tools.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">nenhuma ainda</p>
+          ) : (
+            <ul className="space-y-1">
+              {Object.entries(
+                stats.tools.reduce<Record<string, { ok: number; fail: number }>>((acc, t) => {
+                  acc[t.name] ??= { ok: 0, fail: 0 }
+                  if (t.success) acc[t.name]!.ok++
+                  else acc[t.name]!.fail++
+                  return acc
+                }, {}),
+              ).map(([name, c]) => (
+                <li key={name} className="flex items-center justify-between text-[11px]">
+                  <code className="font-mono">{name}</code>
+                  <span className="font-mono">
+                    {c.ok > 0 && <span className="text-moss-600">{c.ok}✓</span>}
+                    {c.fail > 0 && <span className="text-rose-500 ml-1">{c.fail}✗</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link
+            href="/audit"
+            className="block mt-2 text-[11px] text-moss-700 hover:underline"
+          >
+            Auditoria detalhada →
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </span>
+      <span className="font-mono tabular-nums text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span>{children}</span>
     </div>
   )
 }

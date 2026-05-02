@@ -101,6 +101,9 @@ importers:
       next:
         specifier: ^15.1.4
         version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      openai:
+        specifier: ^4.104.0
+        version: 4.104.0(ws@8.20.0)(zod@3.25.76)
       react:
         specifier: ^19.0.0
         version: 19.2.5

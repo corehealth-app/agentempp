@@ -25,20 +25,23 @@ export default async function AuditPage() {
     .limit(200)
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Operação' }, { label: 'Auditoria' }]}
-        title="Auditoria"
-        description="Últimas 200 ações sensíveis registradas. Mudanças em credentials, regras, configs e admins ficam aqui."
-      />
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 mb-3">
+        <PageHeader
+          compact
+          breadcrumbs={[{ label: 'Operação' }, { label: 'Auditoria' }]}
+          title="Auditoria"
+          description={`${logs?.length ?? 0} ações sensíveis (credentials, regras, configs, admins).`}
+        />
+      </div>
 
-      <ContentCard>
+      <ContentCard className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {!logs || logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4">Sem registros ainda.</p>
+          <p className="text-sm text-muted-foreground py-4 px-5">Sem registros ainda.</p>
         ) : (
-          <div className="overflow-x-auto -mx-5 -my-5">
+          <div className="flex-1 overflow-auto">
             <table className="w-full text-sm">
-              <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-muted/40 border-b border-border">
+              <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-muted/40 border-b border-border sticky top-0 z-10">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-mono">Quando</th>
                   <th className="text-left px-3 py-2.5 font-mono">Quem</th>

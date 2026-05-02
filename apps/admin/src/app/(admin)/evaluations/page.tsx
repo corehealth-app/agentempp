@@ -29,15 +29,18 @@ export default async function EvaluationsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Visão geral' }, { label: 'Avaliações LLM' }]}
-        title="Avaliações LLM"
-        description="LLM-as-Judge avalia ~10% das respostas do agente. Permite detectar regressões de qualidade após mudanças em prompts."
-      />
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 mb-3">
+        <PageHeader
+          compact
+          breadcrumbs={[{ label: 'Visão geral' }, { label: 'Avaliações LLM' }]}
+          title="Avaliações LLM"
+          description="LLM-as-Judge avalia ~10% das respostas. Detecta regressões após mudanças de prompt."
+        />
+      </div>
 
       {/* Stats row */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="shrink-0 grid gap-3 md:grid-cols-4 mb-3">
         <div className="glass-card p-5">
           <div className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground mb-3">
             Score médio
@@ -91,7 +94,12 @@ export default async function EvaluationsPage() {
         </div>
       </div>
 
-      <ContentCard title="Últimas 50 avaliações" description="Score, mensagem do user, resposta do agente e raciocínio do judge">
+      <ContentCard
+        title="Últimas 50 avaliações"
+        description="Score, msg do user, resposta do agente e raciocínio do judge"
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
+        bodyClassName="flex-1 min-h-0 overflow-y-auto p-5"
+      >
         {!evals || evals.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">
             Nenhuma avaliação ainda. Será populada quando o sample-judge rodar.

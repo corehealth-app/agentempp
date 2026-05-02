@@ -60,22 +60,25 @@ export default async function PromptsPage({
     : null
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Persona' }, { label: 'Regras' }]}
-        title="Persona do agente"
-        description={`${totalRules} regras compõem o comportamento. Cada edição cria uma versão imutável em agent_rules_versions.`}
-        actions={
-          <Link href="/prompts/playground">
-            <Button>
-              <Sparkles className="h-4 w-4 mr-2" />
-              Playground
-            </Button>
-          </Link>
-        }
-      />
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 mb-3">
+        <PageHeader
+          compact
+          breadcrumbs={[{ label: 'Persona' }, { label: 'Regras' }]}
+          title="Persona do agente"
+          description={`${totalRules} regras compõem o comportamento. Cada edição cria versão imutável.`}
+          actions={
+            <Link href="/prompts/playground">
+              <Button size="sm">
+                <Sparkles className="h-4 w-4 mr-2" />
+                Playground
+              </Button>
+            </Link>
+          }
+        />
+      </div>
 
-      <div className="glass-card p-3 flex flex-wrap gap-2">
+      <div className="shrink-0 glass-card p-3 mb-3 flex flex-wrap gap-2">
         <Link
           href="/prompts"
           className={`text-xs font-medium px-3 py-1.5 rounded-md border transition-colors ${
@@ -107,14 +110,15 @@ export default async function PromptsPage({
       </div>
 
       {grouped ? (
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 -mr-1">
           {grouped.map(([tipo, list]) => (
             <ContentCard
               key={tipo}
               title={TIPO_LABELS[tipo] ?? tipo}
               description={`${list?.length ?? 0} regras ativas`}
+              bodyClassName="p-0"
             >
-              <ul className="divide-y divide-border -mx-5 -my-5">
+              <ul className="divide-y divide-border">
                 {(list ?? []).map((r, idx) => (
                   <RuleRow key={r.id} rule={r} idx={idx} />
                 ))}
@@ -123,8 +127,8 @@ export default async function PromptsPage({
           ))}
         </div>
       ) : (
-        <ContentCard>
-          <ul className="divide-y divide-border -mx-5 -my-5">
+        <ContentCard className="flex-1 min-h-0 flex flex-col overflow-hidden !p-0">
+          <ul className="flex-1 overflow-y-auto divide-y divide-border">
             {(rules ?? []).map((r, idx) => (
               <RuleRow key={r.id} rule={r} idx={idx} />
             ))}

@@ -32,20 +32,23 @@ export default async function UsersPage() {
   const progMap = new Map(progress?.map((p) => [p.user_id, p]) ?? [])
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Operação' }, { label: 'Usuários' }]}
-        title="Usuários"
-        description="Últimos 100 usuários por atividade. Clique para detalhes."
-      />
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 mb-3">
+        <PageHeader
+          compact
+          breadcrumbs={[{ label: 'Operação' }, { label: 'Usuários' }]}
+          title="Usuários"
+          description={`${users?.length ?? 0} pacientes — clique para detalhes.`}
+        />
+      </div>
 
-      <ContentCard>
+      <ContentCard className="flex-1 min-h-0 flex flex-col overflow-hidden !p-0">
         {!users || users.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4">
+          <p className="text-sm text-muted-foreground py-4 px-5">
             Nenhum usuário ainda. Cadastre um pelo Playground.
           </p>
         ) : (
-          <ul className="divide-y divide-border -mx-5 -my-5">
+          <ul className="flex-1 overflow-y-auto divide-y divide-border">
             {users.map((u) => {
               const p = profMap.get(u.id)
               const pr = progMap.get(u.id)

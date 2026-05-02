@@ -129,19 +129,22 @@ export function ContentCard({
   title,
   description,
   actions,
+  bodyClassName,
 }: {
   children: React.ReactNode
   className?: string
   title?: string
   description?: string
   actions?: React.ReactNode
+  /** Override classes do `<div>` que envolve children. Default 'p-5'. */
+  bodyClassName?: string
 }) {
   if (!title) {
     return <div className={cn('content-card', className)}>{children}</div>
   }
   return (
     <div className={cn('content-card', className)}>
-      <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border bg-muted/30">
+      <div className="shrink-0 flex items-start justify-between gap-3 px-5 py-4 border-b border-border bg-muted/30">
         <div className="min-w-0">
           <h3 className="font-display text-base text-foreground tracking-tight">{title}</h3>
           {description && (
@@ -150,7 +153,7 @@ export function ContentCard({
         </div>
         {actions && <div className="shrink-0">{actions}</div>}
       </div>
-      <div className="p-5">{children}</div>
+      <div className={cn(bodyClassName ?? 'p-5')}>{children}</div>
     </div>
   )
 }

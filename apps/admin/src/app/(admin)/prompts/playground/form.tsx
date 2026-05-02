@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Activity, Bot, DollarSign, RotateCcw, Send, User, Wrench, Zap } from 'lucide-react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { resetPlaygroundUser, runPlayground } from './actions'
@@ -21,8 +22,12 @@ interface Turn {
 }
 
 export function PlaygroundForm() {
-  const [wpp, setWpp] = useState('5511999999999')
-  const [input, setInput] = useState('')
+  const params = useSearchParams()
+  const seedFromUrl = params.get('seed') ?? ''
+  const wppFromUrl = params.get('wpp') ?? '5511999999999'
+
+  const [wpp, setWpp] = useState(wppFromUrl)
+  const [input, setInput] = useState(seedFromUrl)
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, startTransition] = useTransition()
   const scrollRef = useRef<HTMLDivElement>(null)

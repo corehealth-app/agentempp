@@ -12,33 +12,51 @@ interface FunnelRow {
   s5_paying: number
 }
 
-const STEPS: Array<{
+function buildSteps(kcalBlock: number): Array<{
   key: keyof FunnelRow
   label: string
   description: string
-}> = [
-  { key: 'cohort_size', label: 'Cadastrou', description: 'criou conta' },
-  { key: 's1_messaged', label: 'Mandou msg', description: 'pelo menos 1 IN' },
-  { key: 's2_onboarded', label: 'Onboarding ✓', description: 'completou questionário' },
-  { key: 's3_logged_meal', label: '1ª refeição', description: 'logou meal' },
-  { key: 's4_closed_block', label: '1º bloco', description: '7700 kcal de déficit' },
-  { key: 's5_paying', label: 'Pagou', description: 'subscription active|trial' },
-]
+}> {
+  return [
+    { key: 'cohort_size', label: 'Cadastrou', description: 'criou conta' },
+    { key: 's1_messaged', label: 'Mandou msg', description: 'pelo menos 1 IN' },
+    { key: 's2_onboarded', label: 'Onboarding ✓', description: 'completou questionário' },
+    { key: 's3_logged_meal', label: '1ª refeição', description: 'logou meal' },
+    { key: 's4_closed_block', label: '1º bloco', description: `${kcalBlock} kcal de déficit` },
+    { key: 's5_paying', label: 'Pagou', description: 'subscription active|trial' },
+  ]
+}
 
 export default async function FunilPage() {
   const svc = createServiceClient()
-  const { data: rawFunnel } = await (svc as unknown as {
-    from: (t: string) => {
-      select: (s: string) => {
-        order: (col: string, opt: { ascending: boolean }) => Promise<{ data: FunnelRow[] | null }>
+  const [{ data: rawFunnel }, { data: kcalBlockRow }] = await Promise.all([
+    (svc as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          order: (col: string, opt: { ascending: boolean }) => Promise<{ data: FunnelRow[] | null }>
+        }
       }
-    }
-  })
-    .from('v_funnel_activation')
-    .select('*')
-    .order('cohort_week', { ascending: false })
+    })
+      .from('v_funnel_activation')
+      .select('*')
+      .order('cohort_week', { ascending: false }),
+    (svc as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          eq: (col: string, val: string) => {
+            maybeSingle: () => Promise<{ data: { value: unknown } | null }>
+          }
+        }
+      }
+    })
+      .from('global_config')
+      .select('value')
+      .eq('key', 'calc.kcal_block')
+      .maybeSingle(),
+  ])
 
   const funnel = rawFunnel ?? []
+  const STEPS = buildSteps(Number(kcalBlockRow?.value ?? 7700))
 
   const allTimeTotals = funnel.reduce(
     (acc, f) => {

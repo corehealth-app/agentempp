@@ -328,10 +328,7 @@ export async function reprocessMessageAction(messageId: string) {
     .maybeSingle()
   if (!user) return { error: 'user não encontrado' }
 
-  // Dispara via dispatch_inngest_event (RPC pg_net)
-  const eventKey =
-    'inngest.event_key' /* placeholder — Edge Function lê da DB */
-  // Usa RPC já existente
+  // Dispara via RPC dispatch_inngest_event (event_key vem de global_config no SQL).
   const { error } = await (ctx.svc as unknown as {
     rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
   }).rpc('dispatch_inngest_event', {
@@ -348,7 +345,7 @@ export async function reprocessMessageAction(messageId: string) {
     },
   })
   if (error) {
-    return { error: (error as { message?: string }).message ?? String(error), eventKey }
+    return { error: (error as { message?: string }).message ?? String(error) }
   }
   return { ok: true }
 }

@@ -24,15 +24,29 @@ interface User {
   wpp: string
 }
 
-const BLOCK_KCAL_TARGET = 7700
-
 export default async function ConquistasPage() {
   const svc = createServiceClient()
 
-  const [{ data: progress }, { data: users }] = await Promise.all([
+  const [{ data: progress }, { data: users }, { data: kcalBlockRow }] = await Promise.all([
     svc.from('user_progress').select('*').order('updated_at', { ascending: false }).limit(500),
     svc.from('users').select('id, name, wpp').eq('status', 'active').limit(500),
+    (svc as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          eq: (col: string, val: string) => {
+            maybeSingle: () => Promise<{ data: { value: unknown } | null }>
+          }
+        }
+      }
+    })
+      .from('global_config')
+      .select('value')
+      .eq('key', 'calc.kcal_block')
+      .maybeSingle(),
   ])
+
+  // Lê do global_config (editável em /settings/calc) com fallback fisiológico
+  const BLOCK_KCAL_TARGET = Number(kcalBlockRow?.value ?? 7700)
 
   const userMap = new Map<string, User>(
     ((users ?? []) as User[]).map((u) => [u.id, u]),
@@ -87,7 +101,7 @@ export default async function ConquistasPage() {
         <KpiCard
           label="Blocos fechados"
           value={formatNumber(blocksTotal)}
-          subtitle={`${(blocksTotal * 7.7).toFixed(1)} kg de gordura`}
+          subtitle={`${((blocksTotal * BLOCK_KCAL_TARGET) / 1000).toFixed(1)} kg de gordura`}
           icon={Target}
         />
         <KpiCard

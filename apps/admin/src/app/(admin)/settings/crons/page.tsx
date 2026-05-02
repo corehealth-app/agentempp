@@ -2,6 +2,9 @@ import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { CheckCircle2, Clock, XCircle, Circle } from 'lucide-react'
+import { CronControls } from './cron-controls'
+
+export const dynamic = 'force-dynamic'
 
 export default async function CronsPage() {
   const supabase = createServiceClient()
@@ -23,7 +26,7 @@ export default async function CronsPage() {
 
       <ContentCard
         title="Jobs ativos"
-        description="Configurados no Supabase. Edição via SQL: cron.schedule(...)"
+        description="Editáveis aqui mesmo: ative/desative, edite o cron expression ou dispare execução imediata. Toda mudança vai pro audit_log."
       >
         {!jobs || jobs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -64,6 +67,11 @@ export default async function CronsPage() {
                       {String(j.command).slice(0, 200)}
                       {String(j.command).length > 200 ? '…' : ''}
                     </pre>
+                    <CronControls
+                      jobname={String(j.jobname)}
+                      schedule={String(j.schedule)}
+                      active={Boolean(j.active)}
+                    />
                   </div>
                   <div className="text-right shrink-0 text-xs">
                     <div className="flex items-center gap-1.5 justify-end mb-1">

@@ -33,6 +33,8 @@ interface User {
   admin_notes?: string | null
   metadata?: Record<string, unknown> | null
   status?: string
+  country?: string | null
+  country_confirmed?: boolean | null
 }
 
 interface ConversationSummary {
@@ -74,7 +76,7 @@ export default async function ConversasPage({
     }
   })
     .from('users')
-    .select('id, name, wpp, tags, admin_notes, metadata, status')
+    .select('id, name, wpp, tags, admin_notes, metadata, status, country, country_confirmed')
     .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000'])
   const userMap = new Map<string, User>(
     ((rawUsers ?? []) as User[]).map((u) => [u.id, u]),

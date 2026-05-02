@@ -1,4 +1,5 @@
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { CountryBadge } from '@/components/country-badge'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import Link from 'next/link'
@@ -12,11 +13,33 @@ const PROTOCOL_LABELS: Record<string, string> = {
 
 export default async function UsersPage() {
   const svc = createServiceClient()
-  const { data: users } = await svc
+  const { data: rawUsers } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        order: (col: string, opt: { ascending: boolean }) => {
+          limit: (n: number) => Promise<{
+            data:
+              | Array<{
+                  id: string
+                  name: string | null
+                  wpp: string
+                  status: string
+                  country: string | null
+                  country_confirmed: boolean | null
+                  created_at: string
+                  updated_at: string
+                }>
+              | null
+          }>
+        }
+      }
+    }
+  })
     .from('users')
-    .select('id, name, wpp, status, created_at, updated_at')
+    .select('id, name, wpp, status, country, country_confirmed, created_at, updated_at')
     .order('updated_at', { ascending: false })
     .limit(100)
+  const users = rawUsers ?? null
 
   const ids = (users ?? []).map((u) => u.id)
   const { data: profiles } = await svc
@@ -69,6 +92,11 @@ export default async function UsersPage() {
                           {u.name ?? <span className="italic text-muted-foreground">sem nome</span>}
                         </span>
                         <span className="text-xs font-mono text-muted-foreground">{u.wpp}</span>
+                        <CountryBadge
+                          country={u.country}
+                          confirmed={!!u.country_confirmed}
+                          size="sm"
+                        />
                         <span
                           className={`inline-flex text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded-full ${
                             u.status === 'active'

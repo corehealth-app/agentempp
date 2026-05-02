@@ -469,6 +469,50 @@ export const retomarAgente: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// confirma_pais_residencia — grava onde o paciente realmente mora
+// ----------------------------------------------------------------------------
+export const confirmaPaisResidencia: ToolDefinition = {
+  name: 'confirma_pais_residencia',
+  description:
+    'Grava o país onde o paciente RESIDE atualmente. Use APENAS depois que o usuário confirmar explicitamente. Se ele disser "moro no Brasil", "estou em Portugal agora", "vivo em Madrid", chame essa tool com o ISO 3166-1 alpha-2 correto. Não use código de telefone como prova de residência — a tool serve pra corrigir/confirmar.',
+  parameters: z.object({
+    country: z
+      .string()
+      .length(2)
+      .describe('ISO 3166-1 alpha-2 em UPPERCASE: BR, US, PT, ES, AR, MX, etc.'),
+  }),
+  execute: async (args, ctx) => {
+    const country = args.country.toUpperCase()
+    if (!/^[A-Z]{2}$/.test(country)) {
+      throw new Error(`Código país inválido: ${country}. Use ISO alpha-2 (BR, US, PT, etc.).`)
+    }
+    const { error } = await ctx.supabase
+      .from('users')
+      .update({
+        country,
+        country_confirmed: true,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq('id', ctx.userId)
+    if (error) throw error
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'country.confirmed',
+      properties: { country, wpp: ctx.userWpp },
+    })
+    return {
+      success: true,
+      country,
+      confirmed: true,
+      message:
+        country === 'BR'
+          ? 'País gravado como Brasil. Sigo com TACO e medidas brasileiras.'
+          : `País gravado como ${country}. Sigo com cuidado: ainda estou otimizado pra Brasil (TACO, medidas), pode haver imprecisão em alimentos locais.`,
+    }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // Registry
 // ----------------------------------------------------------------------------
 export const ALL_TOOLS: ToolDefinition[] = [
@@ -482,6 +526,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   deleteUser,
   pausarAgente,
   retomarAgente,
+  confirmaPaisResidencia,
 ]
 
 export function getToolByName(name: string): ToolDefinition | undefined {

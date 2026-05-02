@@ -1,4 +1,5 @@
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { CountryBadge } from '@/components/country-badge'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
@@ -70,8 +71,12 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         ]}
         title={user.name ?? user.wpp}
         description={
-          <span className="font-mono text-xs">
+          <span className="font-mono text-xs inline-flex items-center gap-2">
             {user.wpp} · {user.id.slice(0, 8)}…
+            <CountryBadge
+              country={(user as { country?: string | null }).country ?? null}
+              confirmed={!!(user as { country_confirmed?: boolean }).country_confirmed}
+            />
           </span>
         }
       />

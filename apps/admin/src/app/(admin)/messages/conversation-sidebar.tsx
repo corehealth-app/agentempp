@@ -14,6 +14,7 @@ import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CountryBadge } from '@/components/country-badge'
 import {
   pauseUserAction,
   resumeUserAction,
@@ -30,6 +31,8 @@ interface User {
   tags?: string[] | null
   admin_notes?: string | null
   metadata?: Record<string, unknown> | null
+  country?: string | null
+  country_confirmed?: boolean | null
 }
 
 interface Progress {
@@ -204,7 +207,14 @@ export function ConversationSidebar({
             </button>
           </div>
         )}
-        <div className="text-[11px] font-mono text-muted-foreground">+{user.wpp}</div>
+        <div className="text-[11px] font-mono text-muted-foreground inline-flex items-center gap-2">
+          +{user.wpp}
+          <CountryBadge
+            country={user.country ?? null}
+            confirmed={!!user.country_confirmed}
+            size="sm"
+          />
+        </div>
         {isPaused && user.metadata?.paused_until ? (
           <div className="text-[10px] font-mono text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
             💤 pausado até{' '}

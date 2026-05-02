@@ -37,6 +37,12 @@ interface UserContext {
   hoursSinceLastIn: number | null
   /** True se hoursSinceLastIn > 7 dias — pipeline gera reentrada warm. */
   isReentry: boolean
+  /** ISO 3166-1 alpha-2 do país residência (palpite ou confirmado). */
+  country: string | null
+  /** True quando o paciente confirmou explicitamente o país. */
+  countryConfirmed: boolean
+  /** Palpite original baseado no DDI do WhatsApp. */
+  countryDetectedFromWpp: string | null
 }
 
 export async function processMessage(
@@ -347,7 +353,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     }
   })
     .from('users')
-    .select('id, name, summary, last_active_at')
+    .select('id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp')
     .eq('id', userId)
     .single()
   const { data: profile } = await supabase
@@ -371,7 +377,15 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     }))
 
   const userTyped = user as
-    | { id: string; name: string | null; summary: string | null; last_active_at: string | null }
+    | {
+        id: string
+        name: string | null
+        summary: string | null
+        last_active_at: string | null
+        country: string | null
+        country_confirmed: boolean | null
+        country_detected_from_wpp: string | null
+      }
     | null
   // Calcula gap de tempo desde última msg IN (penúltima, pq a atual já entrou)
   let hoursSinceLastIn: number | null = null
@@ -413,6 +427,9 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     summary: userTyped?.summary ?? null,
     hoursSinceLastIn,
     isReentry,
+    country: userTyped?.country ?? null,
+    countryConfirmed: !!userTyped?.country_confirmed,
+    countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
   }
 }
 
@@ -467,6 +484,24 @@ function formatUserContext(ctx: UserContext): string {
   // Resumo persistente do paciente (gerado por cron LLM)
   if (ctx.summary && ctx.summary.trim().length > 0) {
     sections.push(`### Resumo do paciente\n${ctx.summary}`)
+  }
+
+  // País — instrução explícita pro LLM saber se já tem confirmação
+  if (ctx.countryConfirmed) {
+    sections.push(
+      `### País de residência\n` +
+        `Confirmado pelo paciente: **${ctx.country}**. NÃO pergunte de novo.`,
+    )
+  } else {
+    const guess = ctx.countryDetectedFromWpp
+      ? `palpite pelo DDI do WhatsApp: ${ctx.countryDetectedFromWpp}`
+      : 'sem palpite (DDI desconhecido)'
+    sections.push(
+      `### País de residência (NÃO confirmado)\n` +
+        `Status: ${guess}. **Pergunte explicitamente** ao paciente onde ele mora ` +
+        `(siga a rule "Confirmação de país de residência") e chame a tool ` +
+        `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder.`,
+    )
   }
 
   // Estado factual atual

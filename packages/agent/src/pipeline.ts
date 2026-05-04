@@ -541,16 +541,18 @@ function formatUserContext(
   if (ctx.countryConfirmed) {
     sections.push(
       `### Localização e preferências\n` +
-        `País: **${country}** (confirmado). Idioma: **${language}**. Unidades: **${unitsLabel}**. ` +
-        `Persona: ${personaName}. NÃO pergunte de novo. ` +
+        `País: **${country}** (confirmado). Idioma salvo: **${language}**. Unidades: **${unitsLabel}**. ` +
+        `Persona: ${personaName}. NÃO pergunte país de novo. ` +
+        `\n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. ` +
+        `Se o paciente pedir explicitamente pra mudar de idioma (ex: "fale em português", "switch to English"), MUDE IMEDIATAMENTE e chame \`confirma_pais_residencia\` de novo com o \`language\` atualizado pra persistir. Mantenha o \`country\`. ` +
         (language !== 'pt-BR' && language !== 'pt-PT'
-          ? `Responda em ${language}. `
+          ? `Idioma salvo é ${language} — use esse por padrão se o paciente continuar nele. `
           : '') +
         (unitSystem === 'imperial'
-          ? `Quando o paciente informar peso/altura, ele provavelmente vai usar lb/inch. CONVERTA internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Quando devolver metas/balanço, use lb/inch pra ele entender. `
+          ? `\n\n**Unidades imperial:** quando o paciente informar peso/altura, provavelmente usará lb/inch. Converta internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Devolva metas/balanço em lb/inch. Se ele te der um valor em kg, ACEITE — não peça pra reconverter. `
           : '') +
         (country !== 'BR'
-          ? `⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
+          ? `\n\n⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
           : ''),
     )
   } else {

@@ -219,14 +219,24 @@ export async function processMessage(
 
   if (!lastResult) throw new Error('No completion produced')
 
-  // NOTA: a persistência da OUT é responsabilidade do CHAMADOR (process-message
-  // ou engagement-sender), que envia via WhatsApp e persiste com delivery_status
-  // REAL (sent / failed). Antes esse insert acontecia aqui sem delivery_status,
-  // resultando em rastreio quebrado (msg parecia entregue mesmo quando falhava).
-  //
-  // O caller deve fazer:
-  //   1. await sendHumanized(...)   → captura status
-  //   2. await supabase.from('messages').insert({ ..., delivery_status })
+  // 6. persistir mensagem OUT (a IN já é persistida pelo webhook)
+  const { error: insErr } = await deps.supabase.from('messages').insert({
+    user_id: userId,
+    direction: 'out',
+    role: 'assistant',
+    content_type: 'text',
+    content: finalText,
+    provider: input.provider,
+    agent_stage: stage,
+    model_used: lastResult.model,
+    prompt_tokens: totalPromptTokens,
+    completion_tokens: totalCompletionTokens,
+    cost_usd: totalCost,
+    latency_ms: Date.now() - start,
+  })
+  if (insErr) {
+    console.error('[pipeline] failed to persist OUT message', insErr)
+  }
 
   await deps.supabase
     .from('users')

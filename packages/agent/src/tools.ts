@@ -159,36 +159,48 @@ export const registraRefeicao: ToolDefinition = {
     // Calcula macros via TACO
     const calc = await calcMealMacros(ctx.supabase, args.items, ctx.userCountry ?? 'BR')
 
+    // Garante snapshot do dia
+    const { data: snap } = await ctx.supabase
+      .from('daily_snapshots')
+      .select('id, calories_consumed, protein_g, carbs_g, fat_g, calories_target, protein_target')
+      .eq('user_id', ctx.userId)
+      .eq('date', today)
+      .maybeSingle()
+
     // Garante targets calculados (calories_target + protein_target).
     // Sem isso, daily_balance fica positivo sempre e bloco 7700 nunca cresce.
     const config = await loadCalcConfig(ctx.supabase)
     const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
 
-    // RPC atomic: cria ou incrementa snapshot SEM race condition.
-    // Resolve bug onde 2 logs simultâneos sobrescreviam um ao outro.
-    const { data: updated, error: updErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{
-        data: { id: string; calories_consumed: number; protein_g: number; calories_target: number | null; protein_target: number | null; daily_balance: number } | null
-        error: { message?: string } | null
-      }>
-    }).rpc('snapshot_add_meal', {
-      p_user_id: ctx.userId,
-      p_date: today,
-      p_kcal: calc.totals.kcal,
-      p_protein: calc.totals.protein_g,
-      p_carbs: calc.totals.carbs_g,
-      p_fat: calc.totals.fat_g,
-      p_calories_target: targets.calories_target,
-      p_protein_target: targets.protein_target,
-    })
-    if (updErr) throw new Error(updErr.message ?? 'snapshot_add_meal failed')
-    if (!updated) throw new Error('snapshot_add_meal returned null')
-    const snapshotId = updated.id
+    let snapshotId: string
+    if (snap) {
+      snapshotId = snap.id
+      // Se snapshot existe mas tá sem target (caso legado), retroplena.
+      if (snap.calories_target == null && targets.calories_target != null) {
+        await ctx.supabase
+          .from('daily_snapshots')
+          .update({
+            calories_target: targets.calories_target,
+            protein_target: targets.protein_target,
+          })
+          .eq('id', snapshotId)
+      }
+    } else {
+      const { data: created, error: createErr } = await ctx.supabase
+        .from('daily_snapshots')
+        .insert({
+          user_id: ctx.userId,
+          date: today,
+          calories_target: targets.calories_target,
+          protein_target: targets.protein_target,
+        })
+        .select('id')
+        .single()
+      if (createErr) throw createErr
+      snapshotId = created.id
+    }
 
-    // Insere cada item em meal_logs (sem dedup pq cada msg gera novo log)
+    // Insere cada item em meal_logs
     for (const item of calc.items) {
       await ctx.supabase.from('meal_logs').insert({
         user_id: ctx.userId,
@@ -204,6 +216,21 @@ export const registraRefeicao: ToolDefinition = {
         confidence: item.similarity,
       })
     }
+
+    // Atualiza snapshot agregado
+    const { data: updated, error: updErr } = await ctx.supabase
+      .from('daily_snapshots')
+      .update({
+        calories_consumed: Math.round((snap?.calories_consumed ?? 0) + calc.totals.kcal),
+        protein_g: +(Number(snap?.protein_g ?? 0) + calc.totals.protein_g).toFixed(2),
+        carbs_g: +(Number(snap?.carbs_g ?? 0) + calc.totals.carbs_g).toFixed(2),
+        fat_g: +(Number(snap?.fat_g ?? 0) + calc.totals.fat_g).toFixed(2),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', snapshotId)
+      .select('calories_consumed, protein_g, calories_target, protein_target, daily_balance')
+      .single()
+    if (updErr) throw updErr
 
     return {
       success: true,
@@ -258,81 +285,68 @@ export const consultaProgresso: ToolDefinition = {
 export const registraTreino: ToolDefinition = {
   name: 'registra_treino',
   description:
-    'Registra um treino executado. As kcal queimadas são calculadas automaticamente pelo sistema com base em workout_type + duração + intensidade + peso atual do paciente — você NÃO precisa estimar. Use quando o paciente relatar treino concluído.',
+    'Registra um treino executado (musculação, cardio, etc). Use quando usuário relatar treino concluído.',
   parameters: z.object({
     workout_type: z
       .string()
-      .describe(
-        'Slug do tipo de treino. Exemplos: "peito_triceps", "perna_completa", "corrida", "caminhada", "bicicleta", "natacao", "hiit", "futebol", "yoga", "crossfit". Use "outro" se não classificar.',
-      ),
+      .describe('Ex: "peito_triceps", "perna_completa", "cardio", "corrida"'),
     duration_min: z.number().int().positive(),
     intensity: z.enum(['leve', 'moderada', 'alta']).optional(),
+    estimated_kcal: z.number().int().nonnegative().optional(),
     notes: z.string().optional(),
   }),
   execute: async (args, ctx) => {
     const today = new Date().toISOString().split('T')[0]!
 
-    // Targets calóricos
+    const { data: snap } = await ctx.supabase
+      .from('daily_snapshots')
+      .select('id, exercise_calories')
+      .eq('user_id', ctx.userId)
+      .eq('date', today)
+      .maybeSingle()
+
+    // Mesmo padrão de registra_refeicao: garante targets no snapshot novo.
     const cfg = await loadCalcConfig(ctx.supabase)
     const tgt = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
 
-    // Pega peso atual pra calcular kcal (escala linear ref 70kg)
-    const { data: prof } = await ctx.supabase
-      .from('user_profiles')
-      .select('weight_kg')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
-    const weightKg = (prof as { weight_kg: number | null } | null)?.weight_kg ?? 70
-
-    // Cálculo determinístico via SQL function (ADR-007)
-    const { data: kcalResult, error: kcalErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{ data: number | null; error: { message?: string } | null }>
-    }).rpc('calc_workout_kcal', {
-      p_slug: args.workout_type,
-      p_duration_min: args.duration_min,
-      p_intensity: args.intensity ?? 'moderada',
-      p_weight_kg: weightKg,
-    })
-    if (kcalErr) throw new Error(kcalErr.message ?? 'calc_workout_kcal failed')
-    const computedKcal = Number(kcalResult ?? 0)
-
-    // Atomic: snapshot + targets + workout kcal
-    const { data: snap, error: snapErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{
-        data: { id: string; exercise_calories: number; training_done: boolean } | null
-        error: { message?: string } | null
-      }>
-    }).rpc('snapshot_add_workout', {
-      p_user_id: ctx.userId,
-      p_date: today,
-      p_exercise_kcal: computedKcal,
-      p_calories_target: tgt.calories_target,
-      p_protein_target: tgt.protein_target,
-    })
-    if (snapErr) throw new Error(snapErr.message ?? 'snapshot_add_workout failed')
-    if (!snap) throw new Error('snapshot_add_workout returned null')
+    let snapshotId: string
+    if (snap) {
+      snapshotId = snap.id
+    } else {
+      const { data: created, error } = await ctx.supabase
+        .from('daily_snapshots')
+        .insert({
+          user_id: ctx.userId,
+          date: today,
+          calories_target: tgt.calories_target,
+          protein_target: tgt.protein_target,
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+      snapshotId = created.id
+    }
 
     await ctx.supabase.from('workout_logs').insert({
       user_id: ctx.userId,
-      snapshot_id: snap.id,
+      snapshot_id: snapshotId,
       workout_type: args.workout_type,
       duration_min: args.duration_min,
       intensity: args.intensity,
-      estimated_kcal: computedKcal,
+      estimated_kcal: args.estimated_kcal,
       notes: args.notes,
     })
 
-    return {
-      success: true,
-      kcal_burned: computedKcal,
-      total_exercise_kcal_today: snap.exercise_calories,
-    }
+    await ctx.supabase
+      .from('daily_snapshots')
+      .update({
+        exercise_calories: (snap?.exercise_calories ?? 0) + (args.estimated_kcal ?? 0),
+        training_done: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', snapshotId)
+
+    return { success: true }
   },
 }
 

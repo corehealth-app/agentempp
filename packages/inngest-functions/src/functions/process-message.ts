@@ -261,7 +261,6 @@ export const processMessageFn = inngest.createFunction(
     let sentCount = 0
     let failedCount = 0
     let sendMode: 'text' | 'audio' = 'text'
-    let deliveryError: string | undefined
 
     if (wantsAudio) {
       sendMode = 'audio'
@@ -320,34 +319,6 @@ export const processMessageFn = inngest.createFunction(
       )
       sentCount = sendResults.filter((r) => r.status === 'sent').length
       failedCount = sendResults.filter((r) => r.status !== 'sent').length
-      deliveryError = sendResults.find((r) => r.error)?.error
-    }
-
-    // Persiste a OUT no banco COM delivery_status real.
-    // Antes a persistência acontecia em pipeline.ts SEM delivery_status
-    // (sempre null), agora roda aqui depois do envio com status sent/failed.
-    {
-      const deliveryStatus: 'sent' | 'failed' = failedCount > 0 ? 'failed' : 'sent'
-      await step.run('persist-out', async () => {
-        const { error: insErr } = await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'out',
-          role: 'assistant',
-          content_type: sendMode === 'audio' ? 'audio' : 'text',
-          content: result.text,
-          provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-          agent_stage: result.stage,
-          model_used: result.modelUsed,
-          prompt_tokens: result.promptTokens,
-          completion_tokens: result.completionTokens,
-          cost_usd: result.costUsd,
-          latency_ms: result.latencyMs,
-          delivery_status: deliveryStatus,
-          delivery_error: deliveryError ? { msg: deliveryError } : null,
-        })
-        if (insErr) logger.error('persist OUT failed', { error: insErr })
-        return { ok: true }
-      })
     }
 
     // === Step 5: reação final ===

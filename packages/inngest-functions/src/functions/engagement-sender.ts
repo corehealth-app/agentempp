@@ -1,6 +1,7 @@
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { loadHumanizerConfig } from '../lib/runtime-config.js'
 
 /**
  * Worker: envia mensagens proativas de engajamento.
@@ -69,10 +70,9 @@ async function maybeEngageUser(
 
   // Hora local do user — fonte da verdade pra slot e contexto LLM
   const localHour = getLocalHour(userTimezone)
-  // B2: deriva slot a partir da hora local real (não confia no label do cron)
-  const slot = slotFromLocalHour(localHour)
-  // Hint: refeição típica pra hora atual — orienta o LLM
-  const mealHint = mealHintForHour(localHour)
+  // Carrega config (cache 60s), deriva slot+hint da hora local
+  const engagementConfig = await loadEngagementConfig(supabase)
+  const { slot, meal_hint: mealHint } = resolveSlot(localHour, engagementConfig.slots)
 
   async function logEvent(event: string, properties: Record<string, unknown>) {
     await supabase.from('product_events').insert({
@@ -97,14 +97,11 @@ async function maybeEngageUser(
 
   // Janela ativa do paciente (wake_time → bedtime do user_profiles).
   // Offsets + fallbacks editáveis via /settings/global → engagement.*
-  const [{ data: profileTime }, engagementConfig] = await Promise.all([
-    supabase
-      .from('user_profiles')
-      .select('wake_time, bedtime')
-      .eq('user_id', userId)
-      .maybeSingle(),
-    loadEngagementConfig(supabase),
-  ])
+  const { data: profileTime } = await supabase
+    .from('user_profiles')
+    .select('wake_time, bedtime')
+    .eq('user_id', userId)
+    .maybeSingle()
   const window = activeWindow(
     (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.wake_time,
     (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.bedtime,
@@ -201,14 +198,17 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
   })
 
+  // Humanizer params editáveis via /settings/global → humanizer.*
+  const humanizer = await loadHumanizerConfig(supabase)
+
   let deliveryStatus: 'sent' | 'failed' = 'sent'
   let deliveryError: string | undefined
   try {
     const sendResults = await sendHumanized(messaging, wpp, text, {
       showTyping: false, // engagement não responde a uma msg recebida
-      minDelay: 800,
-      maxDelay: 3000,
-      charsPerSecond: 55,
+      minDelay: humanizer.min_delay_ms,
+      maxDelay: humanizer.max_delay_ms,
+      charsPerSecond: humanizer.chars_per_second,
     })
     if (sendResults.some((r) => r.status !== 'sent')) {
       deliveryStatus = 'failed'
@@ -264,18 +264,37 @@ interface ActiveWindow {
   crossesMidnight: boolean
 }
 
+interface SlotDef {
+  until_hour: number
+  slot: string
+  meal_hint: string
+}
+
 interface EngagementConfig {
   wake_offset_min: number
   bed_offset_min: number
   fallback_wake_hour: number
   fallback_bed_hour: number
+  slots: SlotDef[]
 }
+
+const DEFAULT_SLOTS: SlotDef[] = [
+  { until_hour: 6, slot: 'madrugada', meal_hint: 'madrugada — não envia' },
+  { until_hour: 9, slot: 'cafe_da_manha', meal_hint: 'café da manhã (jejum, primeira refeição do dia)' },
+  { until_hour: 11, slot: 'meio_da_manha', meal_hint: 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)' },
+  { until_hour: 14, slot: 'almoco', meal_hint: 'almoço (refeição principal do meio-dia)' },
+  { until_hour: 16, slot: 'pos_almoco', meal_hint: 'pós-almoço (digestão, balanço parcial do dia)' },
+  { until_hour: 19, slot: 'lanche_tarde', meal_hint: 'lanche da tarde (entre almoço e jantar)' },
+  { until_hour: 22, slot: 'jantar', meal_hint: 'jantar (última refeição do dia)' },
+  { until_hour: 24, slot: 'noite', meal_hint: 'noite — não envia' },
+]
 
 const DEFAULT_ENGAGEMENT_CONFIG: EngagementConfig = {
   wake_offset_min: 60,
   bed_offset_min: 60,
   fallback_wake_hour: 6,
   fallback_bed_hour: 22,
+  slots: DEFAULT_SLOTS,
 }
 
 function activeWindow(
@@ -303,7 +322,7 @@ function isWithinActiveWindow(hour: number, w: ActiveWindow): boolean {
 }
 
 /**
- * Carrega config do engagement (offsets + fallbacks) do global_config.
+ * Carrega config do engagement (offsets + fallbacks + slots) do global_config.
  * Cache 60s — mudanças via UI propagam em ≤1min.
  */
 let cachedEngagementConfig: { config: EngagementConfig; expiresAt: number } | null = null
@@ -331,17 +350,47 @@ async function loadEngagementConfig(
     return DEFAULT_ENGAGEMENT_CONFIG
   }
 
-  const merged: EngagementConfig = { ...DEFAULT_ENGAGEMENT_CONFIG }
+  const merged: EngagementConfig = { ...DEFAULT_ENGAGEMENT_CONFIG, slots: [...DEFAULT_SLOTS] }
   for (const row of data) {
-    const subKey = row.key.replace(/^engagement\./, '') as keyof EngagementConfig
-    const num = Number(row.value)
-    if (Number.isFinite(num) && subKey in merged) {
-      merged[subKey] = num
+    const subKey = row.key.replace(/^engagement\./, '')
+    if (subKey === 'slots' && Array.isArray(row.value)) {
+      // Valida shape básico antes de aceitar
+      const slots = (row.value as unknown[]).filter(
+        (s): s is SlotDef =>
+          typeof s === 'object' &&
+          s !== null &&
+          typeof (s as SlotDef).until_hour === 'number' &&
+          typeof (s as SlotDef).slot === 'string' &&
+          typeof (s as SlotDef).meal_hint === 'string',
+      )
+      if (slots.length > 0) merged.slots = slots
+    } else if (subKey in DEFAULT_ENGAGEMENT_CONFIG && subKey !== 'slots') {
+      const num = Number(row.value)
+      if (Number.isFinite(num)) {
+        ;(merged as unknown as Record<string, number>)[subKey] = num
+      }
     }
   }
 
   cachedEngagementConfig = { config: merged, expiresAt: now + ENGAGEMENT_CACHE_TTL_MS }
   return merged
+}
+
+/**
+ * Resolve slot + meal_hint pra hora local atual usando config dinâmico.
+ * Percorre slots (ordenados por until_hour ASC) e retorna o 1º cuja
+ * until_hour > hour. Fallback pro último.
+ */
+function resolveSlot(hour: number, slots: SlotDef[]): { slot: string; meal_hint: string } {
+  // Ordena defensivamente — se admin mexer e desordenar, ainda funciona
+  const sorted = [...slots].sort((a, b) => a.until_hour - b.until_hour)
+  for (const s of sorted) {
+    if (hour < s.until_hour) return { slot: s.slot, meal_hint: s.meal_hint }
+  }
+  const last = sorted[sorted.length - 1]
+  return last
+    ? { slot: last.slot, meal_hint: last.meal_hint }
+    : { slot: 'desconhecido', meal_hint: '' }
 }
 
 function parseHour(timeStr: string | null | undefined, fallback: number): number {
@@ -350,35 +399,6 @@ function parseHour(timeStr: string | null | undefined, fallback: number): number
   if (!m || !m[1]) return fallback
   const h = Number(m[1])
   return Number.isFinite(h) && h >= 0 && h <= 23 ? h : fallback
-}
-
-/**
- * Mapeia hora local (0-23) pra um slot semântico.
- * Independente do nome do cron que disparou — fonte da verdade é a hora real.
- */
-function slotFromLocalHour(hour: number): string {
-  if (hour < 6) return 'madrugada'
-  if (hour < 9) return 'cafe_da_manha'
-  if (hour < 11) return 'meio_da_manha'
-  if (hour < 14) return 'almoco'
-  if (hour < 16) return 'pos_almoco'
-  if (hour < 19) return 'lanche_tarde'
-  if (hour < 22) return 'jantar'
-  return 'noite'
-}
-
-/**
- * Texto sugestivo da refeição/momento típico, passado pro LLM como hint.
- */
-function mealHintForHour(hour: number): string {
-  if (hour < 6) return 'madrugada — não envia'
-  if (hour < 9) return 'café da manhã (jejum, primeira refeição do dia)'
-  if (hour < 11) return 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)'
-  if (hour < 14) return 'almoço (refeição principal do meio-dia)'
-  if (hour < 16) return 'pós-almoço (digestão, balanço parcial do dia)'
-  if (hour < 19) return 'lanche da tarde (entre almoço e jantar)'
-  if (hour < 22) return 'jantar (última refeição do dia)'
-  return 'noite — não envia'
 }
 
 function getLocalHour(tz: string): number {

@@ -8,6 +8,7 @@ import {
 } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
+import { loadHumanizerConfig } from '../lib/runtime-config.js'
 
 /**
  * Worker principal: processa cada mensagem recebida.
@@ -302,12 +303,16 @@ export const processMessageFn = inngest.createFunction(
       else failedCount = 1
       logger.info('Audio sent', audioRes)
     } else {
+      // Humanizer config editável via /settings/global → humanizer.*
+      // Process-message usa response_max_delay_ms (maior que engagement
+      // pra parecer "pensando" antes de responder).
+      const humanizer = await loadHumanizerConfig(supabase)
       const sendResults = await step.run('send-to-user', async () =>
         sendHumanized(messaging, wpp, result.text, {
           showTyping: true,
-          minDelay: 800,
-          maxDelay: 3500,
-          charsPerSecond: 55,
+          minDelay: humanizer.min_delay_ms,
+          maxDelay: humanizer.response_max_delay_ms,
+          charsPerSecond: humanizer.chars_per_second,
           inReplyTo: providerMessageId,
           replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
         }),

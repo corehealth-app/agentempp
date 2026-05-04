@@ -9,7 +9,30 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const INNGEST_EVENT_KEY = Deno.env.get('INNGEST_EVENT_KEY')
 
-const BUFFER_DEBOUNCE_MS = 8000 // 8s — agrega msgs próximas
+// Buffer debounce — editável via /settings/global → buffer.debounce_ms.
+// Cache 60s, fallback 8000ms.
+const DEFAULT_BUFFER_DEBOUNCE_MS = 8000
+let cachedBufferDebounce: { value: number; expiresAt: number } | null = null
+const BUFFER_CACHE_TTL_MS = 60_000
+
+async function getBufferDebounceMs(
+  supabase: ReturnType<typeof createClient>,
+): Promise<number> {
+  const now = Date.now()
+  if (cachedBufferDebounce && cachedBufferDebounce.expiresAt > now) {
+    return cachedBufferDebounce.value
+  }
+  const { data } = await supabase
+    .from('global_config')
+    .select('value')
+    .eq('key', 'buffer.debounce_ms')
+    .maybeSingle()
+  const raw = (data as { value: unknown } | null)?.value
+  const num = Number(raw ?? DEFAULT_BUFFER_DEBOUNCE_MS)
+  const value = Number.isFinite(num) && num > 0 ? num : DEFAULT_BUFFER_DEBOUNCE_MS
+  cachedBufferDebounce = { value, expiresAt: now + BUFFER_CACHE_TTL_MS }
+  return value
+}
 
 async function getCredential(
   supabase: ReturnType<typeof createClient>,
@@ -172,8 +195,10 @@ Deno.serve(async (req: Request) => {
 
         // ============================================================
         //  EMPILHAMENTO: push no buffer com debounce
+        //  (debounce_ms editável via /settings/global → buffer.debounce_ms)
         // ============================================================
-        const flushAt = new Date(Date.now() + BUFFER_DEBOUNCE_MS).toISOString()
+        const debounceMs = await getBufferDebounceMs(supabase)
+        const flushAt = new Date(Date.now() + debounceMs).toISOString()
         const newMsgEntry = {
           provider_message_id: msg.id,
           content_type: contentType,
@@ -203,13 +228,13 @@ Deno.serve(async (req: Request) => {
           { onConflict: 'user_id' },
         )
 
-        // Dispara evento com delay — Inngest aciona buffer-flush em 8s
+        // Dispara evento com delay — Inngest aciona buffer-flush após debounce.
         // Cada msg dispara um evento, mas o worker é idempotente:
         // só processa se ainda houver buffer com flush_after expirado.
         await sendInngestEvent(
           'buffer.flush',
           { userId, count: accumulated.length, fired_at: new Date().toISOString() },
-          BUFFER_DEBOUNCE_MS + 200,
+          debounceMs + 200,
         )
       }
     }

@@ -2,6 +2,70 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+/**
+ * Marca country_confirmed=true (e atualiza country se vier diferente).
+ * Útil quando o paciente já interagiu múltiplas vezes mas o LLM nunca
+ * chamou a tool confirma_pais_residencia — admin destrava manualmente.
+ */
+export async function confirmCountryAction(userId: string, country: string) {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return { error: 'Não autenticado' }
+
+    const svc = createServiceClient()
+    const { data: admin } = await svc
+      .from('admin_users')
+      .select('id, role')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (!admin) return { error: 'Acesso negado' }
+
+    const iso = country.trim().toUpperCase()
+    if (!/^[A-Z]{2}$/.test(iso)) return { error: 'país deve ser ISO alpha-2 (BR, US, …)' }
+
+    const { data: before } = await svc
+      .from('users')
+      .select('country, country_confirmed')
+      .eq('id', userId)
+      .maybeSingle()
+
+    const { error } = await (svc as unknown as {
+      from: (t: string) => {
+        update: (u: Record<string, unknown>) => {
+          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+        }
+      }
+    })
+      .from('users')
+      .update({
+        country: iso,
+        country_confirmed: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+    if (error) return { error: error.message }
+
+    await svc.from('audit_log').insert({
+      actor_id: user.id,
+      actor_email: user.email,
+      action: 'user.confirm_country',
+      entity: 'users',
+      entity_id: userId,
+      before: before ?? {},
+      after: { country: iso, country_confirmed: true },
+    })
+
+    revalidatePath(`/users/${userId}`)
+    revalidatePath('/messages')
+    return { ok: true, country: iso }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function closeDay(userId: string, date: string) {
   try {
     const supabase = await createClient()

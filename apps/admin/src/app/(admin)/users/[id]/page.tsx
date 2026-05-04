@@ -5,6 +5,7 @@ import { formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { CheckoutButton } from './checkout-button'
+import { CountryConfirmButton } from './country-confirm'
 import { DangerButtons } from './danger-buttons'
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -72,12 +73,18 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         ]}
         title={user.name ?? user.wpp}
         description={
-          <span className="font-mono text-xs inline-flex items-center gap-2">
+          <span className="font-mono text-xs inline-flex items-center gap-2 flex-wrap">
             {user.wpp} · {user.id.slice(0, 8)}…
             <CountryBadge
               country={(user as { country?: string | null }).country ?? null}
               confirmed={!!(user as { country_confirmed?: boolean }).country_confirmed}
             />
+            {!(user as { country_confirmed?: boolean }).country_confirmed && (
+              <CountryConfirmButton
+                userId={user.id}
+                detectedCountry={(user as { country?: string | null }).country ?? null}
+              />
+            )}
           </span>
         }
       />

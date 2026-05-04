@@ -82,11 +82,38 @@ export async function closeDay(userId: string, date: string) {
       .maybeSingle()
     if (!admin) return { error: 'Acesso negado' }
 
-    const { data, error } = await svc.rpc('daily_close_user', {
-      p_user_id: userId,
-      p_date: date,
+    // daily_close_user SQL function foi removida na migration de auditoria.
+    // Lógica 100% migrada pro Inngest worker daily-closer (TS).
+    // Aqui marcamos snapshot como fechado e disparamos evento pro worker.
+    const { error: closeErr } = await (svc as unknown as {
+      from: (t: string) => {
+        update: (u: Record<string, unknown>) => {
+          eq: (col: string, val: string) => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+          }
+        }
+      }
     })
-    if (error) return { error: error.message }
+      .from('daily_snapshots')
+      .update({ day_closed: true, closed_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('date', date)
+    if (closeErr) return { error: closeErr.message }
+
+    // Dispara evento Inngest pra recalcular user_progress (XP/streak/blocks)
+    await (svc as unknown as {
+      rpc: (
+        n: string,
+        p: Record<string, unknown>,
+      ) => Promise<{ error: { message?: string } | null }>
+    })
+      .rpc('dispatch_inngest_event', {
+        p_event_name: 'day.close.tick',
+        p_data: { hour: 99, fired_at: new Date().toISOString(), force_user_id: userId },
+      })
+      .catch(() => {
+        // best-effort; admin já marcou snapshot como fechado
+      })
 
     await svc.from('audit_log').insert({
       actor_id: user.id,
@@ -94,11 +121,11 @@ export async function closeDay(userId: string, date: string) {
       action: 'user.close_day',
       entity: 'daily_snapshots',
       entity_id: `${userId}:${date}`,
-      after: data as Record<string, never>,
+      after: { closed_at: new Date().toISOString(), date },
     })
 
     revalidatePath(`/users/${userId}`)
-    return { ok: true, result: data as Record<string, unknown> }
+    return { ok: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }
   }

@@ -16,7 +16,7 @@ export function CloseDayButton({ userId, date }: { userId: string; date: string 
       if (r.error) toast.error(r.error)
       else {
         toast.success(
-          `Dia fechado: streak=${r.result?.streak} XP=${r.result?.xp_total} blocks=${r.result?.blocks_completed}`,
+          'Dia marcado como fechado. Worker daily-closer recalcula XP/streak/blocks em ~30s.',
         )
         router.refresh()
       }

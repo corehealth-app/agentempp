@@ -2,10 +2,11 @@ import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
-import { MessagesRealtimeListener } from './realtime-listener'
 import { ConversationThread } from './conversation-thread'
 import { ConversationSidebar } from './conversation-sidebar'
-import { SearchTrigger } from './search-modal'
+// Realtime listener + search modal são pesados (websocket / modal Radix)
+// mas não bloqueiam conteúdo. Lazy carrega após hydration via wrapper client.
+import { LazyRealtimeListener, LazySearchTrigger } from './lazy-extras'
 
 interface Message {
   id: string
@@ -178,7 +179,7 @@ export default async function ConversasPage({
 
   return (
     <div className="flex flex-col h-full">
-      <MessagesRealtimeListener />
+      <LazyRealtimeListener />
       <div className="shrink-0 mb-3">
         <PageHeader
           compact
@@ -195,7 +196,7 @@ export default async function ConversasPage({
               </span>
             </span>
           }
-          actions={<SearchTrigger />}
+          actions={<LazySearchTrigger />}
         />
       </div>
 

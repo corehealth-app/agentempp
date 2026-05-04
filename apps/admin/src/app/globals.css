@@ -279,3 +279,40 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* ============================================================ */
+/*  View Transitions — fade + slide suave entre páginas         */
+/*  Habilitado pela viewTransition flag em next.config.mjs.     */
+/*  Browsers sem suporte (Safari < 18) ignoram silenciosamente. */
+/* ============================================================ */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: fadeOut 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+::view-transition-new(root) {
+  animation: fadeIn 250ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Respeita prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

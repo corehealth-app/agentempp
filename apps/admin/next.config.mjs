@@ -2,6 +2,9 @@
 const nextConfig = {
   experimental: {
     typedRoutes: false,
+    // View Transitions API — fade suave entre rotas no Chrome/Edge
+    // (degrada gracefully em browsers sem suporte)
+    viewTransition: true,
   },
   transpilePackages: [
     '@mpp/agent',

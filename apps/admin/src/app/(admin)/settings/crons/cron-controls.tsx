@@ -1,7 +1,7 @@
 'use client'
 
 import { Loader2, Pencil, Play, Power, X } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { useOptimistic, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,11 +26,21 @@ export function CronControls({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(schedule)
 
+  // Optimistic: botão muda instantaneamente, server roda em background.
+  // Se der erro, useOptimistic reverte automaticamente no próximo render.
+  const [optimisticActive, setOptimisticActive] = useOptimistic(active)
+
   function toggle() {
+    const next = !optimisticActive
     startTransition(async () => {
-      const r = await toggleCronAction(jobname, !active)
-      if (r.error) toast.error(r.error)
-      else toast.success(active ? `${jobname} desativado` : `${jobname} ativado`)
+      setOptimisticActive(next)
+      const r = await toggleCronAction(jobname, next)
+      if (r.error) {
+        toast.error(r.error)
+        // optimistic auto-reverte porque transição não persistiu o valor
+      } else {
+        toast.success(next ? `${jobname} ativado` : `${jobname} desativado`)
+      }
       router.refresh()
     })
   }
@@ -119,10 +129,10 @@ export function CronControls({
             variant="outline"
             onClick={toggle}
             disabled={pending}
-            className={`h-7 text-xs ${active ? 'text-rose-700 hover:bg-rose-500/10' : 'text-moss-700 hover:bg-moss-500/10'}`}
+            className={`h-7 text-xs ${optimisticActive ? 'text-rose-700 hover:bg-rose-500/10' : 'text-moss-700 hover:bg-moss-500/10'}`}
           >
             <Power className="h-3 w-3 mr-1" />
-            {active ? 'Desativar' : 'Ativar'}
+            {optimisticActive ? 'Desativar' : 'Ativar'}
           </Button>
           <Button
             size="sm"

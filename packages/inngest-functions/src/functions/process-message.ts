@@ -159,15 +159,23 @@ export const processMessageFn = inngest.createFunction(
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
           if (img.type === 'meal') {
+            const lowConfItems = img.items.filter((it) => it.confidence < 0.6)
             const itemsTxt =
               img.items
-                .map(
-                  (it) =>
-                    `  - ${it.name}: ${it.quantity_g_estimate}g (conf ${(it.confidence * 100).toFixed(0)}%)`,
-                )
+                .map((it) => {
+                  const confPct = (it.confidence * 100).toFixed(0)
+                  const flag = it.confidence < 0.6 ? ' ⚠️ INCERTO' : ''
+                  return `  - ${it.name}: ${it.quantity_g_estimate}g (conf ${confPct}%${flag})`
+                })
                 .join('\n') || '  (nenhum alimento identificado)'
+            const guidance =
+              img.items.length === 0
+                ? '\n  ⚠️ AÇÃO: a vision não identificou nada. Pergunte ao paciente o que ele comeu (descreva o prato), NÃO chute.'
+                : lowConfItems.length > 0
+                  ? `\n  ⚠️ AÇÃO: ${lowConfItems.length} item(ns) com confiança baixa marcados ⚠️. Antes de chamar registra_refeicao, CONFIRME esses itens com o paciente em 1 pergunta curta (ex: "Recebi a foto. Vi X com certeza, mas tô em dúvida se isso é Y ou Z — confirma?"). Itens com conf ≥ 60% pode registrar direto.`
+                  : ''
             blocks.push(
-              `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}`,
+              `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
           } else if (img.type === 'body') {
             blocks.push(

@@ -63,15 +63,22 @@ async function maybeEngageUser(
   userId: string,
   wpp: string,
   userTimezone: string,
-  slot: string,
+  cronSlotLabel: string,
 ): Promise<{ sent: boolean; reason?: string }> {
   const { supabase, llm } = createWorkerDeps()
+
+  // Hora local do user — fonte da verdade pra slot e contexto LLM
+  const localHour = getLocalHour(userTimezone)
+  // B2: deriva slot a partir da hora local real (não confia no label do cron)
+  const slot = slotFromLocalHour(localHour)
+  // Hint: refeição típica pra hora atual — orienta o LLM
+  const mealHint = mealHintForHour(localHour)
 
   async function logEvent(event: string, properties: Record<string, unknown>) {
     await supabase.from('product_events').insert({
       user_id: userId,
       event,
-      properties: { slot, wpp, ...properties },
+      properties: { slot, cron_slot: cronSlotLabel, local_hour: localHour, wpp, ...properties },
     })
   }
 
@@ -88,25 +95,28 @@ async function maybeEngageUser(
     return { sent: false, reason: 'paciente pausado' }
   }
 
-  // Hora local do user
-  const localHour = getLocalHour(userTimezone)
-  if (localHour < 6 || localHour > 22) {
+  // Janela noturna: só envia entre 6h e 22h locais (inclusive 22)
+  if (localHour < 6 || localHour >= 22) {
     await logEvent('engagement.skipped', { reason: 'noturno', local_hour: localHour })
     return { sent: false, reason: 'horário noturno' }
   }
 
-  // Já interagiu hoje?
+  // A1: já enviou engajamento hoje? Se sim, pula. (NÃO conta conversa do user.)
   const todayLocal = getLocalDate(userTimezone)
   const startOfDay = `${todayLocal}T00:00:00${tzOffset(userTimezone)}`
-  const { count: msgsToday } = await supabase
-    .from('messages')
+  const { count: engagementsToday } = await supabase
+    .from('product_events')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .eq('event', 'engagement.sent')
     .gte('created_at', startOfDay)
 
-  if ((msgsToday ?? 0) > 0) {
-    await logEvent('engagement.skipped', { reason: 'já interagiu hoje', msgs_today: msgsToday })
-    return { sent: false, reason: 'já interagiu hoje' }
+  if ((engagementsToday ?? 0) > 0) {
+    await logEvent('engagement.skipped', {
+      reason: 'engajamento já enviado hoje',
+      engagements_today: engagementsToday,
+    })
+    return { sent: false, reason: 'engajamento já enviado hoje' }
   }
 
   // Carrega config do agente engajamento
@@ -127,8 +137,11 @@ async function maybeEngageUser(
     .eq('user_id', userId)
     .maybeSingle()
 
+  // C: contexto rico pro LLM — hora local real + dica de refeição típica
   const userContext = `
-Slot: ${slot}
+Hora local do paciente: ${String(localHour).padStart(2, '0')}:00 (timezone ${userTimezone})
+Período do dia: ${slot}
+Refeição típica desse horário: ${mealHint}
 Streak atual: ${progress?.current_streak ?? 0} dias
 XP: ${progress?.xp_total ?? 0} (level ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
@@ -141,13 +154,15 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     messages: [
       {
         role: 'user',
-        content: `${userContext}\n\nGere uma mensagem curta e motivacional para este momento (${slot}).`,
+        content:
+          `${userContext}\n\nGere uma mensagem curta e motivacional pra esse momento. ` +
+          `Use a hora local e a refeição típica acima — NÃO assuma horário pelo nome do slot.`,
       },
     ],
     temperature: Number(prompt.temperature),
     maxTokens: 500,
     userId,
-    metadata: { Stage: 'engajamento', Slot: slot },
+    metadata: { Stage: 'engajamento', Slot: slot, LocalHour: String(localHour) },
   })
 
   const text = (result.content ?? '').trim()
@@ -210,6 +225,35 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   })
 
   return { sent: deliveryStatus === 'sent', reason: deliveryError }
+}
+
+/**
+ * Mapeia hora local (0-23) pra um slot semântico.
+ * Independente do nome do cron que disparou — fonte da verdade é a hora real.
+ */
+function slotFromLocalHour(hour: number): string {
+  if (hour < 6) return 'madrugada'
+  if (hour < 9) return 'cafe_da_manha'
+  if (hour < 11) return 'meio_da_manha'
+  if (hour < 14) return 'almoco'
+  if (hour < 16) return 'pos_almoco'
+  if (hour < 19) return 'lanche_tarde'
+  if (hour < 22) return 'jantar'
+  return 'noite'
+}
+
+/**
+ * Texto sugestivo da refeição/momento típico, passado pro LLM como hint.
+ */
+function mealHintForHour(hour: number): string {
+  if (hour < 6) return 'madrugada — não envia'
+  if (hour < 9) return 'café da manhã (jejum, primeira refeição do dia)'
+  if (hour < 11) return 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)'
+  if (hour < 14) return 'almoço (refeição principal do meio-dia)'
+  if (hour < 16) return 'pós-almoço (digestão, balanço parcial do dia)'
+  if (hour < 19) return 'lanche da tarde (entre almoço e jantar)'
+  if (hour < 22) return 'jantar (última refeição do dia)'
+  return 'noite — não envia'
 }
 
 function getLocalHour(tz: string): number {

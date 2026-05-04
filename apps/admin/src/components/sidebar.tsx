@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import {
   Activity,
   Bot,
+  BookOpen,
   Calculator,
   ChevronLeft,
   ChevronRight,
@@ -86,6 +87,10 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Billing', href: '/settings/billing', icon: CreditCard },
       { label: 'Admins', href: '/settings/admins', icon: UserCog },
     ],
+  },
+  {
+    label: 'AJUDA',
+    items: [{ label: 'Tutorial', href: '/tutorial', icon: BookOpen }],
   },
 ]
 

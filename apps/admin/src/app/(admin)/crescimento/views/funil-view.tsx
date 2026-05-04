@@ -1,4 +1,4 @@
-import { ContentCard, PageHeader } from '@/components/page-header'
+import { ContentCard } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatNumber } from '@/lib/utils'
 
@@ -27,7 +27,7 @@ function buildSteps(kcalBlock: number): Array<{
   ]
 }
 
-export default async function FunilPage() {
+export async function FunilView() {
   const svc = createServiceClient()
   const [{ data: rawFunnel }, { data: kcalBlockRow }] = await Promise.all([
     (svc as unknown as {
@@ -70,11 +70,6 @@ export default async function FunilPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Crescimento' }, { label: 'Funil & Cohorts' }]}
-        title="Funil de ativação"
-        description="Onde os pacientes morrem em cada cohort semanal."
-      />
 
       <ContentCard
         title="Funil agregado (8 semanas)"

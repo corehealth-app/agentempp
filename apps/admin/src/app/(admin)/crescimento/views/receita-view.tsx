@@ -1,5 +1,5 @@
 import { CreditCard, TrendingDown, TrendingUp, Users } from 'lucide-react'
-import { ContentCard, PageHeader } from '@/components/page-header'
+import { ContentCard } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatNumber } from '@/lib/utils'
@@ -32,7 +32,7 @@ interface Subscription {
   created_at: string
 }
 
-export default async function ReceitaPage() {
+export async function ReceitaView() {
   const svc = createServiceClient()
 
   const [{ data: rawMrr }, { data: subs }, { data: events }] = await Promise.all([
@@ -72,11 +72,6 @@ export default async function ReceitaPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Crescimento' }, { label: 'Receita' }]}
-        title="Receita"
-        description="MRR, churn, novas assinaturas. Atualiza em tempo real via webhook Stripe."
-      />
 
       {/* === KPIs === */}
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">

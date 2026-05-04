@@ -56,14 +56,7 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Hoje', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Conversas', href: '/messages', icon: MessageSquare },
       { label: 'Pacientes', href: '/users', icon: Users },
-    ],
-  },
-  {
-    label: 'CRESCIMENTO',
-    items: [
-      { label: 'Conquistas', href: '/crescimento/conquistas', icon: Trophy },
-      { label: 'Funil & Cohorts', href: '/crescimento/funil', icon: TrendingUp },
-      { label: 'Receita', href: '/crescimento/receita', icon: CreditCard },
+      { label: 'Crescimento', href: '/crescimento', icon: TrendingUp },
     ],
   },
   {

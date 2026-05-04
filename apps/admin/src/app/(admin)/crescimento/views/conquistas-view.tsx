@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Award, Flame, Target, TrendingUp, Trophy } from 'lucide-react'
-import { ContentCard, PageHeader } from '@/components/page-header'
+import { ContentCard } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatNumber } from '@/lib/utils'
@@ -24,7 +24,7 @@ interface User {
   wpp: string
 }
 
-export default async function ConquistasPage() {
+export async function ConquistasView() {
   const svc = createServiceClient()
 
   const [{ data: progress }, { data: users }, { data: kcalBlockRow }] = await Promise.all([
@@ -84,11 +84,6 @@ export default async function ConquistasPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        breadcrumbs={[{ label: 'Crescimento' }, { label: 'Conquistas' }]}
-        title="Conquistas"
-        description="Quem está engajado, quem está perto de uma conquista, quem precisa de empurrão."
-      />
 
       {/* === KPIs de gamificação === */}
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">

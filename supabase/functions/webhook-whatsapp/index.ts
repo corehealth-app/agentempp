@@ -194,11 +194,11 @@ Deno.serve(async (req: Request) => {
         })
 
         // ============================================================
-        //  EMPILHAMENTO: push no buffer com debounce
-        //  (debounce_ms editável via /settings/global → buffer.debounce_ms)
+        //  EMPILHAMENTO ATOMIC: RPC buffer_append_msg evita race condition
+        //  Antes: read-then-write (3 fotos paralelas → última sobrescreve as 2)
+        //  Agora: SQL INSERT...ON CONFLICT DO UPDATE com jsonb || (concat atomic)
         // ============================================================
         const debounceMs = await getBufferDebounceMs(supabase)
-        const flushAt = new Date(Date.now() + debounceMs).toISOString()
         const newMsgEntry = {
           provider_message_id: msg.id,
           content_type: contentType,
@@ -207,33 +207,19 @@ Deno.serve(async (req: Request) => {
           received_at: new Date().toISOString(),
         }
 
-        // Tenta upsert: se já existe buffer pro user, append e estende flush_after
-        const { data: existing } = await supabase
-          .from('message_buffer')
-          .select('messages')
-          .eq('user_id', userId)
-          .maybeSingle()
-
-        const accumulated = existing
-          ? [...((existing.messages as unknown[]) ?? []), newMsgEntry]
-          : [newMsgEntry]
-
-        await supabase.from('message_buffer').upsert(
-          {
-            user_id: userId,
-            messages: accumulated,
-            buffered_at: new Date().toISOString(),
-            flush_after: flushAt,
-          },
-          { onConflict: 'user_id' },
-        )
+        const { data: bufRes } = await supabase.rpc('buffer_append_msg', {
+          p_user_id: userId,
+          p_msg_entry: newMsgEntry,
+          p_debounce_ms: debounceMs,
+        })
+        const aggregatedCount = (bufRes as { count?: number } | null)?.count ?? 1
 
         // Dispara evento com delay — Inngest aciona buffer-flush após debounce.
         // Cada msg dispara um evento, mas o worker é idempotente:
         // só processa se ainda houver buffer com flush_after expirado.
         await sendInngestEvent(
           'buffer.flush',
-          { userId, count: accumulated.length, fired_at: new Date().toISOString() },
+          { userId, count: aggregatedCount, fired_at: new Date().toISOString() },
           debounceMs + 200,
         )
       }

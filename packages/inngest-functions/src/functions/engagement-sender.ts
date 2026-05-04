@@ -96,16 +96,19 @@ async function maybeEngageUser(
   }
 
   // Janela ativa do paciente (wake_time → bedtime do user_profiles).
-  // Sem essas infos, fallback pra 6h–22h. Adapta pra plantonista, dono de
-  // restaurante, dev nightowl, etc — cada um tem seu ciclo.
-  const { data: profileTime } = await supabase
-    .from('user_profiles')
-    .select('wake_time, bedtime')
-    .eq('user_id', userId)
-    .maybeSingle()
+  // Offsets + fallbacks editáveis via /settings/global → engagement.*
+  const [{ data: profileTime }, engagementConfig] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select('wake_time, bedtime')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    loadEngagementConfig(supabase),
+  ])
   const window = activeWindow(
     (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.wake_time,
     (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.bedtime,
+    engagementConfig,
   )
   if (!isWithinActiveWindow(localHour, window)) {
     await logEvent('engagement.skipped', {
@@ -176,7 +179,9 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
       },
     ],
     temperature: Number(prompt.temperature),
-    maxTokens: 500,
+    // max_tokens vem de agent_configs (editável em /settings/agents).
+    // Fallback 500 só quando registro não tem o campo (não deveria ocorrer).
+    maxTokens: Number(prompt.max_tokens ?? 500),
     userId,
     metadata: { Stage: 'engajamento', Slot: slot, LocalHour: String(localHour) },
   })
@@ -246,12 +251,12 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
 /**
  * Janela ativa do paciente, derivada de wake_time/bedtime do user_profiles.
  *
- * Política:
- *   - Engajamento começa 30min após o paciente acordar (não chega quando ele
- *     abriu o olho).
- *   - Termina 1h antes de dormir (não atrapalha o sono).
- *   - Sem wake_time → assume 6h. Sem bedtime → assume 22h.
- *   - Suporta janelas que cruzam meia-noite (plantonistas: dorme 04h, acorda 12h).
+ * Política (offsets editáveis via /settings/global → engagement.*):
+ *   - start = wake_time + engagement.wake_offset_min  (default 60min)
+ *   - end   = bedtime  - engagement.bed_offset_min   (default 60min)
+ *   - sem wake → engagement.fallback_wake_hour (default 6h)
+ *   - sem bed  → engagement.fallback_bed_hour  (default 22h)
+ *   - suporta janelas que cruzam meia-noite (plantonistas: dorme 04h, acorda 12h)
  */
 interface ActiveWindow {
   start: number // hora inteira inclusive
@@ -259,13 +264,32 @@ interface ActiveWindow {
   crossesMidnight: boolean
 }
 
-function activeWindow(wakeTime: string | null | undefined, bedtime: string | null | undefined): ActiveWindow {
-  const wake = parseHour(wakeTime, 6)
-  const bed = parseHour(bedtime, 22)
-  // 30min após acordar → arredonda pra próxima hora
-  const start = (wake + 1) % 24
-  // 1h antes de dormir
-  const end = (bed - 1 + 24) % 24
+interface EngagementConfig {
+  wake_offset_min: number
+  bed_offset_min: number
+  fallback_wake_hour: number
+  fallback_bed_hour: number
+}
+
+const DEFAULT_ENGAGEMENT_CONFIG: EngagementConfig = {
+  wake_offset_min: 60,
+  bed_offset_min: 60,
+  fallback_wake_hour: 6,
+  fallback_bed_hour: 22,
+}
+
+function activeWindow(
+  wakeTime: string | null | undefined,
+  bedtime: string | null | undefined,
+  config: EngagementConfig,
+): ActiveWindow {
+  const wake = parseHour(wakeTime, config.fallback_wake_hour)
+  const bed = parseHour(bedtime, config.fallback_bed_hour)
+  const wakeOffsetH = config.wake_offset_min / 60
+  const bedOffsetH = config.bed_offset_min / 60
+  // Arredonda pra hora inteira mais próxima (round half-up)
+  const start = Math.round((wake + wakeOffsetH + 24) % 24)
+  const end = Math.round((bed - bedOffsetH + 24) % 24)
   const crossesMidnight = start > end
   return { start, end, crossesMidnight }
 }
@@ -276,6 +300,48 @@ function isWithinActiveWindow(hour: number, w: ActiveWindow): boolean {
     return hour >= w.start || hour < w.end
   }
   return hour >= w.start && hour < w.end
+}
+
+/**
+ * Carrega config do engagement (offsets + fallbacks) do global_config.
+ * Cache 60s — mudanças via UI propagam em ≤1min.
+ */
+let cachedEngagementConfig: { config: EngagementConfig; expiresAt: number } | null = null
+const ENGAGEMENT_CACHE_TTL_MS = 60_000
+
+async function loadEngagementConfig(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  svc: any,
+): Promise<EngagementConfig> {
+  const now = Date.now()
+  if (cachedEngagementConfig && cachedEngagementConfig.expiresAt > now) {
+    return cachedEngagementConfig.config
+  }
+
+  const { data, error } = (await svc
+    .from('global_config')
+    .select('key, value')
+    .like('key', 'engagement.%')) as { data: Array<{ key: string; value: unknown }> | null; error: unknown }
+
+  if (error || !data || data.length === 0) {
+    cachedEngagementConfig = {
+      config: DEFAULT_ENGAGEMENT_CONFIG,
+      expiresAt: now + ENGAGEMENT_CACHE_TTL_MS,
+    }
+    return DEFAULT_ENGAGEMENT_CONFIG
+  }
+
+  const merged: EngagementConfig = { ...DEFAULT_ENGAGEMENT_CONFIG }
+  for (const row of data) {
+    const subKey = row.key.replace(/^engagement\./, '') as keyof EngagementConfig
+    const num = Number(row.value)
+    if (Number.isFinite(num) && subKey in merged) {
+      merged[subKey] = num
+    }
+  }
+
+  cachedEngagementConfig = { config: merged, expiresAt: now + ENGAGEMENT_CACHE_TTL_MS }
+  return merged
 }
 
 function parseHour(timeStr: string | null | undefined, fallback: number): number {

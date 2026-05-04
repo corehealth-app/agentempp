@@ -1,6 +1,6 @@
 import { calcDailyXP, computeProgress } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
-import { loadCalcConfig } from '@mpp/agent'
+import { loadCalcConfig, loadDailyTargets } from '@mpp/agent'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 
@@ -130,6 +130,11 @@ async function closeUserDay(
   // Carrega config editável (cache 60s). Constantes vêm de global_config calc.*
   const calcConfig = await loadCalcConfig(supabase)
 
+  // Targets calóricos/proteína computados via TDEE - deficit_level (recomp)
+  // ou TDEE + deficit (ganho_massa). Sem isso daily_balance fica positivo
+  // sempre e bloco 7700 nunca incrementa.
+  const targets = await loadDailyTargets(supabase, userId, calcConfig)
+
   // XP base por dia: regras configuráveis via /settings/calc
   const xpEarned = calcDailyXP({ trainingDone, proteinG }, calcConfig)
 
@@ -138,7 +143,9 @@ async function closeUserDay(
     user_id: userId,
     date: yesterday,
     calories_consumed: Math.round(kcalConsumed),
+    calories_target: targets.calories_target,
     protein_g: Math.round(proteinG * 10) / 10,
+    protein_target: targets.protein_target,
     carbs_g: Math.round(carbsG * 10) / 10,
     fat_g: Math.round(fatG * 10) / 10,
     exercise_calories: Math.round(exerciseKcal),

@@ -8,6 +8,8 @@
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
+import { loadCalcConfig } from './calc-config-loader.js'
+import { loadDailyTargets } from './calc-targets.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -165,13 +167,33 @@ export const registraRefeicao: ToolDefinition = {
       .eq('date', today)
       .maybeSingle()
 
+    // Garante targets calculados (calories_target + protein_target).
+    // Sem isso, daily_balance fica positivo sempre e bloco 7700 nunca cresce.
+    const config = await loadCalcConfig(ctx.supabase)
+    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
+
     let snapshotId: string
     if (snap) {
       snapshotId = snap.id
+      // Se snapshot existe mas tá sem target (caso legado), retroplena.
+      if (snap.calories_target == null && targets.calories_target != null) {
+        await ctx.supabase
+          .from('daily_snapshots')
+          .update({
+            calories_target: targets.calories_target,
+            protein_target: targets.protein_target,
+          })
+          .eq('id', snapshotId)
+      }
     } else {
       const { data: created, error: createErr } = await ctx.supabase
         .from('daily_snapshots')
-        .insert({ user_id: ctx.userId, date: today })
+        .insert({
+          user_id: ctx.userId,
+          date: today,
+          calories_target: targets.calories_target,
+          protein_target: targets.protein_target,
+        })
         .select('id')
         .single()
       if (createErr) throw createErr
@@ -283,13 +305,22 @@ export const registraTreino: ToolDefinition = {
       .eq('date', today)
       .maybeSingle()
 
+    // Mesmo padrão de registra_refeicao: garante targets no snapshot novo.
+    const cfg = await loadCalcConfig(ctx.supabase)
+    const tgt = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
+
     let snapshotId: string
     if (snap) {
       snapshotId = snap.id
     } else {
       const { data: created, error } = await ctx.supabase
         .from('daily_snapshots')
-        .insert({ user_id: ctx.userId, date: today })
+        .insert({
+          user_id: ctx.userId,
+          date: today,
+          calories_target: tgt.calories_target,
+          protein_target: tgt.protein_target,
+        })
         .select('id')
         .single()
       if (error) throw error

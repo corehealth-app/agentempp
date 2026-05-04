@@ -150,6 +150,11 @@ export default function TutorialPage() {
           description="Quando o LLM não chama confirma_pais_residencia mesmo o paciente respondendo. /users/[id] → header tem botão âmbar 'Confirmar país' (só aparece se country_confirmed=false). Pode trocar o ISO antes de confirmar."
         />
         <SubItem
+          icon={Globe}
+          title="Idioma e sistema de medidas (por paciente)"
+          description="O agente NÃO assume idioma/unidade só por país. Brasileiro nos EUA pode preferir PT; americano pode usar lb/inch. Tool confirma_pais_residencia recebe 3 args (country, language, unit_system) e a regra obriga perguntar quando country!=BR ou imperial. Se paciente pedir trocar de idioma no meio da conversa, agente muda na hora e re-chama a tool pra persistir. users.locale + users.metadata.unit_system guardam o estado."
+        />
+        <SubItem
           icon={CreditCard}
           title="Gerar link de checkout Stripe"
           description="/users/[id] → seção Assinatura → botões 'Mensal R$197' / 'Anual R$1.164'. Cria sessão Stripe e devolve URL pra você mandar manual ao paciente (link válido 24h)."
@@ -396,6 +401,41 @@ export default function TutorialPage() {
             'Caso clássico: country_confirmed=false. Vai em /users/[id] → botão "Confirmar país".',
             'Outras tools: olhar /audit filtrando por tools_audit pra ver se tem falha.',
             'Se persistir: editar a regra de prompt pra ser mais explícita sobre quando chamar a tool.',
+          ]}
+        />
+        <Faq
+          q="Agente respondeu em inglês mesmo após paciente pedir português"
+          a={[
+            'A regra Persona master tem "REGRA DE IDIOMA (inviolável)": responde no idioma da última msg do paciente, não no locale salvo.',
+            'Se o paciente pedir trocar ("fale em português"), agente muda na hora E chama confirma_pais_residencia pra persistir o language.',
+            'Se ainda falhar: editar a regra Persona master em /prompts (slug persona-master-dr-roberto-amigo-coach) pra reforçar o idioma.',
+            'O locale salvo do paciente fica em users.locale — pode editar direto via SQL como fallback.',
+          ]}
+        />
+        <Faq
+          q='Foto de prato volta com "0 kcal (sem match TACO)"'
+          a={[
+            'Vision identificou o item mas o nome não casou com nada no food_db (trigram threshold 0.3).',
+            'Solução imediata: /settings/foods → adiciona o alimento com nome que a vision retornou + macros por 100g.',
+            'Solução estrutural: melhorar o prompt vision-meal em /prompts pra usar nomes que JÁ existem no food_db.',
+            'Vision retorna "ovo de galinha frito" mas TACO tem "ovo frito"? Adiciona alias no food_db ou ajusta prompt.',
+          ]}
+        />
+        <Faq
+          q="Vision identificou comida com confiança baixa, agente registrou direto"
+          a={[
+            'Threshold padrão é 0.6 (vision.meal.confidence_threshold em /settings/global).',
+            'Itens abaixo dele recebem flag ⚠️ INCERTO no contexto e o agente DEVE perguntar antes de registrar.',
+            'Se ele registrou mesmo assim: a regra do prompt do estágio precisa reforçar essa diretiva. Subir o threshold pra 0.75 também ajuda.',
+            'Pra desabilitar a confirmação (volta ao registro automático): threshold = 0.',
+          ]}
+        />
+        <Faq
+          q="Múltiplas fotos enviadas em sequência mas agente leu só uma"
+          a={[
+            'Bug histórico: webhook fazia read-then-write no message_buffer → race entre 3 webhooks paralelos.',
+            'Corrigido: RPC buffer_append_msg usa INSERT...ON CONFLICT DO UPDATE atômico (jsonb || jsonb).',
+            'Se persistir: olhar /audit pra ver se as 3 entraram em messages, e o buffer agregou todas.',
           ]}
         />
         <Faq

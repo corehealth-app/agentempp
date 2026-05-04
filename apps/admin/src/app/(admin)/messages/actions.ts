@@ -156,27 +156,39 @@ export async function resetUserConversationAction(userId: string) {
     .maybeSingle()
   if (!u) return { error: 'user não encontrado' }
 
-  // Tabelas filhas que vamos limpar (mantém user + profile + subscriptions ativas)
+  // Tabelas filhas que vamos limpar (mantém user + profile + subscriptions ativas).
+  // OBS: message_embeddings NÃO está aqui porque tem FK ON DELETE CASCADE pra
+  // messages — sai automaticamente quando messages é deletada. Tinha FK errada
+  // antes (filtrava por user_id que não existe, falhava silenciosamente).
   const tables = [
-    'messages',
+    'messages', // CASCADE → message_embeddings limpos
     'message_buffer',
     'tools_audit',
     'meal_logs',
     'workout_logs',
-    'daily_snapshots',
+    'daily_snapshots', // CASCADE → meal_logs/workout_logs com snapshot_id
     'reevaluations',
-    'message_embeddings',
+    'product_events', // limpa events do paciente (não os events do admin)
   ]
+  const errors: string[] = []
   for (const t of tables) {
-    await (ctx.svc as unknown as {
+    const { error } = await (ctx.svc as unknown as {
       from: (t: string) => {
-        delete: () => { eq: (col: string, val: string) => Promise<unknown> }
+        delete: () => {
+          eq: (col: string, val: string) => Promise<{ error: { message?: string } | null }>
+        }
       }
     })
       .from(t)
       .delete()
       .eq('user_id', userId)
-      .catch(() => {}) // tabelas podem não ter user_id ou outro cleanup
+    if (error) {
+      // Loga mas continua — algumas tabelas podem ter constraint específica.
+      errors.push(`${t}: ${error.message ?? 'unknown'}`)
+    }
+  }
+  if (errors.length > 0) {
+    console.warn('[reset] alguns deletes falharam:', errors)
   }
 
   // Reseta user_profiles (mantém row mas zera campos)

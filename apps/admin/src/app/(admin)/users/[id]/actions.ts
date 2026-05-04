@@ -82,39 +82,11 @@ export async function closeDay(userId: string, date: string) {
       .maybeSingle()
     if (!admin) return { error: 'Acesso negado' }
 
-    // daily_close_user SQL function foi removida na migration 20260504165600
-    // (lógica 100% migrada pro Inngest worker daily-closer.ts).
-    // Re-implementação inline: marca snapshot como day_closed=true.
-    // Pra recomputar XP/streak/blocks, dispara o evento Inngest:
-    const { error: closeErr } = await (svc as unknown as {
-      from: (t: string) => {
-        update: (u: Record<string, unknown>) => {
-          eq: (col: string, val: string) => {
-            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
-          }
-        }
-      }
+    const { data, error } = await svc.rpc('daily_close_user', {
+      p_user_id: userId,
+      p_date: date,
     })
-      .from('daily_snapshots')
-      .update({ day_closed: true, closed_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('date', date)
-    if (closeErr) return { error: closeErr.message }
-
-    // Dispara evento pro Inngest worker recalcular user_progress
-    await (svc as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{ error: { message?: string } | null }>
-    })
-      .rpc('dispatch_inngest_event', {
-        p_event_name: 'day.close.tick',
-        p_data: { hour: 99, fired_at: new Date().toISOString(), force_user_id: userId },
-      })
-      .catch(() => {
-        /* dispatch é best-effort; admin já fechou manual */
-      })
+    if (error) return { error: error.message }
 
     await svc.from('audit_log').insert({
       actor_id: user.id,
@@ -122,11 +94,11 @@ export async function closeDay(userId: string, date: string) {
       action: 'user.close_day',
       entity: 'daily_snapshots',
       entity_id: `${userId}:${date}`,
-      after: { closed_at: new Date().toISOString(), date },
+      after: data as Record<string, never>,
     })
 
     revalidatePath(`/users/${userId}`)
-    return { ok: true }
+    return { ok: true, result: data as Record<string, unknown> }
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }
   }

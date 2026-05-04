@@ -19,25 +19,12 @@ export const dailyCloserFn = inngest.createFunction(
   { id: 'daily-closer', retries: 2, concurrency: { limit: 5 } },
   { event: 'day.close.tick' },
   async ({ event, step, logger }) => {
-    const { hour, force_user_id } = event.data as {
-      hour: number
-      force_user_id?: string
-    }
-    logger.info('Daily closer tick', { hour, force_user_id })
+    const { hour } = event.data
+    logger.info('Daily closer tick', { hour })
 
     // Lista usuários cujo timezone bate com a hora atual UTC
     const users = await step.run('list-users', async () => {
       const { supabase } = createWorkerDeps()
-      // Caso force_user_id (admin disparou via /users/[id] → "Fechar dia"):
-      // só processa esse paciente, ignora demais.
-      if (force_user_id) {
-        const { data } = await supabase
-          .from('users')
-          .select('id, timezone')
-          .eq('id', force_user_id)
-          .maybeSingle()
-        return data ? [data] : []
-      }
       // Pega users cujo timezone tem offset que faz "agora" ser ~00h local
       // Simplificação MVP: pega todos active e a função verifica internamente
       const { data } = await supabase
@@ -54,12 +41,7 @@ export const dailyCloserFn = inngest.createFunction(
     for (const user of users) {
       try {
         const result = await step.run(`close-${user.id}`, async () =>
-          closeUserDay(
-            user.id,
-            user.timezone ?? 'America/Sao_Paulo',
-            hour,
-            !!force_user_id,
-          ),
+          closeUserDay(user.id, user.timezone ?? 'America/Sao_Paulo', hour),
         )
         if (result.skipped) skipped++
         else processed++
@@ -77,16 +59,12 @@ async function closeUserDay(
   userId: string,
   userTimezone: string,
   hourUtc: number,
-  forceClose = false,
 ): Promise<{ skipped: boolean; reason?: string }> {
   const { supabase, llm } = createWorkerDeps()
 
   // Verifica se "agora" no fuso do user é entre 00h e 04h
   const localHour = getLocalHour(userTimezone)
-  // Guard noturno: só roda 0h-4h locais. forceClose (admin manual) bypassa.
-  if (!forceClose && localHour > 4) {
-    return { skipped: true, reason: `local hour ${localHour} fora janela` }
-  }
+  if (localHour > 4) return { skipped: true, reason: `local hour ${localHour} fora janela` }
 
   // Data local de "ontem" (que vamos fechar)
   const yesterday = getLocalDateMinusDays(userTimezone, 1)

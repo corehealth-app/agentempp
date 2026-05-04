@@ -232,17 +232,22 @@
   }
 
   .nav-card-glass.nav-card-active {
-    background: hsl(var(--sidebar-primary) / 0.10);
-    border-color: hsl(var(--sidebar-primary) / 0.30);
-    box-shadow: 0 4px 16px hsl(var(--sidebar-primary) / 0.10);
+    background: hsl(var(--sidebar-primary) / 0.12);
+    border-color: hsl(var(--sidebar-primary) / 0.55);
+    box-shadow:
+      0 1px 3px hsl(var(--sidebar-primary) / 0.10),
+      0 0 0 1px hsl(var(--sidebar-primary) / 0.18);
     border-left: 3px solid hsl(var(--sidebar-primary));
     color: hsl(var(--sidebar-primary));
-    font-weight: 500;
+    font-weight: 600;
   }
 
   .dark .nav-card-glass.nav-card-active {
-    background: hsl(var(--sidebar-primary) / 0.14);
-    border-color: hsl(var(--sidebar-primary) / 0.35);
+    background: hsl(var(--sidebar-primary) / 0.18);
+    border-color: hsl(var(--sidebar-primary) / 0.60);
+    box-shadow:
+      0 1px 3px hsl(var(--sidebar-primary) / 0.20),
+      0 0 0 1px hsl(var(--sidebar-primary) / 0.25);
     color: hsl(var(--sidebar-primary));
   }
 

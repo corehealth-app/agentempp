@@ -105,8 +105,18 @@ async function closeUserDay(
       .limit(50),
   ])
 
-  if ((!meals || meals.length === 0) && (!workouts || workouts.length === 0)) {
-    return { skipped: true, reason: 'sem atividade' }
+  // Verifica se houve QUALQUER atividade no dia (meal, workout ou msg IN).
+  // Antes: skipava se sem meal/workout → quebrava streak de quem só conversou.
+  // Agora: msg IN também conta como "dia ativo" — cria snapshot vazio com
+  // training_done=false mas atualiza last_active_date pra preservar streak.
+  const hadIncomingMsgs =
+    (messages ?? []).some((m) => (m as { direction: string }).direction === 'in')
+  if (
+    (!meals || meals.length === 0) &&
+    (!workouts || workouts.length === 0) &&
+    !hadIncomingMsgs
+  ) {
+    return { skipped: true, reason: 'sem atividade nem conversa' }
   }
 
   // Calcula totais determinísticos via meal_logs/workout_logs

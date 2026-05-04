@@ -44,6 +44,10 @@ interface UserContext {
   countryConfirmed: boolean
   /** Palpite original baseado no DDI do WhatsApp. */
   countryDetectedFromWpp: string | null
+  /** Locale escolhido pelo paciente (pt-BR, en, es, etc). */
+  locale: string | null
+  /** Sistema de medidas: 'metric' (kg/cm) ou 'imperial' (lb/in). */
+  unitSystem: 'metric' | 'imperial' | null
 }
 
 export async function processMessage(
@@ -352,7 +356,9 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     }
   })
     .from('users')
-    .select('id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp')
+    .select(
+      'id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata',
+    )
     .eq('id', userId)
     .single()
   const { data: profile } = await supabase
@@ -384,6 +390,8 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
         country: string | null
         country_confirmed: boolean | null
         country_detected_from_wpp: string | null
+        locale: string | null
+        metadata: Record<string, unknown> | null
       }
     | null
   // Calcula gap de tempo desde última msg IN (penúltima, pq a atual já entrou)
@@ -418,6 +426,10 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     deficitLevel: (profile?.deficit_level as 400 | 500 | 600 | null) ?? null,
   }
 
+  const unitSystemRaw = userTyped?.metadata?.unit_system
+  const unitSystem: 'metric' | 'imperial' | null =
+    unitSystemRaw === 'metric' || unitSystemRaw === 'imperial' ? unitSystemRaw : null
+
   return {
     userId,
     userName: userTyped?.name ?? null,
@@ -429,6 +441,8 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     country: userTyped?.country ?? null,
     countryConfirmed: !!userTyped?.country_confirmed,
     countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
+    locale: userTyped?.locale ?? null,
+    unitSystem,
   }
 }
 
@@ -516,15 +530,27 @@ function formatUserContext(
     DE: 'de',
     IT: 'it',
   }
-  const language = countryToLanguage[country] ?? 'pt-BR'
+  // Usa locale escolhido pelo paciente se disponível; senão deriva do país
+  const language = ctx.locale ?? countryToLanguage[country] ?? 'pt-BR'
+  // unit_system: explícito do paciente OU 'imperial' default pra US/GB OU 'metric' default
+  const unitSystem =
+    ctx.unitSystem ?? (['US', 'GB'].includes(country) ? 'imperial' : 'metric')
+  const unitsLabel =
+    unitSystem === 'imperial' ? 'lb / inch (imperial)' : 'kg / cm (métrico)'
 
   if (ctx.countryConfirmed) {
     sections.push(
-      `### País de residência\n` +
-        `Confirmado pelo paciente: **${country}** (idioma: ${language}). ` +
+      `### Localização e preferências\n` +
+        `País: **${country}** (confirmado). Idioma: **${language}**. Unidades: **${unitsLabel}**. ` +
         `Persona: ${personaName}. NÃO pergunte de novo. ` +
+        (language !== 'pt-BR' && language !== 'pt-PT'
+          ? `Responda em ${language}. `
+          : '') +
+        (unitSystem === 'imperial'
+          ? `Quando o paciente informar peso/altura, ele provavelmente vai usar lb/inch. CONVERTA internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Quando devolver metas/balanço, use lb/inch pra ele entender. `
+          : '') +
         (country !== 'BR'
-          ? `Responda no idioma do paciente (${language}). Sistema é otimizado pra Brasil — alimentos e medidas locais podem ser imprecisos.`
+          ? `⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
           : ''),
     )
   } else {

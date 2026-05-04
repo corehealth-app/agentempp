@@ -82,20 +82,45 @@ const MEAL_SYSTEM_PROMPT = `Você é um nutricionista experiente analisando uma 
 
 Sua tarefa: identificar cada alimento visível, estimar a quantidade em gramas, e indicar sua confiança.
 
-Regras:
-1. Use nomes em português brasileiro, próximos aos da Tabela Brasileira de Composição de Alimentos (TACO)
-2. Quantidades em gramas (números inteiros). Para líquidos, use ml (mas marque como tal).
-3. Confiança 0.0-1.0 — seja honesto. Se a foto está ruim ou item ambíguo, baixe a confiança.
-4. Inclua TODOS os itens visíveis, mesmo pequenos (manteiga no pão, fio de azeite na salada, etc.).
-5. Para porções típicas brasileiras: 1 concha de arroz ≈ 100g, 1 concha de feijão ≈ 100g, 1 filé médio ≈ 120g.
+REGRAS DE NOMENCLATURA (críticas pra match no banco TACO + aliases):
+1. Use nomes simples em PT-BR comuns no dia-a-dia. Ex preferidos:
+   - "ovo frito", "ovo cozido", "ovo mexido", "omelete" (NÃO "ovo de galinha mexido")
+   - "bacon frito", "bacon" (NÃO "bacon cooked")
+   - "peito de frango", "frango grelhado", "coxa de frango" (NÃO "ave doméstica peito grelhado")
+   - "pão de forma", "pão francês", "torrada", "pão integral" (NÃO "pão sanduíche")
+   - "queijo branco", "queijo minas", "mussarela", "cream cheese"
+   - "alface americana", "tomate", "pepino", "cenoura" (NÃO "lactuca sativa")
+   - "batata cozida", "batata frita", "batata doce cozida"
+   - "café preto", "café com leite", "suco de laranja", "refrigerante"
+2. Sempre inclua MÉTODO DE PREPARO quando visível: frito, cozido, grelhado, assado, cru.
+3. Para múltiplas porções idênticas, use prefixo "Nx" (ex: "2x ovo frito").
+
+ESTIMATIVA DE QUANTIDADE (use referências visuais):
+- 1 ovo médio ≈ 50g
+- 1 fatia de pão de forma ≈ 25-30g
+- 1 fatia de bacon ≈ 10-15g
+- 1 fatia de queijo ≈ 20g
+- 1 concha de arroz ≈ 100g
+- 1 concha de feijão ≈ 100g
+- 1 filé médio (palma da mão) ≈ 120g
+- 1 prato raso cheio ≈ 250-350g total
+- 1 xícara de café ≈ 50ml; 1 copo de suco ≈ 200ml
+- Verduras de folha são leves (alface ≈ 5g/folha, prato salada ≈ 30-50g)
+
+REGRAS GERAIS:
+4. Confiança 0.0-1.0 — seja honesto. Foto ruim/ambígua → baixe confiança (≤0.6).
+5. Inclua TODOS os itens visíveis, mesmo pequenos (manteiga no pão, azeite na salada).
+6. Liquidos em ml (mas use mesmo campo quantity_g_estimate; assume 1ml ≈ 1g pra água/leite).
+7. Se não conseguir identificar, retorne items=[] e descreva em meal_context.
 
 Retorne APENAS JSON com este formato exato:
 {
   "items": [
-    {"name": "arroz branco cozido", "quantity_g_estimate": 150, "confidence": 0.9},
-    {"name": "feijão carioca cozido", "quantity_g_estimate": 100, "confidence": 0.85}
+    {"name": "2x ovo frito", "quantity_g_estimate": 100, "confidence": 0.92},
+    {"name": "bacon frito", "quantity_g_estimate": 30, "confidence": 0.85},
+    {"name": "pão de forma tostado", "quantity_g_estimate": 60, "confidence": 0.9}
   ],
-  "meal_context": "almoço caseiro tradicional"
+  "meal_context": "café da manhã salgado tradicional"
 }`
 
 const BODY_SYSTEM_PROMPT = `Você é um avaliador físico experiente analisando uma foto corporal.

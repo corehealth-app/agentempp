@@ -501,45 +501,78 @@ export const retomarAgente: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
-// confirma_pais_residencia — grava onde o paciente realmente mora
+// confirma_pais_residencia — grava onde o paciente RESIDE + idioma preferido
 // ----------------------------------------------------------------------------
 export const confirmaPaisResidencia: ToolDefinition = {
   name: 'confirma_pais_residencia',
   description:
-    'Grava o país onde o paciente RESIDE atualmente. Use APENAS depois que o usuário confirmar explicitamente. Se ele disser "moro no Brasil", "estou em Portugal agora", "vivo em Madrid", chame essa tool com o ISO 3166-1 alpha-2 correto. Não use código de telefone como prova de residência — a tool serve pra corrigir/confirmar.',
+    'Grava onde o paciente RESIDE + idioma preferido pra conversa. Use APENAS depois que o usuário confirmar AMBOS explicitamente. ⚠️ Se country != "BR", PERGUNTE antes ao paciente em qual idioma ele prefere conversar (ex: brasileiro morando nos EUA pode preferir PT, ou paciente americano pode pedir EN). NÃO assuma o idioma pelo país.',
   parameters: z.object({
     country: z
       .string()
       .length(2)
       .describe('ISO 3166-1 alpha-2 em UPPERCASE: BR, US, PT, ES, AR, MX, etc.'),
+    language: z
+      .enum(['pt-BR', 'pt-PT', 'en', 'es', 'fr', 'de', 'it'])
+      .optional()
+      .describe(
+        'Idioma de conversação preferido pelo paciente. ⚠️ Se country != BR, é OBRIGATÓRIO perguntar ao paciente antes de chamar a tool — não derive do país. Se country=BR, pode omitir (default pt-BR).',
+      ),
+    unit_system: z
+      .enum(['metric', 'imperial'])
+      .optional()
+      .describe(
+        'Sistema de medidas preferido. metric=kg/cm (padrão BR/EU), imperial=lb/in (padrão US/UK). ⚠️ Pra country US/GB: pergunte ao paciente. Pra outros: omita (default metric).',
+      ),
   }),
   execute: async (args, ctx) => {
     const country = args.country.toUpperCase()
     if (!/^[A-Z]{2}$/.test(country)) {
       throw new Error(`Código país inválido: ${country}. Use ISO alpha-2 (BR, US, PT, etc.).`)
     }
-    const { error } = await ctx.supabase
+    const updates: Record<string, unknown> = {
+      country,
+      country_confirmed: true,
+      updated_at: new Date().toISOString(),
+    }
+    if (args.language) {
+      updates.locale = args.language
+    } else if (country === 'BR') {
+      updates.locale = 'pt-BR'
+    }
+    // Sistema de medidas: armazena em metadata pra evitar migration nova.
+    // Default metric (BR/EU); imperial só pra US/GB confirmado pelo paciente.
+    const unitSystem =
+      args.unit_system ?? (['US', 'GB'].includes(country) ? null : 'metric')
+    if (unitSystem) {
+      updates.metadata = { unit_system: unitSystem }
+    }
+    const { error } = await (ctx.supabase as unknown as {
+      from: (t: string) => {
+        update: (u: Record<string, unknown>) => {
+          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+        }
+      }
+    })
       .from('users')
-      .update({
-        country,
-        country_confirmed: true,
-        updated_at: new Date().toISOString(),
-      } as never)
+      .update(updates)
       .eq('id', ctx.userId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'country.confirmed',
-      properties: { country, wpp: ctx.userWpp },
+      properties: { country, language: args.language ?? null, wpp: ctx.userWpp },
     })
     return {
       success: true,
       country,
+      language: args.language ?? (country === 'BR' ? 'pt-BR' : null),
+      unit_system: unitSystem,
       confirmed: true,
       message:
         country === 'BR'
-          ? 'País gravado como Brasil. Sigo com TACO e medidas brasileiras.'
-          : `País gravado como ${country}. Sigo com cuidado: ainda estou otimizado pra Brasil (TACO, medidas), pode haver imprecisão em alimentos locais.`,
+          ? 'País gravado como Brasil (pt-BR, métrico).'
+          : `País=${country}, idioma=${args.language ?? '?'}, unidades=${unitSystem ?? '?'}. Sigo com cuidado: TACO é brasileira, alimentos locais podem sair imprecisos.`,
     }
   },
 }

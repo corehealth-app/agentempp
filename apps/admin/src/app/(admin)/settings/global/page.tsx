@@ -19,14 +19,26 @@ export default async function GlobalConfigPage() {
     .select('key, value, description')
     .order('key', { ascending: true })
 
-  const items = rows ?? []
+  // Exclui prefixo 'calc.*' — tem página dedicada (/settings/calc) com UI
+  // específica por tipo (BMR record, badges JSON-array, etc). Mostrar aqui
+  // duplicaria com editor genérico inferior.
+  const items = (rows ?? []).filter((r) => !r.key.startsWith('calc.'))
 
   return (
     <div className="space-y-4">
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'Global' }]}
         title="Config Global"
-        description="Rate limits, alertas, parâmetros TTS e outras chaves globais. Cada save dispara entrada em audit_log."
+        description={
+          <>
+            Rate limits, alertas, TTS, engagement, humanizer, buffer, attention.{' '}
+            <strong>Constantes de cálculo (BMR, IMC, badges, XP)</strong> ficam em{' '}
+            <a href="/settings/calc" className="underline hover:text-foreground">
+              /settings/calc
+            </a>{' '}
+            (UI dedicada).
+          </>
+        }
       />
 
       {items.length === 0 ? (

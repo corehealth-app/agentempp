@@ -305,12 +305,6 @@ export default function TutorialPage() {
           title="Stripe — produtos + sync"
           description="Sincroniza produtos do Stripe (lookup_keys mpp_mensal_v1, mpp_anual_v1) com a DB local. Edita preço/nome no Stripe Dashboard, vem aqui e clica Sync."
         />
-        <Item
-          icon={CreditCard}
-          href="/settings/billing"
-          title="Billing — assinaturas + eventos"
-          description="Lista subscriptions (50 últimas) + subscription_events (20 últimos). Inclui status (active/past_due/canceled/expired/trialing), plan, current_period_end. Útil pra investigar payment failed do dashboard."
-        />
       </Section>
 
       {/* ====================================================== */}

@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { CheckoutButton } from './checkout-button'
 import { CountryConfirmButton } from './country-confirm'
-import { DangerButtons } from './danger-buttons'
+import { DangerZone } from '../../messages/danger-zone'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -311,10 +311,11 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         title="Zona de perigo"
         description="Resetar mantém o paciente e zera onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
       >
-        <DangerButtons
+        <DangerZone
           userId={user.id}
           userName={user.name}
           userWpp={user.wpp}
+          layout="full"
         />
       </ContentCard>
     </div>

@@ -95,10 +95,26 @@ async function maybeEngageUser(
     return { sent: false, reason: 'paciente pausado' }
   }
 
-  // Janela noturna: só envia entre 6h e 22h locais (inclusive 22)
-  if (localHour < 6 || localHour >= 22) {
-    await logEvent('engagement.skipped', { reason: 'noturno', local_hour: localHour })
-    return { sent: false, reason: 'horário noturno' }
+  // Janela ativa do paciente (wake_time → bedtime do user_profiles).
+  // Sem essas infos, fallback pra 6h–22h. Adapta pra plantonista, dono de
+  // restaurante, dev nightowl, etc — cada um tem seu ciclo.
+  const { data: profileTime } = await supabase
+    .from('user_profiles')
+    .select('wake_time, bedtime')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const window = activeWindow(
+    (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.wake_time,
+    (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.bedtime,
+  )
+  if (!isWithinActiveWindow(localHour, window)) {
+    await logEvent('engagement.skipped', {
+      reason: 'fora da janela ativa do paciente',
+      local_hour: localHour,
+      window_start: window.start,
+      window_end: window.end,
+    })
+    return { sent: false, reason: 'fora da janela ativa' }
   }
 
   // A1: já enviou engajamento hoje? Se sim, pula. (NÃO conta conversa do user.)
@@ -225,6 +241,49 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   })
 
   return { sent: deliveryStatus === 'sent', reason: deliveryError }
+}
+
+/**
+ * Janela ativa do paciente, derivada de wake_time/bedtime do user_profiles.
+ *
+ * Política:
+ *   - Engajamento começa 30min após o paciente acordar (não chega quando ele
+ *     abriu o olho).
+ *   - Termina 1h antes de dormir (não atrapalha o sono).
+ *   - Sem wake_time → assume 6h. Sem bedtime → assume 22h.
+ *   - Suporta janelas que cruzam meia-noite (plantonistas: dorme 04h, acorda 12h).
+ */
+interface ActiveWindow {
+  start: number // hora inteira inclusive
+  end: number // hora inteira exclusive
+  crossesMidnight: boolean
+}
+
+function activeWindow(wakeTime: string | null | undefined, bedtime: string | null | undefined): ActiveWindow {
+  const wake = parseHour(wakeTime, 6)
+  const bed = parseHour(bedtime, 22)
+  // 30min após acordar → arredonda pra próxima hora
+  const start = (wake + 1) % 24
+  // 1h antes de dormir
+  const end = (bed - 1 + 24) % 24
+  const crossesMidnight = start > end
+  return { start, end, crossesMidnight }
+}
+
+function isWithinActiveWindow(hour: number, w: ActiveWindow): boolean {
+  if (w.crossesMidnight) {
+    // janela cruza 00h: fora dela é só [end, start)
+    return hour >= w.start || hour < w.end
+  }
+  return hour >= w.start && hour < w.end
+}
+
+function parseHour(timeStr: string | null | undefined, fallback: number): number {
+  if (!timeStr) return fallback
+  const m = timeStr.match(/^(\d{1,2})/)
+  if (!m || !m[1]) return fallback
+  const h = Number(m[1])
+  return Number.isFinite(h) && h >= 0 && h <= 23 ? h : fallback
 }
 
 /**

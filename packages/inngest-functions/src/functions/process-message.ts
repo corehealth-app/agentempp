@@ -8,7 +8,7 @@ import {
 } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
-import { loadHumanizerConfig } from '../lib/runtime-config.js'
+import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
 
 /**
  * Worker principal: processa cada mensagem recebida.
@@ -124,6 +124,10 @@ export const processMessageFn = inngest.createFunction(
     }
 
     if (contentType === 'image' && allMediaUrls.length > 0) {
+      const visionCfg = await step.run('vision-config', async () => {
+        const { supabase } = createWorkerDeps()
+        return loadVisionConfig(supabase)
+      })
       const vRes = await step.run('vision-analyze', async () => {
         if (!process.env.OPENROUTER_API_KEY) {
           return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente', images: [] }
@@ -132,6 +136,8 @@ export const processMessageFn = inngest.createFunction(
           const vision = new GeminiVision({
             apiKey: process.env.OPENROUTER_API_KEY,
             heliconeApiKey: process.env.HELICONE_API_KEY,
+            model: visionCfg.model,
+            prompts: visionCfg.prompts,
           })
           const start = Date.now()
           // Processa TODAS as imagens em paralelo
@@ -159,12 +165,13 @@ export const processMessageFn = inngest.createFunction(
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
           if (img.type === 'meal') {
-            const lowConfItems = img.items.filter((it) => it.confidence < 0.6)
+            const threshold = visionCfg.meal_confidence_threshold
+            const lowConfItems = img.items.filter((it) => it.confidence < threshold)
             const itemsTxt =
               img.items
                 .map((it) => {
                   const confPct = (it.confidence * 100).toFixed(0)
-                  const flag = it.confidence < 0.6 ? ' ⚠️ INCERTO' : ''
+                  const flag = it.confidence < threshold ? ' ⚠️ INCERTO' : ''
                   return `  - ${it.name}: ${it.quantity_g_estimate}g (conf ${confPct}%${flag})`
                 })
                 .join('\n') || '  (nenhum alimento identificado)'

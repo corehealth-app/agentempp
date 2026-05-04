@@ -11,6 +11,7 @@ import {
   Cpu,
   CreditCard,
   FileText,
+  Apple,
   Key,
   LayoutDashboard,
   LogOut,
@@ -74,6 +75,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { label: 'Global', href: '/settings/global', icon: Settings },
       { label: 'Cálculos', href: '/settings/calc', icon: Calculator },
+      { label: 'Banco de alimentos', href: '/settings/foods', icon: Apple },
       { label: 'API Keys', href: '/settings/api-keys', icon: Key },
       { label: 'Stripe', href: '/settings/stripe', icon: CreditCard },
       { label: 'Crons', href: '/settings/crons', icon: Clock },

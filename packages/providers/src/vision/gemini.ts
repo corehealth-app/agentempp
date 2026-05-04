@@ -212,11 +212,20 @@ function buildHeaders(cfg: VisionConfig): Record<string, string> {
   return headers
 }
 
+export interface VisionPromptOverrides {
+  meal?: string
+  body?: string
+  scale?: string
+  other?: string
+  classifier?: string
+}
+
 export class GeminiVision {
   private client: OpenAI
   private model: string
+  private prompts: Required<VisionPromptOverrides>
 
-  constructor(cfg: VisionConfig) {
+  constructor(cfg: VisionConfig & { prompts?: VisionPromptOverrides }) {
     this.client = new OpenAI({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL ?? 'https://openrouter.ai/api/v1',
@@ -225,6 +234,13 @@ export class GeminiVision {
       maxRetries: 1,
     })
     this.model = cfg.model ?? 'google/gemini-2.5-flash'
+    this.prompts = {
+      meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,
+      body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
+      scale: cfg.prompts?.scale ?? SCALE_SYSTEM_PROMPT,
+      other: cfg.prompts?.other ?? OTHER_SYSTEM_PROMPT,
+      classifier: cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
+    }
   }
 
   /**
@@ -237,7 +253,7 @@ export class GeminiVision {
       temperature: 0,
       max_tokens: 8,
       messages: [
-        { role: 'system', content: CLASSIFIER_PROMPT },
+        { role: 'system', content: this.prompts.classifier },
         {
           role: 'user',
           content: [{ type: 'image_url', image_url: { url: imageUrl } }],
@@ -275,7 +291,7 @@ export class GeminiVision {
       max_tokens: 2048,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: MEAL_SYSTEM_PROMPT },
+        { role: 'system', content: this.prompts.meal },
         {
           role: 'user',
           content: [
@@ -316,7 +332,7 @@ export class GeminiVision {
       max_tokens: 1024,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: BODY_SYSTEM_PROMPT },
+        { role: 'system', content: this.prompts.body },
         {
           role: 'user',
           content: [
@@ -366,7 +382,7 @@ export class GeminiVision {
       max_tokens: 256,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SCALE_SYSTEM_PROMPT },
+        { role: 'system', content: this.prompts.scale },
         {
           role: 'user',
           content: [{ type: 'image_url', image_url: { url: imageUrl } }],
@@ -404,7 +420,7 @@ export class GeminiVision {
       max_tokens: 256,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: OTHER_SYSTEM_PROMPT },
+        { role: 'system', content: this.prompts.other },
         {
           role: 'user',
           content: [{ type: 'image_url', image_url: { url: imageUrl } }],

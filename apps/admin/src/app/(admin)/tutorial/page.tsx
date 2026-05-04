@@ -211,6 +211,20 @@ export default function TutorialPage() {
           title="Avaliações LLM"
           description="LLM-as-judge avalia conversas das últimas 50 msgs. Score 0-10 + justificativa. Distribuição alta (≥8) / média (6-8) / baixa (<6). Use pra decidir o que melhorar nas regras."
         />
+        <Item
+          icon={FileText}
+          href="/prompts?tipo=regras_gerais"
+          title="Vision · 5 prompts (meal/body/scale/other/classifier)"
+          description="Como o modelo lê fotos. Editáveis em /prompts (slug começa com 'vision-'). Cache 60s — mudança propaga ≤1min sem deploy."
+          examples={[
+            'vision-classifier — escolhe meal/body/scale/other antes de analisar',
+            'vision-meal — chain-of-thought 4 passos: identifica → nomeia PT-BR → estima quantidade → auto-checa confidence',
+            'vision-body — estima BF% por ângulo + composição visível',
+            'vision-scale — lê número da balança e converte lb→kg',
+            'vision-other — fallback descritivo pra fotos não-padrão',
+            'Modelo + threshold de confidence editáveis em /settings/global (vision.* keys)',
+          ]}
+        />
       </Section>
 
       {/* ====================================================== */}
@@ -252,6 +266,20 @@ export default function TutorialPage() {
             { name: 'calc', count: 13, what: 'Mesmas chaves de /settings/calc (UI dedicada)' },
             { name: 'country_to_language', count: 1, what: 'Map de país → idioma da persona' },
             { name: 'persona', count: 1, what: 'Variações de persona por país (Dr. Roberto / Robert)' },
+            { name: 'vision', count: 2, what: 'Modelo OpenRouter (gemini-2.5-flash) + threshold de confidence pra flag ⚠️ INCERTO' },
+          ]}
+        />
+        <Item
+          icon={Calculator}
+          href="/settings/foods"
+          title="Banco de alimentos (food_db)"
+          description="Base nutricional consultada quando o agente registra refeição. Vision identifica os itens, esta tabela fornece kcal/proteína/carb/gordura por 100g. Match por trigram em name_pt. Adicione novos quando vir '0 kcal sem match'."
+          examples={[
+            '~233 alimentos BR (TACO + 108 aliases populares)',
+            'Adicionar regional: ex "tacacá" → kcal/protein/carb/fat por 100g',
+            'Editar inline: nome, categoria, macros, fonte (alias / TACO / manual)',
+            'Filtros: busca por nome, categoria, fonte',
+            '⚠️ Nome deve ser PT-BR popular ("ovo frito"), NÃO técnico ("ovo de galinha mexido")',
           ]}
         />
       </Section>

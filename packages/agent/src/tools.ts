@@ -258,12 +258,25 @@ export const consultaProgresso: ToolDefinition = {
 export const registraTreino: ToolDefinition = {
   name: 'registra_treino',
   description:
-    'Registra um treino executado. As kcal queimadas são calculadas automaticamente pelo sistema com base em workout_type + duração + intensidade + peso atual do paciente — você NÃO precisa estimar. Use quando o paciente relatar treino concluído.',
+    'Registra um treino executado. Kcal queimadas calculadas automaticamente (workout_type × duração × intensidade × peso) — você NÃO precisa estimar.',
   parameters: z.object({
     workout_type: z
       .string()
       .describe(
-        'Slug do tipo de treino. Exemplos: "peito_triceps", "perna_completa", "corrida", "caminhada", "bicicleta", "natacao", "hiit", "futebol", "yoga", "crossfit". Use "outro" se não classificar.',
+        [
+          'Slug do tipo de treino. Use o MAIS específico que o paciente descreveu.',
+          'MUSCULAÇÃO: peito_triceps, costas_biceps, perna_completa (=pernas),',
+          '  ombro_trapezio (=ombros), abdomen (=abdominal), biceps_triceps,',
+          '  gluteos, full_body, treino_a / treino_b / treino_c, musculacao (genérico).',
+          'CARDIO: corrida, corrida_leve, corrida_intensa, caminhada, caminhada_rapida,',
+          '  bicicleta, eliptico, escada, natacao, hiit, jumping_jacks, esteira,',
+          '  spinning, remo, zumba, danca, cardio (genérico), aerobico.',
+          'ESPORTE: futebol, volei, beach_tennis, tenis, basquete, luta,',
+          '  jiu_jitsu (=bjj), boxe, muay_thai, escalada.',
+          'CALISTENIA: calistenia, handstand, crossfit (=crossfit_wod=funcional).',
+          'MOBILIDADE: yoga, pilates (=pilates_solo), alongamento (=flex), mobility.',
+          'Se não conseguir classificar: "outro".',
+        ].join('\n'),
       ),
     duration_min: z.number().int().positive(),
     intensity: z.enum(['leve', 'moderada', 'alta']).optional(),

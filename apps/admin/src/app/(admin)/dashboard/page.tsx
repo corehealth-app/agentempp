@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import {
   Activity,
-  ArrowRight,
   CheckCircle2,
   CreditCard,
   DollarSign,
@@ -13,6 +12,7 @@ import { ContentCard, PageHeader } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
 import { Sparkline } from '@/components/sparkline'
 import { createServiceClient } from '@/lib/supabase/server'
+import { AttentionActions } from './attention-actions'
 import { formatNumber, formatUSD } from '@/lib/utils'
 
 interface DailyKpi {
@@ -186,26 +186,30 @@ export default async function DashboardPage() {
               }
               return (
                 <li key={`${a.user_id}-${i}`}>
-                  <Link
-                    href={`/users/${a.user_id}`}
-                    className={`group glass-subtle flex items-start gap-3 p-3 border-l-2 ${meta.tone} hover:bg-muted/40 transition-colors`}
+                  <div
+                    className={`glass-subtle flex items-start gap-3 p-3 border-l-2 ${meta.tone} hover:bg-muted/40 transition-colors`}
                   >
-                    <span className="text-xl shrink-0 leading-none mt-0.5">{meta.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="font-medium text-foreground">
-                          {a.name ?? '(sem nome)'}
-                        </span>
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-                          {a.kind.replace('_', ' ')}
-                        </span>
+                    <Link
+                      href={`/users/${a.user_id}`}
+                      className="group flex items-start gap-3 flex-1 min-w-0"
+                    >
+                      <span className="text-xl shrink-0 leading-none mt-0.5">{meta.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="font-medium text-foreground group-hover:text-moss-700 transition-colors">
+                            {a.name ?? '(sem nome)'}
+                          </span>
+                          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                            {a.kind.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
+                          {a.message}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
-                        {a.message}
-                      </p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-foreground transition-colors mt-1 shrink-0" />
-                  </Link>
+                    </Link>
+                    <AttentionActions userId={a.user_id} kind={a.kind} />
+                  </div>
                 </li>
               )
             })}

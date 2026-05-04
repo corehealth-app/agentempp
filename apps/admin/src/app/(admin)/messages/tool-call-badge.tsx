@@ -17,8 +17,9 @@ interface ToolCall {
 
 /**
  * Badge inline mostrando tools chamadas no turno.
- * Busca tools_audit por user_id + janela ±30s do created_at da OUT.
- * Click → expande pra ver args/result.
+ * Busca tools_audit por user_id + janela [-60s, +5s] do created_at da OUT.
+ * Só RENDERIZA se houver tools chamadas — evita ruído visual em
+ * msgs de engagement (que nunca chamam tools).
  */
 export function ToolCallBadge({
   userId,
@@ -30,11 +31,10 @@ export function ToolCallBadge({
 }) {
   const [open, setOpen] = useState(false)
   const [calls, setCalls] = useState<ToolCall[] | null>(null)
-  const [loading, setLoading] = useState(false)
 
+  // Fetch ao montar — assim sabemos se há calls antes de renderizar.
   useEffect(() => {
-    if (!open || calls !== null) return
-    setLoading(true)
+    let cancelled = false
     const supabase = createClient()
     const before = new Date(new Date(createdAt).getTime() - 60_000).toISOString()
     const after = new Date(new Date(createdAt).getTime() + 5_000).toISOString()
@@ -46,10 +46,16 @@ export function ToolCallBadge({
       .lte('created_at', after)
       .order('created_at', { ascending: true })
       .then(({ data }) => {
-        setCalls((data ?? []) as ToolCall[])
-        setLoading(false)
+        if (!cancelled) setCalls((data ?? []) as ToolCall[])
       })
-  }, [open, calls, userId, createdAt])
+    return () => {
+      cancelled = true
+    }
+  }, [userId, createdAt])
+
+  // Antes de saber: render nada (não pisca).
+  // Depois de saber: só renderiza se houver calls.
+  if (!calls || calls.length === 0) return null
 
   return (
     <div className="mt-1">
@@ -60,16 +66,12 @@ export function ToolCallBadge({
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <Wrench className="h-3 w-3" />
-        tools
+        {calls.length} tool{calls.length === 1 ? '' : 's'}
       </button>
 
       {open && (
         <div className="mt-1 space-y-1 max-w-[380px]">
-          {loading && <div className="text-[10px] text-muted-foreground">carregando…</div>}
-          {!loading && calls && calls.length === 0 && (
-            <div className="text-[10px] text-muted-foreground italic">nenhuma tool chamada</div>
-          )}
-          {calls?.map((c) => (
+          {calls.map((c) => (
             <div
               key={c.id}
               className={`glass-subtle p-2 text-[10px] font-mono space-y-1 border-l-2 ${

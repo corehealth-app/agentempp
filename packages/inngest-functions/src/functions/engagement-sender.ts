@@ -1,3 +1,4 @@
+import { loadCalcConfig, loadDailyTargets } from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
@@ -153,11 +154,49 @@ async function maybeEngageUser(
     .eq('user_id', userId)
     .maybeSingle()
 
-  // C: contexto rico pro LLM — hora local real + dica de refeição típica
+  // Metas calóricas + balanço de hoje (snapshot do dia local).
+  // Sem isso o LLM ALUCINA valores plausíveis ("2.500 kcal, 160g").
+  const todayLocalDate = getLocalDate(userTimezone)
+  const calcCfg = await loadCalcConfig(supabase)
+  const targets = await loadDailyTargets(supabase, userId, calcCfg)
+  const { data: snapToday } = await supabase
+    .from('daily_snapshots')
+    .select('calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance')
+    .eq('user_id', userId)
+    .eq('date', todayLocalDate)
+    .maybeSingle()
+  const consumedKcal = (snapToday as { calories_consumed?: number } | null)?.calories_consumed ?? 0
+  const consumedProtein = (snapToday as { protein_g?: number } | null)?.protein_g ?? 0
+  const exerciseKcal = (snapToday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
+
+  // Snapshot do dia anterior — pra "déficit de ontem" no engajamento da manhã
+  const yesterdayDate = new Date(`${todayLocalDate}T00:00:00${tzOffset(userTimezone)}`)
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+  const yesterdayLocalDate = yesterdayDate.toISOString().slice(0, 10)
+  const { data: snapYesterday } = await supabase
+    .from('daily_snapshots')
+    .select('calories_consumed, calories_target, daily_balance')
+    .eq('user_id', userId)
+    .eq('date', yesterdayLocalDate)
+    .maybeSingle()
+  const yesterdayBalance = (snapYesterday as { daily_balance?: number } | null)?.daily_balance
+
+  const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'
+  const targetProtein = targets.protein_target ?? '(não calculado — perfil incompleto)'
+
+  // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
 Hora local do paciente: ${String(localHour).padStart(2, '0')}:00 (timezone ${userTimezone})
 Período do dia: ${slot}
 Refeição típica desse horário: ${mealHint}
+
+DADOS REAIS DO DIA — USE ESTES VALORES, NÃO INVENTE:
+- Meta calórica de hoje: ${targetKcal} kcal
+- Meta de proteína de hoje: ${targetProtein}${typeof targetProtein === 'number' ? ' g' : ''}
+- Consumido até agora: ${consumedKcal} kcal | ${consumedProtein} g proteína
+- Exercício hoje: ${exerciseKcal} kcal queimadas
+${yesterdayBalance != null ? `- Balanço de ONTEM (${yesterdayLocalDate}): ${yesterdayBalance} kcal (negativo = déficit, positivo = superávit)` : '- Sem dados de ontem'}
+
 Streak atual: ${progress?.current_streak ?? 0} dias
 XP: ${progress?.xp_total ?? 0} (level ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}

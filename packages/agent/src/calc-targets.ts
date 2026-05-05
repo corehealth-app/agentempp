@@ -92,10 +92,13 @@ export function computeDailyTargets(
       break
   }
 
-  // protein_target = peso × fator de fome
+  // protein_target = peso × fator de fome.
+  // Sem hunger_level salvo, usa 'moderada' (1.8g/kg) como default razoável.
+  // Antes retornava null e o cron de engajamento alucinava o valor.
+  const effectiveHunger = profile.hungerLevel ?? 'moderada'
   const proteinTarget =
-    profile.weightKg != null && profile.hungerLevel != null
-      ? calcProteinTargetG(profile.weightKg, profile.hungerLevel, config)
+    profile.weightKg != null
+      ? calcProteinTargetG(profile.weightKg, effectiveHunger, config)
       : null
 
   return {

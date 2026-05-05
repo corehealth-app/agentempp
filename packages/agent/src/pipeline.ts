@@ -166,6 +166,7 @@ export async function processMessage(
       userId,
       userWpp: input.from,
       userCountry: ctx.country ?? 'BR',
+      providerMessageId: input.providerMessageId,
     }
     for (const tc of result.toolCalls) {
       const tool = getToolByName(tc.name)

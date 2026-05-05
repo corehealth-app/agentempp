@@ -17,6 +17,10 @@ export interface ToolContext {
   userWpp: string
   /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
   userCountry?: string
+  /** ID da mensagem que originou o turno (provider_message_id). Usado pra
+   * dedup de inserts em logs (meal_logs, workout_logs) — protege contra
+   * dupla contagem em retentativas do Inngest. */
+  providerMessageId?: string
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -32,7 +36,13 @@ export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
 export const cadastraDadosIniciais: ToolDefinition = {
   name: 'cadastra_dados_iniciais',
   description:
-    'Salva ou atualiza dados iniciais do usuário no perfil. Use quando o usuário fornecer dados do questionário inicial: sexo, data de nascimento, altura, peso, BF%, frequência de treino, sono, fome.',
+    'Salva ou atualiza dados FACTUAIS do perfil do paciente (sexo, nascimento, altura, peso, BF%, atividade, sono, fome). ' +
+    'Use durante onboarding OU quando o paciente confirmar EXPLICITAMENTE que quer atualizar ("meu peso mudou", "agora meço 1.80m"). ' +
+    '⚠️ NÃO USE quando: ' +
+    '(a) o paciente está ESPECULANDO ("acho que tenho uns 25%", "talvez seja 80kg"); ' +
+    '(b) o paciente está REFLETINDO sobre dados antigos; ' +
+    '(c) os números vieram de fonte externa não confirmada (foto de balança sem confirmação verbal). ' +
+    '🚨 UNIDADES: height_cm SEMPRE em centímetros, weight_kg SEMPRE em quilos. Se o paciente disser em lb/inch (sistema imperial salvo em users.metadata.unit_system), CONVERTA antes (1 inch=2.54 cm, 1 lb=0.4536 kg). A tool valida limites: altura 100-250cm, peso 30-300kg, BF 5-60%. Se não bater, é provavelmente unidade errada — recue e pergunte.',
   parameters: z.object({
     name: z.string().optional().describe('Nome do usuário'),
     sex: z.enum(['masculino', 'feminino']).optional(),
@@ -56,12 +66,28 @@ export const cadastraDadosIniciais: ToolDefinition = {
     // Helper: aceita só números > 0 (LLM costuma mandar 0 como placeholder)
     const numPositive = (v: unknown): boolean => typeof v === 'number' && v > 0
     const strNonEmpty = (v: unknown): boolean => typeof v === 'string' && v.trim().length > 0
+    const sanityErrors: string[] = []
+    const inRange = (v: number, min: number, max: number, label: string, hint: string) => {
+      if (v < min || v > max) sanityErrors.push(`${label}=${v} fora do esperado ${min}-${max}. ${hint}`)
+    }
 
     if (strNonEmpty(args.sex)) updates.sex = args.sex
     if (strNonEmpty(args.birth_date)) updates.birth_date = args.birth_date
-    if (numPositive(args.height_cm)) updates.height_cm = args.height_cm
-    if (numPositive(args.weight_kg)) updates.weight_kg = args.weight_kg
-    if (numPositive(args.body_fat_percent)) updates.body_fat_percent = args.body_fat_percent
+    if (numPositive(args.height_cm)) {
+      inRange(args.height_cm!, 100, 250, 'height_cm', 'Provavelmente passou em inches — converta: cm = inch × 2.54.')
+      updates.height_cm = args.height_cm
+    }
+    if (numPositive(args.weight_kg)) {
+      inRange(args.weight_kg!, 30, 300, 'weight_kg', 'Provavelmente passou em libras — converta: kg = lb × 0.4536.')
+      updates.weight_kg = args.weight_kg
+    }
+    if (numPositive(args.body_fat_percent)) {
+      inRange(args.body_fat_percent!, 3, 60, 'body_fat_percent', 'BF% válido fica em 3-60. Reverifique com o paciente.')
+      updates.body_fat_percent = args.body_fat_percent
+    }
+    if (sanityErrors.length > 0) {
+      return { success: false, error: 'sanity_check_failed', issues: sanityErrors }
+    }
     if (strNonEmpty(args.activity_level)) updates.activity_level = args.activity_level
     if (numPositive(args.training_frequency))
       updates.training_frequency = args.training_frequency
@@ -105,15 +131,24 @@ export const cadastraDadosIniciais: ToolDefinition = {
 export const defineProtocolo: ToolDefinition = {
   name: 'define_protocolo',
   description:
-    'Grava o protocolo escolhido pelo usuário. Use APENAS após validar critérios via cadastra_dados_iniciais e o usuário escolher explicitamente.',
+    'Grava o protocolo nutricional + meta DO PACIENTE. ' +
+    '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada com peso/altura/BF; ' +
+    '(2) você apresentou as 3 opções (recomposicao/ganho_massa/manutencao) e o paciente escolheu UMA explicitamente; ' +
+    '(3) você apresentou o nível de fome (leve/moderada/alta → 400/500/600 kcal de déficit) e ele escolheu — APENAS pra protocolo recomposicao. ' +
+    'NÃO USE quando o paciente apenas DESEJOU genericamente ("quero emagrecer", "quero ganhar massa") — peça pra ele confirmar a opção. ' +
+    'Parâmetros: ' +
+    'protocol = "recomposicao" (déficit + preserva massa), "ganho_massa" (superávit), "manutencao" (sem ajuste). ' +
+    'deficit_level = kcal/dia de déficit, APENAS pra recomposicao. 400=fome leve, 500=moderada, 600=alta. Omita pra ganho_massa/manutencao. ' +
+    'goal_type = "BF" (% gordura alvo) ou "IMC" (IMC alvo). ' +
+    'goal_value = número absoluto da meta (ex: BF=15 ou IMC=23). Omita se não chegou nesse nível de detalhe.',
   parameters: z.object({
     protocol: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
     deficit_level: z
       .union([z.literal(400), z.literal(500), z.literal(600)])
       .optional()
-      .describe('Apenas para protocolo recomposicao'),
-    goal_type: z.enum(['BF', 'IMC']).optional(),
-    goal_value: z.number().optional(),
+      .describe('Apenas para protocolo recomposicao. 400=fome leve, 500=moderada, 600=alta.'),
+    goal_type: z.enum(['BF', 'IMC']).optional().describe('"BF"=alvo de % gordura corporal, "IMC"=alvo de IMC'),
+    goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),
   execute: async (args, ctx) => {
     const { error } = await ctx.supabase
@@ -164,6 +199,25 @@ export const registraRefeicao: ToolDefinition = {
   execute: async (args, ctx) => {
     const today = new Date().toISOString().split('T')[0]!
 
+    // Idempotência: se essa msg já gerou meal_logs, skipa snapshot increment.
+    // Protege contra retry de Inngest e LLM emitindo a mesma tool 2x no turno.
+    if (ctx.providerMessageId) {
+      const { data: existing } = await ctx.supabase
+        .from('meal_logs')
+        .select('id, snapshot_id, food_name, kcal')
+        .eq('user_id', ctx.userId)
+        .eq('raw_provider_message_id', ctx.providerMessageId)
+        .limit(20)
+      if (existing && existing.length > 0) {
+        return {
+          success: true,
+          deduped: true,
+          message: 'Refeição já registrada (msg_id repetido). Não duplicou.',
+          existing_count: existing.length,
+        }
+      }
+    }
+
     // Calcula macros via TACO
     const calc = await calcMealMacros(ctx.supabase, args.items, ctx.userCountry ?? 'BR')
 
@@ -173,7 +227,6 @@ export const registraRefeicao: ToolDefinition = {
     const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
 
     // RPC atomic: cria ou incrementa snapshot SEM race condition.
-    // Resolve bug onde 2 logs simultâneos sobrescreviam um ao outro.
     const { data: updated, error: updErr } = await (ctx.supabase as unknown as {
       rpc: (
         n: string,
@@ -196,13 +249,14 @@ export const registraRefeicao: ToolDefinition = {
     if (!updated) throw new Error('snapshot_add_meal returned null')
     const snapshotId = updated.id
 
-    // Insere cada item em meal_logs (sem dedup pq cada msg gera novo log)
+    // Insere cada item em meal_logs com upsert idempotente
+    // (UNIQUE composite user_id,raw_provider_message_id,food_name).
     for (const item of calc.items) {
       await ctx.supabase.from('meal_logs').insert({
         user_id: ctx.userId,
         snapshot_id: snapshotId,
         meal_type: args.meal_type ?? null,
-        food_name: item.matched_taco_name || item.food_name,
+        food_name: item.food_name,
         quantity_g: item.quantity_g,
         kcal: item.kcal,
         protein_g: item.protein_g,
@@ -210,6 +264,7 @@ export const registraRefeicao: ToolDefinition = {
         fat_g: item.fat_g,
         source: item.source,
         confidence: item.similarity,
+        raw_provider_message_id: ctx.providerMessageId ?? null,
       })
     }
 
@@ -217,7 +272,8 @@ export const registraRefeicao: ToolDefinition = {
       success: true,
       meal: {
         items: calc.items.map((i) => ({
-          name: i.matched_taco_name || i.food_name,
+          name: i.food_name,
+          matched_to: i.matched_taco_name || null,
           quantity_g: i.quantity_g,
           kcal: i.kcal,
           protein_g: i.protein_g,
@@ -266,7 +322,12 @@ export const consultaProgresso: ToolDefinition = {
 export const registraTreino: ToolDefinition = {
   name: 'registra_treino',
   description:
-    'Registra um treino executado. Kcal queimadas calculadas automaticamente (workout_type × duração × intensidade × peso) — você NÃO precisa estimar.',
+    'Registra um TREINO QUE O PACIENTE ACABOU DE EXECUTAR (completado hoje, agora ou nas últimas horas). Kcal queimadas calculadas automaticamente (workout_type × duração × intensidade × peso). NÃO calcule manualmente. ' +
+    '⚠️ NÃO USE quando: ' +
+    '(a) o paciente está descrevendo FREQUÊNCIA/PADRÃO ("treino 3x por semana", "qual sua frequência?", "costumo treinar de manhã") — isso é coleta pra montar plano; ' +
+    '(b) o paciente está descrevendo treino FUTURO ou PLANEJADO ("vou começar a treinar", "amanhã faço pernas", "tô pensando em correr"); ' +
+    '(c) o paciente pedindo SUGESTÃO de treino. ' +
+    'Use APENAS com sinais claros de EXECUÇÃO RECENTE: "acabei de sair da academia", "treino de hoje foi…", "agora saí da corrida", "treinei pernas hoje".',
   parameters: z.object({
     workout_type: z
       .string()
@@ -292,6 +353,23 @@ export const registraTreino: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const today = new Date().toISOString().split('T')[0]!
+
+    // Idempotência: se essa msg já gerou workout_logs, skipa snapshot increment.
+    if (ctx.providerMessageId) {
+      const { data: existing } = await ctx.supabase
+        .from('workout_logs')
+        .select('id, snapshot_id, workout_type, estimated_kcal')
+        .eq('user_id', ctx.userId)
+        .eq('raw_provider_message_id', ctx.providerMessageId)
+        .limit(5)
+      if (existing && existing.length > 0) {
+        return {
+          success: true,
+          deduped: true,
+          message: 'Treino já registrado (msg_id repetido). Não duplicou.',
+        }
+      }
+    }
 
     // Targets calóricos
     const cfg = await loadCalcConfig(ctx.supabase)
@@ -347,6 +425,7 @@ export const registraTreino: ToolDefinition = {
       intensity: args.intensity,
       estimated_kcal: computedKcal,
       notes: args.notes,
+      raw_provider_message_id: ctx.providerMessageId ?? null,
     })
 
     return {
@@ -378,19 +457,21 @@ export const atualizaDataUser: ToolDefinition = {
     } = { updated_at: new Date().toISOString() }
     if (args.name) updates.name = args.name
     if (args.timezone) updates.timezone = args.timezone
-    if (args.city) {
-      const { data: user } = await ctx.supabase
-        .from('users')
-        .select('metadata')
-        .eq('id', ctx.userId)
-        .maybeSingle()
-      const metadata = ((user?.metadata as Record<string, unknown>) ?? {}) as Record<string, unknown>
-      metadata.city = args.city
-      updates.metadata = JSON.parse(JSON.stringify(metadata))
+    if (Object.keys(updates).length > 1) {
+      const { error } = await ctx.supabase.from('users').update(updates).eq('id', ctx.userId)
+      if (error) throw error
     }
-    const { error } = await ctx.supabase.from('users').update(updates).eq('id', ctx.userId)
-    if (error) throw error
-    return { success: true, updated: Object.keys(updates) }
+    if (args.city) {
+      // Atomic merge — não usar read-then-write (race com pause, escalation, etc)
+      const { error: rpcErr } = await (ctx.supabase as unknown as {
+        rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>
+      }).rpc('user_metadata_merge', {
+        p_user_id: ctx.userId,
+        p_patch: { city: args.city },
+      })
+      if (rpcErr) throw new Error(rpcErr.message ?? 'user_metadata_merge failed')
+    }
+    return { success: true, updated: [...Object.keys(updates), ...(args.city ? ['city'] : [])] }
   },
 }
 
@@ -405,29 +486,29 @@ export const encerraAtendimento: ToolDefinition = {
     motivo: z.string().describe('Razão pela qual está escalando'),
   }),
   execute: async (args, ctx) => {
-    const { data: user } = await ctx.supabase
-      .from('users')
-      .select('metadata')
-      .eq('id', ctx.userId)
-      .maybeSingle()
-    const metadata = (user?.metadata as Record<string, unknown>) ?? {}
-    const labels = (metadata.labels as string[] | undefined) ?? []
-    if (!labels.includes('humano')) labels.push('humano')
-    metadata.labels = labels
-    metadata.escalated_at = new Date().toISOString()
-    metadata.escalation_reason = args.motivo
+    // Atomic: adiciona label 'humano' + grava metadata extra na mesma transação
+    const { data: result, error: rpcErr } = await (ctx.supabase as unknown as {
+      rpc: (
+        n: string,
+        p: Record<string, unknown>,
+      ) => Promise<{ data: { labels?: string[] } | null; error: { message?: string } | null }>
+    }).rpc('user_metadata_label_add', {
+      p_user_id: ctx.userId,
+      p_label: 'humano',
+      p_extra_patch: {
+        escalated_at: new Date().toISOString(),
+        escalation_reason: args.motivo,
+      },
+    })
+    if (rpcErr) throw new Error(rpcErr.message ?? 'user_metadata_label_add failed')
 
-    await ctx.supabase
-      .from('users')
-      .update({ metadata: JSON.parse(JSON.stringify(metadata)) })
-      .eq('id', ctx.userId)
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'human.escalation_requested',
       properties: { motivo: args.motivo, wpp: ctx.userWpp },
     })
 
-    return { success: true, labels }
+    return { success: true, labels: result?.labels ?? ['humano'] }
   },
 }
 
@@ -514,7 +595,9 @@ export const retomarAgente: ToolDefinition = {
 export const confirmaPaisResidencia: ToolDefinition = {
   name: 'confirma_pais_residencia',
   description:
-    'Grava onde o paciente RESIDE + idioma preferido pra conversa. Use APENAS depois que o usuário confirmar AMBOS explicitamente. ⚠️ Se country != "BR", PERGUNTE antes ao paciente em qual idioma ele prefere conversar (ex: brasileiro morando nos EUA pode preferir PT, ou paciente americano pode pedir EN). NÃO assuma o idioma pelo país.',
+    'Grava país de RESIDÊNCIA + idioma + sistema de medidas preferidos. ⚠️ NÃO assuma idioma nem unidade pelo país (brasileiro nos EUA pode preferir PT/métrico; americano no Brasil pode preferir EN/imperial). ' +
+    'USE APENAS depois que: (1) o paciente confirmar onde MORA explicitamente; (2) responder SE o idioma é o esperado ou outro (OBRIGATÓRIO se country != BR); (3) responder SE prefere métrico ou imperial (OBRIGATÓRIO se country é US/GB). ' +
+    'NÃO USE com base só no DDI do WhatsApp — esse é palpite, precisa confirmação verbal. Se o paciente pedir TROCAR de idioma no meio da conversa, chame essa tool de novo com o language atualizado pra persistir a preferência (mantenha country).',
   parameters: z.object({
     country: z
       .string()

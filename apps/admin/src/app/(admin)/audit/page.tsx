@@ -26,6 +26,7 @@ export default async function AuditPage() {
 
   // Alucinações numéricas detectadas pelo validador de saída — últimas 24h
   const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const since7d = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
   const { data: mismatches, count: mismatchCount } = await (svc as unknown as {
     from: (t: string) => {
       select: (
@@ -57,6 +58,38 @@ export default async function AuditPage() {
     .order('created_at', { ascending: false })
     .limit(20)
 
+  // Histórico 7 dias pra contexto
+  const { data: mismatches7d } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (c: string, v: string) => {
+          gte: (c: string, v: string) => {
+            order: (c: string, o: { ascending: boolean }) => Promise<{
+              data: Array<{ created_at: string }> | null
+            }>
+          }
+        }
+      }
+    }
+  })
+    .from('product_events')
+    .select('created_at')
+    .eq('event', 'llm.numeric_mismatch')
+    .gte('created_at', since7d)
+    .order('created_at', { ascending: true })
+
+  // Bucket por dia
+  const dayBuckets: Record<string, number> = {}
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 3600 * 1000).toISOString().slice(0, 10)
+    dayBuckets[d] = 0
+  }
+  for (const m of mismatches7d ?? []) {
+    const day = m.created_at.slice(0, 10)
+    if (day in dayBuckets) dayBuckets[day]!++
+  }
+  const maxBucket = Math.max(1, ...Object.values(dayBuckets))
+
   return (
     <div className="flex flex-col h-full">
       <div className="shrink-0 mb-3">
@@ -68,19 +101,56 @@ export default async function AuditPage() {
         />
       </div>
 
+      <div className="shrink-0 mb-3 content-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold">
+            Alucinações numéricas{' '}
+            {(mismatchCount ?? 0) > 0 ? (
+              <span className="text-destructive">⚠️ {mismatchCount} hoje</span>
+            ) : (
+              <span className="text-moss-700">✓ 0 hoje</span>
+            )}
+          </h3>
+          <a
+            href="/settings/global"
+            className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground hover:text-foreground"
+          >
+            ajustar threshold →
+          </a>
+        </div>
+
+        <div className="flex items-end gap-1 h-12 mb-2">
+          {Object.entries(dayBuckets).map(([day, count]) => (
+            <div key={day} className="flex-1 flex flex-col items-center" title={`${day}: ${count}`}>
+              <div
+                className={`w-full ${count === 0 ? 'bg-muted' : count > 5 ? 'bg-destructive/70' : 'bg-bronze/60'} rounded-t transition-all`}
+                style={{ height: `${(count / maxBucket) * 100}%`, minHeight: count > 0 ? '4px' : '2px' }}
+              />
+              <div className="text-[9px] font-mono text-muted-foreground mt-1">
+                {day.slice(8)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          Últimos 7 dias · pico: {maxBucket} ·{' '}
+          <a href="/tutorial#anti-alucinacao" className="underline hover:text-foreground">
+            como funciona
+          </a>
+        </div>
+      </div>
+
       {(mismatchCount ?? 0) > 0 && (
         <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-destructive">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold">
-              ⚠️ Alucinações numéricas detectadas (24h): {mismatchCount}
-            </h3>
+            <h3 className="text-sm font-semibold">Findings recentes (24h)</h3>
             <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
               event: llm.numeric_mismatch
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
             Validador parseou números na resposta do agente e achou divergência &gt;10% vs valor
-            real. Não bloqueou a msg — apenas auditou. Investigue se padrão.
+            real. Não bloqueou a msg — apenas auditou.
           </p>
           <ul className="space-y-2 text-xs font-mono max-h-60 overflow-auto">
             {(mismatches ?? []).map((m) => {

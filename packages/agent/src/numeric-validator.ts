@@ -16,6 +16,37 @@
 
 import type { Json, ServiceClient } from '@mpp/db'
 
+// Config cache (60s) — controla threshold + on/off via /settings/global
+interface ValidatorConfig {
+  enabled: boolean
+  threshold_pct: number
+}
+const DEFAULT_CONFIG: ValidatorConfig = { enabled: true, threshold_pct: 0.1 }
+let cachedConfig: { config: ValidatorConfig; expiresAt: number } | null = null
+const TTL_MS = 60_000
+
+async function loadValidatorConfig(supabase: ServiceClient): Promise<ValidatorConfig> {
+  const now = Date.now()
+  if (cachedConfig && cachedConfig.expiresAt > now) return cachedConfig.config
+  const { data } = (await supabase
+    .from('global_config')
+    .select('key, value')
+    .like('key', 'numeric_validator.%')) as {
+    data: Array<{ key: string; value: unknown }> | null
+  }
+  const merged: ValidatorConfig = { ...DEFAULT_CONFIG }
+  for (const row of data ?? []) {
+    if (row.key === 'numeric_validator.enabled' && typeof row.value === 'boolean') {
+      merged.enabled = row.value
+    } else if (row.key === 'numeric_validator.threshold_pct') {
+      const n = Number(row.value)
+      if (Number.isFinite(n) && n >= 0 && n <= 1) merged.threshold_pct = n
+    }
+  }
+  cachedConfig = { config: merged, expiresAt: now + TTL_MS }
+  return merged
+}
+
 interface NumericContext {
   calories_target?: number | null
   protein_target?: number | null
@@ -68,6 +99,7 @@ function parseNum(s: string): number {
 export function validateNumericClaims(
   text: string,
   ctx: NumericContext,
+  thresholdPct = 0.1,
 ): MismatchFinding[] {
   const findings: MismatchFinding[] = []
   for (const { field, re, group } of PATTERNS) {
@@ -88,7 +120,7 @@ export function validateNumericClaims(
           ? 1
           : field === 'current_streak' || field === 'level'
             ? 2
-            : Math.max(real * 0.1, 30)
+            : Math.max(real * thresholdPct, 30)
       if (diff <= tolerance) continue
 
       const excerptStart = Math.max(0, match.index - 40)
@@ -117,7 +149,9 @@ export async function auditNumericClaims(
   metadata: Record<string, Json> = {},
 ): Promise<void> {
   if (!text) return
-  const findings = validateNumericClaims(text, ctx)
+  const config = await loadValidatorConfig(supabase)
+  if (!config.enabled) return
+  const findings = validateNumericClaims(text, ctx, config.threshold_pct)
   if (findings.length === 0) return
 
   await supabase.from('product_events').insert({
@@ -125,6 +159,7 @@ export async function auditNumericClaims(
     event: 'llm.numeric_mismatch',
     properties: {
       findings: findings as unknown as Json,
+      threshold_pct: config.threshold_pct,
       ...metadata,
     },
   })

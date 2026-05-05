@@ -217,6 +217,17 @@ export default function TutorialPage() {
           description="LLM-as-judge avalia conversas das últimas 50 msgs. Score 0-10 + justificativa. Distribuição alta (≥8) / média (6-8) / baixa (<6). Use pra decidir o que melhorar nas regras."
         />
         <Item
+          icon={Wrench}
+          href="/settings/tools"
+          title="Tools (capabilities do agente)"
+          description="Lista todas as tools que o LLM pode chamar (registra_refeicao, registra_treino, consulta_metricas, confirma_pais_residencia, etc) com description completa + parâmetros + em quais stages cada uma está habilitada. Description = instrução de QUANDO usar (vai pro modelo no system prompt). Editar exige código + deploy. Ligar/desligar por stage: /settings/agents → allowed_tools."
+          examples={[
+            'Ver registra_refeicao description (cláusulas anti-bug "padrão alimentar não é refeição")',
+            'Confirmar que consulta_metricas está habilitada nos stages de protocolo',
+            'Ver schema dos parâmetros (food_name, quantity_g, meal_type, etc)',
+          ]}
+        />
+        <Item
           icon={FileText}
           href="/prompts?tipo=regras_gerais"
           title="Vision · 5 prompts (meal/body/scale/other/classifier)"

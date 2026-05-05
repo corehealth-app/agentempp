@@ -90,6 +90,38 @@ export default async function AuditPage() {
   }
   const maxBucket = Math.max(1, ...Object.values(dayBuckets))
 
+  // Meal match warnings (composite/category/protein/no_match) — últimas 24h
+  const { data: mealWarnings, count: mealWarningCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        eq: (col: string, val: string) => {
+          gte: (col: string, val: string) => {
+            order: (col: string, opt: { ascending: boolean }) => {
+              limit: (n: number) => Promise<{
+                data: Array<{
+                  id: string
+                  user_id: string | null
+                  occurred_at: string
+                  properties: Record<string, unknown>
+                }> | null
+                count: number | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  })
+    .from('product_events')
+    .select('id, user_id, occurred_at, properties', { count: 'exact' })
+    .eq('event', 'meal.match_warning')
+    .gte('occurred_at', since24h)
+    .order('occurred_at', { ascending: false })
+    .limit(15)
+
   return (
     <div className="flex flex-col h-full">
       <div className="shrink-0 mb-3">
@@ -139,6 +171,53 @@ export default async function AuditPage() {
           </a>
         </div>
       </div>
+
+      {(mealWarningCount ?? 0) > 0 && (
+        <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-bronze">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">
+              ⚠️ Match TACO suspeito (24h): {mealWarningCount}
+            </h3>
+            <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
+              event: meal.match_warning
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Itens em refeições que disparam sanity check: nome composto, densidade calórica
+            absurda, alimento proteico sem proteína, ou sem match. Calorias zeradas até paciente
+            confirmar.
+          </p>
+          <ul className="space-y-2 text-xs font-mono max-h-60 overflow-auto">
+            {(mealWarnings ?? []).map((m) => {
+              const items = (m.properties as { problematic_items?: Array<Record<string, unknown>> })
+                .problematic_items
+              return (
+                <li key={m.id} className="border-l-2 border-border pl-2">
+                  <div className="text-muted-foreground">
+                    {formatDateTime(m.occurred_at)} · user {m.user_id?.slice(0, 8)} ·{' '}
+                    <span className="font-bold">{items?.length ?? 0}</span> item(ns)
+                  </div>
+                  {(items ?? []).slice(0, 3).map((it, i) => (
+                    <div key={i} className="text-foreground/80">
+                      <span className="text-bronze">{String(it.source)}</span>:{' '}
+                      <span className="text-destructive">{String(it.food_name)}</span>
+                      {it.matched_to ? (
+                        <>
+                          {' '}
+                          → <span className="text-foreground/60">{String(it.matched_to)}</span> (
+                          {(Number(it.similarity) * 100).toFixed(0)}%)
+                        </>
+                      ) : (
+                        ''
+                      )}
+                    </div>
+                  ))}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
 
       {(mismatchCount ?? 0) > 0 && (
         <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-destructive">

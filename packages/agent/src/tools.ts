@@ -228,6 +228,31 @@ export const registraRefeicao: ToolDefinition = {
     // Calcula macros via TACO
     const calc = await calcMealMacros(ctx.supabase, args.items, ctx.userCountry ?? 'BR')
 
+    // Loga warnings de match (composite/category/protein/no_match) em product_events
+    // pra aparecer agregado em /audit. Útil pra detectar padrões de match errado.
+    const problematicItems = calc.items.filter((i) =>
+      ['composite_rejected', 'category_mismatch', 'protein_mismatch', 'no_match'].includes(
+        i.source,
+      ),
+    )
+    if (problematicItems.length > 0) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'meal.match_warning',
+        properties: {
+          provider_message_id: ctx.providerMessageId ?? null,
+          warnings: calc.warnings,
+          problematic_items: problematicItems.map((i) => ({
+            food_name: i.food_name,
+            matched_to: i.matched_taco_name || null,
+            source: i.source,
+            similarity: i.similarity,
+          })),
+          total_items: calc.items.length,
+        },
+      })
+    }
+
     // Garante targets calculados (calories_target + protein_target).
     // Sem isso, daily_balance fica positivo sempre e bloco 7700 nunca cresce.
     const config = await loadCalcConfig(ctx.supabase)

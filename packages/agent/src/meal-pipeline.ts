@@ -195,10 +195,10 @@ export async function calcMealMacros(
         continue
       }
 
-      // Sanity 3: alimento c/ proteína esperada (ovo, frango, carne, peixe, whey)
-      // não pode ter protein_g=0. Se vier zero, match foi errado.
+      // Sanity 3: alimento c/ proteína esperada (carnes, peixes, ovos, embutidos,
+      // laticínios proteicos) não pode ter protein_g=0. Match errado se sim.
       const expectsProtein =
-        /\bovo|\bfrango|\bcarne|\bpeixe|\bwhey|\batum|\bfilé|\bfile|\bpicanha|\bbife|\bsalmão|\bsalmao|\btilápia|\btilapia/.test(
+        /\bovo|\bfrango|\bcarne|\bpeixe|\bwhey|\batum|\bfil[ée]|\bpicanha|\bbife|\bsalm[ãa]o|\btil[áa]pia|\bsalsicha|\blingu[ií]ça|\bbacon|\bpresunto|\bsalame|\bmortadela|\bperu|\bpernil|\bhamb[uú]rguer|\bnugget|\bisca|\bpat[ée]|\bmussarela|\bricota|\bcoalho|\bsardinha|\bcamar[ãa]o|\bcord[ãa]o\s+azul|\bcordeiro|\bcostela/.test(
           lowerName,
         )
       if (expectsProtein && (m.protein_g ?? 0) < 5) {

@@ -90,6 +90,37 @@ export default async function AuditPage() {
   }
   const maxBucket = Math.max(1, ...Object.values(dayBuckets))
 
+  // Auto-fixes da auditoria automática (3x/dia) — últimos 7 dias
+  const { data: autoFixes, count: autoFixCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        eq: (col: string, val: string) => {
+          gte: (col: string, val: string) => {
+            order: (col: string, opt: { ascending: boolean }) => {
+              limit: (n: number) => Promise<{
+                data: Array<{
+                  id: string
+                  occurred_at: string
+                  properties: Record<string, unknown>
+                }> | null
+                count: number | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  })
+    .from('product_events')
+    .select('id, occurred_at, properties', { count: 'exact' })
+    .eq('event', 'audit.auto_fix.applied')
+    .gte('occurred_at', since7d)
+    .order('occurred_at', { ascending: false })
+    .limit(20)
+
   // Meal match warnings (composite/category/protein/no_match) — últimas 24h
   const { data: mealWarnings, count: mealWarningCount } = await (svc as unknown as {
     from: (t: string) => {
@@ -171,6 +202,40 @@ export default async function AuditPage() {
           </a>
         </div>
       </div>
+
+      {(autoFixCount ?? 0) > 0 && (
+        <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-moss-700">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">
+              🤖 Auditoria automática · {autoFixCount} fix(es) nos últimos 7d
+            </h3>
+            <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
+              event: audit.auto_fix.applied · 3x/dia (08h, 14h, 20h BRT)
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Routine remota detecta padrões e adiciona aliases no food_db automaticamente
+            (source=alias_auto, revertível em <a href="/settings/foods?source=alias_auto" className="underline">/settings/foods</a>).
+          </p>
+          <ul className="space-y-1.5 text-xs font-mono max-h-48 overflow-auto">
+            {(autoFixes ?? []).map((f) => {
+              const p = f.properties as { type?: string; food_name?: string; confidence?: string }
+              return (
+                <li key={f.id} className="flex items-center gap-3 text-foreground/80">
+                  <span className="text-muted-foreground shrink-0">
+                    {formatDateTime(f.occurred_at).slice(0, 16)}
+                  </span>
+                  <span className="text-bronze">{p.type}</span>
+                  <span className="text-foreground">{p.food_name}</span>
+                  <span className="text-[9px] text-muted-foreground ml-auto">
+                    conf={p.confidence}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
 
       {(mealWarningCount ?? 0) > 0 && (
         <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-bronze">

@@ -40,7 +40,7 @@ export default async function AuditPage() {
                 data: Array<{
                   id: string
                   user_id: string | null
-                  created_at: string
+                  occurred_at: string
                   properties: Record<string, unknown>
                 }> | null
                 count: number | null
@@ -52,10 +52,10 @@ export default async function AuditPage() {
     }
   })
     .from('product_events')
-    .select('id, user_id, created_at, properties', { count: 'exact' })
+    .select('id, user_id, occurred_at, properties', { count: 'exact' })
     .eq('event', 'llm.numeric_mismatch')
-    .gte('created_at', since24h)
-    .order('created_at', { ascending: false })
+    .gte('occurred_at', since24h)
+    .order('occurred_at', { ascending: false })
     .limit(20)
 
   // Histórico 7 dias pra contexto
@@ -65,7 +65,7 @@ export default async function AuditPage() {
         eq: (c: string, v: string) => {
           gte: (c: string, v: string) => {
             order: (c: string, o: { ascending: boolean }) => Promise<{
-              data: Array<{ created_at: string }> | null
+              data: Array<{ occurred_at: string }> | null
             }>
           }
         }
@@ -73,10 +73,10 @@ export default async function AuditPage() {
     }
   })
     .from('product_events')
-    .select('created_at')
+    .select('occurred_at')
     .eq('event', 'llm.numeric_mismatch')
-    .gte('created_at', since7d)
-    .order('created_at', { ascending: true })
+    .gte('occurred_at', since7d)
+    .order('occurred_at', { ascending: true })
 
   // Bucket por dia
   const dayBuckets: Record<string, number> = {}
@@ -85,7 +85,7 @@ export default async function AuditPage() {
     dayBuckets[d] = 0
   }
   for (const m of mismatches7d ?? []) {
-    const day = m.created_at.slice(0, 10)
+    const day = m.occurred_at.slice(0, 10)
     if (day in dayBuckets) dayBuckets[day]!++
   }
   const maxBucket = Math.max(1, ...Object.values(dayBuckets))
@@ -159,7 +159,7 @@ export default async function AuditPage() {
               return (
                 <li key={m.id} className="border-l-2 border-border pl-2">
                   <div className="text-muted-foreground">
-                    {formatDateTime(m.created_at)} · user {m.user_id?.slice(0, 8)} ·{' '}
+                    {formatDateTime(m.occurred_at)} · user {m.user_id?.slice(0, 8)} ·{' '}
                     <span className="font-bold">{findings?.length ?? 0}</span> finding(s)
                   </div>
                   {(findings ?? []).slice(0, 3).map((f, i) => (

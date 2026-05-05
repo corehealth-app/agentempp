@@ -179,7 +179,13 @@ export const registraRefeicao: ToolDefinition = {
     '(b) o paciente está descrevendo cardápio HIPOTÉTICO ou plano futuro ("vou começar a comer X"); ' +
     '(c) o paciente está pedindo sugestão de cardápio. ' +
     'Use APENAS quando há sinal claro de CONSUMO RECENTE: "acabei de comer", "no almoço comi", foto de prato real, áudio descrevendo o que comeu hoje, "tomei café da manhã com…". ' +
-    'PRESERVE EXATAMENTE o nome que o paciente usou no `food_name` (não troque "ovo mexido" por "ovo cozido", não traduza, não simplifique). Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga.',
+    'PRESERVE EXATAMENTE o nome que o paciente usou no `food_name` (não troque "ovo mexido" por "ovo cozido", não traduza, não simplifique). ' +
+    '🚨 **SEPARE alimentos compostos em itens INDIVIDUAIS no array.** NUNCA mande um nome com "com", "e", "+" — quebre. Exemplos: ' +
+    '❌ items=[{food_name:"ovos cozidos com azeite", quantity_g:205}] (causa match errado, virou 1812 kcal de azeite). ' +
+    '✅ items=[{food_name:"ovo cozido", quantity_g:200}, {food_name:"azeite de oliva", quantity_g:5}]. ' +
+    '❌ items=[{food_name:"arroz com feijão e bife"}]. ' +
+    '✅ items=[{food_name:"arroz branco cozido", quantity_g:100}, {food_name:"feijão preto cozido", quantity_g:80}, {food_name:"bife grelhado", quantity_g:120}]. ' +
+    'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga.',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])

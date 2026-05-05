@@ -24,7 +24,16 @@ export interface MealItemMatched {
   fat_g: number
   fiber_g: number
   similarity: number
-  source: 'taco' | 'llm_estimate' | 'no_match'
+  source:
+    | 'taco'
+    | 'llm_estimate'
+    | 'no_match'
+    /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
+    | 'composite_rejected'
+    /** Match com densidade calórica de gordura mas food_name não é gordura. */
+    | 'category_mismatch'
+    /** Alimento que deveria ter proteína (ovo/carne/whey) bateu sem proteína. */
+    | 'protein_mismatch'
 }
 
 export interface MealCalcResult {
@@ -120,15 +129,97 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (const it of items) {
+    // Sanity 1: nome composto ("ovo com azeite", "arroz e feijão") → trigram tende
+    // a errar feio (uma das partes domina, kcal vai pra outro alimento). Rejeita.
+    const isComposite =
+      / com | e | \+ |\bcom\s+|^com\s+/i.test(` ${it.food_name} `) &&
+      it.food_name.split(/\s+/).length >= 4
+    if (isComposite) {
+      warnings.push(
+        `Item composto rejeitado: "${it.food_name}" — peça pro paciente separar (ex: "4 ovos cozidos" + "1 colher azeite") pra calcular cada um certo. Calorias zeradas.`,
+      )
+      matched.push({
+        food_name: it.food_name,
+        matched_taco_name: '',
+        matched_taco_id: null,
+        quantity_g: it.quantity_g,
+        kcal: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        fiber_g: 0,
+        similarity: 0,
+        source: 'composite_rejected',
+      })
+      continue
+    }
+
     const m = await matchFood(supabase, it.food_name, country)
     const factor = it.quantity_g / 100
 
-    if (m.id != null && m.kcal_per_100g != null && m.similarity >= 0.3) {
+    // Threshold mais conservador: 0.45 (era 0.3). Matches abaixo disso são quase
+    // sempre erros (ex: "ovo" pegando "azeite" sim=0.3).
+    if (m.id != null && m.kcal_per_100g != null && m.similarity >= 0.45) {
       const kcal = +(m.kcal_per_100g * factor).toFixed(1)
       const protein = +((m.protein_g ?? 0) * factor).toFixed(2)
       const carbs = +((m.carbs_g ?? 0) * factor).toFixed(2)
       const fat = +((m.fat_g ?? 0) * factor).toFixed(2)
       const fiber = +((m.fiber_g ?? 0) * factor).toFixed(2)
+
+      // Sanity 2: densidade calórica catastrófica. Alimento sólido com >5 kcal/g
+      // só faz sentido pra gorduras puras (azeite=8.84, manteiga=7.2). Se food_name
+      // não menciona gordura/óleo/manteiga, é sinal de match errado.
+      const kcalPerG = (m.kcal_per_100g ?? 0) / 100
+      const lowerName = it.food_name.toLowerCase()
+      const isFatLike =
+        /azeite|óleo|oleo|manteiga|margarina|maionese|gordura|óleos|nozes|castanha|amêndoa|amendoim|pasta de amendoim/.test(
+          lowerName,
+        )
+      if (kcalPerG > 5 && !isFatLike) {
+        warnings.push(
+          `Match suspeito: "${it.food_name}" → "${m.name_pt}" (${m.kcal_per_100g} kcal/100g é densidade de gordura). Provavelmente match errado. Confirme com paciente. Calorias zeradas.`,
+        )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: m.name_pt ?? '',
+          matched_taco_id: m.id,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: m.similarity,
+          source: 'category_mismatch',
+        })
+        continue
+      }
+
+      // Sanity 3: alimento c/ proteína esperada (ovo, frango, carne, peixe, whey)
+      // não pode ter protein_g=0. Se vier zero, match foi errado.
+      const expectsProtein =
+        /\bovo|\bfrango|\bcarne|\bpeixe|\bwhey|\batum|\bfilé|\bfile|\bpicanha|\bbife|\bsalmão|\bsalmao|\btilápia|\btilapia/.test(
+          lowerName,
+        )
+      if (expectsProtein && (m.protein_g ?? 0) < 5) {
+        warnings.push(
+          `Match suspeito: "${it.food_name}" tem proteína esperada mas matchou "${m.name_pt}" (${m.protein_g}g/100g). Match errado. Confirme com paciente. Calorias zeradas.`,
+        )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: m.name_pt ?? '',
+          matched_taco_id: m.id,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: m.similarity,
+          source: 'protein_mismatch',
+        })
+        continue
+      }
 
       matched.push({
         food_name: it.food_name,

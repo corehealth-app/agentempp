@@ -5,6 +5,7 @@
  *
  * Formato compatível com OpenAI tool calling.
  */
+import { computeMetrics } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
@@ -313,6 +314,83 @@ export const consultaProgresso: ToolDefinition = {
       .maybeSingle()
 
     return { progress: progress ?? null, today: snap ?? null }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// consulta_metricas — métricas determinísticas (anti-alucinação)
+// ----------------------------------------------------------------------------
+export const consultaMetricas: ToolDefinition = {
+  name: 'consulta_metricas',
+  description:
+    'Retorna métricas DETERMINÍSTICAS do paciente: idade, BMR, TDEE, IMC, LBM, meta calórica de hoje, meta de proteína. ' +
+    'Use APENAS quando precisar de um número que NÃO está no contexto do sistema (ex: paciente pediu "qual meu TDEE?" mas o contexto não trouxe). ' +
+    '⚠️ NÃO use rotineiramente — o contexto do sistema já injeta meta/balanço/IMC na maioria dos turnos. ' +
+    'Esta tool é o ESCAPE HATCH pra evitar alucinação quando o LLM ficaria tentado a calcular na cabeça.',
+  parameters: z.object({}),
+  execute: async (_args, ctx) => {
+    const { data: profile } = await ctx.supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    if (!profile) return { error: 'profile_not_found' }
+
+    const config = await loadCalcConfig(ctx.supabase)
+    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
+
+    const profileTyped = profile as {
+      sex: 'masculino' | 'feminino' | null
+      birth_date: string | null
+      height_cm: number | null
+      weight_kg: number | null
+      body_fat_percent: number | null
+      activity_level: 'sedentario' | 'leve' | 'moderado' | 'alto' | 'atleta' | null
+      training_frequency: number | null
+      hunger_level: 'pouca' | 'moderada' | 'muita' | null
+      current_protocol: 'recomposicao' | 'ganho_massa' | 'manutencao' | null
+      goal_type: 'BF' | 'IMC' | null
+      goal_value: number | null
+      deficit_level: 400 | 500 | 600 | null
+      water_intake: 'pouco' | 'moderado' | 'bastante' | null
+    }
+    const m = computeMetrics(
+      {
+        sex: profileTyped.sex,
+        birthDate: profileTyped.birth_date ? new Date(profileTyped.birth_date) : null,
+        heightCm: profileTyped.height_cm != null ? Number(profileTyped.height_cm) : null,
+        weightKg: profileTyped.weight_kg != null ? Number(profileTyped.weight_kg) : null,
+        bodyFatPercent:
+          profileTyped.body_fat_percent != null ? Number(profileTyped.body_fat_percent) : null,
+        activityLevel: profileTyped.activity_level,
+        trainingFrequency: profileTyped.training_frequency,
+        waterIntake: profileTyped.water_intake,
+        hungerLevel: profileTyped.hunger_level,
+        currentProtocol: profileTyped.current_protocol,
+        goalType: profileTyped.goal_type,
+        goalValue:
+          profileTyped.goal_value != null ? Number(profileTyped.goal_value) : null,
+        deficitLevel: profileTyped.deficit_level,
+      },
+      new Date(),
+      config,
+    )
+
+    const tdee =
+      m.bmr != null && m.activityFactor != null ? Math.round(m.bmr * m.activityFactor) : null
+
+    return {
+      age_years: m.age,
+      bmr_kcal: m.bmr != null ? Math.round(m.bmr) : null,
+      tdee_kcal: tdee,
+      imc: m.imc != null ? +m.imc.toFixed(1) : null,
+      lbm_kg: m.lbm != null ? +m.lbm.toFixed(1) : null,
+      calories_target_today: targets.calories_target,
+      protein_target_today_g: targets.protein_target,
+      activity_factor: m.activityFactor,
+      formula_used:
+        profileTyped.body_fat_percent != null ? 'Katch-McArdle (com BF%)' : 'Mifflin-St Jeor',
+    }
   },
 }
 
@@ -677,6 +755,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   registraRefeicao,
   registraTreino,
   consultaProgresso,
+  consultaMetricas,
   atualizaDataUser,
   encerraAtendimento,
   deleteUser,

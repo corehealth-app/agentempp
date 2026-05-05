@@ -439,6 +439,25 @@ export default function TutorialPage() {
           ]}
         />
         <Faq
+          q="Cron de engajamento mandou meta diferente da que o agente disse em conversa"
+          a={[
+            'Era alucinação: engagement-sender não passava calories_target/protein_target reais pro LLM. Prompt tinha placeholders {meta_diaria_kcal} mas eles não eram substituídos. LLM com temp=1.2 inventava valor plausível.',
+            'Corrigido: cron carrega loadDailyTargets() + daily_snapshots de hoje/ontem ANTES do LLM, e injeta no userContext com headline "USE ESTES VALORES, NÃO INVENTE".',
+            'Defesa em camadas: pipeline.ts formatUserContext faz o mesmo pra TODA conversa (não só engagement). Persona master ganhou "REGRA INVIOLÁVEL" proibindo cálculo mental. Tool consulta_metricas como escape hatch.',
+          ]}
+        />
+        <Faq
+          q="Agente inventou número (BMR, TDEE, IMC, idade, streak) na resposta"
+          a={[
+            'Esse padrão é geral: LLM gera dado quantitativo crítico na cabeça em vez de usar fonte determinística.',
+            'Mitigações ativas (defense-in-depth):',
+            '  1) formatUserContext em pipeline.ts injeta meta calórica, meta proteína, consumo do dia, balanço, déficit acumulado, streak, XP, level, blocos completos, IMC, BMR, TDEE, LBM, idade, fórmula usada (Mifflin/Katch).',
+            '  2) Persona master tem "REGRA INVIOLÁVEL: Anti-alucinação numérica" (PT/EN/ES) com lista explícita do que NUNCA calcular.',
+            '  3) Tool consulta_metricas retorna todos os valores determinísticos quando contexto está stale ou paciente pede algo não-injetado.',
+            'Se ainda encontrar alucinação: copie o trecho exato em /messages → forke pra Playground com o contexto real e veja se o LLM repete; se sim, reforçar regra; se não, era stale data — aumentar frequência de loadContext.',
+          ]}
+        />
+        <Faq
           q="Custo IA disparou no dashboard"
           a={[
             'Topbar mostra "Custo 24h $X" — se subiu muito, /messages → filtra por modelo.',

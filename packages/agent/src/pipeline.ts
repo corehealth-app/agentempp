@@ -11,6 +11,7 @@
  */
 import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
+import { loadDailyTargets } from './calc-targets.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterLLM } from '@mpp/providers'
@@ -48,6 +49,27 @@ interface UserContext {
   locale: string | null
   /** Sistema de medidas: 'metric' (kg/cm) ou 'imperial' (lb/in). */
   unitSystem: 'metric' | 'imperial' | null
+  /** Metas calóricas/proteína calculadas determinísticamente (anti-alucinação). */
+  dailyTargets: { calories_target: number | null; protein_target: number | null }
+  /** Snapshot do dia LOCAL do paciente — consumo + balanço atual. */
+  todaySnapshot: {
+    calories_consumed: number
+    protein_g: number
+    carbs_g: number
+    fat_g: number
+    exercise_calories: number
+    daily_balance: number
+    deficit_accumulated: number
+  } | null
+  /** Gamificação. */
+  userProgress: {
+    current_streak: number
+    longest_streak: number
+    xp_total: number
+    level: number
+    blocks_completed: number
+    last_active_date: string | null
+  } | null
 }
 
 export async function processMessage(
@@ -431,6 +453,42 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
   const unitSystem: 'metric' | 'imperial' | null =
     unitSystemRaw === 'metric' || unitSystemRaw === 'imperial' ? unitSystemRaw : null
 
+  // ANTI-ALUCINAÇÃO: carrega metas determinísticas + snapshot do dia + progress.
+  // Sem isso o LLM inventa kcal/proteína/streak/balance.
+  const calcCfg = await loadCalcConfig(supabase)
+  const dailyTargets = await loadDailyTargets(supabase, userId, calcCfg)
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: snapToday } = await supabase
+    .from('daily_snapshots')
+    .select(
+      'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated',
+    )
+    .eq('user_id', userId)
+    .eq('date', today)
+    .maybeSingle()
+  const { data: progress } = await supabase
+    .from('user_progress')
+    .select('current_streak, longest_streak, xp_total, level, blocks_completed, last_active_date')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const snapTyped = snapToday as {
+    calories_consumed?: number | null
+    protein_g?: number | null
+    carbs_g?: number | null
+    fat_g?: number | null
+    exercise_calories?: number | null
+    daily_balance?: number | null
+    deficit_accumulated?: number | null
+  } | null
+  const progressTyped = progress as {
+    current_streak?: number | null
+    longest_streak?: number | null
+    xp_total?: number | null
+    level?: number | null
+    blocks_completed?: number | null
+    last_active_date?: string | null
+  } | null
+
   return {
     userId,
     userName: userTyped?.name ?? null,
@@ -444,6 +502,28 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
     locale: userTyped?.locale ?? null,
     unitSystem,
+    dailyTargets,
+    todaySnapshot: snapTyped
+      ? {
+          calories_consumed: snapTyped.calories_consumed ?? 0,
+          protein_g: Number(snapTyped.protein_g ?? 0),
+          carbs_g: Number(snapTyped.carbs_g ?? 0),
+          fat_g: Number(snapTyped.fat_g ?? 0),
+          exercise_calories: snapTyped.exercise_calories ?? 0,
+          daily_balance: snapTyped.daily_balance ?? 0,
+          deficit_accumulated: snapTyped.deficit_accumulated ?? 0,
+        }
+      : null,
+    userProgress: progressTyped
+      ? {
+          current_streak: progressTyped.current_streak ?? 0,
+          longest_streak: progressTyped.longest_streak ?? 0,
+          xp_total: progressTyped.xp_total ?? 0,
+          level: progressTyped.level ?? 1,
+          blocks_completed: progressTyped.blocks_completed ?? 0,
+          last_active_date: progressTyped.last_active_date ?? null,
+        }
+      : null,
   }
 }
 
@@ -581,7 +661,11 @@ function formatUserContext(
     `- Protocolo atual: ${ctx.profile.currentProtocol ?? 'NÃO DEFINIDO (usuário em onboarding)'}`,
   ]
   if (m.bmr != null) lines.push(`- BMR estimado: ${Math.round(m.bmr)} kcal`)
+  if (m.bmr != null && m.activityFactor != null) {
+    lines.push(`- TDEE estimado: ${Math.round(m.bmr * m.activityFactor)} kcal`)
+  }
   if (m.imc != null) lines.push(`- IMC: ${m.imc.toFixed(1)}`)
+  if (m.lbm != null) lines.push(`- LBM (massa magra): ${m.lbm.toFixed(1)} kg`)
 
   if (ctx.profile.sex && (ctx.profile.bodyFatPercent != null || m.imc != null)) {
     try {
@@ -594,6 +678,51 @@ function formatUserContext(
     }
   }
   sections.push(lines.join('\n'))
+
+  // ============================================================
+  // ANTI-ALUCINAÇÃO — DADOS REAIS DO PACIENTE (USE ESTES VALORES)
+  // ============================================================
+  // Bug histórico: LLM calculava meta/balanço/streak na cabeça e errava.
+  // Solução: passar TODOS os números no contexto + regra inviolável de
+  // "nunca calcule" (Persona master). Estes dados são determinísticos,
+  // calculados em Postgres + função core, NUNCA contestáveis.
+  const numericLines: string[] = []
+  if (ctx.dailyTargets.calories_target != null) {
+    numericLines.push(`- Meta calórica de hoje: **${ctx.dailyTargets.calories_target} kcal**`)
+  }
+  if (ctx.dailyTargets.protein_target != null) {
+    numericLines.push(`- Meta de proteína de hoje: **${ctx.dailyTargets.protein_target} g**`)
+  }
+  if (ctx.todaySnapshot) {
+    const s = ctx.todaySnapshot
+    numericLines.push(
+      `- Consumido hoje: ${s.calories_consumed} kcal | ${s.protein_g} g proteína | ${s.carbs_g}g carbo | ${s.fat_g}g gordura`,
+    )
+    numericLines.push(`- Exercício hoje: ${s.exercise_calories} kcal queimadas`)
+    numericLines.push(
+      `- Balanço calórico de hoje: ${s.daily_balance} kcal (negativo=déficit, positivo=superávit)`,
+    )
+    if (s.deficit_accumulated > 0) {
+      numericLines.push(
+        `- Déficit acumulado (bloco 7700): ${s.deficit_accumulated} kcal de 7700 — falta ${7700 - s.deficit_accumulated} pra fechar bloco`,
+      )
+    }
+  } else {
+    numericLines.push(`- Consumo hoje: 0 kcal (nada registrado ainda)`)
+  }
+  if (ctx.userProgress) {
+    const p = ctx.userProgress
+    numericLines.push(
+      `- Streak atual: ${p.current_streak} dias (recorde ${p.longest_streak}) | XP: ${p.xp_total} (level ${p.level}) | Blocos 7700 fechados: ${p.blocks_completed}`,
+    )
+  }
+  if (numericLines.length > 0) {
+    sections.push(
+      `### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)\n` +
+        `⚠️ Estes valores são canônicos — calculados pelo sistema. NUNCA recalcule meta/balanço/streak na cabeça nem invente números diferentes destes.\n\n` +
+        numericLines.join('\n'),
+    )
+  }
 
   // Regras hard sobre mídias e respostas
   sections.push(

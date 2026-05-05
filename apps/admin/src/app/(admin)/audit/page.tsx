@@ -90,6 +90,37 @@ export default async function AuditPage() {
   }
   const maxBucket = Math.max(1, ...Object.values(dayBuckets))
 
+  // Pending approvals (Modo A: tudo aguarda aprovação Telegram) — abertas
+  const { data: pendingItems, count: pendingCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        eq: (col: string, val: string) => {
+          order: (col: string, opt: { ascending: boolean }) => {
+            limit: (n: number) => Promise<{
+              data: Array<{
+                id: string
+                type: string
+                payload: Record<string, unknown>
+                reason: string | null
+                confidence: string | null
+                created_at: string
+              }> | null
+              count: number | null
+            }>
+          }
+        }
+      }
+    }
+  })
+    .from('pending_approvals')
+    .select('id, type, payload, reason, confidence, created_at', { count: 'exact' })
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(20)
+
   // Auto-fixes da auditoria automática (3x/dia) — últimos 7 dias
   const { data: autoFixes, count: autoFixCount } = await (svc as unknown as {
     from: (t: string) => {
@@ -202,6 +233,56 @@ export default async function AuditPage() {
           </a>
         </div>
       </div>
+
+      {(pendingCount ?? 0) > 0 && (
+        <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-bronze">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">
+              📲 Aguardando aprovação no Margot · {pendingCount} pending
+            </h3>
+            <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
+              modo A · auto-expira em 72h
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Routine sugeriu mudanças que precisam aprovação. Clique [✅ Aprovar] / [❌ Rejeitar]
+            no Telegram (@MargotPiper_Bot) e o sistema aplica automaticamente.
+          </p>
+          <ul className="space-y-1.5 text-xs font-mono max-h-60 overflow-auto">
+            {(pendingItems ?? []).map((p) => {
+              const summary =
+                p.type === 'food_alias'
+                  ? `${(p.payload as { food_name?: string }).food_name} (${(p.payload as { kcal_per_100g?: number }).kcal_per_100g} kcal/100g)`
+                  : p.type === 'structural_bug_report'
+                    ? (p.payload as { title?: string }).title
+                    : JSON.stringify(p.payload).slice(0, 60)
+              return (
+                <li
+                  key={p.id}
+                  id={`pending-${p.id}`}
+                  className="border-l-2 border-border pl-2 py-0.5"
+                >
+                  <div className="flex items-center gap-2 text-foreground/80">
+                    <span className="text-muted-foreground shrink-0">
+                      {formatDateTime(p.created_at).slice(0, 16)}
+                    </span>
+                    <span className="text-bronze">{p.type}</span>
+                    <span className="text-foreground truncate">{summary}</span>
+                    {p.confidence && (
+                      <span className="text-[9px] text-muted-foreground ml-auto shrink-0">
+                        conf={p.confidence}
+                      </span>
+                    )}
+                  </div>
+                  {p.reason && (
+                    <div className="text-[10px] text-muted-foreground italic">{p.reason}</div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
 
       {(autoFixCount ?? 0) > 0 && (
         <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-moss-700">

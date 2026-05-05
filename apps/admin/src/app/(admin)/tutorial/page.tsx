@@ -314,12 +314,14 @@ export default function TutorialPage() {
           title="Routine 3x/dia (08h, 14h, 20h BRT)"
           description="Routine Anthropic Cloud (id trig_01VWD1RPAi…). A cada execução: GET /functions/v1/audit-findings (agrega últimas 8h), classifica severidade e age."
           examples={[
-            'Edge function audit-findings: agrega numeric_mismatches, meal_warnings, tools_failed, foods sem match repetido',
-            'Edge function audit-auto-fix: aceita só food_alias com sanity dupla (kcal vs prot×4+carb×4+fat×9)',
-            'Auto-fixes aparecem em /audit (card verde) com source=alias_auto, revertível em /settings/foods?source=alias_auto',
-            'Bugs estruturais (alucinações, races, prompt drifts) são reportados na resposta da routine — investigação manual',
-            'Cron expression: 0 11,17,23 * * * (UTC)',
-            'Limites: NUNCA mexe em código, NUNCA deleta dado, aborta se findings >50 (anormal)',
+            'MODO A: aprovação total. Routine NUNCA aplica direto — TUDO vai pro Margot bot no Telegram com botões [✅ Aprovar] [❌ Rejeitar].',
+            'Quando você aprova: telegram-webhook aplica o fix (food_alias direto no DB) e edita a msg pra "✅ Aplicado".',
+            'Quando rejeita: status fica "rejected", nada aplicado.',
+            'Pending sem decisão em 72h: auto-expira (status="expired").',
+            'Edge functions: audit-findings (lê 8h), notify-telegram (cria pending + envia msg), telegram-webhook (recebe callback).',
+            'Cron expression: 0 11,17,23 * * * UTC = 08h, 14h, 20h BRT.',
+            'Limites: máximo 5 notificações/run; aborta se findings >50; NUNCA mexe em código.',
+            'Pending visíveis em /audit (card âmbar). Veja status histórico em pending_approvals.',
           ]}
         />
       </Section>

@@ -137,7 +137,13 @@ export const defineProtocolo: ToolDefinition = {
 export const registraRefeicao: ToolDefinition = {
   name: 'registra_refeicao',
   description:
-    'Registra uma refeição. Você fornece apenas os nomes dos alimentos e quantidades em gramas. Os macros (kcal/proteína/carbo/gordura) são calculados automaticamente via base nutricional TACO. NÃO calcule macros manualmente — esta tool faz isso.',
+    'Registra uma REFEIÇÃO QUE O PACIENTE ACABOU DE CONSUMIR (consumida hoje, agora ou nas últimas horas). Macros calculados automaticamente via base nutricional TACO. NÃO calcule macros manualmente. ' +
+    '⚠️ NÃO USE esta tool quando: ' +
+    '(a) o paciente está descrevendo PADRÃO ALIMENTAR ou respondendo perguntas como "o que costuma comer", "o que gosta", "o que costuma fazer no café da manhã" — isso é coleta pra montar plano, não consumo; ' +
+    '(b) o paciente está descrevendo cardápio HIPOTÉTICO ou plano futuro ("vou começar a comer X"); ' +
+    '(c) o paciente está pedindo sugestão de cardápio. ' +
+    'Use APENAS quando há sinal claro de CONSUMO RECENTE: "acabei de comer", "no almoço comi", foto de prato real, áudio descrevendo o que comeu hoje, "tomei café da manhã com…". ' +
+    'PRESERVE EXATAMENTE o nome que o paciente usou no `food_name` (não troque "ovo mexido" por "ovo cozido", não traduza, não simplifique). Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga.',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
@@ -147,11 +153,13 @@ export const registraRefeicao: ToolDefinition = {
         z.object({
           food_name: z
             .string()
-            .describe('Nome do alimento em português (ex: "arroz branco cozido")'),
-          quantity_g: z.number().describe('Quantidade em gramas'),
+            .describe(
+              'Nome EXATO do alimento como o paciente disse, em português (ex: "ovo mexido", "pão francês"). NÃO altere preparo nem traduza.',
+            ),
+          quantity_g: z.number().describe('Quantidade em gramas (estime se não informado)'),
         }),
       )
-      .describe('Lista de itens consumidos'),
+      .describe('Lista de itens consumidos AGORA (não padrão alimentar)'),
   }),
   execute: async (args, ctx) => {
     const today = new Date().toISOString().split('T')[0]!

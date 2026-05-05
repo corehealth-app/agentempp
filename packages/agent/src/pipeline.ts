@@ -12,6 +12,7 @@
 import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
+import { auditNumericClaims } from './numeric-validator.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterLLM } from '@mpp/providers'
@@ -259,6 +260,27 @@ export async function processMessage(
     .from('users')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', userId)
+
+  // Audit anti-alucinação: parseia números na resposta e compara com contexto.
+  // Não bloqueia — só loga em product_events pra investigação posterior.
+  const m = computeMetrics(ctx.profile, new Date(), calcConfig)
+  await auditNumericClaims(
+    deps.supabase,
+    userId,
+    finalText,
+    {
+      calories_target: ctx.dailyTargets.calories_target,
+      protein_target: ctx.dailyTargets.protein_target,
+      imc: m.imc,
+      bmr: m.bmr,
+      tdee: m.bmr != null && m.activityFactor != null ? m.bmr * m.activityFactor : null,
+      age: m.age,
+      current_streak: ctx.userProgress?.current_streak ?? null,
+      level: ctx.userProgress?.level ?? null,
+      calories_consumed_today: ctx.todaySnapshot?.calories_consumed ?? null,
+    },
+    { stage, model: lastResult.model },
+  )
 
   return {
     text: finalText,

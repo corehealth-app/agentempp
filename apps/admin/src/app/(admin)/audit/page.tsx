@@ -24,6 +24,39 @@ export default async function AuditPage() {
     .order('created_at', { ascending: false })
     .limit(200)
 
+  // Alucinações numéricas detectadas pelo validador de saída — últimas 24h
+  const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const { data: mismatches, count: mismatchCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        eq: (col: string, val: string) => {
+          gte: (col: string, val: string) => {
+            order: (col: string, opt: { ascending: boolean }) => {
+              limit: (n: number) => Promise<{
+                data: Array<{
+                  id: string
+                  user_id: string | null
+                  created_at: string
+                  properties: Record<string, unknown>
+                }> | null
+                count: number | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  })
+    .from('product_events')
+    .select('id, user_id, created_at, properties', { count: 'exact' })
+    .eq('event', 'llm.numeric_mismatch')
+    .gte('created_at', since24h)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
   return (
     <div className="flex flex-col h-full">
       <div className="shrink-0 mb-3">
@@ -34,6 +67,45 @@ export default async function AuditPage() {
           description={`${logs?.length ?? 0} ações sensíveis (credentials, regras, configs, admins).`}
         />
       </div>
+
+      {(mismatchCount ?? 0) > 0 && (
+        <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-destructive">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">
+              ⚠️ Alucinações numéricas detectadas (24h): {mismatchCount}
+            </h3>
+            <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
+              event: llm.numeric_mismatch
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Validador parseou números na resposta do agente e achou divergência &gt;10% vs valor
+            real. Não bloqueou a msg — apenas auditou. Investigue se padrão.
+          </p>
+          <ul className="space-y-2 text-xs font-mono max-h-60 overflow-auto">
+            {(mismatches ?? []).map((m) => {
+              const findings = (m.properties as { findings?: Array<Record<string, unknown>> })
+                .findings
+              return (
+                <li key={m.id} className="border-l-2 border-border pl-2">
+                  <div className="text-muted-foreground">
+                    {formatDateTime(m.created_at)} · user {m.user_id?.slice(0, 8)} ·{' '}
+                    <span className="font-bold">{findings?.length ?? 0}</span> finding(s)
+                  </div>
+                  {(findings ?? []).slice(0, 3).map((f, i) => (
+                    <div key={i} className="text-foreground/80">
+                      <span className="text-bronze">{String(f.field)}</span>: disse{' '}
+                      <span className="text-destructive">{String(f.claimed)}</span> vs real{' '}
+                      <span className="text-moss-700">{String(f.real)}</span> (
+                      {(Number(f.diff_pct) * 100).toFixed(0)}% off)
+                    </div>
+                  ))}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
 
       <ContentCard className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {!logs || logs.length === 0 ? (

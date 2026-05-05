@@ -450,11 +450,14 @@ export default function TutorialPage() {
           q="Agente inventou número (BMR, TDEE, IMC, idade, streak) na resposta"
           a={[
             'Esse padrão é geral: LLM gera dado quantitativo crítico na cabeça em vez de usar fonte determinística.',
-            'Mitigações ativas (defense-in-depth):',
+            'Mitigações ativas (defense-in-depth, 5 camadas):',
             '  1) formatUserContext em pipeline.ts injeta meta calórica, meta proteína, consumo do dia, balanço, déficit acumulado, streak, XP, level, blocos completos, IMC, BMR, TDEE, LBM, idade, fórmula usada (Mifflin/Katch).',
             '  2) Persona master tem "REGRA INVIOLÁVEL: Anti-alucinação numérica" (PT/EN/ES) com lista explícita do que NUNCA calcular.',
             '  3) Tool consulta_metricas retorna todos os valores determinísticos quando contexto está stale ou paciente pede algo não-injetado.',
-            'Se ainda encontrar alucinação: copie o trecho exato em /messages → forke pra Playground com o contexto real e veja se o LLM repete; se sim, reforçar regra; se não, era stale data — aumentar frequência de loadContext.',
+            '  4) Validador de saída: pipeline.ts parseia números na resposta antes de enviar e compara com valor real. Divergência >10% vira evento llm.numeric_mismatch em product_events.',
+            '  5) Temperature reduzida no engagement (1.2 → 0.85) — menos criatividade quando há números a entregar.',
+            'Onde ver: /audit mostra alerta vermelho no topo se houve mismatch nas últimas 24h.',
+            'Se ainda encontrar alucinação: copie o trecho exato em /messages → forke pra Playground com o contexto real e veja se o LLM repete; se sim, reforçar regra; se não, era stale data.',
           ]}
         />
         <Faq

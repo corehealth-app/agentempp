@@ -47,7 +47,12 @@ export const cadastraDadosIniciais: ToolDefinition = {
   parameters: z.object({
     name: z.string().optional().describe('Nome do usuário'),
     sex: z.enum(['masculino', 'feminino']).optional(),
-    birth_date: z.string().optional().describe('YYYY-MM-DD'),
+    birth_date: z
+      .string()
+      .optional()
+      .describe(
+        'YYYY-MM-DD. Se você só sabe a idade do paciente, passe o número (ex: "44") — a tool deriva birth_date = ano_atual − idade.',
+      ),
     height_cm: z.number().optional(),
     weight_kg: z.number().optional(),
     body_fat_percent: z.number().optional(),
@@ -57,8 +62,8 @@ export const cadastraDadosIniciais: ToolDefinition = {
     training_frequency: z.number().int().min(0).max(7).optional(),
     water_intake: z.enum(['pouco', 'moderado', 'bastante']).optional(),
     hunger_level: z.enum(['pouca', 'moderada', 'muita']).optional(),
-    wake_time: z.string().optional().describe('HH:MM'),
-    bedtime: z.string().optional().describe('HH:MM'),
+    wake_time: z.string().optional().describe('HH:MM (também aceita "23h", "5h", "23:00:00")'),
+    bedtime: z.string().optional().describe('HH:MM (também aceita "23h", "5h", "23:00:00")'),
     onboarding_step: z.number().int().min(0).max(11).optional(),
     onboarding_completed: z.boolean().optional(),
   }),
@@ -73,7 +78,23 @@ export const cadastraDadosIniciais: ToolDefinition = {
     }
 
     if (strNonEmpty(args.sex)) updates.sex = args.sex
-    if (strNonEmpty(args.birth_date)) updates.birth_date = args.birth_date
+    // Coerção birth_date: aceita "YYYY-MM-DD", "DD/MM/YYYY" ou número (idade em anos).
+    // LLM costumava passar a idade ("44") em vez de data — convertemos.
+    if (strNonEmpty(args.birth_date)) {
+      const raw = args.birth_date!.trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        updates.birth_date = raw
+      } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+        const [d, m, y] = raw.split('/')
+        updates.birth_date = `${y}-${m!.padStart(2, '0')}-${d!.padStart(2, '0')}`
+      } else if (/^\d{1,3}$/.test(raw)) {
+        // Idade em anos: deriva birth_date = ano_atual − idade, dia 1/janeiro
+        const age = parseInt(raw, 10)
+        if (age >= 12 && age <= 120) {
+          updates.birth_date = `${new Date().getUTCFullYear() - age}-01-01`
+        }
+      }
+    }
     if (numPositive(args.height_cm)) {
       inRange(args.height_cm!, 100, 250, 'height_cm', 'Provavelmente passou em inches — converta: cm = inch × 2.54.')
       updates.height_cm = args.height_cm
@@ -94,8 +115,27 @@ export const cadastraDadosIniciais: ToolDefinition = {
       updates.training_frequency = args.training_frequency
     if (strNonEmpty(args.water_intake)) updates.water_intake = args.water_intake
     if (strNonEmpty(args.hunger_level)) updates.hunger_level = args.hunger_level
-    if (strNonEmpty(args.wake_time)) updates.wake_time = args.wake_time
-    if (strNonEmpty(args.bedtime)) updates.bedtime = args.bedtime
+    // Coerção time: aceita "HH:MM", "HH:MM:SS", "HHh", "HHhMM", "HH"
+    // LLM costumava passar "23h" e "5h" — Postgres TIME rejeitava.
+    const coerceTime = (raw: string): string | null => {
+      const s = raw.trim().toLowerCase()
+      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+        const parts = s.split(':')
+        return `${parts[0]!.padStart(2, '0')}:${parts[1]}:${parts[2] ?? '00'}`
+      }
+      const m = s.match(/^(\d{1,2})h(\d{0,2})$/)
+      if (m) return `${m[1]!.padStart(2, '0')}:${(m[2] || '00').padStart(2, '0')}:00`
+      if (/^\d{1,2}$/.test(s)) return `${s.padStart(2, '0')}:00:00`
+      return null
+    }
+    if (strNonEmpty(args.wake_time)) {
+      const t = coerceTime(args.wake_time!)
+      if (t) updates.wake_time = t
+    }
+    if (strNonEmpty(args.bedtime)) {
+      const t = coerceTime(args.bedtime!)
+      if (t) updates.bedtime = t
+    }
     if (typeof args.onboarding_step === 'number' && args.onboarding_step >= 0)
       updates.onboarding_step = args.onboarding_step
     if (typeof args.onboarding_completed === 'boolean')

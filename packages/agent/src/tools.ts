@@ -253,11 +253,18 @@ export const registraRefeicao: ToolDefinition = {
     '✅ items=[{food_name:"ovo cozido", quantity_g:200}, {food_name:"azeite de oliva", quantity_g:5}]. ' +
     '❌ items=[{food_name:"arroz com feijão e bife"}]. ' +
     '✅ items=[{food_name:"arroz branco cozido", quantity_g:100}, {food_name:"feijão preto cozido", quantity_g:80}, {food_name:"bife grelhado", quantity_g:120}]. ' +
-    'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga.',
+    'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga. ' +
+    '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Sem replace=true, a tool SOMA ao snapshot — gera dupla contagem. Default replace=false (assume nova refeição).',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
       .optional(),
+    replace: z
+      .boolean()
+      .optional()
+      .describe(
+        'Se true: deleta meal_logs do dia+meal_type ANTES de inserir os novos (correção/substituição). Se false ou omitido: soma no snapshot (nova refeição).',
+      ),
     items: z
       .array(
         z.object({
@@ -290,6 +297,55 @@ export const registraRefeicao: ToolDefinition = {
           message: 'Refeição já registrada (msg_id repetido). Não duplicou.',
           existing_count: existing.length,
         }
+      }
+    }
+
+    // CORREÇÃO: paciente quer substituir refeição já registrada hoje.
+    // Deleta meal_logs do dia+meal_type e SUBTRAI seus macros do snapshot
+    // antes de inserir os novos. Sem isso, snapshot_add_meal duplica.
+    let replacedSummary: { count: number; kcal_removed: number } | null = null
+    if (args.replace === true && args.meal_type) {
+      const startOfDay = `${today}T00:00:00`
+      const endOfDay = `${today}T23:59:59.999`
+      const { data: toRemove } = await ctx.supabase
+        .from('meal_logs')
+        .select('id, kcal, protein_g, carbs_g, fat_g')
+        .eq('user_id', ctx.userId)
+        .eq('meal_type', args.meal_type)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay)
+      if (toRemove && toRemove.length > 0) {
+        const removed = toRemove.reduce(
+          (acc, l) => ({
+            kcal: acc.kcal + Number(l.kcal ?? 0),
+            prot: acc.prot + Number(l.protein_g ?? 0),
+            carb: acc.carb + Number(l.carbs_g ?? 0),
+            fat: acc.fat + Number(l.fat_g ?? 0),
+          }),
+          { kcal: 0, prot: 0, carb: 0, fat: 0 },
+        )
+        // Deleta os logs antigos
+        await ctx.supabase
+          .from('meal_logs')
+          .delete()
+          .eq('user_id', ctx.userId)
+          .eq('meal_type', args.meal_type)
+          .gte('created_at', startOfDay)
+          .lte('created_at', endOfDay)
+        // Subtrai do snapshot via RPC (passa valores negativos)
+        await (ctx.supabase as unknown as {
+          rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+        }).rpc('snapshot_add_meal', {
+          p_user_id: ctx.userId,
+          p_date: today,
+          p_kcal: -removed.kcal,
+          p_protein: -removed.prot,
+          p_carbs: -removed.carb,
+          p_fat: -removed.fat,
+          p_calories_target: null,
+          p_protein_target: null,
+        })
+        replacedSummary = { count: toRemove.length, kcal_removed: Math.round(removed.kcal) }
       }
     }
 
@@ -385,6 +441,7 @@ export const registraRefeicao: ToolDefinition = {
       },
       day_totals: updated,
       warnings: calc.warnings,
+      replaced: replacedSummary,
     }
   },
 }

@@ -145,8 +145,24 @@ async function closeUserDay(
   // sempre e bloco 7700 nunca incrementa.
   const targets = await loadDailyTargets(supabase, userId, calcConfig)
 
-  // XP base por dia: regras configuráveis via /settings/calc
-  const xpEarned = calcDailyXP({ trainingDone, proteinG }, calcConfig)
+  // XP por dia: tabela MPP completa (doc Notion) — peso, refeições, foto,
+  // proteína, calorias dentro da janela, treino, dia perfeito.
+  // Campos não-tracked ainda (água, sono, passos, persistência) ficam zerados.
+  const mealsLogged = meals?.length ?? 0
+  const xpEarned = calcDailyXP(
+    {
+      trainingDone,
+      proteinG,
+      caloriesConsumed: kcalConsumed,
+      caloriesTarget: targets.calories_target ?? undefined,
+      proteinTarget: targets.protein_target ?? undefined,
+      mealsLogged,
+      // photo/weight tracking ainda não implementados — quando houver, passar aqui
+      photoLogged: false,
+      weightLogged: false,
+    },
+    calcConfig,
+  )
 
   // Upsert daily_snapshot
   const snapshotData = {

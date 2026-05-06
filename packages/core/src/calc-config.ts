@@ -49,10 +49,36 @@ export interface BadgeDef {
 }
 
 export interface XPRules {
+  /** Legacy: base genérico antes da tabela MPP. Mantido pra compat. */
   base: number
+  /** Legacy: bônus se treinou. Mantido pra compat. */
   training_bonus: number
+  /** Legacy: bônus se bateu proteína. Mantido pra compat. */
   protein_bonus: number
   protein_threshold_g: number
+  // ── Tabela MPP oficial (doc Notion) ──────────────────────────
+  /** Registrar peso do dia (+2 XP). */
+  weight_xp?: number
+  /** Por refeição registrada (+2 XP cada). */
+  meal_xp?: number
+  /** Enviar foto do dia (+3 XP). */
+  photo_xp?: number
+  /** Bater meta de proteína (+4 XP). */
+  protein_meta_xp?: number
+  /** Bater meta de calorias dentro da janela MPP (+6 XP). */
+  calories_meta_xp?: number
+  /** Bater meta de passos (+4 XP). NOTA: passos não tracked ainda. */
+  steps_meta_xp?: number
+  /** Beber meta de água (+3 XP). NOTA: água não tracked ainda. */
+  water_meta_xp?: number
+  /** Dormir 7-9h (+4 XP). NOTA: sono diário não tracked ainda. */
+  sleep_meta_xp?: number
+  /** Completar treino planejado (+5 XP). */
+  training_xp?: number
+  /** Dia Perfeito - todos hábitos do dia (+10 XP). */
+  perfect_day_xp?: number
+  /** Persistência - voltou após dia/semana ruim (+6 XP). */
+  persistence_xp?: number
 }
 
 export interface CalcConfig {

@@ -106,17 +106,78 @@ export function computeProgress(
 }
 
 /**
- * Calcula XP a ser ganho num dia, dado se treinou e quanta proteína consumiu.
- * Antes era hardcoded `10 + (training ? 5 : 0) + (protein >= 100 ? 5 : 0)`.
+ * Calcula XP a ser ganho num dia, conforme tabela MPP oficial (doc Notion).
+ * Cada ação granular vale uma quantia específica:
+ *   - registrar peso (+weight_xp)
+ *   - cada refeição registrada (×meal_xp)
+ *   - enviar foto (+photo_xp)
+ *   - bater meta proteína (+protein_meta_xp)
+ *   - bater meta calorias (+calories_meta_xp)
+ *   - completar treino (+training_xp)
+ *   - dia perfeito (+perfect_day_xp) — quando bate proteína E calorias E treino E peso
+ *
+ * NÃO contabiliza ainda (precisa expansão de tracking):
+ *   steps_meta_xp, water_meta_xp, sleep_meta_xp, persistence_xp
+ *
+ * Compat: se a tabela MPP não estiver populada, cai pro legacy
+ * `base + training_bonus + protein_bonus`.
  */
 export function calcDailyXP(
-  args: { trainingDone: boolean; proteinG: number },
+  args: {
+    trainingDone: boolean
+    proteinG: number
+    /** kcal_consumido / kcal_target — bate se está na janela MPP (90-105%) */
+    caloriesConsumed?: number
+    caloriesTarget?: number
+    proteinTarget?: number
+    /** quantas refeições foram registradas no dia */
+    mealsLogged?: number
+    /** se enviou foto corporal hoje */
+    photoLogged?: boolean
+    /** se registrou peso hoje */
+    weightLogged?: boolean
+  },
   config: CalcConfig = DEFAULT_CALC_CONFIG,
 ): number {
   const r = config.xp_rules
-  return (
-    r.base +
-    (args.trainingDone ? r.training_bonus : 0) +
-    (args.proteinG >= r.protein_threshold_g ? r.protein_bonus : 0)
-  )
+  // Detecta tabela MPP populada
+  const useMPPTable = r.meal_xp != null || r.calories_meta_xp != null
+  if (!useMPPTable) {
+    // Legacy: 10 + 5 (treino) + 5 (prot >= threshold)
+    return (
+      r.base +
+      (args.trainingDone ? r.training_bonus : 0) +
+      (args.proteinG >= r.protein_threshold_g ? r.protein_bonus : 0)
+    )
+  }
+  let xp = 0
+  if (args.weightLogged) xp += r.weight_xp ?? 0
+  if (args.mealsLogged && args.mealsLogged > 0) xp += (r.meal_xp ?? 0) * args.mealsLogged
+  if (args.photoLogged) xp += r.photo_xp ?? 0
+  // Meta proteína: ≥ proteinTarget OU fallback ao threshold legacy
+  const proteinMet =
+    args.proteinTarget != null
+      ? args.proteinG >= args.proteinTarget
+      : args.proteinG >= r.protein_threshold_g
+  if (proteinMet) xp += r.protein_meta_xp ?? 0
+  // Meta calórica: dentro da janela MPP 90%-105% do target
+  if (args.caloriesConsumed != null && args.caloriesTarget && args.caloriesTarget > 0) {
+    const ratio = args.caloriesConsumed / args.caloriesTarget
+    if (ratio >= 0.9 && ratio <= 1.05) xp += r.calories_meta_xp ?? 0
+  }
+  if (args.trainingDone) xp += r.training_xp ?? 0
+  // Dia perfeito: peso + ≥3 refeições + foto + proteína + calorias + treino
+  const perfect =
+    !!args.weightLogged &&
+    (args.mealsLogged ?? 0) >= 3 &&
+    !!args.photoLogged &&
+    proteinMet &&
+    args.caloriesConsumed != null &&
+    args.caloriesTarget != null &&
+    args.caloriesTarget > 0 &&
+    args.caloriesConsumed / args.caloriesTarget >= 0.9 &&
+    args.caloriesConsumed / args.caloriesTarget <= 1.05 &&
+    args.trainingDone
+  if (perfect) xp += r.perfect_day_xp ?? 0
+  return xp
 }

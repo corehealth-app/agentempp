@@ -351,7 +351,12 @@ export const registraRefeicao: ToolDefinition = {
     }
 
     // Calcula macros via TACO
-    const calc = await calcMealMacros(ctx.supabase, args.items, ctx.userCountry ?? 'BR')
+    const calc = await calcMealMacros(
+      ctx.supabase,
+      args.items,
+      ctx.userCountry ?? 'BR',
+      ctx.userId,
+    )
 
     // Loga warnings de match (composite/category/protein/no_match) em product_events
     // pra aparecer agregado em /audit. Útil pra detectar padrões de match errado.

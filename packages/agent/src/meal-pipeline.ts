@@ -98,6 +98,103 @@ export function naturalUnit(
   return { display_qty: qtyG, display_unit: 'g' }
 }
 
+/**
+ * Estimativa de macros por categoria quando search_food_trgm não acha.
+ * Roberto pediu: em vez de zerar, supor por porções médias.
+ *
+ * Categorias por keyword (em ordem de prioridade):
+ *   - fruta_doce | fruta_neutra
+ *   - vegetal_folhoso | vegetal_geral
+ *   - carne | peixe | embutido
+ *   - laticineo | queijo
+ *   - carbo (massa, batata, mandioca, arroz)
+ *   - molho (lipid-heavy)
+ *   - oleaginosa
+ *   - doce / sobremesa
+ *   - prato (fallback genérico)
+ */
+export function estimateMacros(foodName: string): {
+  category: string
+  kcal: number // por 100g
+  protein: number
+  carbs: number
+  fat: number
+  fiber: number
+} {
+  const n = foodName.toLowerCase()
+  // Frutas (doces vs neutras)
+  if (/\buva\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(n)) {
+    return { category: 'fruta', kcal: 55, protein: 0.8, carbs: 14, fat: 0.3, fiber: 1.5 }
+  }
+  // Vegetais folhosos
+  if (/alface|rúcula|agrião|espinafre|acelga|couve|repolho|chicória|radicchio|escarola/.test(n)) {
+    return { category: 'vegetal_folhoso', kcal: 18, protein: 1.5, carbs: 3, fat: 0.3, fiber: 1.8 }
+  }
+  // Vegetais cozidos / em geral
+  if (/br[óo]colis|couve-flor|abobrinha|berinjela|pepino|tomate|cenoura|beterraba|chuchu|vagem|ervilha|milho|aspargo|palmito/.test(n)) {
+    return { category: 'vegetal', kcal: 35, protein: 2, carbs: 7, fat: 0.3, fiber: 2 }
+  }
+  // Embutidos / frios processados
+  if (/salame|presunto|mortadela|peito\s+de\s+peru|peru|peito\s+de\s+frango\s+defumado|salsicha|kani|kani\s+kama|sushi/.test(n)) {
+    return { category: 'embutido', kcal: 180, protein: 18, carbs: 2, fat: 11, fiber: 0 }
+  }
+  // Peixe
+  if (/peixe|atum|salmão|tilápia|merluza|sardinha|bacalhau|camarão|sush|robalo|namorado|cação/.test(n)) {
+    return { category: 'peixe', kcal: 130, protein: 22, carbs: 0, fat: 4, fiber: 0 }
+  }
+  // Carne vermelha
+  if (/carne|bife|picanha|alcatra|file mignon|filé mignon|costela|patinho|coxão|maminha|fraldinha|cordeiro/.test(n)) {
+    return { category: 'carne', kcal: 200, protein: 26, carbs: 0, fat: 11, fiber: 0 }
+  }
+  // Frango / aves
+  if (/frango|coxa|asa|sobrecoxa|peito\s+de\s+frango|peru/.test(n)) {
+    return { category: 'frango', kcal: 165, protein: 28, carbs: 0, fat: 5, fiber: 0 }
+  }
+  // Laticínios líquidos / leites
+  if (/iogurte|kefir|coalhada|leite/.test(n)) {
+    return { category: 'laticineo', kcal: 65, protein: 4, carbs: 5, fat: 3, fiber: 0 }
+  }
+  // Queijos
+  if (/queijo|cream\s+cheese|requeij[ãa]o|ricota|cottage|burrata|mussarela|provolone|parmes[ãa]o|gorgonzola/.test(n)) {
+    return { category: 'queijo', kcal: 290, protein: 20, carbs: 3, fat: 22, fiber: 0 }
+  }
+  // Massas / carbos
+  if (/macarr[ãa]o|massa|espaguete|talharim|penne|nhoque|lasanha|ravioli|tortelini/.test(n)) {
+    return { category: 'massa', kcal: 130, protein: 5, carbs: 25, fat: 1.5, fiber: 1 }
+  }
+  if (/arroz|risoto|pa[ée]lla/.test(n)) {
+    return { category: 'arroz', kcal: 130, protein: 2.5, carbs: 28, fat: 0.3, fiber: 0.5 }
+  }
+  if (/batata|mandioca|aipim|inhame|cará|baroa|tubércul/.test(n)) {
+    return { category: 'tubérculo', kcal: 90, protein: 1.5, carbs: 21, fat: 0.1, fiber: 1.5 }
+  }
+  // Pão / panificação
+  if (/p[ãa]o|biscoito|bolacha|torrada|crepioca|tapioca|panqueca|crepe|wrap/.test(n)) {
+    return { category: 'panificação', kcal: 270, protein: 8, carbs: 50, fat: 4, fiber: 2 }
+  }
+  // Molhos / condimentos calóricos
+  if (/molho\s+de\s+salada|molho\s+ranch|maionese|mostarda\s+e\s+mel|c[ée]sar|tarta/.test(n)) {
+    return { category: 'molho_calórico', kcal: 380, protein: 1, carbs: 6, fat: 38, fiber: 0 }
+  }
+  if (/molho/.test(n)) {
+    return { category: 'molho', kcal: 80, protein: 2, carbs: 8, fat: 4, fiber: 0.5 }
+  }
+  // Doces / sobremesas
+  if (/sorvete|chocolate|brigadeiro|pudim|torta|bolo|doce|geleia|mel|açúcar/.test(n)) {
+    return { category: 'doce', kcal: 260, protein: 3, carbs: 45, fat: 8, fiber: 1 }
+  }
+  // Oleaginosas
+  if (/castanha|amêndoa|noz|amendoim|pistache|avelã|macadâmia|granola/.test(n)) {
+    return { category: 'oleaginosa', kcal: 580, protein: 18, carbs: 20, fat: 50, fiber: 8 }
+  }
+  // Bebidas zero
+  if (/[áa]gua|ch[áa]\b|caf[ée]\s+preto|refri\s+zero|adoçant/.test(n)) {
+    return { category: 'bebida_zero', kcal: 1, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+  }
+  // Fallback genérico — prato preparado
+  return { category: 'prato_genérico', kcal: 150, protein: 7, carbs: 18, fat: 5, fiber: 1 }
+}
+
 export interface MealCalcResult {
   items: MealItemMatched[]
   totals: {
@@ -185,6 +282,8 @@ export async function calcMealMacros(
   supabase: ServiceClient,
   items: MealItemInput[],
   country: string = 'BR',
+  /** ID do paciente — habilita reuso de alimentos do histórico do user. */
+  userIdHint?: string,
 ): Promise<MealCalcResult> {
   const matched: MealItemMatched[] = []
   const warnings: string[] = []
@@ -373,20 +472,92 @@ export async function calcMealMacros(
         )
       }
     } else {
-      warnings.push(`Sem match TACO para: "${it.food_name}" — calorias zeradas`)
+      // ────────────────────────────────────────────────────────────────────
+      // FALLBACK 1: tenta reusar do histórico do paciente (Roberto pediu:
+      // "pode já colocar pra ele usar alimentos já informados ou identificados
+      // nas próximas refeições"). Busca meal_logs últimos 30d com mesmo nome.
+      // ────────────────────────────────────────────────────────────────────
+      const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const supaTyped = supabase as any
+      const { data: prior } = await supaTyped
+        .from('meal_logs')
+        .select('food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id')
+        .eq('user_id', userIdHint ?? '_no_user_')
+        .ilike('food_name', it.food_name)
+        .gte('created_at', lookback)
+        .neq('source', 'no_match')
+        .neq('source', 'composite_rejected')
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (prior && prior.length > 0 && prior[0].quantity_g > 0) {
+        const p = prior[0]
+        // Calcula per-100g do registro anterior e aplica na qty atual
+        const ratio = it.quantity_g / Number(p.quantity_g)
+        const reKcal = +(Number(p.kcal) * ratio).toFixed(1)
+        const reProt = +(Number(p.protein_g) * ratio).toFixed(2)
+        const reCarb = +(Number(p.carbs_g) * ratio).toFixed(2)
+        const reFat = +(Number(p.fat_g) * ratio).toFixed(2)
+        warnings.push(
+          `"${it.food_name}" reusado de registro anterior (${p.kcal} kcal/${p.quantity_g}g → ${reKcal} kcal pra ${it.quantity_g}g).`,
+        )
+        const natRe = naturalUnit(it.food_name, it.quantity_g)
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: '[reuso histórico]',
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: reKcal,
+          protein_g: reProt,
+          carbs_g: reCarb,
+          fat_g: reFat,
+          fiber_g: 0,
+          similarity: 1.0,
+          source: 'taco',
+          display_qty: natRe.display_qty,
+          display_unit: natRe.display_unit,
+        })
+        totals.kcal += reKcal
+        totals.protein_g += reProt
+        totals.carbs_g += reCarb
+        totals.fat_g += reFat
+        continue
+      }
+      // ────────────────────────────────────────────────────────────────────
+      // FALLBACK 2: sem reuso — ESTIMA por categoria (em vez de zerar).
+      // ────────────────────────────────────────────────────────────────────
+      const est = estimateMacros(it.food_name)
+      const factor = it.quantity_g / 100
+      const eKcal = +(est.kcal * factor).toFixed(1)
+      const eProt = +(est.protein * factor).toFixed(2)
+      const eCarb = +(est.carbs * factor).toFixed(2)
+      const eFat = +(est.fat * factor).toFixed(2)
+      const eFib = +(est.fiber * factor).toFixed(2)
+      warnings.push(
+        `"${it.food_name}" sem match exato — estimando por categoria "${est.category}" (~${est.kcal} kcal/100g). Confiança média.`,
+      )
+      const natEst = naturalUnit(it.food_name, it.quantity_g)
       matched.push({
         food_name: it.food_name,
-        matched_taco_name: '',
+        matched_taco_name: `[estimativa ${est.category}]`,
         matched_taco_id: null,
         quantity_g: it.quantity_g,
-        kcal: 0,
-        protein_g: 0,
-        carbs_g: 0,
-        fat_g: 0,
-        fiber_g: 0,
+        kcal: eKcal,
+        protein_g: eProt,
+        carbs_g: eCarb,
+        fat_g: eFat,
+        fiber_g: eFib,
         similarity: 0,
-        source: 'no_match',
+        source: 'llm_estimate',
+        display_qty: natEst.display_qty,
+        display_unit: natEst.display_unit,
       })
+      totals.kcal += eKcal
+      totals.protein_g += eProt
+      totals.carbs_g += eCarb
+      totals.fat_g += eFat
+      totals.fiber_g += eFib
+      continue
     }
   }
 

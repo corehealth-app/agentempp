@@ -158,10 +158,19 @@ export const cadastraDadosIniciais: ToolDefinition = {
       .eq('user_id', ctx.userId)
       .maybeSingle()
 
+    // Calcula meta canônica AGORA (com profile recém-atualizado) pra evitar
+    // que o LLM estime na cabeça. Pode ser null se ainda faltam dados.
+    const cfg = await loadCalcConfig(ctx.supabase)
+    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
+
     return {
       success: true,
       updated_fields: Object.keys(updates),
       metrics: metrics ?? null,
+      // ⚠️ Sempre que estes valores estiverem presentes, USE EXATAMENTE eles
+      // ao informar meta ao paciente — não calcule na cabeça.
+      calories_target_today: targets.calories_target,
+      protein_target_today_g: targets.protein_target,
     }
   },
 }
@@ -203,7 +212,26 @@ export const defineProtocolo: ToolDefinition = {
       })
       .eq('user_id', ctx.userId)
     if (error) throw error
-    return { success: true, protocol: args.protocol }
+
+    // Calcula e RETORNA a meta canônica imediatamente — assim o LLM não precisa
+    // estimar na cabeça (bug histórico: LLM dizia TDEE em vez de BMR×1.2−déficit).
+    // Próxima resposta do LLM tem o valor pronto pra usar.
+    const config = await loadCalcConfig(ctx.supabase)
+    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
+
+    return {
+      success: true,
+      protocol: args.protocol,
+      // ⚠️ USE EXATAMENTE estes valores quando informar a meta ao paciente.
+      calories_target_today: targets.calories_target,
+      protein_target_today_g: targets.protein_target,
+      formula_used:
+        args.protocol === 'recomposicao'
+          ? `BMR × ${config.recomp_bmr_multiplier} − ${args.deficit_level ?? 500} kcal (déficit)`
+          : args.protocol === 'ganho_massa'
+            ? `BMR × activity_factor × ${config.ganho_massa_surplus_multiplier} (superávit leve)`
+            : 'BMR × activity_factor (manutenção)',
+    }
   },
 }
 

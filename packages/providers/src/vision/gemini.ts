@@ -307,16 +307,53 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let parsed: { items?: VisionMealAnalysis['items']; meal_context?: string } = {}
+    let parsed: Record<string, unknown> = {}
     try {
       parsed = JSON.parse(raw)
     } catch {
       throw new Error(`Vision (meal) JSON inválido: ${raw.slice(0, 200)}`)
     }
+    // Parser tolerante — modelos novos (gemini 2.5) divergem do schema:
+    // aceita items|meal_contents|foods e cada item aceita name|item|food_name
+    // + quantity_g_estimate|estimate_grams|grams|qty_g|quantity. Strings viram numbers.
+    const rawItems =
+      (parsed.items as unknown[]) ??
+      (parsed.meal_contents as unknown[]) ??
+      (parsed.foods as unknown[]) ??
+      []
+    const items: VisionMealAnalysis['items'] = (rawItems as Array<Record<string, unknown>>).map(
+      (it) => {
+        const name =
+          (it.name as string) ??
+          (it.item as string) ??
+          (it.food_name as string) ??
+          (it.food as string) ??
+          ''
+        const qtyRaw =
+          it.quantity_g_estimate ??
+          it.estimate_grams ??
+          it.grams ??
+          it.qty_g ??
+          it.quantity ??
+          it.amount_g
+        const confRaw = it.confidence ?? it.conf ?? 0.5
+        return {
+          name,
+          quantity_g_estimate: Number(qtyRaw) || 0,
+          confidence: Number(confRaw) || 0,
+          notes: (it.notes as string | undefined) ?? undefined,
+        }
+      },
+    )
+    const meal_context =
+      (parsed.meal_context as string) ??
+      (parsed.context as string) ??
+      (parsed.description as string) ??
+      undefined
     return {
       type: 'meal',
-      items: parsed.items ?? [],
-      meal_context: parsed.meal_context,
+      items,
+      meal_context,
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,

@@ -129,14 +129,72 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (const it of items) {
-    // Sanity 1: nome composto ("ovo com azeite", "arroz e feijão") → trigram tende
-    // a errar feio (uma das partes domina, kcal vai pra outro alimento). Rejeita.
+    // Sanity 1: nome composto ("ovo com azeite", "leite com whey", "arroz e feijão").
+    // Antes: rejeitava direto e zerava. Agora: tenta auto-split, busca cada parte
+    // separadamente, divide a quantidade proporcionalmente. Se TODAS as partes
+    // matcham bem, agrega os macros. Senão rejeita com warning.
     const isComposite =
       / com | e | \+ |\bcom\s+|^com\s+/i.test(` ${it.food_name} `) &&
-      it.food_name.split(/\s+/).length >= 4
+      it.food_name.split(/\s+/).length >= 3
     if (isComposite) {
+      const parts = it.food_name
+        .split(/ com | e | \+ /i)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 2)
+      // Dividir qty igual entre as partes
+      const partQty = it.quantity_g / parts.length
+      const partMatches: Array<{ name: string; m: Awaited<ReturnType<typeof matchFood>> }> = []
+      for (const p of parts) {
+        const pm = await matchFood(supabase, p, country)
+        partMatches.push({ name: p, m: pm })
+      }
+      const allGood = partMatches.every((pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null)
+      if (allGood) {
+        // Adiciona cada parte como item separado, com nome composto preservado em matched_taco_name
+        let totalKcal = 0,
+          totalProt = 0,
+          totalCarbs = 0,
+          totalFat = 0,
+          totalFib = 0
+        for (const pm of partMatches) {
+          const f = partQty / 100
+          const kcal = +((pm.m.kcal_per_100g ?? 0) * f).toFixed(1)
+          const prot = +((pm.m.protein_g ?? 0) * f).toFixed(2)
+          const carb = +((pm.m.carbs_g ?? 0) * f).toFixed(2)
+          const fat = +((pm.m.fat_g ?? 0) * f).toFixed(2)
+          const fib = +((pm.m.fiber_g ?? 0) * f).toFixed(2)
+          totalKcal += kcal
+          totalProt += prot
+          totalCarbs += carb
+          totalFat += fat
+          totalFib += fib
+        }
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: partMatches.map((pm) => pm.m.name_pt).join(' + '),
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: +totalKcal.toFixed(1),
+          protein_g: +totalProt.toFixed(2),
+          carbs_g: +totalCarbs.toFixed(2),
+          fat_g: +totalFat.toFixed(2),
+          fiber_g: +totalFib.toFixed(2),
+          similarity: Math.min(...partMatches.map((pm) => pm.m.similarity)),
+          source: 'taco',
+        })
+        totals.kcal += totalKcal
+        totals.protein_g += totalProt
+        totals.carbs_g += totalCarbs
+        totals.fat_g += totalFat
+        totals.fiber_g += totalFib
+        warnings.push(
+          `"${it.food_name}" auto-dividido em ${partMatches.map((pm) => pm.m.name_pt).join(' + ')} (qty ${partQty.toFixed(0)}g cada). Quando souber quantidades exatas, separe os itens.`,
+        )
+        continue
+      }
+      // Algum part não matchou — mantém rejeição
       warnings.push(
-        `Item composto rejeitado: "${it.food_name}" — peça pro paciente separar (ex: "4 ovos cozidos" + "1 colher azeite") pra calcular cada um certo. Calorias zeradas.`,
+        `Item composto rejeitado: "${it.food_name}" — não consegui separar em alimentos conhecidos. Peça pro paciente separar (ex: "leite 250ml" + "whey 30g"). Calorias zeradas.`,
       )
       matched.push({
         food_name: it.food_name,

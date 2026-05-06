@@ -34,6 +34,68 @@ export interface MealItemMatched {
     | 'category_mismatch'
     /** Alimento que deveria ter proteína (ovo/carne/whey) bateu sem proteína. */
     | 'protein_mismatch'
+  /** Quantidade em UNIDADE NATURAL pra exibir ao paciente (ex: "2 unidades", "250 ml"). */
+  display_qty?: number
+  /** Unidade natural pra exibição: 'g' (default), 'ml', 'unidade', 'unidades', 'pão', 'pães'. */
+  display_unit?: string
+}
+
+/**
+ * Decide unidade natural pra exibição baseado no nome do alimento.
+ * Backend mantém gramas como unidade interna; isso é só pra UX.
+ *
+ * Regras:
+ *   - Ovos → unidades (50g por ovo médio)
+ *   - Líquidos (leite, suco, café, chocolate quente, vitamina, etc) → ml (1g ≈ 1ml)
+ *   - Pão francês → unidades quando múltiplo de 50g
+ *   - Outros → g
+ */
+export function naturalUnit(
+  foodName: string,
+  qtyG: number,
+): { display_qty: number; display_unit: string } {
+  const lower = foodName.toLowerCase()
+  // Ovos: 1 ovo médio ≈ 50g
+  if (/\bovo\b|\bovos\b|omelete/.test(lower)) {
+    const units = Math.round(qtyG / 50)
+    if (units >= 1) {
+      return { display_qty: units, display_unit: units === 1 ? 'unidade' : 'unidades' }
+    }
+  }
+  // Líquidos: leite, suco, café, chocolate quente, achocolatado, vitamina, smoothie,
+  // chá, cerveja, vinho, refrigerante, água, whey, capuccino
+  if (
+    /\bleite\b|\bsuco\b|\bcaf[ée]\b|chocolate\s+quente|cappuc|capuc|achocolatad|vitamina|smoothie|\bch[áa]\b|cerveja|vinho|refri|coca|\b[áa]gua\b|whey|caipirinha|cachaça|whisky|gin|champ/.test(
+      lower,
+    )
+  ) {
+    return { display_qty: qtyG, display_unit: 'ml' }
+  }
+  // Pão francês: 1 pão ≈ 50g
+  if (/p[ãa]o\s*franc/.test(lower) && qtyG >= 50 && qtyG % 50 === 0) {
+    const units = qtyG / 50
+    return { display_qty: units, display_unit: units === 1 ? 'pão' : 'pães' }
+  }
+  // Pão de queijo: 1 unidade ≈ 30g
+  if (/p[ãa]o\s+de\s+queijo/.test(lower) && qtyG >= 30 && qtyG % 30 === 0) {
+    const units = qtyG / 30
+    return { display_qty: units, display_unit: units === 1 ? 'pão de queijo' : 'pães de queijo' }
+  }
+  // Fatias (queijo, presunto, mortadela, peito de peru): se "fatiado" ou "fatia(s)" no nome
+  if (/fatiad|\bfatia/.test(lower) && qtyG >= 15 && qtyG % 15 === 0) {
+    const units = qtyG / 15  // ~15g por fatia média
+    return { display_qty: units, display_unit: units === 1 ? 'fatia' : 'fatias' }
+  }
+  // Banana média ≈ 100g; maçã ≈ 150g — só converte se múltiplo limpo
+  if (/\bbanana\b/.test(lower) && qtyG >= 100 && qtyG % 100 === 0) {
+    const units = qtyG / 100
+    return { display_qty: units, display_unit: units === 1 ? 'banana' : 'bananas' }
+  }
+  if (/\bma[çc][ãa]\b/.test(lower) && qtyG >= 150 && qtyG % 150 === 0) {
+    const units = qtyG / 150
+    return { display_qty: units, display_unit: units === 1 ? 'maçã' : 'maçãs' }
+  }
+  return { display_qty: qtyG, display_unit: 'g' }
 }
 
 export interface MealCalcResult {
@@ -169,6 +231,7 @@ export async function calcMealMacros(
           totalFat += fat
           totalFib += fib
         }
+        const natComp = naturalUnit(it.food_name, it.quantity_g)
         matched.push({
           food_name: it.food_name,
           matched_taco_name: partMatches.map((pm) => pm.m.name_pt).join(' + '),
@@ -181,6 +244,8 @@ export async function calcMealMacros(
           fiber_g: +totalFib.toFixed(2),
           similarity: Math.min(...partMatches.map((pm) => pm.m.similarity)),
           source: 'taco',
+          display_qty: natComp.display_qty,
+          display_unit: natComp.display_unit,
         })
         totals.kcal += totalKcal
         totals.protein_g += totalProt
@@ -279,6 +344,7 @@ export async function calcMealMacros(
         continue
       }
 
+      const nat = naturalUnit(it.food_name, it.quantity_g)
       matched.push({
         food_name: it.food_name,
         matched_taco_name: m.name_pt ?? '',
@@ -291,6 +357,8 @@ export async function calcMealMacros(
         fiber_g: fiber,
         similarity: m.similarity,
         source: 'taco',
+        display_qty: nat.display_qty,
+        display_unit: nat.display_unit,
       })
 
       totals.kcal += kcal

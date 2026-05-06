@@ -254,7 +254,8 @@ export const registraRefeicao: ToolDefinition = {
     '❌ items=[{food_name:"arroz com feijão e bife"}]. ' +
     '✅ items=[{food_name:"arroz branco cozido", quantity_g:100}, {food_name:"feijão preto cozido", quantity_g:80}, {food_name:"bife grelhado", quantity_g:120}]. ' +
     'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga. ' +
-    '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Sem replace=true, a tool SOMA ao snapshot — gera dupla contagem. Default replace=false (assume nova refeição).',
+    '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Sem replace=true, a tool SOMA ao snapshot — gera dupla contagem. Default replace=false (assume nova refeição). ' +
+    '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos".',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
@@ -431,6 +432,10 @@ export const registraRefeicao: ToolDefinition = {
           name: i.food_name,
           matched_to: i.matched_taco_name || null,
           quantity_g: i.quantity_g,
+          // ⚠️ Use display_qty + display_unit ao MOSTRAR refeição ao paciente.
+          // Ex: "2 unidades", "250 ml" — mais natural que "120g" pra ovo, "280g" pra leite.
+          display_qty: i.display_qty ?? i.quantity_g,
+          display_unit: i.display_unit ?? 'g',
           kcal: i.kcal,
           protein_g: i.protein_g,
           carbs_g: i.carbs_g,

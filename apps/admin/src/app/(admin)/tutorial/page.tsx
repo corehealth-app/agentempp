@@ -568,6 +568,19 @@ export default function TutorialPage() {
             usa BF% se disponível (mais preciso pra Katch-McArdle); senão IMC pra rotear
             protocolo.
           </Term>
+          <Term word="Fórmulas de meta calórica (MPP oficial)">
+            Doc MPP no Notion define explicitamente:
+            <br />
+            <strong>Recomposição:</strong> BMR × 1,2 (FIXO) − déficit (400/500/600). Atividade
+            NÃO entra no cálculo principal — "a meta é calculada apenas pela dieta".
+            <br />
+            <strong>Ganho de massa:</strong> BMR × activity_factor × 1,05 (superávit leve).
+            <br />
+            <strong>Manutenção:</strong> BMR × activity_factor (TDEE puro).
+            <br />
+            BMR usa Katch-McArdle quando há BF% (LBM = peso × (1−BF); BMR = 370 + 21,6×LBM),
+            senão Mifflin-St Jeor.
+          </Term>
           <Term word="BMR / TDEE">
             BMR = basal metabolic rate (gasto em repouso). TDEE = total daily energy expenditure
             (BMR × fator de atividade). Base do cálculo de kcal alvo do paciente.

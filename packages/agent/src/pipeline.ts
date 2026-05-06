@@ -684,7 +684,16 @@ function formatUserContext(
   ]
   if (m.bmr != null) lines.push(`- BMR estimado: ${Math.round(m.bmr)} kcal`)
   if (m.bmr != null && m.activityFactor != null) {
-    lines.push(`- TDEE estimado: ${Math.round(m.bmr * m.activityFactor)} kcal`)
+    const tdeeVal = Math.round(m.bmr * m.activityFactor)
+    // ⚠️ Pra recomposição, TDEE é INFORMATIVO — meta usa BMR×1.2 − déficit (doc MPP).
+    // Mostrar com aviso explícito pra LLM não confundir TDEE com meta.
+    if (ctx.profile.currentProtocol === 'recomposicao') {
+      lines.push(
+        `- TDEE estimado: ${tdeeVal} kcal (apenas referência — NÃO é a meta na recomposição; meta = BMR × 1,2 − déficit, vide seção "Dados numéricos REAIS" abaixo)`,
+      )
+    } else {
+      lines.push(`- TDEE estimado: ${tdeeVal} kcal`)
+    }
   }
   if (m.imc != null) lines.push(`- IMC: ${m.imc.toFixed(1)}`)
   if (m.lbm != null) lines.push(`- LBM (massa magra): ${m.lbm.toFixed(1)} kg`)

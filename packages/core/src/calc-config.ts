@@ -60,6 +60,12 @@ export interface CalcConfig {
   bmr_katch: BMRKatchConfig
   activity_factors: Record<ActivityLevel, number>
   protein_factors: Record<HungerLevel, number>
+  /** Multiplicador FIXO do BMR pra recomposição (doc MPP: 1.2 — atividade não entra). */
+  recomp_bmr_multiplier: number
+  /** Multiplicador de superávit pra ganho de massa (doc MPP: 1.05 = superávit leve). */
+  ganho_massa_surplus_multiplier: number
+  /** Déficit calórico por nível de fome (apenas recomposição). */
+  deficit_by_hunger: Record<HungerLevel, number>
   kcal_block: number
   imc_limit_recomp: number
   training_min: number
@@ -94,6 +100,13 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     pouca: 1.6,
     moderada: 1.8,
     muita: 2.0,
+  },
+  recomp_bmr_multiplier: 1.2,
+  ganho_massa_surplus_multiplier: 1.05,
+  deficit_by_hunger: {
+    pouca: 600,
+    moderada: 500,
+    muita: 400,
   },
   kcal_block: 7700,
   imc_limit_recomp: 25,

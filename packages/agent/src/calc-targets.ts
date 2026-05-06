@@ -90,14 +90,16 @@ export function computeDailyTargets(
   let caloriesTarget: number
   switch (profile.currentProtocol) {
     case 'recomposicao': {
-      const sedentarioFactor = config.activity_factors.sedentario ?? 1.2
-      const bmrBase = metrics.bmr * sedentarioFactor
+      const recompMultiplier = config.recomp_bmr_multiplier ?? 1.2
+      const bmrBase = metrics.bmr * recompMultiplier
       caloriesTarget = bmrBase - (profile.deficitLevel ?? 500)
       break
     }
-    case 'ganho_massa':
-      caloriesTarget = tdee * 1.05
+    case 'ganho_massa': {
+      const surplusMultiplier = config.ganho_massa_surplus_multiplier ?? 1.05
+      caloriesTarget = tdee * surplusMultiplier
       break
+    }
     case 'manutencao':
     default:
       caloriesTarget = tdee

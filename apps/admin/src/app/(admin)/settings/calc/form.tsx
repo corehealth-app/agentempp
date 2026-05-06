@@ -29,6 +29,16 @@ const GROUPS: Record<
     description: 'Multiplicador BMR→TDEE e proteína g/kg corporal por nível de fome.',
     keys: ['calc.activity_factors', 'calc.protein_factors'],
   },
+  formulas: {
+    title: 'Fórmulas de meta calórica (doc MPP)',
+    description:
+      'Multiplicadores e déficits oficiais MPP por protocolo. Recomposição usa BMR × 1.2 fixo (não usa activity_factor — atividade NÃO entra no cálculo principal). Ganho aplica superávit leve sobre TDEE.',
+    keys: [
+      'calc.recomp_bmr_multiplier',
+      'calc.ganho_massa_surplus_multiplier',
+      'calc.deficit_by_hunger',
+    ],
+  },
   protocol: {
     title: 'Roteamento de protocolo',
     description: 'Limites IMC/BF e treino mínimo que decidem recomposição vs ganho_massa.',

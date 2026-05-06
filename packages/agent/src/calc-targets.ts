@@ -76,15 +76,27 @@ export function computeDailyTargets(
 
   const tdee = calcTDEE(metrics.bmr, profile.activityLevel, config)
 
-  // calories_target = TDEE - deficit_level (se protocolo de recomp)
-  // ganho_massa: superávit (+ deficit_level invertido); manutencao: TDEE puro
+  // Fórmulas oficiais MPP (doc Notion / regra agent_rules.recomposicao-meta-calorica)
+  //
+  // recomposição:  BMR × 1,2 (FIXO — atividade NÃO entra) − déficit
+  //                Doc: "a meta calórica é calculada apenas pela dieta;
+  //                exercício nunca entra no cálculo principal"
+  //
+  // ganho_massa:   BMR × fator_atividade × 1,05 (superávit leve)
+  //                Doc: "evita superávit fraco e exagerado, ganho limpo"
+  //
+  // manutencao:    BMR × fator_atividade (sem ajuste, igual TDEE)
+  //                Doc: "manutenção é definida por resposta real do corpo"
   let caloriesTarget: number
   switch (profile.currentProtocol) {
-    case 'recomposicao':
-      caloriesTarget = tdee - (profile.deficitLevel ?? 500)
+    case 'recomposicao': {
+      const sedentarioFactor = config.activity_factors.sedentario ?? 1.2
+      const bmrBase = metrics.bmr * sedentarioFactor
+      caloriesTarget = bmrBase - (profile.deficitLevel ?? 500)
       break
+    }
     case 'ganho_massa':
-      caloriesTarget = tdee + (profile.deficitLevel ?? 300)
+      caloriesTarget = tdee * 1.05
       break
     case 'manutencao':
     default:

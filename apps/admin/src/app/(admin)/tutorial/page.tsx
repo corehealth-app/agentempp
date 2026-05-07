@@ -182,7 +182,7 @@ export default function TutorialPage() {
         <Item
           icon={FileText}
           href="/prompts"
-          title="Regras (88+) e system prompts"
+          title="Regras (112) e system prompts"
           description="Editor com diff viewer e versionamento. Cada regra tem categoria, prioridade, ativa/inativa. System prompt de cada estágio tem sua própria versão em agent_rules_versions."
           examples={[
             'Mudar voz/tom → editar regra de persona, "Salvar como rascunho", "Publicar"',
@@ -254,35 +254,34 @@ export default function TutorialPage() {
         <Item
           icon={Calculator}
           href="/settings/calc"
-          title="Constantes de cálculo (13)"
-          description="⚠️ Impacto clínico — alterar coeficientes da BMR Mifflin-St Jeor afeta recomendações de calorias pra TODOS os pacientes."
+          title="Constantes de cálculo (17) — alinhadas com doc Notion MPP"
+          description="⚠️ Impacto clínico — toda fórmula determinística do método. 6 grupos numerados na UI. Mudanças refletem em até 60s (cache)."
           examples={[
-            'BMR Mifflin: weight_coef, height_coef, age_coef, male_offset, female_offset',
-            'BMR Katch-McArdle (com %BF): base, lbm_coef',
-            'Activity factors: sedentario / leve / moderado / alto / atleta',
-            'Protein factors: pouca / moderada / muita (g/kg corporal)',
-            'KCAL_BLOCK = 7700 (1kg gordura)',
-            'IMC limit recomp (25), training_min (3), BF limits por sexo',
-            'Levels XP (7 níveis com nomes), badges (6 tipos), xp_rules diárias',
+            '1️⃣ BMR: Mifflin-St Jeor (sem BF) e Katch-McArdle (370 + 21.6 × LBM)',
+            '2️⃣ Fatores: activity (sedentário 1.2 → atleta 1.9). protein (cascata oficial: muita→1.6 perfil difícil, training_low<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8)',
+            '3️⃣ Fórmulas: recomp = BMR × 1.2 − déficit (atividade NÃO entra). ganho = BMR × atividade × 1.05. Manutenção = BMR × atividade. deficit_by_hunger: 600/500/400',
+            '4️⃣ Roteamento: imc_limit_recomp (25), training_min (3), sleep_min_hours (6.5 ← novo), bf_limits por sexo. Critérios obrigatórios pra ganho: treino + sono + alimentação estruturada',
+            '5️⃣ Escadas: bf_goal_rules (>30→bf−10, >20→20, …, base→10). imc_goal_steps [30, 25, 23, 22, 21] com margem mínima 1',
+            '6️⃣ Gamificação: kcal_block (7700). levels (8 níveis Notion: 0/100/300/600/1000/1500/2200/3000). 17 badges. xp_rules diárias',
           ]}
         />
         <Item
           icon={Settings}
           href="/settings/global"
-          title="Config global (32+ chaves em 9 grupos)"
-          description="Tudo que não é por-paciente. Agrupado por prefixo do key:"
+          title="Config global (44 chaves em 11 grupos)"
+          description="Tudo que não é cálculo nem regra. Agrupado por prefixo. Form com switch (bool), number (numérico), JSON editor com validação inline (object/array), ou texto livre."
           groups={[
             { name: 'rate_limit', count: 2, what: 'Msgs/user/min, custo/user/dia' },
             { name: 'alerts', count: 3, what: 'Custo 24h, latência P95, taxa de erro de tools' },
             { name: 'tts', count: 5, what: 'ElevenLabs stability/similarity/speed/style + rewriter on/off' },
-            { name: 'engagement', count: 5, what: 'Wake/bed offsets + fallbacks + slots (thresholds + meal_hints)' },
+            { name: 'engagement', count: 5, what: 'Wake/bed offsets + fallbacks + slots (JSON com thresholds + meal_hints por slot)' },
             { name: 'humanizer', count: 4, what: 'Velocidade de digitação simulada (chars/s, delays)' },
             { name: 'buffer', count: 1, what: 'Debounce do webhook WhatsApp (ms — agrega msgs próximas)' },
             { name: 'attention', count: 7, what: 'Thresholds das categorias do "Quem precisa da sua atenção"' },
-            { name: 'calc', count: 13, what: 'Mesmas chaves de /settings/calc (UI dedicada)' },
-            { name: 'country_to_language', count: 1, what: 'Map de país → idioma da persona' },
-            { name: 'persona', count: 1, what: 'Variações de persona por país (Dr. Roberto / Robert)' },
-            { name: 'vision', count: 2, what: 'Modelo OpenRouter (gemini-2.5-flash) + threshold de confidence pra flag ⚠️ INCERTO' },
+            { name: 'numeric_validator', count: 2, what: 'Validador anti-alucinação on/off + threshold (% erro tolerado)' },
+            { name: 'persona', count: 12, what: 'Nome/título/método por país (BR/PT/ES/US): Dr. Roberto / Dr. Robert' },
+            { name: 'country_to_language', count: 1, what: 'Mapping ISO país → idioma default' },
+            { name: 'vision', count: 2, what: 'Modelo (gemini-2.5-flash) + threshold de confidence pra flag ⚠️ INCERTO' },
           ]}
         />
         <Item
@@ -296,6 +295,60 @@ export default function TutorialPage() {
             'Editar inline: nome, categoria, macros, fonte (alias / TACO / manual)',
             'Filtros: busca por nome, categoria, fonte',
             '⚠️ Nome deve ser PT-BR popular ("ovo frito"), NÃO técnico ("ovo de galinha mexido")',
+          ]}
+        />
+      </Section>
+
+      {/* ====================================================== */}
+      {/* DEFESAS DETERMINÍSTICAS + NOTION                         */}
+      {/* ====================================================== */}
+      <Section
+        icon={AlertTriangle}
+        title="Defesas determinísticas anti-erro do LLM"
+        description="Camadas de segurança em código que validam saída do LLM. Não substituem o prompt — defesa em profundidade. Eventos vão pra product_events e aparecem em /audit."
+      >
+        <Item
+          icon={AlertTriangle}
+          href="/audit"
+          title="5 camadas anti-alucinação numérica"
+          description="LLM calculava meta/balanço/streak mentalmente e errava. Implementamos 5 camadas independentes — cada uma sozinha já reduz erro, juntas garantem precisão."
+          examples={[
+            '1. CONTEXTO PRÉ-INJETADO: formatUserContext passa meta calórica, proteína, consumo, balanço, IMC, BMR, TDEE, LBM, streak/XP/level/blocos prontos. LLM SÓ usa, nunca recalcula.',
+            '2. PERSONA REGRA INVIOLÁVEL: "Anti-alucinação numérica" em PT/EN/ES — lista o que NUNCA recalcular. Editável em /prompts.',
+            '3. TOOL consulta_metricas: escape hatch determinístico se contexto stale.',
+            '4. VALIDADOR PÓS-LLM: regex parseia números na resposta vs contexto, loga divergência >10% em product_events. Editável /settings/global → numeric_validator.',
+            '5. TEMPERATURE engagement reduzida (1.2 → 0.85) pra reduzir alucinação criativa.',
+          ]}
+        />
+        <Item
+          icon={Sparkles}
+          href="/audit"
+          title="Auto-corrige meal_type pela hora local + bloqueia replace destrutivo"
+          description="Se LLM passa meal_type errado (ex: jantar às 8h) ou replace=true sem correção real do paciente, sistema corrige antes de gravar. Silencioso, sem fricção UX."
+          examples={[
+            'AUTO-CORRIGE meal_type: 5-11h→cafe, 11-15h→almoco, 15-18h→lanche, 18-23h→jantar, 23-5h→lanche. Sobrescreve args.meal_type quando LLM passar errado. Loga tool.meal_type_autocorrected.',
+            'BLOQUEIA replace=true: se últimas 3 msgs do paciente NÃO tiverem palavra de correção (corrige/errei/troca/na verdade/actually/fix/mistake/me equivoqué), replace vira false. Loga tool.replace_blocked_no_correction.',
+            'Detector multi-idioma: PT/EN/ES com regex específicos pra cada (correction-detector.ts).',
+            'Match composto direto: "leite com whey" vai direto pro alias 95kcal/100g, antes era split em "leite"+"whey" (sim<0.45) e zerava.',
+            'Lookup de snapshot usa data LOCAL do paciente (timezone) — antes UTC perdia consumo registrado entre 20h-24h pra users em New_York.',
+          ]}
+        />
+        <Item
+          icon={Globe}
+          href="/settings/calc"
+          title="100% alinhado com doc Notion MPP"
+          description="Auditoria sistemática contra os 21 docs + 16 CSVs do export Notion (commit d2cb65f) detectou e corrigiu 5 desvios. Hoje todas as fórmulas batem com a doc oficial."
+          examples={[
+            '✅ BMR Mifflin/Katch: weight×10 + height×6.25 − age×5 (+5 m / −161 f). Katch = 370 + 21.6 × LBM',
+            '✅ Recomp = BMR × 1.2 − déficit (atividade NÃO entra). Doc Notion: "regra de ouro: dieta como base"',
+            '✅ Ganho = BMR × atividade × 1.05 (superávit leve). Manutenção = BMR × atividade',
+            '✅ Déficit por fome: muita 400, moderada 500, pouca 600 (paciente com mais fome → menos déficit)',
+            '✅ Protein cascade Notion: muita→1.6 (perfil difícil), training<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8 (corrigido — antes invertido)',
+            '✅ Levels (8 Notion): 0/100/300/600/1000/1500/2200/3000 com Lenda MPP no topo',
+            '✅ IMC goal escada [30, 25, 23, 22, 21] margem 1 (corrigido — antes faltava 30)',
+            '✅ BF goal escada: >30→bf−10, >20→20, >18→18, >15→15, base→10',
+            '✅ Critérios pra Ganho: treino ≥3 + sono ≥6h30 + alimentação estruturada (food_organization=sim). Onboarding agora pergunta os 3.',
+            '✅ Bloco 7700 kcal = 1kg gordura (referência popular MPP)',
           ]}
         />
       </Section>
@@ -337,14 +390,15 @@ export default function TutorialPage() {
         <Item
           icon={Clock}
           href="/settings/crons"
-          title="Cron jobs (12)"
+          title="Cron jobs (20)"
           description="Cada job tem 3 ações inline com optimistic UI: Editar (cron expression 5/6 campos), Ativar/Desativar (toggle pg_cron), Rodar agora (executa o command imediatamente, fora do schedule). Toda mudança vai pro audit_log."
           examples={[
-            'engagement-* (5×/dia) — heartbeats, sender escolhe slot por hora local',
-            'daily-closer-* (4 horários: 00h30, 01h30, 02h30, 03h30 UTC) — cobre múltiplos timezones',
-            'cleanup-processed-messages (04h diário) — DELETE messages > 30d',
-            'wa-quality-check (30min) — monitora quality rating do WhatsApp Business',
-            'refresh-mv-kpis-daily (1×/dia) — recomputa materialized view dos KPIs',
+            'engagement-morning/late_morning/afternoon/evening/night (5×/dia) — heartbeats, sender escolhe slot por hora LOCAL do paciente',
+            'daily-closer-* (11 horários, 00h30→10h30 UTC) — cobre todos os timezones (BRT, EDT, PDT, etc)',
+            'cleanup-processed-messages (04h) — DELETE messages > 30d',
+            'wa-quality-check (30min) — monitora quality rating do WhatsApp',
+            'refresh-mv-kpis-daily (1×h) — recomputa materialized view dos KPIs',
+            'attention-cleanup (03h) — expira pending_approvals stale',
           ]}
         />
       </Section>

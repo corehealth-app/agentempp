@@ -12,6 +12,7 @@ import { calcMealMacros } from './meal-pipeline.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { countryToTimezone, getLocalDateString } from './timezone-utils.js'
+import { detectCorrectionIntent } from './correction-detector.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -27,6 +28,12 @@ export interface ToolContext {
    * dedup de inserts em logs (meal_logs, workout_logs) — protege contra
    * dupla contagem em retentativas do Inngest. */
   providerMessageId?: string
+  /** Últimas N mensagens do PACIENTE (direção 'in') no turno atual.
+   * Usado pra validação semântica determinística — ex: detectar se
+   * `replace=true` em registra_refeicao é legítimo (paciente disse
+   * "corrige", "errei", etc) ou bug do LLM (foto nova classificada como
+   * correção). NÃO substitui prompt rule, é defesa em profundidade. */
+  recentUserMessages?: string[]
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -306,9 +313,15 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
-    // Validador semântico: meal_type bate com a hora local?
-    // Se discrepar (ex: meal_type=jantar às 8h da manhã), loga warning pra
-    // auditoria. Não bloqueia — paciente pode estar registrando atrasado.
+    // ========================================================================
+    // GUARDA-CHUVA DETERMINÍSTICO (defesa em profundidade contra erro do LLM)
+    // ========================================================================
+
+    // (1) AUTO-CORRIGE meal_type pela hora local do paciente.
+    // Reversível: se LLM passou meal_type errado (ex: "jantar" às 8h da manhã),
+    // sistema sobrescreve silenciosamente pra hora-correspondente. Não pergunta
+    // pro paciente — UX limpa. Logs em product_events pra auditoria.
+    let mealTypeOriginal = args.meal_type
     if (args.meal_type) {
       const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
       const localHour = Number.parseInt(
@@ -330,17 +343,44 @@ export const registraRefeicao: ToolDefinition = {
       if (args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
-          event: 'tool.meal_type_mismatch',
+          event: 'tool.meal_type_autocorrected',
           properties: {
             claimed: args.meal_type,
-            expected_by_hour: expected,
+            corrected_to: expected,
             local_hour: localHour,
             timezone: tz,
             replace: args.replace ?? false,
           },
         })
+        // Sobrescreve args.meal_type com o sugerido pela hora.
+        args.meal_type = expected
       }
     }
+
+    // (2) BLOQUEIA replace=true sem palavra-chave de correção.
+    // Destrutivo: replace=true DELETA refeições do dia+meal_type.
+    // Se últimas msgs do paciente NÃO têm "corrige/errei/troca/na verdade/...",
+    // é provavelmente bug do LLM (ex: foto nova classificada como correção).
+    // Downgrade pra replace=false silenciosamente — vira INSERT normal.
+    if (args.replace === true) {
+      const recentMsgs = ctx.recentUserMessages ?? []
+      const correctionWord = detectCorrectionIntent(recentMsgs)
+      if (!correctionWord) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_blocked_no_correction',
+          properties: {
+            meal_type: mealTypeOriginal,
+            corrected_meal_type: args.meal_type,
+            recent_msgs_count: recentMsgs.length,
+            recent_msgs_preview: recentMsgs.slice(-2).map((m) => m.slice(0, 80)),
+          },
+        })
+        // Downgrade silencioso — segue como INSERT normal.
+        args.replace = false
+      }
+    }
+    // ========================================================================
 
     // CORREÇÃO: paciente quer substituir refeição já registrada hoje.
     // Deleta meal_logs do dia+meal_type e SUBTRAI seus macros do snapshot

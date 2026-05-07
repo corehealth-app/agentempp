@@ -194,6 +194,12 @@ export async function processMessage(
       userCountry: ctx.country ?? 'BR',
       userTimezone: ctx.timezone,
       providerMessageId: input.providerMessageId,
+      // Últimas 3 msgs do paciente — pra validação semântica em tools (ex:
+      // detectar se replace=true em registra_refeicao tem palavra de correção).
+      recentUserMessages: ctx.recentMessages
+        .filter((m) => m.role === 'user')
+        .slice(-3)
+        .map((m) => m.content),
     }
     for (const tc of result.toolCalls) {
       const tool = getToolByName(tc.name)

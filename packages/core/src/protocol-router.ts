@@ -78,8 +78,11 @@ export function resolveProtocol(
   // - Sono ≥ 6h30/noite
   // - Alimentação estruturada (foodOrganization='sim')
   const sleepHours = calcSleepHours(profile.bedTime, profile.wakeTime)
-  if (sleepHours != null && sleepHours < 6.5) {
-    blockers.push(`sono insuficiente (${sleepHours.toFixed(1)}h, mínimo 6h30)`)
+  const sleepMin = config.sleep_min_hours
+  if (sleepHours != null && sleepHours < sleepMin) {
+    blockers.push(
+      `sono insuficiente (${sleepHours.toFixed(1)}h, mínimo ${sleepMin.toFixed(1)}h)`,
+    )
   } else if (sleepHours == null) {
     blockers.push('horários de sono não informados')
   }

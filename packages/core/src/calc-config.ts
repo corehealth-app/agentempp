@@ -109,6 +109,8 @@ export interface CalcConfig {
   kcal_block: number
   imc_limit_recomp: number
   training_min: number
+  /** Horas mínimas de sono pra qualificar pra Ganho de Massa. Doc MPP: 6.5h. */
+  sleep_min_hours: number
   bf_limits: Record<Sex, BFLimits>
   imc_goal_steps: number[]
   bf_goal_rules: BFGoalRule[]
@@ -156,6 +158,7 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
   kcal_block: 7700,
   imc_limit_recomp: 25,
   training_min: 3,
+  sleep_min_hours: 6.5,
   bf_limits: {
     masculino: { recomp: 20, gain: 19 },
     feminino: { recomp: 28, gain: 27 },

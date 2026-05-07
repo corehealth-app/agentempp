@@ -33,17 +33,33 @@ export default async function CalcConfigPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'Cálculos' }]}
         title="Constantes de cálculo"
-        description="Toda fórmula determinística do MPP — BMR, TDEE, proteína, IMC, %BF, blocos 7700, XP, badges. Mudanças aqui afetam novos cálculos imediatamente."
+        description="Toda fórmula determinística do MPP — BMR, TDEE, proteína, IMC, %BF, sono mínimo, blocos 7700, XP, badges. Mudanças aqui afetam novos cálculos imediatamente."
       />
+
+      <div className="glass-card border-l-4 border-l-blue-500/60 p-4 text-xs space-y-1">
+        <p className="font-medium text-blue-700 uppercase tracking-widest text-[10px]">
+          📘 Fonte de verdade: doc MPP no Notion
+        </p>
+        <p className="text-muted-foreground">
+          Todos os valores aqui seguem a documentação oficial do método MPP (Notion). As fórmulas
+          incluem BMR Mifflin-St Jeor / Katch-McArdle, recomp = BMR × 1.2 − déficit, ganho = BMR ×
+          atividade × 1.05, escada IMC [30, 25, 23, 22, 21], escada BF, levels (8 níveis), 17
+          badges, fatores de proteína em cascata por hunger + treino, e critérios de elegibilidade
+          (treino ≥ 3, sono ≥ 6h30, alimentação estruturada). Antes de alterar, verifique a doc
+          original.
+        </p>
+      </div>
 
       <div className="glass-card border-l-4 border-l-amber-500/60 p-4 text-xs space-y-1">
         <p className="font-medium text-amber-700 uppercase tracking-widest text-[10px]">
           ⚠️ Alterações têm impacto clínico
         </p>
         <p className="text-muted-foreground">
-          Mudanças nessas constantes afetam recomendações nutricionais e de treino. Os valores
-          padrão seguem literatura científica (Mifflin-St Jeor, Katch-McArdle). Toda mudança vai
-          pro <code className="font-mono bg-muted px-1 py-0.5 rounded">audit_log</code>.
+          Mudanças nessas constantes afetam recomendações nutricionais e de treino de TODOS os
+          pacientes em tempo real (sem deploy). Os valores padrão seguem literatura científica.
+          Toda mudança é registrada em{' '}
+          <code className="font-mono bg-muted px-1 py-0.5 rounded">audit_log</code> e usa cache de
+          60s — alteração reflete em até 1 minuto.
         </p>
       </div>
 

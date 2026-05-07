@@ -19,20 +19,21 @@ const GROUPS: Record<
   { title: string; description: string; keys: string[] }
 > = {
   bmr: {
-    title: 'BMR — Metabolismo Basal',
+    title: '1️⃣ BMR — Metabolismo Basal',
     description:
-      'Mifflin-St Jeor (sem %BF) e Katch-McArdle (com %BF). Constantes científicas: alterar com cuidado.',
+      'Fórmulas científicas de gasto calórico de repouso. Mifflin-St Jeor (sem %BF) e Katch-McArdle (com %BF, mais preciso). Notion: BMR = 370 + 21.6 × LBM (Katch).',
     keys: ['calc.bmr_mifflin', 'calc.bmr_katch'],
   },
   factors: {
-    title: 'Fatores de atividade e proteína',
-    description: 'Multiplicador BMR→TDEE e proteína g/kg corporal por nível de fome.',
+    title: '2️⃣ Fatores de atividade e proteína',
+    description:
+      'activity_factors: multiplicador BMR→TDEE (sedentário 1.2 → atleta 1.9). protein_factors: cascata oficial Notion — muita→1.6 (perfil difícil), training_low<3→1.7, optimal_high_training (pouca+treino≥5)→2.0, default→1.8.',
     keys: ['calc.activity_factors', 'calc.protein_factors'],
   },
   formulas: {
-    title: 'Fórmulas de meta calórica (doc MPP)',
+    title: '3️⃣ Fórmulas de meta calórica',
     description:
-      'Multiplicadores e déficits oficiais MPP por protocolo. Recomposição usa BMR × 1.2 fixo (não usa activity_factor — atividade NÃO entra no cálculo principal). Ganho aplica superávit leve sobre TDEE.',
+      'Por protocolo: Recomposição = BMR × 1.2 − déficit (atividade NÃO entra). Ganho = BMR × atividade × 1.05 (superávit leve). Manutenção = BMR × atividade. Déficit varia por fome: pouca=600, moderada=500, muita=400.',
     keys: [
       'calc.recomp_bmr_multiplier',
       'calc.ganho_massa_surplus_multiplier',
@@ -40,19 +41,26 @@ const GROUPS: Record<
     ],
   },
   protocol: {
-    title: 'Roteamento de protocolo',
-    description: 'Limites IMC/BF e treino mínimo que decidem recomposição vs ganho_massa.',
+    title: '4️⃣ Roteamento de protocolo (critérios)',
+    description:
+      'Decide automaticamente recomp vs ganho_massa. Critérios obrigatórios pra Ganho: BF/IMC abaixo do limite + treino ≥ 3x/sem + sono ≥ 6h30 + alimentação estruturada. Faltando qualquer um → recomp obrigatória.',
     keys: [
       'calc.imc_limit_recomp',
-      'calc.training_min',
       'calc.bf_limits',
-      'calc.imc_goal_steps',
-      'calc.bf_goal_rules',
+      'calc.training_min',
+      'calc.sleep_min_hours',
     ],
   },
+  goals: {
+    title: '5️⃣ Escadas de meta (BF / IMC)',
+    description:
+      'Metas progressivas. BF: >30→bf−10, >20→20, >18→18, >15→15, base→10. IMC: [30, 25, 23, 22, 21] com margem mínima 1 (se IMC=32, próxima meta=30).',
+    keys: ['calc.bf_goal_rules', 'calc.imc_goal_steps'],
+  },
   gamification: {
-    title: 'Gamificação',
-    description: 'Bloco 7700, níveis XP, badges e regras de XP diário.',
+    title: '6️⃣ Gamificação',
+    description:
+      'Bloco 7700 kcal = 1 kg gordura (referência popular). Levels: 0/100/300/600/1000/1500/2200/3000 XP (8 níveis). Badges configuráveis. xp_rules: pontos por refeição/treino/proteína/etc.',
     keys: ['calc.kcal_block', 'calc.levels', 'calc.badges', 'calc.xp_rules'],
   },
 }

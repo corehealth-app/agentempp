@@ -50,6 +50,8 @@ interface UserContext {
   locale: string | null
   /** Sistema de medidas: 'metric' (kg/cm) ou 'imperial' (lb/in). */
   unitSystem: 'metric' | 'imperial' | null
+  /** Timezone IANA do paciente (ex: America/Sao_Paulo). Default 'America/Sao_Paulo'. */
+  timezone: string
   /** Metas calóricas/proteína calculadas determinísticamente (anti-alucinação). */
   dailyTargets: { calories_target: number | null; protein_target: number | null }
   /** Snapshot do dia LOCAL do paciente — consumo + balanço atual. */
@@ -402,7 +404,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
   })
     .from('users')
     .select(
-      'id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata',
+      'id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata, timezone',
     )
     .eq('id', userId)
     .single()
@@ -437,6 +439,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
         country_detected_from_wpp: string | null
         locale: string | null
         metadata: Record<string, unknown> | null
+        timezone: string | null
       }
     | null
   // Calcula gap de tempo desde última msg IN (penúltima, pq a atual já entrou)
@@ -524,6 +527,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
     locale: userTyped?.locale ?? null,
     unitSystem,
+    timezone: userTyped?.timezone ?? 'America/Sao_Paulo',
     dailyTargets,
     todaySnapshot: snapTyped
       ? {
@@ -669,6 +673,50 @@ function formatUserContext(
         `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder.`,
     )
   }
+
+  // Hora local do paciente — CRÍTICO pra meal_type correto.
+  // Sem isso o LLM tem que adivinhar pelos alimentos (ambíguo: pão+ovo serve
+  // pra café OU jantar) e classifica errado. Bug real: foto de café às 7h
+  // local foi registrada como meal_type=jantar com replace=true porque o
+  // LLM achou que era correção do jantar de ontem.
+  const tz = ctx.timezone
+  const now = new Date()
+  const localTimeFmt = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'long',
+    hour12: false,
+  })
+  const parts = localTimeFmt.formatToParts(now)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  const localHour = Number.parseInt(get('hour'), 10)
+  const localStr = `${get('weekday')}, ${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`
+  const suggestedMeal =
+    localHour >= 5 && localHour < 11
+      ? 'cafe (café da manhã)'
+      : localHour >= 11 && localHour < 15
+        ? 'almoco (almoço)'
+        : localHour >= 15 && localHour < 18
+          ? 'lanche (lanche da tarde)'
+          : localHour >= 18 && localHour < 23
+            ? 'jantar'
+            : 'lanche (madrugada/ceia)'
+  sections.push(
+    `### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n` +
+      `**${localStr}** (timezone: ${tz}, hora local = ${localHour}h)\n\n` +
+      `⚠️ Se o paciente registrar refeição AGORA, o \`meal_type\` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n` +
+      `- 5h–10h59 → \`cafe\` (café da manhã)\n` +
+      `- 11h–14h59 → \`almoco\`\n` +
+      `- 15h–17h59 → \`lanche\`\n` +
+      `- 18h–22h59 → \`jantar\`\n` +
+      `- 23h–4h59 → \`lanche\` (ceia/madrugada)\n\n` +
+      `**Sugestão pra esta refeição: \`${suggestedMeal}\`**.\n\n` +
+      `❌ NÃO use \`replace=true\` em foto NOVA recebida em momento diferente do dia. \`replace=true\` é APENAS quando o paciente disse explicitamente "corrige", "errei", "na verdade era X" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.`,
+  )
 
   // Estado factual atual
   const lines = [

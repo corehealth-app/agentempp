@@ -76,6 +76,12 @@ export const cadastraDadosIniciais: ToolDefinition = {
     hunger_level: z.enum(['pouca', 'moderada', 'muita']).optional(),
     wake_time: z.string().optional().describe('HH:MM (também aceita "23h", "5h", "23:00:00")'),
     bedtime: z.string().optional().describe('HH:MM (também aceita "23h", "5h", "23:00:00")'),
+    food_organization: z
+      .enum(['sim', 'nao'])
+      .optional()
+      .describe(
+        'Alimentação estruturada (paciente segue plano vs improvisa). Critério obrigatório pra Ganho de Massa per doc Notion. Pergunte: "Você costuma seguir um plano alimentar ou come o que aparece no dia?"',
+      ),
     onboarding_step: z.number().int().min(0).max(11).optional(),
     onboarding_completed: z.boolean().optional(),
   }),
@@ -148,6 +154,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
       const t = coerceTime(args.bedtime!)
       if (t) updates.bedtime = t
     }
+    if (strNonEmpty(args.food_organization)) updates.food_organization = args.food_organization
     if (typeof args.onboarding_step === 'number' && args.onboarding_step >= 0)
       updates.onboarding_step = args.onboarding_step
     if (typeof args.onboarding_completed === 'boolean')

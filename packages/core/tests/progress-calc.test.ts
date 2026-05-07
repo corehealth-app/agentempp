@@ -29,21 +29,26 @@ function snapshot(overrides: Partial<DailySnapshot> = {}): DailySnapshot {
 }
 
 describe('levelForXP', () => {
-  it('mapeia faixas corretamente', () => {
+  it('mapeia faixas corretamente (oficial Notion: 0/100/300/600/1000/1500/2200/3000)', () => {
     expect(levelForXP(0).level).toBe(1)
     expect(levelForXP(99).level).toBe(1)
     expect(levelForXP(100).level).toBe(2)
-    expect(levelForXP(249).level).toBe(2)
-    expect(levelForXP(250).level).toBe(3)
+    expect(levelForXP(299).level).toBe(2)
+    expect(levelForXP(300).level).toBe(3)
+    expect(levelForXP(599).level).toBe(3)
+    expect(levelForXP(600).level).toBe(4)
     expect(levelForXP(1000).level).toBe(5)
-    expect(levelForXP(3500).level).toBe(7)
-    expect(levelForXP(99999).level).toBe(7)
+    expect(levelForXP(1500).level).toBe(6)
+    expect(levelForXP(2200).level).toBe(7)
+    expect(levelForXP(3000).level).toBe(8)
+    expect(levelForXP(99999).level).toBe(8)
   })
 
   it('retorna nome do nível', () => {
     expect(levelForXP(0).name).toBe('Início')
     expect(levelForXP(100).name).toBe('Constância')
-    expect(levelForXP(3500).name).toBe('Elite MPP')
+    expect(levelForXP(2200).name).toBe('Elite MPP')
+    expect(levelForXP(3000).name).toBe('Lenda MPP')
   })
 })
 

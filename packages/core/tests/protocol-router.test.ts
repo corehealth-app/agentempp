@@ -17,6 +17,10 @@ const baseProfile: UserProfile = {
   goalType: null,
   goalValue: null,
   deficitLevel: null,
+  // Critérios novos pra Ganho de Massa (sono ≥6h30 + alimentação estruturada).
+  bedTime: '23:00',
+  wakeTime: '07:00',
+  foodOrganization: 'sim',
 }
 
 const baseMetrics: UserMetrics = {

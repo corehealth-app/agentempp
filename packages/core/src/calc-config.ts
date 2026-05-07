@@ -160,7 +160,9 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     masculino: { recomp: 20, gain: 19 },
     feminino: { recomp: 28, gain: 27 },
   },
-  imc_goal_steps: [25, 23, 22, 21],
+  // Escada oficial Notion MPP: [30, 25, 23, 22, 21] com margem mínima 1.
+  // Antes faltava o 30 — paciente com IMC 32 ia direto pra 25 (meta agressiva).
+  imc_goal_steps: [30, 25, 23, 22, 21],
   bf_goal_rules: [
     { above: 30, subtract: 10 },
     { above: 20, target: 20 },
@@ -168,14 +170,18 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     { above: 15, target: 15 },
     { above: 0, target: 10 },
   ],
+  // Levels oficiais MPP (Notion): 0/100/300/600/1000/1500/2200/3000.
+  // Antes thresholds divergiam (250/500/2000/3500) → users em 250-299 pulavam
+  // pra level 3 quando Notion ainda os mantém em 2.
   levels: [
     { level: 1, name: 'Início', min: 0, max: 99 },
-    { level: 2, name: 'Constância', min: 100, max: 249 },
-    { level: 3, name: 'Foco', min: 250, max: 499 },
-    { level: 4, name: 'Disciplina', min: 500, max: 999 },
-    { level: 5, name: 'Performance', min: 1000, max: 1999 },
-    { level: 6, name: 'Domínio', min: 2000, max: 3499 },
-    { level: 7, name: 'Elite MPP', min: 3500, max: null },
+    { level: 2, name: 'Constância', min: 100, max: 299 },
+    { level: 3, name: 'Foco', min: 300, max: 599 },
+    { level: 4, name: 'Disciplina', min: 600, max: 999 },
+    { level: 5, name: 'Performance', min: 1000, max: 1499 },
+    { level: 6, name: 'Domínio', min: 1500, max: 2199 },
+    { level: 7, name: 'Elite MPP', min: 2200, max: 2999 },
+    { level: 8, name: 'Lenda MPP', min: 3000, max: null },
   ],
   badges: [
     { key: 'Primeira Semana', type: 'streak', threshold: 7 },

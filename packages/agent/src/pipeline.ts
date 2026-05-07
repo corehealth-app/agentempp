@@ -480,6 +480,12 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     goalType: profile?.goal_type ?? null,
     goalValue: profile?.goal_value != null ? Number(profile.goal_value) : null,
     deficitLevel: (profile?.deficit_level as 400 | 500 | 600 | null) ?? null,
+    // Campos novos pra critérios de Ganho de Massa (sono ≥6h30 + alimentação).
+    bedTime: (profile as { bedtime?: string | null } | null)?.bedtime ?? null,
+    wakeTime: profile?.wake_time ?? null,
+    foodOrganization:
+      ((profile as { food_organization?: 'sim' | 'nao' | null } | null)?.food_organization ??
+        null) as 'sim' | 'nao' | null,
   }
 
   const unitSystemRaw = userTyped?.metadata?.unit_system

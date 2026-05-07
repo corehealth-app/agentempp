@@ -11,6 +11,31 @@
 import type { ProtocolDecision, UserMetrics, UserProfile } from './types.js'
 import { DEFAULT_CALC_CONFIG, type CalcConfig } from './calc-config.js'
 
+/**
+ * Calcula horas de sono a partir de bedTime/wakeTime (HH:MM).
+ * Trata virada de meia-noite. Auto-corrige inversão (>12h vira 24-h).
+ * Replica n8n code do Notion.
+ */
+export function calcSleepHours(
+  bedTime: string | null | undefined,
+  wakeTime: string | null | undefined,
+): number | null {
+  if (!bedTime || !wakeTime) return null
+  const bed = bedTime.split(':').map(Number)
+  const wake = wakeTime.split(':').map(Number)
+  if (bed.length < 2 || wake.length < 2) return null
+  const [bh, bm] = bed
+  const [wh, wm] = wake
+  if ([bh, bm, wh, wm].some((n) => n == null || Number.isNaN(n))) return null
+  let bedMin = bh! * 60 + bm!
+  let wakeMin = wh! * 60 + wm!
+  if (wakeMin <= bedMin) wakeMin += 24 * 60 // virada de meia-noite
+  let hours = (wakeMin - bedMin) / 60
+  // Se >12h, provavelmente os campos foram invertidos pelo paciente.
+  if (hours > 12) hours = 24 - hours
+  return hours
+}
+
 export function calcBFGoal(bf: number, config: CalcConfig = DEFAULT_CALC_CONFIG): number {
   for (const rule of config.bf_goal_rules) {
     if (bf > rule.above) {
@@ -46,6 +71,22 @@ export function resolveProtocol(
     blockers.push(
       `musculação insuficiente (atual: ${trainingFreq}x/semana, mínimo: ${config.training_min}x)`,
     )
+  }
+
+  // Critérios oficiais Notion pra Ganho de Massa (TODOS obrigatórios):
+  // - Treino ≥ 3x/sem (acima)
+  // - Sono ≥ 6h30/noite
+  // - Alimentação estruturada (foodOrganization='sim')
+  const sleepHours = calcSleepHours(profile.bedTime, profile.wakeTime)
+  if (sleepHours != null && sleepHours < 6.5) {
+    blockers.push(`sono insuficiente (${sleepHours.toFixed(1)}h, mínimo 6h30)`)
+  } else if (sleepHours == null) {
+    blockers.push('horários de sono não informados')
+  }
+  if (profile.foodOrganization === 'nao') {
+    blockers.push('alimentação não estruturada')
+  } else if (profile.foodOrganization == null) {
+    blockers.push('estruturação alimentar não informada')
   }
 
   // ----- Decisão por BF (preferencial) -----

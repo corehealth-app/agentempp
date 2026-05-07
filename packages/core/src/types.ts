@@ -37,6 +37,14 @@ export interface UserProfile {
   goalType: GoalType | null
   goalValue: number | null
   deficitLevel: 400 | 500 | 600 | null
+  /** Hora de dormir (HH:MM). Usado pra calcular sleep_hours pro critério de
+   * Ganho de Massa (≥6h30) e janelas de engajamento. */
+  bedTime?: string | null
+  /** Hora de acordar (HH:MM). Mesmo uso que bedTime. */
+  wakeTime?: string | null
+  /** Alimentação estruturada (paciente segue plano vs come improvisado).
+   * Critério obrigatório pra Ganho de Massa per doc Notion. */
+  foodOrganization?: 'sim' | 'nao' | null
 }
 
 export interface UserMetrics {

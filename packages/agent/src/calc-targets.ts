@@ -106,13 +106,18 @@ export function computeDailyTargets(
       break
   }
 
-  // protein_target = peso × fator de fome.
-  // Sem hunger_level salvo, usa 'moderada' (1.8g/kg) como default razoável.
-  // Antes retornava null e o cron de engajamento alucinava o valor.
+  // protein_target = peso × fator (cascata oficial MPP em resolveProteinFactor).
+  // Sem hunger_level, usa 'moderada' (1.8g/kg) como default razoável.
+  // Cascata considera training_frequency pra subir pra 1.9-2.0 em perfil ótimo.
   const effectiveHunger = profile.hungerLevel ?? 'moderada'
   const proteinTarget =
     profile.weightKg != null
-      ? calcProteinTargetG(profile.weightKg, effectiveHunger, config)
+      ? calcProteinTargetG(
+          profile.weightKg,
+          effectiveHunger,
+          config,
+          profile.trainingFrequency,
+        )
       : null
 
   return {

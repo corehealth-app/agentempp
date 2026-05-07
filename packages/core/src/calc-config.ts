@@ -85,7 +85,21 @@ export interface CalcConfig {
   bmr_mifflin: BMRMifflinConfig
   bmr_katch: BMRKatchConfig
   activity_factors: Record<ActivityLevel, number>
-  protein_factors: Record<HungerLevel, number>
+  /**
+   * Fatores de proteína (g/kg). Cascata por prioridade documentada no Notion:
+   *   muita → 1.6 (perfil comportamental difícil — fallback baixo)
+   *   training_low → 1.7 (treina < 3x/semana)
+   *   optimal_mid_training → 1.9 (pouca fome + perfil ótimo + ≥4x/semana)
+   *   optimal_high_training → 2.0 (pouca fome + perfil ótimo + ≥5x/semana)
+   *   moderada → 1.8 (default)
+   *   pouca → fallback aplicado em resolveProteinFactor (não lookup direto)
+   * `pouca` no map é apenas placeholder pra compatibilidade.
+   */
+  protein_factors: Record<HungerLevel, number> & {
+    training_low?: number
+    optimal_mid_training?: number
+    optimal_high_training?: number
+  }
   /** Multiplicador FIXO do BMR pra recomposição (doc MPP: 1.2 — atividade não entra). */
   recomp_bmr_multiplier: number
   /** Multiplicador de superávit pra ganho de massa (doc MPP: 1.05 = superávit leve). */
@@ -123,9 +137,14 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     atleta: 1.9,
   },
   protein_factors: {
-    pouca: 1.6,
+    // Lookup direto (compatibilidade): muita=baixo, moderada=default
+    muita: 1.6,
     moderada: 1.8,
-    muita: 2.0,
+    pouca: 1.8, // default; resolveProteinFactor sobe pra 1.9-2.0 se training alto
+    // Fatores condicionais (cascata em resolveProteinFactor)
+    training_low: 1.7,
+    optimal_mid_training: 1.9,
+    optimal_high_training: 2.0,
   },
   recomp_bmr_multiplier: 1.2,
   ganho_massa_surplus_multiplier: 1.05,

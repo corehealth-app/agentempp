@@ -71,10 +71,11 @@ describe('calcIMC', () => {
 })
 
 describe('calcProteinTargetG', () => {
-  it('aplica fator por hunger level', () => {
-    expect(calcProteinTargetG(80, 'pouca')).toBe(128) // 1.6
-    expect(calcProteinTargetG(80, 'moderada')).toBe(144) // 1.8
-    expect(calcProteinTargetG(80, 'muita')).toBe(160) // 2.0
+  it('aplica fator por hunger level (cascata oficial Notion MPP)', () => {
+    // Sem trainingFrequency: muita→1.6 (perfil difícil), demais→1.8 default
+    expect(calcProteinTargetG(80, 'muita')).toBe(128) // 1.6
+    expect(calcProteinTargetG(80, 'moderada')).toBe(144) // 1.8 default
+    expect(calcProteinTargetG(80, 'pouca')).toBe(144) // 1.8 default
   })
 })
 

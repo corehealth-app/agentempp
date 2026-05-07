@@ -76,8 +76,33 @@ const PATTERNS: Array<{
 }> = [
   // "2.500 kcal", "2500 kcal", "meta de 2,500 kcal"
   { field: 'calories_target', re: /(?:meta|alvo|target|goal)\s*(?:hoje|de|é)?\s*(?:é\s*)?\*{0,2}\s*([\d]{3,5}(?:[.,][\d]{3})?)\s*\*{0,2}\s*kcal/gi, group: 1 },
-  // "180g proteina", "180 g de proteina"
-  { field: 'protein_target', re: /\*{0,2}\s*([\d]{2,4}(?:[.,]\d)?)\s*\*{0,2}\s*g\s*(?:de\s*)?prote[íi]na/gi, group: 1 },
+  // protein_target só dispara quando o número está claramente no contexto de
+  // META DIÁRIA (não per-refeição). 3 padrões:
+  //   A) "Proteína: 125 / 178g" — card pós-registro (segundo número = meta)
+  //   B) "meta de 178g de proteína" — keyword target ANTES do número
+  //   C) "178g de proteína (meta|dia|diária)" — keyword target DEPOIS do número
+  // Antes dispara em "Total refeição: 447 kcal | 11g proteína" (per-meal) → false positive.
+  {
+    field: 'protein_target',
+    re: /prote[íi]na[:\s]*\*{0,2}\s*\d+(?:[.,]\d+)?\s*\*{0,2}\s*g?\s*\/\s*\*{0,2}\s*([\d]{2,4}(?:[.,]\d)?)\s*\*{0,2}\s*g/gi,
+    group: 1,
+  },
+  {
+    field: 'protein_target',
+    re: /(?:meta|alvo|target|goal|objetiv[oa]|cota)[^\n]{0,40}?(\d{2,4}(?:[.,]\d)?)\s*g[^\n]{0,15}?prote[íi]na/gi,
+    group: 1,
+  },
+  {
+    field: 'protein_target',
+    re: /(\d{2,4}(?:[.,]\d)?)\s*g\s*(?:de\s*)?prote[íi]na[^\n]{0,30}?(?:meta|alvo|dia|diár[ia]a|goal|target|por\s+dia)/gi,
+    group: 1,
+  },
+  // D) "meta de proteína é Xg" (keyword + proteína ANTES do número)
+  {
+    field: 'protein_target',
+    re: /(?:meta|alvo|target|goal|objetiv[oa]|cota)[^\n]{0,40}?prote[íi]na[^\n]{0,20}?(\d{2,4}(?:[.,]\d)?)\s*g\b/gi,
+    group: 1,
+  },
   // "IMC 25", "IMC de 25.3", "IMC: 25,3"
   { field: 'imc', re: /imc\s*[:=]?\s*(?:de\s*)?(\d{1,2}(?:[.,]\d)?)/gi, group: 1 },
   // "BMR 1973", "BMR de 1.973"

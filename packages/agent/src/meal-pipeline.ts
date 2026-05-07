@@ -294,10 +294,23 @@ export async function calcMealMacros(
     // Antes: rejeitava direto e zerava. Agora: tenta auto-split, busca cada parte
     // separadamente, divide a quantidade proporcionalmente. Se TODAS as partes
     // matcham bem, agrega os macros. Senão rejeita com warning.
+    //
+    // PRECEDÊNCIA: se o nome COMPLETO bate exato no food_db (ex: "leite com whey"
+    // tem alias próprio com sim>=0.85), usa o match direto e PULA auto-split.
+    // Sem isso, "leite com whey" (alias 95 kcal/100g) era zerado porque "whey"
+    // sozinho tem sim=0.38 < 0.45 e o composite-reject preempta o match perfeito.
     const isComposite =
       / com | e | \+ |\bcom\s+|^com\s+/i.test(` ${it.food_name} `) &&
       it.food_name.split(/\s+/).length >= 3
     if (isComposite) {
+      const directMatch = await matchFood(supabase, it.food_name, country)
+      if (
+        directMatch.id != null &&
+        directMatch.kcal_per_100g != null &&
+        directMatch.similarity >= 0.85
+      ) {
+        // Match completo bom — segue pelo caminho não-composite (queda abaixo)
+      } else {
       const parts = it.food_name
         .split(/ com | e | \+ /i)
         .map((s) => s.trim())
@@ -374,6 +387,8 @@ export async function calcMealMacros(
         source: 'composite_rejected',
       })
       continue
+      } // fecha else (auto-split)
+      // Se chegou aqui, directMatch é bom — cai pro fluxo de match direto abaixo
     }
 
     const m = await matchFood(supabase, it.food_name, country)

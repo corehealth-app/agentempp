@@ -1,6 +1,12 @@
 import { calcDailyXP, computeProgress } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
-import { loadCalcConfig, loadDailyTargets } from '@mpp/agent'
+import {
+  getLocalDateMinusDays,
+  getLocalHour,
+  getTzOffset,
+  loadCalcConfig,
+  loadDailyTargets,
+} from '@mpp/agent'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 
@@ -80,8 +86,8 @@ async function closeUserDay(
   if (existing?.day_closed) return { skipped: true, reason: 'já fechado' }
 
   // Lê histórico do dia
-  const startOfDay = `${yesterday}T00:00:00${tzOffset(userTimezone)}`
-  const endOfDay = `${yesterday}T23:59:59${tzOffset(userTimezone)}`
+  const startOfDay = `${yesterday}T00:00:00${getTzOffset(userTimezone)}`
+  const endOfDay = `${yesterday}T23:59:59${getTzOffset(userTimezone)}`
 
   const [{ data: meals }, { data: workouts }, { data: messages }] = await Promise.all([
     supabase
@@ -255,39 +261,4 @@ async function closeUserDay(
   return { skipped: false }
 }
 
-// ----------------------------------------------------------------------------
-// Helpers de timezone
-// ----------------------------------------------------------------------------
-function getLocalHour(tz: string): number {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: '2-digit',
-    hour12: false,
-  })
-  const parts = fmt.formatToParts(new Date())
-  const h = parts.find((p) => p.type === 'hour')?.value ?? '0'
-  return Number.parseInt(h, 10)
-}
-
-function getLocalDateMinusDays(tz: string, days: number): string {
-  const now = new Date()
-  const offset = days * 24 * 60 * 60 * 1000
-  const past = new Date(now.getTime() - offset)
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  return fmt.format(past)
-}
-
-function tzOffset(tz: string): string {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    timeZoneName: 'longOffset',
-  })
-  const parts = fmt.formatToParts(new Date())
-  const offset = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT-03:00'
-  return offset.replace('GMT', '').replace('GMT', '') || '-03:00'
-}
+// Helpers de timezone agora vêm de @mpp/agent (timezone-utils.ts).

@@ -1,4 +1,10 @@
-import { loadCalcConfig, loadDailyTargets } from '@mpp/agent'
+import {
+  getLocalDateString,
+  getLocalHour,
+  getTzOffset,
+  loadCalcConfig,
+  loadDailyTargets,
+} from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
@@ -440,34 +446,6 @@ function parseHour(timeStr: string | null | undefined, fallback: number): number
   return Number.isFinite(h) && h >= 0 && h <= 23 ? h : fallback
 }
 
-function getLocalHour(tz: string): number {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: '2-digit',
-    hour12: false,
-  })
-  return Number.parseInt(
-    fmt.formatToParts(new Date()).find((p) => p.type === 'hour')?.value ?? '0',
-    10,
-  )
-}
-
-function getLocalDate(tz: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
-}
-
-function tzOffset(tz: string): string {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    timeZoneName: 'longOffset',
-  })
-  const offset = fmt
-    .formatToParts(new Date())
-    .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT-03:00'
-  return offset.replace('GMT', '') || '-03:00'
-}
+// Helpers de timezone agora vêm de @mpp/agent (timezone-utils.ts).
+const getLocalDate = getLocalDateString
+const tzOffset = getTzOffset

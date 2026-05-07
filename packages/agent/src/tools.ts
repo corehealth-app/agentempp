@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
-import { getLocalDateString } from './timezone-utils.js'
+import { countryToTimezone, getLocalDateString } from './timezone-utils.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -306,6 +306,42 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
+    // Validador semântico: meal_type bate com a hora local?
+    // Se discrepar (ex: meal_type=jantar às 8h da manhã), loga warning pra
+    // auditoria. Não bloqueia — paciente pode estar registrando atrasado.
+    if (args.meal_type) {
+      const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
+      const localHour = Number.parseInt(
+        new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', hour12: false })
+          .formatToParts(new Date())
+          .find((p) => p.type === 'hour')?.value ?? '12',
+        10,
+      )
+      const expected =
+        localHour >= 5 && localHour < 11
+          ? 'cafe'
+          : localHour >= 11 && localHour < 15
+            ? 'almoco'
+            : localHour >= 15 && localHour < 18
+              ? 'lanche'
+              : localHour >= 18 && localHour < 23
+                ? 'jantar'
+                : 'lanche'
+      if (args.meal_type !== expected) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.meal_type_mismatch',
+          properties: {
+            claimed: args.meal_type,
+            expected_by_hour: expected,
+            local_hour: localHour,
+            timezone: tz,
+            replace: args.replace ?? false,
+          },
+        })
+      }
+    }
+
     // CORREÇÃO: paciente quer substituir refeição já registrada hoje.
     // Deleta meal_logs do dia+meal_type e SUBTRAI seus macros do snapshot
     // antes de inserir os novos. Sem isso, snapshot_add_meal duplica.
@@ -352,6 +388,19 @@ export const registraRefeicao: ToolDefinition = {
           p_protein_target: null,
         })
         replacedSummary = { count: toRemove.length, kcal_removed: Math.round(removed.kcal) }
+      } else {
+        // replace=true mas nada pra substituir hoje desse meal_type.
+        // É indício de bug do LLM (achou que era correção quando não era).
+        // Loga e segue com insert normal — não bloqueia paciente.
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_without_target',
+          properties: {
+            meal_type: args.meal_type,
+            date: today,
+            note: 'replace=true mas nenhum meal_log existente desse tipo hoje',
+          },
+        })
       }
     }
 
@@ -864,6 +913,12 @@ export const confirmaPaisResidencia: ToolDefinition = {
       .describe(
         'Sistema de medidas preferido. metric=kg/cm (padrão BR/EU), imperial=lb/in (padrão US/UK). ⚠️ Pra country US/GB: pergunte ao paciente. Pra outros: omita (default metric).',
       ),
+    timezone: z
+      .string()
+      .optional()
+      .describe(
+        'Timezone IANA específico (ex: America/New_York, Europe/Lisbon). Use APENAS se o paciente disse a CIDADE e ela tem timezone diferente do default do país (ex: paciente em Los Angeles → America/Los_Angeles em vez de New_York). Se não tiver certeza, omita — sistema deriva do país.',
+      ),
   }),
   execute: async (args, ctx) => {
     const country = args.country.toUpperCase()
@@ -887,6 +942,15 @@ export const confirmaPaisResidencia: ToolDefinition = {
     if (unitSystem) {
       updates.metadata = { unit_system: unitSystem }
     }
+    // Timezone: explícito do LLM tem prioridade; senão deriva do país.
+    // Valida que é IANA válido tentando construir Intl.DateTimeFormat.
+    let tz = args.timezone ?? countryToTimezone(country)
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    } catch {
+      tz = countryToTimezone(country) // fallback se LLM passou tz inválido
+    }
+    updates.timezone = tz
     const { error } = await (ctx.supabase as unknown as {
       from: (t: string) => {
         update: (u: Record<string, unknown>) => {
@@ -908,11 +972,12 @@ export const confirmaPaisResidencia: ToolDefinition = {
       country,
       language: args.language ?? (country === 'BR' ? 'pt-BR' : null),
       unit_system: unitSystem,
+      timezone: tz,
       confirmed: true,
       message:
         country === 'BR'
-          ? 'País gravado como Brasil (pt-BR, métrico).'
-          : `País=${country}, idioma=${args.language ?? '?'}, unidades=${unitSystem ?? '?'}. Sigo com cuidado: TACO é brasileira, alimentos locais podem sair imprecisos.`,
+          ? `País gravado como Brasil (pt-BR, métrico, timezone ${tz}).`
+          : `País=${country}, idioma=${args.language ?? '?'}, unidades=${unitSystem ?? '?'}, timezone=${tz}. Sigo com cuidado: TACO é brasileira, alimentos locais podem sair imprecisos.`,
     }
   },
 }

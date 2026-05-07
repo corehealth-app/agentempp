@@ -1,0 +1,148 @@
+# Fases do Usuário - Agente MPP
+
+## 1. Recomposição Corporal
+
+**Objetivo:** Perda de gordura com preservação/ganho muscular[[2]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Recomposi%C3%A7%C3%A3o%20corporal%20-%20Introdu%C3%A7%C3%A3o%20e%20frase%20de%20boas%202d7b69682c48800bb8cef72e46c77af8.md)
+
+**Critérios de entrada:**[[3]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Recomposi%C3%A7%C3%A3o%20-%20crit%C3%A9rios%20de%20entrada%202d7b69682c4880209280eee4f21b5089.md)
+
+- BF ≥ 20% (homens) ou ≥ 28% (mulheres)
+- IMC ≥ 25 (quando BF não disponível)
+- Ausência dos critérios mínimos para ganho de massa
+
+## 2. Ganho de Massa Muscular
+
+**Objetivo:** Hipertrofia prioritária com controle de gordura[[4]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Ganho%20de%20massa%20muscular%20-%20introdu%C3%A7%C3%A3o%20de%20boas%20vinda%202d7b69682c48801f9b24fb00613997e6.md)
+
+**Critérios de entrada:**[[5]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Ganho%20de%20massa%20muscular%20-%20Crit%C3%A9rios%20de%20entrada%202d7b69682c4880429e0dcebbd5b8c20d.md)
+
+- BF ≤ 18-20% (homens) ou ≤ 26-28% (mulheres)
+- IMC ≤ 25 com aparência funcional adequada
+- Musculação ≥ 3x/semana
+- Alimentação estruturada
+
+## 3. Manutenção
+
+**Objetivo:** Estabilização, consolidação e prevenção de recaída[[6]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Manuten%C3%A7%C3%A3o%20-%20Frase%20de%20boas%20vindas%20ao%20protocolo%20de%20%202d7b69682c4880b58bdff03b2ac19cbe.md)
+
+**Critérios de entrada:**[[7]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Manuten%C3%A7%C3%A3o%20-%20crit%C3%A9rios%20de%20entrada%202d7b69682c48802dafd5c128470dea6f.md)
+
+- Já está em faixa saudável
+- Não deseja reduzir mais gordura
+- Não deseja iniciar ganho de massa
+- Precisa estabilizar antes de nova fase
+
+---
+
+**Importante:** No MPP, todo usuário está sempre em uma dessas três fases — nunca "sem fase". A transição entre elas é guiada pelo agente com base em critérios objetivos e decisão consciente do usuário.[[8]](Agente%20MPP%20-%20Regras%20do%20Agente%20-%2027-12-2025%20(Atuali/Decis%C3%A3o%20de%20objetivo%20-%20crit%C3%A9rios%20internos%20antes%20de%20%202d7b69682c48802a84b2ca76f5a69adf.md)
+
+---
+
+## Diagrama das Rotas Possíveis do Usuário Pelo Processo
+
+```mermaid
+flowchart TD
+    Start([Início - Novo Usuário]) --> Coleta[Coleta de Dados Iniciais<br/>Peso, Altura, Idade, BF/IMC, Fotos]
+    
+    Coleta --> Analise{Análise de<br/>Composição Corporal}
+    
+    %% Decisão Inicial
+    Analise -->|BF ≥ 20% H ou ≥ 28% M<br/>ou IMC ≥ 25| ForcarRecomp[Entrada Obrigatória<br/>em Recomposição]
+    Analise -->|BF < 20% H ou < 28% M<br/>IMC < 25| DentroFaixa{Usuário Dentro<br/>da Faixa Saudável}
+    
+    %% Se dentro da faixa, usuário escolhe
+    DentroFaixa --> EscolhaObjetivo{Qual seu objetivo?}
+    EscolhaObjetivo -->|Perder Gordura| Recomp
+    EscolhaObjetivo -->|Ganhar Massa| VerificarCriterios{Cumpre Critérios<br/>para Ganho?}
+    EscolhaObjetivo -->|Manter| Manutencao
+    
+    VerificarCriterios -->|Sim:<br/>Musculação ≥3x/sem<br/>Alimentação estruturada| Ganho
+    VerificarCriterios -->|Não| BloqueioGanho[❌ Bloqueio:<br/>Redirecionar para Recomposição]
+    BloqueioGanho --> Recomp
+    
+    ForcarRecomp --> Recomp
+    
+    %% === FASE RECOMPOSIÇÃO ===
+    Recomp[🔥 RECOMPOSIÇÃO CORPORAL<br/>Déficit 400-600 kcal<br/>Meta: Blocos de 7.700 kcal]
+    
+    Recomp --> Recomp_Ciclo[Ciclo Diário:<br/>- Registro de refeições<br/>- Acompanhamento de macros<br/>- Treino musculação 3-5x/sem]
+    
+    Recomp_Ciclo --> Recomp_Aval{Reavaliação<br/>Quinzenal}
+    
+    Recomp_Aval -->|Progredindo bem| Recomp_Ciclo
+    Recomp_Aval -->|Ajustes necessários| Recomp_Ajuste[Ajustar déficit<br/>ou dieta]
+    Recomp_Ajuste --> Recomp_Ciclo
+    
+    Recomp_Aval -->|Meta atingida<br/>18% ou 15%| Checkpoint1{🎯 Checkpoint<br/>de Decisão}
+    
+    Checkpoint1 -->|Continuar<br/>Reduzindo| Recomp_Ciclo
+    Checkpoint1 -->|Parar e<br/>Estabilizar| TransicaoManut1[Transição:<br/>Reverse Diet<br/>+100-150 kcal/semana]
+    
+    TransicaoManut1 --> Manutencao
+    
+    Recomp_Aval -->|BF ≤ 10%<br/>Limite Inferior| ForcaManut1[⚠️ Saída Obrigatória<br/>Limite de Segurança]
+    ForcaManut1 --> TransicaoManut1
+    
+    %% === FASE GANHO DE MASSA ===
+    Ganho[💪 GANHO DE MASSA MUSCULAR<br/>Superávit +5%<br/>Meta: Progressão de treino]
+    
+    Ganho --> Ganho_Ciclo[Ciclo Diário:<br/>- Meta calórica elevada<br/>- Proteína alta<br/>- Musculação obrigatória]
+    
+    Ganho_Ciclo --> Ganho_Aval{Reavaliação<br/>Quinzenal}
+    
+    Ganho_Aval -->|Progressão OK<br/>Gordura controlada| Ganho_Ciclo
+    Ganho_Aval -->|Ajustes necessários| Ganho_Ajuste[Ajustar calorias<br/>ou treino]
+    Ganho_Ajuste --> Ganho_Ciclo
+    
+    Ganho_Aval -->|Limite de gordura:<br/>+2-3pp H ou +3-4pp M| LimiteGanho[⚠️ Limite Atingido]
+    LimiteGanho --> DecisaoLimite{Próximo Passo}
+    
+    DecisaoLimite -->|Consolidar| ConsolidacaoGanho[Estabilização<br/>14 dias]
+    DecisaoLimite -->|Mini-cut| MiniCut[Mini Recomposição<br/>Estratégica]
+    
+    MiniCut --> Manutencao
+    ConsolidacaoGanho --> Manutencao
+    
+    Ganho_Aval -->|Sem progressão<br/>+ Treinos caindo| PausaGanho[⛔ Pausa Obrigatória]
+    PausaGanho --> Manutencao
+    
+    Ganho_Aval -->|Ciclo completo<br/>8-16 semanas| FimCicloGanho[Encerramento<br/>Planejado]
+    FimCicloGanho --> ConsolidacaoGanho
+    
+    %% === FASE MANUTENÇÃO ===
+    Manutencao[⚖️ MANUTENÇÃO<br/>TDEE neutro<br/>Meta: Estabilidade]
+    
+    Manutencao --> Manut_Ciclo[Ciclo Diário:<br/>- Orçamento 14 dias<br/>- DAM ≤ 4 dias<br/>- Flexibilidade controlada]
+    
+    Manut_Ciclo --> Manut_Aval{Reavaliação<br/>Quinzenal}
+    
+    Manut_Aval -->|Peso estável<br/>DAM OK| Manut_Ciclo
+    Manut_Aval -->|Ajustes leves<br/>±100-150 kcal| Manut_Ajuste[Calibração Fina]
+    Manut_Ajuste --> Manut_Ciclo
+    
+    Manut_Aval -->|Estável ≥ 2-4 sem<br/>+ Novo objetivo| SaidaManut{Próximo Ciclo?}
+    
+    SaidaManut -->|Reduzir<br/>mais gordura| VoltaRecomp[Retorno à<br/>Recomposição]
+    SaidaManut -->|Ganhar<br/>massa| VerificaCriteriosNovo{Critérios OK?}
+    SaidaManut -->|Manter| Manut_Ciclo
+    
+    VoltaRecomp --> Recomp
+    
+    VerificaCriteriosNovo -->|Sim| NovoGanho[Novo Ciclo<br/>de Ganho]
+    VerificaCriteriosNovo -->|Não| Manut_Ciclo
+    
+    NovoGanho --> Ganho
+    
+    %% Estilização
+    classDef recompClass fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px,color:#fff
+    classDef ganhoClass fill:#51cf66,stroke:#2f9e44,stroke-width:2px,color:#fff
+    classDef manutClass fill:#4dabf7,stroke:#1971c2,stroke-width:2px,color:#fff
+    classDef decisaoClass fill:#ffd43b,stroke:#f59f00,stroke-width:2px,color:#000
+    classDef alertaClass fill:#ff8787,stroke:#e03131,stroke-width:3px,color:#fff
+    
+    class Recomp,Recomp_Ciclo,Recomp_Aval,Recomp_Ajuste,VoltaRecomp recompClass
+    class Ganho,Ganho_Ciclo,Ganho_Aval,Ganho_Ajuste,NovoGanho ganhoClass
+    class Manutencao,Manut_Ciclo,Manut_Aval,Manut_Ajuste manutClass
+    class Analise,DentroFaixa,EscolhaObjetivo,VerificarCriterios,Checkpoint1,DecisaoLimite,SaidaManut,VerificaCriteriosNovo decisaoClass
+    class BloqueioGanho,ForcaManut1,LimiteGanho,PausaGanho alertaClass
+```

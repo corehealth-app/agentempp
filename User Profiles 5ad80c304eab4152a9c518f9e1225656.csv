@@ -1,0 +1,71 @@
+# Databases Agente MPP
+
+<aside>
+👤
+
+USERS AND FORMULAS
+
+</aside>
+
+---
+
+- *Fonte de usuários do sistema.*
+    
+    `Tabela central de usuários. Armazena dados de identificação (nome, telefone, email), configurações regionais (timezone, locale) e status da conta. Todas as outras tabelas se relacionam com esta através do user_id.`
+    
+
+[Users](Databases%20Agente%20MPP/Users%2011c6250437a5465290df300a83a61d3a.csv)
+
+- *Perfil físico e dados de onboarding do usuário.*
+    
+    `Contém informações coletadas durante o onboarding: sexo, data de nascimento, altura, peso, objetivo (recomposição/perda/ganho/manutenção) e status do fluxo de cadastro. Base para os cálculos de TDEE e macros.`
+    
+
+[User Profiles](Databases%20Agente%20MPP/User%20Profiles%205ad80c304eab4152a9c518f9e1225656.csv)
+
+<aside>
+📈
+
+GAMIFICATION
+
+</aside>
+
+- *Registro diário de progresso do usuário.*
+    
+    `Coração do MPP. Consolida os dados de cada dia: calorias consumidas/meta, proteína consumida/meta, passos, treino realizado e XP ganho. Permite análise de consistência e fechamento de dia.`
+    
+
+[Daily Snapshots](Databases%20Agente%20MPP/Daily%20Snapshots%20f2b7fd919c4042f19160965639e13fe7.csv)
+
+- *Estado consolidado de gamificação por usuário.*
+    
+    `Armazena o XP total acumulado e o nível atual de cada usuário. Atualizado sempre que novos eventos de XP são registrados. Permite consultar rapidamente a progressão do usuário sem precisar somar todos os XP Events.`
+    
+
+[User Progress](Databases%20Agente%20MPP/User%20Progress%20430000557c85487d827920169c9ea831.csv)
+
+- *Log de eventos de gamificação.*
+    
+    `Registra cada evento que concede XP ao usuário: refeição logada, meta de proteína atingida, dia perfeito, streak, level up. Alimenta a tabela User Progress e permite análise de engajamento.`
+    
+
+<aside>
+💳
+
+PAYMENTS
+
+</aside>
+
+- *Controle de assinaturas e acesso.*
+    
+    `Fonte de verdade para determinar se o usuário tem acesso ao sistema. Registra plano (trial/mensal/anual), status, datas de período e configuração de cancelamento. Integrada com Stripe.`
+    
+
+[Subscriptions](Databases%20Agente%20MPP/Subscriptions%209dcae0fe60dc4958bf18e9d7293048bd.csv)
+
+- *Auditoria de eventos de assinatura.*
+    
+    `Log de todos os eventos relacionados a assinaturas: webhooks recebidos, checkouts completados, renovações e cancelamentos. Garante idempotência e rastreabilidade de integrações com gateway de pagamento.`
+    
+
+[Subscription Events](Databases%20Agente%20MPP/Subscription%20Events%20045da790458743b4a6768030e4dcf688.csv)

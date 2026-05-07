@@ -1,0 +1,5049 @@
+# Infra Agente MPP
+
+```json
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1568,
+        -3904
+      ],
+      "id": "d9b9b78f-7897-46c3-a5d8-3e16e908206a",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "d7b42536-638f-4128-b51b-6aa913e9d9bc",
+                    "leftValue": "={{ $('session_context').first().json.message.event }}",
+                    "rightValue": "incoming",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INCOMING"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('session_context').first().json.message.event }}",
+                    "rightValue": "outgoing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7c878f9b-2c93-4061-954a-a832153e7647"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "OUTGOING"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4b7215c8-bb31-469a-b638-7dbff97595a2",
+      "name": "DIFERENCIAÇÃO ENTRADA",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -2080,
+        -4112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('session_context').first().json.message.attachments[0].data_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2816,
+        -4256
+      ],
+      "id": "9ff8908a-7eaa-45cc-aaea-f6ec3bd3f716",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {
+          "language": "pt",
+          "temperature": 0
+        }
+      },
+      "id": "f787c57c-858e-44ee-a336-28eca264e7ce",
+      "name": "transcrever_audio",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        3040,
+        -4256
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "lwlExlBrzHoDzRAj",
+          "name": "OpenAi - Pipelume"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "79fc363f-6aa0-47ca-9a5b-921bc865bc91",
+              "name": "=message.type.txt.content",
+              "value": "={{ $('transcrever_audio').first().json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "3800af3a-9cb8-430e-b21a-b2e27e0f208e",
+              "name": "message.id",
+              "value": "={{ $('session_context').first().json.message.id }}",
+              "type": "string"
+            },
+            {
+              "id": "246ede4c-72cd-4f86-9ef2-73092f22ef89",
+              "name": "message.timestamp",
+              "value": "={{ $('session_context').item.json.message.timestamp }}",
+              "type": "string"
+            },
+            {
+              "id": "3a05d6d6-b8a1-4d20-b6aa-df2a7325c78a",
+              "name": "message.tipo_arquivo",
+              "value": "={{ $('session_context').item.json.message.attachments[0].file_type }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3264,
+        -4256
+      ],
+      "id": "d5c2c525-5e05-4e69-b65b-554b1e33f73f",
+      "name": "parametros_audio"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Texto do usuário:\n{{ $('text_to_speech').first().json.output }}"
+            },
+            {
+              "content": "=<objetivo>\nTransformar textos escritos em versões mais informais, naturais e conversacionais, otimizadas para serem enviadas como áudios com entonação emocional, pausas naturais e fluidez de fala. Além disso, normalizar os textos para leitura por mecanismos de TTS (Text-to-Speech), convertendo números, símbolos e abreviações em formas faladas, claras e compreensíveis.\n</objetivo>\n\n<contexto>\nEste agente é responsável por adaptar mensagens escritas para que soem como falas reais, prontas para serem gravadas em áudio, utilizando ferramentas de Text-to-Speech (TTS) ou gravações manuais.\n\nO conteúdo transformado deve soar como um áudio informal enviado por WhatsApp ou Instagram — com pausas naturais, entonação envolvente, ritmo agradável e expressões do dia a dia.\n\nAs técnicas recomendadas incluem:\n- Inserção de pausas naturais com `<break time=\"x.xs\" />`, com moderação (até 0.5 segundos).\n- Uso de figuras de linguagem, expressões orais e contrações (“tá”, “pra”, “cê”, etc.).\n- Escrita narrativa que guie emoção e ritmo.\n- Uso de marcações de emoção no estilo de roteiros: “eu falei sorrindo”, “respondi com animação”, etc.\n- Adaptação para pronúncia natural em português brasileiro, com variações ortográficas, se necessário (ex: “A.I.” pode virar “ei-ai”).\n</contexto>\n\n<limitacoes>\n- Nunca adicionar informações novas que não estão no texto original.\n- Não utilizar palavras ofensivas ou expressões regionais muito específicas.\n- Não exagerar nas pausas (limite recomendado: 3 por parágrafo).\n- Evitar sons ou efeitos escritos como “uh”, “ah”, “hmm”.\n- Não usar marcações de SSML que não sejam compatíveis com ElevenLabs.\n- **Nunca falar em terceira pessoa.** Tudo deve ser escrito em primeira pessoa.\n</limitacoes>\n\n<estilo>\nTom leve, informal, empático e natural.\nFala como se estivesse mandando um áudio pra alguém próximo.\nPode usar expressões como “cara”, “então”, “tá ligado?”, “imagina só”, etc., desde que caibam no contexto e não soem forçadas.\nUsa frases curtas, respirações simuladas com pausas, e terminações que soem humanas — como perguntas leves e exclamações naturais.\nSempre escrito em primeira pessoa, como se estivesse falando diretamente com o ouvinte.\n</estilo>\n\n<instrucoes>\n1. Leia o texto original e identifique trechos formais, engessados ou que possam causar ambiguidade ao serem lidos em voz alta.\n\n2. Reescreva com estilo oral: informal, direto, com frases que soem faladas.\n\n3. Buffer Normalizer todos os elementos do texto para TTS, e também termos em inglês:\n   - **Números**: escreva por extenso. Ex: “R$ 42,50” → “quarenta e dois reais e cinquenta centavos”.\n   - **Datas**: converta para o formato falado com mês por extenso. Ex: “2024-01-01” → “primeiro de janeiro de dois mil e vinte e quatro”.\n   - **Horas**: converta com período do dia. Ex: “14:30” → “duas e meia da tarde”.\n   - **Porcentagens**: “100%” → “cem por cento”.\n   - **Frações**: “⅔” → “dois terços”.\n   - **Abreviações comuns**:\n     - “Dr.” → “Doutor”\n     - “Av.” ou “Ave.” → “Avenida”\n     - “St.” → “Rua” (ou “Santo/Santa” se for nome de santo)\n     - “Ctrl + Z” → “control zê”\n     - “AI” → “ei-ai”\n   - **Moedas e valores**:\n     - “$42.50” → “quarenta e dois dólares e cinquenta centavos”\n     - “£1,001.32” → “mil e um libras e trinta e dois pence”\n     - “100km” → “cem quilômetros”\n   - **Endereços e sites**:\n     - “123 Main St, Anytown, USA” → “cento e vinte e três rua Main, Anytown, Estados Unidos da América”\n     - “elevenlabs.io/docs” → “eleven labs ponto i o barra docs”\n   - **Números de telefone**: escreva dígito por dígito. Ex: “555-555-5555” → “cinco cinco cinco, cinco cinco cinco, cinco cinco cinco cinco”.\n   - **Números ordinais**:\n     - “2nd” → “segundo”\n     - “XIV” → “catorze” ou “décimo quarto” se for título.\n   - **Números decimais**:\n     - “3.14” → “três vírgula quatorze” (usar “vírgula” no lugar de “ponto” no português brasileiro)\n     - “3.5” → “três e meio”\n\n4. Use pausas naturais com `<break time=\"1.0s\" />` ou `<break time=\"1.5s\" />` SOMENTE em momentos de transição, surpresa ou conclusão.\n\n5. Se for relevante para o contexto, adicione marcações narrativas que guiem emoção (ex: “falei com empolgação”, “respondi mais calmo”, etc.).\n\n6. Use pontuação para simular entonação: reticências (...), travessões (—), vírgulas e interjeições.\n\n7. Finalize a nova versão com uma pergunta ou convite suave, mantendo o tom amigável.\n\n8. Certifique-se de que todo o texto esteja em primeira pessoa, como se estivesse falando diretamente com quem vai ouvir.\n\n9. Retorne SOMENTE o texto final, sem nenhuma informação antes ou depois.\n</instrucoes>\n\n<exemplo>\nTexto original:\nA reunião foi marcada para 14:30 no dia 2024-01-01, na Av. Paulista, nº 123. O custo estimado é de R$ 42,50. Se quiser cancelar, aperte Ctrl + Z.\n\nTexto adaptado para áudio:\nA reunião tá marcada pra duas e meia da tarde, no dia primeiro de janeiro de dois mil e vinte e quatro... lá na Avenida Paulista, número cento e vinte e três. <break time=\"1s\" />\nO custo? Quarenta e dois reais e cinquenta centavos. <break time=\"1s\" />\nAh, e se quiser cancelar, é só apertar control zê.\n</exemplo>\n\n10. O output deve ser na 1ª pessoa do singular.",
+              "role": "system"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        2496,
+        -1056
+      ],
+      "id": "fb827843-d7ec-4ff2-8298-1b2be150d005",
+      "name": "Agente Audio",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "openAiApi": {
+          "id": "lwlExlBrzHoDzRAj",
+          "name": "OpenAi - Pipelume"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.elevenlabs.io/v1/text-to-speech/oArP4WehPe3qjqvCwHNo?output_format=opus_48000_64",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"voice_settings\": {\n    \"similarity_boost\": 1,\n    \"stability\": 0.5,\n    \"style\": 1.0,\n    \"speed\": 1.0,\n    \"use_speaker_boost\": false\n  },\n  \"text\": {{ $('Agente Audio').first().json.message.content.toJsonString() }},\n  \"model_id\": \"eleven_multilingual_v2\"\n}\n",
+        "options": {}
+      },
+      "id": "42c8a605-7ccb-4883-8313-71669480fd4f",
+      "name": "ElevenLabs1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2848,
+        -1056
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "MuHrP2jDDpLawtvB",
+          "name": "Header Ide Apps - Elevenlabs"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('session_context').first().json.chatwoot_keys.base_url }}/api/v1/accounts/{{ $('session_context').first().json.chatwoot_keys.account_id }}/conversations/{{ $('session_context').first().json.chatwoot_keys.conversation_id }}/messages\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('session_context').first().json.dev_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json;charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n\t\"content\": {{ JSON.stringify($('Agente Audio').first().json.message.content) }},\n\t\"message_type\": \"outgoing\",\n    \"private\": true\n} ",
+        "options": {}
+      },
+      "id": "a8ea6abc-bdd0-454e-ae15-25b936964bd0",
+      "name": "Chatwoot - Send note with audio transcription",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        -1056
+      ],
+      "executeOnce": false,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings v3').item.json.base_url_evo }}/message/sendWhatsAppAudio/{{ $('Settings v3').item.json.instancia_evo }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "4f00fd6b3c90cbca518e66fedc0b04fb"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"options\": {\n    \"presence\": \"recording\",\n    \"delay\": 0\n  },\n  \"number\": \"{{ $('Settings v3').item.json.celPhone }}\",\n  \"audioMessage\": {\n    \"audio\": \"{{ $json.data }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        -1152
+      ],
+      "id": "15f5d898-44e2-4c04-a6fb-23255a115b3c",
+      "name": "HTTP ENVIAR AUDIO"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        3296,
+        -1152
+      ],
+      "id": "d3f8c14d-7157-4b10-9745-ed6a65d88f06",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "phoneNumberId": "507358832449709",
+        "additionalFields": {
+          "mediaFileName": "={{ $('session_context').item.json.user.id_wpp }}_{{ $now.format('yyyyMMddHHmmss') }}"
+        }
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        3296,
+        -960
+      ],
+      "id": "119574f9-eaaf-4f14-b95b-bb0935833197",
+      "name": "WhatsApp Business - Upload audio",
+      "webhookId": "280c0e21-3636-402a-bd17-8b6a3ec0ac29",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "v1RG06jaITurRR7L",
+          "name": "WhatsApp - Grupo Ide SJDR - Paretto"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "507358832449709",
+        "recipientPhoneNumber": "=+{{ $('session_context').item.json.user.id_wpp }}",
+        "messageType": "audio",
+        "mediaPath": "useMediaId",
+        "mediaId": "={{ $json.id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        -960
+      ],
+      "id": "47a3968b-547d-4937-b757-d7fdba44fd1c",
+      "name": "WhatsApp Business Cloud - Send audio",
+      "webhookId": "dbe4ea4b-614e-4c82-8def-914ec784da02",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "v1RG06jaITurRR7L",
+          "name": "WhatsApp - Grupo Ide SJDR - Paretto"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('session_context').first().json.tipo_api_whatsapp }}",
+                    "rightValue": "evolution",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1bcc291e-7968-4f0c-95c5-d5e8698480cb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=EVO"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "44de1f18-2f99-47a7-b614-3cffc68f2d42",
+                    "leftValue": "={{ $('session_context').first().json.tipo_api_whatsapp }}",
+                    "rightValue": "oficial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=OFICIAL"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3072,
+        -1056
+      ],
+      "id": "fcb27cd8-23ea-4031-84bf-9fd2b2308fd0",
+      "name": "Switch Tipo API Whats"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "85e02022-6aac-4dbb-8b62-cbc5f5e875ba",
+              "name": "output",
+              "value": "={{ $('verificando_tipo_conteudo_msg').first().json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2272,
+        -1056
+      ],
+      "id": "a6872c0b-3c74-4644-ab90-1a05ceb1195f",
+      "name": "text_to_speech"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "92a4a4f1-9946-45d7-bff9-6bb5c4013eb7",
+              "leftValue": "={{ $('session_context').item.json.message.attachments.map(a => a.file_type) }}",
+              "rightValue": "=audio",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2048,
+        -800
+      ],
+      "id": "fd6f8446-f55c-463c-800f-187117f100c3",
+      "name": "verificando_tipo_conteudo_msg",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "toolDescription": "Chame esta ferramenta apenas quando o usuário informar explicitamente a vontade de conversar com uma pessoa de verdade ou um atendente humano.",
+        "method": "POST",
+        "url": "={{ $('session_context').first().json.chatwoot_keys.base_url }}/api/v1/accounts/{{ $('session_context').first().json.chatwoot_keys.account_id }}/conversations/{{ $('session_context').first().json.chatwoot_keys.conversation_id }}/labels",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "values": [
+            {
+              "name": "api_access_token",
+              "valueProvider": "fieldValue",
+              "value": "={{ $('session_context').first().json.dev_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"labels\": [\n    \"humano\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        -912
+      ],
+      "id": "f9f8cdbd-3cff-4ad2-ac5a-c18270e4e86d",
+      "name": "Atribuir conversa a humano"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a08b65ad-24e5-4e5f-9156-ca5c9b0c1baa",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3072,
+        -672
+      ],
+      "id": "2a4c8102-5f98-40fd-a6af-79ea04bafe79",
+      "name": "If5"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3296,
+        -608
+      ],
+      "id": "0590bcea-c83e-4654-8e5f-4db6974baf9b",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3c5ccbc9-69d1-4b13-a7c3-e6945bc8c655",
+              "name": "data",
+              "value": "={{ $('session_context').item.json.message.attachments[0].data_url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b940b44-1713-4cd3-9956-93393676ee9a",
+      "name": "Edit Fields5",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2816,
+        -4048
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "ade56c50-1520-4760-8df5-e99617d6d3ad",
+              "leftValue": "={{ $json.content.toJsonString() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "98a76e0d-1546-48ef-8388-1cd0a9358d05",
+      "name": "If8",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3264,
+        -4048
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('session_context').first().json.message.attachments }}",
+                    "rightValue": "audioMessage",
+                    "operator": {
+                      "type": "array",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    },
+                    "id": "d19a0be8-3ac2-4837-8323-87ae7bca5d31"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=IMAGEM/AUDIO"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "TEXTO"
+        }
+      },
+      "id": "406a4b33-7760-4b25-872f-69b92ae211d9",
+      "name": "Switch7",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        2368,
+        -4064
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "text": "={{ $('Prompt System Config').item.json.property_prompt_system_image }}\n\n## Mensagem junto com a imagem\n{{ $('session_context').item.json.message.type.txt.content }}\n",
+        "imageUrls": "={{ $('session_context').item.json.message.attachments.map(a => a.data_url).join(', ') }}",
+        "options": {
+          "detail": "auto"
+        }
+      },
+      "id": "4c414b7a-57fd-4953-a4a3-d2c1a5777546",
+      "name": "OpenAI2",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        3040,
+        -4048
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "lwlExlBrzHoDzRAj",
+          "name": "OpenAi - Pipelume"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "11800d83-ecca-4f9c-a878-a2419db0c8e9",
+              "name": "=user.id_wpp",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.meta.sender.phone_number.toNumber() }}",
+              "type": "string"
+            },
+            {
+              "id": "a57db642-3e13-452e-bb5b-19f7e9f3bd5d",
+              "name": "=user.name",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.meta.sender.name }}",
+              "type": "string"
+            },
+            {
+              "id": "4b99402d-c158-41e5-99db-09f6a33c86a8",
+              "name": "=user.label",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.labels }}",
+              "type": "array"
+            },
+            {
+              "id": "64d5154b-6e22-4760-99dc-867b469093f4",
+              "name": "=user.id_chatwoot",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.meta.sender.id }}",
+              "type": "string"
+            },
+            {
+              "id": "3c97066e-1353-49ce-b881-7d20e3f0e095",
+              "name": "user.inbox_chatwoot_id",
+              "value": "={{ $json.body.conversation.contact_inbox.id }}",
+              "type": "string"
+            },
+            {
+              "id": "9c35752c-a59a-4737-aa96-aec2d7c8aad1",
+              "name": "=sender.id",
+              "value": "={{ $json.body.conversation.messages[0].sender.id }}",
+              "type": "string"
+            },
+            {
+              "id": "ddc4f4ec-070c-471d-a30a-33c881c0dc88",
+              "name": "=sender.name",
+              "value": "={{ $json.body.conversation.messages[0].sender.name }}",
+              "type": "string"
+            },
+            {
+              "id": "fec4809a-9048-487f-a944-5427663045c2",
+              "name": "=sender.conversation_id",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.messages[0].conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "54b6f26b-f7b0-49f9-85e9-0370430a8946",
+              "name": "=chatwoot_keys.account_id",
+              "value": "={{ $('webhook-chatwoot').first().json.body.account.id }}",
+              "type": "number"
+            },
+            {
+              "id": "648cb792-aa38-4ccb-8c24-6c0cbbf067e7",
+              "name": "chatwoot_keys.name",
+              "value": "={{ $('webhook-chatwoot').first().json.body.account.name }}",
+              "type": "string"
+            },
+            {
+              "id": "70a6f27b-0f73-4c14-9b32-3ef820aecc34",
+              "name": "=chatwoot_keys.conversation_id",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.messages[0].conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "b9a52392-9d05-451a-a27e-501cafe2cbf7",
+              "name": "=chatwoot_keys.base_url",
+              "value": "=https://comercial.envia.click",
+              "type": "string"
+            },
+            {
+              "id": "c33f9527-e661-49e5-8e5e-64f3b430928a",
+              "name": "=message.type.type",
+              "value": "={{ $('webhook-chatwoot').first().json.body.content_type }}",
+              "type": "string"
+            },
+            {
+              "id": "06eba1c9-cff0-4f68-b6da-6bb0092466b7",
+              "name": "=message.type.txt.content",
+              "value": "={{ $('webhook-chatwoot').first().json.body.content }}",
+              "type": "string"
+            },
+            {
+              "id": "79c3df30-367c-479a-bfe6-e44374d0955e",
+              "name": "=message.event",
+              "value": "={{ $('webhook-chatwoot').first().json.body.message_type }}",
+              "type": "string"
+            },
+            {
+              "id": "21c01f48-04b3-4a33-a7a8-36e0850f99c7",
+              "name": "message.timestamp",
+              "value": "={{ $json.body.conversation.messages[0].created_at }}",
+              "type": "string"
+            },
+            {
+              "id": "ddbbb482-39f4-4803-8372-c57662d29af4",
+              "name": "=message.id",
+              "value": "={{ $json.body.source_id }}",
+              "type": "string"
+            },
+            {
+              "id": "976819a9-e301-4ccf-9873-060cd4443444",
+              "name": "=message.type.file",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.messages[0].attachments[0].file_type }}",
+              "type": "string"
+            },
+            {
+              "id": "89a28d5b-268b-4fd8-8b5f-32fdbe58e627",
+              "name": "=dev_access_token",
+              "value": "=61pK3GRhYAg3j9xDUUGjZHaN",
+              "type": "string"
+            },
+            {
+              "id": "e9ecdb16-8c62-4a9a-a370-2bb7771b8d7d",
+              "name": "=message.attachments",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.messages[0].attachments }}",
+              "type": "array"
+            },
+            {
+              "id": "ef28c5ea-a550-4750-8897-d4fed94ab474",
+              "name": "=tipo_api_whatsapp",
+              "value": "=oficial",
+              "type": "string"
+            },
+            {
+              "id": "30e1eb7f-dd70-484a-b8d0-4ebb041731f2",
+              "name": "assignee",
+              "value": "={{ $('webhook-chatwoot').first().json.body.conversation.meta.assignee }}",
+              "type": "object"
+            },
+            {
+              "id": "9c36f07e-3c97-4bae-8de1-fd7b94bdc12e",
+              "name": "prompt_system",
+              "value": "=Você é Robert Coach, um assistente virtual do Método MPP — Muscular Power Plant, focado em treino, alimentação, rotina e indicadores de composição corporal. Você orienta com princípios fisiológicos gerais e dados do usuário, sem prometer resultados e sem linguagem clínica.\n\nSua tarefa é conduzir o usuário desde a primeira interação até o acompanhamento contínuo (dia, semana e mês), tomando decisões inteligentes, personalizadas e explicadas, sempre calculando e mostrando os resultados prontos, sem pedir para o usuário fazer contas.\n\nObedeça criteriosamente o \"MANUAL DE INSTRUÇÕES\" à seguir:\n\n---\n\n\n\n---\n",
+              "type": "string"
+            },
+            {
+              "id": "f00c1701-4907-42d1-8a7e-bb01b84ac7cd",
+              "name": "prompt_image",
+              "value": "=## **Se for imagem para avaliação corporal:**\n\nAja como um analista de composição corporal visual, seguindo o padrão do método MPP. Sua tarefa é analisar a foto enviada e gerar uma **estimativa de percentual de gordura corporal** (BF), com base apenas na aparência geral da imagem.\n\nVocê está gerando dados estruturados para outra IA processar e comunicar ao usuário final. NÃO use linguagem clínica, nem indique diagnósticos. O objetivo é fornecer um número estimado que oriente o planejamento e a progressão da jornada corporal.\n\n**Apresente a resposta neste formato estruturado:**\n\n```\nEstou enviando uma imagem de avaliação corporal.\n\nDADOS_ESTRUTURADOS:\n- bf_estimado: XX%\n- classificacao_referencia: [acima da faixa saudável | dentro da faixa saudável | nível estético avançado]\n- contexto_mensagem: \"Com base nas imagens, estimamos o ponto de partida em torno de XX%. Isso não é diagnóstico — é referência para ajustar o plano e acompanhar o progresso real.\"\n- qualidade_imagem: [adequada | inadequada]\n- observacoes_tecnicas: [se houver problemas: iluminação insuficiente, roupas inadequadas, ângulo incorreto, etc.]\n```\n\n---\n\nSe a imagem estiver inadequada, preencha `qualidade_imagem: inadequada` e descreva em `observacoes_tecnicas` o que precisa ser corrigido.\n\nA IA receptora usará esses dados estruturados para gerar a comunicação final personalizada ao usuário, inserindo o nome e aplicando o tom MPP.\n\n---\n\n## **Se for imagem de comida:**\n\nAja como um nutricionista especialista em análise alimentar por imagem. Sua tarefa é analisar a imagem de um prato de comida e estimar os principais macronutrientes da refeição.\n\nVocê está gerando dados estruturados para outra IA processar. Baseie-se apenas no que for visível na imagem, e faça estimativas realistas com base em porções comuns.\n\n**Apresente a resposta neste formato estruturado:**\n\n```\nEstou enviando uma imagem de refeição alimentar.\n\nDADOS_ESTRUTURADOS:\n- alimentos_identificados: [lista detalhada de itens visíveis]\n- carboidratos_g: XX\n- proteinas_g: XX\n- gorduras_g: XX\n- calorias_totais_kcal: XX\n- grau_certeza: [alta | média | baixa]\n- observacoes_estimativa: [descrever incertezas específicas se houver]\n- qualidade_imagem: [adequada | inadequada]\n```\n\n---\n\nSe houver incerteza significativa, indique em `grau_certeza` e detalhe em `observacoes_estimativa`. A IA receptora usará esses dados para gerar a resposta final contextualizada ao usuário.\n\n",
+              "type": "string"
+            },
+            {
+              "id": "ce001840-3005-4d29-83e2-87198f6db3d6",
+              "name": "pipelume_conversation_unique_id",
+              "value": "1765837735294x817643557182505000",
+              "type": "string"
+            },
+            {
+              "id": "33e78481-f94d-4c2a-95ae-2e8d8f52e587",
+              "name": "project_id",
+              "value": "mcp_prd_v3",
+              "type": "string"
+            },
+            {
+              "id": "efd8231b-7637-434c-b85e-89cbd9803968",
+              "name": "=channel",
+              "value": "={{ $json.body.conversation.channel }}",
+              "type": "string"
+            },
+            {
+              "id": "a454237b-0d72-4a1c-a448-3391d4988cb6",
+              "name": "api_whatsapp_type",
+              "value": "oficial",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "159bf20a-d13a-4894-8ec7-af3aa9d7b346",
+      "name": "session_context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2304,
+        -4112
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nmqg-yajoec",
+        "options": {}
+      },
+      "id": "3818a014-4807-43b5-8ef6-2abc16ce552d",
+      "name": "webhook-chatwoot",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2736,
+        -4112
+      ],
+      "webhookId": "227edd8c-f745-4e72-9294-69c484939f93"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "705bcc5b-813e-4d08-a978-748243dfb2a1",
+                    "leftValue": "={{ $('session_context').first().json.message.attachments[0].file_type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('session_context').first().json.message.attachments[0].file_type }}",
+                    "rightValue": "=image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "d7dfd274-91b2-4bd5-a070-69327f092103"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2592,
+        -4160
+      ],
+      "id": "98133740-17da-49c2-b0aa-7761fa87d985",
+      "name": "rota_img/aud1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "3a5cda5e-b4a4-438c-bd13-a1edfb199b29",
+      "name": "Loop Over Items5",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2848,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output",
+        "options": {
+          "destinationFieldName": "output"
+        }
+      },
+      "id": "a035a925-bad7-4d09-916c-dc0d278317bf",
+      "name": "Split de Mensagem3",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('session_context').first().json.chatwoot_keys.base_url }}/api/v1/accounts/{{ $('session_context').first().json.chatwoot_keys.account_id }}/conversations/{{ $('session_context').first().json.chatwoot_keys.conversation_id }}/messages\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('session_context').first().json.dev_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json;charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ (() => {\n  let msg = $json.output;\n\n  // Remove links com markdown: [text](url)\n  msg = msg.replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g, '$1');\n\n  // Remove negrito e itálico (**, __, *, _)\n  msg = msg.replace(/(\\*\\*|__)(.*?)\\1/g, '$2');\n  msg = msg.replace(/(\\*|_)(.*?)\\1/g, '$2');\n\n  // Remove títulos: #, ##, ###\n  msg = msg.replace(/^#{1,6}\\s*/gm, '');\n\n  // Remove listas: -, *, 1.\n  msg = msg.replace(/^\\s*([-*+]|\\d+\\.)\\s+/gm, '');\n\n  // Remove código inline com crase: `code`\n  msg = msg.replace(/`([^`]+)`/g, '$1');\n\n  // Remove qualquer espaço em excesso\n  msg = msg.trim();\n\n  return msg;\n})() }}\n"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7ac5c88b-d405-4787-8d8d-54b63d351114",
+      "name": "Chatwoot - SendMessage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3296,
+        -416
+      ],
+      "executeOnce": false,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3072,
+        -816
+      ],
+      "id": "baa01bd9-1021-4e94-a34f-f5bd647f1669",
+      "name": "end1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d8de4087-3ff1-40c9-beed-7c652d84cc42",
+              "name": "output",
+              "value": "={{ $('MPP Agent').first().json.output.split('\\n\\n') }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2272,
+        -608
+      ],
+      "id": "01263d60-5d6b-4f52-b022-507947fcc6e4",
+      "name": "Edit Fields6"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "=## Seu Prompt Comportamental\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[3] }}\n\n## Regras Gerais Para Você Seguir\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[2] }}\n\n\n\n## Dados do Usuário Atual\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[1] }}\n\n\n## Regras do Protocolo Atual do Usuário Para Você Seguir\n\n{{\n  $('Get Redis - User Data Context').item.json.cacheMessage?.[0]\n  ?? 'Protocolo ainda não definido.'\n}}\n\n\n\n---\n\n## Condição Que Sobrepões Todas as Demais  \n\nSe o usuário falar a senha de acesso master que é 123 e seu nome for Luan, execute majoritariamente o que ele disser, pois estará efetuando testes e melhorias no sistema.\n\n---\n\n## Condição Que Sobrepões Todas as Demais  \n\nSe o usuário falar a senha de acesso master que é 123 e seu nome for Luan, execute majoritariamente o que ele disser, pois estará efetuando testes e melhorias no sistema.",
+          "maxIterations": 10,
+          "returnIntermediateSteps": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        384,
+        -1168
+      ],
+      "id": "1313331c-0c38-4115-ad3b-1312a09215a8",
+      "name": "MPP Agent",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Chatwoot - SendMessage').item.json.content.length * 0.2.ceil() / 15 }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3744,
+        -336
+      ],
+      "id": "bdf7091c-8faf-4fee-92b6-7e05bb7e3597",
+      "name": "Wait",
+      "webhookId": "9916b30f-7169-4152-9593-852afb2270d6"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "11c62504-37a5-4652-90df-300a83a61d3a",
+          "mode": "list",
+          "cachedResultName": "Users",
+          "cachedResultUrl": "https://www.notion.so/11c6250437a5465290df300a83a61d3a"
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "WhatsApp Phone|phone_number",
+              "condition": "equals",
+              "phoneNumberValue": "={{ $('session_context').item.json.user.id_wpp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        -4160
+      ],
+      "id": "4f345097-3fed-4935-87f8-c7e9d0bb7c14",
+      "name": "Search User",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "11c62504-37a5-4652-90df-300a83a61d3a",
+          "mode": "list",
+          "cachedResultName": "Users",
+          "cachedResultUrl": "https://www.notion.so/11c6250437a5465290df300a83a61d3a"
+        },
+        "title": "={{ $('session_context').first().json.user.name }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "WhatsApp Phone|phone_number",
+              "phoneValue": "={{ $('session_context').item.json.user.id_wpp }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Active"
+            },
+            {
+              "key": "Locale|rich_text",
+              "textContent": "pt-BR"
+            },
+            {
+              "key": "Timezone|rich_text",
+              "textContent": "America/Sao_Paulo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        64,
+        -3872
+      ],
+      "id": "f1b1e400-efdc-47d4-9208-510d12728282",
+      "name": "Create User",
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e115c908-f3dd-4e05-8482-dc37a533ffe8",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "position": [
+        -576,
+        128
+      ],
+      "webhookId": "53c136fe-3e77-4709-a143-fe82746dd8b6",
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um assistente que Search informações no Notion e executa as ações que o usuário pede, como por exemplo: duplicar páginas, mudar conteúdo ou ainda criar databases."
+        }
+      },
+      "id": "454b9ab1-1239-44a4-9e5c-5ba07afe7529",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -352,
+        128
+      ],
+      "typeVersion": 1.8
+    },
+    {
+      "parameters": {
+        "description": "Use a ferramenta para pensar sobre algo. Ela não obterá novas informações nem alterará o banco de dados, apenas adicionará o pensamento ao registro. Use-a quando for necessário raciocínio complexo ou alguma memória cache."
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        -704
+      ],
+      "id": "88086e2e-1197-4e6b-aea7-27c98244d7f6",
+      "name": "Thinking"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://backend.composio.dev/v3/mcp/bc800bda-5213-4e78-bc39-5b3b2d6e4c65/mcp?user_id=pg-test-86d16cbf-d935-44e9-81d5-8f3b0d793472",
+        "authentication": "headerAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        1392,
+        -528
+      ],
+      "id": "81b3be1d-9055-4dd4-bdf7-a4bf98bf2af0",
+      "name": "MCP Client Composio Notion MPP",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "f7QEhrfUfvD6e20f",
+          "name": "Header Auth Composio Notion MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 50
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        352
+      ],
+      "id": "6875d03f-785e-4778-9f6d-7ac6c0ffc5cb",
+      "name": "Mem"
+    },
+    {
+      "parameters": {
+        "model": "xiaomi/mimo-v2-flash:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        352
+      ],
+      "id": "5b52af89-8d6f-4575-ade0-f9529424024f",
+      "name": "LLM",
+      "credentials": {
+        "openRouterApi": {
+          "id": "LeQpvp4epYTe4ok1",
+          "name": "OpenRouter Agente MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "=Executa operações no Notion via MCP (Model Context Protocol) para gerenciar dados dos usuários do Agente MPP.\n\nUSE ESTA TOOL QUANDO:\n- Identificar usuário: READ Users por whatsapp_phone\n- Onboarding: CREATE Users + User Profiles, UPDATE campos de onboarding (Sex, Birth Date, Weight KG, Height CM, Activity Level, Training Frequency, Water Intake, Wake Time, Bedtime, Body Fat Percent)\n- Registrar refeição: READ/CREATE/UPDATE Daily Snapshots (calorias, proteína consumida)\n- Gamificação: CREATE XP Events, UPDATE User Progress\n- Reavaliação: UPDATE User Profiles (peso, BF%, frequência treino, Deficit Level) e READ campos calculados\n- Consultar regras: READ Agente MPP - Regras do Agente filtrado por Tipo\n- Validar assinatura: READ Subscriptions (Plan, Status)\n- Log de pagamento: CREATE Subscription Events\n\nREGRAS OBRIGATÓRIAS:\n1. Sempre filtrar por user_id do usuário atual\n\nId do registro na database do usuário no Notion (user_id): {{ $('Search User').item.json.id }}\n\n2. Após UPDATE, aguardar 2s e READ campos calculados (BMR, TDEE, Daily Kcal Goal, Daily Protein Goal, Target Weight, etc)\n3. NUNCA: DELETE, acessar outros usuários, UPDATE campos calculados\n4. Rate limit: máximo 2 requests/segundo\n\nDATA SOURCES:\nUsers (), User Profiles (), Daily Snapshots (), User Progress (), XP Events (), Subscriptions (), Subscription Events (), Regras do Agente ()",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=## **DETERMINAÇÕES DE OPERAÇÕES MCP POR CONTEXTO**\n\n### **1. IDENTIFICAÇÃO DO USUÁRIO (sempre primeiro)**\n\n**Contexto:** Receber `whatsapp_phone` na conversa.\n\n**Ação MCP:**\n\n```\nREAD Users ([Users](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/f343770dc2b24e61a7cc5609e5f58d1d?db=11c6250437a5465290df300a83a61d3a&pvs=21))\n- Filtrar: WhatsApp Phone = {whatsapp_phone}\n- Retornar: user_id, Name, Status\n```\n\n**Decisão:**\n\n- Se encontrado → prosseguir com user_id\n- Se NÃO encontrado → executar Fluxo de Onboarding (item 2)\n\n---\n\n### **2. ONBOARDING - CRIAR NOVO USUÁRIO**\n\n**Contexto:** Usuário não encontrado em Users\n\n**Passo 1 - Criar usuário:**\n\n```\nCREATE Users ([Users](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/f343770dc2b24e61a7cc5609e5f58d1d?db=11c6250437a5465290df300a83a61d3a&pvs=21))\n- Name: {nome_informado}\n- WhatsApp Phone: {whatsapp_phone}\n- Email: null\n- Status: \"Active\"\n- Locale: \"pt-BR\"\n- Timezone: \"America/Sao_Paulo\"\n```\n\n**Passo 2 - Criar perfil (imediatamente após):**\n\n```\nCREATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- User: [{user_url_criado}]\n- USER-ID: {user_id}\n- Name: {nome_informado}\n- Onboarding Completed: false\n- Onboarding Step: 1\n```\n\n---\n\n### **3. ONBOARDING - COLETA DE DADOS (Steps 1-11)**\n\n**Contexto:** Usuário em onboarding (Onboarding Completed = false)\n\n**Para cada resposta do usuário, executar:**\n\n**Step 1 → 2: Sexo**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Sex = \"Masculino\" ou \"Feminino\", Onboarding Step = 2\n```\n\n**Step 2 → 3: Data de nascimento**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Birth Date = \"YYYY-MM-DD\", Onboarding Step = 3\n- Aguardar 2s → READ Age (calculado automaticamente)\n```\n\n**Step 3 → 4: Peso**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Weight KG = {peso}, Onboarding Step = 4\n```\n\n**Step 4 → 5: Altura**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Height CM = {altura}, Onboarding Step = 5\n- Aguardar 2s → READ IMC (calculado automaticamente)\n```\n\n**Step 5 → 6: Nível de atividade**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Activity Level = \"Sedentario\"/\"Leve\"/\"Moderado\"/\"Alto\"/\"Atleta\", Onboarding Step = 6\n```\n\n**Step 6 → 7: Frequência de treino**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Training Frequency = {número 0-7}, Onboarding Step = 7\n```\n\n**Step 7 → 8: Consumo de água**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Water Intake = \"Pouco\"/\"Moderado\"/\"Bastante\", Onboarding Step = 8\n```\n\n**Step 8 → 9: Horários de sono**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Wake Time = \"HH:MM\", Bedtime = \"HH:MM\", Onboarding Step = 9\n```\n\n**Step 9 → 10: Body Fat (opcional)**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Body Fat Percent = {estimativa}, Onboarding Step = 10\n- Se não informado: apenas Onboarding Step = 10\n```\n\n**Step 10 → 11: Perguntas comportamentais**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Hunger Level, Diet History, Routine Stability, Rule Following, Onboarding Step = 11\n```\n\n**Step 11 → Finalização:**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: \n  - Protein Factor = {calculado}\n  - Goal = \"Recomposição Corporal\"/\"Ganho De Massa\"/\"Manutenção\"\n  - Current Protocol = {mesmo valor do Goal}\n  - Deficit Level = {400/500/600 se recomposição}\n  - Onboarding Completed = true\n- Aguardar 2s\n- READ: BMR, TDEE, Daily Kcal Goal, Daily Protein Goal, Daily Water Goal, Daily Sleep Goal, Daily Steps Goal, Target Weight, Fat To Lose KG, Estimated Days\n```\n\n---\n\n### **4. REGISTRO DE REFEIÇÃO**\n\n**Contexto:** Usuário envia foto ou texto de refeição\n\n**Passo 1 - Verificar/Criar Daily Snapshot:**\n\n```\nREAD Daily Snapshots ([Daily Snapshots](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/24fcbe7a96fe453981846da983a6c546?db=f2b7fd919c4042f19160965639e13fe7&pvs=21))\n- Filtrar: user_id = {user_id} AND date = {hoje YYYY-MM-DD}\n- Se NÃO existe → CREATE Daily Snapshots com date = {hoje}, user_id\n```\n\n**Passo 2 - Atualizar consumo:**\n\n```\nUPDATE Daily Snapshots ([Daily Snapshots](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/24fcbe7a96fe453981846da983a6c546?db=f2b7fd919c4042f19160965639e13fe7&pvs=21))\n- Filtrar: user_id = {user_id} AND date = {hoje}\n- Campos: \n  - Somar kcal_refeicao ao campo de calorias totais\n  - Somar proteina_refeicao ao campo de proteína total\n- Aguardar 2s\n```\n\n**Passo 3 - Ler dados atualizados:**\n\n```\nREAD Daily Snapshots ([Daily Snapshots](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/24fcbe7a96fe453981846da983a6c546?db=f2b7fd919c4042f19160965639e13fe7&pvs=21))\n- Filtrar: user_id = {user_id} AND date = {hoje}\n- Retornar: calorias consumidas, proteína consumida\n\nREAD User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Retornar: Daily Kcal Goal, Daily Protein Goal, Current Protocol\n```\n\n**Passo 4 - Se métricas do protocolo (recomposição):**\n\n```\nREAD Daily Snapshots ([Daily Snapshots](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/24fcbe7a96fe453981846da983a6c546?db=f2b7fd919c4042f19160965639e13fe7&pvs=21))\n- Filtrar: user_id = {user_id} AND date >= {hoje - 14 dias}\n- Calcular déficit acumulado dos últimos 14 dias\n```\n\n---\n\n### **5. CRIAÇÃO DE XP EVENT**\n\n**Contexto:** Meta atingida (proteína, dia perfeito, streak)\n\n```\nCREATE XP Events ([XP Events](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/1263d51b431f4c2c80bd53c6f2d8a9a7?db=eb6459dc668045b7b3aa3fdd0bf46ad9&pvs=21))\n- Campos:\n  - User: [{user_url}]\n  - Event Type: \"protein_goal\"/\"perfect_day\"/\"streak_7\"/\"level_up\"\n  - XP Amount: {valor}\n  - Event Date: {hoje}\n  - Description: {descrição}\n\nUPDATE User Progress ([User Progress](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/b028e9f8f6684e15a198825f4c3f4476?db=430000557c85487d827920169c9ea831&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos: Somar XP ao total, recalcular nível\n```\n\n---\n\n### **6. REAVALIAÇÃO QUINZENAL**\n\n**Contexto:** A cada 14 dias (calcular a partir de Created At)\n\n**Após coletar respostas:**\n\n```\nUPDATE User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Filtrar: user_id = {user_id}\n- Campos:\n  - Weight KG = {novo_peso}\n  - Body Fat Percent = {nova_estimativa} (se houver foto)\n  - Training Frequency = {frequência_real}\n  - Deficit Level = {ajuste se necessário}\n- Aguardar 2s\n- READ: BMR, TDEE, Daily Kcal Goal, Target Weight, Fat To Lose KG, Estimated Days\n```\n\n---\n\n### **7. CONSULTA DE REGRAS DO AGENTE**\n\n**Contexto:** Antes de cada resposta para aplicar comportamento correto\n\n```\nREAD Agente MPP - Regras do Agente ([Agente MPP - Prompt Particionado - 27-12-2025 - Folha 1.csv](https://www.notion.so/2d7b69682c48804d9305fcef2e2d39d8?pvs=21))\n- Filtrar: Tipo = \"Coleta de Dados\" OU Tipo = \"Regras Gerais\" OU Tipo = {Current Protocol do usuário}\n- Retornar: Sessão, Conteúdo\n- Aplicar TODAS as regras retornadas\n```\n\n---\n\n### **8. VERIFICAÇÃO DE ASSINATURA**\n\n**Contexto:** Validar acesso do usuário\n\n```\nREAD Subscriptions ([Subscriptions](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/a1047e4350fd4c8bb6efc4cabf76cf4e?db=9dcae0fe60dc4958bf18e9d7293048bd&pvs=21))\n- Filtrar: user_id = {user_id}\n- Retornar: Plan, Status, Current Period End\n- Decidir: acesso permitido se Status = \"active\" ou \"trialing\"\n```\n\n---\n\n### **9. LOG DE EVENTO DE ASSINATURA**\n\n**Contexto:** Webhook Stripe recebido\n\n```\nCREATE Subscription Events ([Subscription Events](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/5a3d1b1cf1a8418aa23d4e91be8f67b6?db=045da790458743b4a6768030e4dcf688&pvs=21))\n- Campos:\n  - User: [{user_url}]\n  - Event Type: \"checkout.completed\"/\"subscription.renewed\"/\"subscription.canceled\"\n  - Event Date: {timestamp}\n  - Stripe Event ID: {event_id}\n  - Metadata: {json}\n```\n\n---\n\n## **REGRAS GLOBAIS DE SEGURANÇA**\n\n**SEMPRE:**\n\n- Filtrar TODAS as operações READ/UPDATE por `user_id` do usuário atual\n- Aguardar 2 segundos após UPDATE antes de READ em campos calculados\n- Respeitar rate limit: máximo 2 requests/segundo (500ms entre chamadas)\n\n**NUNCA:**\n\n- Executar operações DELETE\n- Acessar dados de outros usuários\n- Modificar schema das databases\n- Fazer UPDATE em campos calculados (Age, BMR, TDEE, IMC, LBM, Daily Kcal Goal, Daily Protein Goal, Target Weight, Fat To Lose KG, Estimated Days)\n\n---\n\nDatabases disponíveis: Users, User Profiles, Daily Snapshots, User Progress, XP Events, Subscriptions, Subscription Events, Agente MPP - Regras do Agente."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        -928
+      ],
+      "id": "03ce5e39-25da-49d1-aa86-15b1de19e5ca",
+      "name": "AI Agent Tool",
+      "notesInFlow": true,
+      "notes": "Chama MCP"
+    },
+    {
+      "parameters": {
+        "model": "={{ $('Prompt System Config').item.json.property_model }}",
+        "options": {
+          "maxTokens": "={{ $('Prompt System Config').item.json.property_max_tokens }}",
+          "temperature": "={{ $('Prompt System Config').item.json.property_temperature }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        384,
+        -368
+      ],
+      "id": "0db12661-f6f6-4c74-b430-60f385e58e8e",
+      "name": "LLM low Cost",
+      "credentials": {
+        "openRouterApi": {
+          "id": "DNpSA4lzkAyR26C9",
+          "name": "OpenRouter Grupo Ide"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-haiku-4.5",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        -352
+      ],
+      "id": "6defc77a-326a-491b-8394-133222396de5",
+      "name": "LLM Middle Cost",
+      "credentials": {
+        "openRouterApi": {
+          "id": "LeQpvp4epYTe4ok1",
+          "name": "OpenRouter Agente MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=chat_{{ $('session_context').first().json.project_id }}_{{ $('session_context').first().json.user.id_wpp}}",
+        "contextWindowLength": 40
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        496,
+        -368
+      ],
+      "id": "b6700cb8-1c42-44b4-8204-4e3eff380cc7",
+      "name": "MEM2",
+      "credentials": {
+        "postgres": {
+          "id": "PhyknPKYDfpLSJAe",
+          "name": "Postgres Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "5ad80c30-4eab-4152-a9c5-18f9e1225656",
+          "mode": "list",
+          "cachedResultName": "User Profiles",
+          "cachedResultUrl": "https://www.notion.so/5ad80c304eab4152a9c518f9e1225656"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Search User').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        64,
+        -4448
+      ],
+      "id": "a1c19078-8f8b-43b7-a351-8a4b00d727f9",
+      "name": "Current User Profile Data",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "43000055-7c85-487d-8279-20169c9ea831",
+          "mode": "list",
+          "cachedResultName": "User Progress",
+          "cachedResultUrl": "https://www.notion.so/430000557c85487d827920169c9ea831"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Search User').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        -4448
+      ],
+      "id": "1673cfc6-8e86-4381-9240-65b8379159f1",
+      "name": "Current User Progress Data",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "content",
+        "include": "specifiedFields",
+        "fieldsToInclude": "name, property_content",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        -4368
+      ],
+      "id": "a0db6497-d722-47f4-b59b-67e1ee4e48d5",
+      "name": "Aggregate",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "={{ $('checkFormat2').item.json.sender_type == \"Contact\" ? \"system\":\"user\" }}",
+              "message": "={{ $json.text }}"
+            }
+          ]
+        }
+      },
+      "id": "df40bb1f-a785-4fff-86c9-e50133baaa1b",
+      "name": "Chat Memory Manager",
+      "type": "@n8n/n8n-nodes-langchain.memoryManager",
+      "typeVersion": 1.1,
+      "position": [
+        -192,
+        -2432
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "3e0e2209-6f02-40a2-bd10-f7979955e409",
+                    "leftValue": "={{  $('session_context').item.json.message.attachments[0].file_type == \"audio\" ? \"audio\" : \"\"  }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "3e0e2209-6f02-40a2-bd10-f7979955e409",
+                    "leftValue": "={{ $('session_context').item.json.message.type.type  == \"text\" ? \"text\" : \"\"   }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e3556080-0a92-4ddc-aae4-f556b7748001",
+      "name": "checkFormat2",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.1,
+      "position": [
+        -880,
+        -2432
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=chat_{{ $('session_context').first().json.project_id }}_{{ $('session_context').first().json.user.id_wpp}}",
+        "contextWindowLength": 20
+      },
+      "id": "af669960-4fdc-49b8-b4a9-877c4b40c67c",
+      "name": "MEM1",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.1,
+      "position": [
+        -192,
+        -2336
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PhyknPKYDfpLSJAe",
+          "name": "Postgres Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "78b5c18c-808a-4b5c-bbbc-6e68d6c2e1c4",
+              "name": "text",
+              "value": "={{ $json.message.type.txt.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0f6a0003-6f59-4bfd-8786-6cff13b22c43",
+      "name": "Text Content",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -384,
+        -2432
+      ]
+    },
+    {
+      "parameters": {
+        "model": "xiaomi/mimo-v2-flash:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        -2512
+      ],
+      "id": "d564b866-645b-4609-b97d-20b1ac768d7d",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "LeQpvp4epYTe4ok1",
+          "name": "OpenRouter Agente MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Remova do texto os break times, mantendo o texto 100% fiel ao conteúdo original:\n{{ $json.message.type.txt.content }}\n",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Remova do texto os break times, mantendo o texto 100% fiel ao conteúdo original.\n\nExemplo para ser removido do texto:\n\n<break time=\"0.3s\" />"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -672,
+        -2608
+      ],
+      "id": "93595477-a9b5-4847-9b65-29c77bdf644b",
+      "name": "Converte Transcrição"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "78b5c18c-808a-4b5c-bbbc-6e68d6c2e1c4",
+              "name": "text",
+              "value": "={{ $json.text}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6676ed08-6613-4a88-9464-5fd4697a4316",
+      "name": "Text Content from Audio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -384,
+        -2608
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2ce6eedd-cc88-4d50-b8a9-46f988ca1926",
+              "name": "content",
+              "value": "={{ $('Get Redis').item.json.cacheMessage.map(item => item.parseJson().message).reverse().join('\\n') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dbd70671-048c-430e-9fc5-086a2d1b8b0e",
+      "name": "Set Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3488,
+        -2160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bd0f6971-8fea-4159-b6ff-aca489ff63e5",
+              "name": "remoteJid",
+              "value": "={{ $node['session_context'].json.channel }}::{{ $node['session_context'].json.sender.id }}",
+              "type": "string"
+            },
+            {
+              "id": "81e6df8a-3877-426b-8f28-9fc7504a27ae",
+              "name": "message_id",
+              "value": "=message-id::{{ $node['session_context'].json.message.id }}",
+              "type": "string"
+            },
+            {
+              "id": "bea1676f-6b8b-48c6-a3ef-f9a66d4ef3cd",
+              "name": "timestamp",
+              "value": "={{ $node['session_context'].json.message.timestamp }}",
+              "type": "string"
+            },
+            {
+              "id": "700c4dd8-0820-43f6-a1ba-1c99595ee686",
+              "name": "conversation_id",
+              "value": "=conversation-id::{{ $node['session_context'].json.chatwoot_keys.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "d893ddd3-584b-4ade-8cac-acbe315e0b98",
+              "name": "message",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "1eb89858-7424-46d0-a997-0e4d115b0ea0",
+              "name": "wait",
+              "value": "=",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bd4ab58e-cf86-4d82-af87-3b79b58e7014",
+      "name": "Buffer Normalizer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1888,
+        -2544
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c577110e-b16a-42e6-b3e1-201aacbf5f23",
+      "name": "No Operation, do nothing",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        -2336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "={{ $('Buffer Normalizer').item.json.remoteJid }}",
+        "messageData": "={{ $json.toJsonString() }}"
+      },
+      "id": "d4f5d2a8-21af-4551-914d-67b6837914e9",
+      "name": "Set Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2576,
+        -2128
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "cacheMessage",
+        "key": "={{ $('Buffer Normalizer').item.json.remoteJid }}",
+        "keyType": "list",
+        "options": {}
+      },
+      "id": "55751373-523a-4872-83ba-a680ff5f3a17",
+      "name": "Get Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        -2128
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "={{ $('Buffer Normalizer').item.json.remoteJid }}"
+      },
+      "id": "5aed4135-eff4-4eee-aeac-dd508a40c46f",
+      "name": "Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        -2144
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Get Redis').item.json.cacheMessage.first().parseJson().message_id }}",
+                    "rightValue": "={{ $('Buffer Normalizer').item.json.message_id }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "id": "a3d517df-d46b-4021-8ea3-7dca36de1b7e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ignore"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "bceb1783-09f3-4ad6-b304-ecf584dcead7",
+                    "leftValue": "={{ $('Get Redis').item.json.cacheMessage.first().parseJson().timestamp.toDateTime('s') }}",
+                    "rightValue": "={{ $now.minus($('Buffer Normalizer').item.json.wait, 'seconds') }}",
+                    "operator": {
+                      "type": "dateTime",
+                      "operation": "before"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "prosseguir"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "aguardar"
+        }
+      },
+      "id": "ed02eed1-6862-4335-a232-95404909347a",
+      "name": "Switch1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.1,
+      "position": [
+        3024,
+        -2240
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "db759e68-ce00-4b55-a00e-b491e45b195d",
+      "name": "Wait1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3248,
+        -1888
+      ],
+      "webhookId": "e36a75df-c8c5-4e88-b943-6f7c777c9637"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "de352a2c-df7b-4510-a5a5-c8a0538f3a02",
+              "name": "text",
+              "value": "={{ $('session_context').item.json.message.type.txt.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3904,
+        -3536
+      ],
+      "id": "2f4f43b2-770f-4df4-90c4-5e650680c6c3",
+      "name": "Content Type Text"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "de352a2c-df7b-4510-a5a5-c8a0538f3a02",
+              "name": "text",
+              "value": "={{ $('OpenAI2').item.json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3904,
+        -3776
+      ],
+      "id": "a59f8a94-6672-40a9-a801-d6a5e1f37f91",
+      "name": "Content Type Image"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "de352a2c-df7b-4510-a5a5-c8a0538f3a02",
+              "name": "text",
+              "value": "={{ $json.message.type.txt.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3904,
+        -4000
+      ],
+      "id": "3f5c5216-ae7e-430e-b257-3e9629833ae0",
+      "name": "Content Type Audio"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v22.0/507358832449709/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"status\": \"read\",\n  \"message_id\": \"{{ $('session_context').item.json.message.id }}\",\n  \"typing_indicator\": {\n    \"type\": \"text\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        -416
+      ],
+      "id": "9234aeba-af04-41c7-840b-6840f3acafeb",
+      "name": "WhatsApp API - Typing indicator Loop",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "v1RG06jaITurRR7L",
+          "name": "WhatsApp - Grupo Ide SJDR - Paretto"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v22.0/507358832449709/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"status\": \"read\",\n  \"message_id\": \"{{ $('session_context').item.json.message.id }}\",\n  \"typing_indicator\": {\n    \"type\": \"text\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3264,
+        -2544
+      ],
+      "id": "df466a76-54b9-4ea5-b804-e7fd91bbaac6",
+      "name": "WhatsApp API - Typing indicator",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "v1RG06jaITurRR7L",
+          "name": "WhatsApp - Grupo Ide SJDR - Paretto"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v22.0/507358832449709/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"status\": \"read\",\n  \"message_id\": \"{{ $('session_context').item.json.message.id }}\",\n  \"typing_indicator\": {\n    \"type\": \"text\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3536,
+        -2480
+      ],
+      "id": "bfed499e-ab4d-4c78-a96b-3174fdc45e06",
+      "name": "WhatsApp API - Recording indicator",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "v1RG06jaITurRR7L",
+          "name": "WhatsApp - Grupo Ide SJDR - Paretto"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Tratamento das Respostas\n- Envio de áudio\n- Envio de texto em loop (humanização)",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1744,
+        -1440
+      ],
+      "typeVersion": 1,
+      "id": "0a3c9049-2d12-4def-bbe5-1ba65bcdeee0",
+      "name": "Sticky Note",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Agente de IA\n- Ferramentas\n- Modelo\n- Memória",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -656,
+        -1424
+      ],
+      "typeVersion": 1,
+      "id": "9737bcfb-94e1-4179-9e38-72a756c50d6b",
+      "name": "Sticky Note1",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Zona de Testes",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -592,
+        -144
+      ],
+      "typeVersion": 1,
+      "id": "4cf65c29-44b6-449e-ab05-65b1da6add66",
+      "name": "Sticky Note2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Buffer de Memória\n- Aguarda para responder",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1744,
+        -3104
+      ],
+      "typeVersion": 1,
+      "id": "7a80e47e-e2ae-43ac-8b9d-dd2b63ae8e3a",
+      "name": "Sticky Note3",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Tipos de Entrada\n- Texto\n- Áudio\n- Imagem",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1664,
+        -4704
+      ],
+      "typeVersion": 1,
+      "id": "5ba1d8cb-2260-4bce-81c4-59743aeb8ea9",
+      "name": "Sticky Note4",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Banco de Dados do Sistema\n- Reconhece o usuário\n- Verifica informações",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -688,
+        -4704
+      ],
+      "typeVersion": 1,
+      "id": "3e8e0c00-20b9-4694-b17c-33612dc84a1a",
+      "name": "Sticky Note5",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Salva Mensagem da IA na Memória",
+        "width": 2100,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -672,
+        -3072
+      ],
+      "typeVersion": 1,
+      "id": "251b7217-5258-407a-a697-cc853e9c0c84",
+      "name": "Sticky Note6",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Ações Recursivas do Sistema\nLoops de fechamento:\n- Daily Snapshot\n- User Progress\n- XP Events\n- Pagamentos",
+        "height": 176,
+        "width": 2100,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        -6416
+      ],
+      "typeVersion": 1,
+      "id": "e3b403c4-7877-4190-81ad-0a64ef202c34",
+      "name": "Sticky Note7",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "9dcae0fe-60dc-4958-bf18-e9d7293048bd",
+          "mode": "list",
+          "cachedResultName": "Subscriptions",
+          "cachedResultUrl": "https://www.notion.so/9dcae0fe60dc4958bf18e9d7293048bd"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Search User').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        -4448
+      ],
+      "id": "6b2094d8-edc9-4f3b-9a13-f7593ae9e016",
+      "name": "Current User Subscription",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        288,
+        -5232
+      ],
+      "id": "0d5f3509-4af4-4491-b736-fd9c8b40e532",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -32,
+        -5888
+      ],
+      "id": "0bb8c0ef-9db4-436a-b107-37874fb8397b",
+      "name": "Loop Over Subscriptions"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        176,
+        -6032
+      ],
+      "id": "de878021-9f2a-46ce-a51e-c986ffafc6d3",
+      "name": "End Loop"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "11c62504-37a5-4652-90df-300a83a61d3a",
+          "mode": "list",
+          "cachedResultName": "Users",
+          "cachedResultUrl": "https://www.notion.so/11c6250437a5465290df300a83a61d3a"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Loop Over Subscriptions').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        256,
+        -5744
+      ],
+      "id": "424b6bf8-a761-4620-bfee-3018880011fa",
+      "name": "Search Current User Loop",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "5ad80c30-4eab-4152-a9c5-18f9e1225656",
+          "mode": "list",
+          "cachedResultName": "User Profiles",
+          "cachedResultUrl": "https://www.notion.so/5ad80c304eab4152a9c518f9e1225656"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Loop Over Subscriptions').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        -5744
+      ],
+      "id": "384bb1fc-66a6-4074-8383-33aaab529309",
+      "name": "Current User Profile Data Loop",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "43000055-7c85-487d-8279-20169c9ea831",
+          "mode": "list",
+          "cachedResultName": "User Progress",
+          "cachedResultUrl": "https://www.notion.so/430000557c85487d827920169c9ea831"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "USER-ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Loop Over Subscriptions').item.json.property_user_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        -5744
+      ],
+      "id": "2f6fd1c0-5b57-4b45-b5ec-80fc4aa63df2",
+      "name": "Current User Progress Data Loop",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "9dcae0fe-60dc-4958-bf18-e9d7293048bd",
+          "mode": "list",
+          "cachedResultName": "Subscriptions",
+          "cachedResultUrl": "https://www.notion.so/9dcae0fe60dc4958bf18e9d7293048bd"
+        },
+        "limit": 5,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Active"
+            },
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Trial"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        -5984
+      ],
+      "id": "41d26de6-dff1-4cd2-b41e-23ab3f90aa5f",
+      "name": "Search Subscriptions - Close Day Loop",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "={{ $('checkFormat2').item.json.sender_type == \"Contact\" ? \"system\":\"user\" }}",
+              "message": "={{ $json.text }}"
+            }
+          ]
+        }
+      },
+      "id": "37c41578-947f-4420-b8fe-4580b326ac5c",
+      "name": "Chat Memory Manager1",
+      "type": "@n8n/n8n-nodes-langchain.memoryManager",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        -6000
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=chat_{{ $('session_context').first().json.project_id }}_{{ $('session_context').first().json.user.id_wpp}}",
+        "contextWindowLength": 20
+      },
+      "id": "27f53664-dfb4-4af5-afc8-75d00d4e0cc0",
+      "name": "MEM",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        -5904
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PhyknPKYDfpLSJAe",
+          "name": "Postgres Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  STRING_AGG(\n    (\n      CASE\n        WHEN t.message->>'type' = 'human'\n          THEN 'Usuário: ' || COALESCE(t.message->>'content', '')\n        ELSE\n          'IA: ' || COALESCE(t.message->>'content', '')\n      END\n    ),\n    E'\\n\\n'\n    ORDER BY t.created_at ASC\n  ) AS conversation_text\nFROM (\n  SELECT\n    message,\n    created_at\n  FROM public.n8n_chat_histories\n  WHERE session_id = '{{ $json.session_id }}'\n    AND created_at >= CURRENT_DATE\n    AND created_at < CURRENT_DATE + INTERVAL '1 day'\n  ORDER BY created_at DESC\n  LIMIT 50\n) t;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        496,
+        -5520
+      ],
+      "id": "ad760a5c-e4c8-4297-8453-dd47099654ed",
+      "name": "User History Daily Data",
+      "credentials": {
+        "postgres": {
+          "id": "PhyknPKYDfpLSJAe",
+          "name": "Postgres Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "={{ $json.property_model }}",
+        "options": {
+          "maxTokens": "={{ $json.property_max_tokens }}",
+          "temperature": "={{ $json.property_temperature }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        -5424
+      ],
+      "id": "5552ae90-d1f0-49f7-9f69-de461aec4965",
+      "name": "LLM Low Cost 2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "LeQpvp4epYTe4ok1",
+          "name": "OpenRouter Agente MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "54ebdcde-0190-45ae-a1ad-b23fae1266c6",
+              "name": "session_id",
+              "value": "=chat_mcp_prd_v3_{{ $('Search Current User Loop').item.json.property_whats_app_phone.replace('+', '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        -5520
+      ],
+      "id": "505bc1d7-f375-48e8-8fb3-62371372cfe8",
+      "name": "Conversation Data"
+    },
+    {
+      "parameters": {
+        "description": "Use a ferramenta para pensar sobre algo. Ela não obterá novas informações nem alterará o banco de dados, apenas adicionará o pensamento ao registro. Use-a quando for necessário raciocínio complexo ou alguma memória cache."
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        1456,
+        -5280
+      ],
+      "id": "69662e6f-7a57-4fed-9384-f8c7fbdc846b",
+      "name": "Thinking1"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://backend.composio.dev/v3/mcp/bc800bda-5213-4e78-bc39-5b3b2d6e4c65/mcp?user_id=pg-test-86d16cbf-d935-44e9-81d5-8f3b0d793472",
+        "authentication": "headerAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        1792,
+        -5280
+      ],
+      "id": "ef302f84-2fbb-4079-af74-c2c17cf87b78",
+      "name": "MCP Client Composio Notion MPP1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "f7QEhrfUfvD6e20f",
+          "name": "Header Auth Composio Notion MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "={\n  \"name\": \"mcp_notion_executor\",\n  \"description\": \"Executa operações no Notion via MCP (Model Context Protocol) para gerenciar dados dos usuários do Agente MPP. USE ESTA TOOL QUANDO: - Identificar usuário: READ Users por whatsapp_phone - Onboarding: CREATE Users + User Profiles, UPDATE campos de onboarding (Sex, Birth Date, Weight KG, Height CM, Activity Level, Training Frequency, Water Intake, Wake Time, Bedtime, Body Fat Percent) - Registrar refeição: READ/UPDATE/CREATE Daily Snapshots (calorias, proteína, exercícios) - Reavaliação: UPDATE User Profiles (peso, BF%, frequência treino, Deficit Level) e READ campos calculados - Consultar regras: READ Agente MPP - Regras do Agente filtrado por Tipo - Validar assinatura: READ Subscriptions (Plan, Status) - Log de pagamento: CREATE Subscription Events REGRAS OBRIGATÓRIAS: 1. Sempre filtrar por user_id do usuário atual 2. Sempre filtrar por user_id do usuário atual 3. Após UPDATE de campos base necessários para cálculo de fórmulas, aguardar 2 segundos e fazer READ para obter valores atualizados 4. Respeitar rate limit de 2 req/s (500ms entre chamadas) 5. Nunca executar DELETE 6. Id do registro na database do usuário no Notion (user_id): [No path back to node]\",\n  \"inputSchema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"operation\": {\n        \"type\": \"string\",\n        \"enum\": [\"READ\", \"CREATE\", \"UPDATE\", \"QUERY\"],\n        \"description\": \"Tipo de operação MCP\"\n      },\n      \"database\": {\n        \"type\": \"string\",\n        \"enum\": [\n          \"Users\",\n          \"User Profiles\", \n          \"Daily Snapshots\",\n          \"User Progress\",\n          \"XP Events\",\n          \"Subscriptions\",\n          \"Subscription Events\",\n          \"Agente MPP - Regras\"\n        ],\n        \"description\": \"Database alvo no Notion\"\n      },\n      \"filters\": {\n        \"type\": \"object\",\n        \"description\": \"Filtros para operação (ex: {\\\"USER-ID\\\": \\\"USER-45\\\", \\\"date\\\": \\\"2025-12-31\\\"})\"\n      },\n      \"data\": {\n        \"type\": \"object\",\n        \"description\": \"Dados para CREATE/UPDATE (seguir schema da database)\"\n      },\n      \"user_id\": {\n        \"type\": \"string\",\n        \"description\": \"ID do usuário atual (obrigatório para escopo de segurança)\"\n      },\n      \"wait_for_calculation\": {\n        \"type\": \"boolean\",\n        \"description\": \"Se true, aguarda 2s após UPDATE antes de fazer READ automático\"\n      }\n    },\n    \"required\": [\"operation\", \"database\", \"user_id\"]\n  }\n}",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=\n## I. IDENTIDADE E MISSÃO\n\nVocê é o **MCP Notion Executor**, um agente auxiliar especializado em executar operações no Notion via Model Context Protocol (MCP).\n\nSua missão: Receber comandos estruturados de outros agentes (principalmente o Daily Closer) e executar operações READ, CREATE, UPDATE e QUERY nas databases do Agente MPP, garantindo:\n- Segurança (escopo por user_id)\n- Performance (rate limiting)\n- Confiabilidade (retry logic)\n- Auditoria (logs detalhados)\n\nVocê NÃO toma decisões de negócio. Você é um executor técnico puro.\n\n---\n\n## II. DATABASES DISPONÍVEIS\n\n### Escopo de Acesso\n\n**LEITURA (READ/QUERY):**\n- Users ([Users](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/f343770dc2b24e61a7cc5609e5f58d1d?db=11c6250437a5465290df300a83a61d3a&pvs=21))\n- User Profiles ([User Profiles](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/de8799c6c7664dcda0be4076a46204cf?db=5ad80c304eab4152a9c518f9e1225656&pvs=21))\n- Daily Snapshots ([Daily Snapshots](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/24fcbe7a96fe453981846da983a6c546?db=f2b7fd919c4042f19160965639e13fe7&pvs=21))\n- User Progress ([User Progress](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/b028e9f8f6684e15a198825f4c3f4476?db=430000557c85487d827920169c9ea831&pvs=21))\n- XP Events ([XP Events](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/1263d51b431f4c2c80bd53c6f2d8a9a7?db=eb6459dc668045b7b3aa3fdd0bf46ad9&pvs=21))\n- Subscriptions ([Subscriptions](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/a1047e4350fd4c8bb6efc4cabf76cf4e?db=9dcae0fe60dc4958bf18e9d7293048bd&pvs=21))\n- Subscription Events ([Subscription Events](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/5a3d1b1cf1a8418aa23d4e91be8f67b6?db=045da790458743b4a6768030e4dcf688&pvs=21))\n- Agente MPP - Regras ([Configurações do Agente MPP](https://www.notion.so/160b3135bfb848cab9ba97f910359041/ds/59012e6f41684b18a942581feee14c24?db=bab3f098007c4375a7182626c72099c5&pvs=21))\n\n**ESCRITA (CREATE/UPDATE):**\n- Users\n- User Profiles\n- Daily Snapshots\n- XP Events\n- User Progress\n- Subscriptions\n- Subscription Events\n\n**NUNCA:**\n- DELETE em qualquer database\n- Modificar schema (properties, data sources)\n- Acessar dados de outros usuários\n\n---\n\n## III. PROTOCOLO DE EXECUÇÃO\n\n### 3.1 Validação de Input\n\nAo receber um comando, validar:\n\n1. **user_id presente?** → Obrigatório para todas operações\n2. **operation válida?** → READ, CREATE, UPDATE, QUERY\n3. **database existe?** → Verificar lista de databases\n4. **Permissões corretas?** → READ em tudo, WRITE apenas nas permitidas\n5. **Filtros obrigatórios?** → Sempre filtrar por user_id nas operações WRITE\n\n**Se validação falhar → retornar erro detalhado**\n\n### 3.2 Execução de READ\n\n```\n\n1. Montar query Notion API\n2. Adicionar filtros (sempre incluir user_id se aplicável)\n3. Executar request\n4. Aguardar resposta\n5. Parsear resultado\n6. Retornar JSON estruturado\n\n```\n\n**Formato de retorno:**\n```\n\n{\n\n\"success\": true,\n\n\"operation\": \"READ\",\n\n\"database\": \"User Profiles\",\n\n\"results\": [{...dados...}],\n\n\"count\": 1,\n\n\"execution_time_ms\": 234\n\n}\n\n```\n\n### 3.3 Execução de CREATE\n\n```\n\n1. Validar que database permite WRITE\n2. Validar schema dos dados\n3. Adicionar user_id aos dados (se não presente)\n4. Executar request\n5. Aguardar confirmação\n6. Retornar URL do registro criado\n\n```\n\n**Formato de retorno:**\n```\n\n{\n\n\"success\": true,\n\n\"operation\": \"CREATE\",\n\n\"database\": \"Daily Snapshots\",\n\n\"created_url\": \"{{999}}\",\n\n\"created_id\": \"page-id-123\",\n\n\"execution_time_ms\": 456\n\n}\n\n```\n\n### 3.4 Execução de UPDATE\n\n```\n\n1. Validar que database permite WRITE\n2. Validar que registro pertence ao user_id atual\n3. Montar patch com apenas campos modificados\n4. Executar request\n5. Se wait_for_calculation = true:\n    - Aguardar 2 segundos\n    - Executar READ automático\n    - Retornar dados atualizados\n6. Retornar confirmação\n\n```\n\n**Formato de retorno (com wait):**\n```\n\n{\n\n\"success\": true,\n\n\"operation\": \"UPDATE\",\n\n\"database\": \"User Profiles\",\n\n\"updated_url\": \"{{999}}\",\n\n\"waited_for_calculation\": true,\n\n\"updated_data\": {...campos calculados...},\n\n\"execution_time_ms\": 2567\n\n}\n\n```\n\n### 3.5 Execução de QUERY\n\nPara queries SQL complexas (via query-data-sources):\n\n```\n\n1. Validar data_source_url\n2. Montar query SQL\n3. SEMPRE adicionar filtro: WHERE \"USER-ID\" = '{user_id}'\n4. Executar query\n5. Retornar resultados\n\n```\n\n---\n\n## IV. RATE LIMITING E PERFORMANCE\n\n### 4.1 Limites do Notion API\n\n- **3 requests/segundo** (média)\n- **HTTP 429** quando excedido\n- **Retry-After header** indica tempo de espera\n\n### 4.2 Estratégia de Controle\n\n**Implementar rate limiter interno:**\n```\n\n- Máximo: 2 req/s (500ms entre chamadas)\n- Fila de operações pendentes\n- Processamento sequencial respeitando intervalo\n\n```\n\n### 4.3 Retry Logic\n\nSe receber **HTTP 429**:\n```\n\n1. Ler header \"Retry-After\" (segundos)\n2. Aguardar tempo + 1 segundo adicional\n3. Tentar novamente (máx 3 tentativas)\n4. Se falhar após 3 → retornar erro ao agente chamador\n\n```\n\nSe receber **HTTP 5xx** (erro do servidor):\n```\n\n1. Aguardar 2 segundos\n2. Tentar novamente (máx 2 tentativas)\n3. Se falhar → retornar erro ao agente chamador\n\n```\n\n---\n\n## V. SEGURANÇA E ESCOPO\n\n### 5.1 Regras de Isolamento\n\n**SEMPRE:**\n- Filtrar operações READ/UPDATE por user_id\n- Validar que CREATE inclui user_id correto\n- Rejeitar tentativas de acessar dados de outros usuários\n\n**Exceções (READ sem filtro de user_id):**\n- Agente MPP - Regras (database de configuração global)\n- Subscriptions (apenas quando validando plano)\n\n### 5.2 Auditoria\n\nLogar todas operações:\n```\n\n[timestamp] user_id | operation | database | filters | duration | status\n\n[15:47:23] USER-45 | UPDATE | Daily Snapshots | {date: 2025-12-31} | 234ms | SUCCESS\n\n[15:47:24] USER-45 | CREATE | XP Events | {reason: protein_goal} | 189ms | SUCCESS\n\n```\n\n---\n\n## VI. TRATAMENTO DE ERROS\n\n### 6.1 Erros de Validação\n\n```\n\n{\n\n\"success\": false,\n\n\"error_type\": \"VALIDATION_ERROR\",\n\n\"message\": \"Campo obrigatório ausente: user_id\",\n\n\"details\": {...}\n\n}\n\n```\n\n### 6.2 Erros de Permissão\n\n```\n\n{\n\n\"success\": false,\n\n\"error_type\": \"PERMISSION_ERROR\",\n\n\"message\": \"Database 'Users' não permite operação CREATE\",\n\n\"details\": {...}\n\n}\n\n```\n\n### 6.3 Erros de Rate Limit\n\n```\n\n{\n\n\"success\": false,\n\n\"error_type\": \"RATE_LIMIT_ERROR\",\n\n\"message\": \"Rate limit excedido. Aguardar 3 segundos.\",\n\n\"retry_after_seconds\": 3\n\n}\n\n```\n\n### 6.4 Erros do Notion API\n\n```\n\n{\n\n\"success\": false,\n\n\"error_type\": \"NOTION_API_ERROR\",\n\n\"message\": \"Página não encontrada\",\n\n\"notion_error_code\": \"object_not_found\",\n\n\"details\": {...}\n\n}\n\n```\n\n---\n\n## VII. OTIMIZAÇÕES\n\n### 7.1 Batch Operations\n\nSe receber múltiplas operações em sequência:\n```\n\n1. Agrupar operações READ quando possível\n2. Espaçar operações WRITE com delay de 500ms\n3. Processar em ordem recebida\n4. Retornar array de resultados\n\n```\n\n### 7.2 Cache (Opcional)\n\nPara reduzir chamadas repetidas:\n```\n\n- Cache READ de User Profiles por 30 segundos\n- Cache READ de regras por 5 minutos\n- Invalidar cache após UPDATE\n\n```\n\n---\n\n## VIII. FORMATO DE RESPOSTA PADRÃO\n\nToda operação retorna:\n\n```\n\n{\n\n\"success\": boolean,\n\n\"operation\": \"READ|CREATE|UPDATE|QUERY\",\n\n\"database\": \"nome da database\",\n\n\"user_id\": \"USER-XX\",\n\n\"timestamp\": \"ISO-8601\",\n\n\"execution_time_ms\": number,\n\n// Se success = true:\n\n\"results\": [...] ou \"created_url\": \"...\" ou \"updated_url\": \"...\",\n\n\"count\": number,\n\n// Se success = false:\n\n\"error_type\": \"...\",\n\n\"message\": \"...\",\n\n\"details\": {...}\n\n}\n\n```\n\n---\n\n## IX. EXEMPLOS DE USO\n\n### Exemplo 1: READ User Profile\n```\n\n{\n\n\"operation\": \"READ\",\n\n\"database\": \"User Profiles\",\n\n\"filters\": {\"USER-ID\": \"USER-45\"},\n\n\"user_id\": \"USER-45\"\n\n}\n\n```\n\n### Exemplo 2: UPDATE com wait\n```\n\n{\n\n\"operation\": \"UPDATE\",\n\n\"database\": \"User Profiles\",\n\n\"filters\": {\"USER-ID\": \"USER-45\"},\n\n\"data\": {\n\n\"Weight KG\": 105.2,\n\n\"Body Fat Percent\": 27\n\n},\n\n\"user_id\": \"USER-45\",\n\n\"wait_for_calculation\": true\n\n}\n\n```\n\n### Exemplo 3: CREATE XP Event\n```\n\n{\n\n\"operation\": \"CREATE\",\n\n\"database\": \"XP Events\",\n\n\"data\": {\n\n\"Name\": \"Proteína atingida!\",\n\n\"User\": [\"[Luan Lucas Bonadie](https://www.notion.so/Luan-Lucas-Bonadie-2dab69682c4881b79441d45a4c49c330?pvs=21)\"],\n\n\"USER-ID\": \"USER-45\",\n\n\"date:Date:start\": \"2025-12-31T23:59:00.000Z\",\n\n\"date:Date:is_datetime\": 1,\n\n\"Reason\": \"protein_goal\",\n\n\"Points\": 50,\n\n\"Metadata\": \"Meta: 169.6g / Atingido: 172g\"\n\n},\n\n\"user_id\": \"USER-45\"\n\n}\n\n```\n\n---\n\n## X. INÍCIO DA OPERAÇÃO\n\nAo receber comando:\n1. Validar input\n2. Verificar rate limit\n3. Executar operação\n4. Aplicar retry se necessário\n5. Retornar resultado estruturado\n\n**PRIORIDADE MÁXIMA:**\nSegurança > Confiabilidade > Performance\n\n**NEVER:**\n- Executar DELETE\n- Acessar dados fora do escopo do user_id\n- Ultrapassar rate limits\n- Modificar schema\n```\n\n---"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        1648,
+        -5360
+      ],
+      "id": "53e33f9a-de64-4ba7-a2a0-22f2ade3920e",
+      "name": "AI Agent Tool1",
+      "notesInFlow": true,
+      "notes": "Chama MCP"
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-haiku-4.5",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        -5280
+      ],
+      "id": "ee646e4c-b6dd-4b51-bac6-03df892be8fc",
+      "name": "LLM Middle Cost1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "LeQpvp4epYTe4ok1",
+          "name": "OpenRouter Agente MPP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "bab3f098-007c-4375-a718-2626c72099c5",
+          "mode": "list",
+          "cachedResultName": "Configurações do Agente MPP",
+          "cachedResultUrl": "https://www.notion.so/bab3f098007c4375a7182626c72099c5"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Active"
+            },
+            {
+              "key": "Features Enabled|multi_select",
+              "condition": "contains",
+              "multiSelectValue": "Progress Analisys"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        688,
+        -5520
+      ],
+      "id": "d67cf336-b1a4-4bc4-9e68-71eefd76fb13",
+      "name": "Prompt System Agente Analisys",
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        -5184
+      ],
+      "id": "c15ff3b0-f3c7-4d4b-b343-ec75bf3d853f",
+      "name": "Calculator"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Current User Subscription').item.json.property_status }}",
+                    "rightValue": "Trial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7fd6ad5d-54d3-443c-849b-e2871d19d0cf"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Trial"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d3df09a9-d543-47e9-ac7d-6268c2afc7af",
+                    "leftValue": "={{ $('Current User Subscription').item.json.property_status }}",
+                    "rightValue": "Active",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Active"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "020f6834-b356-4083-b537-7e0bee476be8",
+                    "leftValue": "={{ $('Current User Subscription').item.json.property_status }}",
+                    "rightValue": "Trial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "No Trial"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "97d5ee07-2b4d-41db-b0b8-eec239582a89",
+                    "leftValue": "={{ $('Current User Subscription').item.json.property_status }}",
+                    "rightValue": "Active",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "No Active"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1200,
+        -4256
+      ],
+      "id": "05ec7936-84b0-4c7e-a5df-23f3a5e1e803",
+      "name": "Verify Subscription"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('session_context').first().json.chatwoot_keys.base_url }}/api/v1/accounts/{{ $('session_context').first().json.chatwoot_keys.account_id }}/conversations/{{ $('session_context').first().json.chatwoot_keys.conversation_id }}/messages\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('session_context').first().json.dev_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json;charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ (() => {\n  let msg = \"Infelizmente seu plano está expirado. 🙁\";\n\n  // Remove links com markdown: [text](url)\n  msg = msg.replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g, '$1');\n\n  // Remove negrito e itálico (**, __, *, _)\n  msg = msg.replace(/(\\*\\*|__)(.*?)\\1/g, '$2');\n  msg = msg.replace(/(\\*|_)(.*?)\\1/g, '$2');\n\n  // Remove títulos: #, ##, ###\n  msg = msg.replace(/^#{1,6}\\s*/gm, '');\n\n  // Remove listas: -, *, 1.\n  msg = msg.replace(/^\\s*([-*+]|\\d+\\.)\\s+/gm, '');\n\n  // Remove código inline com crase: `code`\n  msg = msg.replace(/`([^`]+)`/g, '$1');\n\n  // Remove qualquer espaço em excesso\n  msg = msg.trim();\n\n  return msg;\n})() }}\n"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "58c1204b-5ec0-4f76-b4bd-25805af41af0",
+      "name": "Chatwoot - SendMessage1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        -4400
+      ],
+      "executeOnce": false,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "## Meio de Pagamento",
+        "height": 176,
+        "width": 2100,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1648,
+        -6416
+      ],
+      "typeVersion": 1,
+      "id": "4c62cb9a-d0ef-4865-8205-06fae5f28492",
+      "name": "Sticky Note8",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "9259f996-508d-4de1-bada-8746bc42a7d0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        -5984
+      ],
+      "id": "f2639176-97b3-4908-a28a-74d06f486848",
+      "name": "Webhook Stripe",
+      "webhookId": "9259f996-508d-4de1-bada-8746bc42a7d0"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "045da790-4587-43b4-a676-8030e4dcf688",
+          "mode": "list",
+          "cachedResultName": "Subscription Events",
+          "cachedResultUrl": "https://www.notion.so/045da790458743b4a6768030e4dcf688"
+        },
+        "title": "=Plan {{ $json.body.data.object.metadata.plan_type }} - {{ $json.body.data.object.customer_details.name }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Event Type|select",
+              "selectValue": "={{ $json.body.data.object.payment_status }}"
+            },
+            {
+              "key": "Amount|number",
+              "numberValue": "={{ $json.body.data.object.amount_total }}"
+            },
+            {
+              "key": "Payload|rich_text",
+              "textContent": "={{ $json.body.data.object.metadata.user_id }}"
+            },
+            {
+              "key": "Provider Event ID|rich_text",
+              "textContent": "={{ $json.body.data.object.subscription }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1984,
+        -5984
+      ],
+      "id": "f886820f-3180-4d9c-94b1-8db6f531a814",
+      "name": "Upadate User Plan",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -576,
+        -5792
+      ],
+      "id": "23b0c45a-71ea-41b3-a7f6-92b9769c98e4",
+      "name": "Loop End Day"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Conversa a ser analisada:\n{{ $('User History Daily Data').item.json.conversation_text }}",
+        "options": {
+          "systemMessage": "={{ $json.property_prompt_system }}\n\n### Dados da conversa atual\n\nDia da semana, data e hora atual: {{ $now.toLocal().format('ffff') }} \nNome usuário: {{ $('Search Current User Loop').item.json.name }}\nWhatsApp do usuário: {{ $('Search Current User Loop').item.json.property_whats_app_phone }}\n\nId do registro na database do usuário no Notion (para criar relacionamento 'relation' de tabelas do memso usuário): {{ $('Search Current User Loop').item.json.id }}\n\nUSER-ID do usuário {{ $('Search Current User Loop').item.json.name }} (para preencher nas colunas 'USER-ID' nas demais databases): {{ $('Search Current User Loop').item.json.property_user_id }}\n",
+          "maxIterations": 10,
+          "returnIntermediateSteps": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -5520
+      ],
+      "id": "e7965d9a-73d6-4d76-b217-a2f0fbc33986",
+      "name": "MPP Daily Closer"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c26529c5-dacf-42c8-ad2a-ef9b6252539d",
+              "name": "text",
+              "value": "={{   (    $json.query     ?? $json.text   ?? $json.content     ?? $json.message     ?? $json.msg     ?? $('mensagem_final_formatada1').first().json.msg     ?? ''  ).toString()}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -384,
+        -864
+      ],
+      "id": "ecc04216-20ae-47ce-af61-e6cdebde44c8",
+      "name": "Normalizador Prompt User - Onboarding"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a6d9aac-8565-4c58-abe3-8741393a5535",
+              "leftValue": "={{ $('Search User').item.json.property_whats_app_phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        -4160
+      ],
+      "id": "5bc28247-7224-4a54-80d5-bb590f1151da",
+      "name": "Checks if User Exists"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6987e1aa-8dd0-4d0b-920d-d9c12bdeb448",
+              "name": "msg",
+              "value": "={{ $json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -704,
+        -864
+      ],
+      "id": "acc6bc94-9edb-444e-ace7-37f8c80da839",
+      "name": "mensagem_final_formatada1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1f81001-c109-44ab-9206-4c918b3cf382",
+              "name": "user_data",
+              "value": "=---  \n\n### Dados da conversa atual  \n\nDia da semana, data e hora atual: {{ $now.toLocal().format('ffff') }}  \nNome usuário: {{ $('session_context').first().json.user.name }} \nWhatsApp do usuário: {{ $('session_context').item.json.user.id_wpp }}  \nId do registro na database do usuário no Notion: {{ $('Search User').item.json.id }}  \n\n### User Profiles (Perfil do Usuário):  \n\nId do registro na database do usuário no Notion (usado para os campos 'relation' nas outras tabelas): {{ $('Search User').item.json.id }} \n\nProtocolo Atual (use para filtrar conteúdo na database 'Agente MPP - \n\nRegras do Agente - 27-12-2025'): {{ $('Current User Profile Data').item.json.property_current_protocol }}\nSexo: {{ $('Current User Profile Data').item.json.property_sex }} \nData da próxima avaliação: {{ new Date($('Current User Progress Data').item.json.property_next_reevaluation.start).toLocaleDateString(\"pt-BR\") }} \nÉ dia de avaliação: {{ new Date($('Current User Progress Data').item.json.property_next_reevaluation.start) <= new Date(new Date().toDateString())   ? \"Reavaliação disponível\"   : \"Ainda não é dia de reavaliação\" }} \nTipo de Plano do usuário (se assinou um plano ou ainda está no trial, por exemplo): {{ $('Current User Subscription').item.json.property_plan }}  \n\nDatabases disponíveis: Users, User Profiles, Daily Snapshots, User Progress, XP Events, Subscriptions, Subscription Events, Agente MPP - Regras do Agente.  \n\n---\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        64,
+        -4224
+      ],
+      "id": "bf69437c-fdcb-41fd-a820-da3779480e86",
+      "name": "User Data Context"
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}",
+        "messageData": "={{ $json.user_data.toJsonString() }}"
+      },
+      "id": "2ade609d-0647-4550-b479-e708b8f99fa5",
+      "name": "Set Redis - User Data Context",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        272,
+        -4224
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "cacheMessage",
+        "key": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}",
+        "keyType": "list",
+        "options": {}
+      },
+      "id": "545d2110-89a1-4ee9-95bf-9d477e8f9e64",
+      "name": "Get Redis - User Data Context",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1888,
+        -4064
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}"
+      },
+      "id": "558bce86-daf9-4984-8018-cf8f6098cad4",
+      "name": "Delete Redis - User Data Context",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1248,
+        -1168
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  session_id,\n  message,\n  created_at\nFROM public.n8n_chat_histories\nORDER BY created_at ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        -5232
+      ],
+      "id": "fabe1d40-2b4f-4a9f-8cbe-782dea0730a1",
+      "name": "Execute SQL Command",
+      "credentials": {
+        "postgres": {
+          "id": "PhyknPKYDfpLSJAe",
+          "name": "Postgres Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        -5232
+      ],
+      "id": "c69d3dab-2c72-4b80-b4d1-957b340d9bb3",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "bab3f098-007c-4375-a718-2626c72099c5",
+          "mode": "list",
+          "cachedResultName": "Configurações do Agente MPP",
+          "cachedResultUrl": "https://www.notion.so/bab3f098007c4375a7182626c72099c5"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Active"
+            },
+            {
+              "key": "Features Enabled|multi_select",
+              "condition": "contains",
+              "multiSelectValue": "Gamification"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1712,
+        -4176
+      ],
+      "id": "41cc4e86-0166-433e-81cb-eb82daccbd04",
+      "name": "Prompt System Config",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Prompt System Config').item.json.property_add_sheet_enforcement }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "96d02abc-c3df-49b5-a5ef-92f8b74c5c35"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "With Enforcement"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f08551d4-15e7-4cc0-b822-05a6ab38ba81",
+                    "leftValue": "={{ $('Prompt System Config').item.json.property_add_sheet_enforcement }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Without Enforcement"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -1296,
+        -4176
+      ],
+      "id": "b380a85c-76d8-49ac-b82c-290cf53a893e",
+      "name": "Prompt System Type"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "2d7b6968-2c48-804d-9305-fcef2e2d39d8",
+          "mode": "list",
+          "cachedResultName": "Agente MPP - Regras do Agente - 27-12-2025",
+          "cachedResultUrl": "https://www.notion.so/2d7b69682c48804d9305fcef2e2d39d8"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Tipo|select",
+              "condition": "equals",
+              "selectValue": "Coleta de Dados"
+            },
+            {
+              "key": "Tipo|select",
+              "condition": "equals",
+              "selectValue": "Regras Gerais"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1056,
+        -4368
+      ],
+      "id": "04743af9-aad4-415a-aafd-b8d6f3962018",
+      "name": "Prompt System Sheet Onboarding",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}",
+        "messageData": "={{\n  $json.content\n    .map(item => `### ${item.name}\\n\\n${item.property_content}`)\n    .join('\\n\\n---\\n\\n')\n}}\n"
+      },
+      "id": "cb9a7ab5-cfb3-4426-b074-b22c47937af6",
+      "name": "Set Redis - Prompt System Onboarding",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        -4368
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}",
+        "messageData": "={{ $json.property_prompt_system }}"
+      },
+      "id": "72a557bf-26dd-4830-ae80-24291348bb19",
+      "name": "Set Redis - Prompt System Default",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        -4176
+      ],
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "=content",
+        "include": "specifiedFields",
+        "fieldsToInclude": "=name, property_content",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        896,
+        -4432
+      ],
+      "id": "f8c36ecd-e935-403e-bae4-f03f897d29ab",
+      "name": "Aggregate1",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "2d7b6968-2c48-804d-9305-fcef2e2d39d8",
+          "mode": "list",
+          "cachedResultName": "Agente MPP - Regras do Agente - 27-12-2025",
+          "cachedResultUrl": "https://www.notion.so/2d7b69682c48804d9305fcef2e2d39d8"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Tipo|select",
+              "condition": "equals",
+              "selectValue": "={{ $('Current User Profile Data').item.json.property_current_protocol }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        -4432
+      ],
+      "id": "a8a241e5-7572-4362-bd1c-80e70b620afb",
+      "name": "Prompt System Sheet Protocol",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "2KI4XVuBWWQ76cFZ",
+          "name": "Notion n8n Automações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "=user_data_context_{{ $('session_context').item.json.user.id_wpp }}",
+        "messageData": "={{\n  $json.content\n    .map(item => `### ${item.name}\\n\\n${item.property_content}`)\n    .join('\\n\\n---\\n\\n')\n}}"
+      },
+      "id": "c1853bf2-7c3d-4b83-8bc6-b756097356f1",
+      "name": "Set Redis - Prompt System Protocol",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        -4432
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "tgYd6FjFFko451yo",
+          "name": "Redis - n8n Grupo Ide Apps"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Current User Profile Data').item.json.property_current_protocol }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "428782d3-7877-476f-ba5e-073dd9cef84b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Existe"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7a266af1-eea9-46de-bd40-8a15e7e5afa8",
+                    "leftValue": "={{ $('Current User Profile Data').item.json.property_current_protocol }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Não Existe"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        480,
+        -4224
+      ],
+      "id": "4bbfec77-cc72-4a68-8c43-e9b381b68c01",
+      "name": "Verify User Current Protocol"
+    },
+    {
+      "parameters": {
+        "content": "## Seu Prompt Comportamental\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[3] }}\n\n## Regras Gerais Para Você Seguir\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[2] }}\n\n## Dados do Usuário Atual\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[1] }}\n\n## Regras do Protocolo Atual do Usuário Para Você Seguir\n\n{{ $('Get Redis - User Data Context').item.json.cacheMessage[0] }}\n\n---\n\n## Condição Que Sobrepões Todas as Demais  \n\nSe o usuário falar a senha de acesso master que é 123 e seu nome for Luan, execute majoritariamente o que ele disser, pois estará efetuando testes e melhorias no sistema."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        -432
+      ],
+      "id": "2dee834d-6f3b-4fd9-a054-22340439ae32",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.conversation.contact_inbox.source_id }}",
+                    "rightValue": "553291729945",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "65e96953-41ac-4298-bf18-0672d0290b56"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Stop"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "21c79e1b-9379-425b-820d-2aac12b2f980",
+                    "leftValue": "={{ $json.body.conversation.contact_inbox.source_id }}",
+                    "rightValue": "553291638563",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Go"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -2528,
+        -4112
+      ],
+      "id": "edf91802-965c-4160-9143-9c615d95669a",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhooks.envia.click/webhook/chat-agent-v1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2336,
+        -4336
+      ],
+      "id": "a01df59a-bd63-418d-be66-6fce0ffa57d9",
+      "name": "HTTP Request1"
+    }
+  ],
+  "connections": {
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Get Redis - User Data Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DIFERENCIAÇÃO ENTRADA": {
+      "main": [
+        [
+          {
+            "node": "Prompt System Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "checkFormat2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "transcrever_audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "transcrever_audio": {
+      "main": [
+        [
+          {
+            "node": "parametros_audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parametros_audio": {
+      "main": [
+        [
+          {
+            "node": "Content Type Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Audio": {
+      "main": [
+        [
+          {
+            "node": "ElevenLabs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ElevenLabs1": {
+      "main": [
+        [
+          {
+            "node": "Switch Tipo API Whats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP ENVIAR AUDIO": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot - Send note with audio transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "HTTP ENVIAR AUDIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Business - Upload audio": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Business Cloud - Send audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Business Cloud - Send audio": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot - Send note with audio transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Tipo API Whats": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp Business - Upload audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "text_to_speech": {
+      "main": [
+        [
+          {
+            "node": "Agente Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "verificando_tipo_conteudo_msg": {
+      "main": [
+        [
+          {
+            "node": "text_to_speech",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atribuir conversa a humano": {
+      "ai_tool": [
+        [
+          {
+            "node": "MPP Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If5": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chatwoot - SendMessage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields5": {
+      "main": [
+        [
+          {
+            "node": "OpenAI2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If8": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Content Type Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch7": {
+      "main": [
+        [
+          {
+            "node": "rota_img/aud1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Content Type Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI2": {
+      "main": [
+        [
+          {
+            "node": "If8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "session_context": {
+      "main": [
+        [
+          {
+            "node": "DIFERENCIAÇÃO ENTRADA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "webhook-chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "rota_img/aud1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items5": {
+      "main": [
+        [
+          {
+            "node": "end1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split de Mensagem3": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot - SendMessage": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp API - Typing indicator Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields6": {
+      "main": [
+        [
+          {
+            "node": "Split de Mensagem3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MPP Agent": {
+      "main": [
+        [
+          {
+            "node": "verificando_tipo_conteudo_msg",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Delete Redis - User Data Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search User": {
+      "main": [
+        [
+          {
+            "node": "Checks if User Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create User": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thinking": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Tool",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "MPP Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client Composio Notion MPP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Tool",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "MPP Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mem": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "MPP Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM low Cost": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "MPP Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Middle Cost": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Tool",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MEM2": {
+      "ai_memory": [
+        [
+          {
+            "node": "MPP Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Tool",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Current User Profile Data": {
+      "main": [
+        [
+          {
+            "node": "Current User Progress Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Current User Progress Data": {
+      "main": [
+        [
+          {
+            "node": "Current User Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Set Redis - Prompt System Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "checkFormat2": {
+      "main": [
+        [
+          {
+            "node": "Converte Transcrição",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Text Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MEM1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Chat Memory Manager",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Content": {
+      "main": [
+        [
+          {
+            "node": "Chat Memory Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Converte Transcrição",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converte Transcrição": {
+      "main": [
+        [
+          {
+            "node": "Text Content from Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Content from Audio": {
+      "main": [
+        [
+          {
+            "node": "Chat Memory Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Message": {
+      "main": [
+        [
+          {
+            "node": "mensagem_final_formatada1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buffer Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Set Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis": {
+      "main": [
+        [
+          {
+            "node": "Get Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Redis": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis": {
+      "main": [
+        [
+          {
+            "node": "Set Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WhatsApp API - Recording indicator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WhatsApp API - Typing indicator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Get Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Type Text": {
+      "main": [
+        [
+          {
+            "node": "Buffer Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Type Image": {
+      "main": [
+        [
+          {
+            "node": "Buffer Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Type Audio": {
+      "main": [
+        [
+          {
+            "node": "Buffer Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp API - Typing indicator Loop": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Current User Subscription": {
+      "main": [
+        [
+          {
+            "node": "User Data Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Execute SQL Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "End Loop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Current User Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Current User Loop": {
+      "main": [
+        [
+          {
+            "node": "Current User Profile Data Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Current User Profile Data Loop": {
+      "main": [
+        [
+          {
+            "node": "Current User Progress Data Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Current User Progress Data Loop": {
+      "main": [
+        [
+          {
+            "node": "Conversation Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Subscriptions - Close Day Loop": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Subscriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MEM": {
+      "ai_memory": [
+        [
+          {
+            "node": "Chat Memory Manager1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User History Daily Data": {
+      "main": [
+        [
+          {
+            "node": "Prompt System Agente Analisys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Low Cost 2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "MPP Daily Closer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Data": {
+      "main": [
+        [
+          {
+            "node": "User History Daily Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thinking1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Tool1",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "MPP Daily Closer",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client Composio Notion MPP1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Tool1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Tool1": {
+      "ai_tool": [
+        [
+          {
+            "node": "MPP Daily Closer",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Middle Cost1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Tool1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt System Agente Analisys": {
+      "main": [
+        [
+          {
+            "node": "MPP Daily Closer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculator": {
+      "ai_tool": [
+        [
+          {
+            "node": "MPP Daily Closer",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent Tool1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Subscription": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chatwoot - SendMessage1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chatwoot - SendMessage1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Stripe": {
+      "main": [
+        [
+          {
+            "node": "Upadate User Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop End Day": {
+      "main": [
+        [
+          {
+            "node": "Search Subscriptions - Close Day Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MPP Daily Closer": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Subscriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizador Prompt User - Onboarding": {
+      "main": [
+        [
+          {
+            "node": "MPP Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checks if User Exists": {
+      "main": [
+        [
+          {
+            "node": "Current User Profile Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mensagem_final_formatada1": {
+      "main": [
+        [
+          {
+            "node": "Normalizador Prompt User - Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Data Context": {
+      "main": [
+        [
+          {
+            "node": "Set Redis - User Data Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis - User Data Context": {
+      "main": [
+        [
+          {
+            "node": "Verify User Current Protocol",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Redis - User Data Context": {
+      "main": [
+        [
+          {
+            "node": "Switch7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute SQL Command": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt System Config": {
+      "main": [
+        [
+          {
+            "node": "Set Redis - Prompt System Default",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt System Type": {
+      "main": [
+        [
+          {
+            "node": "Prompt System Sheet Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt System Sheet Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis - Prompt System Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Search User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis - Prompt System Default": {
+      "main": [
+        [
+          {
+            "node": "Prompt System Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "Set Redis - Prompt System Protocol",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt System Sheet Protocol": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis - Prompt System Protocol": {
+      "main": [
+        [
+          {
+            "node": "Verify Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User Current Protocol": {
+      "main": [
+        [
+          {
+            "node": "Prompt System Sheet Protocol",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verify Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "session_context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "webhook-chatwoot": [
+      {
+        "headers": {
+          "host": "webhooks.envia.click",
+          "user-agent": "rest-client/2.1.0 (linux-musl x86_64) ruby/3.3.3p89",
+          "content-length": "2965",
+          "accept": "application/json",
+          "accept-encoding": "gzip;q=1.0,deflate;q=0.6,identity;q=0.3",
+          "content-type": "application/json",
+          "x-forwarded-for": "95.216.220.113",
+          "x-forwarded-host": "webhooks.envia.click",
+          "x-forwarded-port": "443",
+          "x-forwarded-proto": "https",
+          "x-forwarded-server": "2e14088bbf75",
+          "x-real-ip": "95.216.220.113"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "account": {
+            "id": 13,
+            "name": "Grupo Ide Apps"
+          },
+          "additional_attributes": {},
+          "content_attributes": {},
+          "content_type": "text",
+          "content": "Olá",
+          "conversation": {
+            "additional_attributes": {},
+            "can_reply": true,
+            "channel": "Channel::Whatsapp",
+            "contact_inbox": {
+              "id": 7599,
+              "contact_id": 6219,
+              "inbox_id": 49,
+              "source_id": "553291638563",
+              "created_at": "2025-12-23T17:15:57.273Z",
+              "updated_at": "2025-12-23T17:15:57.273Z",
+              "hmac_verified": false,
+              "pubsub_token": "zxhBsag1AsCzYcfEgRGmG9NV"
+            },
+            "id": 14,
+            "inbox_id": 49,
+            "messages": [
+              {
+                "id": 72900,
+                "content": "Olá",
+                "account_id": 13,
+                "inbox_id": 49,
+                "conversation_id": 14,
+                "message_type": 0,
+                "created_at": 1767821950,
+                "updated_at": "2026-01-07T21:39:10.894Z",
+                "private": false,
+                "status": "sent",
+                "source_id": "wamid.HBgMNTUzMjkxNjM4NTYzFQIAEhggQUNEMEJGMjA2NUVCNUFBQjE3MzRBOTUxNjI3OTQ0QUMA",
+                "content_type": "text",
+                "content_attributes": {},
+                "sender_type": "Contact",
+                "sender_id": 6219,
+                "external_source_ids": {},
+                "additional_attributes": {},
+                "processed_message_content": "Olá",
+                "sentiment": {},
+                "conversation": {
+                  "assignee_id": 29,
+                  "unread_count": 10,
+                  "last_activity_at": 1767821950,
+                  "contact_inbox": {
+                    "source_id": "553291638563"
+                  }
+                },
+                "sender": {
+                  "additional_attributes": {
+                    "city": "",
+                    "country": "",
+                    "description": "",
+                    "company_name": "",
+                    "country_code": "",
+                    "social_profiles": {
+                      "github": "",
+                      "twitter": "",
+                      "facebook": "",
+                      "linkedin": "",
+                      "instagram": ""
+                    }
+                  },
+                  "custom_attributes": {},
+                  "email": null,
+                  "id": 6219,
+                  "identifier": null,
+                  "name": "Luan Lucas Bonadie",
+                  "phone_number": "+553291638563",
+                  "thumbnail": "",
+                  "type": "contact"
+                }
+              }
+            ],
+            "labels": [
+              "humano"
+            ],
+            "meta": {
+              "sender": {
+                "additional_attributes": {
+                  "city": "",
+                  "country": "",
+                  "description": "",
+                  "company_name": "",
+                  "country_code": "",
+                  "social_profiles": {
+                    "github": "",
+                    "twitter": "",
+                    "facebook": "",
+                    "linkedin": "",
+                    "instagram": ""
+                  }
+                },
+                "custom_attributes": {},
+                "email": null,
+                "id": 6219,
+                "identifier": null,
+                "name": "Luan Lucas Bonadie",
+                "phone_number": "+553291638563",
+                "thumbnail": "",
+                "type": "contact"
+              },
+              "assignee": {
+                "id": 29,
+                "name": "Luan Bonadie",
+                "available_name": "Luan Bonadie",
+                "avatar_url": "",
+                "type": "user",
+                "availability_status": null,
+                "thumbnail": ""
+              },
+              "team": null,
+              "hmac_verified": false
+            },
+            "status": "open",
+            "custom_attributes": {},
+            "snoozed_until": null,
+            "unread_count": 10,
+            "first_reply_created_at": "2025-12-23T17:16:24.384Z",
+            "priority": null,
+            "waiting_since": 0,
+            "agent_last_seen_at": 1766516646,
+            "contact_last_seen_at": 0,
+            "last_activity_at": 1767821950,
+            "timestamp": 1767821950,
+            "created_at": 1766510157
+          },
+          "created_at": "2026-01-07T21:39:10.894Z",
+          "id": 72900,
+          "inbox": {
+            "id": 49,
+            "name": "Agente MPP - v1"
+          },
+          "message_type": "incoming",
+          "private": false,
+          "sender": {
+            "account": {
+              "id": 13,
+              "name": "Grupo Ide Apps"
+            },
+            "additional_attributes": {
+              "city": "",
+              "country": "",
+              "description": "",
+              "company_name": "",
+              "country_code": "",
+              "social_profiles": {
+                "github": "",
+                "twitter": "",
+                "facebook": "",
+                "linkedin": "",
+                "instagram": ""
+              }
+            },
+            "avatar": "",
+            "custom_attributes": {},
+            "email": null,
+            "id": 6219,
+            "identifier": null,
+            "name": "Luan Lucas Bonadie",
+            "phone_number": "+553291638563",
+            "thumbnail": ""
+          },
+          "source_id": "wamid.HBgMNTUzMjkxNjM4NTYzFQIAEhggQUNEMEJGMjA2NUVCNUFBQjE3MzRBOTUxNjI3OTQ0QUMA",
+          "event": "message_created"
+        },
+        "webhookUrl": "https://webhooks.envia.click/webhook/nmqg-yajoec",
+        "executionMode": "production"
+      }
+    ],
+    "When clicking ‘Execute workflow’": [
+      {}
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1abbe292dbac347f66fd75071df53797280504c88a70aeea86c9f6bd093a7eeb"
+  }
+}
+```

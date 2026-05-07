@@ -13,6 +13,7 @@ import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { auditNumericClaims } from './numeric-validator.js'
+import { getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterLLM } from '@mpp/providers'
@@ -191,6 +192,7 @@ export async function processMessage(
       userId,
       userWpp: input.from,
       userCountry: ctx.country ?? 'BR',
+      userTimezone: ctx.timezone,
       providerMessageId: input.providerMessageId,
     }
     for (const tc of result.toolCalls) {
@@ -482,7 +484,10 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
   // Sem isso o LLM inventa kcal/proteína/streak/balance.
   const calcCfg = await loadCalcConfig(supabase)
   const dailyTargets = await loadDailyTargets(supabase, userId, calcCfg)
-  const today = new Date().toISOString().slice(0, 10)
+  // Data LOCAL do paciente (não UTC). Sem isso, paciente em America/New_York
+  // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
+  const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
+  const today = getLocalDateString(userTz)
   const { data: snapToday } = await supabase
     .from('daily_snapshots')
     .select(

@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
+import { getLocalDateString } from './timezone-utils.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -18,6 +19,10 @@ export interface ToolContext {
   userWpp: string
   /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
   userCountry?: string
+  /** Timezone IANA do paciente (default America/Sao_Paulo). Usado pra
+   * computar a data LOCAL ao buscar/inserir snapshot. Antes usava UTC
+   * → paciente em New_York perdia consumo registrado entre 20h-24h. */
+  userTimezone?: string
   /** ID da mensagem que originou o turno (provider_message_id). Usado pra
    * dedup de inserts em logs (meal_logs, workout_logs) — protege contra
    * dupla contagem em retentativas do Inngest. */
@@ -280,7 +285,7 @@ export const registraRefeicao: ToolDefinition = {
       .describe('Lista de itens consumidos AGORA (não padrão alimentar)'),
   }),
   execute: async (args, ctx) => {
-    const today = new Date().toISOString().split('T')[0]!
+    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
 
     // Idempotência: se essa msg já gerou meal_logs, skipa snapshot increment.
     // Protege contra retry de Inngest e LLM emitindo a mesma tool 2x no turno.
@@ -471,7 +476,7 @@ export const consultaProgresso: ToolDefinition = {
       .eq('user_id', ctx.userId)
       .maybeSingle()
 
-    const today = new Date().toISOString().split('T')[0]!
+    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
     const { data: snap } = await ctx.supabase
       .from('daily_snapshots')
       .select('*')
@@ -596,7 +601,7 @@ export const registraTreino: ToolDefinition = {
     notes: z.string().optional(),
   }),
   execute: async (args, ctx) => {
-    const today = new Date().toISOString().split('T')[0]!
+    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
 
     // Idempotência: se essa msg já gerou workout_logs, skipa snapshot increment.
     if (ctx.providerMessageId) {

@@ -72,6 +72,9 @@ interface UserContext {
     xp_total: number
     level: number
     blocks_completed: number
+    /** Déficit acumulado RUMO ao próximo bloco 7700 (reseta quando atinge).
+     * Usado no card pós-registro pra recomp: 📊 Bloco: {deficit_block}/7700. */
+    deficit_block: number
     last_active_date: string | null
   } | null
 }
@@ -510,7 +513,9 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     .maybeSingle()
   const { data: progress } = await supabase
     .from('user_progress')
-    .select('current_streak, longest_streak, xp_total, level, blocks_completed, last_active_date')
+    .select(
+      'current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date',
+    )
     .eq('user_id', userId)
     .maybeSingle()
   const snapTyped = snapToday as {
@@ -528,6 +533,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     xp_total?: number | null
     level?: number | null
     blocks_completed?: number | null
+    deficit_block?: number | null
     last_active_date?: string | null
   } | null
 
@@ -564,6 +570,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
           xp_total: progressTyped.xp_total ?? 0,
           level: progressTyped.level ?? 1,
           blocks_completed: progressTyped.blocks_completed ?? 0,
+          deficit_block: progressTyped.deficit_block ?? 0,
           last_active_date: progressTyped.last_active_date ?? null,
         }
       : null,
@@ -811,6 +818,14 @@ function formatUserContext(
     numericLines.push(
       `- Streak atual: ${p.current_streak} dias (recorde ${p.longest_streak}) | XP: ${p.xp_total} (level ${p.level}) | Blocos 7700 fechados: ${p.blocks_completed}`,
     )
+    // Bloco 7700 EM ANDAMENTO — usado pelo card pós-registro (recomp)
+    // pra mostrar 📊 Bloco 7700: {N} / 7700 kcal ({pct}%).
+    if (p.deficit_block > 0) {
+      const pct = Math.round((p.deficit_block / 7700) * 100)
+      numericLines.push(
+        `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%) — falta ${7700 - p.deficit_block} kcal pra fechar`,
+      )
+    }
   }
   if (numericLines.length > 0) {
     sections.push(

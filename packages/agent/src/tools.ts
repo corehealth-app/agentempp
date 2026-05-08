@@ -325,9 +325,16 @@ export const registraRefeicao: ToolDefinition = {
     // ========================================================================
 
     // (1) AUTO-CORRIGE meal_type pela hora local do paciente.
-    // Reversível: se LLM passou meal_type errado (ex: "jantar" às 8h da manhã),
-    // sistema sobrescreve silenciosamente pra hora-correspondente. Não pergunta
-    // pro paciente — UX limpa. Logs em product_events pra auditoria.
+    // CONSERVADOR: só sobrescreve quando há discrepância GRAVE (≥3h da janela)
+    // OU quando paciente NÃO mencionou meal_type explícito na msg recente.
+    //
+    // Antes (bug): qualquer mismatch hora→meal sobrescrevia, ignorando o que
+    // paciente falou. Caso real: às 18:28 BRT (boundary) Luan disse "café da
+    // tarde" e sistema converteu pra jantar. Usuário ficou confuso.
+    //
+    // Bug original que essa defesa cobria: foto sem texto às 8h → LLM chutava
+    // jantar (achou que era correção). Esse caso continua coberto: 8h vs jantar
+    // (≥3h) → corrige.
     let mealTypeOriginal = args.meal_type
     if (args.meal_type) {
       const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
@@ -347,20 +354,44 @@ export const registraRefeicao: ToolDefinition = {
               : localHour >= 18 && localHour < 23
                 ? 'jantar'
                 : 'lanche'
+      // Detecta se paciente mencionou meal_type explícito nas últimas msgs.
+      // Se sim, NÃO auto-corrige (paciente sabe o que fala).
+      const recentMsgs = (ctx.recentUserMessages ?? []).join(' ').toLowerCase()
+      const userMentionedMeal =
+        /\bcaf[eé](?:\s+da\s+manh)?\b|\b(?:cafe|breakfast)\b|\balmo[çc]o\b|\blunch\b|\blanche\b|\bsnack\b|\b(?:café\s+da\s+tarde|merenda)\b|\bjantar\b|\bdinner\b|\bceia\b|\bsupper\b/i.test(
+          recentMsgs,
+        )
+
+      // Distância em janelas (cafe=0, almoco=1, lanche=2, jantar=3, ceia=4)
+      const order = ['cafe', 'almoco', 'lanche', 'jantar']
+      const distance = Math.abs(
+        (order.indexOf(args.meal_type) >= 0 ? order.indexOf(args.meal_type) : 0) -
+          (order.indexOf(expected) >= 0 ? order.indexOf(expected) : 0),
+      )
+
+      const shouldAutoCorrect = args.meal_type !== expected && !userMentionedMeal && distance >= 2
+
       if (args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
-          event: 'tool.meal_type_autocorrected',
+          event: shouldAutoCorrect
+            ? 'tool.meal_type_autocorrected'
+            : 'tool.meal_type_mismatch_kept',
           properties: {
             claimed: args.meal_type,
-            corrected_to: expected,
+            expected_by_hour: expected,
             local_hour: localHour,
             timezone: tz,
+            distance,
+            user_mentioned_meal: userMentionedMeal,
             replace: args.replace ?? false,
           },
         })
-        // Sobrescreve args.meal_type com o sugerido pela hora.
-        args.meal_type = expected
+        if (shouldAutoCorrect) {
+          // Discrepância grave + paciente sem nomear meal_type → sobrescreve.
+          args.meal_type = expected
+        }
+        // Senão: respeita o que LLM passou (paciente nomeou OU diferença pequena).
       }
     }
 

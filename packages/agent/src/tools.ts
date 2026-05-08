@@ -730,19 +730,27 @@ export const registraTreino: ToolDefinition = {
   execute: async (args, ctx) => {
     const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
 
-    // Idempotência: se essa msg já gerou workout_logs, skipa snapshot increment.
+    // Idempotência granular: bloqueia retry/Inngest replay (mesma msg + mesmo
+    // workout_type), mas PERMITE múltiplos workouts diferentes da mesma foto
+    // (ex: foto do app mostra musculação + bike — 2 calls registra_treino com
+    // mesmo pmid mas workout_type diferentes, ambos devem entrar).
+    //
+    // Bug histórico: dedupe era só por pmid. Roberto mandou foto com 3
+    // exercícios → LLM fez 2 calls (musculação + bike) → bike foi deduped
+    // (mesmo pmid) e ficou sem registrar; só musculação ficou no snapshot.
     if (ctx.providerMessageId) {
       const { data: existing } = await ctx.supabase
         .from('workout_logs')
         .select('id, snapshot_id, workout_type, estimated_kcal')
         .eq('user_id', ctx.userId)
         .eq('raw_provider_message_id', ctx.providerMessageId)
-        .limit(5)
+        .eq('workout_type', args.workout_type)
+        .limit(2)
       if (existing && existing.length > 0) {
         return {
           success: true,
           deduped: true,
-          message: 'Treino já registrado (msg_id repetido). Não duplicou.',
+          message: `Treino ${args.workout_type} já registrado (msg_id+tipo repetido). Não duplicou.`,
         }
       }
     }

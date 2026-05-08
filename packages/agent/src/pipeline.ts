@@ -13,7 +13,7 @@ import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { auditNumericClaims } from './numeric-validator.js'
-import { getLocalDateString } from './timezone-utils.js'
+import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterLLM } from '@mpp/providers'
@@ -76,6 +76,16 @@ interface UserContext {
      * Usado no card pós-registro pra recomp: 📊 Bloco: {deficit_block}/7700. */
     deficit_block: number
     last_active_date: string | null
+  } | null
+  /** Janela 14 dias — orçamento calórico + DAM. Métrica oficial Notion pra
+   * manutenção (📊 Orçamento + 📅 DAM ≤ 4) e ganho_massa (📊 Orçamento).
+   * Computado sobre daily_snapshots fechados nos últimos 14 dias. */
+  last14d: {
+    consumed_total: number
+    target_total: number
+    days_with_data: number
+    /** Dias acima da meta (DAM). Limite manutenção: 4. */
+    dam: number
   } | null
 }
 
@@ -518,6 +528,29 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     )
     .eq('user_id', userId)
     .maybeSingle()
+
+  // Janela 14 dias — orçamento calórico + DAM (manutenção/ganho_massa).
+  // Computa em-memória sobre daily_snapshots fechados.
+  const date14dAgo = getLocalDateMinusDays(userTz, 14)
+  const { data: last14dRows } = await supabase
+    .from('daily_snapshots')
+    .select('calories_consumed, calories_target, day_closed')
+    .eq('user_id', userId)
+    .gte('date', date14dAgo)
+    .eq('day_closed', true)
+  const last14dTyped = (last14dRows ?? []) as Array<{
+    calories_consumed: number | null
+    calories_target: number | null
+    day_closed: boolean | null
+  }>
+  const last14d = {
+    consumed_total: last14dTyped.reduce((s, r) => s + (r.calories_consumed ?? 0), 0),
+    target_total: last14dTyped.reduce((s, r) => s + (r.calories_target ?? 0), 0),
+    days_with_data: last14dTyped.length,
+    dam: last14dTyped.filter(
+      (r) => (r.calories_consumed ?? 0) > (r.calories_target ?? 0),
+    ).length,
+  }
   const snapTyped = snapToday as {
     calories_consumed?: number | null
     protein_g?: number | null
@@ -574,6 +607,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
           last_active_date: progressTyped.last_active_date ?? null,
         }
       : null,
+    last14d: last14d.days_with_data > 0 ? last14d : null,
   }
 }
 
@@ -826,6 +860,14 @@ function formatUserContext(
         `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%) — falta ${7700 - p.deficit_block} kcal pra fechar`,
       )
     }
+  }
+  // Janela 14d — pra manutenção e ganho_massa (Notion: métrica principal).
+  if (ctx.last14d && ctx.last14d.target_total > 0) {
+    const l = ctx.last14d
+    const pct = Math.round((l.consumed_total / l.target_total) * 100)
+    numericLines.push(
+      `- Orçamento 14 dias: **${l.consumed_total} kcal de ${l.target_total} kcal (${pct}%)** | DAM: ${l.dam}/${l.days_with_data} dias | janela: ${l.days_with_data} dias fechados`,
+    )
   }
   if (numericLines.length > 0) {
     sections.push(

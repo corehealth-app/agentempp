@@ -698,7 +698,10 @@ export const consultaMetricas: ToolDefinition = {
 export const registraTreino: ToolDefinition = {
   name: 'registra_treino',
   description:
-    'Registra um TREINO QUE O PACIENTE ACABOU DE EXECUTAR (completado hoje, agora ou nas últimas horas). Kcal queimadas calculadas automaticamente (workout_type × duração × intensidade × peso). NÃO calcule manualmente. ' +
+    'Registra um TREINO QUE O PACIENTE ACABOU DE EXECUTAR (completado hoje, agora ou nas últimas horas). ' +
+    'Kcal queimadas: por padrão calculadas via fórmula (workout_type × duração × intensidade × peso). ' +
+    'EXCEÇÃO: se o paciente enviou FOTO de app de fitness (Apple Health, Strava, Garmin, Samsung Health, etc) com kcal NUMÉRICO VISÍVEL, ' +
+    'passe esse valor em `estimated_kcal_from_image` e o sistema usará ele em vez da fórmula. ' +
     '⚠️ NÃO USE quando: ' +
     '(a) o paciente está descrevendo FREQUÊNCIA/PADRÃO ("treino 3x por semana", "qual sua frequência?", "costumo treinar de manhã") — isso é coleta pra montar plano; ' +
     '(b) o paciente está descrevendo treino FUTURO ou PLANEJADO ("vou começar a treinar", "amanhã faço pernas", "tô pensando em correr"); ' +
@@ -726,6 +729,17 @@ export const registraTreino: ToolDefinition = {
     duration_min: z.number().int().positive(),
     intensity: z.enum(['leve', 'moderada', 'alta']).optional(),
     notes: z.string().optional(),
+    estimated_kcal_from_image: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'kcal extraído de FOTO de app de fitness (Apple Health, Strava, Garmin, Samsung Health, Polar, Fitbit, etc). ' +
+          'PASSE quando o paciente enviou screenshot E o número aparece claramente na imagem. ' +
+          'Se houver múltiplos workouts na foto, divida em chamadas separadas, cada uma com seu kcal próprio. ' +
+          'NÃO PASSE quando o paciente descreveu o treino só em texto/áudio — nesses casos a fórmula determinística é mais confiável que adivinhação. ' +
+          'Sistema valida sanidade: se valor for absurdo (<10% ou >300% da fórmula), descarta e usa fórmula.',
+      ),
   }),
   execute: async (args, ctx) => {
     const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
@@ -767,7 +781,8 @@ export const registraTreino: ToolDefinition = {
       .maybeSingle()
     const weightKg = (prof as { weight_kg: number | null } | null)?.weight_kg ?? 70
 
-    // Cálculo determinístico via SQL function (ADR-007)
+    // Cálculo determinístico via SQL function (ADR-007). Sempre roda — mesmo
+    // quando vamos usar valor da foto, a fórmula serve de baseline pra sanity check.
     const { data: kcalResult, error: kcalErr } = await (ctx.supabase as unknown as {
       rpc: (
         n: string,
@@ -780,7 +795,38 @@ export const registraTreino: ToolDefinition = {
       p_weight_kg: weightKg,
     })
     if (kcalErr) throw new Error(kcalErr.message ?? 'calc_workout_kcal failed')
-    const computedKcal = Number(kcalResult ?? 0)
+    const formulaKcal = Number(kcalResult ?? 0)
+
+    // HÍBRIDO: usa kcal da foto se foi passado E está dentro de range razoável
+    // (10%-300% da fórmula). Senão, usa a fórmula. Loga decisão pra auditoria.
+    let finalKcal = formulaKcal
+    let kcalSource: 'image' | 'formula' = 'formula'
+    let imageDiscarded = false
+    if (args.estimated_kcal_from_image && args.estimated_kcal_from_image > 0) {
+      const ratio = args.estimated_kcal_from_image / Math.max(formulaKcal, 1)
+      const inRange = ratio >= 0.1 && ratio <= 3.0
+      if (inRange) {
+        finalKcal = Math.round(args.estimated_kcal_from_image)
+        kcalSource = 'image'
+      } else {
+        imageDiscarded = true
+      }
+      // Audit: registra a decisão pra debug + ajuste futuro de threshold
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: imageDiscarded ? 'workout.kcal_image_discarded' : 'workout.kcal_image_used',
+        properties: {
+          workout_type: args.workout_type,
+          duration_min: args.duration_min,
+          intensity: args.intensity ?? 'moderada',
+          weight_kg: weightKg,
+          formula_kcal: formulaKcal,
+          image_kcal: args.estimated_kcal_from_image,
+          ratio: +ratio.toFixed(2),
+          chosen: kcalSource,
+        },
+      })
+    }
 
     // Atomic: snapshot + targets + workout kcal
     const { data: snap, error: snapErr } = await (ctx.supabase as unknown as {
@@ -794,7 +840,7 @@ export const registraTreino: ToolDefinition = {
     }).rpc('snapshot_add_workout', {
       p_user_id: ctx.userId,
       p_date: today,
-      p_exercise_kcal: computedKcal,
+      p_exercise_kcal: finalKcal,
       p_calories_target: tgt.calories_target,
       p_protein_target: tgt.protein_target,
     })
@@ -807,14 +853,20 @@ export const registraTreino: ToolDefinition = {
       workout_type: args.workout_type,
       duration_min: args.duration_min,
       intensity: args.intensity,
-      estimated_kcal: computedKcal,
-      notes: args.notes,
+      estimated_kcal: finalKcal,
+      notes: args.notes
+        ? `${args.notes} [src=${kcalSource}]`
+        : `[kcal_source=${kcalSource}, formula=${formulaKcal}, image=${args.estimated_kcal_from_image ?? 'n/a'}]`,
       raw_provider_message_id: ctx.providerMessageId ?? null,
     })
 
     return {
       success: true,
-      kcal_burned: computedKcal,
+      kcal_burned: finalKcal,
+      kcal_source: kcalSource,
+      formula_kcal: formulaKcal,
+      image_kcal: args.estimated_kcal_from_image ?? null,
+      image_discarded: imageDiscarded,
       total_exercise_kcal_today: snap.exercise_calories,
     }
   },

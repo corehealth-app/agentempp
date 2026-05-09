@@ -394,9 +394,18 @@ export async function calcMealMacros(
     const m = await matchFood(supabase, it.food_name, country)
     const factor = it.quantity_g / 100
 
-    // Threshold mais conservador: 0.45 (era 0.3). Matches abaixo disso são quase
-    // sempre erros (ex: "ovo" pegando "azeite" sim=0.3).
-    if (m.id != null && m.kcal_per_100g != null && m.similarity >= 0.45) {
+    // Threshold dinâmico por tamanho da query:
+    // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa
+    //   contra entries longos no DB (ex: "whey" vs "whey protein" = 0.38).
+    //   Threshold mais permissivo evita fallback prematuro pra estimateMacros.
+    // - Queries longas (>15 chars / 3+ palavras) usam threshold mais rigoroso
+    //   pra evitar matches catastróficos (ex: "ovos cozidos com fio de azeite"
+    //   matchando azeite por causa do trigram parcial).
+    const queryWords = it.food_name.trim().split(/\s+/).length
+    const queryLen = it.food_name.trim().length
+    const isShortQuery = queryWords <= 2 || queryLen <= 15
+    const matchThreshold = isShortQuery ? 0.3 : 0.45
+    if (m.id != null && m.kcal_per_100g != null && m.similarity >= matchThreshold) {
       const kcal = +(m.kcal_per_100g * factor).toFixed(1)
       const protein = +((m.protein_g ?? 0) * factor).toFixed(2)
       const carbs = +((m.carbs_g ?? 0) * factor).toFixed(2)

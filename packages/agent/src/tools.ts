@@ -425,15 +425,30 @@ export const registraRefeicao: ToolDefinition = {
     // antes de inserir os novos. Sem isso, snapshot_add_meal duplica.
     let replacedSummary: { count: number; kcal_removed: number } | null = null
     if (args.replace === true && args.meal_type) {
-      const startOfDay = `${today}T00:00:00`
-      const endOfDay = `${today}T23:59:59.999`
-      const { data: toRemove } = await ctx.supabase
+      // BUG HISTÓRICO (Roberto 09/05): query usava `created_at >= '${today}T00:00:00'`
+      // sem timezone — Postgres interpretava como UTC, mas `today` era data LOCAL
+      // (EDT). Pra paciente em UTC-4 entre 20h-24h local (= 00h-04h UTC do dia
+      // seguinte), os meal_logs criados nesse intervalo tinham created_at do
+      // "dia seguinte UTC" e ficavam fora do range. Replace nunca encontrava
+      // nada → log "tool.replace_without_target" → 4x duplicate insert.
+      //
+      // Fix: filtra pelo SNAPSHOT do dia local (snapshot_id linkado à data local
+      // via snapshot_add_meal), em vez de range de created_at em UTC.
+      const { data: snapToday } = await ctx.supabase
+        .from('daily_snapshots')
+        .select('id')
+        .eq('user_id', ctx.userId)
+        .eq('date', today)
+        .maybeSingle()
+      const snapId = (snapToday as { id: string } | null)?.id ?? null
+      const baseQuery = ctx.supabase
         .from('meal_logs')
         .select('id, kcal, protein_g, carbs_g, fat_g')
         .eq('user_id', ctx.userId)
         .eq('meal_type', args.meal_type)
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay)
+      const { data: toRemove } = snapId
+        ? await baseQuery.eq('snapshot_id', snapId)
+        : { data: [] as Array<{ id: string; kcal: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null }> }
       if (toRemove && toRemove.length > 0) {
         const removed = toRemove.reduce(
           (acc, l) => ({
@@ -444,14 +459,13 @@ export const registraRefeicao: ToolDefinition = {
           }),
           { kcal: 0, prot: 0, carb: 0, fat: 0 },
         )
-        // Deleta os logs antigos
+        // Deleta os logs antigos do mesmo snapshot+meal_type
         await ctx.supabase
           .from('meal_logs')
           .delete()
           .eq('user_id', ctx.userId)
           .eq('meal_type', args.meal_type)
-          .gte('created_at', startOfDay)
-          .lte('created_at', endOfDay)
+          .eq('snapshot_id', snapId!)
         // Subtrai do snapshot via RPC (passa valores negativos)
         await (ctx.supabase as unknown as {
           rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>

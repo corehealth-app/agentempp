@@ -142,6 +142,48 @@ async function maybeEngageUser(
     return { sent: false, reason: 'engajamento já enviado hoje' }
   }
 
+  // Se paciente já registrou refeição correspondente ao slot atual, pula.
+  // Evita msgs constrangedoras tipo "café passou batido?" depois do paciente
+  // ter acabado de registrar o café. Mapeamento slot → meal_type esperado:
+  const SLOT_TO_MEAL_TYPE: Record<string, string | null> = {
+    cafe_da_manha: 'cafe',
+    meio_da_manha: 'lanche',
+    almoco: 'almoco',
+    pos_almoco: null, // só checkin de balanço, não meal-specific
+    lanche_tarde: 'lanche',
+    jantar: 'jantar',
+    noite: null,
+    madrugada: null,
+  }
+  const expectedMealType = SLOT_TO_MEAL_TYPE[slot] ?? null
+  if (expectedMealType) {
+    const todayLocalEarly = getLocalDate(userTimezone)
+    const { data: snapEarly } = await supabase
+      .from('daily_snapshots')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', todayLocalEarly)
+      .maybeSingle()
+    const snapIdEarly = (snapEarly as { id: string } | null)?.id ?? null
+    if (snapIdEarly) {
+      const { data: mealsForSlot } = await supabase
+        .from('meal_logs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('snapshot_id', snapIdEarly)
+        .eq('meal_type', expectedMealType as 'cafe' | 'almoco' | 'lanche' | 'jantar')
+        .limit(1)
+      if (mealsForSlot && mealsForSlot.length > 0) {
+        await logEvent('engagement.skipped', {
+          reason: 'meal_type do slot já registrado hoje',
+          slot,
+          expected_meal_type: expectedMealType,
+        })
+        return { sent: false, reason: `${expectedMealType} já registrado hoje` }
+      }
+    }
+  }
+
   // Carrega config do agente engajamento
   const { data: prompt } = await supabase
     .from('v_active_prompts')

@@ -232,6 +232,7 @@ async function matchFood(
 ): Promise<{
   id: number | null
   name_pt: string | null
+  category: string | null
   similarity: number
   kcal_per_100g: number | null
   protein_g: number | null
@@ -252,6 +253,7 @@ async function matchFood(
   const empty = {
     id: null,
     name_pt: null,
+    category: null,
     similarity: 0,
     kcal_per_100g: null,
     protein_g: null,
@@ -263,6 +265,7 @@ async function matchFood(
   type Row = {
     id: number | null
     name_pt: string | null
+    category: string | null
     similarity: number | null
     kcal_per_100g: number | string | null
     protein_g: number | string | null
@@ -278,6 +281,7 @@ async function matchFood(
   return {
     id: top.id ?? null,
     name_pt: top.name_pt ?? null,
+    category: top.category ?? null,
     similarity: top.similarity ?? 0,
     kcal_per_100g: top.kcal_per_100g != null ? Number(top.kcal_per_100g) : null,
     protein_g: top.protein_g != null ? Number(top.protein_g) : null,
@@ -428,17 +432,31 @@ export async function calcMealMacros(
       const fat = +((m.fat_g ?? 0) * factor).toFixed(2)
       const fiber = +((m.fiber_g ?? 0) * factor).toFixed(2)
 
-      // Sanity 2: densidade calórica catastrófica. Alimento sólido com >5 kcal/g
-      // só faz sentido pra gorduras/oleaginosas/embutidos densos. Se food_name
-      // não menciona um desses, é sinal de match errado.
+      // Sanity 2: densidade calórica catastrófica. Alimento >5 kcal/g só faz
+      // sentido pra gorduras/oleaginosas/embutidos densos / queijos gordos.
       //
-      // Bug histórico: regex era curto demais e zerava bacon/salame/linguiça/
-      // chocolate/queijo parmesão/chia/linhaça (todos naturalmente >5 kcal/g).
-      // Lista expandida pra cobrir os casos comuns BR.
+      // Detecção PRINCIPAL via category do food_db (mais robusto que regex).
+      // Categorias que justificam >5 kcal/g naturalmente:
+      //   - gorduras (óleos, azeite, manteiga)
+      //   - oleaginosas / sementes (castanhas, nozes, chia, linhaça)
+      //   - doces (chocolates densos)
+      // Pra carnes / laticínios / outros, ainda usa regex backup pra cobrir
+      // casos específicos (bacon, parmesão, etc) que NÃO têm categoria dedicada.
+      //
+      // Histórico: regex sozinho falhava em bacon (carnes), parmesão (lacteos)
+      // etc. Categoria + regex juntos cobrem todos casos legítimos.
       const kcalPerG = (m.kcal_per_100g ?? 0) / 100
       const lowerName = it.food_name.toLowerCase()
+      const matchCat = (m.category ?? '').toLowerCase()
+      const categoryAllowsHighKcal = [
+        'gorduras',
+        'oleaginosas',
+        'sementes',
+        'doces',
+      ].includes(matchCat)
       const isFatLike =
-        /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|c[uú]rcuma|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|gangorra|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
+        categoryAllowsHighKcal ||
+        /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
           lowerName,
         )
       if (kcalPerG > 5 && !isFatLike) {

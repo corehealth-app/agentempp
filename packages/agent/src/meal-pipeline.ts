@@ -204,7 +204,21 @@ export interface MealCalcResult {
     fat_g: number
     fiber_g: number
   }
+  /** Warnings DEPRECATED. Use user_warnings ou audit_warnings. Mantido pra
+   * compatibilidade — concatena os dois. */
   warnings: string[]
+  /** Warnings que DEVEM ser mostradas ao paciente (precisa de ação dele):
+   *  - composite rejeitado (paciente separa items)
+   *  - match suspeito (paciente confirma)
+   *  - sanity violations (densidade calórica, proteína esperada)
+   * Estes vão na resposta do agente. */
+  user_warnings: string[]
+  /** Warnings APENAS pra audit interno (paciente NÃO precisa saber):
+   *  - auto-split bem-sucedido
+   *  - reuso de histórico
+   *  - estimativa por categoria silenciosa
+   * Estes vão pra product_events mas não pro paciente. */
+  audit_warnings: string[]
 }
 
 /**
@@ -286,7 +300,9 @@ export async function calcMealMacros(
   userIdHint?: string,
 ): Promise<MealCalcResult> {
   const matched: MealItemMatched[] = []
-  const warnings: string[] = []
+  const userWarnings: string[] = []
+  const auditWarnings: string[] = []
+  const warnings = userWarnings // alias pra compat com pushes existentes que não classificou
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (const it of items) {
@@ -364,8 +380,8 @@ export async function calcMealMacros(
         totals.carbs_g += totalCarbs
         totals.fat_g += totalFat
         totals.fiber_g += totalFib
-        warnings.push(
-          `"${it.food_name}" auto-dividido em ${partMatches.map((pm) => pm.m.name_pt).join(' + ')} (qty ${partQty.toFixed(0)}g cada). Quando souber quantidades exatas, separe os itens.`,
+        auditWarnings.push(
+          `"${it.food_name}" auto-dividido em ${partMatches.map((pm) => pm.m.name_pt).join(' + ')} (qty ${partQty.toFixed(0)}g cada).`,
         )
         continue
       }
@@ -491,7 +507,7 @@ export async function calcMealMacros(
       totals.fiber_g += fiber
 
       if (m.similarity < 0.5) {
-        warnings.push(
+        auditWarnings.push(
           `Match com baixa confiança: "${it.food_name}" → "${m.name_pt}" (sim=${m.similarity.toFixed(2)})`,
         )
       }
@@ -522,7 +538,7 @@ export async function calcMealMacros(
         const reProt = +(Number(p.protein_g) * ratio).toFixed(2)
         const reCarb = +(Number(p.carbs_g) * ratio).toFixed(2)
         const reFat = +(Number(p.fat_g) * ratio).toFixed(2)
-        warnings.push(
+        auditWarnings.push(
           `"${it.food_name}" reusado de registro anterior (${p.kcal} kcal/${p.quantity_g}g → ${reKcal} kcal pra ${it.quantity_g}g).`,
         )
         const natRe = naturalUnit(it.food_name, it.quantity_g)
@@ -557,8 +573,8 @@ export async function calcMealMacros(
       const eCarb = +(est.carbs * factor).toFixed(2)
       const eFat = +(est.fat * factor).toFixed(2)
       const eFib = +(est.fiber * factor).toFixed(2)
-      warnings.push(
-        `"${it.food_name}" sem match exato — estimando por categoria "${est.category}" (~${est.kcal} kcal/100g). Confiança média.`,
+      auditWarnings.push(
+        `"${it.food_name}" sem match exato — estimando por categoria "${est.category}" (~${est.kcal} kcal/100g).`,
       )
       const natEst = naturalUnit(it.food_name, it.quantity_g)
       matched.push({
@@ -585,7 +601,13 @@ export async function calcMealMacros(
     }
   }
 
-  return { items: matched, totals: roundTotals(totals), warnings }
+  return {
+    items: matched,
+    totals: roundTotals(totals),
+    warnings: [...userWarnings, ...auditWarnings], // compat
+    user_warnings: userWarnings,
+    audit_warnings: auditWarnings,
+  }
 }
 
 function roundTotals(t: { kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number }) {

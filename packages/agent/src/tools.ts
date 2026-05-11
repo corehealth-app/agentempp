@@ -517,7 +517,7 @@ export const registraRefeicao: ToolDefinition = {
         event: 'meal.match_warning',
         properties: {
           provider_message_id: ctx.providerMessageId ?? null,
-          warnings: calc.warnings,
+          warnings: calc.user_warnings,
           problematic_items: problematicItems.map((i) => ({
             food_name: i.food_name,
             matched_to: i.matched_taco_name || null,
@@ -596,7 +596,7 @@ export const registraRefeicao: ToolDefinition = {
         totals: calc.totals,
       },
       day_totals: updated,
-      warnings: calc.warnings,
+      warnings: calc.user_warnings,
       replaced: replacedSummary,
     }
   },

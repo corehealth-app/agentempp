@@ -429,12 +429,16 @@ export async function calcMealMacros(
       const fiber = +((m.fiber_g ?? 0) * factor).toFixed(2)
 
       // Sanity 2: densidade calórica catastrófica. Alimento sólido com >5 kcal/g
-      // só faz sentido pra gorduras puras (azeite=8.84, manteiga=7.2). Se food_name
-      // não menciona gordura/óleo/manteiga, é sinal de match errado.
+      // só faz sentido pra gorduras/oleaginosas/embutidos densos. Se food_name
+      // não menciona um desses, é sinal de match errado.
+      //
+      // Bug histórico: regex era curto demais e zerava bacon/salame/linguiça/
+      // chocolate/queijo parmesão/chia/linhaça (todos naturalmente >5 kcal/g).
+      // Lista expandida pra cobrir os casos comuns BR.
       const kcalPerG = (m.kcal_per_100g ?? 0) / 100
       const lowerName = it.food_name.toLowerCase()
       const isFatLike =
-        /azeite|óleo|oleo|manteiga|margarina|maionese|gordura|óleos|nozes|castanha|amêndoa|amendoim|pasta de amendoim/.test(
+        /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|c[uú]rcuma|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|gangorra|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
           lowerName,
         )
       if (kcalPerG > 5 && !isFatLike) {

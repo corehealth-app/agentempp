@@ -92,10 +92,30 @@ async function maybeEngageUser(
   // Pausa ativa? respeita
   const { data: u } = await supabase
     .from('users')
-    .select('metadata, status')
+    .select('metadata, status, name, locale, country')
     .eq('id', userId)
     .maybeSingle()
   const meta = (u as { metadata: Record<string, unknown> | null } | null)?.metadata
+  const userTyped = u as {
+    metadata: Record<string, unknown> | null
+    status: string | null
+    name: string | null
+    locale: string | null
+    country: string | null
+  } | null
+  const userCountry = userTyped?.country ?? 'BR'
+  const countryToLanguage: Record<string, string> = {
+    BR: 'pt-BR',
+    PT: 'pt-PT',
+    US: 'en',
+    GB: 'en',
+    CA: 'en',
+    AU: 'en',
+    ES: 'es',
+    MX: 'es',
+    AR: 'es',
+  }
+  const userLanguage = userTyped?.locale ?? countryToLanguage[userCountry] ?? 'pt-BR'
   const pausedUntil = meta?.paused_until as string | undefined
   if (pausedUntil && new Date(pausedUntil) > new Date()) {
     await logEvent('engagement.skipped', { reason: 'paused', paused_until: pausedUntil })
@@ -234,6 +254,9 @@ async function maybeEngageUser(
 
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
+⚠️ IDIOMA DO PACIENTE: **${userLanguage}** (locale salvo). Responda nesse idioma. Não infira pelo timezone — paciente pode morar fora mas falar outra língua.
+País do paciente: ${userCountry}
+Nome: ${userTyped?.name ?? '(sem nome)'}
 Hora local do paciente: ${String(localHour).padStart(2, '0')}:00 (timezone ${userTimezone})
 Período do dia: ${slot}
 Refeição típica desse horário: ${mealHint}

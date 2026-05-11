@@ -152,6 +152,46 @@ export default async function AuditPage() {
     .order('occurred_at', { ascending: false })
     .limit(20)
 
+  // Meal logs com info degradada (24h) — pega TUDO que não é taco/fonte limpa.
+  // Complementa o card de meal.match_warning: ali são sanity checks que emitiram
+  // evento; aqui é a verdade do banco (inclui fallbacks silenciosos como
+  // llm_estimate por categoria, que NÃO emitem warning event pro paciente).
+  const { data: degradedMeals, count: degradedMealsCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        gte: (col: string, val: string) => {
+          or: (filter: string) => {
+            order: (col: string, opt: { ascending: boolean }) => {
+              limit: (n: number) => Promise<{
+                data: Array<{
+                  id: string
+                  user_id: string | null
+                  food_name: string
+                  quantity_g: number
+                  kcal: number
+                  source: string
+                  created_at: string
+                }> | null
+                count: number | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  })
+    .from('meal_logs')
+    .select('id, user_id, food_name, quantity_g, kcal, source, created_at', { count: 'exact' })
+    .gte('created_at', since24h)
+    .or(
+      'source.in.(llm_estimate,composite_rejected,category_mismatch,protein_mismatch,no_match),kcal.eq.0',
+    )
+    .order('created_at', { ascending: false })
+    .limit(20)
+
   // Meal match warnings (composite/category/protein/no_match) — últimas 24h
   const { data: mealWarnings, count: mealWarningCount } = await (svc as unknown as {
     from: (t: string) => {
@@ -310,6 +350,53 @@ export default async function AuditPage() {
                   <span className="text-foreground">{p.food_name}</span>
                   <span className="text-[9px] text-muted-foreground ml-auto">
                     conf={p.confidence}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      {(degradedMealsCount ?? 0) > 0 && (
+        <div className="shrink-0 mb-3 content-card p-4 border-l-4 border-bronze">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">
+              🍽️ Refeições com info degradada (24h): {degradedMealsCount}
+            </h3>
+            <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">
+              source ≠ taco · OR kcal = 0
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Itens onde a info do alimento não veio limpa do food_db: estimativa por categoria
+            (llm_estimate), sanity check zerou (composite/category/protein_mismatch) ou sem
+            match. Se aparecer em volume, vale adicionar alias/alimento via{' '}
+            <a href="/settings/foods" className="underline hover:text-foreground">
+              /settings/foods
+            </a>
+            .
+          </p>
+          <ul className="space-y-1 text-xs font-mono max-h-60 overflow-auto">
+            {(degradedMeals ?? []).map((m) => {
+              const sourceColor =
+                m.kcal === 0
+                  ? 'text-destructive'
+                  : m.source === 'llm_estimate'
+                    ? 'text-bronze'
+                    : 'text-destructive'
+              return (
+                <li key={m.id} className="flex items-center gap-2 py-0.5">
+                  <span className="text-muted-foreground shrink-0 w-28">
+                    {formatDateTime(m.created_at).slice(0, 16)}
+                  </span>
+                  <span className="text-muted-foreground shrink-0 w-16">
+                    {m.user_id?.slice(0, 8)}
+                  </span>
+                  <span className={`shrink-0 w-32 ${sourceColor}`}>{m.source}</span>
+                  <span className="text-foreground truncate">{m.food_name}</span>
+                  <span className="text-muted-foreground shrink-0 ml-auto">
+                    {m.quantity_g}g · {m.kcal} kcal
                   </span>
                 </li>
               )

@@ -327,19 +327,24 @@ export const registraRefeicao: ToolDefinition = {
     // GUARDA-CHUVA DETERMINÍSTICO (defesa em profundidade contra erro do LLM)
     // ========================================================================
 
-    // (0) DETECTA CORREÇÃO IMPLÍCITA — paciente re-envia a MESMA refeição com
-    // quantidades diferentes em janela curta SEM dizer "corrige".
+    // (0) EVIDÊNCIA OBJETIVA DE CORREÇÃO — sobreposição de food_names em janela curta.
     //
-    // Caso real (esposa do Roberto, 2026-05-12): foto detectou 200g de arroz e
-    // 180g de carne (errado). Ela respondeu "100g arroz, 100g carne" SEM dizer
-    // "corrige". Agent chamou registra_refeicao SEM replace=true e SOMOU os
-    // valores em vez de substituir → meal duplicada.
+    // Casos reais que cobrimos:
+    //  - Esposa do Roberto (2026-05-12): foto detectou 200g arroz + 180g carne
+    //    (errado). Ela respondeu "100g arroz, 100g carne" SEM dizer "corrige".
+    //    LLM mandou replace=false → soma. Detecção implícita aplica replace=true.
+    //  - Sogro do Roberto Paulo (2026-05-13): foto identificou "bebida láctea com
+    //    espuma" zerada (composite_rejected). Paulo respondeu "Leite semi
+    //    desnatado com café". LLM mandou replace=true CORRETAMENTE, mas o blocker
+    //    (que pedia palavra-chave "corrige/errei") fez downgrade pra false → soma.
     //
-    // Heurística: se há meal_logs do mesmo meal_type registrados nos últimos
-    // 15 min E ≥50% dos food_name novos batem (substring) com algum food_name
-    // anterior → auto-aplica replace=true.
-    let implicitReplaceDetected = false
-    if (args.replace !== true && args.meal_type && args.items.length > 0) {
+    // SOLUÇÃO UNIFICADA: calcular evidência objetiva SEMPRE e usar em ambos os
+    // caminhos. Evidência objetiva = >=50% overlap de food_name em <15min do
+    // mesmo meal_type. Verbal = palavra-chave nas msgs recentes. Qualquer uma
+    // serve pra ratificar replace=true.
+    let objectiveCorrectionEvidence = false
+    let overlapMeta: { ratio: number; recent: string[]; new: string[] } | null = null
+    if (args.meal_type && args.items.length > 0) {
       const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
       const { data: recentLogs } = await ctx.supabase
         .from('meal_logs')
@@ -356,28 +361,36 @@ export const registraRefeicao: ToolDefinition = {
         const newNames: string[] = args.items.map((i: { food_name: string }) =>
           normalize(i.food_name),
         )
-        // Conta quantos dos itens novos batem (substring bidirecional) com algum recente
         const overlapCount = newNames.filter((nn: string) =>
           recentNames.some((rn: string) => rn.includes(nn) || nn.includes(rn)),
         ).length
         const overlapRatio = overlapCount / Math.max(newNames.length, recentNames.length)
+        overlapMeta = {
+          ratio: Math.round(overlapRatio * 100) / 100,
+          recent: recentNames,
+          new: newNames,
+        }
         if (overlapRatio >= 0.5) {
-          args.replace = true
-          implicitReplaceDetected = true
-          await ctx.supabase.from('product_events').insert({
-            user_id: ctx.userId,
-            event: 'tool.replace_implicit_detected',
-            properties: {
-              meal_type: args.meal_type,
-              overlap_ratio: Math.round(overlapRatio * 100) / 100,
-              recent_names: recentNames,
-              new_names: newNames,
-              recent_count: recent.length,
-              new_count: args.items.length,
-            },
-          })
+          objectiveCorrectionEvidence = true
         }
       }
+    }
+
+    // Caso A: LLM mandou replace=false mas há evidência objetiva → auto-aplica
+    let implicitReplaceDetected = false
+    if (args.replace !== true && objectiveCorrectionEvidence) {
+      args.replace = true
+      implicitReplaceDetected = true
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.replace_implicit_detected',
+        properties: {
+          meal_type: args.meal_type,
+          overlap_ratio: overlapMeta?.ratio,
+          recent_names: overlapMeta?.recent,
+          new_names: overlapMeta?.new,
+        },
+      })
     }
 
     // (1) AUTO-CORRIGE meal_type pela hora local do paciente.
@@ -451,15 +464,20 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
-    // (2) BLOQUEIA replace=true sem palavra-chave de correção.
+    // (2) BLOQUEIA replace=true sem evidência de correção (verbal OU objetiva).
     // Destrutivo: replace=true DELETA refeições do dia+meal_type.
-    // Se últimas msgs do paciente NÃO têm "corrige/errei/troca/na verdade/...",
-    // é provavelmente bug do LLM (ex: foto nova classificada como correção).
-    // Downgrade pra replace=false silenciosamente — vira INSERT normal.
+    //
+    // Antes (bug Paulo 2026-05-13): exigia palavra-chave verbal. LLM mandou
+    // replace=true corretamente porque Paulo re-listou os mesmos itens, mas msg
+    // dele ("Leite semi desnatado com café") não tinha "corrige/errei" → blocker
+    // downgrade pra false → SOMOU em vez de substituir.
+    //
+    // Agora: aceita verbal (correctionWord) OU objetiva (overlap >=50% em <15min).
+    // Só downgrade quando NENHUMA evidência existe — aí é provável bug do LLM.
     if (args.replace === true && !implicitReplaceDetected) {
       const recentMsgs = ctx.recentUserMessages ?? []
       const correctionWord = detectCorrectionIntent(recentMsgs)
-      if (!correctionWord) {
+      if (!correctionWord && !objectiveCorrectionEvidence) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.replace_blocked_no_correction',
@@ -468,10 +486,21 @@ export const registraRefeicao: ToolDefinition = {
             corrected_meal_type: args.meal_type,
             recent_msgs_count: recentMsgs.length,
             recent_msgs_preview: recentMsgs.slice(-2).map((m) => m.slice(0, 80)),
+            overlap_ratio: overlapMeta?.ratio ?? 0,
           },
         })
         // Downgrade silencioso — segue como INSERT normal.
         args.replace = false
+      } else if (!correctionWord && objectiveCorrectionEvidence) {
+        // LLM acertou replace=true sem palavra-chave verbal — ratificado por overlap.
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_ratified_by_overlap',
+          properties: {
+            meal_type: args.meal_type,
+            overlap_ratio: overlapMeta?.ratio,
+          },
+        })
       }
     }
     // ========================================================================

@@ -850,7 +850,7 @@ function formatUserContext(
   if (ctx.userProgress) {
     const p = ctx.userProgress
     numericLines.push(
-      `- Streak atual: ${p.current_streak} dias (recorde ${p.longest_streak}) | XP: ${p.xp_total} (level ${p.level}) | Blocos 7700 fechados: ${p.blocks_completed}`,
+      `- Sequência atual: ${p.current_streak} dias consecutivos (recorde ${p.longest_streak}) | XP: ${p.xp_total} (nível ${p.level}) | Blocos 7700 fechados: ${p.blocks_completed}`,
     )
     // Bloco 7700 EM ANDAMENTO — usado pelo card pós-registro (recomp)
     // pra mostrar 📊 Bloco 7700: {N} / 7700 kcal ({pct}%).

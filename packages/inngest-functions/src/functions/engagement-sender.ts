@@ -268,10 +268,12 @@ DADOS REAIS DO DIA — USE ESTES VALORES, NÃO INVENTE:
 - Exercício hoje: ${exerciseKcal} kcal queimadas
 ${yesterdayBalance != null ? `- Balanço de ONTEM (${yesterdayLocalDate}): ${yesterdayBalance} kcal (negativo = déficit, positivo = superávit)` : '- Sem dados de ontem'}
 
-Streak atual: ${progress?.current_streak ?? 0} dias
-XP: ${progress?.xp_total ?? 0} (level ${progress?.level ?? 1})
+Sequência atual: ${progress?.current_streak ?? 0} dias consecutivos
+XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
+
+⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.
 `.trim()
 
   const result = await llm.complete({

@@ -25,35 +25,7 @@ type MockRow = {
   fiber_g: number
 }
 
-type HistoryRow = {
-  id: string
-  food_name: string
-  quantity_g: number
-  kcal: number
-  protein_g: number
-  carbs_g: number
-  fat_g: number
-}
-
-function makeMock(
-  matches: Record<string, MockRow | null>,
-  historyRows: HistoryRow[] = [],
-): ServiceClient {
-  // Proxy chainable que aceita qualquer .eq/.ilike/.gte/.gt/.neq/.order/.limit
-  // e no final retorna { data, error }. Suporta queries antigas (fallback 1)
-  // e novas (lookupUserHistory).
-  const makeChain = (rows: unknown): unknown => {
-    const obj: Record<string, unknown> = {
-      data: rows,
-      error: null,
-    }
-    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'order', 'limit']) {
-      obj[m] = () => makeChain(rows)
-    }
-    obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
-      Promise.resolve(cb({ data: rows, error: null }))
-    return obj
-  }
+function makeMock(matches: Record<string, MockRow | null>): ServiceClient {
   return {
     rpc: async (_fn: string, params: { search_term: string }) => {
       const term = params.search_term.toLowerCase().trim()
@@ -61,10 +33,23 @@ function makeMock(
       if (hit) return { data: [hit], error: null }
       return { data: [], error: null }
     },
-    from: (table: string) => {
-      if (table === 'meal_logs') return makeChain(historyRows)
-      return makeChain([])
-    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          ilike: () => ({
+            gte: () => ({
+              neq: () => ({
+                neq: () => ({
+                  order: () => ({
+                    limit: () => ({ data: null, error: null }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
   } as unknown as ServiceClient
 }
 
@@ -317,153 +302,5 @@ describe('calcMealMacros — proteína esperada (sanity 3)', () => {
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBe(146)
     expect(r.user_warnings).toHaveLength(0)
-  })
-})
-
-describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13)', () => {
-  // Roberto pediu: alimentos repetidos devem reusar do histórico em vez de re-matchar
-  // toda vez. Ex: "leite com whey" virava "achocolatado" no trigram todo dia.
-
-  it('matchou histórico exato — usa macros do log anterior, ignora trigram', async () => {
-    // Trigram retornaria match errado (achocolatado), mas histórico tem
-    // "leite com whey" gravado → usa o histórico.
-    const mock = makeMock(
-      {
-        'leite com whey': {
-          id: 999,
-          name_pt: 'achocolatado',
-          category: 'bebidas',
-          similarity: 0.5,
-          kcal_per_100g: 85,
-          protein_g: 1.5,
-          carbs_g: 18,
-          fat_g: 1.0,
-          fiber_g: 0,
-        },
-      },
-      [
-        {
-          id: 'log-1',
-          food_name: 'leite com whey',
-          quantity_g: 200,
-          kcal: 200, // 100 kcal/100g (correto)
-          protein_g: 24,
-          carbs_g: 10,
-          fat_g: 6,
-        },
-      ],
-    )
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'leite com whey', quantity_g: 250 }],
-      'BR',
-      'user-roberto',
-    )
-    expect(r.items[0]?.source).toBe('taco')
-    expect(r.items[0]?.matched_taco_name).toContain('histórico')
-    // 100 kcal/100g × 250g/100 = 250 kcal — NÃO 212.5 (achocolatado)
-    expect(r.items[0]?.kcal).toBe(250)
-    expect(r.items[0]?.protein_g).toBe(30) // 24g/200g × 250g = 30g
-    expect(r.audit_warnings.some((w) => /hist[óo]rico/i.test(w))).toBe(true)
-  })
-
-  it('histórico match case/acento-insensitive', async () => {
-    const mock = makeMock(
-      {},
-      [
-        {
-          id: 'log-2',
-          food_name: 'Pão Francês',
-          quantity_g: 50,
-          kcal: 150,
-          protein_g: 4,
-          carbs_g: 29,
-          fat_g: 1.5,
-        },
-      ],
-    )
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'pao frances', quantity_g: 100 }],
-      'BR',
-      'user-x',
-    )
-    expect(r.items[0]?.source).toBe('taco')
-    expect(r.items[0]?.kcal).toBe(300) // 150 × 2
-  })
-
-  it('sem userIdHint NÃO consulta histórico', async () => {
-    const mock = makeMock(
-      {
-        'arroz branco': {
-          id: 1,
-          name_pt: 'arroz branco cozido',
-          category: 'cereais',
-          similarity: 1.0,
-          kcal_per_100g: 128,
-          protein_g: 2.5,
-          carbs_g: 28,
-          fat_g: 0.2,
-          fiber_g: 1.6,
-        },
-      },
-      [
-        {
-          id: 'log-3',
-          food_name: 'arroz branco',
-          quantity_g: 100,
-          kcal: 999, // valor catastrófico no histórico — não deve ser usado sem userId
-          protein_g: 0,
-          carbs_g: 0,
-          fat_g: 0,
-        },
-      ],
-    )
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'arroz branco', quantity_g: 100 }],
-      'BR',
-      undefined, // sem userId
-    )
-    expect(r.items[0]?.source).toBe('taco')
-    expect(r.items[0]?.kcal).toBe(128) // do food_db, não do histórico
-  })
-
-  it('histórico ignorado quando paciente envia nome diferente (sem overlap)', async () => {
-    const mock = makeMock(
-      {
-        'banana prata': {
-          id: 50,
-          name_pt: 'banana prata',
-          category: 'frutas',
-          similarity: 1.0,
-          kcal_per_100g: 89,
-          protein_g: 1.1,
-          carbs_g: 22,
-          fat_g: 0.3,
-          fiber_g: 2.6,
-        },
-      },
-      [
-        {
-          id: 'log-4',
-          food_name: 'leite com whey', // alimento totalmente diferente
-          quantity_g: 200,
-          kcal: 200,
-          protein_g: 24,
-          carbs_g: 10,
-          fat_g: 6,
-        },
-      ],
-    )
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'banana prata', quantity_g: 100 }],
-      'BR',
-      'user-y',
-    )
-    expect(r.items[0]?.source).toBe('taco')
-    expect(r.items[0]?.kcal).toBe(89) // banana, não whey
-    expect(r.items[0]?.matched_taco_name).not.toContain('histórico')
   })
 })

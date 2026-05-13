@@ -234,6 +234,31 @@ export const processMessageFn = inngest.createFunction(
         })
       })
     } catch (err) {
+      // Loga erro pra rastreabilidade (antes só ficava em logger.info do Inngest,
+      // que era inacessível sem `vercel logs` ao vivo). Caso real 2026-05-13:
+      // Roberto mandou foto, pipeline falhou silenciosamente, demoramos 30min
+      // pra confirmar a causa porque não havia evento no banco.
+      try {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const errStack = err instanceof Error ? err.stack?.slice(0, 1500) : undefined
+        const { supabase } = createWorkerDeps()
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.error',
+          properties: {
+            provider_message_id: providerMessageId,
+            content_type: contentType,
+            has_media: !!mediaUrl,
+            error_message: errMsg.slice(0, 500),
+            error_stack: errStack,
+            text_preview: (enrichedText ?? text ?? '').slice(0, 200),
+          },
+        })
+      } catch (logErr) {
+        logger.error('Failed to log pipeline.error event', {
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        })
+      }
       await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
       await messaging
         .sendText(wpp, 'Tive um problema agora. Tenta de novo em alguns segundos? 🙏', {

@@ -332,6 +332,83 @@ async function matchFood(
  * Cada item identificado vai para a food_db. Itens sem match recebem
  * estimativa zero e o warning é registrado.
  */
+/**
+ * Procura o mesmo alimento no histórico do paciente nos últimos 30d.
+ * Roberto pediu (2026-05-13): "consegue pegar os alimentos q se repetem
+ * pra vir nas refeições seguintes qd ele identificar algo semelhante?
+ * Pq tipo, todo dia eu tomo leite com whey de manhã e todo dia ele coloca
+ * achocolatado ou chocolate quente".
+ *
+ * Estratégia: o próprio `meal_logs` é a memória do paciente. Se ele
+ * confirmou X = Y macros num dia (após correção, replace=true substitui
+ * os logs antigos), nos dias seguintes esse log vira fonte de verdade.
+ *
+ * Filtros importantes:
+ *   - source='taco' (matches confiáveis, não estimativa por categoria nem zerados)
+ *   - kcal > 0 (exclui logs sanity-rejected)
+ *   - últimas 30d
+ *   - case/acento-insensitive (normalize)
+ *
+ * Retorna `null` se não acha hit confiável.
+ */
+export async function lookupUserHistory(
+  supabase: ServiceClient,
+  userId: string,
+  foodName: string,
+): Promise<{
+  kcal_per_100g: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+  fiber_g: number
+  matched_log_id: string
+  matched_food_name: string
+} | null> {
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const target = normalize(foodName)
+  const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supaTyped = supabase as any
+  const { data } = await supaTyped
+    .from('meal_logs')
+    .select('id, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g')
+    .eq('user_id', userId)
+    .eq('source', 'taco')
+    .gt('kcal', 0)
+    .gte('created_at', lookback)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  const rows = (data ?? []) as Array<{
+    id: string
+    food_name: string
+    quantity_g: number
+    kcal: number
+    protein_g: number
+    carbs_g: number
+    fat_g: number
+  }>
+  // Match exato (normalizado) primeiro; depois substring forte.
+  const exact = rows.find((r) => normalize(r.food_name) === target)
+  const sub =
+    exact ??
+    rows.find((r) => {
+      const n = normalize(r.food_name)
+      return n.length >= 4 && target.length >= 4 && (n.includes(target) || target.includes(n))
+    })
+  if (!sub || sub.quantity_g <= 0) return null
+  const factor100 = 100 / Number(sub.quantity_g)
+  return {
+    kcal_per_100g: +(Number(sub.kcal) * factor100).toFixed(2),
+    protein_g: +(Number(sub.protein_g) * factor100).toFixed(2),
+    carbs_g: +(Number(sub.carbs_g) * factor100).toFixed(2),
+    fat_g: +(Number(sub.fat_g) * factor100).toFixed(2),
+    fiber_g: 0,
+    matched_log_id: sub.id,
+    matched_food_name: sub.food_name,
+  }
+}
+
 export async function calcMealMacros(
   supabase: ServiceClient,
   items: MealItemInput[],
@@ -346,6 +423,45 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (const it of items) {
+    // ── PRIORIDADE 0: HISTÓRICO DO PACIENTE (Roberto 2026-05-13) ────────────
+    // Antes do trigram, checa se o paciente já registrou esse alimento antes.
+    // Se sim, usa esses macros — evita "leite com whey" virar achocolatado
+    // toda vez. Após correção via replace=true, o log atualizado vira a memória.
+    if (userIdHint) {
+      const hist = await lookupUserHistory(supabase, userIdHint, it.food_name)
+      if (hist) {
+        const f = it.quantity_g / 100
+        const kcal = +(hist.kcal_per_100g * f).toFixed(1)
+        const protein = +(hist.protein_g * f).toFixed(2)
+        const carbs = +(hist.carbs_g * f).toFixed(2)
+        const fat = +(hist.fat_g * f).toFixed(2)
+        const nat = naturalUnit(it.food_name, it.quantity_g)
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: `[histórico] ${hist.matched_food_name}`,
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal,
+          protein_g: protein,
+          carbs_g: carbs,
+          fat_g: fat,
+          fiber_g: 0,
+          similarity: 1.0,
+          source: 'taco',
+          display_qty: nat.display_qty,
+          display_unit: nat.display_unit,
+        })
+        totals.kcal += kcal
+        totals.protein_g += protein
+        totals.carbs_g += carbs
+        totals.fat_g += fat
+        auditWarnings.push(
+          `"${it.food_name}" reusado do histórico do paciente (registro anterior: "${hist.matched_food_name}").`,
+        )
+        continue
+      }
+    }
+    // ───────────────────────────────────────────────────────────────────────
     // Sanity 1: nome composto ("ovo com azeite", "leite com whey", "arroz e feijão").
     // Antes: rejeitava direto e zerava. Agora: tenta auto-split, busca cada parte
     // separadamente, divide a quantidade proporcionalmente. Se TODAS as partes

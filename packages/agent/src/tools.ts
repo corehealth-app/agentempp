@@ -339,39 +339,87 @@ export const registraRefeicao: ToolDefinition = {
     //    (que pedia palavra-chave "corrige/errei") fez downgrade pra false → soma.
     //
     // SOLUÇÃO UNIFICADA: calcular evidência objetiva SEMPRE e usar em ambos os
-    // caminhos. Evidência objetiva = >=50% overlap de food_name em <15min do
-    // mesmo meal_type. Verbal = palavra-chave nas msgs recentes. Qualquer uma
-    // serve pra ratificar replace=true.
+    // caminhos. Evidência objetiva = >=50% overlap de food_name em <15min de
+    // QUALQUER meal_type recente. Verbal = palavra-chave nas msgs recentes.
+    // Qualquer uma serve pra ratificar replace=true.
+    //
+    // CROSS-MEAL-TYPE (Paulo 2026-05-13 18:43-19:15): foto chegou 15:43 BRT e
+    // foi registrada como 'lanche' (chute por hora). Paulo corrigiu e LLM
+    // mandou meal_type='almoco'. Antes: detector filtrava por meal_type igual,
+    // não via os logs anteriores em 'lanche' → soma. Agora: olha qualquer
+    // meal_type recente e, se encontrar overlap forte, marca crossMealTypeFrom
+    // pra apagar também daquele meal_type no replace.
     let objectiveCorrectionEvidence = false
-    let overlapMeta: { ratio: number; recent: string[]; new: string[] } | null = null
+    let overlapMeta: { ratio: number; recent: string[]; new: string[]; from_meal_type: string | null } | null = null
+    let crossMealTypeFrom: string | null = null
     if (args.meal_type && args.items.length > 0) {
       const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
       const { data: recentLogs } = await ctx.supabase
         .from('meal_logs')
-        .select('food_name, quantity_g')
+        .select('food_name, quantity_g, meal_type')
         .eq('user_id', ctx.userId)
-        .eq('meal_type', args.meal_type)
         .gte('created_at', fifteenMinAgo)
-        .limit(20)
-      const recent = (recentLogs ?? []) as Array<{ food_name: string; quantity_g: number }>
+        .limit(30)
+      const recent = (recentLogs ?? []) as Array<{
+        food_name: string
+        quantity_g: number
+        meal_type: string
+      }>
       if (recent.length > 0) {
         const normalize = (s: string) =>
           s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-        const recentNames: string[] = recent.map((r) => normalize(r.food_name))
         const newNames: string[] = args.items.map((i: { food_name: string }) =>
           normalize(i.food_name),
         )
-        const overlapCount = newNames.filter((nn: string) =>
-          recentNames.some((rn: string) => rn.includes(nn) || nn.includes(rn)),
-        ).length
-        const overlapRatio = overlapCount / Math.max(newNames.length, recentNames.length)
-        overlapMeta = {
-          ratio: Math.round(overlapRatio * 100) / 100,
-          recent: recentNames,
-          new: newNames,
+        // Agrupa logs por meal_type e calcula overlap pra cada grupo separado.
+        // Se overlap >= 50% em algum grupo, esse é o "target da correção".
+        // Prioriza o MESMO meal_type (caso simples) sobre cross-meal-type.
+        const groups = new Map<string, string[]>()
+        for (const r of recent) {
+          const arr = groups.get(r.meal_type) ?? []
+          arr.push(normalize(r.food_name))
+          groups.set(r.meal_type, arr)
         }
-        if (overlapRatio >= 0.5) {
+        let bestRatio = 0
+        let bestMealType: string | null = null
+        let bestNames: string[] = []
+        // Tenta primeiro o mesmo meal_type
+        const sameTypeNames = groups.get(args.meal_type)
+        if (sameTypeNames && sameTypeNames.length > 0) {
+          const overlap = newNames.filter((nn) =>
+            sameTypeNames.some((rn) => rn.includes(nn) || nn.includes(rn)),
+          ).length
+          const ratio = overlap / Math.max(newNames.length, sameTypeNames.length)
+          if (ratio > bestRatio) {
+            bestRatio = ratio
+            bestMealType = args.meal_type
+            bestNames = sameTypeNames
+          }
+        }
+        // Depois testa outros meal_types — só aceita se overlap >= 50%.
+        for (const [mt, names] of groups.entries()) {
+          if (mt === args.meal_type) continue
+          const overlap = newNames.filter((nn) =>
+            names.some((rn) => rn.includes(nn) || nn.includes(rn)),
+          ).length
+          const ratio = overlap / Math.max(newNames.length, names.length)
+          if (ratio >= 0.5 && ratio > bestRatio) {
+            bestRatio = ratio
+            bestMealType = mt
+            bestNames = names
+          }
+        }
+        overlapMeta = {
+          ratio: Math.round(bestRatio * 100) / 100,
+          recent: bestNames,
+          new: newNames,
+          from_meal_type: bestMealType,
+        }
+        if (bestRatio >= 0.5) {
           objectiveCorrectionEvidence = true
+          if (bestMealType && bestMealType !== args.meal_type) {
+            crossMealTypeFrom = bestMealType
+          }
         }
       }
     }
@@ -508,8 +556,13 @@ export const registraRefeicao: ToolDefinition = {
     // CORREÇÃO: paciente quer substituir refeição já registrada hoje.
     // Deleta meal_logs do dia+meal_type e SUBTRAI seus macros do snapshot
     // antes de inserir os novos. Sem isso, snapshot_add_meal duplica.
-    let replacedSummary: { count: number; kcal_removed: number } | null = null
+    let replacedSummary: { count: number; kcal_removed: number; cross_from?: string } | null = null
     if (args.replace === true && args.meal_type) {
+      // Lista de meal_types pra apagar: SEMPRE o atual + cross se detectado.
+      // Cross-meal-type: paciente corrigiu trocando o tipo (ex: lanche → almoco).
+      const mealTypesToDelete = crossMealTypeFrom
+        ? [args.meal_type, crossMealTypeFrom]
+        : [args.meal_type]
       // BUG HISTÓRICO (Roberto 09/05): query usava `created_at >= '${today}T00:00:00'`
       // sem timezone — Postgres interpretava como UTC, mas `today` era data LOCAL
       // (EDT). Pra paciente em UTC-4 entre 20h-24h local (= 00h-04h UTC do dia
@@ -526,16 +579,27 @@ export const registraRefeicao: ToolDefinition = {
         .eq('date', today)
         .maybeSingle()
       const snapId = (snapToday as { id: string } | null)?.id ?? null
-      const baseQuery = ctx.supabase
-        .from('meal_logs')
-        .select('id, kcal, protein_g, carbs_g, fat_g')
-        .eq('user_id', ctx.userId)
-        .eq('meal_type', args.meal_type)
-      const { data: toRemove } = snapId
-        ? await baseQuery.eq('snapshot_id', snapId)
-        : { data: [] as Array<{ id: string; kcal: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null }> }
-      if (toRemove && toRemove.length > 0) {
-        const removed = toRemove.reduce(
+      type RemoveRow = {
+        id: string
+        kcal: number | null
+        protein_g: number | null
+        carbs_g: number | null
+        fat_g: number | null
+      }
+      let allRemoved: RemoveRow[] = []
+      if (snapId) {
+        for (const mt of mealTypesToDelete) {
+          const { data: rows } = await ctx.supabase
+            .from('meal_logs')
+            .select('id, kcal, protein_g, carbs_g, fat_g')
+            .eq('user_id', ctx.userId)
+            .eq('meal_type', mt)
+            .eq('snapshot_id', snapId)
+          if (rows) allRemoved = allRemoved.concat(rows as RemoveRow[])
+        }
+      }
+      if (allRemoved.length > 0) {
+        const removed = allRemoved.reduce(
           (acc, l) => ({
             kcal: acc.kcal + Number(l.kcal ?? 0),
             prot: acc.prot + Number(l.protein_g ?? 0),
@@ -544,13 +608,27 @@ export const registraRefeicao: ToolDefinition = {
           }),
           { kcal: 0, prot: 0, carb: 0, fat: 0 },
         )
-        // Deleta os logs antigos do mesmo snapshot+meal_type
-        await ctx.supabase
-          .from('meal_logs')
-          .delete()
-          .eq('user_id', ctx.userId)
-          .eq('meal_type', args.meal_type)
-          .eq('snapshot_id', snapId!)
+        // Deleta os logs antigos de TODOS os meal_types alvo (atual + cross)
+        for (const mt of mealTypesToDelete) {
+          await ctx.supabase
+            .from('meal_logs')
+            .delete()
+            .eq('user_id', ctx.userId)
+            .eq('meal_type', mt)
+            .eq('snapshot_id', snapId!)
+        }
+        if (crossMealTypeFrom) {
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.replace_cross_meal_type',
+            properties: {
+              from_meal_type: crossMealTypeFrom,
+              to_meal_type: args.meal_type,
+              removed_count: allRemoved.length,
+              removed_kcal: Math.round(removed.kcal),
+            },
+          })
+        }
         // Subtrai do snapshot via RPC (passa valores negativos)
         await (ctx.supabase as unknown as {
           rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
@@ -564,7 +642,11 @@ export const registraRefeicao: ToolDefinition = {
           p_calories_target: null,
           p_protein_target: null,
         })
-        replacedSummary = { count: toRemove.length, kcal_removed: Math.round(removed.kcal) }
+        replacedSummary = {
+          count: allRemoved.length,
+          kcal_removed: Math.round(removed.kcal),
+          ...(crossMealTypeFrom ? { cross_from: crossMealTypeFrom } : {}),
+        }
       } else {
         // replace=true mas nada pra substituir hoje desse meal_type.
         // É indício de bug do LLM (achou que era correção quando não era).

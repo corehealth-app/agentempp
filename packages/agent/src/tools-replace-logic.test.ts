@@ -20,7 +20,7 @@ import type { ServiceClient } from '@mpp/db'
 //   true     | não    | sim     | kept (ratified_by_overlap) ← bug Paulo
 //   true     | não    | não     | downgrade (blocked_no_correction)
 
-type RecentLog = { food_name: string; quantity_g: number }
+type RecentLog = { food_name: string; quantity_g: number; meal_type?: string }
 
 interface MockOptions {
   recentLogs?: RecentLog[]
@@ -72,7 +72,16 @@ function makeContextAndSupabase(opts: MockOptions) {
           },
         }
       }
-      // daily_snapshots, users, etc — stub vazio
+      // daily_snapshots → retorna snapshot mock (precisa pra path do replace)
+      if (table === 'daily_snapshots') {
+        return {
+          ...((chain({ id: 'snap-mock' }) as object)),
+          insert: () => chain({ id: 'snap-mock' }),
+          update: () => chain({ id: 'snap-mock' }),
+          upsert: () => chain({ id: 'snap-mock' }),
+        }
+      }
+      // outros — stub vazio
       return {
         ...((chain([]) as object)),
         insert: () => chain([]),
@@ -202,5 +211,75 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     const blocked = events.find((e) => e.event === 'tool.replace_blocked_no_correction')
     expect(blocked).toBeDefined()
     expect(blocked?.properties.overlap_ratio).toBe(0)
+  })
+
+  // BUG do PAULO 2026-05-13 18:43-19:15 (cross-meal-type):
+  // Foto chegou 15:43 BRT → registrada como 'lanche'. Paulo corrigiu, LLM
+  // mandou meal_type='almoco' + replace=true. Antes: detector filtrava só
+  // pelo mesmo meal_type → não viu o 'lanche' → bloqueou → SOMOU.
+  // Agora: detector olha qualquer meal_type recente e captura cross.
+  it('replace=true + overlap em meal_type DIFERENTE (cross-meal-type) — bug do PAULO', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      recentLogs: [
+        { food_name: 'carne assada', quantity_g: 150, meal_type: 'lanche' },
+        { food_name: 'ovo frito', quantity_g: 100, meal_type: 'lanche' },
+        { food_name: 'arroz cozido', quantity_g: 150, meal_type: 'lanche' },
+        { food_name: 'lentilha cozida', quantity_g: 50, meal_type: 'lanche' },
+        { food_name: 'couve refogada', quantity_g: 50, meal_type: 'lanche' },
+      ],
+      recentUserMessages: ['Observação ovos fritos sem gordura'],
+      llmSentReplace: true,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco', // LLM corrigiu lanche → almoco
+        replace: true,
+        items: [
+          { food_name: 'carne assada', quantity_g: 150 },
+          { food_name: 'ovos fritos sem gordura', quantity_g: 100 },
+          { food_name: 'arroz cozido', quantity_g: 150 },
+          { food_name: 'lentilha cozida', quantity_g: 50 },
+          { food_name: 'couve refogada', quantity_g: 50 },
+        ],
+      },
+      ctx,
+    )
+    // Deve ratificar via overlap (cross-meal-type)
+    expect(events.find((e) => e.event === 'tool.replace_ratified_by_overlap')).toBeDefined()
+    // E NÃO deve ter sido blocked
+    expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeUndefined()
+    // Deve logar o evento de cross-meal-type
+    const cross = events.find((e) => e.event === 'tool.replace_cross_meal_type')
+    expect(cross).toBeDefined()
+    expect(cross?.properties.from_meal_type).toBe('lanche')
+    expect(cross?.properties.to_meal_type).toBe('almoco')
+  })
+
+  it('mesmo meal_type prevalece quando há logs em ambos (não confunde cross)', async () => {
+    // Se há logs em lanche E em almoco recentes, e LLM manda almoco com overlap
+    // alto no almoco, NÃO deve marcar cross — usa só o mesmo meal_type.
+    const { ctx, events } = makeContextAndSupabase({
+      recentLogs: [
+        { food_name: 'biscoito', quantity_g: 30, meal_type: 'lanche' }, // sem overlap
+        { food_name: 'arroz', quantity_g: 100, meal_type: 'almoco' },   // overlap
+        { food_name: 'feijão', quantity_g: 80, meal_type: 'almoco' },   // overlap
+      ],
+      recentUserMessages: ['era 150g de arroz, não 100'],
+      llmSentReplace: true,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco',
+        replace: true,
+        items: [
+          { food_name: 'arroz', quantity_g: 150 },
+          { food_name: 'feijão', quantity_g: 80 },
+        ],
+      },
+      ctx,
+    )
+    // Deve ratificar mas NÃO deve marcar cross-meal-type (mesmo tipo prevalece)
+    expect(events.find((e) => e.event === 'tool.replace_ratified_by_overlap')).toBeDefined()
+    expect(events.find((e) => e.event === 'tool.replace_cross_meal_type')).toBeUndefined()
   })
 })

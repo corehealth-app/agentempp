@@ -60,11 +60,17 @@ function badgeMatches(badge: BadgeDef, p: UserProgress): boolean {
 
 /**
  * Aplica um snapshot diário ao progresso anterior, retornando o próximo estado.
+ *
+ * @param designDeficit kcal/dia que o protocolo já programa (recomp: 400/500/600).
+ *   Sem isso, paciente on-plan (consumed=target) tem dailyBalance=0 e o bloco
+ *   nunca cresce — Roberto reportou exatamente isso em 2026-05-09 e 2026-05-12.
+ *   A migration SQL daily_close_user já considera isso; este path TS replica.
  */
 export function computeProgress(
   snapshot: DailySnapshot,
   prev: UserProgress,
   config: CalcConfig = DEFAULT_CALC_CONFIG,
+  designDeficit = 0,
 ): UserProgress {
   // XP e level
   const xpTotal = prev.xpTotal + snapshot.xpEarned
@@ -77,8 +83,9 @@ export function computeProgress(
   const currentStreak = continuesStreak ? prev.currentStreak + 1 : 1
   const longestStreak = Math.max(currentStreak, prev.longestStreak)
 
-  // Bloco 7700: déficit acumulado dentro do bloco atual
-  const newDeficit = Math.max(0, -snapshot.dailyBalance)
+  // Bloco 7700: design_deficit (estrutural) + extras vs target.
+  // Extras positivos = comeu além do target (queima do design deficit).
+  const newDeficit = Math.max(0, designDeficit + -snapshot.dailyBalance)
   const totalDeficit = prev.deficitBlock + newDeficit
   const blocksDelta = Math.floor(totalDeficit / config.kcal_block)
   const blocksCompleted = prev.blocksCompleted + blocksDelta

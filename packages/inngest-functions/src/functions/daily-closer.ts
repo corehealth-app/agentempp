@@ -136,10 +136,13 @@ async function closeUserDay(
   )
   const trainingDone = (workouts ?? []).length > 0
 
-  // Pega target do profile
+  // Pega target do profile + deficit_level (pra bloco 7700 incluir design_deficit
+  // estrutural da recomp). Sem isso, paciente on-plan (consumed=target) tinha
+  // dailyBalance=0 e bloco nunca crescia. Roberto reportou em 2026-05-09 e
+  // 2026-05-12. A migration SQL daily_close_user já corrige; replicamos aqui.
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('current_protocol')
+    .select('current_protocol, deficit_level')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -228,7 +231,15 @@ async function closeUserDay(
     dailyBalance: snap.daily_balance ?? 0,
   }
 
-  const next = computeProgress(dailySnap, prev, calcConfig)
+  // Design deficit estrutural: só recomp usa (400/500/600 conforme fome).
+  // Outros protocolos (ganho_massa, manutenção) = 0 — bloco só conta extras.
+  const profileTyped = profile as { current_protocol?: string | null; deficit_level?: number | null } | null
+  const designDeficit =
+    profileTyped?.current_protocol === 'recomposicao'
+      ? (profileTyped?.deficit_level ?? 500)
+      : 0
+
+  const next = computeProgress(dailySnap, prev, calcConfig, designDeficit)
 
   await supabase
     .from('user_progress')

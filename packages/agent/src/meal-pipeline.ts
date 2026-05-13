@@ -222,6 +222,42 @@ export interface MealCalcResult {
 }
 
 /**
+ * Extrai o "âncora" do nome do alimento — palavra-chave do ingrediente principal,
+ * removendo qualifiers de preparo/tipo. Usado pra rejeitar match catastrófico
+ * onde o trigram dominou a similaridade por uma palavra de preparo.
+ *
+ * Exemplo: "arroz refogado" → âncora="arroz". Match "espinafre refogado" não
+ * contém "arroz" → rejeita match, cai pra estimativa por categoria.
+ *
+ * Reportado por Roberto em 2026-05-12: "arroz refogado" matchou com
+ * "espinafre refogado" (39 kcal/100g) → 47 kcal pra 120g de arroz = absurdo.
+ */
+const PREPARATION_QUALIFIERS = new Set([
+  'refogado', 'refogada', 'cozido', 'cozida', 'frito', 'frita', 'assado',
+  'assada', 'grelhado', 'grelhada', 'cru', 'crua', 'natural', 'temperado',
+  'temperada', 'recheado', 'recheada', 'gratinado', 'gratinada', 'mexido',
+  'mexida', 'desfiado', 'desfiada', 'moído', 'moida', 'moído', 'moída',
+  'picado', 'picada', 'fatiado', 'fatiada', 'ralado', 'ralada',
+  'branco', 'branca', 'integral', 'doce', 'salgado', 'salgada', 'light',
+  'diet', 'zero', 'magro', 'magra', 'gordo', 'gorda',
+  'com', 'sem', 'ao', 'no', 'na', 'de', 'do', 'da', 'dos', 'das', 'e', 'em',
+  'pra', 'para', 'tipo', 'estilo', 'mix',
+])
+
+export function extractAnchor(foodName: string): string | null {
+  const tokens = foodName
+    .toLowerCase()
+    .replace(/[^a-záéíóúâêôãõçü\s]/gi, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !PREPARATION_QUALIFIERS.has(t))
+  // Prioriza o token mais longo (geralmente o ingrediente principal).
+  // Empate: pega o primeiro (ordem de menção do paciente).
+  if (tokens.length === 0) return null
+  tokens.sort((a, b) => b.length - a.length)
+  return tokens[0] ?? null
+}
+
+/**
  * Match fuzzy via pg_trgm.
  * Threshold de 0.3 (ajustável). Acima disso confiamos no match.
  */
@@ -414,6 +450,13 @@ export async function calcMealMacros(
     const m = await matchFood(supabase, it.food_name, country)
     const factor = it.quantity_g / 100
 
+    // Anchor check: o ingrediente principal da query precisa aparecer no
+    // nome do match. Bloqueia bug "arroz refogado" → "espinafre refogado".
+    // Se a âncora não aparece, força fallback pra estimativa por categoria.
+    const anchor = extractAnchor(it.food_name)
+    const matchedNameLower = (m.name_pt ?? '').toLowerCase()
+    const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
+
     // Threshold dinâmico por tamanho da query:
     // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa
     //   contra entries longos no DB (ex: "whey" vs "whey protein" = 0.38).
@@ -425,7 +468,7 @@ export async function calcMealMacros(
     const queryLen = it.food_name.trim().length
     const isShortQuery = queryWords <= 2 || queryLen <= 15
     const matchThreshold = isShortQuery ? 0.3 : 0.45
-    if (m.id != null && m.kcal_per_100g != null && m.similarity >= matchThreshold) {
+    if (m.id != null && m.kcal_per_100g != null && m.similarity >= matchThreshold && anchorMatches) {
       const kcal = +(m.kcal_per_100g * factor).toFixed(1)
       const protein = +((m.protein_g ?? 0) * factor).toFixed(2)
       const carbs = +((m.carbs_g ?? 0) * factor).toFixed(2)
@@ -534,6 +577,17 @@ export async function calcMealMacros(
         )
       }
     } else {
+      // Loga rejeição por anchor mismatch pra rastreabilidade no /audit
+      if (
+        m.id != null &&
+        m.kcal_per_100g != null &&
+        m.similarity >= matchThreshold &&
+        !anchorMatches
+      ) {
+        auditWarnings.push(
+          `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — âncora "${anchor}" não aparece no nome.`,
+        )
+      }
       // ────────────────────────────────────────────────────────────────────
       // FALLBACK 1: tenta reusar do histórico do paciente (Roberto pediu:
       // "pode já colocar pra ele usar alimentos já informados ou identificados

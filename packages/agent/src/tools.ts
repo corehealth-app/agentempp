@@ -275,7 +275,8 @@ export const registraRefeicao: ToolDefinition = {
     'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga. ' +
     '➕ ADIÇÃO de item a refeição JÁ REGISTRADA ("adicionei X", "esqueci de mencionar Y", "coloca mais Z"): chame com APENAS os itens NOVOS, sem re-listar a refeição inteira, e SEM replace=true. Exemplo: paciente diz "Adicionei uma medida de geleia de morango ao café" → items=[{food_name:"geleia de morango",quantity_g:20}]. Se você re-listar todos os itens da refeição + os novos sem replace=true, DUPLICA as calorias no tracking. ' +
     '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Com replace=true a tool apaga os logs anteriores do meal_type e insere os novos. Sem replace=true, a tool SOMA — gera dupla contagem. Default replace=false (assume nova refeição ou adição). ' +
-    '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' + +
+    '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
+    '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' + +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos".',
   parameters: z.object({
     meal_type: z
@@ -325,6 +326,59 @@ export const registraRefeicao: ToolDefinition = {
     // ========================================================================
     // GUARDA-CHUVA DETERMINÍSTICO (defesa em profundidade contra erro do LLM)
     // ========================================================================
+
+    // (0) DETECTA CORREÇÃO IMPLÍCITA — paciente re-envia a MESMA refeição com
+    // quantidades diferentes em janela curta SEM dizer "corrige".
+    //
+    // Caso real (esposa do Roberto, 2026-05-12): foto detectou 200g de arroz e
+    // 180g de carne (errado). Ela respondeu "100g arroz, 100g carne" SEM dizer
+    // "corrige". Agent chamou registra_refeicao SEM replace=true e SOMOU os
+    // valores em vez de substituir → meal duplicada.
+    //
+    // Heurística: se há meal_logs do mesmo meal_type registrados nos últimos
+    // 15 min E ≥50% dos food_name novos batem (substring) com algum food_name
+    // anterior → auto-aplica replace=true.
+    let implicitReplaceDetected = false
+    if (args.replace !== true && args.meal_type && args.items.length > 0) {
+      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+      const { data: recentLogs } = await ctx.supabase
+        .from('meal_logs')
+        .select('food_name, quantity_g')
+        .eq('user_id', ctx.userId)
+        .eq('meal_type', args.meal_type)
+        .gte('created_at', fifteenMinAgo)
+        .limit(20)
+      const recent = (recentLogs ?? []) as Array<{ food_name: string; quantity_g: number }>
+      if (recent.length > 0) {
+        const normalize = (s: string) =>
+          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+        const recentNames: string[] = recent.map((r) => normalize(r.food_name))
+        const newNames: string[] = args.items.map((i: { food_name: string }) =>
+          normalize(i.food_name),
+        )
+        // Conta quantos dos itens novos batem (substring bidirecional) com algum recente
+        const overlapCount = newNames.filter((nn: string) =>
+          recentNames.some((rn: string) => rn.includes(nn) || nn.includes(rn)),
+        ).length
+        const overlapRatio = overlapCount / Math.max(newNames.length, recentNames.length)
+        if (overlapRatio >= 0.5) {
+          args.replace = true
+          implicitReplaceDetected = true
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.replace_implicit_detected',
+            properties: {
+              meal_type: args.meal_type,
+              overlap_ratio: Math.round(overlapRatio * 100) / 100,
+              recent_names: recentNames,
+              new_names: newNames,
+              recent_count: recent.length,
+              new_count: args.items.length,
+            },
+          })
+        }
+      }
+    }
 
     // (1) AUTO-CORRIGE meal_type pela hora local do paciente.
     // CONSERVADOR: só sobrescreve quando há discrepância GRAVE (≥3h da janela)
@@ -402,7 +456,7 @@ export const registraRefeicao: ToolDefinition = {
     // Se últimas msgs do paciente NÃO têm "corrige/errei/troca/na verdade/...",
     // é provavelmente bug do LLM (ex: foto nova classificada como correção).
     // Downgrade pra replace=false silenciosamente — vira INSERT normal.
-    if (args.replace === true) {
+    if (args.replace === true && !implicitReplaceDetected) {
       const recentMsgs = ctx.recentUserMessages ?? []
       const correctionWord = detectCorrectionIntent(recentMsgs)
       if (!correctionWord) {

@@ -143,10 +143,12 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
     expect(r.user_warnings).toHaveLength(0)
   })
 
-  it('alimento NÃO-gordo matchado contra alimento gordo SEM categoria conhecida — DEVE zerar (regex check pelo nome)', async () => {
-    // Cenário: "iogurte natural" (não é gordura) bateu contra match com 700 kcal/100g
-    // e category "cremes" (não está em categoryAllowsHighKcal). Regex no nome também
-    // não pega "iogurte" → DEVE rejeitar via category_mismatch.
+  it('alimento NÃO-gordo matchado contra alimento gordo SEM categoria conhecida — anchor rejeita antes, vira llm_estimate', async () => {
+    // Cenário: "iogurte natural" bateu contra "creme de leite condensado".
+    // Anchor "iogurte" não aparece em "creme de leite condensado" → match rejeitado
+    // antes dos sanity checks. Cai pra estimativa por categoria (laticinio ~65 kcal).
+    // Antes do anchor check, isso virava category_mismatch e zerava — agora
+    // estima razoavelmente em vez de zerar (Roberto pediu "estimar, não zerar").
     const mock = makeMock({
       'iogurte natural': {
         id: 104,
@@ -165,10 +167,12 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
       [{ food_name: 'iogurte natural', quantity_g: 100 }],
       'BR',
     )
-    expect(r.items[0]?.source).toBe('category_mismatch')
-    expect(r.items[0]?.kcal).toBe(0)
-    expect(r.user_warnings.length).toBeGreaterThan(0)
-    expect(r.user_warnings[0]).toMatch(/match suspeito/i)
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    // Não zera — estima como laticineo (~65 kcal/100g)
+    expect(r.items[0]?.kcal).toBeGreaterThan(40)
+    expect(r.items[0]?.kcal).toBeLessThan(100)
+    // Audit log registra rejeição por anchor
+    expect(r.audit_warnings.some((w) => /âncora|anchor/i.test(w))).toBe(true)
   })
 })
 
@@ -257,11 +261,13 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
 })
 
 describe('calcMealMacros — proteína esperada (sanity 3)', () => {
-  it('"ovo" matchou em algo sem proteína — DEVE zerar e ir pra user_warnings', async () => {
+  it('"ovo" matchou em algo sem proteína — anchor rejeita match catastrófico, vira llm_estimate', async () => {
+    // "ovo" não aparece em "arroz branco" → anchor check rejeita antes do
+    // sanity check de proteína. Cai pra estimativa por categoria (ovo ~155 kcal).
     const mock = makeMock({
       ovo: {
         id: 300,
-        name_pt: 'arroz branco', // match catastrófico
+        name_pt: 'arroz branco',
         category: 'cereais',
         similarity: 0.5,
         kcal_per_100g: 130,
@@ -272,10 +278,10 @@ describe('calcMealMacros — proteína esperada (sanity 3)', () => {
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'ovo', quantity_g: 100 }], 'BR')
-    expect(r.items[0]?.source).toBe('protein_mismatch')
-    expect(r.items[0]?.kcal).toBe(0)
-    expect(r.user_warnings.length).toBeGreaterThan(0)
-    expect(r.user_warnings[0]).toMatch(/prote[íi]na/i)
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    // estimateMacros não tem regra específica pra "ovo" sozinho — cai no fallback
+    // genérico (~150 kcal/100g). Importante: NÃO usa o match catastrófico (130).
+    expect(r.audit_warnings.some((w) => /âncora|anchor/i.test(w))).toBe(true)
   })
 
   it('"ovo" matchou em ovo cozido (146 kcal, 13g proteína) — passa limpo', async () => {

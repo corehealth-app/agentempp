@@ -35,6 +35,9 @@ type Events = {
   'wa.quality.check': {
     data: { fired_at: string }
   }
+  'pipeline.health.tick': {
+    data: { fired_at: string }
+  }
   'subscription.event': {
     data: {
       provider_event_id: string

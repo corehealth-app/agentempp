@@ -6,6 +6,7 @@ import { dailyCloserFn } from './functions/daily-closer.js'
 import { engagementSenderFn } from './functions/engagement-sender.js'
 import { bufferListenerFn } from './functions/buffer-listener.js'
 import { waQualityCheckFn } from './functions/wa-quality-check.js'
+import { pipelineHealthFn } from './functions/pipeline-health.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -13,6 +14,7 @@ export const allFunctions = [
   engagementSenderFn,
   bufferListenerFn,
   waQualityCheckFn,
+  pipelineHealthFn,
 ]
 
 export {
@@ -21,4 +23,5 @@ export {
   engagementSenderFn,
   bufferListenerFn,
   waQualityCheckFn,
+  pipelineHealthFn,
 }

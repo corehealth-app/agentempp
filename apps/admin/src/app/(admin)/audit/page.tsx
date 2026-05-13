@@ -192,6 +192,63 @@ export default async function AuditPage() {
     .order('created_at', { ascending: false })
     .limit(20)
 
+  // ─── PIPELINE HEALTH ────────────────────────────────────────────────────
+  // Última msg OUT do sistema (qualquer user). Se passou >30min → sistema
+  // pode estar mudo. Caso real (2026-05-13): Inngest dessincronizou após
+  // deploy manual; 3h sem resposta a nenhum paciente.
+  const { data: lastOutRows } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (c: string, v: string) => {
+          order: (c: string, o: { ascending: boolean }) => {
+            limit: (n: number) => Promise<{
+              data: Array<{ created_at: string }> | null
+            }>
+          }
+        }
+      }
+    }
+  })
+    .from('messages')
+    .select('created_at')
+    .eq('direction', 'out')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const lastOutAt = lastOutRows?.[0]?.created_at ?? null
+  const minutesSinceLastOut = lastOutAt
+    ? Math.round((Date.now() - new Date(lastOutAt).getTime()) / 60000)
+    : null
+
+  // Eventos pipeline.stuck nas últimas 24h (detector automático)
+  const { data: stuckEvents, count: stuckCount } = await (svc as unknown as {
+    from: (t: string) => {
+      select: (
+        s: string,
+        opts?: { count?: 'exact' },
+      ) => {
+        eq: (c: string, v: string) => {
+          gte: (c: string, v: string) => {
+            order: (c: string, o: { ascending: boolean }) => {
+              limit: (n: number) => Promise<{
+                data: Array<{
+                  occurred_at: string
+                  properties: Record<string, unknown>
+                }> | null
+                count: number | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  })
+    .from('product_events')
+    .select('occurred_at, properties', { count: 'exact' })
+    .eq('event', 'pipeline.stuck')
+    .gte('occurred_at', since24h)
+    .order('occurred_at', { ascending: false })
+    .limit(10)
+
   // Meal match warnings (composite/category/protein/no_match) — últimas 24h
   const { data: mealWarnings, count: mealWarningCount } = await (svc as unknown as {
     from: (t: string) => {
@@ -233,6 +290,64 @@ export default async function AuditPage() {
           title="Auditoria"
           description={`${logs?.length ?? 0} ações sensíveis (credentials, regras, configs, admins).`}
         />
+      </div>
+
+      {/* Saúde do pipeline — alerta se sistema "mudo" ou stuck detectado */}
+      <div
+        className={`shrink-0 mb-3 content-card p-4 ${
+          (minutesSinceLastOut ?? 0) > 30 || (stuckCount ?? 0) > 0
+            ? 'border-destructive/40 bg-destructive/5'
+            : ''
+        }`}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold">
+            Saúde do pipeline{' '}
+            {(minutesSinceLastOut ?? 0) > 30 ? (
+              <span className="text-destructive">
+                ⚠️ {minutesSinceLastOut}min sem resposta
+              </span>
+            ) : (stuckCount ?? 0) > 0 ? (
+              <span className="text-bronze">
+                ⚠️ {stuckCount} incidentes nas 24h
+              </span>
+            ) : (
+              <span className="text-moss-700">✓ OK</span>
+            )}
+          </h3>
+        </div>
+        <div className="flex gap-6 text-xs">
+          <div>
+            <div className="text-muted-foreground">Última msg OUT</div>
+            <div className="font-mono">
+              {lastOutAt
+                ? `${minutesSinceLastOut}min atrás (${lastOutAt.slice(11, 16)} UTC)`
+                : 'nunca'}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Eventos pipeline.stuck (24h)</div>
+            <div className="font-mono">{stuckCount ?? 0}</div>
+          </div>
+        </div>
+        {(stuckEvents ?? []).length > 0 && (
+          <details className="mt-2 text-[10px]">
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              Detalhes dos incidentes
+            </summary>
+            <ul className="mt-1 space-y-1 font-mono">
+              {(stuckEvents ?? []).map((e) => (
+                <li key={e.occurred_at}>
+                  [{e.occurred_at.slice(11, 19)}] stuck=
+                  {String(
+                    (e.properties as { stuck_count?: number })?.stuck_count ?? '?',
+                  )}{' '}
+                  users
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
 
       <div className="shrink-0 mb-3 content-card p-4">

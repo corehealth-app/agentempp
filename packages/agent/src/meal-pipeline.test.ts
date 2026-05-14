@@ -234,7 +234,7 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
     expect(r.items[0]?.source).toBe('composite_rejected')
     expect(r.items[0]?.kcal).toBe(0)
     expect(r.user_warnings.length).toBeGreaterThan(0)
-    expect(r.user_warnings.join(' ')).toMatch(/composto|separar/i)
+    expect(r.user_warnings.join(' ')).toMatch(/vários alimentos juntos|separad/i)
   })
 
   it('auto-split bem-sucedido — aviso vai pra audit_warnings (silencioso pro paciente)', async () => {

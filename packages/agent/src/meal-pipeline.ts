@@ -541,9 +541,11 @@ export async function calcMealMacros(
         )
         continue
       }
-      // Algum part não matchou — mantém rejeição
+      // Algum part não foi encontrado — mantém rejeição.
+      // Texto SEM jargão: o LLM repassa isso ao paciente, então nada de
+      // "match/matchou/zerado". Roberto reclamou de "matchou" vazar (2026-05-14).
       warnings.push(
-        `Item composto rejeitado: "${it.food_name}" — não consegui separar em alimentos conhecidos. Peça pro paciente separar (ex: "leite 250ml" + "whey 30g"). Calorias zeradas.`,
+        `Não consegui identificar "${it.food_name}" porque veio com vários alimentos juntos. Peça pro paciente descrever cada item separado com a quantidade (ex: "leite 250ml" e "whey 30g"). Não foi possível calcular as calorias desse item ainda.`,
       )
       matched.push({
         food_name: it.food_name,
@@ -620,7 +622,7 @@ export async function calcMealMacros(
         )
       if (kcalPerG > 5 && !isFatLike) {
         warnings.push(
-          `Match suspeito: "${it.food_name}" → "${m.name_pt}" (${m.kcal_per_100g} kcal/100g é densidade de gordura). Provavelmente match errado. Confirme com paciente. Calorias zeradas.`,
+          `Não tenho certeza sobre "${it.food_name}" — o valor calórico encontrado parece alto demais pro que o paciente descreveu. Peça pra ele confirmar ou detalhar melhor o alimento. Não calculei as calorias desse item ainda.`,
         )
         matched.push({
           food_name: it.food_name,
@@ -646,7 +648,7 @@ export async function calcMealMacros(
         )
       if (expectsProtein && (m.protein_g ?? 0) < 5) {
         warnings.push(
-          `Match suspeito: "${it.food_name}" tem proteína esperada mas matchou "${m.name_pt}" (${m.protein_g}g/100g). Match errado. Confirme com paciente. Calorias zeradas.`,
+          `Não tenho certeza sobre "${it.food_name}" — esperava um alimento rico em proteína mas o valor encontrado não bate. Peça pro paciente confirmar ou detalhar. Não calculei as calorias desse item ainda.`,
         )
         matched.push({
           food_name: it.food_name,

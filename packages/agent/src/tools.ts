@@ -775,7 +775,7 @@ export const registraRefeicao: ToolDefinition = {
 export const consultaProgresso: ToolDefinition = {
   name: 'consulta_progresso',
   description:
-    'Retorna o painel de progresso do usuário (XP, level, streak, blocos completos, badges, último snapshot). Use quando ele perguntar como está indo.',
+    'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, blocos completos, conquistas, registro de hoje). Use quando ele perguntar como está indo.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
     const { data: progress } = await ctx.supabase
@@ -792,7 +792,31 @@ export const consultaProgresso: ToolDefinition = {
       .eq('date', today)
       .maybeSingle()
 
-    return { progress: progress ?? null, today: snap ?? null }
+    // Traduz as chaves pra português ANTES de devolver pro LLM. Sem isso o LLM
+    // vê "current_streak"/"level" no JSON e replica "streak"/"level" na resposta
+    // ao paciente (Roberto reclamou 2026-05-13/14).
+    const p = progress as {
+      xp_total?: number
+      level?: number
+      current_streak?: number
+      longest_streak?: number
+      blocks_completed?: number
+      deficit_block?: number
+      badges_earned?: string[]
+    } | null
+    const progressoPt = p
+      ? {
+          xp: p.xp_total ?? 0,
+          nivel: p.level ?? 1,
+          sequencia_dias_consecutivos: p.current_streak ?? 0,
+          recorde_sequencia: p.longest_streak ?? 0,
+          blocos_7700_completos: p.blocks_completed ?? 0,
+          deficit_no_bloco_atual: p.deficit_block ?? 0,
+          conquistas: p.badges_earned ?? [],
+        }
+      : null
+
+    return { progresso: progressoPt, hoje: snap ?? null }
   },
 }
 

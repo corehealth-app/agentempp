@@ -277,7 +277,8 @@ export const registraRefeicao: ToolDefinition = {
     '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Com replace=true a tool apaga os logs anteriores do meal_type e insere os novos. Sem replace=true, a tool SOMA — gera dupla contagem. Default replace=false (assume nova refeição ou adição). ' +
     '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
     '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' + +
-    '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos".',
+    '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
+    '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Se ele também informar os macros específicos dele (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende e aplica nas próximas vezes. NÃO use `corrections` pra troca de quantidade — só pra troca de IDENTIDADE do alimento.',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
@@ -300,6 +301,28 @@ export const registraRefeicao: ToolDefinition = {
         }),
       )
       .describe('Lista de itens consumidos AGORA (não padrão alimentar)'),
+    corrections: z
+      .array(
+        z.object({
+          de: z
+            .string()
+            .describe('Nome que foi identificado ERRADO (ex: "batata")'),
+          para: z
+            .string()
+            .describe('Nome correto que o paciente informou (ex: "mandioca")'),
+          kcal_per_100g: z
+            .number()
+            .optional()
+            .describe('Macro customizado: kcal/100g, SÓ se o paciente informou explicitamente'),
+          protein_g: z.number().optional().describe('Macro customizado: proteína g/100g'),
+          carbs_g: z.number().optional().describe('Macro customizado: carboidrato g/100g'),
+          fat_g: z.number().optional().describe('Macro customizado: gordura g/100g'),
+        }),
+      )
+      .optional()
+      .describe(
+        'Correções de IDENTIDADE de alimento que o paciente fez (ex: "batata" → "mandioca"). O sistema aprende e reaplica. NÃO use pra mudança de quantidade.',
+      ),
   }),
   execute: async (args, ctx) => {
     const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
@@ -319,6 +342,114 @@ export const registraRefeicao: ToolDefinition = {
           deduped: true,
           message: 'Refeição já registrada (msg_id repetido). Não duplicou.',
           existing_count: existing.length,
+        }
+      }
+    }
+
+    // ========================================================================
+    // APRENDIZADO DE CORREÇÕES DE ALIMENTO (Roberto 2026-05-14)
+    // ========================================================================
+    // Quando o paciente corrige a IDENTIDADE de um alimento ("batata" → "mandioca"),
+    // grava em user_food_corrections pra reaplicar nas próximas. Design:
+    //  - 1ª correção: status='learning', confirmed_count=1 (aplica c/ confirmação)
+    //  - 2ª confirmação igual: status='active', confirmed_count=2 (aplica silencioso)
+    //  - correção CONTRA uma entrada (de=corrected_to anterior, ou para≠ anterior):
+    //    contradicted_count++, e se contradições >= confirmações → status='retired'
+    if (args.corrections && args.corrections.length > 0) {
+      // ServiceClient ainda não tem os tipos gerados de user_food_corrections —
+      // cast solto (mesmo padrão de lookupUserHistory). Tabela criada em
+      // migration 20260514120000.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const supaCorr = ctx.supabase as any
+      const normalizeName = (s: string) =>
+        s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+      for (const corr of args.corrections) {
+        const said = normalizeName(corr.de)
+        const correctedTo = normalizeName(corr.para)
+        if (!said || !correctedTo || said === correctedTo) continue
+
+        const { data: existingRows } = await supaCorr
+          .from('user_food_corrections')
+          .select('id, corrected_to, confirmed_count, contradicted_count, status')
+          .eq('user_id', ctx.userId)
+          .eq('said_name', said)
+          .limit(1)
+        const existing = (existingRows ?? [])[0] as
+          | {
+              id: string
+              corrected_to: string
+              confirmed_count: number
+              contradicted_count: number
+              status: string
+            }
+          | undefined
+
+        const customMacros = {
+          custom_kcal_per_100g: corr.kcal_per_100g ?? null,
+          custom_protein_g: corr.protein_g ?? null,
+          custom_carbs_g: corr.carbs_g ?? null,
+          custom_fat_g: corr.fat_g ?? null,
+        }
+
+        if (!existing) {
+          // 1ª correção desse nome → entra como learning
+          await supaCorr.from('user_food_corrections').insert({
+            user_id: ctx.userId,
+            said_name: said,
+            corrected_to: correctedTo,
+            ...customMacros,
+            confirmed_count: 1,
+            status: 'learning',
+          })
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'food_correction.learned',
+            properties: { said_name: said, corrected_to: correctedTo, has_custom_macros: corr.kcal_per_100g != null },
+          })
+        } else if (normalizeName(existing.corrected_to) === correctedTo) {
+          // Mesma correção de novo → confirma. 2ª confirmação ativa.
+          const newCount = existing.confirmed_count + 1
+          await supaCorr
+            .from('user_food_corrections')
+            .update({
+              confirmed_count: newCount,
+              status: newCount >= 2 ? 'active' : existing.status,
+              last_seen: new Date().toISOString(),
+              ...(corr.kcal_per_100g != null ? customMacros : {}),
+            })
+            .eq('id', existing.id)
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'food_correction.confirmed',
+            properties: { said_name: said, corrected_to: correctedTo, confirmed_count: newCount, now_active: newCount >= 2 },
+          })
+        } else {
+          // Correção CONTRADIZ a entrada (mesmo said_name, corrected_to diferente).
+          // Conta contradição; se contradições >= confirmações, aposenta a entrada
+          // antiga e recomeça com a nova correção.
+          const newContradicted = existing.contradicted_count + 1
+          const retire = newContradicted >= existing.confirmed_count
+          await supaCorr
+            .from('user_food_corrections')
+            .update({
+              corrected_to: retire ? correctedTo : existing.corrected_to,
+              contradicted_count: retire ? 0 : newContradicted,
+              confirmed_count: retire ? 1 : existing.confirmed_count,
+              status: retire ? 'learning' : existing.status,
+              last_seen: new Date().toISOString(),
+              ...(retire ? customMacros : {}),
+            })
+            .eq('id', existing.id)
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'food_correction.contradicted',
+            properties: {
+              said_name: said,
+              old_corrected_to: existing.corrected_to,
+              new_corrected_to: correctedTo,
+              retired_and_relearned: retire,
+            },
+          })
         }
       }
     }
@@ -692,6 +823,23 @@ export const registraRefeicao: ToolDefinition = {
             similarity: i.similarity,
           })),
           total_items: calc.items.length,
+        },
+      })
+    }
+
+    // Loga aplicação do mapa de correções (Roberto 2026-05-14) — observabilidade
+    // pra ver no /audit se o mapa está ajudando ou poluindo.
+    const correctionApplied = calc.audit_warnings.filter((w) =>
+      /correção aprendida do paciente/i.test(w),
+    )
+    if (correctionApplied.length > 0) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'food_correction.applied',
+        properties: {
+          provider_message_id: ctx.providerMessageId ?? null,
+          applied: correctionApplied,
+          count: correctionApplied.length,
         },
       })
     }

@@ -35,13 +35,25 @@ type HistoryRow = {
   fat_g: number
 }
 
+type CorrectionRow = {
+  said_name: string
+  corrected_to: string
+  custom_kcal_per_100g?: number | null
+  custom_protein_g?: number | null
+  custom_carbs_g?: number | null
+  custom_fat_g?: number | null
+  status: 'learning' | 'active' | 'retired'
+  confirmed_count: number
+}
+
 function makeMock(
   matches: Record<string, MockRow | null>,
   historyRows: HistoryRow[] = [],
+  correctionRows: CorrectionRow[] = [],
 ): ServiceClient {
   // Proxy chainable que aceita qualquer .eq/.ilike/.gte/.gt/.neq/.order/.limit
-  // e no final retorna { data, error }. Suporta queries antigas (fallback 1)
-  // e novas (lookupUserHistory).
+  // e no final retorna { data, error }. Suporta queries de lookupUserHistory,
+  // lookupFoodCorrection e o fallback antigo.
   const makeChain = (rows: unknown): unknown => {
     const obj: Record<string, unknown> = {
       data: rows,
@@ -63,6 +75,7 @@ function makeMock(
     },
     from: (table: string) => {
       if (table === 'meal_logs') return makeChain(historyRows)
+      if (table === 'user_food_corrections') return makeChain(correctionRows)
       return makeChain([])
     },
   } as unknown as ServiceClient
@@ -465,5 +478,135 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBe(89) // banana, não whey
     expect(r.items[0]?.matched_taco_name).not.toContain('histórico')
+  })
+})
+
+describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14)', () => {
+  // Quando o paciente corrige a identidade de um alimento ("batata" → "mandioca"),
+  // o sistema aprende e reaplica. Precedência: correção > histórico > trigram.
+
+  it('correção ACTIVE com macro customizado → usa macro direto, ignora trigram', async () => {
+    // food_db tem "batata" mas o paciente corrigiu pra "mandioca" com macro próprio.
+    const mock = makeMock(
+      {
+        batata: {
+          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+        },
+      },
+      [],
+      [
+        {
+          said_name: 'batata', corrected_to: 'mandioca',
+          custom_kcal_per_100g: 150, custom_protein_g: 1.5, custom_carbs_g: 36, custom_fat_g: 0.3,
+          status: 'active', confirmed_count: 2,
+        },
+      ],
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
+    expect(r.items[0]?.food_name).toBe('mandioca')
+    expect(r.items[0]?.kcal).toBe(150) // macro customizado, NÃO 86 (batata do trigram)
+    expect(r.items[0]?.matched_taco_name).toContain('correção do paciente')
+    // status active → NÃO precisa confirmar
+    expect(r.user_warnings).toHaveLength(0)
+  })
+
+  it('correção ACTIVE sem macro customizado → remapeia nome, trigram resolve macros', async () => {
+    // Corrigiu "batata" → "mandioca", sem macro próprio. O trigram acha "mandioca".
+    const mock = makeMock(
+      {
+        mandioca: {
+          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+        },
+      },
+      [],
+      [
+        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 3 },
+      ],
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
+    expect(r.items[0]?.food_name).toBe('mandioca')
+    expect(r.items[0]?.kcal).toBe(125) // veio do trigram pra "mandioca"
+    expect(r.user_warnings).toHaveLength(0)
+  })
+
+  it('correção LEARNING (1ª vez) → aplica MAS pede confirmação via user_warning', async () => {
+    const mock = makeMock(
+      {
+        mandioca: {
+          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+        },
+      },
+      [],
+      [
+        { said_name: 'batata', corrected_to: 'mandioca', status: 'learning', confirmed_count: 1 },
+      ],
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
+    expect(r.items[0]?.food_name).toBe('mandioca')
+    // learning → DEVE ter user_warning pedindo confirmação
+    expect(r.user_warnings.length).toBeGreaterThan(0)
+    expect(r.user_warnings.join(' ')).toMatch(/corrigiu isso antes|me avisa/i)
+  })
+
+  it('sem userId → mapa de correções NÃO é consultado', async () => {
+    const mock = makeMock(
+      {
+        batata: {
+          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+        },
+      },
+      [],
+      [
+        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 5 },
+      ],
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', undefined)
+    // sem userId → usa o trigram normal, ignora correção
+    expect(r.items[0]?.food_name).toBe('batata')
+    expect(r.items[0]?.kcal).toBe(86)
+  })
+
+  it('correção tem precedência SOBRE o histórico do paciente', async () => {
+    // Paciente tem "batata" no histórico (86 kcal) E uma correção batata→mandioca.
+    // A correção deve vencer.
+    const mock = makeMock(
+      {
+        mandioca: {
+          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+        },
+      },
+      [
+        { id: 'h1', food_name: 'batata', quantity_g: 100, kcal: 86, protein_g: 2, carbs_g: 20, fat_g: 0 },
+      ],
+      [
+        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 2 },
+      ],
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
+    expect(r.items[0]?.food_name).toBe('mandioca') // correção venceu o histórico
+    expect(r.items[0]?.kcal).toBe(125)
+  })
+
+  it('correção RETIRED é ignorada (filtro na query simula isso)', async () => {
+    // status retired → a query do lookupFoodCorrection filtra com .neq('status','retired').
+    // O mock retorna [] quando não há linha — simulamos passando correctionRows vazio.
+    const mock = makeMock(
+      {
+        batata: {
+          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+        },
+      },
+      [],
+      [], // correção retired não retornaria da query
+    )
+    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
+    expect(r.items[0]?.food_name).toBe('batata')
+    expect(r.items[0]?.kcal).toBe(86)
   })
 })

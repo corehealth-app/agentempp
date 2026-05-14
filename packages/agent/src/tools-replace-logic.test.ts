@@ -227,7 +227,9 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
         { food_name: 'lentilha cozida', quantity_g: 50, meal_type: 'lanche' },
         { food_name: 'couve refogada', quantity_g: 50, meal_type: 'lanche' },
       ],
-      recentUserMessages: ['Observação ovos fritos sem gordura'],
+      // Menciona "almoço" pra suprimir o autocorrect de meal_type por hora —
+      // sem isso o teste é flaky (ex: rodando 19h+ BRT, almoço→jantar).
+      recentUserMessages: ['no almoço os ovos fritos foram sem gordura'],
       llmSentReplace: true,
     })
     await registraRefeicao.execute(

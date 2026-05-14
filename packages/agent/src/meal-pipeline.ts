@@ -333,6 +333,85 @@ async function matchFood(
  * estimativa zero e o warning é registrado.
  */
 /**
+ * Procura uma correção de alimento APRENDIDA pra esse paciente.
+ * Roberto pediu (2026-05-14): quando o paciente corrige a identidade de um
+ * alimento ("batata" → "mandioca"), o sistema aprende e reaplica.
+ *
+ * Precedência: ESTE lookup roda ANTES de tudo (histórico, trigram, estimativa).
+ *
+ * Comportamento por status:
+ *   - 'active' (confirmed_count >= 2): aplica silencioso — remapeia o nome.
+ *   - 'learning' (confirmed_count = 1): aplica MAS marca needs_confirmation=true,
+ *     pra o agente confirmar com o paciente ("registrei mandioca — você corrigiu
+ *     isso antes; se hoje for batata mesmo, me avisa").
+ *   - 'retired': ignorado (filtrado na query).
+ *
+ * Janela: só correções com last_seen nos últimos 30 dias (mesma janela do
+ * lookupUserHistory — correção velha de comida que a pessoa não come mais
+ * não deve valer pra sempre).
+ *
+ * Retorna `null` se não há correção aplicável.
+ */
+export async function lookupFoodCorrection(
+  supabase: ServiceClient,
+  userId: string,
+  foodName: string,
+): Promise<{
+  corrected_to: string
+  custom_macros: {
+    kcal_per_100g: number
+    protein_g: number
+    carbs_g: number
+    fat_g: number
+  } | null
+  needs_confirmation: boolean
+} | null> {
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const target = normalize(foodName)
+  if (!target) return null
+  const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supaTyped = supabase as any
+  const { data } = await supaTyped
+    .from('user_food_corrections')
+    .select(
+      'said_name, corrected_to, custom_kcal_per_100g, custom_protein_g, custom_carbs_g, custom_fat_g, status, confirmed_count',
+    )
+    .eq('user_id', userId)
+    .eq('said_name', target)
+    .neq('status', 'retired')
+    .gte('last_seen', lookback)
+    .limit(1)
+  const row = (data ?? [])[0] as
+    | {
+        said_name: string
+        corrected_to: string
+        custom_kcal_per_100g: number | string | null
+        custom_protein_g: number | string | null
+        custom_carbs_g: number | string | null
+        custom_fat_g: number | string | null
+        status: string
+        confirmed_count: number
+      }
+    | undefined
+  if (!row) return null
+  const hasCustom = row.custom_kcal_per_100g != null
+  return {
+    corrected_to: row.corrected_to,
+    custom_macros: hasCustom
+      ? {
+          kcal_per_100g: Number(row.custom_kcal_per_100g),
+          protein_g: Number(row.custom_protein_g ?? 0),
+          carbs_g: Number(row.custom_carbs_g ?? 0),
+          fat_g: Number(row.custom_fat_g ?? 0),
+        }
+      : null,
+    needs_confirmation: row.status === 'learning',
+  }
+}
+
+/**
  * Procura o mesmo alimento no histórico do paciente nos últimos 30d.
  * Roberto pediu (2026-05-13): "consegue pegar os alimentos q se repetem
  * pra vir nas refeições seguintes qd ele identificar algo semelhante?
@@ -422,7 +501,69 @@ export async function calcMealMacros(
   const warnings = userWarnings // alias pra compat com pushes existentes que não classificou
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
-  for (const it of items) {
+  for (let it of items) {
+    // ── PRIORIDADE -1: MAPA DE CORREÇÕES DO PACIENTE (Roberto 2026-05-14) ───
+    // Roda ANTES de tudo. Se o paciente já corrigiu esse alimento ("batata" →
+    // "mandioca"), remapeia o nome aqui. Precedência: correção > histórico >
+    // trigram > estimativa.
+    //   - custom_macros presente → usa direto (alimento específico do paciente).
+    //   - sem custom_macros → só remapeia o nome; o resto do pipeline (histórico
+    //     /trigram) resolve os macros pro nome corrigido.
+    //   - needs_confirmation (status=learning, 1ª correção) → aplica MAS adiciona
+    //     user_warning pro agente confirmar com o paciente.
+    if (userIdHint) {
+      const corr = await lookupFoodCorrection(supabase, userIdHint, it.food_name)
+      if (corr) {
+        if (corr.custom_macros) {
+          const f = it.quantity_g / 100
+          const kcal = +(corr.custom_macros.kcal_per_100g * f).toFixed(1)
+          const protein = +(corr.custom_macros.protein_g * f).toFixed(2)
+          const carbs = +(corr.custom_macros.carbs_g * f).toFixed(2)
+          const fat = +(corr.custom_macros.fat_g * f).toFixed(2)
+          const nat = naturalUnit(corr.corrected_to, it.quantity_g)
+          matched.push({
+            food_name: corr.corrected_to,
+            matched_taco_name: `[correção do paciente] ${it.food_name} → ${corr.corrected_to}`,
+            matched_taco_id: null,
+            quantity_g: it.quantity_g,
+            kcal,
+            protein_g: protein,
+            carbs_g: carbs,
+            fat_g: fat,
+            fiber_g: 0,
+            similarity: 1.0,
+            source: 'taco',
+            display_qty: nat.display_qty,
+            display_unit: nat.display_unit,
+          })
+          totals.kcal += kcal
+          totals.protein_g += protein
+          totals.carbs_g += carbs
+          totals.fat_g += fat
+          auditWarnings.push(
+            `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente (macro customizado).`,
+          )
+          if (corr.needs_confirmation) {
+            userWarnings.push(
+              `Registrei "${corr.corrected_to}" porque você corrigiu isso antes. Se hoje for "${it.food_name}" mesmo, é só me avisar.`,
+            )
+          }
+          continue
+        }
+        // Sem macro customizado: só remapeia o nome e deixa o resto do pipeline
+        // resolver os macros do nome corrigido.
+        auditWarnings.push(
+          `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente.`,
+        )
+        if (corr.needs_confirmation) {
+          userWarnings.push(
+            `Registrei "${corr.corrected_to}" porque você corrigiu isso antes. Se hoje for "${it.food_name}" mesmo, é só me avisar.`,
+          )
+        }
+        it = { ...it, food_name: corr.corrected_to }
+      }
+    }
+
     // ── PRIORIDADE 0: HISTÓRICO DO PACIENTE (Roberto 2026-05-13) ────────────
     // Antes do trigram, checa se o paciente já registrou esse alimento antes.
     // Se sim, usa esses macros — evita "leite com whey" virar achocolatado

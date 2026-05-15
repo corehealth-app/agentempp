@@ -5,9 +5,14 @@ import {
   loadCalcConfig,
   loadDailyTargets,
 } from '@mpp/agent'
-import { createMessagingProvider, sendHumanized } from '@mpp/providers'
+import {
+  createMessagingProvider,
+  sendHumanized,
+  TTSRouter,
+  rewriteForTTS,
+} from '@mpp/providers'
 import { inngest } from '../client.js'
-import { createWorkerDeps } from '../lib/env.js'
+import { createWorkerDeps, loadCredential } from '../lib/env.js'
 import { loadHumanizerConfig } from '../lib/runtime-config.js'
 
 /**
@@ -313,18 +318,79 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   // Humanizer params editáveis via /settings/global → humanizer.*
   const humanizer = await loadHumanizerConfig(supabase)
 
+  // Áudio motivacional: probabilidade configurável (default 25%). Roberto pediu
+  // (2026-05-15) que nem todo engajamento seja texto — "de vez em quando" áudio
+  // dá um tom mais humano nas mensagens motivacionais.
+  // Configurável em global_config.engagement.audio_probability (0.0 a 1.0).
+  const { data: audioProbRow } = await supabase
+    .from('global_config')
+    .select('value')
+    .eq('key', 'engagement.audio_probability')
+    .maybeSingle()
+  const audioProbabilityRaw =
+    (audioProbRow as { value?: unknown } | null)?.value ?? 0.25
+  const audioProbability =
+    typeof audioProbabilityRaw === 'number'
+      ? audioProbabilityRaw
+      : Number(audioProbabilityRaw) || 0.25
+  const elevenlabsKey = await loadCredential(supabase, 'ELEVENLABS_API_KEY', 'elevenlabs', 'api_key')
+  const elevenlabsVoice = await loadCredential(supabase, 'ELEVENLABS_VOICE_ID', 'elevenlabs', 'voice_id')
+  const canSendAudio = !!elevenlabsKey && !!elevenlabsVoice
+  const sendAsAudio = canSendAudio && Math.random() < audioProbability
+
   let deliveryStatus: 'sent' | 'failed' = 'sent'
   let deliveryError: string | undefined
+  let contentType: 'text' | 'audio' = 'text'
+  let ttsMediaId: string | undefined
+
   try {
-    const sendResults = await sendHumanized(messaging, wpp, text, {
-      showTyping: false, // engagement não responde a uma msg recebida
-      minDelay: humanizer.min_delay_ms,
-      maxDelay: humanizer.max_delay_ms,
-      charsPerSecond: humanizer.chars_per_second,
-    })
-    if (sendResults.some((r) => r.status !== 'sent')) {
-      deliveryStatus = 'failed'
-      deliveryError = sendResults.find((r) => r.error)?.error
+    if (sendAsAudio) {
+      contentType = 'audio'
+      // TTS via ElevenLabs (com fallback pra Cartesia se configurado)
+      const cartesiaKey = await loadCredential(supabase, 'CARTESIA_API_KEY', 'cartesia', 'api_key')
+      const cartesiaVoice = await loadCredential(supabase, 'CARTESIA_VOICE_ID', 'cartesia', 'voice_id')
+      const tts = new TTSRouter({
+        elevenlabs: { apiKey: elevenlabsKey!, voiceId: elevenlabsVoice! },
+        cartesia:
+          cartesiaKey && cartesiaVoice
+            ? { apiKey: cartesiaKey, voiceId: cartesiaVoice }
+            : undefined,
+      })
+      const { llm } = createWorkerDeps()
+      const speechText = await rewriteForTTS(llm, text).catch(() => text)
+      const { result: ttsResult, provider: ttsProvider } = await tts.synthesize(speechText, 'standard')
+      const blob = new Blob([new Uint8Array(ttsResult.audio)], { type: ttsResult.mimeType })
+      const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
+      ttsMediaId = mediaId
+      const sendResult = await messaging.sendAudio(wpp, mediaId)
+      if (sendResult.status !== 'sent') {
+        deliveryStatus = 'failed'
+        deliveryError = sendResult.error
+      }
+      // Loga evento TTS
+      await supabase.from('product_events').insert({
+        user_id: userId,
+        event: deliveryStatus === 'sent' ? 'tts.generated' : 'tts.failed',
+        properties: {
+          context: 'engagement',
+          slot,
+          tts_provider: ttsProvider,
+          tts_latency_ms: ttsResult.durationMs,
+          chars: speechText.length,
+          media_id: mediaId,
+        },
+      })
+    } else {
+      const sendResults = await sendHumanized(messaging, wpp, text, {
+        showTyping: false,
+        minDelay: humanizer.min_delay_ms,
+        maxDelay: humanizer.max_delay_ms,
+        charsPerSecond: humanizer.chars_per_second,
+      })
+      if (sendResults.some((r) => r.status !== 'sent')) {
+        deliveryStatus = 'failed'
+        deliveryError = sendResults.find((r) => r.error)?.error
+      }
     }
   } catch (e) {
     deliveryStatus = 'failed'
@@ -336,8 +402,9 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     user_id: userId,
     direction: 'out',
     role: 'assistant',
-    content_type: 'text',
+    content_type: contentType,
     content: text,
+    media_url: ttsMediaId ?? null,
     provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
     agent_stage: 'engajamento',
     model_used: result.model,

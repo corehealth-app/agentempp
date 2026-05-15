@@ -308,7 +308,10 @@ export async function processMessage(
 
   return {
     text: finalText,
-    preferAudio: input.contentType === 'audio',
+    // Roberto pediu (2026-05-15): NÃO ecoar áudio de volta automaticamente quando
+    // paciente manda áudio. Resposta sempre em texto. Áudio do agente só é usado
+    // pelo cron de engajamento (random 25%) — não como espelho da entrada.
+    preferAudio: false,
     toolCalls: toolCallsSummary,
     stage,
     modelUsed: lastResult.model,
@@ -375,10 +378,13 @@ async function checkSubscription(
   }
 }
 
-function buildBlockedResponse(input: AgentInput, reason: string): AgentOutput {
+function buildBlockedResponse(_input: AgentInput, reason: string): AgentOutput {
   return {
     text: `Sua assinatura precisa ser renovada para continuar usando o coach. Acesse seu painel ou fale com a equipe. (motivo: ${reason})`,
-    preferAudio: input.contentType === 'audio',
+    // Roberto pediu (2026-05-15): NÃO ecoar áudio de volta automaticamente quando
+    // paciente manda áudio. Resposta sempre em texto. Áudio do agente só é usado
+    // pelo cron de engajamento (random 25%) — não como espelho da entrada.
+    preferAudio: false,
     toolCalls: [],
     stage: 'manutencao',
     modelUsed: 'none',

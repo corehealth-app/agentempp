@@ -62,6 +62,24 @@ export function naturalUnit(
       return { display_qty: units, display_unit: units === 1 ? 'unidade' : 'unidades' }
     }
   }
+  // SÓLIDOS/PÓS de marcas que costumam parecer líquido pelo nome.
+  // Caso real Roberto 2026-05-15: "leite em pó" exibido como ml porque o regex
+  // de líquidos abaixo casa em \bleite\b. Esta guarda EARLY força "g" pra:
+  //   - leite em pó / em pó integral
+  //   - café solúvel / café instantâneo
+  //   - whey protein em pó / whey em pó
+  //   - achocolatado em pó
+  //   - chá em folhas / em flocos / granulado
+  // OBS: regex usa substring sem \b porque JS \b não trata acentos (é, ó) como
+  // word chars — \bp[óo]\b NÃO match "pó" no fim de string. Substring é seguro
+  // aqui pois esses termos são únicos em nomes de alimentos.
+  if (
+    /em\s+p[óo]|sol[úu]vel|instant[âa]ne[oa]|em\s+flocos|em\s+folhas|granulad[oa]/i.test(
+      lower,
+    )
+  ) {
+    return { display_qty: qtyG, display_unit: 'g' }
+  }
   // Líquidos: leite, suco, café, chocolate quente, achocolatado, vitamina, smoothie,
   // chá, cerveja, vinho, refrigerante, água, whey, capuccino
   if (

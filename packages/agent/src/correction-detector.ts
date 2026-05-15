@@ -13,6 +13,8 @@
 const CORRECTION_KEYWORDS_PT: RegExp[] = [
   /\bcorrige\b/i,
   /\bcorrij[ao]\b/i,
+  /\bcorrigir\b/i, // "Favor corrigir" (Luciana 2026-05-15) — infinitivo
+  /\bcorrigid[oa]\b/i, // "já foi corrigido" etc
   /\bcorre[çc][ãa]o\b/i,
   /\bna verdade\b/i,
   /\berrei\b/i,

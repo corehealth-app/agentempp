@@ -484,12 +484,15 @@ export const registraRefeicao: ToolDefinition = {
     let overlapMeta: { ratio: number; recent: string[]; new: string[]; from_meal_type: string | null } | null = null
     let crossMealTypeFrom: string | null = null
     if (args.meal_type && args.items.length > 0) {
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+      // Janela 30min (era 15min). Caso Luciana 2026-05-15: corrigiu "não tem bacon"
+      // 17min após a foto → fora dos 15min → detector pulou → blocker derrubou
+      // replace → consumido duplicou. 30min cobre correção mais reflexiva.
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
       const { data: recentLogs } = await ctx.supabase
         .from('meal_logs')
         .select('food_name, quantity_g, meal_type')
         .eq('user_id', ctx.userId)
-        .gte('created_at', fifteenMinAgo)
+        .gte('created_at', thirtyMinAgo)
         .limit(30)
       const recent = (recentLogs ?? []) as Array<{
         food_name: string

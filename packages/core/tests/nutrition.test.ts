@@ -71,11 +71,11 @@ describe('calcIMC', () => {
 })
 
 describe('calcProteinTargetG', () => {
-  it('aplica fator por hunger level (cascata oficial Notion MPP)', () => {
-    // Sem trainingFrequency: muita→1.6 (perfil difícil), demais→1.8 default
-    expect(calcProteinTargetG(80, 'muita')).toBe(128) // 1.6
-    expect(calcProteinTargetG(80, 'moderada')).toBe(144) // 1.8 default
-    expect(calcProteinTargetG(80, 'pouca')).toBe(144) // 1.8 default
+  it('aplica fator flat 1.5 g/kg em todos os hunger levels (Roberto 2026-05-15)', () => {
+    // Antes era cascata 1.6-2.0; agora flat 1.5 pra todos (adesão > teórico).
+    expect(calcProteinTargetG(80, 'muita')).toBe(120) // 80 × 1.5
+    expect(calcProteinTargetG(80, 'moderada')).toBe(120)
+    expect(calcProteinTargetG(80, 'pouca')).toBe(120)
   })
 })
 
@@ -103,7 +103,7 @@ describe('computeMetrics', () => {
     expect(m.activityFactor).toBe(1.55)
     expect(m.lbm).toBe(64)
     expect(m.imc).toBeCloseTo(24.69, 2)
-    expect(m.proteinFactor).toBe(1.8)
+    expect(m.proteinFactor).toBe(1.5) // flat default desde 2026-05-15
   })
 
   it('retorna nulls quando perfil incompleto', () => {

@@ -139,14 +139,16 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     atleta: 1.9,
   },
   protein_factors: {
-    // Lookup direto (compatibilidade): muita=baixo, moderada=default
-    muita: 1.6,
-    moderada: 1.8,
-    pouca: 1.8, // default; resolveProteinFactor sobe pra 1.9-2.0 se training alto
-    // Fatores condicionais (cascata em resolveProteinFactor)
-    training_low: 1.7,
-    optimal_mid_training: 1.9,
-    optimal_high_training: 2.0,
+    // Roberto pediu (2026-05-15): flat 1.5 g/kg pra recomposição não estourar
+    // a meta calórica. Continua sendo hiperproteica (média BR é 0,8-1,2 g/kg);
+    // saturação de síntese muscular fica em ~1.6 — perda marginal vs ganho de
+    // adesão. Antes era cascata 1.6-2.0 dependente de fome+treino.
+    muita: 1.5,
+    moderada: 1.5,
+    pouca: 1.5,
+    training_low: 1.5,
+    optimal_mid_training: 1.5,
+    optimal_high_training: 1.5,
   },
   recomp_bmr_multiplier: 1.2,
   ganho_massa_surplus_multiplier: 1.05,

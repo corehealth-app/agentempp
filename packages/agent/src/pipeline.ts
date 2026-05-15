@@ -301,6 +301,7 @@ export async function processMessage(
       current_streak: ctx.userProgress?.current_streak ?? null,
       level: ctx.userProgress?.level ?? null,
       calories_consumed_today: ctx.todaySnapshot?.calories_consumed ?? null,
+      deficit_block: ctx.userProgress?.deficit_block ?? null,
     },
     { stage, model: lastResult.model },
   )

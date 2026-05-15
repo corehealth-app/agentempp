@@ -57,6 +57,10 @@ interface NumericContext {
   current_streak?: number | null
   level?: number | null
   calories_consumed_today?: number | null
+  /** deficit_block atual do paciente (0-7700). Roberto 2026-05-15 viu o LLM
+   * imprimir "Bloco 7700: 0/7700" enquanto DB tinha 2110 — validador não
+   * cobria essa linha do card e nada pegou. */
+  deficit_block?: number | null
 }
 
 interface MismatchFinding {
@@ -113,6 +117,18 @@ const PATTERNS: Array<{
   { field: 'age', re: /(\d{2})\s*anos\b/gi, group: 1 },
   // "streak de 5 dias", "5 dias seguidos"
   { field: 'current_streak', re: /streak\s*(?:de|atual)?\s*[:=]?\s*(\d{1,3})/gi, group: 1 },
+  // Bloco 7700 — captura o valor ATUAL do bloco (lado esquerdo da fração).
+  // Casos:
+  //   "📊 Bloco 7700: **2.110 / 7.700 kcal (27%)**"  ← card pós-refeição
+  //   "Bloco 7700: 0 / 7.700 kcal (0%)"
+  //   "Bloco 7700 em andamento: **2110 kcal de 7700**"  ← formato numericLines
+  //   "no bloco 7.700 ele tem 2110 kcal"
+  // NÃO casa "7700 kcal" sozinho (target), nem "(27%)" (porcentagem).
+  {
+    field: 'deficit_block',
+    re: /bloco\s*7\.?700\s*(?:em\s*andamento)?[:\s]*\*{0,2}\s*(\d{1,4}(?:[.,]\d{3})?)\s*\*{0,2}\s*(?:\/|de|kcal\s*de)/gi,
+    group: 1,
+  },
 ]
 
 function parseNum(s: string): number {

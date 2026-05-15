@@ -16,6 +16,16 @@ const CORRECTION_KEYWORDS_PT: RegExp[] = [
   /\bcorrigir\b/i, // "Favor corrigir" (Luciana 2026-05-15) — infinitivo
   /\bcorrigid[oa]\b/i, // "já foi corrigido" etc
   /\bcorre[çc][ãa]o\b/i,
+  // Linguagem de REMOÇÃO de item — implica correção (paciente quer tirar item):
+  /\btira\s+(?:o|a|os|as)?\s*\w+/i, // "tira o bacon"
+  /\bsem\s+(?:o|a|os|as)\s+\w+/i, // "sem o bacon"
+  /\bnão\s+(?:tem|tinha|teve)\s+\w+/i, // "não tem bacon"
+  /\besquec[ea]\s+(?:o|a|os|as)?\s*\w+/i, // "esquece o queijo"
+  /\bremov[ea]r?\s+(?:o|a|os|as)?\s*\w+/i, // "remove o pão"
+  /\bdelet[ae]r?\s+/i, // "deleta", "deletar"
+  /\bapag[ae]r?\s+/i, // "apaga o item"
+  /\bexcluir?\s+/i, // "exclui isso"
+  /\bretir[ae]r?\s+/i, // "retira o bacon"
   /\bna verdade\b/i,
   /\berrei\b/i,
   /\b(?:errado|errada)\b/i,
@@ -57,6 +67,13 @@ const CORRECTION_KEYWORDS_EN: RegExp[] = [
   /\bforgot\b/i,
   /\bremove\b/i,
   /\bdelete\b/i,
+  // Removal language
+  /\bno\s+\w+\s*(?:in|on|inside)/i, // "no bacon in"
+  /\btake\s+(?:out|off)\s+/i, // "take out the bacon"
+  /\bwithout\s+(?:the|any)?\s*\w+/i, // "without bacon"
+  /\bskip\s+(?:the)?\s*\w+/i, // "skip the bacon"
+  /\bthere'?s\s+no\s+\w+/i, // "there's no bacon"
+  /\bisn'?t\s+\w+/i, // "isn't bacon"
 ]
 
 const CORRECTION_KEYWORDS_ES: RegExp[] = [
@@ -73,6 +90,11 @@ const CORRECTION_KEYWORDS_ES: RegExp[] = [
   /\bme\s+olvid[ée]\b/i,
   /\bquita\b/i,
   /\bborra\b/i,
+  // Removal language ES
+  /\bsin\s+(?:el|la|los|las)?\s*\w+/i, // "sin el bacon"
+  /\bno\s+(?:hay|tiene)\s+\w+/i, // "no hay bacon"
+  /\bsac[ae]r?\s+(?:el|la)?\s*\w+/i, // "saca el bacon"
+  /\belimina[r]?\s+/i, // "elimina"
 ]
 
 const ALL_PATTERNS: RegExp[] = [

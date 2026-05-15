@@ -121,6 +121,38 @@ export const processMessageFn = inngest.createFunction(
       } else {
         logger.warn('STT skipped', { reason: sttRes.reason })
       }
+      // Observabilidade: loga STT (sucesso ou falha). Sem isso, audio quebrado
+      // só vira visível quando paciente reclama (caso Paulo 05-13).
+      try {
+        const { supabase } = createWorkerDeps()
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: sttRes.ok ? 'stt.transcribed' : 'stt.failed',
+          properties: {
+            provider_message_id: providerMessageId,
+            success: sttRes.ok,
+            latency_ms: sttRes.latency_ms,
+            text_length: sttRes.ok ? (sttRes.text?.length ?? 0) : 0,
+            text_preview: sttRes.ok ? (sttRes.text ?? '').slice(0, 120) : null,
+            reason: !sttRes.ok ? sttRes.reason : null,
+            provider: 'groq-whisper',
+            language: 'pt',
+          },
+        })
+        // Persiste transcrição em messages.content pra rastreabilidade.
+        // Antes ficava só no contexto LLM e sumia — banco mostrava content vazio.
+        if (sttRes.ok && sttRes.text && providerMessageId) {
+          await supabase
+            .from('messages')
+            .update({ content: sttRes.text })
+            .eq('provider_message_id', providerMessageId)
+            .eq('direction', 'in')
+        }
+      } catch (logErr) {
+        logger.warn('STT event log failed', {
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        })
+      }
     }
 
     if (contentType === 'image' && allMediaUrls.length > 0) {
@@ -302,6 +334,7 @@ export const processMessageFn = inngest.createFunction(
     let failedCount = 0
     let sendMode: 'text' | 'audio' = 'text'
     let deliveryError: string | undefined
+    let ttsMediaId: string | undefined
 
     if (wantsAudio) {
       sendMode = 'audio'
@@ -338,11 +371,34 @@ export const processMessageFn = inngest.createFunction(
           chars: speechText.length,
           tts_provider: ttsProvider,
           tts_latency_ms: ttsResult.durationMs,
+          media_id: mediaId,
         }
       })
       if (audioRes.status === 'sent') sentCount = 1
       else failedCount = 1
+      ttsMediaId = audioRes.media_id
       logger.info('Audio sent', audioRes)
+      // Observabilidade TTS — antes era invisível, só visível no /audit por
+      // contagem de OUT com content_type=audio sem detalhe de provider/latência.
+      try {
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: audioRes.status === 'sent' ? 'tts.generated' : 'tts.failed',
+          properties: {
+            provider_message_id: providerMessageId,
+            success: audioRes.status === 'sent',
+            tts_provider: audioRes.tts_provider,
+            tts_latency_ms: audioRes.tts_latency_ms,
+            chars: audioRes.chars,
+            media_id: audioRes.media_id,
+            voice_id: elevenlabsVoice ? `${elevenlabsVoice.slice(0, 8)}...` : null,
+          },
+        })
+      } catch (logErr) {
+        logger.warn('TTS event log failed', {
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        })
+      }
     } else {
       // Humanizer config editável via /settings/global → humanizer.*
       // Process-message usa response_max_delay_ms (maior que engagement
@@ -375,6 +431,9 @@ export const processMessageFn = inngest.createFunction(
           role: 'assistant',
           content_type: sendMode === 'audio' ? 'audio' : 'text',
           content: result.text,
+          // Persiste o media_id do áudio TTS pra rastreabilidade.
+          // Antes ficava null em mensagens content_type=audio.
+          media_url: ttsMediaId ?? null,
           provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
           agent_stage: result.stage,
           model_used: result.modelUsed,

@@ -284,4 +284,40 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(events.find((e) => e.event === 'tool.replace_ratified_by_overlap')).toBeDefined()
     expect(events.find((e) => e.event === 'tool.replace_cross_meal_type')).toBeUndefined()
   })
+
+  // BUG da AMANDA 2026-05-15: ela mandou "É cuscuz, não farofa" + "Apenas 1
+  // unidade nessa foto". Verbal NÃO matchou (formas naturais que o detector
+  // não cobria), overlap só 25-40% (corrige 1 item por vez de uma refeição
+  // de 3+ itens). Resultado: blocker derrubava replace, consumido somava
+  // a cada correção. Fix: se LLM preencheu corrections[] não-vazio, isso já
+  // é evidência objetiva — bypass do blocker.
+  it('corrections[] não-vazio bypassa o blocker mesmo sem verbal/overlap — bug da AMANDA', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      recentLogs: [
+        { food_name: 'pão sírio tostado', quantity_g: 50, meal_type: 'cafe' },
+        { food_name: 'ovo mexido', quantity_g: 100, meal_type: 'cafe' },
+        { food_name: 'farofa', quantity_g: 120, meal_type: 'cafe' },
+      ],
+      recentUserMessages: ['É cuscuz, não farofa'],
+      llmSentReplace: true,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: true,
+        items: [
+          { food_name: 'pão francês', quantity_g: 50 },
+          { food_name: 'ovo mexido', quantity_g: 100 },
+          { food_name: 'cuscuz', quantity_g: 120 },
+        ],
+        // LLM preencheu corrections[] declarando explicitamente a correção
+        corrections: [{ de: 'farofa', para: 'cuscuz' }],
+      },
+      ctx,
+    )
+    // NÃO deve ser blocked — corrections[] preenchido é evidência objetiva
+    expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeUndefined()
+    // Captura da correção deve ter rodado
+    expect(events.find((e) => e.event === 'food_correction.learned')).toBeDefined()
+  })
 })

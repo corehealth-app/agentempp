@@ -29,6 +29,13 @@ const CORRECTION_KEYWORDS_PT: RegExp[] = [
   /\bdeleta\b/i,
   /\bremove\b/i,
   /\b[ée]\s+leite\s+com\b/i, // "é leite com whey" (correção do tipo "X é Y")
+  // Formas naturais de correção que a Amanda usou (2026-05-15) e o detector falhou:
+  /\b[ée]\s+\w+(?:\s+\w+)?,?\s+n[ãa]o\b/i, // "é cuscuz, não farofa" / "é X não Y"
+  /\bn[ãa]o\s+[ée]\s+\w+/i, // "não é X"
+  /\bapenas\s+\d+\b/i, // "Apenas 1 unidade nessa foto"
+  /\bs[óo]\s+\d+\s*(?:unidade|fatia|colher|pedaço|p[ãa]o)/i, // "só 1 unidade"
+  /\bno\s+lugar\s+(?:do|da|de)\b/i, // "no lugar do açúcar"
+  /\bo\s+\w+\s+[ée]\s+\w+\b/i, // "o pão é francês" (afirmação corretiva)
 ]
 
 const CORRECTION_KEYWORDS_EN: RegExp[] = [

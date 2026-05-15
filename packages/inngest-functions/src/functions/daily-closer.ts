@@ -239,7 +239,29 @@ async function closeUserDay(
       ? (profileTyped?.deficit_level ?? 500)
       : 0
 
-  const next = computeProgress(dailySnap, prev, calcConfig, designDeficit)
+  // BUG (Erika 2026-05-14): paciente fez onboarding ontem, não registrou
+  // nenhuma refeição, dia fechou e somou 1.969 kcal no bloco 7700 — porque
+  // o close usou consumed=0 vs target=1969 = "deficit" de 1969. Isso é
+  // alucinação: o paciente provavelmente comeu, só não registrou. Mensagem
+  // recebida ≠ evidência de consumo.
+  //
+  // Regra: se NÃO há refeição NEM treino registrados, o bloco NÃO ganha
+  // crédito desse dia (passa designDeficit=0 ao computeProgress; o snapshot
+  // permanece salvo pra histórico/streak). Conversa avulsa não conta.
+  const hasActivity = (meals?.length ?? 0) > 0 || (workouts?.length ?? 0) > 0
+  const effectiveDesignDeficit = hasActivity ? designDeficit : 0
+  if (!hasActivity) {
+    // Zera o dailyBalance pra computeProgress não creditar nada via -balance.
+    // Snapshot permanece com o balance real pra fins de display/log.
+    dailySnap.dailyBalance = 0
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'bloco7700.skipped_inactive_day',
+      properties: { date: yesterday, calories_target: targets.calories_target },
+    })
+  }
+
+  const next = computeProgress(dailySnap, prev, calcConfig, effectiveDesignDeficit)
 
   await supabase
     .from('user_progress')

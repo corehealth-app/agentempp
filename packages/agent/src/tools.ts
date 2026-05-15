@@ -278,7 +278,7 @@ export const registraRefeicao: ToolDefinition = {
     '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
     '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' + +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
-    '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Se ele também informar os macros específicos dele (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende e aplica nas próximas vezes. NÃO use `corrections` pra troca de quantidade — só pra troca de IDENTIDADE do alimento.',
+    '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca", ou "é cuscuz, não farofa", ou "o pão é francês"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Inclui também quando ele diz "apenas N unidades" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.',
   parameters: z.object({
     meal_type: z
       .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
@@ -553,6 +553,16 @@ export const registraRefeicao: ToolDefinition = {
           }
         }
       }
+    }
+
+    // EVIDÊNCIA EXPLÍCITA: se o LLM preencheu `corrections[]` na chamada, é
+    // declaração ATIVA dele que isso é correção. Mais forte que overlap.
+    // Caso real (Amanda 2026-05-15): "É cuscuz, não farofa" + "Apenas 1 unidade"
+    // — corrections[] populado, mas overlap só 25-40% (corrige item-a-item de
+    // uma refeição de 3 itens), e detector verbal não pegava as frases naturais.
+    // Resultado: blocker derrubava replace, refeição somava a cada correção.
+    if (args.corrections && args.corrections.length > 0) {
+      objectiveCorrectionEvidence = true
     }
 
     // Caso A: LLM mandou replace=false mas há evidência objetiva → auto-aplica

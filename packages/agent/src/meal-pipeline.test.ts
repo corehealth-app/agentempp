@@ -59,7 +59,7 @@ function makeMock(
       data: rows,
       error: null,
     }
-    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'order', 'limit']) {
+    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'or', 'order', 'limit']) {
       obj[m] = () => makeChain(rows)
     }
     obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>

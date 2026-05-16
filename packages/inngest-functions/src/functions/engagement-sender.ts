@@ -84,7 +84,7 @@ async function maybeEngageUser(
   const localHour = getLocalHour(userTimezone)
   // Carrega config (cache 60s), deriva slot+hint da hora local
   const engagementConfig = await loadEngagementConfig(supabase)
-  const { slot, meal_hint: mealHint } = resolveSlot(localHour, engagementConfig.slots)
+  const { slot, meal_hint: mealHint, silent: slotSilent } = resolveSlot(localHour, engagementConfig.slots)
 
   async function logEvent(event: string, properties: Record<string, unknown>) {
     await supabase.from('product_events').insert({
@@ -92,6 +92,20 @@ async function maybeEngageUser(
       event,
       properties: { slot, cron_slot: cronSlotLabel, local_hour: localHour, wpp, ...properties },
     })
+  }
+
+  // SLOT SILENCIOSO — pula ANTES de qualquer outra checagem.
+  // Caso Amanda 2026-05-16: wake_time=03:00 (provável erro de onboarding) →
+  // janela ativa virou 04h-20h → slot=madrugada caiu dentro → enviou às 04:07.
+  // SlotDef.silent=true pra madrugada/noite garante que mesmo com janela ativa
+  // mal-configurada, esses slots nunca disparam. Defesa contra dado errado de
+  // profile, sem precisar consertar cada profile individual.
+  if (slotSilent) {
+    await logEvent('engagement.skipped', {
+      reason: 'slot silencioso (madrugada/noite) — não envia',
+      slot_silent: true,
+    })
+    return { sent: false, reason: 'slot silencioso' }
   }
 
   // Pausa ativa? respeita
@@ -447,6 +461,13 @@ interface SlotDef {
   until_hour: number
   slot: string
   meal_hint: string
+  /** Se false, NUNCA envia engajamento nesse slot mesmo quando a janela
+   * ativa do paciente permitir. Default true. Usado pra slots de "madrugada"
+   * e "noite" — Amanda 2026-05-16 recebeu engajamento às 04:07 BRT porque
+   * o wake_time dela tava 03:00 (erro provável no onboarding) → janela ativa
+   * virou 04h-20h → slot=madrugada caiu dentro → enviou. meal_hint dizia
+   * "não envia" mas era só string, ninguém checava. */
+  silent?: boolean
 }
 
 interface EngagementConfig {
@@ -458,14 +479,14 @@ interface EngagementConfig {
 }
 
 const DEFAULT_SLOTS: SlotDef[] = [
-  { until_hour: 6, slot: 'madrugada', meal_hint: 'madrugada — não envia' },
+  { until_hour: 6, slot: 'madrugada', meal_hint: 'madrugada — não envia', silent: true },
   { until_hour: 9, slot: 'cafe_da_manha', meal_hint: 'café da manhã (jejum, primeira refeição do dia)' },
   { until_hour: 11, slot: 'meio_da_manha', meal_hint: 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)' },
   { until_hour: 14, slot: 'almoco', meal_hint: 'almoço (refeição principal do meio-dia)' },
   { until_hour: 16, slot: 'pos_almoco', meal_hint: 'pós-almoço (digestão, balanço parcial do dia)' },
   { until_hour: 19, slot: 'lanche_tarde', meal_hint: 'lanche da tarde (entre almoço e jantar)' },
   { until_hour: 22, slot: 'jantar', meal_hint: 'jantar (última refeição do dia)' },
-  { until_hour: 24, slot: 'noite', meal_hint: 'noite — não envia' },
+  { until_hour: 24, slot: 'noite', meal_hint: 'noite — não envia', silent: true },
 ]
 
 const DEFAULT_ENGAGEMENT_CONFIG: EngagementConfig = {
@@ -560,16 +581,16 @@ async function loadEngagementConfig(
  * Percorre slots (ordenados por until_hour ASC) e retorna o 1º cuja
  * until_hour > hour. Fallback pro último.
  */
-function resolveSlot(hour: number, slots: SlotDef[]): { slot: string; meal_hint: string } {
+function resolveSlot(hour: number, slots: SlotDef[]): { slot: string; meal_hint: string; silent: boolean } {
   // Ordena defensivamente — se admin mexer e desordenar, ainda funciona
   const sorted = [...slots].sort((a, b) => a.until_hour - b.until_hour)
   for (const s of sorted) {
-    if (hour < s.until_hour) return { slot: s.slot, meal_hint: s.meal_hint }
+    if (hour < s.until_hour) return { slot: s.slot, meal_hint: s.meal_hint, silent: s.silent ?? false }
   }
   const last = sorted[sorted.length - 1]
   return last
-    ? { slot: last.slot, meal_hint: last.meal_hint }
-    : { slot: 'desconhecido', meal_hint: '' }
+    ? { slot: last.slot, meal_hint: last.meal_hint, silent: last.silent ?? false }
+    : { slot: 'desconhecido', meal_hint: '', silent: false }
 }
 
 function parseHour(timeStr: string | null | undefined, fallback: number): number {

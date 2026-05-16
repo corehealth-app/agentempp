@@ -391,15 +391,24 @@ export async function lookupFoodCorrection(
   const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supaTyped = supabase as any
+  // Busca por said_name OU corrected_to. Bug Amanda 2026-05-16: ela corrigiu
+  // "iogurte de pêssego" → "iogurte de pêssego whey" com custom_macros, depois
+  // o LLM passou items.food_name="iogurte de pêssego whey" (= corrected_to).
+  // Lookup com .eq('said_name', target) NÃO achava → cai em estimate genérico
+  // → custom_macros 49 kcal/100g + 5.9g P/100g NÃO aplicado → registrou 0.68g P
+  // em vez de 5g P. Usar .or() pra cobrir os 2 casos: LLM passou nome original
+  // OU passou nome já corrigido. Ordena por last_seen DESC pra pegar o mais
+  // recente em caso de múltiplas correções convergentes.
   const { data } = await supaTyped
     .from('user_food_corrections')
     .select(
       'said_name, corrected_to, custom_kcal_per_100g, custom_protein_g, custom_carbs_g, custom_fat_g, status, confirmed_count',
     )
     .eq('user_id', userId)
-    .eq('said_name', target)
+    .or(`said_name.eq.${target},corrected_to.eq.${target}`)
     .neq('status', 'retired')
     .gte('last_seen', lookback)
+    .order('last_seen', { ascending: false })
     .limit(1)
   const row = (data ?? [])[0] as
     | {

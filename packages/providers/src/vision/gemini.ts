@@ -142,7 +142,8 @@ Sempre prefira o nome que um brasileiro usaria conversando, NÃO termo técnico/
 **PASSO 3 — Estimativa de quantidade (use referências visuais)**
 Calibre cada item olhando proporções no prato:
 - 1 ovo médio ≈ 50g | 1 ovo grande ≈ 60g
-- 1 fatia de pão de forma ≈ 25-30g | 1 pão francês ≈ 50g | 1 pão de queijo ≈ 25-35g
+- 1 fatia de pão de forma ≈ 25-30g | 1 pão francês INTEIRO ≈ 50g | 1 pão de queijo ≈ 25-35g
+- ⚠️ **PÃO PARTIDO/CORTADO AO MEIO**: se o pão aparece aberto, partido ao meio, ou só metade visível no prato, conte como **½ pão francês ≈ 25g** (NÃO 50g). Olhar pra: pão "aberto" pra rechear conta a metade que tá sendo USADA (não dobra). Pão na chapa cortado ao meio = ½ pão se só uma metade tá no prato.
 - 1 fatia de bacon ≈ 10-15g | 1 fatia de presunto ≈ 15g
 - 1 fatia de queijo (sanduíche) ≈ 20g | cubo de queijo coalho ≈ 30g
 - 1 concha de arroz cozido ≈ 100g | 1 colher servir ≈ 50g

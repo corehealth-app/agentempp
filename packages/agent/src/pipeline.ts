@@ -861,12 +861,13 @@ function formatUserContext(
     )
     // Bloco 7700 EM ANDAMENTO — usado pelo card pós-registro (recomp)
     // pra mostrar 📊 Bloco 7700: {N} / 7700 kcal ({pct}%).
-    if (p.deficit_block > 0) {
-      const pct = Math.round((p.deficit_block / 7700) * 100)
-      numericLines.push(
-        `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%) — falta ${7700 - p.deficit_block} kcal pra fechar`,
-      )
-    }
+    // SEMPRE mostra, mesmo quando 0 — sem isso o LLM alucina (Amanda 2026-05-15
+    // viu "Bloco 7700: 57/7700" enquanto real era 0; Paulo viu "0/7700" enquanto
+    // real era 874). Validator pega, mas paciente já viu o número errado.
+    const pct = Math.round((p.deficit_block / 7700) * 100)
+    numericLines.push(
+      `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%)${p.deficit_block > 0 ? ` — falta ${7700 - p.deficit_block} kcal pra fechar` : ''}`,
+    )
   }
   // Janela 14d — pra manutenção e ganho_massa (Notion: métrica principal).
   if (ctx.last14d && ctx.last14d.target_total > 0) {

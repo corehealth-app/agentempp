@@ -807,6 +807,53 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
+    // ========================================================================
+    // DEDUP INTRA-ARRAY (Amanda 2026-05-15) — Bug A
+    // ========================================================================
+    // Quando LLM envia items=[{burrito,300},{burrito,300},{coca,250},{coca,250}]
+    // (replicando a lista), cada item vira meal_log separado e calorias dobram.
+    // Caso real Amanda: "Burrito de filé\n1 coca 250ml" virou 1.110 kcal em vez
+    // de 555. Luciana 2026-05-11 teve cenoura/tomate/alface/arroz QUADRUPLICADOS
+    // num único almoço (2.199 kcal no almoço).
+    //
+    // Defesa: agrega itens com (food_name normalizado + sem qty) iguais somando
+    // quantity_g. Se quantity_g idêntica → provável duplicação acidental do LLM,
+    // merge SOMA. Se quantidades diferentes → também SOMA (paciente comeu 2x do
+    // mesmo item em quantidades distintas — semanticamente correto).
+    {
+      const normName = (s: string) =>
+        s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+      const mergedMap = new Map<string, { food_name: string; quantity_g: number; original_count: number }>()
+      for (const it of args.items) {
+        const key = normName(it.food_name)
+        const existing = mergedMap.get(key)
+        if (existing) {
+          existing.quantity_g += it.quantity_g
+          existing.original_count += 1
+        } else {
+          mergedMap.set(key, { food_name: it.food_name, quantity_g: it.quantity_g, original_count: 1 })
+        }
+      }
+      const dupCount = Array.from(mergedMap.values()).filter((m) => m.original_count > 1).length
+      if (dupCount > 0) {
+        const merged = Array.from(mergedMap.values())
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.items_deduped',
+          properties: {
+            meal_type: args.meal_type ?? null,
+            provider_message_id: ctx.providerMessageId ?? null,
+            original_count: args.items.length,
+            merged_count: merged.length,
+            duplicates: merged
+              .filter((m) => m.original_count > 1)
+              .map((m) => ({ food_name: m.food_name, repeated: m.original_count, summed_g: m.quantity_g })),
+          },
+        })
+        args.items = merged.map(({ food_name, quantity_g }) => ({ food_name, quantity_g }))
+      }
+    }
+
     // Calcula macros via TACO
     const calc = await calcMealMacros(
       ctx.supabase,

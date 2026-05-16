@@ -224,6 +224,30 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
             )
+          } else if (img.type === 'nutrition_label') {
+            const ps = img.per_serving
+            const p100 = img.per_100g
+            const fmt = (n: number | null) => (n == null ? 'n/d' : String(n))
+            const servingLine =
+              img.serving_size_g != null
+                ? `  porção declarada: **${img.serving_size_g}g**`
+                : '  porção não declarada na imagem'
+            const perServingLine = `  POR PORÇÃO (${img.serving_size_g ?? '?'}g): ${fmt(ps.kcal)} kcal | ${fmt(ps.protein_g)}g P | ${fmt(ps.carbs_g)}g C | ${fmt(ps.fat_g)}g G`
+            const per100Line = `  POR 100g: ${fmt(p100.kcal)} kcal | ${fmt(p100.protein_g)}g P | ${fmt(p100.carbs_g)}g C | ${fmt(p100.fat_g)}g G`
+            const confPct = (img.confidence * 100).toFixed(0)
+            // Guidance pro LLM usar `corrections[]` em registra_refeicao com os
+            // macros customizados (campos kcal_per_100g, protein_g, carbs_g, fat_g).
+            // Caso Amanda 2026-05-16: ficou stuck pedindo "manda foto melhor" 3x;
+            // com isto extraído, basta passar pra tool e fim.
+            const guidance =
+              img.per_100g.kcal != null
+                ? `\n  ✅ AÇÃO: chame registra_refeicao com itens normais E preencha \`corrections[]\` com {de:"${img.product_name ?? 'iogurte/produto'}", para:"${img.product_name ?? 'iogurte/produto'}", kcal_per_100g:${p100.kcal}, protein_g:${p100.protein_g ?? 0}, carbs_g:${p100.carbs_g ?? 0}, fat_g:${p100.fat_g ?? 0}}. Isso registra com macros REAIS da embalagem em vez de estimativa genérica.`
+                : img.per_serving.kcal != null && img.serving_size_g
+                  ? `\n  ✅ AÇÃO: tabela só tem POR PORÇÃO. Calcule POR 100g dividindo: kcal_per_100g=${Math.round((ps.kcal! / img.serving_size_g) * 100)}, protein_g=${ps.protein_g != null ? ((ps.protein_g / img.serving_size_g) * 100).toFixed(1) : 0}, etc. Use em \`corrections[]\` de registra_refeicao.`
+                  : `\n  ⚠️ AÇÃO: tabela ilegível ou incompleta. Pergunte ao paciente pra digitar os valores (kcal, proteína, carboidrato, gordura por porção).`
+            blocks.push(
+              `${idx} [tabela nutricional]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
+            )
           } else {
             blocks.push(`${idx} [outra]:\n  ${img.description}`)
           }

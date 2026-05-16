@@ -21,7 +21,7 @@ export interface VisionConfig {
   heliconeApiKey?: string
 }
 
-export type VisionImageType = 'meal' | 'body' | 'scale' | 'other'
+export type VisionImageType = 'meal' | 'body' | 'scale' | 'nutrition_label' | 'other'
 
 export interface VisionMealAnalysis {
   type: 'meal'
@@ -72,10 +72,47 @@ export interface VisionOtherAnalysis {
   latencyMs: number
 }
 
+/** Tabela nutricional de embalagem (Amanda 2026-05-16 mandou foto de rótulo
+ * 3x e gemini-2.5-flash não conseguiu extrair os valores; agente ficou
+ * pedindo foto melhor em loop). Quando vision detecta rótulo, faz OCR
+ * específico pra extrair kcal/proteína/carbo/gordura POR PORÇÃO (e por 100g
+ * quando disponível). Permite que registra_refeicao seja chamado com macros
+ * customizados via `corrections[]` em vez de cair no estimate genérico. */
+export interface VisionNutritionLabelAnalysis {
+  type: 'nutrition_label'
+  /** Nome do produto na embalagem (ex: "iogurte whey de pêssego", "biscoito X"). */
+  product_name: string | null
+  /** Tamanho da porção em GRAMAS conforme rótulo (ex: 170 pra "porção 170g"). */
+  serving_size_g: number | null
+  /** Macros POR PORÇÃO conforme rótulo. */
+  per_serving: {
+    kcal: number | null
+    protein_g: number | null
+    carbs_g: number | null
+    fat_g: number | null
+  }
+  /** Macros POR 100G (quando rótulo BR informa, ou calculável). */
+  per_100g: {
+    kcal: number | null
+    protein_g: number | null
+    carbs_g: number | null
+    fat_g: number | null
+  }
+  /** Confiança 0-1 — se valores ilegíveis/borrados, baixa. */
+  confidence: number
+  /** Observações livres do OCR (ex: "tabela parcialmente visível", "fibra alimentar 3g detectada também"). */
+  notes?: string
+  raw_response: string
+  promptTokens: number
+  completionTokens: number
+  latencyMs: number
+}
+
 export type VisionAnalysis =
   | VisionMealAnalysis
   | VisionBodyAnalysis
   | VisionScaleAnalysis
+  | VisionNutritionLabelAnalysis
   | VisionOtherAnalysis
 
 const MEAL_SYSTEM_PROMPT = `Você é um nutricionista brasileiro experiente analisando uma foto de refeição. Sua acurácia é crítica — o paciente toma decisão de protocolo a partir desses dados.
@@ -194,12 +231,71 @@ const OTHER_SYSTEM_PROMPT = `Você é um descritor visual em pt-BR. Em 2-3 frase
 Retorne APENAS JSON:
 { "description": "..." }`
 
-const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 4 palavras (sem aspas, sem nada além):
+const NUTRITION_LABEL_SYSTEM_PROMPT = `Você é um leitor especializado em TABELAS NUTRICIONAIS de embalagens brasileiras. Sua única tarefa: extrair os valores numéricos da tabela.
 
-meal  — foto de refeição/comida/bebida/embalagem alimentar
-body  — foto corporal de pessoa (frente/lado/costas)
-scale — foto de balança digital, fita métrica, ou medidor mostrando número
-other — qualquer outra coisa`
+# Como ler a tabela (padrão brasileiro ANVISA)
+
+A tabela é tipicamente um quadro com 2 colunas:
+- coluna 1: **"Quantidade por porção"** (com tamanho ex "170g" no cabeçalho)
+- coluna 2: **"%VD*"** (percentual valor diário — IGNORE essa coluna)
+
+Linhas típicas (na ordem que costumam aparecer):
+1. **Valor energético** — em kcal (e às vezes kJ entre parênteses; só pegue o kcal)
+2. **Carboidratos** — em g
+3. **Açúcares totais / Açúcares adicionados** (subdivisões — só pegue se pedido)
+4. **Proteínas** — em g
+5. **Gorduras totais** — em g
+6. Gorduras saturadas / trans (ignore subdivisões)
+7. Fibra alimentar (ignore)
+8. Sódio (ignore)
+
+⚠️ Algumas embalagens mostram só **POR 100g** em vez de "por porção". Outras mostram **AMBOS** (2 colunas: "por porção" + "por 100g"). Capture o que estiver visível.
+
+# Como achar o serving_size (porção)
+
+Procure no cabeçalho da tabela ou logo acima dela: "Porção: 170g", "Porção: 1 unidade (30g)", "Quantidade por porção 200ml". Se a embalagem indicar porção em ML (líquidos), considere 1ml ≈ 1g para water-based.
+
+# Confiança (0.0-1.0)
+
+- 0.85-1.00: tabela nítida, todos os valores legíveis
+- 0.60-0.85: maioria legível mas algum número embaçado/cortado
+- 0.30-0.60: parcialmente legível, várias linhas faltam
+- < 0.30: tabela praticamente ilegível — retorne null nos valores e explique em notes
+
+# Regras
+
+- Se algum valor não estiver legível, retorne **null** pra ele (NÃO chute).
+- Se a foto NÃO for de tabela nutricional, retorne todos os campos null e diga em notes "não é tabela nutricional".
+- Números com vírgula ou ponto decimal (PT-BR): "5,2g" = 5.2.
+- "kcal" vs "kJ": SEMPRE retorne kcal (1 kcal ≈ 4.184 kJ; converta se só houver kJ).
+
+Retorne APENAS JSON com este formato exato:
+{
+  "product_name": "Iogurte Whey Pêssego",
+  "serving_size_g": 170,
+  "per_serving": {
+    "kcal": 95,
+    "protein_g": 17,
+    "carbs_g": 4.5,
+    "fat_g": 0.5
+  },
+  "per_100g": {
+    "kcal": 56,
+    "protein_g": 10,
+    "carbs_g": 2.6,
+    "fat_g": 0.3
+  },
+  "confidence": 0.92,
+  "notes": "tabela completa, valores nítidos"
+}`
+
+const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 5 palavras (sem aspas, sem nada além):
+
+meal             — foto de refeição/comida no prato/bebida pronta pra consumir
+nutrition_label  — foto de TABELA NUTRICIONAL (rótulo da embalagem, quadro de "Valor energético / Carboidratos / Proteínas / Gorduras" tipicamente em pt-BR ANVISA)
+body             — foto corporal de pessoa (frente/lado/costas)
+scale            — foto de balança digital, fita métrica, ou medidor mostrando número
+other            — qualquer outra coisa (embalagem fechada sem tabela visível, paisagem, etc)`
 
 function buildHeaders(cfg: VisionConfig): Record<string, string> {
   const headers: Record<string, string> = {
@@ -216,6 +312,7 @@ export interface VisionPromptOverrides {
   meal?: string
   body?: string
   scale?: string
+  nutrition_label?: string
   other?: string
   classifier?: string
 }
@@ -238,6 +335,7 @@ export class GeminiVision {
       meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,
       body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
       scale: cfg.prompts?.scale ?? SCALE_SYSTEM_PROMPT,
+      nutrition_label: cfg.prompts?.nutrition_label ?? NUTRITION_LABEL_SYSTEM_PROMPT,
       other: cfg.prompts?.other ?? OTHER_SYSTEM_PROMPT,
       classifier: cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
     }
@@ -251,7 +349,7 @@ export class GeminiVision {
     const r = await this.client.chat.completions.create({
       model: this.model,
       temperature: 0,
-      max_tokens: 8,
+      max_tokens: 12,
       messages: [
         { role: 'system', content: this.prompts.classifier },
         {
@@ -261,6 +359,9 @@ export class GeminiVision {
       ],
     })
     const txt = (r.choices[0]?.message?.content ?? '').trim().toLowerCase()
+    // Ordem importa: nutrition_label antes de meal (string "nutrition_label" não
+    // começa com "meal", mas se LLM responder só "label" tem que cair certo).
+    if (txt.startsWith('nutrition') || txt.startsWith('label')) return 'nutrition_label'
     if (txt.startsWith('meal')) return 'meal'
     if (txt.startsWith('body')) return 'body'
     if (txt.startsWith('scale')) return 'scale'
@@ -280,6 +381,7 @@ export class GeminiVision {
     if (type === 'meal') return this.analyzeMeal(imageUrl, options.userMessage)
     if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
     if (type === 'scale') return this.analyzeScale(imageUrl)
+    if (type === 'nutrition_label') return this.analyzeNutritionLabel(imageUrl, options.userMessage)
     return this.analyzeOther(imageUrl)
   }
 
@@ -442,6 +544,86 @@ export class GeminiVision {
       weight_kg: p.weight_kg ?? null,
       confidence: p.confidence ?? 0,
       unit_detected: p.unit_detected ?? 'unknown',
+      raw_response: raw,
+      promptTokens: completion.usage?.prompt_tokens ?? 0,
+      completionTokens: completion.usage?.completion_tokens ?? 0,
+      latencyMs: Date.now() - start,
+    }
+  }
+
+  async analyzeNutritionLabel(
+    imageUrl: string,
+    userMessage?: string,
+  ): Promise<VisionNutritionLabelAnalysis> {
+    const start = Date.now()
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: 0,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: this.prompts.nutrition_label },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageUrl } },
+            {
+              type: 'text',
+              text: userMessage
+                ? `Mensagem do usuário junto: "${userMessage}"\n\nExtraia os valores da tabela nutricional.`
+                : 'Extraia os valores da tabela nutricional.',
+            },
+          ],
+        },
+      ],
+    })
+    const raw = completion.choices[0]?.message?.content ?? ''
+    let p: {
+      product_name?: string | null
+      serving_size_g?: number | string | null
+      per_serving?: {
+        kcal?: number | string | null
+        protein_g?: number | string | null
+        carbs_g?: number | string | null
+        fat_g?: number | string | null
+      }
+      per_100g?: {
+        kcal?: number | string | null
+        protein_g?: number | string | null
+        carbs_g?: number | string | null
+        fat_g?: number | string | null
+      }
+      confidence?: number | string
+      notes?: string
+    } = {}
+    try {
+      p = JSON.parse(raw)
+    } catch {
+      throw new Error(`Vision (nutrition_label) JSON inválido: ${raw.slice(0, 200)}`)
+    }
+    const toNum = (v: unknown): number | null => {
+      if (v == null || v === '') return null
+      const n = Number(String(v).replace(',', '.'))
+      return Number.isFinite(n) ? n : null
+    }
+    return {
+      type: 'nutrition_label',
+      product_name: p.product_name ?? null,
+      serving_size_g: toNum(p.serving_size_g),
+      per_serving: {
+        kcal: toNum(p.per_serving?.kcal),
+        protein_g: toNum(p.per_serving?.protein_g),
+        carbs_g: toNum(p.per_serving?.carbs_g),
+        fat_g: toNum(p.per_serving?.fat_g),
+      },
+      per_100g: {
+        kcal: toNum(p.per_100g?.kcal),
+        protein_g: toNum(p.per_100g?.protein_g),
+        carbs_g: toNum(p.per_100g?.carbs_g),
+        fat_g: toNum(p.per_100g?.fat_g),
+      },
+      confidence: toNum(p.confidence) ?? 0,
+      notes: p.notes,
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,

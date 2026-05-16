@@ -320,4 +320,59 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     // Captura da correção deve ter rodado
     expect(events.find((e) => e.event === 'food_correction.learned')).toBeDefined()
   })
+
+  // BUG da AMANDA 2026-05-15 19:11: ela mandou "Burrito de filé\n1 coca 250ml".
+  // LLM duplicou: items=[burrito,burrito,coca,coca] → 1.110 kcal em vez de 555.
+  // Luciana 2026-05-11 14:09: 4x cenoura/tomate/alface/arroz num único almoço
+  // (snapshot calorias_consumed=3424 vs real ~1156). Fix: dedup intra-array
+  // antes do calcMealMacros — itens com mesmo food_name normalizado mergeam
+  // somando quantity_g.
+  it('items duplicados no mesmo call são MERGED somando quantity_g — bug da AMANDA/LUCIANA', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      recentLogs: [],
+      recentUserMessages: ['Burrito de filé\n1 coca 250ml'],
+      llmSentReplace: false,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: false,
+        items: [
+          { food_name: 'burrito de filé', quantity_g: 300 },
+          { food_name: 'coca-cola', quantity_g: 250 },
+          { food_name: 'Burrito de Filé', quantity_g: 300 }, // mesmo (case/normalize)
+          { food_name: 'coca-cola', quantity_g: 250 }, // mesmo
+        ],
+      },
+      ctx,
+    )
+    const deduped = events.find((e) => e.event === 'tool.items_deduped')
+    expect(deduped).toBeDefined()
+    expect(deduped?.properties.original_count).toBe(4)
+    expect(deduped?.properties.merged_count).toBe(2)
+    const dups = deduped?.properties.duplicates as Array<{ food_name: string; repeated: number; summed_g: number }>
+    expect(dups).toHaveLength(2)
+    expect(dups[0]?.repeated).toBe(2)
+    expect(dups[0]?.summed_g).toBe(600) // 300 + 300 somados (paciente comeu 2 burritos é semanticamente o mesmo que 1 de 600g)
+  })
+
+  it('items SEM duplicação NÃO dispara dedup event', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      recentLogs: [],
+      recentUserMessages: ['café com 2 ovos e 1 pão'],
+      llmSentReplace: false,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: false,
+        items: [
+          { food_name: 'ovo mexido', quantity_g: 100 },
+          { food_name: 'pão francês', quantity_g: 50 },
+        ],
+      },
+      ctx,
+    )
+    expect(events.find((e) => e.event === 'tool.items_deduped')).toBeUndefined()
+  })
 })

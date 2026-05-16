@@ -64,11 +64,15 @@ export async function loadHumanizerConfig(
 
 export interface VisionRuntimeConfig {
   model: string
+  /** Modelo específico pra nutrition_label. Sonnet 4.6 Vision tem OCR muito
+   * superior pra texto denso de rótulo. Fallback pro `model` se não setado. */
+  nutrition_label_model?: string
   meal_confidence_threshold: number
   prompts: {
     meal?: string
     body?: string
     scale?: string
+    nutrition_label?: string
     other?: string
     classifier?: string
   }
@@ -76,6 +80,7 @@ export interface VisionRuntimeConfig {
 
 const DEFAULT_VISION_CONFIG = {
   model: 'google/gemini-2.5-flash',
+  nutrition_label_model: 'anthropic/claude-sonnet-4.6',
   meal_confidence_threshold: 0.6,
 }
 
@@ -90,6 +95,7 @@ export async function loadVisionConfig(
 
   const merged: VisionRuntimeConfig = {
     model: DEFAULT_VISION_CONFIG.model,
+    nutrition_label_model: DEFAULT_VISION_CONFIG.nutrition_label_model,
     meal_confidence_threshold: DEFAULT_VISION_CONFIG.meal_confidence_threshold,
     prompts: {},
   }
@@ -101,6 +107,8 @@ export async function loadVisionConfig(
   for (const row of gcRows ?? []) {
     if (row.key === 'vision.model' && typeof row.value === 'string') {
       merged.model = row.value
+    } else if (row.key === 'vision.nutrition_label_model' && typeof row.value === 'string') {
+      merged.nutrition_label_model = row.value
     } else if (row.key === 'vision.meal.confidence_threshold') {
       const n = Number(row.value)
       if (Number.isFinite(n) && n >= 0 && n <= 1) {
@@ -118,7 +126,7 @@ export async function loadVisionConfig(
   }
   for (const row of ruleRows ?? []) {
     const key = row.slug.replace(/^vision-/, '') as keyof VisionRuntimeConfig['prompts']
-    if (['meal', 'body', 'scale', 'other', 'classifier'].includes(key) && row.content) {
+    if (['meal', 'body', 'scale', 'nutrition_label', 'other', 'classifier'].includes(key) && row.content) {
       merged.prompts[key] = row.content
     }
   }

@@ -17,7 +17,13 @@ import OpenAI from 'openai'
 export interface VisionConfig {
   apiKey: string
   baseURL?: string
-  model?: string // default 'google/gemini-2.0-flash-001'
+  model?: string // default 'google/gemini-2.5-flash'
+  /** Modelo opcional usado APENAS para nutrition_label. Sonnet 4.6 Vision
+   * (anthropic/claude-sonnet-4.6) tem OCR muito superior pra texto denso de
+   * rótulo. Caso Amanda 2026-05-16: gemini-2.5-flash falhou 3x lendo rótulo
+   * de iogurte, ficou em loop "manda foto melhor". Se omitido, cai no
+   * `model` default. */
+  nutritionLabelModel?: string
   heliconeApiKey?: string
 }
 
@@ -321,6 +327,8 @@ export interface VisionPromptOverrides {
 export class GeminiVision {
   private client: OpenAI
   private model: string
+  /** Modelo específico pra nutrition_label (fallback pro `model` se omitido). */
+  private nutritionLabelModel: string
   private prompts: Required<VisionPromptOverrides>
 
   constructor(cfg: VisionConfig & { prompts?: VisionPromptOverrides }) {
@@ -332,6 +340,7 @@ export class GeminiVision {
       maxRetries: 1,
     })
     this.model = cfg.model ?? 'google/gemini-2.5-flash'
+    this.nutritionLabelModel = cfg.nutritionLabelModel ?? this.model
     this.prompts = {
       meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,
       body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
@@ -557,8 +566,10 @@ export class GeminiVision {
     userMessage?: string,
   ): Promise<VisionNutritionLabelAnalysis> {
     const start = Date.now()
+    // Usa nutritionLabelModel (Sonnet 4.6 Vision por default na config de
+    // produção) — OCR muito superior pra texto denso de rótulo vs Gemini Flash.
     const completion = await this.client.chat.completions.create({
-      model: this.model,
+      model: this.nutritionLabelModel,
       temperature: 0,
       max_tokens: 1024,
       response_format: { type: 'json_object' },

@@ -169,6 +169,7 @@ export const processMessageFn = inngest.createFunction(
             apiKey: process.env.OPENROUTER_API_KEY,
             heliconeApiKey: process.env.HELICONE_API_KEY,
             model: visionCfg.model,
+            nutritionLabelModel: visionCfg.nutrition_label_model,
             prompts: visionCfg.prompts,
           })
           const start = Date.now()

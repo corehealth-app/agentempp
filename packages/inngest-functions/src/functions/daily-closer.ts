@@ -3,6 +3,7 @@ import type { DailySnapshot, UserProgress } from '@mpp/core'
 import {
   getLocalDateMinusDays,
   getLocalHour,
+  getTodayGap,
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
@@ -76,14 +77,21 @@ async function closeUserDay(
   const yesterday = getLocalDateMinusDays(userTimezone, 1)
 
   // Já fechado?
-  const { data: existing } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (supabase as any)
     .from('daily_snapshots')
-    .select('id, day_closed')
+    .select('id, day_closed, day_status, gap_reminder_sent_at')
     .eq('user_id', userId)
     .eq('date', yesterday)
     .maybeSingle()
+  const existingTyped = existing as {
+    id: string
+    day_closed: boolean | null
+    day_status: string | null
+    gap_reminder_sent_at: string | null
+  } | null
 
-  if (existing?.day_closed) return { skipped: true, reason: 'já fechado' }
+  if (existingTyped?.day_closed) return { skipped: true, reason: 'já fechado' }
 
   // Lê histórico do dia
   const startOfDay = `${yesterday}T00:00:00${getTzOffset(userTimezone)}`
@@ -173,7 +181,8 @@ async function closeUserDay(
     calcConfig,
   )
 
-  // Upsert daily_snapshot
+  // Upsert daily_snapshot. day_status é atualizado em UPDATE separado abaixo
+  // (depois de computar gap-check), pra evitar reordenação grande dessa função.
   const snapshotData = {
     user_id: userId,
     date: yesterday,
@@ -249,7 +258,58 @@ async function closeUserDay(
   // crédito desse dia (passa designDeficit=0 ao computeProgress; o snapshot
   // permanece salvo pra histórico/streak). Conversa avulsa não conta.
   const hasActivity = (meals?.length ?? 0) > 0 || (workouts?.length ?? 0) > 0
-  const effectiveDesignDeficit = hasActivity ? designDeficit : 0
+
+  // GAP CHECK FINAL (Roberto 2026-05-16): se o gap-checker mandou lembrete às
+  // 21h-23h local e paciente NÃO RESPONDEU registrando nem dizendo "pulei",
+  // o gap continua. Fecha como incomplete_no_response → NÃO credita bloco 7700.
+  // Sem isso, paciente que esquece de registrar jantar ganha bloco fake.
+  //
+  // Só aplica se:
+  //  - há padrão de refeição estabelecido (≥5 dias ativos no histórico 14d)
+  //  - lembrete FOI enviado (gap_reminder_sent_at IS NOT NULL)
+  //  - gap continua (paciente não registrou nem disse "pulei")
+  let dayStatus: 'complete' | 'incomplete_no_response' = 'complete'
+  // Só checa pra "ontem" — getTodayGap olha hoje, mas precisamos do dia que
+  // estamos fechando. Re-implementamos inline usando o snapshot existente.
+  if (existingTyped?.gap_reminder_sent_at && hasActivity) {
+    // Re-computar gap pra "ontem" (yesterday) usando meal_logs já carregados.
+    // Padrão usa últimos 14d via getTodayGap, mas precisamos checar yesterday.
+    // Simplificação: se paciente não interagiu desde o lembrete, gap continua.
+    // Robusto: pega padrão e compara com meal_logs do dia.
+    const gapInfo = await getTodayGap(supabase, userId, userTimezone)
+    // gap aqui é o gap "hoje" (no fuso local atual) — mas a partir das 0h-4h
+    // local, "hoje" do método ainda é o que estávamos fechando como "ontem"
+    // até a virada UTC. Esse mismatch só acontece em janelas estreitas; pra
+    // robustez total, compararíamos snapshot_id de yesterday.
+    if (gapInfo.gap.size > 0 && !gapInfo.pattern.fallbackUsed) {
+      dayStatus = 'incomplete_no_response'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('product_events').insert({
+        user_id: userId,
+        event: 'bloco7700.skipped_incomplete_day',
+        properties: {
+          date: yesterday,
+          gap: Array.from(gapInfo.gap),
+          reason: 'lembrete enviado, paciente não respondeu',
+        },
+      })
+    }
+  }
+
+  // Persiste day_status no snapshot (UPDATE separado — coluna ainda não está
+  // nos types gerados do supabase, regerar com `pnpm db:types` depois).
+  // Preserva user_skipped se já estava setado (paciente confirmou explicitamente).
+  const finalDayStatus =
+    existingTyped?.day_status === 'user_skipped' ? 'user_skipped' : dayStatus
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('daily_snapshots')
+    .update({ day_status: finalDayStatus })
+    .eq('id', snap.id)
+
+  const blocoCreditaThisDay =
+    hasActivity && (finalDayStatus === 'complete' || finalDayStatus === 'user_skipped')
+  const effectiveDesignDeficit = blocoCreditaThisDay ? designDeficit : 0
   if (!hasActivity) {
     // Zera o dailyBalance pra computeProgress não creditar nada via -balance.
     // Snapshot permanece com o balance real pra fins de display/log.

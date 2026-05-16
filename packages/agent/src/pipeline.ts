@@ -851,6 +851,20 @@ function formatUserContext(
         `- Déficit acumulado (bloco 7700): ${s.deficit_accumulated} kcal de 7700 — falta ${7700 - s.deficit_accumulated} pra fechar bloco`,
       )
     }
+    // day_status (Roberto 2026-05-16) — exposto pro LLM saber se há gap aberto.
+    // O cron daily-gap-checker marca 'pending_close' quando manda lembrete
+    // sobre refeição esperada que não foi registrada. Daily-closer fecha
+    // depois como 'incomplete_no_response' se paciente não responder.
+    const snapTyped = s as typeof s & { day_status?: string | null; gap_reminder_sent_at?: string | null }
+    if (snapTyped.day_status === 'pending_close') {
+      numericLines.push(
+        `- ⚠️ DIA PENDENTE: enviamos lembrete sobre refeição não registrada. Se o paciente acabou de mandar/confirmar, registre normal. Se ele falou "pulei", chame marca_refeicao_pulada(meal_type) com a refeição pulada.`,
+      )
+    } else if (snapTyped.day_status === 'incomplete_no_response') {
+      numericLines.push(
+        `- ⚠️ DIA INCOMPLETO: paciente não respondeu ao lembrete de refeição faltante. Bloco 7700 NÃO foi creditado por esse dia. Pra creditar retroativo, paciente precisa registrar a refeição que faltou OU confirmar "pulei".`,
+      )
+    }
   } else {
     numericLines.push(`- Consumo hoje: 0 kcal (nada registrado ainda)`)
   }

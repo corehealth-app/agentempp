@@ -1536,6 +1536,46 @@ export const confirmaPaisResidencia: ToolDefinition = {
 // ----------------------------------------------------------------------------
 // Registry
 // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// marca_refeicao_pulada — paciente confirmou que não comeu essa refeição
+// ----------------------------------------------------------------------------
+export const marcaRefeicaoPulada: ToolDefinition = {
+  name: 'marca_refeicao_pulada',
+  description:
+    'Marca uma REFEIÇÃO específica como PULADA pelo paciente hoje (ele não comeu intencionalmente). ' +
+    'Use quando paciente responder confirmando que pulou: "pulei o jantar", "não comi café hoje", ' +
+    '"fiquei sem almoço", "não tinha fome", "passei direto", "fui dormir sem jantar", "tô em jejum". ' +
+    'NÃO use quando paciente está PERGUNTANDO sobre pular, ou explicando teoria — só quando ele relata ' +
+    'comportamento real do dia. Loga em product_events pro daily-closer considerar o dia como completo ' +
+    '(creditar bloco 7700 normalmente) mesmo sem registro daquela refeição. Sem isso, o sistema fica ' +
+    'esperando lembrete/registro e pode marcar dia como incomplete_no_response.',
+  parameters: z.object({
+    meal_type: z
+      .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia'])
+      .describe('Tipo da refeição que o paciente confirmou ter pulado'),
+    reason: z
+      .string()
+      .optional()
+      .describe('Motivo opcional informado pelo paciente (ex: "jejum intermitente", "sem fome", "trabalho")'),
+  }),
+  execute: async (args, ctx) => {
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'meal.user_skipped',
+      properties: {
+        meal_type: args.meal_type,
+        reason: args.reason ?? null,
+        provider_message_id: ctx.providerMessageId ?? null,
+      },
+    })
+    return {
+      success: true,
+      meal_type: args.meal_type,
+      message: `Refeição "${args.meal_type}" marcada como pulada hoje. O dia segue válido pro bloco 7700 (assumimos que foi intencional).`,
+    }
+  },
+}
+
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
@@ -1543,6 +1583,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   registraTreino,
   consultaProgresso,
   consultaMetricas,
+  marcaRefeicaoPulada,
   atualizaDataUser,
   encerraAtendimento,
   deleteUser,

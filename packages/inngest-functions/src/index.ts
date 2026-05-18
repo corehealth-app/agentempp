@@ -8,6 +8,7 @@ import { engagementSenderFn } from './functions/engagement-sender.js'
 import { bufferListenerFn } from './functions/buffer-listener.js'
 import { waQualityCheckFn } from './functions/wa-quality-check.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
+import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -17,6 +18,7 @@ export const allFunctions = [
   bufferListenerFn,
   waQualityCheckFn,
   pipelineHealthFn,
+  openrouterBalanceCheckFn,
 ]
 
 export {
@@ -27,4 +29,5 @@ export {
   bufferListenerFn,
   waQualityCheckFn,
   pipelineHealthFn,
+  openrouterBalanceCheckFn,
 }

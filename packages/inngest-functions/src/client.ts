@@ -38,6 +38,9 @@ type Events = {
   'pipeline.health.tick': {
     data: { fired_at: string }
   }
+  'openrouter.balance.tick': {
+    data: { fired_at: string }
+  }
   'subscription.event': {
     data: {
       provider_event_id: string

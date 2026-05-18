@@ -16,7 +16,7 @@ import { auditNumericClaims } from './numeric-validator.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
-import type { OpenRouterLLM } from '@mpp/providers'
+import type { OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
@@ -146,7 +146,21 @@ export async function processMessage(
   // Carrega config editável de cálculos (cache 60s) — afeta metrics e protocol
   const calcConfig = await loadCalcConfig(deps.supabase)
 
-  const baseSystem = `${promptRow.system_prompt}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
+  // System prompt em 2 blocos pra Anthropic prompt caching (sessão 2026-05-16):
+  //  1. ESTÁVEL — promptRow.system_prompt (50+ agent_rules + persona) — cacheado
+  //  2. VARIÁVEL — contexto do paciente (snapshot, hora, last messages) — sem cache
+  // Anthropic Opus 4.7 estava custando $0.77/turno (153k tokens médio).
+  // Com cache (90% redução nas leituras), cai pra ~$0.10/turno em conversas seguidas.
+  // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
+  const stableSystem = promptRow.system_prompt
+  const variableSystem = `\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
+  const isAnthropic = /^anthropic\//.test(promptRow.model)
+  const systemPrompt: SystemPromptBlock = isAnthropic
+    ? [
+        { text: stableSystem, cache: 'ephemeral' },
+        { text: variableSystem },
+      ]
+    : stableSystem + variableSystem
 
   const messages: ChatCompletionMessageParam[] = ctx.recentMessages.map((m) => ({
     role: m.role,
@@ -157,6 +171,8 @@ export async function processMessage(
   const toolCallsSummary: AgentOutput['toolCalls'] = []
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
+  let totalCacheRead = 0
+  let totalCacheCreate = 0
   let totalCost: number | null = null
   let lastResult: Awaited<ReturnType<typeof deps.llm.complete>> | null = null
   let finalText = ''
@@ -167,16 +183,19 @@ export async function processMessage(
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
-      systemPrompt: baseSystem,
+      systemPrompt,
       messages,
       temperature: promptRow.temperature,
       maxTokens: promptRow.max_tokens,
       tools,
+      cacheTools: isAnthropic, // marca último tool com cache_control pra Anthropic
       userId,
       metadata: { Stage: stage, Iteration: String(iter) },
     })
     lastResult = result
     totalPromptTokens += result.promptTokens
+    totalCacheRead += result.cacheReadInputTokens ?? 0
+    totalCacheCreate += result.cacheCreationInputTokens ?? 0
     totalCompletionTokens += result.completionTokens
     if (result.costUsd != null) {
       totalCost = (totalCost ?? 0) + result.costUsd
@@ -305,6 +324,25 @@ export async function processMessage(
     },
     { stage, model: lastResult.model },
   )
+
+  // Métrica de prompt caching (Anthropic): loga evento se houve hit, pra
+  // observabilidade da economia. Sem hit (1ª chamada do paciente nos últimos
+  // 5min OU modelo não-Anthropic), não loga — evita ruído.
+  if (totalCacheRead > 0 || totalCacheCreate > 0) {
+    const hitRate = totalCacheRead / Math.max(totalPromptTokens, 1)
+    await deps.supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'llm.cache_usage',
+      properties: {
+        model: lastResult.model,
+        stage,
+        prompt_tokens: totalPromptTokens,
+        cache_read_tokens: totalCacheRead,
+        cache_creation_tokens: totalCacheCreate,
+        hit_rate: +hitRate.toFixed(3),
+      },
+    })
+  }
 
   return {
     text: finalText,

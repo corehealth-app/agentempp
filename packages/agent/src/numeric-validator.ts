@@ -137,6 +137,22 @@ function parseNum(s: string): number {
   return Number(cleaned)
 }
 
+// Padroes que indicam que o numero eh RESTANTE/FALTANTE, nao meta absoluta.
+// Falsos positivos vistos (sessao 2026-05-18): "Ainda faltam 32g de proteina
+// pra fechar o dia", "Falta 43g de proteina pra fechar a meta". Esses casos
+// confundiam o validator (claimed=32, real=120 -> mismatch 73% falso).
+// Skip se algum desses padroes aparece nos 40 chars antes do match.
+const RESTANTE_BEFORE_PATTERNS = [
+  /\bfalta(?:m|ndo|ram)?\b/i,
+  /\bainda\b/i,
+  /\brestam?\b/i,
+  /\bsobra(?:m)?\b/i,
+  /\bpra\s+fechar\b/i,
+  /\bpara\s+fechar\b/i,
+  /\bpra\s+bater\b/i,
+  /\bpara\s+bater\b/i,
+]
+
 export function validateNumericClaims(
   text: string,
   ctx: NumericContext,
@@ -153,6 +169,15 @@ export function validateNumericClaims(
       if (!claimedRaw) continue
       const claimed = parseNum(claimedRaw)
       if (!Number.isFinite(claimed)) continue
+
+      // Skip se eh RESTANTE/FALTANTE (paciente ve "ainda faltam Xg" e isso
+      // nao eh claim sobre meta absoluta). Aplica apenas pra fields com
+      // semantica de "restante" (protein_target, calories_target).
+      if (field === 'protein_target' || field === 'calories_target') {
+        const before = text.slice(Math.max(0, match.index - 40), match.index)
+        if (RESTANTE_BEFORE_PATTERNS.some((p) => p.test(before))) continue
+      }
+
       const diff = Math.abs(claimed - real)
       const diffPct = diff / Math.max(Math.abs(real), 1)
 

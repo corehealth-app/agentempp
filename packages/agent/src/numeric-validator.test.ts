@@ -26,6 +26,31 @@ describe('validateNumericClaims protein_target — false positive fix', () => {
     expect(validateNumericClaims('💪 Proteína: 125 / 178g (70%)', ctx)).toEqual([])
     expect(validateNumericClaims('meta de 178g de proteína', ctx)).toEqual([])
   })
+
+  // BUG (Luciana+Amanda+Erika 2026-05-16): validator pegava "32g de proteína
+  // pra fechar o dia" e marcava como mismatch (claimed=32, real=120). Mas
+  // "32g" era RESTANTE, não claim sobre meta. Fix: skip se "falta(m)|ainda|
+  // resta|pra fechar" aparece nos 40 chars antes do número.
+  it('NÃO dispara em "ainda faltam 32g de proteína pra fechar o dia"', () => {
+    const t = 'Você está indo bem. Ainda faltam 32g de proteína pra fechar o dia, foque no jantar.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
+  it('NÃO dispara em "falta 43g de proteína pra fechar a meta"', () => {
+    const t = 'Falta 43g de proteína pra fechar a meta; vale priorizar fonte proteica.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
+  it('NÃO dispara em "restam 42g de proteína"', () => {
+    const t = 'Excelente progresso, restam 42g de proteína pra atingir o alvo do dia.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
+  it('AINDA dispara quando LLM realmente inventa meta absoluta diferente', () => {
+    // Card format: bate na regex A "Proteína: X / Yg" — meta absoluta = 250 (real 178, diff 72 > tol 30)
+    const t = '💪 Proteína: 80 / 250g (32%)'
+    const findings = validateNumericClaims(t, ctx)
+    expect(findings.length).toBeGreaterThan(0)
+    expect(findings[0]!.field).toBe('protein_target')
+    expect(findings[0]!.claimed).toBe(250)
+  })
 })
 
 describe('validateNumericClaims deficit_block (bloco 7700) — bug do Roberto 2026-05-15', () => {

@@ -1,9 +1,9 @@
 import { calcDailyXP, computeProgress } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
 import {
+  getGapForDate,
   getLocalDateMinusDays,
   getLocalHour,
-  getTodayGap,
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
@@ -264,23 +264,19 @@ async function closeUserDay(
   // o gap continua. Fecha como incomplete_no_response → NÃO credita bloco 7700.
   // Sem isso, paciente que esquece de registrar jantar ganha bloco fake.
   //
+  // BUG corrigido (Roberto+Paulo+Luciana 2026-05-17): chamada anterior usava
+  // getTodayGap() que retorna gap de "hoje" (dia em curso). Como daily-closer
+  // roda 00h-04h local fechando "ontem", o gap retornado era do dia recém-
+  // iniciado (com tudo zerado) → snapshots de ontem marcados incomplete
+  // injustamente. Fix: getGapForDate(yesterday) — checa o dia certo.
+  //
   // Só aplica se:
   //  - há padrão de refeição estabelecido (≥5 dias ativos no histórico 14d)
   //  - lembrete FOI enviado (gap_reminder_sent_at IS NOT NULL)
-  //  - gap continua (paciente não registrou nem disse "pulei")
+  //  - gap continua na DATA FECHANDO (paciente não registrou nem disse "pulei")
   let dayStatus: 'complete' | 'incomplete_no_response' = 'complete'
-  // Só checa pra "ontem" — getTodayGap olha hoje, mas precisamos do dia que
-  // estamos fechando. Re-implementamos inline usando o snapshot existente.
   if (existingTyped?.gap_reminder_sent_at && hasActivity) {
-    // Re-computar gap pra "ontem" (yesterday) usando meal_logs já carregados.
-    // Padrão usa últimos 14d via getTodayGap, mas precisamos checar yesterday.
-    // Simplificação: se paciente não interagiu desde o lembrete, gap continua.
-    // Robusto: pega padrão e compara com meal_logs do dia.
-    const gapInfo = await getTodayGap(supabase, userId, userTimezone)
-    // gap aqui é o gap "hoje" (no fuso local atual) — mas a partir das 0h-4h
-    // local, "hoje" do método ainda é o que estávamos fechando como "ontem"
-    // até a virada UTC. Esse mismatch só acontece em janelas estreitas; pra
-    // robustez total, compararíamos snapshot_id de yesterday.
+    const gapInfo = await getGapForDate(supabase, userId, userTimezone, yesterday)
     if (gapInfo.gap.size > 0 && !gapInfo.pattern.fallbackUsed) {
       dayStatus = 'incomplete_no_response'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

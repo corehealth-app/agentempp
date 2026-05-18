@@ -119,8 +119,83 @@ export async function getMealPattern(
 }
 
 /**
- * Identifica quais refeições esperadas ainda NÃO foram registradas hoje.
- * Usado pelo cron daily-gap-checker e pelo daily-closer.
+ * Identifica quais refeições esperadas ainda NÃO foram registradas em UMA
+ * DATA específica (formato YYYY-MM-DD em fuso local).
+ *
+ * BUG histórico (Roberto+Paulo+Luciana 2026-05-17): daily-closer chamava
+ * getTodayGap() durante o fechamento de "ontem", mas getTodayGap retornava
+ * gap de HOJE (dia em curso). Resultado: snapshots de ontem marcados como
+ * incomplete_no_response com gap do dia novo (que mal começou) → blocos
+ * 7700 NÃO creditados injustamente. Roberto 16/05 e 17/05 marcados errado.
+ *
+ * Fix: parametrizar a data. daily-closer passa `yesterday`, daily-gap-checker
+ * passa `today` (via wrapper getTodayGap abaixo).
+ */
+export async function getGapForDate(
+  supabase: ServiceClient,
+  userId: string,
+  userTimezone: string,
+  dateStr: string,
+  options: { thresholdPct?: number } = {},
+): Promise<{
+  pattern: MealPattern
+  registered: Set<MealType>
+  skipped: Set<MealType>
+  gap: Set<MealType>
+}> {
+  const pattern = await getMealPattern(supabase, userId, userTimezone, options)
+
+  // Snapshot da data (pode não existir)
+  const { data: snap } = await supabase
+    .from('daily_snapshots')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('date', dateStr)
+    .maybeSingle()
+
+  const snapId = (snap as { id: string } | null)?.id ?? null
+  const registered = new Set<MealType>()
+  if (snapId) {
+    const { data: logs } = await supabase
+      .from('meal_logs')
+      .select('meal_type')
+      .eq('snapshot_id', snapId)
+      .not('meal_type', 'is', null)
+    for (const l of (logs ?? []) as Array<{ meal_type: string }>) {
+      registered.add(l.meal_type as MealType)
+    }
+  }
+
+  // Refeições marcadas como "pulei" na data (product_events meal.user_skipped)
+  // Janela: 00:00 a 23:59 da data no fuso local.
+  const startOfDay = `${dateStr}T00:00:00`
+  const endOfDay = `${dateStr}T23:59:59`
+  const { data: skipEvents } = await supabase
+    .from('product_events')
+    .select('properties')
+    .eq('user_id', userId)
+    .eq('event', 'meal.user_skipped')
+    .gte('occurred_at', startOfDay)
+    .lte('occurred_at', endOfDay)
+  const skipped = new Set<MealType>()
+  for (const e of (skipEvents ?? []) as Array<{ properties: Record<string, unknown> }>) {
+    const mt = e.properties?.meal_type as MealType | undefined
+    if (mt) skipped.add(mt)
+  }
+
+  const gap = new Set<MealType>()
+  for (const mt of pattern.expected) {
+    if (!registered.has(mt) && !skipped.has(mt)) {
+      gap.add(mt)
+    }
+  }
+
+  return { pattern, registered, skipped, gap }
+}
+
+/**
+ * Wrapper: gap de HOJE (usado pelo daily-gap-checker pra detectar enquanto
+ * paciente ainda pode registrar).
  */
 export async function getTodayGap(
   supabase: ServiceClient,
@@ -129,55 +204,9 @@ export async function getTodayGap(
   options: { thresholdPct?: number } = {},
 ): Promise<{
   pattern: MealPattern
-  registeredToday: Set<MealType>
-  skippedToday: Set<MealType>
+  registered: Set<MealType>
+  skipped: Set<MealType>
   gap: Set<MealType>
 }> {
-  const pattern = await getMealPattern(supabase, userId, userTimezone, options)
-  const today = getLocalDateString(userTimezone)
-
-  // Snapshot de hoje (pode não existir ainda)
-  const { data: snap } = await supabase
-    .from('daily_snapshots')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('date', today)
-    .maybeSingle()
-
-  const snapId = (snap as { id: string } | null)?.id ?? null
-  const registeredToday = new Set<MealType>()
-  if (snapId) {
-    const { data: logs } = await supabase
-      .from('meal_logs')
-      .select('meal_type')
-      .eq('snapshot_id', snapId)
-      .not('meal_type', 'is', null)
-    for (const l of (logs ?? []) as Array<{ meal_type: string }>) {
-      registeredToday.add(l.meal_type as MealType)
-    }
-  }
-
-  // Refeições marcadas como "pulei" hoje (product_events meal.user_skipped)
-  const startOfDay = `${today}T00:00:00`
-  const { data: skipEvents } = await supabase
-    .from('product_events')
-    .select('properties')
-    .eq('user_id', userId)
-    .eq('event', 'meal.user_skipped')
-    .gte('occurred_at', startOfDay)
-  const skippedToday = new Set<MealType>()
-  for (const e of (skipEvents ?? []) as Array<{ properties: Record<string, unknown> }>) {
-    const mt = e.properties?.meal_type as MealType | undefined
-    if (mt) skippedToday.add(mt)
-  }
-
-  // Gap = esperado MAS não registrado E não marcado como pulado
-  const gap = new Set<MealType>()
-  for (const mt of pattern.expected) {
-    if (!registeredToday.has(mt) && !skippedToday.has(mt)) {
-      gap.add(mt)
-    }
-  }
-
-  return { pattern, registeredToday, skippedToday, gap }
+  return getGapForDate(supabase, userId, userTimezone, getLocalDateString(userTimezone), options)
 }

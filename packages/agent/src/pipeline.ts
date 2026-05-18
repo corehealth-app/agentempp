@@ -155,9 +155,13 @@ export async function processMessage(
   const stableSystem = promptRow.system_prompt
   const variableSystem = `\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
+  // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
+  // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda
+  // outra → cache 5min expira). Com 1h, write custa 2x normal mas hit rate
+  // sobe pra 80%+ esperado. Net economia maior.
   const systemPrompt: SystemPromptBlock = isAnthropic
     ? [
-        { text: stableSystem, cache: 'ephemeral' },
+        { text: stableSystem, cache: 'ephemeral_1h' },
         { text: variableSystem },
       ]
     : stableSystem + variableSystem
@@ -189,6 +193,7 @@ export async function processMessage(
       maxTokens: promptRow.max_tokens,
       tools,
       cacheTools: isAnthropic, // marca último tool com cache_control pra Anthropic
+      cacheToolsTtl: isAnthropic ? 'ephemeral_1h' : undefined, // tools schema é estável, vale 1h
       userId,
       metadata: { Stage: stage, Iteration: String(iter) },
     })

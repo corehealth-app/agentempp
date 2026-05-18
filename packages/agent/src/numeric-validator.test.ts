@@ -51,6 +51,23 @@ describe('validateNumericClaims protein_target — false positive fix', () => {
     expect(findings[0]!.field).toBe('protein_target')
     expect(findings[0]!.claimed).toBe(250)
   })
+
+  // BUG (Luciana 2026-05-18 19:12): validator pegava "Meta de proteína batida
+  // com folga — 23g num iogurte" como mismatch (claimed=23, real=120). 23g é
+  // proteína DO IOGURTE, não meta. Fix: ampliar RESTANTE_BEFORE_PATTERNS com
+  // "batida/atingida/com folga/num/numa/em um".
+  it('NÃO dispara em "Meta de proteína batida com folga — 23g num iogurte"', () => {
+    const t = 'Meta de proteína batida com folga — 23g num iogurte zero açúcar, ótimo.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
+  it('NÃO dispara em "Meta atingida — 30g no leite"', () => {
+    const t = 'Meta atingida — 30g no leite vai garantir.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
+  it('NÃO dispara em "Cumprida a meta — 25g numa banana"', () => {
+    const t = 'Cumprida a meta — 25g numa banana entrega o restante.'
+    expect(validateNumericClaims(t, ctx)).toEqual([])
+  })
 })
 
 describe('validateNumericClaims deficit_block (bloco 7700) — bug do Roberto 2026-05-15', () => {

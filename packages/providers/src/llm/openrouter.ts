@@ -21,14 +21,17 @@ export interface LLMConfig {
 /** Bloco de system prompt — string simples ou array (pra cache control).
  *
  * Anthropic prompt caching via OpenRouter (2026-05-16): marcar bloco com
- * `cache: 'ephemeral'` salva 90% no custo das leituras subsequentes dentro
- * de 5min. Usado pra parte ESTÁVEL do prompt (regras + persona) que não
- * muda entre turnos do mesmo paciente. Parte VARIÁVEL (contexto do paciente)
- * vai num bloco separado sem cache.
+ * `cache: 'ephemeral'` salva 90% no custo das leituras subsequentes.
+ *
+ * TTL:
+ *  - 'ephemeral': 5min TTL, write custa 1.25x normal
+ *  - 'ephemeral_1h': 1h TTL, write custa 2x normal (vale a pena se paciente
+ *    manda msgs com gaps > 5min mas dentro de 1h, como observado em produção
+ *    2026-05-18: hit rate caiu pra 36% pq turnos esparsos)
  *
  * Funciona só pra modelos Anthropic (Opus/Sonnet/Haiku 4.x). Em outros
  * providers, OpenRouter ignora o campo. */
-export type SystemPromptBlock = string | Array<{ text: string; cache?: 'ephemeral' }>
+export type SystemPromptBlock = string | Array<{ text: string; cache?: 'ephemeral' | 'ephemeral_1h' }>
 
 export interface LLMCallParams {
   model: string
@@ -40,6 +43,8 @@ export interface LLMCallParams {
   /** Se true, marca o último tool schema com cache_control — Anthropic cacheia
    * todos os tools anteriores junto. Funciona com tools array estável. */
   cacheTools?: boolean
+  /** TTL do cache de tools quando cacheTools=true. Default 'ephemeral' (5min). */
+  cacheToolsTtl?: 'ephemeral' | 'ephemeral_1h'
   /** Forçar uso de tool específica, ou 'auto' (padrão). */
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }
   /** JSON mode (structured output). Se Zod schema futuramente, usar response_format. */
@@ -108,21 +113,29 @@ export class OpenRouterLLM {
       }
     }
 
+    // Helper: monta cache_control object com TTL configuravel.
+    // 'ephemeral' = 5min (default), 'ephemeral_1h' = 1h (write 2x mas vale pra
+    // turnos esparsos). Anthropic via OpenRouter aceita {type:'ephemeral',ttl:'1h'}.
+    const cacheControlFor = (ttl: 'ephemeral' | 'ephemeral_1h' | undefined) => {
+      if (ttl === 'ephemeral_1h') return { type: 'ephemeral', ttl: '1h' }
+      if (ttl === 'ephemeral') return { type: 'ephemeral' }
+      return undefined
+    }
+
     // System content — string simples ou array de blocos com cache_control.
-    // Quando array, cada bloco vira `{type:'text', text, cache_control?}` no
-    // formato Anthropic via OpenRouter. OpenRouter encaminha o cache_control
-    // pra Anthropic, que cacheia por 5min (ephemeral). Outros providers ignoram.
     let systemMessage: ChatCompletionMessageParam
     if (typeof p.systemPrompt === 'string') {
       systemMessage = { role: 'system', content: p.systemPrompt }
     } else {
-      // Array of blocks — OpenAI SDK aceita content como array.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const blocks: any[] = p.systemPrompt.map((b) => ({
-        type: 'text',
-        text: b.text,
-        ...(b.cache === 'ephemeral' ? { cache_control: { type: 'ephemeral' } } : {}),
-      }))
+      const blocks: any[] = p.systemPrompt.map((b) => {
+        const cc = cacheControlFor(b.cache)
+        return {
+          type: 'text',
+          text: b.text,
+          ...(cc ? { cache_control: cc } : {}),
+        }
+      })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       systemMessage = { role: 'system', content: blocks as any }
     }
@@ -130,10 +143,11 @@ export class OpenRouterLLM {
     // Tools com cache_control no ÚLTIMO item — Anthropic cacheia tools até esse.
     let toolsToSend = p.tools
     if (p.tools && p.tools.length > 0 && p.cacheTools) {
+      const cc = cacheControlFor(p.cacheToolsTtl ?? 'ephemeral')
       toolsToSend = p.tools.map((t, i, arr) => {
-        if (i === arr.length - 1) {
+        if (i === arr.length - 1 && cc) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return { ...t, cache_control: { type: 'ephemeral' } } as any
+          return { ...t, cache_control: cc } as any
         }
         return t
       })

@@ -137,12 +137,13 @@ function parseNum(s: string): number {
   return Number(cleaned)
 }
 
-// Padroes que indicam que o numero eh RESTANTE/FALTANTE, nao meta absoluta.
-// Falsos positivos vistos (sessao 2026-05-18): "Ainda faltam 32g de proteina
-// pra fechar o dia", "Falta 43g de proteina pra fechar a meta". Esses casos
-// confundiam o validator (claimed=32, real=120 -> mismatch 73% falso).
+// Padroes que indicam que o numero eh RESTANTE/FALTANTE/atingido em item,
+// nao meta absoluta. Falsos positivos vistos:
+//  - "Ainda faltam 32g de proteina pra fechar o dia" (Luciana 16/05)
+//  - "Meta de proteina batida com folga - 23g num iogurte" (Luciana 18/05)
 // Skip se algum desses padroes aparece nos 40 chars antes do match.
 const RESTANTE_BEFORE_PATTERNS = [
+  // Restante/faltante (numero eh quanto FALTA bater)
   /\bfalta(?:m|ndo|ram)?\b/i,
   /\bainda\b/i,
   /\brestam?\b/i,
@@ -151,6 +152,22 @@ const RESTANTE_BEFORE_PATTERNS = [
   /\bpara\s+fechar\b/i,
   /\bpra\s+bater\b/i,
   /\bpara\s+bater\b/i,
+  // Meta JA atingida/batida (numero eh quanto FOI alem da meta, nao a meta)
+  /\bbatid[oa]\b/i,
+  /\batingid[oa]\b/i,
+  /\bcumprid[oa]\b/i,
+  /\bcom\s+folga\b/i,
+  /\bsuperad[oa]\b/i,
+  /\bultrapassad[oa]\b/i,
+  // Numero descrevendo QUANTIDADE EM UM ITEM (nao meta)
+  // "23g num iogurte", "30g no leite", "15g numa banana"
+  /\bnum?\s*$/i,
+  /\bnum[ao]\s*$/i,
+  /\bno\s*$/i,
+  /\bem\s+um(?:a)?\s*$/i,
+  /\bcontido\s+em\b/i,
+  // Tabela de item ("Iogurte (170g): 10g P") - item antes vem antes do numero
+  /\(\d+\s*g\)\s*[:|]\s*\d+\s*kcal\s*\|\s*$/i,
 ]
 
 export function validateNumericClaims(
@@ -173,8 +190,14 @@ export function validateNumericClaims(
       // Skip se eh RESTANTE/FALTANTE (paciente ve "ainda faltam Xg" e isso
       // nao eh claim sobre meta absoluta). Aplica apenas pra fields com
       // semantica de "restante" (protein_target, calories_target).
+      //
+      // IMPORTANTE: match.index aponta pro INICIO da regex inteira (ex: "meta"
+      // na regex `(meta|...)prote[íi]na(...g)`), nao pro grupo capturado. Pra
+      // achar 40 chars antes do NUMERO, calculamos a posicao do grupo.
       if (field === 'protein_target' || field === 'calories_target') {
-        const before = text.slice(Math.max(0, match.index - 40), match.index)
+        const numberPosInMatch = match[0].indexOf(claimedRaw)
+        const numberAbsPos = match.index + (numberPosInMatch >= 0 ? numberPosInMatch : 0)
+        const before = text.slice(Math.max(0, numberAbsPos - 40), numberAbsPos)
         if (RESTANTE_BEFORE_PATTERNS.some((p) => p.test(before))) continue
       }
 

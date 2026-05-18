@@ -1,6 +1,7 @@
 import {
   getLocalDateString,
   getLocalHour,
+  getMealPattern,
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
@@ -164,6 +165,12 @@ async function maybeEngageUser(
   }
 
   // A1: já enviou engajamento hoje? Se sim, pula. (NÃO conta conversa do user.)
+  //
+  // BUG corrigido (2026-05-18): query usava `.gte('created_at', startOfDay)`
+  // mas a coluna real em product_events é `occurred_at`. PostgREST ignorava
+  // filtro de coluna inexistente → checagem sempre retornava 0 → bot enviava
+  // engajamento em TODOS os 5 slots/dia. Gleidson recebeu 4 msgs em 16/05
+  // (07h, 10h, 14h, 17h). Custo colateral: ~$1.75/dia de Haiku desperdiçado.
   const todayLocal = getLocalDate(userTimezone)
   const startOfDay = `${todayLocal}T00:00:00${tzOffset(userTimezone)}`
   const { count: engagementsToday } = await supabase
@@ -171,7 +178,7 @@ async function maybeEngageUser(
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('event', 'engagement.sent')
-    .gte('created_at', startOfDay)
+    .gte('occurred_at', startOfDay)
 
   if ((engagementsToday ?? 0) > 0) {
     await logEvent('engagement.skipped', {
@@ -195,7 +202,30 @@ async function maybeEngageUser(
     madrugada: null,
   }
   const expectedMealType = SLOT_TO_MEAL_TYPE[slot] ?? null
+
+  // REFATOR ENGAJAMENTO (Roberto 2026-05-18): se o slot é meal-specific,
+  // só envia se a refeição é ESPERADA pelo padrão do paciente (últimos 14d).
+  // Sem isso, paciente que faz jejum (sem café) recebia engajamento de café
+  // toda manhã. Aproveita getMealPattern (já usado pelo gap-checker).
   if (expectedMealType) {
+    const pattern = await getMealPattern(supabase, userId, userTimezone)
+    // Só pula se pattern foi inferido (paciente tem histórico) E meal não
+    // está em expected. Paciente novo (fallback) recebe normal pra não
+    // ficar sem comunicação no início.
+    if (
+      !pattern.fallbackUsed &&
+      !pattern.expected.has(expectedMealType as 'cafe' | 'almoco' | 'lanche' | 'jantar')
+    ) {
+      await logEvent('engagement.skipped', {
+        reason: 'meal_type não está no padrão do paciente (últimos 14d)',
+        slot,
+        expected_meal_type: expectedMealType,
+        pattern_active_days: pattern.activeDays,
+      })
+      return { sent: false, reason: `${expectedMealType} fora do padrão` }
+    }
+
+    // Se paciente já registrou esse meal_type hoje, pula (não cobra de novo).
     const todayLocalEarly = getLocalDate(userTimezone)
     const { data: snapEarly } = await supabase
       .from('daily_snapshots')

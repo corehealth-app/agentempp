@@ -130,6 +130,46 @@ async function closeUserDay(
     (!workouts || workouts.length === 0) &&
     !hadIncomingMsgs
   ) {
+    // BUG corrigido (Gleidson 2026-05-18): paciente sumiu por 3 dias mas
+    // current_streak ficou congelado em 2 (LLM continuou dizendo "2 dias firmes"
+    // nas msgs automáticas). Causa: daily-closer skipava dia inativo sem tocar
+    // user_progress.current_streak → ficava no valor anterior.
+    //
+    // Fix: ZERA current_streak quando há gap >= 2 dias desde last_active_date.
+    // (1 dia de gap é tolerado — paciente pode pular um dia esporadicamente.)
+    const { data: prog } = await supabase
+      .from('user_progress')
+      .select('current_streak, last_active_date')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const progTyped = prog as {
+      current_streak: number | null
+      last_active_date: string | null
+    } | null
+    if (progTyped?.current_streak && progTyped.current_streak > 0 && progTyped.last_active_date) {
+      // Calcula gap em dias entre yesterday e last_active_date
+      const lastActive = new Date(progTyped.last_active_date)
+      const yesterdayDate = new Date(yesterday)
+      const gapDays = Math.floor(
+        (yesterdayDate.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24),
+      )
+      if (gapDays >= 2) {
+        await supabase
+          .from('user_progress')
+          .update({ current_streak: 0, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'streak.reset_inactive',
+          properties: {
+            previous_streak: progTyped.current_streak,
+            last_active_date: progTyped.last_active_date,
+            gap_days: gapDays,
+            yesterday,
+          },
+        })
+      }
+    }
     return { skipped: true, reason: 'sem atividade nem conversa' }
   }
 

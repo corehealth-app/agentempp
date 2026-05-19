@@ -48,6 +48,21 @@ const CORRECTION_KEYWORDS_PT: RegExp[] = [
   /\bs[óo]\s+\d+\s*(?:unidade|fatia|colher|pedaço|p[ãa]o)/i, // "só 1 unidade"
   /\bno\s+lugar\s+(?:do|da|de)\b/i, // "no lugar do açúcar"
   /\bo\s+\w+\s+[ée]\s+\w+\b/i, // "o pão é francês" (afirmação corretiva)
+  // RESET MASSA — paciente quer descartar/recomeçar refeições do dia
+  // (Luciana 2026-05-12: "Preciso resetar o dia todo hoje" + "favor
+  // desconsiderar" — 8 replace_blocked porque detector verbal não pegava)
+  /\bdesconsider(?:a|e|ar|ando)\b/i,
+  /\bresete?(?:a|ar|i|e)?\b/i,
+  /\brecome[çc][ae]r?\b/i,
+  /\brefaz(?:er|emos)?\b/i,
+  /\bcome[çc]ar\s+(?:de\s+)?novo\b/i,
+  /\bdescart[ae]r?\b/i,
+  /\bjog(?:a|ar)\s+fora\b/i,
+  /\bapag(?:a|ar|ou)\s+(?:tudo|todas?|essas?|aqueles?|aquilo)\b/i,
+  /\bzer(?:a|ar|ado)\s+(?:o\s+)?dia\b/i,
+  /\bignor[ae]r?\s+(?:essas?|aqueles?|aquilo)\b/i,
+  /\best[áa]\s+errado\b/i, // "está errado" — afirma erro
+  /\best[áa]o?\s+errad[oa]s?\b/i, // "estão errados"
 ]
 
 const CORRECTION_KEYWORDS_EN: RegExp[] = [

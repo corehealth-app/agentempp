@@ -309,17 +309,14 @@ export async function processMessage(
     .update({ updated_at: new Date().toISOString() })
     .eq('id', userId)
 
-  // FIX C (Roberto 2026-05-18): se houve tool de registra_refeicao/registra_treino
-  // com sucesso, SUBSTITUI o card de balanço alucinado do LLM por um card
-  // pré-renderizado pelo sistema. LLM nunca mais escreve os números do card —
-  // eles vêm direto do banco. Resolve na raiz o "agente inventou 1.376+559=1.935".
-  const mealOrWorkoutTool = toolCallsSummary.find(
-    (tc) =>
-      (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') &&
-      !tc.error &&
-      tc.result != null,
-  )
-  if (mealOrWorkoutTool && finalText && hasBalanceCard(finalText)) {
+  // FIX C (Roberto 2026-05-18, ampliado 19/05): SEMPRE que LLM monta card de
+  // balanço, sistema SUBSTITUI pelo card pré-renderizado com dados frescos do
+  // banco. Antes só rodava pós-registra_refeicao/registra_treino; agora roda
+  // pra qualquer turno onde LLM toca o card (incluindo consulta_progresso,
+  // engagement, resposta a "como tá meu progresso?"). Resolve as 11 alucinações
+  // de Bloco 7700 que vimos em 7 dias (Roberto 5, Amanda 2, Erika 1, Paulo 2,
+  // Luciana 1) — incluindo casos em texto livre sem chamada de tool de registro.
+  if (finalText && hasBalanceCard(finalText)) {
     const todayStr = getLocalDateString(ctx.timezone)
     const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
       deps.supabase
@@ -361,10 +358,17 @@ export async function processMessage(
       const before = finalText
       finalText = injectCanonicalCard(finalText, canonicalCard)
       if (before !== finalText) {
+        const triggerTool = toolCallsSummary.find(
+          (tc) =>
+            (tc.name === 'registra_refeicao' ||
+              tc.name === 'registra_treino' ||
+              tc.name === 'consulta_progresso') &&
+            !tc.error,
+        )
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.card_replaced',
-          properties: { stage, tool: mealOrWorkoutTool.name },
+          properties: { stage, tool: triggerTool?.name ?? 'none' },
         })
       }
     }

@@ -659,10 +659,36 @@ export async function calcMealMacros(
       const partQty = it.quantity_g / parts.length
       const partMatches: Array<{ name: string; m: Awaited<ReturnType<typeof matchFood>> }> = []
       for (const p of parts) {
-        const pm = await matchFood(supabase, p, country)
+        let pm = await matchFood(supabase, p, country)
+        // FALLBACK (Erika+Amanda 2026-05-15/16): se match da parte completa
+        // ficou baixo, tenta a ÚLTIMA palavra "substantiva" (ignorando
+        // preposições de/do/da/com). Ex: "lasanha de abóbora" → tenta "abóbora"
+        // que é entry específica do food_db. Exige sim>=0.55 pra evitar falso
+        // match (mais conservador que match composto inicial).
+        if (pm.similarity < 0.45 || pm.kcal_per_100g == null) {
+          const words = p
+            .split(/\s+/)
+            .filter((w) => w.length >= 3 && !/^(de|do|da|dos|das|com|e|ou|na|no|à|ao)$/i.test(w))
+          for (const w of [...words].reverse()) {
+            const m2 = await matchFood(supabase, w, country)
+            if (m2.similarity >= 0.55 && m2.kcal_per_100g != null) {
+              pm = m2
+              break
+            }
+          }
+        }
         partMatches.push({ name: p, m: pm })
       }
-      const allGood = partMatches.every((pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null)
+      // Conta partes BOAS (sim>=0.45 + kcal valido). Estratégia em camadas:
+      //  - 100% boas: agrega tudo (caminho original)
+      //  - >=50% boas: agrega só as boas com warning ao paciente
+      //  - <50% boas: rejeita (composite_rejected)
+      const goodMatches = partMatches.filter(
+        (pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null,
+      )
+      const allGood = goodMatches.length === partMatches.length
+      const someGood =
+        !allGood && goodMatches.length >= Math.ceil(partMatches.length / 2)
       if (allGood) {
         // Adiciona cada parte como item separado, com nome composto preservado em matched_taco_name
         let totalKcal = 0,
@@ -709,9 +735,50 @@ export async function calcMealMacros(
         )
         continue
       }
-      // Algum part não foi encontrado — mantém rejeição.
-      // Texto SEM jargão: o LLM repassa isso ao paciente, então nada de
-      // "match/matchou/zerado". Roberto reclamou de "matchou" vazar (2026-05-14).
+      // Algumas partes OK (mas não todas) — agrega só as boas com warning.
+      // Casos reais (sessão 2026-05-19): "lasanha de abóbora com queijo"
+      // (Erika 16/05), "muffin de banana com castanhas" (Amanda 16/05).
+      // Em vez de zerar TUDO, usa as partes que matcharam (proporcional
+      // a partes boas) e avisa o paciente do que faltou.
+      if (someGood) {
+        const partQtyGood = it.quantity_g / goodMatches.length
+        let totalKcal = 0, totalProt = 0, totalCarbs = 0, totalFat = 0, totalFib = 0
+        for (const pm of goodMatches) {
+          const f = partQtyGood / 100
+          totalKcal += (pm.m.kcal_per_100g ?? 0) * f
+          totalProt += (pm.m.protein_g ?? 0) * f
+          totalCarbs += (pm.m.carbs_g ?? 0) * f
+          totalFat += (pm.m.fat_g ?? 0) * f
+          totalFib += (pm.m.fiber_g ?? 0) * f
+        }
+        const missing = partMatches.filter((pm) => !goodMatches.includes(pm)).map((pm) => pm.name)
+        const natComp = naturalUnit(it.food_name, it.quantity_g)
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: goodMatches.map((pm) => pm.m.name_pt).join(' + ') + ' (parcial)',
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: +totalKcal.toFixed(1),
+          protein_g: +totalProt.toFixed(2),
+          carbs_g: +totalCarbs.toFixed(2),
+          fat_g: +totalFat.toFixed(2),
+          fiber_g: +totalFib.toFixed(2),
+          similarity: Math.min(...goodMatches.map((pm) => pm.m.similarity)),
+          source: 'taco',
+          display_qty: natComp.display_qty,
+          display_unit: natComp.display_unit,
+        })
+        totals.kcal += totalKcal
+        totals.protein_g += totalProt
+        totals.carbs_g += totalCarbs
+        totals.fat_g += totalFat
+        totals.fiber_g += totalFib
+        warnings.push(
+          `Calculei "${it.food_name}" usando só [${goodMatches.map((g) => g.m.name_pt).join(', ')}] — não identifiquei ${missing.length > 1 ? 'as partes' : 'a parte'} ${missing.map((p) => `"${p}"`).join(' e ')}. Se faltou algo importante, me corrija com o nome certo dessa parte e a quantidade.`,
+        )
+        continue
+      }
+      // Nenhuma ou pouquíssimas partes OK — rejeição (composite_rejected).
       warnings.push(
         `Não consegui identificar "${it.food_name}" porque veio com vários alimentos juntos. Peça pro paciente descrever cada item separado com a quantidade (ex: "leite 250ml" e "whey 30g"). Não foi possível calcular as calorias desse item ainda.`,
       )

@@ -159,6 +159,18 @@ const RESTANTE_BEFORE_PATTERNS = [
   /\bcom\s+folga\b/i,
   /\bsuperad[oa]\b/i,
   /\bultrapassad[oa]\b/i,
+  // Numero descrevendo QUANTIDADE OBTIDA/ENTREGUE em item (nao meta)
+  // Casos reais: "whey puxou 23g de proteina" (Paulo 19/05), "ovos
+  // entregaram 13g" (Paulo 18/05), "frango garantiu 30g", "leite trouxe 8g"
+  /\bpuxo(?:u|aram)\b/i,
+  /\btrouxe(?:ram)?\b/i,
+  /\bentrego(?:u|aram)\b/i,
+  /\bgaranti[ou]\b/i,
+  /\boferec[ei](?:u|am)\b/i,
+  /\bsoma(?:ram|m)?\b.{0,15}$/i,
+  /\bso(?:u|aram)\s+\d/i,
+  /\bdeu\b/i,
+  /\bderam\b/i,
   // Numero descrevendo QUANTIDADE EM UM ITEM (nao meta)
   // "23g num iogurte", "30g no leite", "15g numa banana"
   /\bnum?\s*$/i,

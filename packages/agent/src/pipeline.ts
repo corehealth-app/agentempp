@@ -12,7 +12,8 @@
 import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
-import { auditNumericClaims } from './numeric-validator.js'
+import { auditNumericClaims, detectSentimentMismatch } from './numeric-validator.js'
+import { hasBalanceCard, injectCanonicalCard, renderBalanceCard } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
@@ -308,6 +309,67 @@ export async function processMessage(
     .update({ updated_at: new Date().toISOString() })
     .eq('id', userId)
 
+  // FIX C (Roberto 2026-05-18): se houve tool de registra_refeicao/registra_treino
+  // com sucesso, SUBSTITUI o card de balanço alucinado do LLM por um card
+  // pré-renderizado pelo sistema. LLM nunca mais escreve os números do card —
+  // eles vêm direto do banco. Resolve na raiz o "agente inventou 1.376+559=1.935".
+  const mealOrWorkoutTool = toolCallsSummary.find(
+    (tc) =>
+      (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') &&
+      !tc.error &&
+      tc.result != null,
+  )
+  if (mealOrWorkoutTool && finalText && hasBalanceCard(finalText)) {
+    const todayStr = getLocalDateString(ctx.timezone)
+    const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
+      deps.supabase
+        .from('daily_snapshots')
+        .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
+        .eq('user_id', userId)
+        .eq('date', todayStr)
+        .maybeSingle(),
+      deps.supabase
+        .from('user_progress')
+        .select('deficit_block')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ])
+    if (snapFresh) {
+      const snapTyped = snapFresh as {
+        calories_consumed: number
+        calories_target: number | null
+        protein_g: number
+        protein_target: number | null
+        exercise_calories: number
+      }
+      const progTyped = progFresh as { deficit_block: number } | null
+      const canonicalCard = renderBalanceCard({
+        caloriesConsumed: snapTyped.calories_consumed,
+        caloriesTarget: snapTyped.calories_target,
+        proteinG: Number(snapTyped.protein_g),
+        proteinTarget: snapTyped.protein_target,
+        exerciseCalories: snapTyped.exercise_calories,
+        deficitBlock: progTyped?.deficit_block ?? 0,
+        protocol:
+          (ctx.profile.currentProtocol as
+            | 'recomposicao'
+            | 'ganho_massa'
+            | 'manutencao'
+            | null) ?? null,
+        last14d: ctx.last14d,
+      })
+      const before = finalText
+      finalText = injectCanonicalCard(finalText, canonicalCard)
+      if (before !== finalText) {
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.card_replaced',
+          properties: { stage, tool: mealOrWorkoutTool.name },
+        })
+      }
+    }
+  }
+
   // Audit anti-alucinação: parseia números na resposta e compara com contexto.
   // Não bloqueia — só loga em product_events pra investigação posterior.
   const m = computeMetrics(ctx.profile, new Date(), calcConfig)
@@ -329,6 +391,32 @@ export async function processMessage(
     },
     { stage, model: lastResult.model },
   )
+
+  // FIX B (Roberto 2026-05-18): sanity semântico — texto diz "déficit" mas
+  // balance é positivo (ou vice-versa). Caso real: agente disse "excedente de
+  // 92 kcal" quando snapshot tinha daily_balance=-960 (déficit). Loga evento
+  // 'llm.sentiment_mismatch' pra rastreabilidade. Não bloqueia — paciente já
+  // viu o card REAL agora (fix C acima).
+  if (ctx.todaySnapshot?.daily_balance != null) {
+    const sentimentMismatch = detectSentimentMismatch(
+      finalText,
+      ctx.todaySnapshot.daily_balance,
+    )
+    if (sentimentMismatch) {
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'llm.sentiment_mismatch',
+        properties: {
+          stage,
+          model: lastResult.model,
+          text_says: sentimentMismatch.text_says,
+          balance_is: sentimentMismatch.balance_is,
+          daily_balance: sentimentMismatch.daily_balance,
+          excerpt: sentimentMismatch.excerpt,
+        },
+      })
+    }
+  }
 
   // Métrica de prompt caching (Anthropic): loga evento se houve hit, pra
   // observabilidade da economia. Sem hit (1ª chamada do paciente nos últimos

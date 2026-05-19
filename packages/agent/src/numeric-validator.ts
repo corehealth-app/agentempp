@@ -228,6 +228,68 @@ export function validateNumericClaims(
 }
 
 /**
+ * Sanity semantico: detecta inconsistencia entre PALAVRAS (deficit/excedente)
+ * e o sinal real do daily_balance. Caso real Roberto 2026-05-18 20:52: LLM
+ * disse "excedente de 92 kcal" quando snapshot tinha daily_balance=-960
+ * (deficit). Validator numerico nao pegava (nao tinha "92" como meta no ctx).
+ *
+ * Convencao MPP:
+ *   daily_balance = consumed - target - exercise
+ *   - balance < 0: deficit (paciente ainda nao bateu meta, "restam X kcal")
+ *   - balance > 0: excedente (passou da meta, "excedente Y kcal")
+ *   - balance == 0: na meta exata
+ *
+ * Palavras-chave a detectar:
+ *   - "deficit", "restam X kcal", "abaixo da meta", "ainda pode comer"
+ *      -> implica balance < 0 (ou proximo de 0)
+ *   - "excedente", "acima da meta", "passou", "estourou", "ultrapassou"
+ *      -> implica balance > 0
+ */
+export interface SentimentMismatch {
+  text_says: 'deficit' | 'excedente'
+  balance_is: 'deficit' | 'excedente' | 'on_target'
+  daily_balance: number
+  excerpt: string
+}
+
+const DEFICIT_WORDS = /\b(d[ée]ficit|restam?\s+\d|ainda\s+(?:tem|pode|faltam)|abaixo\s+da\s+meta|sobra(?:m)?\s+\d|falta(?:m)?\s+\d)/i
+const EXCEDENTE_WORDS = /\b(excedente|acima\s+da\s+meta|passou\s+(?:da|de)\s+meta|estourou|ultrapassou\s+(?:a\s+)?meta|al[ée]m\s+da\s+meta)/i
+
+export function detectSentimentMismatch(
+  text: string,
+  dailyBalance: number | null | undefined,
+): SentimentMismatch | null {
+  if (dailyBalance == null) return null
+  const hasDeficit = DEFICIT_WORDS.test(text)
+  const hasExcedente = EXCEDENTE_WORDS.test(text)
+  // Toleancia ±50 kcal (paciente "na meta")
+  const balanceIs: 'deficit' | 'excedente' | 'on_target' =
+    dailyBalance < -50 ? 'deficit' : dailyBalance > 50 ? 'excedente' : 'on_target'
+
+  // Mismatch 1: texto diz excedente mas balance eh deficit grande
+  if (hasExcedente && dailyBalance < -100) {
+    const m = text.match(EXCEDENTE_WORDS)
+    return {
+      text_says: 'excedente',
+      balance_is: balanceIs,
+      daily_balance: dailyBalance,
+      excerpt: m ? text.slice(Math.max(0, (m.index ?? 0) - 30), (m.index ?? 0) + (m[0]?.length ?? 0) + 30) : '',
+    }
+  }
+  // Mismatch 2: texto diz deficit mas balance eh excedente
+  if (hasDeficit && !hasExcedente && dailyBalance > 100) {
+    const m = text.match(DEFICIT_WORDS)
+    return {
+      text_says: 'deficit',
+      balance_is: balanceIs,
+      daily_balance: dailyBalance,
+      excerpt: m ? text.slice(Math.max(0, (m.index ?? 0) - 30), (m.index ?? 0) + (m[0]?.length ?? 0) + 30) : '',
+    }
+  }
+  return null
+}
+
+/**
  * Loga divergencias em product_events. Nao bloqueia. Nao retorna nada.
  */
 export async function auditNumericClaims(

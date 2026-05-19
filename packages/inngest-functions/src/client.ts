@@ -41,6 +41,9 @@ type Events = {
   'openrouter.balance.tick': {
     data: { fired_at: string }
   }
+  'audit.daily.tick': {
+    data: { fired_at: string }
+  }
   'subscription.event': {
     data: {
       provider_event_id: string

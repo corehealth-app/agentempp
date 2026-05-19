@@ -9,6 +9,7 @@ import { bufferListenerFn } from './functions/buffer-listener.js'
 import { waQualityCheckFn } from './functions/wa-quality-check.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.js'
+import { dailyAuditFn } from './functions/daily-audit.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -19,6 +20,7 @@ export const allFunctions = [
   waQualityCheckFn,
   pipelineHealthFn,
   openrouterBalanceCheckFn,
+  dailyAuditFn,
 ]
 
 export {
@@ -30,4 +32,5 @@ export {
   waQualityCheckFn,
   pipelineHealthFn,
   openrouterBalanceCheckFn,
+  dailyAuditFn,
 }

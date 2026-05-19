@@ -136,3 +136,63 @@ export function injectCanonicalCard(text: string, card: string): string {
   }
   return `${text.trim()}\n\n${card}`.trim()
 }
+
+/**
+ * Substitui MENÇÕES SOLTAS de Bloco 7700 em texto livre (fora do card).
+ *
+ * Caso real Roberto 2026-05-18: além de mostrar "3.000 / 7.700 kcal" no card
+ * (resolvido pelo injectCanonicalCard), LLM podia mencionar "você está em
+ * 3.000 do bloco" ou "faltam X kcal pro bloco 7.700" em texto livre. O fix C
+ * (card canônico) só pega quando o card completo está presente. Casos soltos
+ * passavam batido — validator logava mas não corrigia.
+ *
+ * Esta função procura padrões soltos e substitui pelo valor real:
+ *   - "Bloco 7700: X kcal"
+ *   - "X / 7.700 kcal"
+ *   - "X kcal de 7.700"
+ *   - "X de 7700"
+ *   - "Você está em X do bloco"
+ *
+ * Só substitui se o valor mencionado difere do real em >100 kcal ou >15%.
+ * Tolera diferença pequena (LLM arredondou minimamente sem mudar significado).
+ */
+export function replaceLooseBlockMentions(
+  text: string,
+  deficitBlock: number,
+): { text: string; replacements: number } {
+  let result = text
+  let count = 0
+  const realFmt = PT_NUM.format(deficitBlock)
+  const realPct = Math.round((deficitBlock / 7700) * 100)
+
+  // Helper: substitui número claimed pelo real se diferir significativamente
+  const shouldReplace = (claimed: number) =>
+    Math.abs(claimed - deficitBlock) > 100 && Math.abs(claimed - deficitBlock) / Math.max(deficitBlock, 1) > 0.05
+
+  // Padrão A: "Bloco 7700: **X / 7.700 kcal** (Y%)" ou "Bloco 7700: X kcal de 7700"
+  // Captura número + porcentagem opcional. Permite ** envolvendo todo o
+  // valor "**X / 7.700 kcal**", "kcal" final opcional, "(Y%)" opcional.
+  const patA = /\bbloco\s*7\.?700[:\s]*\*{0,2}\s*(\d{1,4}(?:[.,]\d{3})?)\s*\*{0,2}\s*(?:kcal\s*)?(?:\/|de|kcal\s*de)\s*\*{0,2}\s*7\.?700(?:\s*kcal)?\s*\*{0,2}(?:\s*\(\s*(\d{1,3})\s*%\s*\))?/gi
+  result = result.replace(patA, (full, numStr, pctStr) => {
+    const claimed = Number(String(numStr).replace(/\./g, '').replace(',', '.'))
+    if (!Number.isFinite(claimed) || !shouldReplace(claimed)) return full
+    count++
+    return pctStr
+      ? `Bloco 7700: **${realFmt} / 7.700 kcal** (${realPct}%)`
+      : `Bloco 7700: **${realFmt} / 7.700 kcal**`
+  })
+
+  // Padrão B: "X / 7.700" ou "X / 7700" SOLTO (sem prefixo "Bloco" — frase livre)
+  // Cuidado: já consumimos o "Bloco 7700: X / 7.700" no patA acima, então o que
+  // sobra é menção solta. Match flag /g mantém estado, não repete dentro do mesmo
+  // texto após replace.
+  const patB = /(\d{1,4}(?:[.,]\d{3})?)\s*\/\s*7\.?700\b/g
+  result = result.replace(patB, (full, numStr) => {
+    const claimed = Number(String(numStr).replace(/\./g, '').replace(',', '.'))
+    if (!Number.isFinite(claimed) || !shouldReplace(claimed)) return full
+    count++
+    return `${realFmt} / 7.700`
+  })
+
+  return { text: result, replacements: count }
+}

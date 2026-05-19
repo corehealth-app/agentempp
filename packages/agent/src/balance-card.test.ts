@@ -3,6 +3,7 @@ import {
   hasBalanceCard,
   injectCanonicalCard,
   renderBalanceCard,
+  replaceLooseBlockMentions,
   stripBalanceCard,
 } from './balance-card.js'
 
@@ -122,5 +123,43 @@ describe('hasBalanceCard / stripBalanceCard / injectCanonicalCard', () => {
     const out = injectCanonicalCard(llmText, canonical)
     expect(out).toContain('Almoço registrado.')
     expect(out).toContain('🔥 Consumido')
+  })
+})
+
+describe('replaceLooseBlockMentions — menções soltas de Bloco 7700', () => {
+  it('substitui "Bloco 7700: **3.000 / 7.700 kcal (39%)**" pelo real', () => {
+    const t = 'Comentário motivacional. 📊 Bloco 7700: **3.000 / 7.700 kcal** (39%) — bom ritmo.'
+    const out = replaceLooseBlockMentions(t, 3794)
+    expect(out.replacements).toBe(1)
+    expect(out.text).toContain('Bloco 7700: **3.794 / 7.700 kcal** (49%)')
+    expect(out.text).not.toContain('3.000')
+  })
+
+  it('substitui menção solta "X / 7.700" sem prefixo Bloco', () => {
+    const t = 'Você está em 3000 / 7700 kcal acumulados — quase metade.'
+    const out = replaceLooseBlockMentions(t, 3794)
+    expect(out.replacements).toBe(1)
+    expect(out.text).toContain('3.794 / 7.700')
+  })
+
+  it('NÃO substitui se diferença pequena (<100 kcal e <5%)', () => {
+    const t = '📊 Bloco 7700: **3.790 / 7.700 kcal** (49%)'
+    const out = replaceLooseBlockMentions(t, 3794) // diff 4 kcal
+    expect(out.replacements).toBe(0)
+    expect(out.text).toContain('3.790')
+  })
+
+  it('NÃO toca quando texto não tem menção a Bloco/7700', () => {
+    const t = 'Comeu bem hoje, parabéns.'
+    const out = replaceLooseBlockMentions(t, 3794)
+    expect(out.replacements).toBe(0)
+    expect(out.text).toBe(t)
+  })
+
+  it('substitui múltiplas ocorrências no mesmo texto', () => {
+    const t = 'Você está em 3.000 / 7.700 agora. Faltam pouco pro Bloco 7700: 3.000 kcal de 7.700.'
+    const out = replaceLooseBlockMentions(t, 3794)
+    expect(out.replacements).toBeGreaterThanOrEqual(2)
+    expect(out.text).not.toContain('3.000')
   })
 })

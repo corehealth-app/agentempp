@@ -13,7 +13,12 @@ import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { auditNumericClaims, detectSentimentMismatch } from './numeric-validator.js'
-import { hasBalanceCard, injectCanonicalCard, renderBalanceCard } from './balance-card.js'
+import {
+  hasBalanceCard,
+  injectCanonicalCard,
+  renderBalanceCard,
+  replaceLooseBlockMentions,
+} from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
@@ -371,6 +376,22 @@ export async function processMessage(
           properties: { stage, tool: triggerTool?.name ?? 'none' },
         })
       }
+    }
+  }
+
+  // FIX residual (2026-05-19): menções SOLTAS de Bloco 7700 fora do card
+  // (ex: LLM escreve "você está em 3.000 do bloco" no comentário motivacional)
+  // não eram cobertas pelo injectCanonicalCard. Esta varredura adicional
+  // substitui ocorrências soltas pelo valor real do user_progress.deficit_block.
+  if (finalText && ctx.userProgress?.deficit_block != null) {
+    const looseReplace = replaceLooseBlockMentions(finalText, ctx.userProgress.deficit_block)
+    if (looseReplace.replacements > 0) {
+      finalText = looseReplace.text
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'llm.loose_bloco_replaced',
+        properties: { stage, replacements: looseReplace.replacements },
+      })
     }
   }
 

@@ -681,14 +681,22 @@ export async function calcMealMacros(
       }
       // Conta partes BOAS (sim>=0.45 + kcal valido). Estratégia em camadas:
       //  - 100% boas: agrega tudo (caminho original)
-      //  - >=50% boas: agrega só as boas com warning ao paciente
-      //  - <50% boas: rejeita (composite_rejected)
+      //  - parcial: agrega só as boas com warning ao paciente
+      //  - threshold de parcial:
+      //      2-3 partes: >=50% (>=1 ou 2 boas)
+      //      4-5 partes: >=2 boas (40-50%)
+      //      6+ partes: >=33% (composto super complexo aceita mais perda)
       const goodMatches = partMatches.filter(
         (pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null,
       )
       const allGood = goodMatches.length === partMatches.length
-      const someGood =
-        !allGood && goodMatches.length >= Math.ceil(partMatches.length / 2)
+      const minGoodForPartial =
+        partMatches.length >= 6
+          ? Math.ceil(partMatches.length / 3)
+          : partMatches.length >= 4
+            ? 2
+            : Math.ceil(partMatches.length / 2)
+      const someGood = !allGood && goodMatches.length >= minGoodForPartial
       if (allGood) {
         // Adiciona cada parte como item separado, com nome composto preservado em matched_taco_name
         let totalKcal = 0,

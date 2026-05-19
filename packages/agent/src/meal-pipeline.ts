@@ -383,6 +383,9 @@ export async function lookupFoodCorrection(
     fat_g: number
   } | null
   needs_confirmation: boolean
+  /** True quando correção tem confirmed_count >= 3 (paciente já confirmou
+   * múltiplas vezes — aplicar silenciosamente sem warning audível). */
+  is_well_established: boolean
 } | null> {
   const normalize = (s: string) =>
     s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
@@ -435,6 +438,7 @@ export async function lookupFoodCorrection(
         }
       : null,
     needs_confirmation: row.status === 'learning',
+    is_well_established: row.status === 'active' && (row.confirmed_count ?? 0) >= 3,
   }
 }
 
@@ -567,9 +571,18 @@ export async function calcMealMacros(
           totals.protein_g += protein
           totals.carbs_g += carbs
           totals.fat_g += fat
-          auditWarnings.push(
-            `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente (macro customizado).`,
-          )
+          // Caso Roberto 2026-05-19: correção "chocolate quente → leite com whey"
+          // está active com confirmed_count=4 mas LLM continuava dizendo "Heads
+          // up: identifiquei leite com whey pelo seu histórico" toda manhã. O
+          // auditWarning ficava no result da tool e o LLM (Sonnet 4.6) achava
+          // que era pra mencionar. Solução: SILENCIAR auditWarning quando
+          // correção é well_established (active + confirmed>=3) — paciente já
+          // sabe, não precisa de aviso repetido.
+          if (!corr.is_well_established) {
+            auditWarnings.push(
+              `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente (macro customizado).`,
+            )
+          }
           if (corr.needs_confirmation) {
             userWarnings.push(
               `Registrei "${corr.corrected_to}" porque você corrigiu isso antes. Se hoje for "${it.food_name}" mesmo, é só me avisar.`,
@@ -579,9 +592,11 @@ export async function calcMealMacros(
         }
         // Sem macro customizado: só remapeia o nome e deixa o resto do pipeline
         // resolver os macros do nome corrigido.
-        auditWarnings.push(
-          `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente.`,
-        )
+        if (!corr.is_well_established) {
+          auditWarnings.push(
+            `"${it.food_name}" remapeado pra "${corr.corrected_to}" via correção aprendida do paciente.`,
+          )
+        }
         if (corr.needs_confirmation) {
           userWarnings.push(
             `Registrei "${corr.corrected_to}" porque você corrigiu isso antes. Se hoje for "${it.food_name}" mesmo, é só me avisar.`,

@@ -356,22 +356,31 @@ async function closeUserDay(
       properties: { date: yesterday, calories_target: targets.calories_target },
     })
   } else if (
-    finalDayStatus === 'incomplete_no_response' &&
+    finalDayStatus !== 'user_skipped' &&
     targets.calories_target != null &&
     targets.calories_target > 0 &&
     kcalConsumed < 0.5 * targets.calories_target
   ) {
-    // SUB-REGISTRO (Luciana 2026-05-20): dia incomplete com consumo < 50% da
-    // meta = paciente provavelmente comeu mas não registrou (refeições
-    // fantasma do fake-registration, OU esqueceu). O déficit observado é FAKE.
-    // Não credita — senão o bloco 7700 infla com déficit que não existe.
-    // Luciana dias 17/18: registrou 17% da meta, creditou ~915 kcal/dia falso.
+    // SUB-REGISTRO (Luciana 2026-05-20): QUALQUER dia (complete ou incomplete)
+    // com consumo < 50% da meta = paciente provavelmente comeu mas não
+    // registrou (refeições fantasma do fake-registration, OU esqueceu). O
+    // déficit OBSERVADO é FAKE — zera o dailyBalance pra não creditar.
+    //
+    // Nota: dia COMPLETE sub-registrado ainda credita o design_deficit (400)
+    // via effectiveDesignDeficit (assume que seguiu o protocolo deficitário,
+    // só não registrou tudo). Dia INCOMPLETE sub-registrado credita 0
+    // (effectiveDesignDeficit já é 0). user_skipped é confirmação explícita
+    // de pulo — não entra aqui (credita normal).
+    //
+    // Luciana: dias 17/18 (incomplete, 17%) creditavam ~915 fake; dias
+    // 07/09/13 (complete, 0-23%) creditavam déficit observado fake também.
     dailySnap.dailyBalance = 0
     await supabase.from('product_events').insert({
       user_id: userId,
       event: 'bloco7700.skipped_subregistro',
       properties: {
         date: yesterday,
+        day_status: finalDayStatus,
         calories_consumed: Math.round(kcalConsumed),
         calories_target: targets.calories_target,
         pct: Math.round((kcalConsumed / targets.calories_target) * 100),

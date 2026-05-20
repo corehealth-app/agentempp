@@ -302,6 +302,69 @@ export function detectSentimentMismatch(
 }
 
 /**
+ * Reconcilia o RÓTULO e a MAGNITUDE de balanço calórico na PROSA livre com o
+ * saldo real do dia. Diferente de detectSentimentMismatch (que só detecta/loga),
+ * esta função CORRIGE o texto. Casos reais (Paulo 2026-05-20):
+ *   - 17:13 pipeline: prosa "Excedente leve de 130 kcal" (ignorou exercício)
+ *     enquanto saldo real era -122 (déficit). Card já dizia "Restam 122" — a
+ *     prosa contradizia o próprio card.
+ *   - 11:17 engajamento: "fechou com 458 kcal de déficit" quando o balanço de
+ *     ontem era +458 (superávit vs meta). Sinal invertido.
+ *
+ * Convenção (igual à do card): balance = consumido - meta - exercício.
+ *   balance < -tol  -> déficit (sob a meta, "restam |balance| kcal")
+ *   balance > +tol  -> excedente/superávit (passou da meta)
+ *
+ * NÃO toca linhas de card (usam "Restam:/Excedente:" com dois-pontos e emoji);
+ * só captura prosa no formato "<palavra> de <n> kcal" ou "<n> kcal de <palavra>",
+ * e só reescreve quando o rótulo da prosa DIVERGE do sinal real (frases corretas
+ * ficam intactas).
+ */
+export function reconcileBalanceProse(
+  text: string,
+  dailyBalance: number | null | undefined,
+  opts: { tolerance?: number } = {},
+): { text: string; replacements: number } {
+  if (!text || dailyBalance == null) return { text, replacements: 0 }
+  const tol = opts.tolerance ?? 50
+  const realSign: 'deficit' | 'excedente' | 'on_target' =
+    dailyBalance < -tol ? 'deficit' : dailyBalance > tol ? 'excedente' : 'on_target'
+  if (realSign === 'on_target') return { text, replacements: 0 }
+
+  const mag = Math.abs(Math.round(dailyBalance))
+  const replacement = realSign === 'deficit' ? `restam ${mag} kcal` : `excedente de ${mag} kcal`
+  const wordToSign = (w: string): 'deficit' | 'excedente' =>
+    /^d[ée]f/i.test(w) ? 'deficit' : 'excedente'
+
+  let replacements = 0
+  let out = text
+
+  // Padrão A: "<palavra> (leve|pequeno|grande)? de <n> kcal"
+  out = out.replace(
+    /\b(d[ée]ficit|super[áa]vit|excedente)\b(?:\s+(?:leve|pequen[oa]|grande))?\s+de\s+[\d.,]+\s*kcal/gi,
+    (full: string, word: string) => {
+      if (wordToSign(word) === realSign) return full
+      replacements++
+      return /^[A-ZÀ-Ý]/.test(full.trimStart())
+        ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+        : replacement
+    },
+  )
+
+  // Padrão B: "<n> kcal de <palavra>"
+  out = out.replace(
+    /[\d.,]+\s*kcal\s+de\s+(d[ée]ficit|super[áa]vit|excedente)\b/gi,
+    (full: string, word: string) => {
+      if (wordToSign(word) === realSign) return full
+      replacements++
+      return replacement
+    },
+  )
+
+  return { text: out, replacements }
+}
+
+/**
  * Loga divergencias em product_events. Nao bloqueia. Nao retorna nada.
  */
 export async function auditNumericClaims(

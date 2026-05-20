@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateNumericClaims } from './numeric-validator.js'
+import { validateNumericClaims, reconcileBalanceProse } from './numeric-validator.js'
 
 const ctx = { protein_target: 178.2, calories_target: 1843 }
 
@@ -111,5 +111,57 @@ describe('validateNumericClaims deficit_block (bloco 7700) — bug do Roberto 20
     // O regex deve casar só com o lado esquerdo da fração, não com 7.700 (target)
     const r = validateNumericClaims('Bloco 7700: 2.110 / 7.700 kcal (27%)', blocoCtx)
     expect(r).toEqual([]) // 2110 está correto
+  })
+})
+
+describe('reconcileBalanceProse — corrige rótulo/magnitude na prosa (Paulo 2026-05-20)', () => {
+  it('pipeline #2: "Excedente leve de 130 kcal" com saldo real -122 vira "Restam 122 kcal"', () => {
+    const text = 'Excedente leve de 130 kcal — nada que quebre o processo. Faltam 12g de proteína.'
+    const r = reconcileBalanceProse(text, -122)
+    expect(r.replacements).toBe(1)
+    expect(r.text).toContain('Restam 122 kcal')
+    expect(r.text).not.toMatch(/excedente/i)
+    expect(r.text).toContain('Faltam 12g de proteína') // não toca proteína
+  })
+
+  it('engagement #3: "458 kcal de déficit" com saldo +458 vira "excedente de 458 kcal"', () => {
+    const text = 'Ontem você fechou com 458 kcal de déficit — saldo sólido no bloco de 7.700.'
+    const r = reconcileBalanceProse(text, 458)
+    expect(r.replacements).toBe(1)
+    expect(r.text).toContain('excedente de 458 kcal')
+    expect(r.text).not.toMatch(/d[ée]ficit/i)
+    expect(r.text).toContain('bloco de 7.700') // não toca o resto
+  })
+
+  it('NÃO altera prosa já correta (déficit real, texto diz "restam")', () => {
+    const text = 'Boa! Ainda restam 200 kcal pra fechar a meta.'
+    const r = reconcileBalanceProse(text, -200)
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(text)
+  })
+
+  it('NÃO altera prosa já correta (excedente real, texto diz "excedente de X")', () => {
+    const text = 'Você fechou com excedente de 100 kcal hoje.'
+    const r = reconcileBalanceProse(text, 100)
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(text)
+  })
+
+  it('NÃO toca linhas de card (formato "Excedente: X kcal" com dois-pontos)', () => {
+    const card = '🎯 Restam: 122 kcal\n🔥 Consumido: 1.171 / 1.041 kcal'
+    const r = reconcileBalanceProse(card, -122)
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(card)
+  })
+
+  it('on_target (|saldo| ≤ tolerância) não mexe em nada', () => {
+    const text = 'Você teve um excedente de 10 kcal, irrelevante.'
+    const r = reconcileBalanceProse(text, 10)
+    expect(r.replacements).toBe(0)
+  })
+
+  it('saldo null/undefined é no-op seguro', () => {
+    expect(reconcileBalanceProse('qualquer texto', null).replacements).toBe(0)
+    expect(reconcileBalanceProse('qualquer texto', undefined).replacements).toBe(0)
   })
 })

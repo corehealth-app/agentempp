@@ -139,6 +139,7 @@ Sempre prefira o nome que um brasileiro usaria conversando, NÃO termo técnico/
 - "arroz branco cozido" / "arroz integral" / "feijão preto cozido" / "feijão carioca" / "farofa"
 - "batata cozida" / "batata frita" / "batata doce cozida" / "purê de batata" / "mandioca cozida"
 - "carne moída" / "patinho grelhado" / "picanha" / "filé mignon"
+- Carnes/ensopados de cozimento lento (cor escura, molho/caldo gelatinoso, pedaços com osso/cartilagem): "mocotó" / "dobradinha" / "buchada" / "rabada" / "carne de panela" / "cozido". ⚠️ NÃO confunda mocotó/cozido escuro com "carne de porco ensopada" ou "carne moída" — quando a carne escura no molho for ambígua, marque confiança ≤ 0.55 e sugira em meal_context "carne escura no caldo — pode ser mocotó/dobradinha/carne de panela, confirmar com o paciente" em vez de chutar.
 - "salmão grelhado" / "tilápia" / "atum em lata"
 - "banana" / "maçã" / "mamão" / "abacate" / "morango"
 - "café preto" / "café com leite" / "suco de laranja natural" / "refrigerante"

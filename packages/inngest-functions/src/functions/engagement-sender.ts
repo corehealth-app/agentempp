@@ -5,6 +5,7 @@ import {
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
+  reconcileBalanceProse,
   replaceLooseBlockMentions,
 } from '@mpp/agent'
 import {
@@ -299,6 +300,20 @@ async function maybeEngageUser(
     .maybeSingle()
   const yesterdayBalance = (snapYesterday as { daily_balance?: number } | null)?.daily_balance
 
+  // FIX #3 (Paulo 2026-05-20 11:17): o LLM recebia o balanço cru ("458 kcal,
+  // negativo=déficit") e mesmo assim chamou +458 (superávit) de "déficit". Agora
+  // o RÓTULO é decidido em código e entregue pronto — o LLM não decide o sinal.
+  let yesterdayLabel: string | null = null
+  if (yesterdayBalance != null) {
+    const mag = Math.abs(Math.round(yesterdayBalance))
+    yesterdayLabel =
+      yesterdayBalance < -50
+        ? `déficit de ${mag} kcal (comeu ABAIXO da meta — bom pro processo)`
+        : yesterdayBalance > 50
+          ? `superávit de ${mag} kcal (comeu ACIMA da meta — NÃO chame de déficit; o bloco ainda pode creditar pois a meta é menor que a manutenção, mas o saldo do dia foi positivo)`
+          : `praticamente na meta (${mag} kcal de diferença)`
+  }
+
   const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'
   const targetProtein = targets.protein_target ?? '(não calculado — perfil incompleto)'
 
@@ -340,7 +355,7 @@ DADOS REAIS DO DIA — USE ESTES VALORES, NÃO INVENTE:
 - Meta de proteína de hoje: ${targetProtein}${typeof targetProtein === 'number' ? ' g' : ''}
 - Consumido até agora: ${consumedKcal} kcal | ${consumedProtein} g proteína
 - Exercício hoje: ${exerciseKcal} kcal queimadas
-${yesterdayBalance != null ? `- Balanço de ONTEM (${yesterdayLocalDate}): ${yesterdayBalance} kcal (negativo = déficit, positivo = superávit)` : '- Sem dados de ontem'}
+${yesterdayLabel != null ? `- Balanço de ONTEM (${yesterdayLocalDate}): ${yesterdayLabel}` : '- Sem dados de ontem'}
 
 Sequência atual: ${progress?.current_streak ?? 0} dias consecutivos
 XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
@@ -389,6 +404,21 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
       await logEvent('llm.loose_bloco_replaced', {
         context: 'engagement',
         replacements: looseFix.replacements,
+      })
+    }
+  }
+
+  // FIX #3 (guard): se mesmo com o rótulo pronto o LLM inverter déficit/superávit
+  // na prosa (ex: "458 kcal de déficit" quando ontem foi superávit), corrige o
+  // texto pelo saldo real de ontem antes de enviar.
+  if (yesterdayBalance != null) {
+    const balFix = reconcileBalanceProse(text, yesterdayBalance)
+    if (balFix.replacements > 0) {
+      text = balFix.text
+      await logEvent('llm.balance_prose_reconciled', {
+        context: 'engagement',
+        replacements: balFix.replacements,
+        daily_balance: yesterdayBalance,
       })
     }
   }

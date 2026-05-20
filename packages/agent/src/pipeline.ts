@@ -12,7 +12,11 @@
 import { computeMetrics, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
-import { auditNumericClaims, detectSentimentMismatch } from './numeric-validator.js'
+import {
+  auditNumericClaims,
+  detectSentimentMismatch,
+  reconcileBalanceProse,
+} from './numeric-validator.js'
 import {
   hasBalanceCard,
   injectCanonicalCard,
@@ -428,6 +432,24 @@ export async function processMessage(
           event: 'llm.card_replaced',
           properties: { stage, tool: triggerTool?.name ?? 'none' },
         })
+      }
+      // FIX #2 (Paulo 2026-05-20 17:13): a PROSA fora do card ainda alucinava
+      // "Excedente leve de 130 kcal" (sem descontar exercício) contradizendo o
+      // card canônico "Restam 122". Reconcilia rótulo+magnitude pelo saldo REAL
+      // (mesmo cálculo do card: consumido - meta - exercício). detectSentimentMismatch
+      // abaixo só loga; aqui CORRIGE o texto antes de enviar.
+      if (snapTyped.calories_target != null) {
+        const freshBalance =
+          snapTyped.calories_consumed - snapTyped.calories_target - snapTyped.exercise_calories
+        const proseFix = reconcileBalanceProse(finalText, freshBalance)
+        if (proseFix.replacements > 0) {
+          finalText = proseFix.text
+          await deps.supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'llm.balance_prose_reconciled',
+            properties: { stage, replacements: proseFix.replacements, daily_balance: freshBalance },
+          })
+        }
       }
     }
   }

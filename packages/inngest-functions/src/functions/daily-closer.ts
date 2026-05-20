@@ -355,6 +355,28 @@ async function closeUserDay(
       event: 'bloco7700.skipped_inactive_day',
       properties: { date: yesterday, calories_target: targets.calories_target },
     })
+  } else if (
+    finalDayStatus === 'incomplete_no_response' &&
+    targets.calories_target != null &&
+    targets.calories_target > 0 &&
+    kcalConsumed < 0.5 * targets.calories_target
+  ) {
+    // SUB-REGISTRO (Luciana 2026-05-20): dia incomplete com consumo < 50% da
+    // meta = paciente provavelmente comeu mas não registrou (refeições
+    // fantasma do fake-registration, OU esqueceu). O déficit observado é FAKE.
+    // Não credita — senão o bloco 7700 infla com déficit que não existe.
+    // Luciana dias 17/18: registrou 17% da meta, creditou ~915 kcal/dia falso.
+    dailySnap.dailyBalance = 0
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'bloco7700.skipped_subregistro',
+      properties: {
+        date: yesterday,
+        calories_consumed: Math.round(kcalConsumed),
+        calories_target: targets.calories_target,
+        pct: Math.round((kcalConsumed / targets.calories_target) * 100),
+      },
+    })
   }
 
   const next = computeProgress(dailySnap, prev, calcConfig, effectiveDesignDeficit)

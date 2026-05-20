@@ -190,6 +190,8 @@ export async function processMessage(
   // max_tool_iterations: prioriza config do DB, fallback pro deps, fallback pra 5
   const configMax = (promptRow as { max_tool_iterations?: number }).max_tool_iterations
   const max = configMax ?? deps.maxToolIterations ?? 5
+  // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
+  let fakeRegistrationRetried = false
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
@@ -213,8 +215,59 @@ export async function processMessage(
     }
 
     if (result.toolCalls.length === 0) {
-      finalText = result.content ?? ''
-      messages.push({ role: 'assistant', content: result.content ?? '' })
+      const content = result.content ?? ''
+
+      // DETECTOR DE FAKE REGISTRATION (Luciana 2026-05-20): o LLM (Sonnet 4.6)
+      // às vezes responde "Almoço registrado. Arroz 128 kcal | Total 521..."
+      // com card completo MAS sem chamar registra_refeicao/registra_treino —
+      // inventa tudo. Luciana teve 3 dias (17/18/20) com refeições fantasma:
+      // agente confirmou registro, mas 0 meal_logs no banco. Snapshot ficou
+      // com déficit fake gigante.
+      //
+      // Defesa: se o texto AFIRMA registro (registrei/registrado/anotado) E tem
+      // assinatura de refeição/treino (kcal/card) MAS nenhuma tool de registro
+      // foi chamada no turno → re-prompt forçado pra chamar a tool. 1 retry.
+      const claimsRegistration =
+        /\b(registr(?:ei|ado|ada|ados|adas)|anot(?:ei|ado|ada)|adicion(?:ei|ado|ada)\s+ao)\b/i.test(
+          content,
+        )
+      const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
+      const registrationToolCalled = toolCallsSummary.some(
+        (tc) =>
+          (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
+      )
+      const isFakeRegistration =
+        claimsRegistration && hasFoodSignature && !registrationToolCalled
+
+      if (isFakeRegistration && !fakeRegistrationRetried) {
+        fakeRegistrationRetried = true
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.fake_registration_detected',
+          properties: { stage, model: result.model, content_preview: content.slice(0, 120) },
+        })
+        messages.push({ role: 'assistant', content })
+        messages.push({
+          role: 'user',
+          content:
+            'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.',
+        })
+        continue
+      }
+
+      if (isFakeRegistration && fakeRegistrationRetried) {
+        // Re-prompt falhou — LLM insistiu em não chamar a tool. Loga erro
+        // crítico. NÃO removemos o texto (paciente recebe algo), mas o evento
+        // alerta que o registro não aconteceu de fato.
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.fake_registration_unresolved',
+          properties: { stage, model: result.model, content_preview: content.slice(0, 120) },
+        })
+      }
+
+      finalText = content
+      messages.push({ role: 'assistant', content })
       break
     }
 

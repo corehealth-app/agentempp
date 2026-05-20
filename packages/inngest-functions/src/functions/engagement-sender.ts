@@ -5,6 +5,7 @@ import {
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
+  replaceLooseBlockMentions,
 } from '@mpp/agent'
 import {
   createMessagingProvider,
@@ -301,6 +302,30 @@ async function maybeEngageUser(
   const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'
   const targetProtein = targets.protein_target ?? '(não calculado — perfil incompleto)'
 
+  // REAVALIAÇÃO 14 DIAS (Roberto 2026-05-20): se o daily-closer marcou
+  // `reevaluation.due` (não resolvida nas últimas 36h) E é o slot matinal,
+  // injeta instrução pro LLM pedir o peso atualizado. Quando paciente responde
+  // com peso, cadastra_dados_iniciais recalcula meta/protocolo automaticamente.
+  let reevaluationBlock = ''
+  if (slot === 'cafe_da_manha') {
+    const { data: revalEvents } = await supabase
+      .from('product_events')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('event', 'reevaluation.due')
+      .gte('occurred_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString())
+      .limit(1)
+    if (revalEvents && revalEvents.length > 0) {
+      reevaluationBlock =
+        `\n\n⚠️ HOJE É DIA DE REAVALIAÇÃO (14 dias de acompanhamento). ` +
+        `Na sua mensagem matinal, ALÉM do bom dia, PEÇA ao paciente o peso atual ` +
+        `(e BF%/medidas se ele costuma medir) pra recalcular a meta e ajustar o ` +
+        `protocolo dos próximos 14 dias. Tom: comemorativo (marco de 2 semanas), ` +
+        `não burocrático. Ex: "Hoje fecha 14 dias firmes — bora reavaliar? Me manda ` +
+        `teu peso atual que eu recalibro tua meta."`
+    }
+  }
+
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
 ⚠️ IDIOMA DO PACIENTE: **${userLanguage}** (locale salvo). Responda nesse idioma. Não infira pelo timezone — paciente pode morar fora mas falar outra língua.
@@ -322,7 +347,7 @@ XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
 
-⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.
+⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${reevaluationBlock}
 `.trim()
 
   const result = await llm.complete({
@@ -344,10 +369,28 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     metadata: { Stage: 'engajamento', Slot: slot, LocalHour: String(localHour) },
   })
 
-  const text = (result.content ?? '').trim()
+  let text = (result.content ?? '').trim()
   if (!text) {
     await logEvent('engagement.skipped', { reason: 'LLM vazio' })
     return { sent: false, reason: 'LLM vazio' }
+  }
+
+  // ANTI-ALUCINAÇÃO no engagement (Roberto 2026-05-20): o "Bom dia" do Haiku
+  // disse "saldo de 5.029 kcal no bloco" quando o valor REAL era 5.586. O
+  // engagement-sender não passa pelo pipeline.ts (que tem o card canônico +
+  // replaceLooseBlockMentions), então as menções de bloco aqui ficavam sem
+  // correção. Aplicamos a mesma varredura: substitui menções soltas de Bloco
+  // 7700 pelo valor real do user_progress.deficit_block.
+  const progDeficitBlock = (progress as { deficit_block?: number } | null)?.deficit_block
+  if (progDeficitBlock != null) {
+    const looseFix = replaceLooseBlockMentions(text, progDeficitBlock)
+    if (looseFix.replacements > 0) {
+      text = looseFix.text
+      await logEvent('llm.loose_bloco_replaced', {
+        context: 'engagement',
+        replacements: looseFix.replacements,
+      })
+    }
   }
 
   // ENVIA pelo WhatsApp via messaging provider

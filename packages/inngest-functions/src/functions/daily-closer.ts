@@ -387,7 +387,72 @@ async function closeUserDay(
     })
   }
 
+  // REAVALIAÇÃO 14 DIAS (Roberto 2026-05-20): MPP prevê reavaliação periódica
+  // (peso/BF%/meta) a cada 14 dias. A coluna user_progress.next_reevaluation
+  // existia mas nunca era populada nem checada. Agora:
+  //  - bootstrap: se NULL, seta = primeiro_snapshot + 14 dias
+  //  - due: se yesterday >= next_reevaluation, loga evento + avança +14d.
+  //    A MENSAGEM ao paciente sai pelo engagement matinal (cafe_da_manha) que
+  //    detecta o evento `reevaluation.due` — evita mandar 3h da manhã.
+  await checkReevaluation(supabase, userId, yesterday)
+
   return { skipped: false }
+}
+
+/**
+ * Detecta e marca reavaliação de 14 dias. Loga `reevaluation.due` quando
+ * vence — engagement matinal pega e pede o peso atualizado ao paciente.
+ */
+async function checkReevaluation(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  closingDate: string,
+): Promise<void> {
+  const { data: prog } = await supabase
+    .from('user_progress')
+    .select('next_reevaluation')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const nextReval = (prog as { next_reevaluation: string | null } | null)?.next_reevaluation
+
+  if (!nextReval) {
+    // Bootstrap: primeiro snapshot do paciente + 14 dias
+    const { data: firstSnap } = await supabase
+      .from('daily_snapshots')
+      .select('date')
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    const firstDate = (firstSnap as { date: string } | null)?.date
+    if (firstDate) {
+      const d = new Date(firstDate)
+      d.setDate(d.getDate() + 14)
+      await supabase
+        .from('user_progress')
+        .update({ next_reevaluation: d.toISOString().slice(0, 10) })
+        .eq('user_id', userId)
+    }
+    return
+  }
+
+  // Due? closingDate (data fechada) >= next_reevaluation
+  if (closingDate >= nextReval) {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'reevaluation.due',
+      properties: { due_date: nextReval, closing_date: closingDate },
+    })
+    // Avança +14 dias a partir da data devida (não da data fechada — mantém
+    // cadência fixa de 14 em 14 mesmo se houve atraso no fechamento).
+    const d = new Date(nextReval)
+    d.setDate(d.getDate() + 14)
+    await supabase
+      .from('user_progress')
+      .update({ next_reevaluation: d.toISOString().slice(0, 10) })
+      .eq('user_id', userId)
+  }
 }
 
 // Helpers de timezone agora vêm de @mpp/agent (timezone-utils.ts).

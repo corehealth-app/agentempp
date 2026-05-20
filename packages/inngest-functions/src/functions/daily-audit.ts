@@ -1,4 +1,5 @@
 import { inngest } from '../client.js'
+import { recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
 
 /**
@@ -27,7 +28,13 @@ import { createWorkerDeps } from '../lib/env.js'
  */
 export const dailyAuditFn = inngest.createFunction(
   { id: 'daily-audit', retries: 1, concurrency: { limit: 1 } },
-  { event: 'audit.daily.tick' },
+  // 3x/dia: 9h, 15h, 21h BRT (Eduardo 2026-05-20). Cron NATIVO do Inngest —
+  // antes era disparado pelo evento 'audit.daily.tick' via pg_cron (1x/dia 9h).
+  // O pg_cron antigo 'daily-audit-9h-brt' agora dispara um evento órfão
+  // (sem consumidor) — limpar com `cron.unschedule('daily-audit-9h-brt')`
+  // quando houver acesso SQL ao banco. Não causa efeito (Inngest ignora evento
+  // sem função ouvinte).
+  { cron: 'TZ=America/Sao_Paulo 0 9,15,21 * * *' },
   async ({ step, logger }) => {
     const { supabase } = createWorkerDeps()
 
@@ -166,8 +173,91 @@ export const dailyAuditFn = inngest.createFunction(
       }
     })
 
+    // AUTO-CORREÇÃO (Eduardo 2026-05-20): além de auditar, reconcilia os blocos
+    // 7700 sozinho. recomputeUserBloco é fiel ao daily-closer (validado: Gleidson
+    // e Raphaela batem exato), idempotente e self-healing. TRAVA DE SEGURANÇA
+    // (circuit-breaker): se um run tentaria corrigir mais de MAX_BLOCO_FIX
+    // usuários de uma vez = sinal de bug de fórmula/dado → NÃO aplica e alerta,
+    // pra não propagar erro em escala a cada 8h.
+    const autofix = await step.run('auto-reconcile-blocos', async () => {
+      const BLOCO_DIFF_TOL = 50
+      const MAX_BLOCO_FIX = 8
+      const { data: progs } = await supabase
+        .from('user_progress')
+        .select('user_id, deficit_block, blocks_completed')
+      const diverge: Array<{
+        uid: string
+        old: number
+        neu: number
+        oldB: number
+        newB: number
+        days: number
+      }> = []
+      for (const p of (progs ?? []) as Array<{
+        user_id: string
+        deficit_block: number | null
+        blocks_completed: number | null
+      }>) {
+        const r = await recomputeUserBloco(supabase, p.user_id)
+        if (
+          Math.abs((p.deficit_block ?? 0) - r.correctDeficitBlock) > BLOCO_DIFF_TOL ||
+          (p.blocks_completed ?? 0) !== r.correctBlocksCompleted
+        ) {
+          diverge.push({
+            uid: p.user_id,
+            old: p.deficit_block ?? 0,
+            neu: r.correctDeficitBlock,
+            oldB: p.blocks_completed ?? 0,
+            newB: r.correctBlocksCompleted,
+            days: r.daysClosed,
+          })
+        }
+      }
+      let applied = 0
+      let circuitBroke = false
+      if (diverge.length > MAX_BLOCO_FIX) {
+        circuitBroke = true
+      } else {
+        for (const b of diverge) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('user_progress')
+            .update({
+              deficit_block: b.neu,
+              blocks_completed: b.newB,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', b.uid)
+          await supabase.from('product_events').insert({
+            user_id: b.uid,
+            event: 'audit.bloco_autofixed',
+            properties: {
+              old_deficit_block: b.old,
+              new_deficit_block: b.neu,
+              old_blocks: b.oldB,
+              new_blocks: b.newB,
+              days_closed: b.days,
+            },
+          })
+          applied++
+        }
+      }
+      return {
+        divergeCount: diverge.length,
+        applied,
+        circuitBroke,
+        details: diverge.slice(0, 8).map((b) => `${b.old}→${b.neu}`),
+      }
+    })
+
     // Decide se há alerta crítico (vai pro topo da mensagem)
     const alerts: string[] = []
+    if (autofix.circuitBroke)
+      alerts.push(
+        `🔴 ${autofix.divergeCount} blocos divergentes — auto-fix BLOQUEADO (circuit-breaker, revisar fórmula/dado)`,
+      )
+    else if (autofix.applied > 0)
+      alerts.push(`🔧 ${autofix.applied} bloco(s) auto-corrigido(s): ${autofix.details.join(', ')}`)
     if (metrics.pipelineErrors > 0) alerts.push(`🔴 ${metrics.pipelineErrors} pipeline.error`)
     if (metrics.numericMismatch > 3) alerts.push(`⚠️ ${metrics.numericMismatch} numeric_mismatch`)
     if (metrics.sentimentMismatch > 0) alerts.push(`⚠️ ${metrics.sentimentMismatch} sentiment_mismatch`)
@@ -187,6 +277,12 @@ export const dailyAuditFn = inngest.createFunction(
       `• Numeric mismatch: ${metrics.numericMismatch} | Sentiment: ${metrics.sentimentMismatch}\n` +
       `• Composite rejected: ${metrics.compositeRejected}\n` +
       `• Snapshot integrity: ${metrics.snapshotIntegrityOk ? 'OK' : `❌ ${metrics.snapshotDivergencias} diff`}\n` +
+      `\n*Auto-correção (blocos 7700)*\n` +
+      (autofix.circuitBroke
+        ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`
+        : autofix.applied > 0
+          ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
+          : `• ✅ todos em sincronia (0 correções)\n`) +
       `\n*Defesas ativas*\n` +
       `• Card canônico substituiu: ${metrics.cardReplaced}\n` +
       `• Bloco solto substituído: ${metrics.looseBlocoReplaced}\n` +
@@ -203,7 +299,13 @@ export const dailyAuditFn = inngest.createFunction(
     // Loga sempre (histórico)
     await supabase.from('product_events').insert({
       event: 'audit.daily_report',
-      properties: { ...metrics, alerts_count: alerts.length },
+      properties: {
+        ...metrics,
+        alerts_count: alerts.length,
+        bloco_autofixed: autofix.applied,
+        bloco_diverge: autofix.divergeCount,
+        bloco_circuit_broke: autofix.circuitBroke,
+      },
     })
 
     // Envia Telegram só se há alertas OU sempre (config). Default: sempre,

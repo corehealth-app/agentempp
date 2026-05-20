@@ -66,12 +66,18 @@ export function renderBalanceCard(data: BalanceCardData): string {
   }
 
   // Linha 2: 🎯 Restam OU Excedente
+  // BUG corrigido (Roberto 2026-05-19): antes era `consumed - target` SEM
+  // descontar exercício. Roberto comeu 2.076 (meta 1.843) MAS queimou 565 no
+  // exercício → balanço REAL = 2076-1843-565 = -332 (DÉFICIT). Card mostrava
+  // "Excedente: 233" (ignorando exercício) enquanto a msg de fechamento dizia
+  // "332 de déficit" — inconsistente. Fórmula MPP: balance = consumed - target
+  // - exercise. Agora o card desconta o exercício, consistente com a linha 🏃🏻.
   if (data.caloriesTarget != null && data.caloriesTarget > 0) {
-    const diff = data.caloriesConsumed - data.caloriesTarget
-    if (diff > 0) {
-      lines.push(`🎯 Excedente: **${fmt(diff)} kcal**`)
+    const balance = data.caloriesConsumed - data.caloriesTarget - data.exerciseCalories
+    if (balance > 0) {
+      lines.push(`🎯 Excedente: **${fmt(balance)} kcal**`)
     } else {
-      lines.push(`🎯 Restam: **${fmt(-diff)} kcal**`)
+      lines.push(`🎯 Restam: **${fmt(-balance)} kcal**`)
     }
   }
 

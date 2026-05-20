@@ -8,7 +8,8 @@ import {
 } from './balance-card.js'
 
 describe('renderBalanceCard — formato canônico', () => {
-  it('recomp em déficit — mostra Restam', () => {
+  it('recomp em déficit — mostra Restam (descontando exercício)', () => {
+    // consumed 1301, target 1843, exercise 565 → balance = 1301-1843-565 = -1107
     const card = renderBalanceCard({
       caloriesConsumed: 1301,
       caloriesTarget: 1843,
@@ -19,13 +20,30 @@ describe('renderBalanceCard — formato canônico', () => {
       protocol: 'recomposicao',
     })
     expect(card).toContain('🔥 Consumido: **1.301 / 1.843 kcal (71%)**')
-    expect(card).toContain('🎯 Restam: **542 kcal**')
+    expect(card).toContain('🎯 Restam: **1.107 kcal**')
     expect(card).toContain('💪 Proteína: **98 / 148g (66%)**')
     expect(card).toContain('🏃🏻 Exercício: **565 kcal**')
     expect(card).toContain('📊 Bloco 7700: **5.254 / 7.700 kcal (68%)**')
   })
 
-  it('recomp em excedente — mostra Excedente', () => {
+  it('Roberto 2026-05-19: comeu 2076 (meta 1843) + 565 exercício = DÉFICIT 332, não excedente 233', () => {
+    // Bug raiz: card mostrava "Excedente 233" (2076-1843) ignorando exercício.
+    const card = renderBalanceCard({
+      caloriesConsumed: 2076,
+      caloriesTarget: 1843,
+      proteinG: 182.1,
+      proteinTarget: 149,
+      exerciseCalories: 565,
+      deficitBlock: 5254,
+      protocol: 'recomposicao',
+    })
+    // 2076 - 1843 - 565 = -332 → déficit → Restam 332
+    expect(card).toContain('🎯 Restam: **332 kcal**')
+    expect(card).not.toContain('Excedente')
+  })
+
+  it('recomp em excedente real — mostra Excedente (exercício insuficiente)', () => {
+    // consumed 1935, target 1843, exercise 0 → balance = 92 → excedente
     const card = renderBalanceCard({
       caloriesConsumed: 1935,
       caloriesTarget: 1843,
@@ -111,7 +129,8 @@ describe('hasBalanceCard / stripBalanceCard / injectCanonicalCard', () => {
     })
     const out = injectCanonicalCard(llmText, canonical)
     expect(out).toContain('🔥 Consumido: **1.448 / 1.843 kcal (79%)**')
-    expect(out).toContain('🎯 Restam: **395 kcal**')
+    // 1448 - 1843 - 565 = -960 → Restam 960 (com exercício descontado)
+    expect(out).toContain('🎯 Restam: **960 kcal**')
     expect(out).not.toContain('1.935')
     expect(out).not.toContain('Excedente: **92 kcal**')
     expect(out).toContain('Bom dia.')

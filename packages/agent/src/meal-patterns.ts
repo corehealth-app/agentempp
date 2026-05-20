@@ -14,7 +14,7 @@
  */
 
 import type { ServiceClient } from '@mpp/db'
-import { getLocalDateString, getLocalDateMinusDays } from './timezone-utils.js'
+import { getLocalDateString, getLocalDateMinusDays, getTzOffset } from './timezone-utils.js'
 
 export type MealType = 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
 
@@ -167,9 +167,15 @@ export async function getGapForDate(
   }
 
   // Refeições marcadas como "pulei" na data (product_events meal.user_skipped)
-  // Janela: 00:00 a 23:59 da data no fuso local.
-  const startOfDay = `${dateStr}T00:00:00`
-  const endOfDay = `${dateStr}T23:59:59`
+  // Janela: 00:00 a 23:59 da data no fuso LOCAL do paciente.
+  // BUG corrigido (Roberto 2026-05-19): faltava o tzOffset. Roberto (NY/EDT)
+  // disse "Pulei" às 21:32 EDT = 01:32 UTC do dia seguinte. Janela sem offset
+  // ("2026-05-19T23:59:59" interpretado como UTC) terminava 19:59 EDT — o
+  // evento das 21:32 ficava FORA → daily-closer não via o skip → marcava
+  // incomplete_no_response em vez de user_skipped → bloco 7700 não creditava.
+  const offset = getTzOffset(userTimezone)
+  const startOfDay = `${dateStr}T00:00:00${offset}`
+  const endOfDay = `${dateStr}T23:59:59${offset}`
   const { data: skipEvents } = await supabase
     .from('product_events')
     .select('properties')

@@ -1,4 +1,4 @@
-import { calcDailyXP, computeProgress } from '@mpp/core'
+import { calcDailyXP, computeProgress, creditDayToBloco } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
 import {
   getGapForDate,
@@ -343,13 +343,11 @@ async function closeUserDay(
     .update({ day_status: finalDayStatus })
     .eq('id', snap.id)
 
-  const blocoCreditaThisDay =
-    hasActivity && (finalDayStatus === 'complete' || finalDayStatus === 'user_skipped')
-  const effectiveDesignDeficit = blocoCreditaThisDay ? designDeficit : 0
+  // O CRÉDITO do bloco vem do engine (creditDayToBloco — fonte única da regra,
+  // ver @mpp/core/engine/bloco + docs/CALCULO-MPP.md §3). As condições abaixo
+  // só EMITEM os eventos de log (skipped_*); a decisão de quanto creditar é do
+  // engine, não daqui (não duplicar a regra).
   if (!hasActivity) {
-    // Zera o dailyBalance pra computeProgress não creditar nada via -balance.
-    // Snapshot permanece com o balance real pra fins de display/log.
-    dailySnap.dailyBalance = 0
     await supabase.from('product_events').insert({
       user_id: userId,
       event: 'bloco7700.skipped_inactive_day',
@@ -361,20 +359,10 @@ async function closeUserDay(
     targets.calories_target > 0 &&
     kcalConsumed < 0.5 * targets.calories_target
   ) {
-    // SUB-REGISTRO (Luciana 2026-05-20): QUALQUER dia (complete ou incomplete)
-    // com consumo < 50% da meta = paciente provavelmente comeu mas não
-    // registrou (refeições fantasma do fake-registration, OU esqueceu). O
-    // déficit OBSERVADO é FAKE — zera o dailyBalance pra não creditar.
-    //
-    // Nota: dia COMPLETE sub-registrado ainda credita o design_deficit (400)
-    // via effectiveDesignDeficit (assume que seguiu o protocolo deficitário,
-    // só não registrou tudo). Dia INCOMPLETE sub-registrado credita 0
-    // (effectiveDesignDeficit já é 0). user_skipped é confirmação explícita
-    // de pulo — não entra aqui (credita normal).
-    //
-    // Luciana: dias 17/18 (incomplete, 17%) creditavam ~915 fake; dias
-    // 07/09/13 (complete, 0-23%) creditavam déficit observado fake também.
-    dailySnap.dailyBalance = 0
+    // SUB-REGISTRO (Luciana 2026-05-20): consumo < 50% da meta = déficit
+    // observado FAKE. O engine zera esse crédito (complete credita só o
+    // designDeficit; incomplete credita 0; user_skipped não entra aqui). Aqui
+    // só logamos o evento pra auditoria.
     await supabase.from('product_events').insert({
       user_id: userId,
       event: 'bloco7700.skipped_subregistro',
@@ -388,7 +376,16 @@ async function closeUserDay(
     })
   }
 
-  const next = computeProgress(dailySnap, prev, calcConfig, effectiveDesignDeficit)
+  const dayCredit = creditDayToBloco({
+    hasActivity,
+    dayStatus: finalDayStatus,
+    caloriesConsumed: kcalConsumed,
+    caloriesTarget: targets.calories_target,
+    dailyBalance: snap.daily_balance ?? 0,
+    designDeficit,
+  })
+
+  const next = computeProgress(dailySnap, prev, calcConfig, dayCredit)
 
   await supabase
     .from('user_progress')

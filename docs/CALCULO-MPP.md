@@ -40,7 +40,12 @@ daily_balance = consumido − meta − exercício
 - É o número usado pelo `daily-closer` pra creditar o bloco.
 - Roberto confirmou: déficit do dia = `design_deficit − excedente_comida + exercício`.
   Ex. 19/05: `500 − 233 + 565 = 832`.
-- Fica salvo em `daily_snapshots.daily_balance`.
+- ⚠️ `daily_snapshots.daily_balance` é **COLUNA GERADA** (`= consumido − meta −
+  exercício`). NÃO dá pra setar via UPDATE/PATCH (erro 428C9). Ao corrigir
+  `calories_consumed`, o banco recalcula o `daily_balance` sozinho.
+- Invariante: `calories_consumed` deve ser sempre `= SUM(meal_logs.kcal)` do dia
+  (a auditoria alerta se divergir >50). Backfill manual: corrigir consumed/
+  protein/carbs/fat = SUM(meal_logs); daily_balance segue automático.
 
 > Regra de ouro: **comida = sem exercício; bloco = com exercício.** O card mostra
 > "Restam" (comida) + linha "🏃🏻 Exercício (acelera o bloco)" separada.

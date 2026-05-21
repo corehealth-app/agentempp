@@ -5,7 +5,7 @@
  *
  * Formato compatível com OpenAI tool calling.
  */
-import { computeMetrics } from '@mpp/core'
+import { computeMetrics, computePeriodSummary, type SnapshotForAgg } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
@@ -1576,6 +1576,39 @@ export const marcaRefeicaoPulada: ToolDefinition = {
   },
 }
 
+// ----------------------------------------------------------------------------
+// consulta_resumo_periodo — médias/aderência de 7 ou 30 dias (determinístico)
+// ----------------------------------------------------------------------------
+export const consultaResumoPeriodo: ToolDefinition = {
+  name: 'consulta_resumo_periodo',
+  description:
+    'Retorna o RESUMO determinístico de um período (semana = 7 dias, mês = 30 dias): médias de calorias e ' +
+    'proteína, média do déficit do dia, dias completos e % de aderência. Use quando o paciente pedir comparação/' +
+    'evolução ("como foi minha semana?", "minha média de proteína subiu?"). Assim os números vêm CALCULADOS do ' +
+    'banco, não da sua cabeça (evita alucinação de média).',
+  parameters: z.object({
+    periodo: z.enum(['semana', 'mes']).describe('semana = últimos 7 dias; mes = últimos 30 dias'),
+  }),
+  execute: async (args, ctx) => {
+    const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const today = getLocalDateString(tz)
+    const n = args.periodo === 'semana' ? 7 : 30
+    const start = new Date(`${today}T00:00:00Z`)
+    start.setUTCDate(start.getUTCDate() - (n - 1))
+    const startStr = start.toISOString().slice(0, 10)
+    const { data } = await ctx.supabase
+      .from('daily_snapshots')
+      .select('calories_consumed, protein_g, daily_balance, day_status')
+      .eq('user_id', ctx.userId)
+      .eq('day_closed', true)
+      .gte('date', startStr)
+      .lte('date', today)
+      .order('date', { ascending: true })
+    const summary = computePeriodSummary((data ?? []) as unknown as SnapshotForAgg[])
+    return { periodo: args.periodo, from: startStr, to: today, ...summary }
+  },
+}
+
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
@@ -1583,6 +1616,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   registraTreino,
   consultaProgresso,
   consultaMetricas,
+  consultaResumoPeriodo,
   marcaRefeicaoPulada,
   atualizaDataUser,
   encerraAtendimento,

@@ -24,6 +24,8 @@ import {
   replaceLooseBlockMentions,
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
+import { detectFakeWrite } from './fake-write-detector.js'
+import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
@@ -228,7 +230,7 @@ export async function processMessage(
   const configMax = (promptRow as { max_tool_iterations?: number }).max_tool_iterations
   const max = configMax ?? deps.maxToolIterations ?? 5
   // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
-  let fakeRegistrationRetried = false
+  let fakeWriteRetried = false
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
@@ -254,53 +256,39 @@ export async function processMessage(
     if (result.toolCalls.length === 0) {
       const content = result.content ?? ''
 
-      // DETECTOR DE FAKE REGISTRATION (Luciana 2026-05-20): o LLM (Sonnet 4.6)
-      // às vezes responde "Almoço registrado. Arroz 128 kcal | Total 521..."
-      // com card completo MAS sem chamar registra_refeicao/registra_treino —
-      // inventa tudo. Luciana teve 3 dias (17/18/20) com refeições fantasma:
-      // agente confirmou registro, mas 0 meal_logs no banco. Snapshot ficou
-      // com déficit fake gigante.
-      //
-      // Defesa: se o texto AFIRMA registro (registrei/registrado/anotado) E tem
-      // assinatura de refeição/treino (kcal/card) MAS nenhuma tool de registro
-      // foi chamada no turno → re-prompt forçado pra chamar a tool. 1 retry.
-      const claimsRegistration =
-        /\b(registr(?:ei|ado|ada|ados|adas)|anot(?:ei|ado|ada)|adicion(?:ei|ado|ada)\s+ao)\b/i.test(
-          content,
-        )
-      const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
+      // GUARD DE ESCRITA FANTASMA — Camada 1 (retry forçado no turno).
+      // O LLM às vezes AFIRMA registro (Luciana 2026-05-20: "Almoço registrado…
+      // 521 kcal") ou CORREÇÃO (Roberto 2026-05-21: "Corrigido. Feijão 180g…")
+      // com card completo MAS sem chamar a tool — nada é salvo. O card em si é
+      // canônico (FIX C reescreve do banco); a falha é a tool não rodar. Aqui
+      // forçamos 1 retry. Detector puro travado em fake-write-detector.test.ts.
       const registrationToolCalled = toolCallsSummary.some(
         (tc) =>
           (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
       )
-      const isFakeRegistration =
-        claimsRegistration && hasFoodSignature && !registrationToolCalled
+      const fake = detectFakeWrite({ content, registrationToolCalled })
 
-      if (isFakeRegistration && !fakeRegistrationRetried) {
-        fakeRegistrationRetried = true
+      if (fake.isFake && !fakeWriteRetried) {
+        fakeWriteRetried = true
         await deps.supabase.from('product_events').insert({
           user_id: userId,
-          event: 'llm.fake_registration_detected',
-          properties: { stage, model: result.model, content_preview: content.slice(0, 120) },
+          event: 'llm.fake_write_detected',
+          properties: {
+            stage,
+            kind: fake.kind,
+            model: result.model,
+            content_preview: content.slice(0, 120),
+          },
         })
         messages.push({ role: 'assistant', content })
         messages.push({
           role: 'user',
           content:
-            'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.',
+            fake.kind === 'correction'
+              ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
+              : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.',
         })
         continue
-      }
-
-      if (isFakeRegistration && fakeRegistrationRetried) {
-        // Re-prompt falhou — LLM insistiu em não chamar a tool. Loga erro
-        // crítico. NÃO removemos o texto (paciente recebe algo), mas o evento
-        // alerta que o registro não aconteceu de fato.
-        await deps.supabase.from('product_events').insert({
-          user_id: userId,
-          event: 'llm.fake_registration_unresolved',
-          properties: { stage, model: result.model, content_preview: content.slice(0, 120) },
-        })
       }
 
       finalText = content
@@ -499,6 +487,47 @@ export async function processMessage(
         user_id: userId,
         event: 'llm.loose_bloco_replaced',
         properties: { stage, replacements: looseReplace.replacements },
+      })
+    }
+  }
+
+  // GUARD DE ESCRITA FANTASMA — Camadas 2 e 3 (rede de finalização).
+  // Checa o TEXTO REAL enviado ao paciente (pós-FIX C). Não bloqueia: registra
+  // sinais de alta prioridade pra auditoria 5×/dia investigar/agir.
+  {
+    const registrationToolCalled = toolCallsSummary.some(
+      (tc) => (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
+    )
+    // Camada 2: o retry da Camada 1 falhou (LLM insistiu em não chamar a tool)
+    // ou o card veio por caminho não-terminal → o texto final ainda afirma
+    // registro/correção sem tool = escrita NÃO persistiu. Sinal crítico.
+    const fakeFinal = detectFakeWrite({ content: finalText, registrationToolCalled })
+    if (fakeFinal.isFake) {
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'llm.fake_write_unresolved',
+        properties: {
+          stage,
+          kind: fakeFinal.kind,
+          model: lastResult.model,
+          content_preview: finalText.slice(0, 120),
+        },
+      })
+    }
+    // Camada 3 (lado da ENTRADA): o paciente pediu correção, o agente mostrou
+    // card, mas nenhuma tool de registro rodou no turno. Cruza intenção do
+    // paciente × ação do agente. Log-only (evita falso-positivo afetar paciente);
+    // a auditoria usa pra pegar correção silenciosamente não-persistida.
+    const patientMsgs = ctx.recentMessages
+      .filter((mm) => mm.role === 'user')
+      .slice(-3)
+      .map((mm) => mm.content)
+    const correctionWord = detectCorrectionIntent(patientMsgs)
+    if (correctionWord && !registrationToolCalled && hasBalanceCard(finalText)) {
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'llm.correction_intent_no_write',
+        properties: { stage, keyword: correctionWord, content_preview: finalText.slice(0, 120) },
       })
     }
   }

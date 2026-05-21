@@ -8,3 +8,4 @@ export * from './progress-calc.js'
 // migração dos chamadores (próxima tarefa).
 export { creditDayToBloco, accumulateBloco, type DayCreditInput, type DayStatus } from './engine/bloco.js'
 export * from './engine/balance.js'
+export * from './engine/targets.js'

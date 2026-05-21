@@ -5,12 +5,13 @@
  */
 import { processMessage } from '@mpp/agent'
 import { createServiceClient } from '@mpp/db'
-import { OpenRouterLLM } from '@mpp/providers'
+import { OpenRouterEmbeddings, OpenRouterLLM } from '@mpp/providers'
 import type { ServiceClient } from '@mpp/db'
 
 export interface WorkerDeps {
   supabase: ServiceClient
   llm: OpenRouterLLM
+  embeddings: OpenRouterEmbeddings
 }
 
 export function createWorkerDeps(): WorkerDeps {
@@ -28,6 +29,7 @@ export function createWorkerDeps(): WorkerDeps {
       apiKey: openrouterKey,
       heliconeApiKey: process.env.HELICONE_API_KEY,
     }),
+    embeddings: new OpenRouterEmbeddings({ apiKey: openrouterKey, dimensions: 1024 }),
   }
 }
 

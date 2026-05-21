@@ -26,7 +26,7 @@ import {
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
-import type { OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
+import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
@@ -38,6 +38,37 @@ export interface PipelineDeps {
   llm: OpenRouterLLM
   /** Limite de iterações de tool calling (segurança). */
   maxToolIterations?: number
+  /** Embeddings p/ RAG do método (sub-projeto D). Opcional: sem ele, sem retrieval. */
+  embeddings?: OpenRouterEmbeddings
+}
+
+/**
+ * RAG (sub-projeto D): recupera as seções do método relevantes ao turno e
+ * devolve um bloco pra injetar no system prompt. Degradação graciosa: qualquer
+ * falha (sem embeddings, erro de rede, RPC) → retorna '' e o turno segue.
+ * Os NÚMEROS já vêm do código (card/engine), então um miss aqui só afeta prosa.
+ */
+async function retrieveMethodContext(
+  deps: PipelineDeps,
+  text: string | null | undefined,
+  protocol: string | null | undefined,
+): Promise<string> {
+  if (!deps.embeddings || !text || text.trim().length < 3) return ''
+  try {
+    const emb = await deps.embeddings.embed(text)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (deps.supabase as any).rpc('match_method_chunks', {
+      query_embedding: emb,
+      match_count: 5,
+      filter_protocol: protocol ?? null,
+    })
+    const chunks = (data ?? []) as Array<{ page_title: string; content: string }>
+    if (chunks.length === 0) return ''
+    const body = chunks.map((c) => `### ${c.page_title}\n${c.content}`).join('\n\n')
+    return `\n\n## Método relevante (recuperado da base — siga estas regras)\n${body}`
+  } catch {
+    return ''
+  }
 }
 
 interface UserContext {
@@ -163,7 +194,9 @@ export async function processMessage(
   // Com cache (90% redução nas leituras), cai pra ~$0.10/turno em conversas seguidas.
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
   const stableSystem = promptRow.system_prompt
-  const variableSystem = `\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
+  // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
+  const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
+  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
   // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
   // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda

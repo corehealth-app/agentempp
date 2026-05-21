@@ -434,20 +434,20 @@ export async function processMessage(
         })
       }
       // FIX #2 (Paulo 2026-05-20 17:13): a PROSA fora do card ainda alucinava
-      // "Excedente leve de 130 kcal" (sem descontar exercício) contradizendo o
-      // card canônico "Restam 122". Reconcilia rótulo+magnitude pelo saldo REAL
-      // (mesmo cálculo do card: consumido - meta - exercício). detectSentimentMismatch
-      // abaixo só loga; aqui CORRIGE o texto antes de enviar.
+      // "Excedente leve de 130 kcal" contradizendo o card canônico. Reconcilia
+      // rótulo+magnitude pela MESMA base do card: balanço de COMIDA = consumido
+      // − meta (SEM exercício — regra MPP, Roberto 2026-05-21). O exercício vai
+      // pro bloco, não pro "Restam". detectSentimentMismatch abaixo usa a mesma
+      // base. (Antes usava consumido−meta−exercício, inflava o restante.)
       if (snapTyped.calories_target != null) {
-        const freshBalance =
-          snapTyped.calories_consumed - snapTyped.calories_target - snapTyped.exercise_calories
-        const proseFix = reconcileBalanceProse(finalText, freshBalance)
+        const eatingBalance = snapTyped.calories_consumed - snapTyped.calories_target
+        const proseFix = reconcileBalanceProse(finalText, eatingBalance)
         if (proseFix.replacements > 0) {
           finalText = proseFix.text
           await deps.supabase.from('product_events').insert({
             user_id: userId,
             event: 'llm.balance_prose_reconciled',
-            properties: { stage, replacements: proseFix.replacements, daily_balance: freshBalance },
+            properties: { stage, replacements: proseFix.replacements, eating_balance: eatingBalance },
           })
         }
       }
@@ -493,15 +493,18 @@ export async function processMessage(
   )
 
   // FIX B (Roberto 2026-05-18): sanity semântico — texto diz "déficit" mas
-  // balance é positivo (ou vice-versa). Caso real: agente disse "excedente de
-  // 92 kcal" quando snapshot tinha daily_balance=-960 (déficit). Loga evento
-  // 'llm.sentiment_mismatch' pra rastreabilidade. Não bloqueia — paciente já
-  // viu o card REAL agora (fix C acima).
-  if (ctx.todaySnapshot?.daily_balance != null) {
-    const sentimentMismatch = detectSentimentMismatch(
-      finalText,
-      ctx.todaySnapshot.daily_balance,
-    )
+  // balance é positivo (ou vice-versa). Loga 'llm.sentiment_mismatch'. Não
+  // bloqueia — paciente já viu o card REAL agora (fix C acima).
+  // Usa o balanço de COMIDA (consumido − meta, SEM exercício) — mesma base do
+  // card "Restam/Excedente" (regra MPP, Roberto 2026-05-21). Antes usava
+  // daily_balance (com exercício), o que divergia do card e gerava falso
+  // positivo em dias com exercício abaixo da meta.
+  const eatingBalanceForSentiment =
+    ctx.todaySnapshot?.calories_consumed != null && ctx.dailyTargets.calories_target != null
+      ? ctx.todaySnapshot.calories_consumed - ctx.dailyTargets.calories_target
+      : null
+  if (eatingBalanceForSentiment != null) {
+    const sentimentMismatch = detectSentimentMismatch(finalText, eatingBalanceForSentiment)
     if (sentimentMismatch) {
       await deps.supabase.from('product_events').insert({
         user_id: userId,
@@ -511,7 +514,7 @@ export async function processMessage(
           model: lastResult.model,
           text_says: sentimentMismatch.text_says,
           balance_is: sentimentMismatch.balance_is,
-          daily_balance: sentimentMismatch.daily_balance,
+          eating_balance: sentimentMismatch.daily_balance,
           excerpt: sentimentMismatch.excerpt,
         },
       })

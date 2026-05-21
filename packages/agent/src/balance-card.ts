@@ -65,19 +65,20 @@ export function renderBalanceCard(data: BalanceCardData): string {
     lines.push(`🔥 Consumido: **${fmt(data.caloriesConsumed)} kcal**`)
   }
 
-  // Linha 2: 🎯 Restam OU Excedente
-  // BUG corrigido (Roberto 2026-05-19): antes era `consumed - target` SEM
-  // descontar exercício. Roberto comeu 2.076 (meta 1.843) MAS queimou 565 no
-  // exercício → balanço REAL = 2076-1843-565 = -332 (DÉFICIT). Card mostrava
-  // "Excedente: 233" (ignorando exercício) enquanto a msg de fechamento dizia
-  // "332 de déficit" — inconsistente. Fórmula MPP: balance = consumed - target
-  // - exercise. Agora o card desconta o exercício, consistente com a linha 🏃🏻.
+  // Linha 2: 🎯 Restam OU Excedente — APENAS comida (meta − consumido).
+  // REGRA MPP (Roberto 2026-05-21): o exercício NÃO entra no "Restam". Queimar
+  // no treino acelera a perda (vai pro BLOCO 7700), mas NÃO libera comer mais —
+  // "Restam" é só quanto ainda dá pra comer pra bater a META DE INGESTÃO.
+  // O exercício aparece na linha 🏃🏻 e é creditado no bloco pelo daily-closer
+  // (que usa consumed−target−exercise — esse cálculo do BLOCO NÃO muda).
+  // ⚠️ Reverte o ajuste de 2026-05-19 que somava exercício aqui (inflava o
+  //    "Restam" quando abaixo da meta). Ver docs/CALCULO-MPP.md (regra do card).
   if (data.caloriesTarget != null && data.caloriesTarget > 0) {
-    const balance = data.caloriesConsumed - data.caloriesTarget - data.exerciseCalories
-    if (balance > 0) {
-      lines.push(`🎯 Excedente: **${fmt(balance)} kcal**`)
+    const eatingBalance = data.caloriesConsumed - data.caloriesTarget
+    if (eatingBalance > 0) {
+      lines.push(`🎯 Excedente: **${fmt(eatingBalance)} kcal**`)
     } else {
-      lines.push(`🎯 Restam: **${fmt(-balance)} kcal**`)
+      lines.push(`🎯 Restam: **${fmt(-eatingBalance)} kcal**`)
     }
   }
 
@@ -92,8 +93,14 @@ export function renderBalanceCard(data: BalanceCardData): string {
     lines.push(`💪 Proteína: **${data.proteinG.toFixed(1)}g**`)
   }
 
-  // Linha 4: 🏃🏻 Exercício (sempre mostra, mesmo se 0)
-  lines.push(`🏃🏻 Exercício: **${fmt(data.exerciseCalories)} kcal**`)
+  // Linha 4: 🏃🏻 Exercício (sempre mostra, mesmo se 0). Na recomposição, quando
+  // > 0, anota que vai pro bloco — reforça que NÃO libera comer mais (regra MPP,
+  // ver linha 2). Em manutenção/ganho não há bloco, então sem anotação.
+  if (data.exerciseCalories > 0 && data.protocol === 'recomposicao') {
+    lines.push(`🏃🏻 Exercício: **${fmt(data.exerciseCalories)} kcal** _(acelera o bloco 7700)_`)
+  } else {
+    lines.push(`🏃🏻 Exercício: **${fmt(data.exerciseCalories)} kcal**`)
+  }
 
   // Linha 5: 📊 Bloco 7700 (recomp) OU Orçamento 14d (outros protocolos)
   if (data.protocol === 'recomposicao') {

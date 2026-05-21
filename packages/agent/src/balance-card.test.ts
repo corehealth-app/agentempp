@@ -8,8 +8,10 @@ import {
 } from './balance-card.js'
 
 describe('renderBalanceCard — formato canônico', () => {
-  it('recomp em déficit — mostra Restam (descontando exercício)', () => {
-    // consumed 1301, target 1843, exercise 565 → balance = 1301-1843-565 = -1107
+  it('REGRA MPP (Roberto 2026-05-21): Restam = meta − consumido, exercício NÃO entra', () => {
+    // consumed 1301, target 1843, exercise 565.
+    // Restam (comida) = 1843 - 1301 = 542. O exercício NÃO soma no Restam —
+    // vai pro bloco e aparece anotado na linha 🏃🏻.
     const card = renderBalanceCard({
       caloriesConsumed: 1301,
       caloriesTarget: 1843,
@@ -20,14 +22,31 @@ describe('renderBalanceCard — formato canônico', () => {
       protocol: 'recomposicao',
     })
     expect(card).toContain('🔥 Consumido: **1.301 / 1.843 kcal (71%)**')
-    expect(card).toContain('🎯 Restam: **1.107 kcal**')
+    expect(card).toContain('🎯 Restam: **542 kcal**')
     expect(card).toContain('💪 Proteína: **98 / 148g (66%)**')
-    expect(card).toContain('🏃🏻 Exercício: **565 kcal**')
+    expect(card).toContain('🏃🏻 Exercício: **565 kcal** _(acelera o bloco 7700)_')
     expect(card).toContain('📊 Bloco 7700: **5.254 / 7.700 kcal (68%)**')
   })
 
-  it('Roberto 2026-05-19: comeu 2076 (meta 1843) + 565 exercício = DÉFICIT 332, não excedente 233', () => {
-    // Bug raiz: card mostrava "Excedente 233" (2076-1843) ignorando exercício.
+  it('Roberto 2026-05-20: comeu 1407 (meta 1843) + 467 exercício → Restam 436, NÃO 903', () => {
+    // O exercício (467) NÃO infla o "Restam". Restam = 1843 - 1407 = 436.
+    const card = renderBalanceCard({
+      caloriesConsumed: 1407,
+      caloriesTarget: 1843,
+      proteinG: 102.4,
+      proteinTarget: 149,
+      exerciseCalories: 467,
+      deficitBlock: 4967,
+      protocol: 'recomposicao',
+    })
+    expect(card).toContain('🎯 Restam: **436 kcal**')
+    expect(card).not.toContain('903')
+    expect(card).toContain('🏃🏻 Exercício: **467 kcal** _(acelera o bloco 7700)_')
+  })
+
+  it('comeu acima da meta → Excedente = consumido − meta (exercício à parte)', () => {
+    // consumed 2076, target 1843 → Excedente comida = 233. O exercício (565)
+    // vai pro bloco, mas o "Excedente de comida" continua 233 (regra MPP nova).
     const card = renderBalanceCard({
       caloriesConsumed: 2076,
       caloriesTarget: 1843,
@@ -37,13 +56,11 @@ describe('renderBalanceCard — formato canônico', () => {
       deficitBlock: 5254,
       protocol: 'recomposicao',
     })
-    // 2076 - 1843 - 565 = -332 → déficit → Restam 332
-    expect(card).toContain('🎯 Restam: **332 kcal**')
-    expect(card).not.toContain('Excedente')
+    expect(card).toContain('🎯 Excedente: **233 kcal**')
+    expect(card).not.toContain('Restam')
   })
 
-  it('recomp em excedente real — mostra Excedente (exercício insuficiente)', () => {
-    // consumed 1935, target 1843, exercise 0 → balance = 92 → excedente
+  it('recomp em excedente real sem exercício — mostra Excedente', () => {
     const card = renderBalanceCard({
       caloriesConsumed: 1935,
       caloriesTarget: 1843,
@@ -129,8 +146,8 @@ describe('hasBalanceCard / stripBalanceCard / injectCanonicalCard', () => {
     })
     const out = injectCanonicalCard(llmText, canonical)
     expect(out).toContain('🔥 Consumido: **1.448 / 1.843 kcal (79%)**')
-    // 1448 - 1843 - 565 = -960 → Restam 960 (com exercício descontado)
-    expect(out).toContain('🎯 Restam: **960 kcal**')
+    // Restam (comida) = 1843 - 1448 = 395 (exercício NÃO entra — regra MPP)
+    expect(out).toContain('🎯 Restam: **395 kcal**')
     expect(out).not.toContain('1.935')
     expect(out).not.toContain('Excedente: **92 kcal**')
     expect(out).toContain('Bom dia.')

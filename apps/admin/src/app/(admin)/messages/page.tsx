@@ -128,10 +128,46 @@ export default async function ConversasPage({
   if (filter === 'flagged') conversations = conversations.filter((c) => c.hasFlag)
 
   const selectedUserId = params.user ?? conversations[0]?.user.id
-  const thread = selectedUserId
-    ? messages.filter((m) => m.user_id === selectedUserId).reverse()
-    : []
-  const selectedUser = selectedUserId ? userMap.get(selectedUserId) : undefined
+
+  // Thread: busca as mensagens do paciente selecionado DIRETO no banco, em vez
+  // de filtrar a fatia global de 300. Caso contrário, um paciente que ficou
+  // alguns dias quieto aparece "vazio": o volume dos outros pacientes empurra
+  // o histórico dele pra fora da janela de 300 (ex.: Raphaela — 27 msgs no
+  // banco, mas só a de hoje caía na fatia).
+  let thread: Message[] = []
+  let selectedUser = selectedUserId ? userMap.get(selectedUserId) : undefined
+  if (selectedUserId) {
+    const { data: threadRows } = await svc
+      .from('messages')
+      .select(
+        'id, user_id, direction, content, content_type, agent_stage, model_used, prompt_tokens, completion_tokens, cost_usd, latency_ms, created_at, raw_payload, review_flag, review_note',
+      )
+      .eq('user_id', selectedUserId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    thread = ((threadRows ?? []) as unknown as Message[]).reverse()
+
+    // Se o selecionado não estava na fatia de 300 (ex.: paciente aberto via URL
+    // sem mensagem recente), busca o cadastro dele à parte pra sidebar.
+    if (!selectedUser) {
+      const { data: su } = await (svc as unknown as {
+        from: (t: string) => {
+          select: (s: string) => {
+            eq: (c: string, v: string) => {
+              maybeSingle: () => Promise<{ data: User | null }>
+            }
+          }
+        }
+      })
+        .from('users')
+        .select(
+          'id, name, wpp, tags, admin_notes, metadata, status, country, country_confirmed',
+        )
+        .eq('id', selectedUserId)
+        .maybeSingle()
+      selectedUser = (su ?? undefined) as User | undefined
+    }
+  }
 
   // Estatísticas do paciente selecionado pra sidebar
   let userExtras: {

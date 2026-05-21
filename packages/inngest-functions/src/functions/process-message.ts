@@ -194,6 +194,7 @@ export const processMessageFn = inngest.createFunction(
       if (vRes.ok && vRes.images.length > 0) {
         // Formata cada imagem segundo seu tipo
         const blocks: string[] = []
+        let bodyBf: { estimate: number; confidence: number } | null = null
         for (let i = 0; i < vRes.images.length; i++) {
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
@@ -221,6 +222,9 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [corporal · ${img.view}]:\n  BF% estimado: ${img.bf_percent_estimate ?? 'n/d'} (conf ${(img.bf_confidence * 100).toFixed(0)}%)\n  ${img.composition_notes}${img.posture_notes ? `\n  postura: ${img.posture_notes}` : ''}`,
             )
+            if (img.bf_percent_estimate != null) {
+              bodyBf = { estimate: img.bf_percent_estimate, confidence: img.bf_confidence }
+            }
           } else if (img.type === 'scale') {
             blocks.push(
               `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
@@ -263,6 +267,22 @@ export const processMessageFn = inngest.createFunction(
           types: vRes.images.map((i) => i.type),
           latency: vRes.latency_ms,
         })
+        // Persiste a ESTIMATIVA de BF% da foto num campo separado (sub-projeto B).
+        // NUNCA sobrescreve body_fat_percent (confirmado pelo paciente/Roberto).
+        if (bodyBf != null) {
+          const bf = bodyBf
+          await step.run('persist-bf-estimate', async () => {
+            const { supabase } = createWorkerDeps()
+            await supabase
+              .from('user_profiles')
+              .update({
+                bf_percent_estimated: bf.estimate,
+                bf_source: 'vision',
+                bf_estimated_at: new Date().toISOString(),
+              })
+              .eq('user_id', userId)
+          })
+        }
       } else {
         logger.warn('Vision skipped', { reason: vRes.ok ? 'sem imagens' : vRes.reason })
         if (text) {

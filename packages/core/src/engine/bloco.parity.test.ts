@@ -35,3 +35,21 @@ describe('paridade: engine reproduz valores validados em prod (2026-05-20)', () 
     ).toBe(0)
   })
 })
+
+describe('fechamento (closer): replay multi-dia cobrindo as 6 ramificações', () => {
+  // Cada dia espelha uma ramificação do daily-closer; o crédito esperado é o
+  // mesmo que o closer produzia antes da migração (paridade por construção).
+  it('acumula os créditos corretos no bloco', () => {
+    const dias: Day[] = [
+      { hasActivity: true, dayStatus: 'complete', caloriesConsumed: 1500, caloriesTarget: 1843, dailyBalance: -343 }, // 843
+      { hasActivity: true, dayStatus: 'complete', caloriesConsumed: 400, caloriesTarget: 1843, dailyBalance: -1443 }, // sub-reg complete → 500
+      { hasActivity: true, dayStatus: 'incomplete_no_response', caloriesConsumed: 400, caloriesTarget: 1843, dailyBalance: -1443 }, // sub-reg incomplete → 0
+      { hasActivity: false, dayStatus: 'complete', caloriesConsumed: 0, caloriesTarget: 1843, dailyBalance: -1843 }, // sem atividade → 0
+      { hasActivity: true, dayStatus: 'user_skipped', caloriesConsumed: 2076, caloriesTarget: 1843, dailyBalance: -332 }, // 832
+      { hasActivity: true, dayStatus: 'incomplete_no_response', caloriesConsumed: 1300, caloriesTarget: 1843, dailyBalance: -343 }, // incomplete >=50% → 343
+      { hasActivity: true, dayStatus: 'complete', caloriesConsumed: 2200, caloriesTarget: 1843, dailyBalance: 357 }, // excedente leve → 143
+    ]
+    // 843 + 500 + 0 + 0 + 832 + 343 + 143 = 2661
+    expect(bloco(dias, 500)).toBe(2661)
+  })
+})

@@ -17,6 +17,7 @@
  * LLM continua livre pra escrever preâmbulo + tabela de itens da refeição +
  * comentário motivacional. SÓ o card de balanço é cativo do sistema.
  */
+import { eatingBalance } from '@mpp/core'
 
 export interface BalanceCardData {
   /** Consumido hoje (kcal). */
@@ -74,11 +75,11 @@ export function renderBalanceCard(data: BalanceCardData): string {
   // ⚠️ Reverte o ajuste de 2026-05-19 que somava exercício aqui (inflava o
   //    "Restam" quando abaixo da meta). Ver docs/CALCULO-MPP.md (regra do card).
   if (data.caloriesTarget != null && data.caloriesTarget > 0) {
-    const eatingBalance = data.caloriesConsumed - data.caloriesTarget
-    if (eatingBalance > 0) {
-      lines.push(`🎯 Excedente: **${fmt(eatingBalance)} kcal**`)
+    const eb = eatingBalance(data.caloriesConsumed, data.caloriesTarget)
+    if (eb > 0) {
+      lines.push(`🎯 Excedente: **${fmt(eb)} kcal**`)
     } else {
-      lines.push(`🎯 Restam: **${fmt(-eatingBalance)} kcal**`)
+      lines.push(`🎯 Restam: **${fmt(-eb)} kcal**`)
     }
   }
 

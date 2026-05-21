@@ -9,7 +9,7 @@
  *   5. callAgent      — LLM com tools, loop até finalizar
  *   6. persistTurn    — salva mensagens in/out
  */
-import { computeMetrics, resolveProtocol } from '@mpp/core'
+import { computeMetrics, eatingBalance, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import {
@@ -440,14 +440,14 @@ export async function processMessage(
       // pro bloco, não pro "Restam". detectSentimentMismatch abaixo usa a mesma
       // base. (Antes usava consumido−meta−exercício, inflava o restante.)
       if (snapTyped.calories_target != null) {
-        const eatingBalance = snapTyped.calories_consumed - snapTyped.calories_target
-        const proseFix = reconcileBalanceProse(finalText, eatingBalance)
+        const eb = eatingBalance(snapTyped.calories_consumed, snapTyped.calories_target)
+        const proseFix = reconcileBalanceProse(finalText, eb)
         if (proseFix.replacements > 0) {
           finalText = proseFix.text
           await deps.supabase.from('product_events').insert({
             user_id: userId,
             event: 'llm.balance_prose_reconciled',
-            properties: { stage, replacements: proseFix.replacements, eating_balance: eatingBalance },
+            properties: { stage, replacements: proseFix.replacements, eating_balance: eb },
           })
         }
       }
@@ -501,7 +501,7 @@ export async function processMessage(
   // positivo em dias com exercício abaixo da meta.
   const eatingBalanceForSentiment =
     ctx.todaySnapshot?.calories_consumed != null && ctx.dailyTargets.calories_target != null
-      ? ctx.todaySnapshot.calories_consumed - ctx.dailyTargets.calories_target
+      ? eatingBalance(ctx.todaySnapshot.calories_consumed, ctx.dailyTargets.calories_target)
       : null
   if (eatingBalanceForSentiment != null) {
     const sentimentMismatch = detectSentimentMismatch(finalText, eatingBalanceForSentiment)

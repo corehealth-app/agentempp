@@ -7,3 +7,4 @@ export * from './progress-calc.js'
 // @deprecated — excluímos o de bloco do barrel para evitar ambiguidade até a
 // migração dos chamadores (próxima tarefa).
 export { creditDayToBloco, accumulateBloco, type DayCreditInput, type DayStatus } from './engine/bloco.js'
+export * from './engine/balance.js'

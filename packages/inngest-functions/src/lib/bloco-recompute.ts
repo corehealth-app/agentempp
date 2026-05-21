@@ -1,6 +1,5 @@
 import type { ServiceClient } from '@mpp/db'
-
-const KCAL_BLOCK = 7700
+import { creditDayToBloco, accumulateBloco } from '@mpp/core'
 
 export interface BlocoRecompute {
   userId: string
@@ -74,28 +73,27 @@ export async function recomputeUserBloco(
     }
   }
 
-  let total = 0
-  for (const s of rows) {
-    const con = s.calories_consumed ?? 0
-    const tgt = s.calories_target ?? 0
-    const bal = s.daily_balance ?? 0
-    const st = s.day_status
+  const credits = rows.map((s) => {
     const hasAct =
       (mealCounts[s.id] ?? 0) > 0 || (s.exercise_calories ?? 0) > 0 || !!s.training_done
-    let credit: number
-    if (!hasAct) credit = 0
-    else if (st === 'user_skipped') credit = Math.max(0, designDeficit - bal)
-    else if (tgt > 0 && con < 0.5 * tgt) credit = st === 'complete' || st == null ? designDeficit : 0
-    else if (st === 'incomplete_no_response') credit = Math.max(0, -bal)
-    else credit = Math.max(0, designDeficit - bal)
-    total += credit
-  }
-
-  const totalRounded = Math.round(total)
+    return creditDayToBloco({
+      hasActivity: hasAct,
+      dayStatus: (s.day_status ?? null) as
+        | 'complete'
+        | 'incomplete_no_response'
+        | 'user_skipped'
+        | null,
+      caloriesConsumed: s.calories_consumed ?? 0,
+      caloriesTarget: s.calories_target,
+      dailyBalance: s.daily_balance ?? 0,
+      designDeficit,
+    })
+  })
+  const { deficitBlock, blocksCompleted } = accumulateBloco(credits)
   return {
     userId,
     daysClosed: rows.length,
-    correctDeficitBlock: totalRounded % KCAL_BLOCK,
-    correctBlocksCompleted: Math.floor(totalRounded / KCAL_BLOCK),
+    correctDeficitBlock: deficitBlock,
+    correctBlocksCompleted: blocksCompleted,
   }
 }

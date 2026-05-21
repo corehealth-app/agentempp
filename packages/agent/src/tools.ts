@@ -1577,6 +1577,45 @@ export const marcaRefeicaoPulada: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// registra_metrica_diaria — captura leve de água/sono/passos quando mencionados
+// ----------------------------------------------------------------------------
+export const registraMetricaDiaria: ToolDefinition = {
+  name: 'registra_metrica_diaria',
+  description:
+    'Grava água (ml), sono (horas) e/ou passos do paciente no dia de HOJE, quando ele MENCIONAR esses dados ' +
+    '("bebi 2L de água", "dormi 7 horas", "fiz 8 mil passos"). Grava só o que o paciente informou (parcial ok). ' +
+    '⚠️ NÃO infira nem pergunte proativamente — registre apenas o que ele relatar espontaneamente. Não é meta ' +
+    'obrigatória nem entra no card de balanço.',
+  parameters: z.object({
+    water_ml: z.number().optional().describe('Água consumida hoje em ml (ex: 2000 = 2L)'),
+    sleep_hours: z.number().optional().describe('Horas de sono da última noite (ex: 7.5)'),
+    steps: z.number().int().optional().describe('Passos do dia'),
+  }),
+  execute: async (args, ctx) => {
+    if (args.water_ml == null && args.sleep_hours == null && args.steps == null) {
+      return { error: 'nenhuma métrica informada' }
+    }
+    const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const today = getLocalDateString(tz)
+    const patch: Record<string, number> = {}
+    if (args.water_ml != null) patch.water_consumed_ml = Math.round(args.water_ml)
+    if (args.sleep_hours != null) patch.sleep_hours = args.sleep_hours
+    if (args.steps != null) patch.steps = Math.round(args.steps)
+    // upsert: cria o snapshot de hoje se não existir (colunas NOT NULL têm default);
+    // se existir, atualiza só as métricas informadas (preserva consumo/proteína/etc).
+    await ctx.supabase
+      .from('daily_snapshots')
+      .upsert({ user_id: ctx.userId, date: today, ...patch }, { onConflict: 'user_id,date' })
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'metric.captured',
+      properties: { date: today, ...patch },
+    })
+    return { success: true, date: today, ...patch }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // consulta_resumo_periodo — médias/aderência de 7 ou 30 dias (determinístico)
 // ----------------------------------------------------------------------------
 export const consultaResumoPeriodo: ToolDefinition = {
@@ -1617,6 +1656,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   consultaProgresso,
   consultaMetricas,
   consultaResumoPeriodo,
+  registraMetricaDiaria,
   marcaRefeicaoPulada,
   atualizaDataUser,
   encerraAtendimento,

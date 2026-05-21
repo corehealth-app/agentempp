@@ -98,26 +98,31 @@ describe('computeProgress — streak', () => {
 
 describe('computeProgress — bloco 7700 kcal', () => {
   it('acumula déficit dentro do bloco', () => {
-    const next = computeProgress(snapshot({ dailyBalance: -500 }), emptyProgress)
+    const next = computeProgress(snapshot({ dailyBalance: -500 }), emptyProgress, undefined, 500)
     expect(next.deficitBlock).toBe(500)
     expect(next.blocksCompleted).toBe(0)
   })
 
   it('completa bloco quando atinge 7700', () => {
     const prev: UserProgress = { ...emptyProgress, deficitBlock: 7500 }
-    const next = computeProgress(snapshot({ dailyBalance: -300 }), prev)
+    const next = computeProgress(snapshot({ dailyBalance: -300 }), prev, undefined, 300)
     expect(next.blocksCompleted).toBe(1)
     expect(next.deficitBlock).toBe(100) // 7800 - 7700
   })
 
   it('saldo positivo (surplus) não diminui bloco existente', () => {
     const prev: UserProgress = { ...emptyProgress, deficitBlock: 1000 }
-    const next = computeProgress(snapshot({ dailyBalance: 500 }), prev)
+    const next = computeProgress(snapshot({ dailyBalance: 500 }), prev, undefined, 0)
     expect(next.deficitBlock).toBe(1000)
   })
 
   it('múltiplos blocos num único dia (caso extremo)', () => {
-    const next = computeProgress(snapshot({ dailyBalance: -KCAL_BLOCK * 2 - 100 }), emptyProgress)
+    const next = computeProgress(
+      snapshot({ dailyBalance: -KCAL_BLOCK * 2 - 100 }),
+      emptyProgress,
+      undefined,
+      KCAL_BLOCK * 2 + 100,
+    )
     expect(next.blocksCompleted).toBe(2)
     expect(next.deficitBlock).toBe(100)
   })
@@ -137,7 +142,7 @@ describe('computeProgress — badges', () => {
 
   it('Primeiro Bloco ao completar primeiro bloco', () => {
     const prev: UserProgress = { ...emptyProgress, deficitBlock: 7500 }
-    const next = computeProgress(snapshot({ dailyBalance: -300 }), prev)
+    const next = computeProgress(snapshot({ dailyBalance: -300 }), prev, undefined, 300)
     expect(next.badgesEarned).toContain('Primeiro Bloco')
   })
 

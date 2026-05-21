@@ -18,14 +18,15 @@ if (!SUPABASE_URL || !SERVICE_KEY || !OR_KEY) {
   process.exit(1)
 }
 
-// coleta recursiva de .md, ignorando Trash/bkp
+// coleta recursiva de .md, SÓ do método ("Regras do Agente"), excluindo
+// Trash/bkp e — CRÍTICO — dados de paciente (Users) e dumps de banco (Databases).
 function collectMd(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
-    if (/Trash|\[bkp\]/i.test(p)) continue
+    if (/Trash|\[bkp\]|\/Users\/|Users |Databases?\b/i.test(p)) continue
     const st = statSync(p)
     if (st.isDirectory()) collectMd(p, out)
-    else if (name.endsWith('.md')) out.push(p)
+    else if (name.endsWith('.md') && /Regras do Agente/i.test(p)) out.push(p)
   }
   return out
 }

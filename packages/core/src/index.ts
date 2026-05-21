@@ -10,3 +10,4 @@ export { creditDayToBloco, accumulateBloco, type DayCreditInput, type DayStatus 
 export * from './engine/balance.js'
 export * from './engine/targets.js'
 export * from './engine/aggregates.js'
+export * from './engine/protocols.js'

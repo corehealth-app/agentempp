@@ -28,13 +28,11 @@ import { createWorkerDeps } from '../lib/env.js'
  */
 export const dailyAuditFn = inngest.createFunction(
   { id: 'daily-audit', retries: 1, concurrency: { limit: 1 } },
-  // 3x/dia: 9h, 15h, 21h BRT (Eduardo 2026-05-20). Cron NATIVO do Inngest —
-  // antes era disparado pelo evento 'audit.daily.tick' via pg_cron (1x/dia 9h).
-  // O pg_cron antigo 'daily-audit-9h-brt' agora dispara um evento órfão
-  // (sem consumidor) — limpar com `cron.unschedule('daily-audit-9h-brt')`
-  // quando houver acesso SQL ao banco. Não causa efeito (Inngest ignora evento
-  // sem função ouvinte).
-  { cron: 'TZ=America/Sao_Paulo 0 9,15,21 * * *' },
+  // 5x/dia: 8h, 12h, 15h, 18h, 21h BRT (Eduardo 2026-05-21; antes 3x). Cron NATIVO
+  // do Inngest. Acompanha o piloto do D (encolhimento do prompt) + auto-corrige
+  // blocos (com circuit-breaker) e reporta no Telegram. pg_cron antigo
+  // 'daily-audit-9h-brt' já removido.
+  { cron: 'TZ=America/Sao_Paulo 0 8,12,15,18,21 * * *' },
   async ({ step, logger }) => {
     const { supabase } = createWorkerDeps()
 

@@ -5,7 +5,14 @@
  *
  * Formato compatível com OpenAI tool calling.
  */
-import { computeMetrics, computePeriodSummary, type SnapshotForAgg } from '@mpp/core'
+import {
+  computeMaintenanceAdjustment,
+  computeMetrics,
+  computePeriodSummary,
+  evaluateGainSafety,
+  evaluateGainVelocity,
+  type SnapshotForAgg,
+} from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
@@ -220,15 +227,36 @@ export const defineProtocolo: ToolDefinition = {
     goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),
   execute: async (args, ctx) => {
+    const updatePayload: Record<string, unknown> = {
+      current_protocol: args.protocol,
+      deficit_level: args.deficit_level ?? null,
+      goal_type: args.goal_type ?? null,
+      goal_value: args.goal_value ?? null,
+      updated_at: new Date().toISOString(),
+    }
+    // Sub-projeto C (wiring): ao entrar em ganho/manutenção, captura o BASELINE
+    // do ciclo (peso/BF/treino de início) pra computar velocidade e tetos de
+    // segurança na reavaliação (dia 14). Recomposição NÃO captura — intocado.
+    if (args.protocol === 'ganho_massa' || args.protocol === 'manutencao') {
+      const { data: cur } = await ctx.supabase
+        .from('user_profiles')
+        .select('weight_kg, body_fat_percent, training_frequency')
+        .eq('user_id', ctx.userId)
+        .maybeSingle()
+      const c = cur as {
+        weight_kg: number | null
+        body_fat_percent: number | null
+        training_frequency: number | null
+      } | null
+      updatePayload.cycle_start_weight_kg = c?.weight_kg ?? null
+      updatePayload.cycle_start_bf_percent = c?.body_fat_percent ?? null
+      updatePayload.cycle_start_training_freq = c?.training_frequency ?? null
+      updatePayload.cycle_start_at = new Date().toISOString()
+    }
     const { error } = await ctx.supabase
       .from('user_profiles')
-      .update({
-        current_protocol: args.protocol,
-        deficit_level: args.deficit_level ?? null,
-        goal_type: args.goal_type ?? null,
-        goal_value: args.goal_value ?? null,
-        updated_at: new Date().toISOString(),
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update(updatePayload as any)
       .eq('user_id', ctx.userId)
     if (error) throw error
 
@@ -1577,6 +1605,91 @@ export const marcaRefeicaoPulada: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// consulta_reavaliacao_protocolo — decisões determinísticas de ganho/manutenção
+// ----------------------------------------------------------------------------
+export const consultaReavaliacaoProtocolo: ToolDefinition = {
+  name: 'consulta_reavaliacao_protocolo',
+  description:
+    'Computa as decisões DETERMINÍSTICAS da reavaliação de GANHO DE MASSA ou MANUTENÇÃO ' +
+    '(velocidade de ganho, teto de gordura/IMC, ajuste calórico) a partir do baseline do ciclo e dos ' +
+    'valores atuais. Use na reavaliação (~14 dias), DEPOIS que o paciente informar peso/BF atuais. Só ' +
+    'para ganho_massa/manutencao (recomposição usa a escada de déficit). Os números vêm CALCULADOS — não ' +
+    'invente velocidade/ajuste de cabeça.',
+  parameters: z.object({
+    current_weight_kg: z.number().describe('Peso atual informado na reavaliação (kg)'),
+    current_bf_percent: z.number().optional().describe('BF% atual, se informado'),
+    current_training_freq: z
+      .number()
+      .int()
+      .optional()
+      .describe('Treinos de musculação/semana atuais (usado na manutenção)'),
+  }),
+  execute: async (args, ctx) => {
+    const { data: p } = await ctx.supabase
+      .from('user_profiles')
+      .select(
+        'sex, height_cm, current_protocol, training_frequency, cycle_start_weight_kg, cycle_start_bf_percent, cycle_start_training_freq, cycle_start_at',
+      )
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    const prof = p as {
+      sex: 'masculino' | 'feminino' | null
+      height_cm: number | null
+      current_protocol: 'recomposicao' | 'ganho_massa' | 'manutencao' | null
+      training_frequency: number | null
+      cycle_start_weight_kg: number | null
+      cycle_start_bf_percent: number | null
+      cycle_start_training_freq: number | null
+      cycle_start_at: string | null
+    } | null
+    if (!prof) return { error: 'profile_not_found' }
+    const protocol = prof.current_protocol
+    if (protocol !== 'ganho_massa' && protocol !== 'manutencao') {
+      return { error: 'tool_apenas_ganho_ou_manutencao', current_protocol: protocol }
+    }
+
+    if (protocol === 'ganho_massa') {
+      if (prof.cycle_start_weight_kg == null || prof.cycle_start_at == null) {
+        return {
+          error: 'sem_baseline_do_ciclo',
+          hint: 'baseline não capturado no início do ciclo; defina o protocolo de novo pra registrar o início',
+        }
+      }
+      const days = Math.max(
+        1,
+        Math.round((Date.now() - new Date(prof.cycle_start_at).getTime()) / 86_400_000),
+      )
+      const velocity = evaluateGainVelocity(prof.cycle_start_weight_kg, args.current_weight_kg, days)
+      let safety: ReturnType<typeof evaluateGainSafety> | null = null
+      if (
+        prof.sex &&
+        prof.height_cm &&
+        prof.cycle_start_bf_percent != null &&
+        args.current_bf_percent != null
+      ) {
+        const hM = Number(prof.height_cm) / 100
+        const imcStart = prof.cycle_start_weight_kg / (hM * hM)
+        const imcNow = args.current_weight_kg / (hM * hM)
+        safety = evaluateGainSafety({
+          sex: prof.sex,
+          bfStart: prof.cycle_start_bf_percent,
+          bfNow: args.current_bf_percent,
+          imcStart,
+          imcNow,
+        })
+      }
+      return { protocol, days_in_cycle: days, velocity, safety }
+    }
+
+    // manutenção: ajuste por treino a menos
+    const prevFreq = prof.cycle_start_training_freq ?? prof.training_frequency ?? 0
+    const nowFreq = args.current_training_freq ?? prof.training_frequency ?? prevFreq
+    const adjustment = computeMaintenanceAdjustment(prevFreq, nowFreq)
+    return { protocol, adjustment }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // registra_metrica_diaria — captura leve de água/sono/passos quando mencionados
 // ----------------------------------------------------------------------------
 export const registraMetricaDiaria: ToolDefinition = {
@@ -1656,6 +1769,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   consultaProgresso,
   consultaMetricas,
   consultaResumoPeriodo,
+  consultaReavaliacaoProtocolo,
   registraMetricaDiaria,
   marcaRefeicaoPulada,
   atualizaDataUser,

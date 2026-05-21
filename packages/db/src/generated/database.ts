@@ -1273,6 +1273,10 @@ export type Database = {
           body_fat_percent: number | null
           created_at: string
           current_protocol: Database["public"]["Enums"]["protocol_enum"] | null
+          cycle_start_at: string | null
+          cycle_start_bf_percent: number | null
+          cycle_start_training_freq: number | null
+          cycle_start_weight_kg: number | null
           deficit_level: number | null
           food_organization: string | null
           goal_type: Database["public"]["Enums"]["goal_type_enum"] | null
@@ -1299,6 +1303,10 @@ export type Database = {
           body_fat_percent?: number | null
           created_at?: string
           current_protocol?: Database["public"]["Enums"]["protocol_enum"] | null
+          cycle_start_at?: string | null
+          cycle_start_bf_percent?: number | null
+          cycle_start_training_freq?: number | null
+          cycle_start_weight_kg?: number | null
           deficit_level?: number | null
           food_organization?: string | null
           goal_type?: Database["public"]["Enums"]["goal_type_enum"] | null
@@ -1325,6 +1333,10 @@ export type Database = {
           body_fat_percent?: number | null
           created_at?: string
           current_protocol?: Database["public"]["Enums"]["protocol_enum"] | null
+          cycle_start_at?: string | null
+          cycle_start_bf_percent?: number | null
+          cycle_start_training_freq?: number | null
+          cycle_start_weight_kg?: number | null
           deficit_level?: number | null
           food_organization?: string | null
           goal_type?: Database["public"]["Enums"]["goal_type_enum"] | null

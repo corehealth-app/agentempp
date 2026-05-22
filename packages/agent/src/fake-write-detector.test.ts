@@ -40,6 +40,24 @@ describe('detectFakeWrite', () => {
     expect(r.kind).toBe('correction')
   })
 
+  it('flags card de refeição SEM palavra-chave (Roberto 22/05 14:02: "**Almoço:** ... Total refeição: 543")', () => {
+    const r = detectFakeWrite({
+      content:
+        '**Almoço:**\n• Feijão carioca (200 g): 152 kcal | 10g P\n• Arroz (100 g): 128 kcal\n\n**Total refeição: 543 kcal | 55g P | 55g C | 11g G.**',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
+  it('NÃO flaga card de refeição quando a tool FOI chamada', () => {
+    const r = detectFakeWrite({
+      content: '**Almoço:**\n• Arroz: 128 kcal\n**Total refeição: 543 kcal.**',
+      registrationToolCalled: true,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
   it('does NOT flag when a registration tool WAS called this turn', () => {
     const r = detectFakeWrite({
       content: `Corrigido.\n${CARD}`,

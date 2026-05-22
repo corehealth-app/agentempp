@@ -22,6 +22,12 @@ const REGISTRATION_CLAIM =
 
 // Sem \b no FIM: "substituí" termina em vogal acentuada (não-ASCII), e \b
 // ASCII falha entre "í" e espaço (ambos não-\w). Mesmo gotcha do correction-detector.
+// Card de refeição itemizado (Roberto 2026-05-22 14:02): o agente às vezes mostra
+// "**Almoço:** • item… **Total refeição: X**" SEM dizer "registrado/salvo" — é uma
+// afirmação IMPLÍCITA de registro. "Total refeição" não aparece no card de balanço
+// (que usa 🔥 Consumido), só no card de registro de refeição.
+const MEAL_CARD = /total\s+(?:da\s+)?refei[çc][ãa]o/i
+
 const CORRECTION_CLAIM =
   /\b(?:corrig(?:i|ido|ida|idos|idas)|corre[çc][ãa]o|substitu(?:í|i|ído|ido|ída|ida)|re-?registr(?:ei|ado|ada)|troquei|atualiz(?:ei|ado|ada))/i
 
@@ -52,6 +58,7 @@ export function detectFakeWrite({
   if (!hasFoodSignature) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }
-  if (REGISTRATION_CLAIM.test(content)) return { isFake: true, kind: 'registration' }
+  if (REGISTRATION_CLAIM.test(content) || MEAL_CARD.test(content))
+    return { isFake: true, kind: 'registration' }
   return { isFake: false, kind: null }
 }

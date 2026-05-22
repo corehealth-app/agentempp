@@ -15,6 +15,7 @@ import { loadDailyTargets } from './calc-targets.js'
 import {
   auditNumericClaims,
   detectDeficitRealMismatch,
+  detectPrematureBlockCompletion,
   detectSentimentMismatch,
   reconcileBalanceProse,
 } from './numeric-validator.js'
@@ -232,6 +233,7 @@ export async function processMessage(
   const max = configMax ?? deps.maxToolIterations ?? 5
   // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
   let fakeWriteRetried = false
+  let prematureBlockRetried = false
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
@@ -288,6 +290,26 @@ export async function processMessage(
             fake.kind === 'correction'
               ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
               : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.',
+        })
+        continue
+      }
+
+      // Guard de conclusão PREMATURA de bloco (Roberto 2026-05-22): o bloco só
+      // credita no fechamento da noite; no meio do dia o déficit está inflado
+      // (refeições ainda não feitas). Não deixar a prosa comemorar "bloco fechado
+      // hoje" contradizendo o card. 1 retry forçado.
+      if (detectPrematureBlockCompletion(content) && !prematureBlockRetried) {
+        prematureBlockRetried = true
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.premature_block_completion',
+          properties: { stage, content_preview: content.slice(0, 140) },
+        })
+        messages.push({ role: 'assistant', content })
+        messages.push({
+          role: 'user',
+          content:
+            'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
         })
         continue
       }

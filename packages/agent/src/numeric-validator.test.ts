@@ -3,9 +3,35 @@ import {
   validateNumericClaims,
   reconcileBalanceProse,
   detectDeficitRealMismatch,
+  detectPrematureBlockCompletion,
 } from './numeric-validator.js'
 
 const ctx = { protein_target: 178.2, calories_target: 1843 }
+
+describe('detectPrematureBlockCompletion', () => {
+  // O bloco só credita no FECHAMENTO do dia. Afirmar "bloco fechou/completou
+  // AGORA/hoje/com isso" durante o dia é prematuro (Roberto 22/05 12:31).
+  it('pega o caso Roberto: "bloco 7700 fechado hoje" + "segundo bloco completo"', () => {
+    expect(
+      detectPrematureBlockCompletion(
+        'Com isso, o déficit do dia ultrapassa 1.046 — bloco 7700 fechado hoje, Roberto. 🎉 Segundo bloco completo.',
+      ),
+    ).toBe(true)
+  })
+  it('NÃO pega a linha do card "Bloco 7700: 6.654 / 7.700 (86%)"', () => {
+    expect(detectPrematureBlockCompletion('📊 Bloco 7700: 6.654 / 7.700 (86%)')).toBe(false)
+  })
+  it('NÃO pega "faltam 1.046 kcal pra fechar o segundo bloco"', () => {
+    expect(detectPrematureBlockCompletion('faltam 1.046 kcal pra fechar o segundo bloco')).toBe(
+      false,
+    )
+  })
+  it('NÃO pega comemoração de bloco PASSADO ("você fechou seu 1o bloco ontem")', () => {
+    expect(
+      detectPrematureBlockCompletion('Parabéns — você fechou seu primeiro bloco ontem!'),
+    ).toBe(false)
+  })
+})
 
 describe('detectDeficitRealMismatch', () => {
   // "déficit real do dia" = crédito do bloco = designDeficit − dailyBalance.

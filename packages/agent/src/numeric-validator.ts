@@ -408,6 +408,28 @@ export function detectDeficitRealMismatch(
 }
 
 /**
+ * Detecta afirmação PREMATURA de conclusão de bloco (Roberto 2026-05-22 12:31):
+ * "bloco 7700 fechado hoje / segundo bloco completo" durante o DIA. O bloco só
+ * credita no FECHAMENTO da noite (daily-closer); no meio do dia o déficit está
+ * inflado (refeições ainda não feitas). O card mostra o valor real, mas a prosa
+ * comemora antes da hora — contradizendo o próprio card.
+ *
+ * Dispara quando há (afirmação de conclusão de bloco) E (marcador de "agora/hoje/
+ * com isso/com o treino") — pra NÃO pegar comemoração legítima de bloco passado
+ * ("você fechou seu 1º bloco ontem"). Usado só em turno ao vivo (dia aberto).
+ */
+const BLOCK_DONE =
+  /\bbloco\b[^.\n]{0,25}(fechad[oa]|complet[oa])|(fech|complet)\w+[^.\n]{0,12}\bbloco\b|(primeir|segund|terceir|quart|quint)[oa]\s+bloco\s+(completo|fechado)/i
+const NOW_MARKER = /\b(hoje|agora|com\s+isso|com\s+o\s+(exerc|treino)|acab\w+\s+de|já\s+ultrapass)/i
+
+export function detectPrematureBlockCompletion(text: string): boolean {
+  if (!text) return false
+  // Ignora a linha do card "Bloco 7700: X / 7700" (tem barra, não é afirmação).
+  const prose = text.replace(/Bloco\s*7\.?700[^\n]*\/[^\n]*/gi, '')
+  return BLOCK_DONE.test(prose) && NOW_MARKER.test(prose)
+}
+
+/**
  * Loga divergencias em product_events. Nao bloqueia. Nao retorna nada.
  */
 export async function auditNumericClaims(

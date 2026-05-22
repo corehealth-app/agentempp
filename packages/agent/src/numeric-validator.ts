@@ -365,6 +365,48 @@ export function reconcileBalanceProse(
 }
 
 /**
+ * Detecta o erro do "déficit real" (Roberto 2026-05-21): o LLM, ao narrar um
+ * dia COM exercício, calcula "déficit real = exercício − excedente" e ESQUECE
+ * que a meta já tem o déficit programado embutido. Ex: excedente 126, exercício
+ * 523 → escreveu "déficit real de 397" (523−126), quando o real é 897.
+ *
+ * O "déficit real do dia" = crédito do bloco = designDeficit − dailyBalance
+ * (dailyBalance = consumido − meta − exercício, negativo quando há déficit).
+ * Ex: 500 − (−397) = 897. É o mesmo número que o bloco credita no fechamento.
+ *
+ * Só dispara em afirmação EXPLÍCITA "déficit real ... de N kcal". Frases sem
+ * número ("déficit real fica positivo") não acusam. Detecta/loga — não reescreve.
+ */
+export interface DeficitRealMismatch {
+  claimed: number
+  correct: number
+  excerpt: string
+}
+
+export function detectDeficitRealMismatch(
+  text: string,
+  params: { designDeficit: number; dailyBalance: number },
+  opts: { tolerance?: number } = {},
+): DeficitRealMismatch | null {
+  if (!text) return null
+  const tol = opts.tolerance ?? 50
+  // "déficit real [do dia] [de] **N kcal**" — N em pt-BR (1.943 / 397).
+  const m = text.match(
+    /d[ée]ficit\s+real(?:\s+do\s+dia)?\s+(?:de\s+)?\*{0,2}\s*([\d.,]+)\s*kcal/i,
+  )
+  if (!m || m[1] == null) return null
+  const claimed = Number(m[1].replace(/\./g, '').replace(',', '.'))
+  if (!Number.isFinite(claimed)) return null
+  const correct = Math.max(0, Math.round(params.designDeficit - params.dailyBalance))
+  if (Math.abs(claimed - correct) <= tol) return null
+  return {
+    claimed,
+    correct,
+    excerpt: text.slice(Math.max(0, (m.index ?? 0) - 20), (m.index ?? 0) + m[0].length + 10),
+  }
+}
+
+/**
  * Loga divergencias em product_events. Nao bloqueia. Nao retorna nada.
  */
 export async function auditNumericClaims(

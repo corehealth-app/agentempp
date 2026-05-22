@@ -14,6 +14,7 @@ import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import {
   auditNumericClaims,
+  detectDeficitRealMismatch,
   detectSentimentMismatch,
   reconcileBalanceProse,
 } from './numeric-validator.js'
@@ -469,6 +470,31 @@ export async function processMessage(
             user_id: userId,
             event: 'llm.balance_prose_reconciled',
             properties: { stage, replacements: proseFix.replacements, eating_balance: eb },
+          })
+        }
+
+        // Detector do erro de "déficit real" (Roberto 2026-05-21): o LLM faz
+        // exercício − excedente e esquece o déficit já embutido na meta. O
+        // "déficit real do dia" = crédito do bloco = designDeficit − netBalance.
+        // Log-only por enquanto (medir antes de reescrever automático).
+        const designDeficit =
+          ctx.profile.currentProtocol === 'recomposicao' ? (ctx.profile.deficitLevel ?? 500) : 0
+        const netBalance =
+          snapTyped.calories_consumed - snapTyped.calories_target - snapTyped.exercise_calories
+        const drMismatch = detectDeficitRealMismatch(finalText, {
+          designDeficit,
+          dailyBalance: netBalance,
+        })
+        if (drMismatch) {
+          await deps.supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'llm.deficit_real_mismatch',
+            properties: {
+              stage,
+              claimed: drMismatch.claimed,
+              correct: drMismatch.correct,
+              excerpt: drMismatch.excerpt,
+            },
           })
         }
       }

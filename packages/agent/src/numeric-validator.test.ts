@@ -1,7 +1,51 @@
 import { describe, it, expect } from 'vitest'
-import { validateNumericClaims, reconcileBalanceProse } from './numeric-validator.js'
+import {
+  validateNumericClaims,
+  reconcileBalanceProse,
+  detectDeficitRealMismatch,
+} from './numeric-validator.js'
 
 const ctx = { protein_target: 178.2, calories_target: 1843 }
+
+describe('detectDeficitRealMismatch', () => {
+  // "déficit real do dia" = crédito do bloco = designDeficit − dailyBalance.
+  // O LLM erra fazendo exercício − excedente, esquecendo o déficit embutido na meta.
+  const params = { designDeficit: 500, dailyBalance: -397 } // correto = 897
+
+  it('pega o erro do Roberto 21/05: "déficit real de 397" quando o certo é 897', () => {
+    const r = detectDeficitRealMismatch(
+      'Com o exercício, o excedente de 126 kcal vira déficit real de **397 kcal** no dia.',
+      params,
+    )
+    expect(r).not.toBeNull()
+    expect(r?.claimed).toBe(397)
+    expect(r?.correct).toBe(897)
+  })
+
+  it('NÃO acusa quando o agente escreve o valor certo (897)', () => {
+    const r = detectDeficitRealMismatch('déficit real de 897 kcal no dia', params)
+    expect(r).toBeNull()
+  })
+
+  it('NÃO acusa quando não há número ("déficit real do dia fica positivo")', () => {
+    const r = detectDeficitRealMismatch('o déficit real do dia fica positivo', params)
+    expect(r).toBeNull()
+  })
+
+  it('NÃO acusa texto sem menção a "déficit real"', () => {
+    const r = detectDeficitRealMismatch('Almoço registrado, 521 kcal no total.', params)
+    expect(r).toBeNull()
+  })
+
+  it('entende separador de milhar pt-BR ("1.943")', () => {
+    const r = detectDeficitRealMismatch('déficit real de 1.943 kcal', {
+      designDeficit: 500,
+      dailyBalance: -397,
+    })
+    expect(r?.claimed).toBe(1943)
+    expect(r?.correct).toBe(897)
+  })
+})
 
 describe('validateNumericClaims protein_target — false positive fix', () => {
   it('NÃO dispara em proteína per-refeição', () => {

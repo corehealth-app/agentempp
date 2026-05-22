@@ -15,8 +15,10 @@
  * base do guard que força a tool a ser chamada.
  */
 
+// "salv*" incluído (Paulo 2026-05-22): o agente usa MUITO "Café/Almoço/Jantar
+// salvo" — era o buraco que mais perdia refeição (guard não pegava sem a tool).
 const REGISTRATION_CLAIM =
-  /\b(registr(?:ei|ado|ada|ados|adas)|anot(?:ei|ado|ada)|adicion(?:ei|ado|ada)\s+ao)\b/i
+  /\b(registr(?:ei|ado|ada|ados|adas)|anot(?:ei|ado|ada)|salv(?:o|a|os|as|ei|amos)|adicion(?:ei|ado|ada)\s+ao)\b/i
 
 // Sem \b no FIM: "substituí" termina em vogal acentuada (não-ASCII), e \b
 // ASCII falha entre "í" e espaço (ambos não-\w). Mesmo gotcha do correction-detector.

@@ -22,6 +22,15 @@ describe('detectFakeWrite', () => {
     expect(r.kind).toBe('correction')
   })
 
+  it('flags fake REGISTRATION via "salvo" (Paulo 21/05 jantar perdido)', () => {
+    const r = detectFakeWrite({
+      content: `Jantar salvo, Paulo.\n• Banana (2 un): 178 kcal\n${CARD}`,
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
   it('flags fake CORRECTION via "substituí"', () => {
     const r = detectFakeWrite({
       content: `Substituí o item, Roberto.\n${CARD}`,

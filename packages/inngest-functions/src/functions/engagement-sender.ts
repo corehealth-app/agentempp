@@ -7,6 +7,7 @@ import {
   loadDailyTargets,
   reconcileBalanceProse,
   replaceLooseBlockMentions,
+  reevaluationKickoff,
 } from '@mpp/agent'
 import { realDailyDeficit } from '@mpp/core'
 import {
@@ -442,11 +443,12 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   // ignorava a instrução injetada no prompt; agora o pedido de peso é GARANTIDO.
   // Anexa só no slot matinal quando o daily-closer marcou reevaluation.due.
   if (reevaluationDue) {
-    text +=
-      '\n\n🎯 Hoje fecha *14 dias* de acompanhamento — dia de reavaliar! ' +
-      'Me manda teu *peso atual* (e BF%/medidas, se você costuma medir) que eu ' +
-      'recalibro tua meta pros próximos 14 dias.'
-    await logEvent('reevaluation.prompt_appended', { slot })
+    // Script oficial do manual por protocolo (peso + 3 fotos + Q3 específica:
+    // fome/treinos/atividade). Antes pedia "peso e BF%/medidas" — fora do manual.
+    const proto = (profileRow as { current_protocol?: string | null } | null)
+      ?.current_protocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null | undefined
+    text += '\n\n' + reevaluationKickoff(proto)
+    await logEvent('reevaluation.prompt_appended', { slot, protocol: proto ?? null })
   }
 
   // ENVIA pelo WhatsApp via messaging provider

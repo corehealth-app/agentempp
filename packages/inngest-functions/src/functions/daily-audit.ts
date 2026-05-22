@@ -150,6 +150,28 @@ export const dailyAuditFn = inngest.createFunction(
         if (Math.abs(s.calories_consumed - sum) > 50) divergencias++
       }
 
+      // 11. Reavaliações disparadas há >24h e NÃO processadas (Roberto 2026-05-22).
+      // "due" sem nenhum cadastra_dados_iniciais/define_protocolo depois = recálculo
+      // não rodou. Janela 24-48h: dá 24h pro paciente responder antes de alertar.
+      const { data: dueData } = await supabase
+        .from('product_events')
+        .select('user_id, occurred_at')
+        .eq('event', 'reevaluation.due')
+        .gte('occurred_at', new Date(Date.now() - 48 * 3600 * 1000).toISOString())
+        .lt('occurred_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
+      const dues = (dueData ?? []) as Array<{ user_id: string; occurred_at: string }>
+      let reevaluationPending = 0
+      for (const d of dues) {
+        const { count: recomputed } = await supabase
+          .from('tools_audit')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', d.user_id)
+          .in('tool_name', ['cadastra_dados_iniciais', 'define_protocolo'])
+          .eq('success', true)
+          .gte('created_at', d.occurred_at)
+        if (!recomputed || recomputed === 0) reevaluationPending++
+      }
+
       return {
         pipelineErrors: pipelineErrors ?? 0,
         numericMismatch: numericMismatch ?? 0,
@@ -167,6 +189,7 @@ export const dailyAuditFn = inngest.createFunction(
         balance,
         snapshotIntegrityOk: divergencias === 0,
         snapshotDivergencias: divergencias,
+        reevaluationPending,
         turnos: costs.length,
       }
     })
@@ -264,6 +287,10 @@ export const dailyAuditFn = inngest.createFunction(
     if (!metrics.snapshotIntegrityOk) alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
     if (metrics.balance != null && metrics.balance < 20)
       alerts.push(`🔴 saldo OpenRouter $${metrics.balance.toFixed(2)} < $20`)
+    if (metrics.reevaluationPending > 0)
+      alerts.push(
+        `🔴 ${metrics.reevaluationPending} reavaliação(ões) sem recálculo há +24h — processar (peso/fome → meta)`,
+      )
 
     const overallStatus = alerts.length === 0 ? '✅ Tudo OK' : '⚠️ Atenção'
 
@@ -276,6 +303,7 @@ export const dailyAuditFn = inngest.createFunction(
       `• Numeric mismatch: ${metrics.numericMismatch} | Sentiment: ${metrics.sentimentMismatch}\n` +
       `• Composite rejected: ${metrics.compositeRejected}\n` +
       `• Snapshot integrity: ${metrics.snapshotIntegrityOk ? 'OK' : `❌ ${metrics.snapshotDivergencias} diff`}\n` +
+      `• Reavaliação pendente (+24h): ${metrics.reevaluationPending}\n` +
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke
         ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`

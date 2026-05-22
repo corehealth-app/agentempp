@@ -91,3 +91,4 @@ packages/db/src/generated/
 crons-*.png
 calc-*.png
 *-page.yml
+.audit-logs/

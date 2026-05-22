@@ -404,9 +404,23 @@ export const dailyAuditFn = inngest.createFunction(
     // pra Eduardo ter visibilidade diária do estado.
     const botToken = process.env.TELEGRAM_BOT_TOKEN
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
-    if (!botToken || !adminChatId) {
-      logger.warn('Telegram creds ausentes — relatório só no banco')
-      return { ok: true, alerts: alerts.length, sent: false }
+    // Destinatários: o admin do env (Eduardo) + extras configurados no banco
+    // (global_config 'audit.telegram_chat_ids', array de chat_ids). Assim dá pra
+    // adicionar/remover gente SEM deploy — só editando a config. ⚠️ Cada pessoa
+    // precisa ter dado /start no @MargotPiper_Bot antes (Telegram NÃO deixa bot
+    // iniciar conversa) — senão o envio pra ela falha com 403 (logado, não trava).
+    const { data: extraCfg } = await supabase
+      .from('global_config')
+      .select('value')
+      .eq('key', 'audit.telegram_chat_ids')
+      .maybeSingle()
+    const extraIds = Array.isArray((extraCfg as { value?: unknown } | null)?.value)
+      ? (extraCfg as { value: unknown[] }).value.map((v) => String(v))
+      : []
+    const recipients = [...new Set([...(adminChatId ? [adminChatId] : []), ...extraIds])]
+    if (!botToken || recipients.length === 0) {
+      logger.warn('Telegram creds/destinatários ausentes — relatório só no banco')
+      return { ok: true, alerts: alerts.length, sent: 0 }
     }
 
     // Envio RESILIENTE (bug 2026-05-21): antes era parse_mode:Markdown e lançava
@@ -414,32 +428,36 @@ export const dailyAuditFn = inngest.createFunction(
     // o Markdown legado (400) → o passo lançava → Inngest re-rodava a função
     // inteira → relatório duplicado no banco e ZERO entrega no Telegram.
     // Agora: tenta Markdown, cai pra texto puro se falhar, e NUNCA lança (um
-    // erro de envio não deve re-rodar a auditoria). Loga falha pra visibilidade.
+    // erro de envio não deve re-rodar a auditoria). Loga falha por destinatário.
     const sent = await step.run('send-telegram', async () => {
-      const post = (useMarkdown: boolean) =>
+      const postTo = (chatId: string, useMarkdown: boolean) =>
         fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: adminChatId,
+            chat_id: chatId,
             text: msg,
             ...(useMarkdown ? { parse_mode: 'Markdown' } : {}),
             disable_web_page_preview: true,
           }),
         })
-      let res = await post(true)
-      if (!res.ok) res = await post(false) // Markdown quebrou → texto puro
-      if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        await supabase.from('product_events').insert({
-          event: 'audit.telegram_failed',
-          properties: { status: res.status, body: body.slice(0, 200) },
-        })
-        return false
+      let okCount = 0
+      for (const chatId of recipients) {
+        let res = await postTo(chatId, true)
+        if (!res.ok) res = await postTo(chatId, false) // Markdown quebrou → texto puro
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          await supabase.from('product_events').insert({
+            event: 'audit.telegram_failed',
+            properties: { chat_id: chatId, status: res.status, body: body.slice(0, 200) },
+          })
+        } else {
+          okCount++
+        }
       }
-      return true
+      return okCount
     })
 
-    return { ok: true, alerts: alerts.length, sent, ...metrics }
+    return { ok: true, alerts: alerts.length, sent, recipients: recipients.length, ...metrics }
   },
 )

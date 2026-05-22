@@ -10,6 +10,7 @@ import { waQualityCheckFn } from './functions/wa-quality-check.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.js'
 import { dailyAuditFn } from './functions/daily-audit.js'
+import { sampleJudgeFn } from './functions/sample-judge.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -21,6 +22,7 @@ export const allFunctions = [
   pipelineHealthFn,
   openrouterBalanceCheckFn,
   dailyAuditFn,
+  sampleJudgeFn,
 ]
 
 export {
@@ -33,4 +35,5 @@ export {
   pipelineHealthFn,
   openrouterBalanceCheckFn,
   dailyAuditFn,
+  sampleJudgeFn,
 }

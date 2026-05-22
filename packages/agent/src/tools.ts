@@ -210,11 +210,11 @@ export const defineProtocolo: ToolDefinition = {
     'Grava o protocolo nutricional + meta DO PACIENTE. ' +
     '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada com peso/altura/BF; ' +
     '(2) você apresentou as 3 opções (recomposicao/ganho_massa/manutencao) e o paciente escolheu UMA explicitamente; ' +
-    '(3) você apresentou o nível de fome (leve/moderada/alta → 400/500/600 kcal de déficit) e ele escolheu — APENAS pra protocolo recomposicao. ' +
+    '(3) você apresentou o nível de fome (muita/moderada/pouca → 400/500/600 kcal de déficit; MAIS fome = MENOR déficit, pra proteger a adesão — regra do método) e ele escolheu — APENAS pra protocolo recomposicao. ' +
     'NÃO USE quando o paciente apenas DESEJOU genericamente ("quero emagrecer", "quero ganhar massa") — peça pra ele confirmar a opção. ' +
     'Parâmetros: ' +
     'protocol = "recomposicao" (déficit + preserva massa), "ganho_massa" (superávit), "manutencao" (sem ajuste). ' +
-    'deficit_level = kcal/dia de déficit, APENAS pra recomposicao. 400=fome leve, 500=moderada, 600=alta. Omita pra ganho_massa/manutencao. ' +
+    'deficit_level = kcal/dia de déficit, APENAS pra recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome → MENOR déficit, pra não quebrar a adesão — regra fixa do método). Omita pra ganho_massa/manutencao. ' +
     'goal_type = "BF" (% gordura alvo) ou "IMC" (IMC alvo). ' +
     'goal_value = número absoluto da meta (ex: BF=15 ou IMC=23). Omita se não chegou nesse nível de detalhe.',
   parameters: z.object({
@@ -222,7 +222,7 @@ export const defineProtocolo: ToolDefinition = {
     deficit_level: z
       .union([z.literal(400), z.literal(500), z.literal(600)])
       .optional()
-      .describe('Apenas para protocolo recomposicao. 400=fome leve, 500=moderada, 600=alta.'),
+      .describe('Apenas para protocolo recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome = menor déficit).'),
     goal_type: z.enum(['BF', 'IMC']).optional().describe('"BF"=alvo de % gordura corporal, "IMC"=alvo de IMC'),
     goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),

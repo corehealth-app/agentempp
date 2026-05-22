@@ -400,6 +400,11 @@ export async function processMessage(
   // engagement, resposta a "como tá meu progresso?"). Resolve as 11 alucinações
   // de Bloco 7700 que vimos em 7 dias (Roberto 5, Amanda 2, Erika 1, Paulo 2,
   // Luciana 1) — incluindo casos em texto livre sem chamada de tool de registro.
+  // Consumo FRESCO (pós-registro deste turno). Usado nos detectores de sentiment
+  // e numeric pra evitar falso-positivo do snapshot do INÍCIO do turno (Roberto
+  // 2026-05-22: detector acusava "excedente vs déficit" quando o paciente tinha
+  // registrado a refeição no próprio turno — a prosa batia com o card, o stale não).
+  let freshConsumed: number | null = ctx.todaySnapshot?.calories_consumed ?? null
   if (finalText && hasBalanceCard(finalText)) {
     const todayStr = getLocalDateString(ctx.timezone)
     const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
@@ -423,6 +428,7 @@ export async function processMessage(
         protein_target: number | null
         exercise_calories: number
       }
+      freshConsumed = snapTyped.calories_consumed
       const progTyped = progFresh as { deficit_block: number } | null
       const canonicalCard = renderBalanceCard({
         caloriesConsumed: snapTyped.calories_consumed,
@@ -574,7 +580,7 @@ export async function processMessage(
       age: m.age,
       current_streak: ctx.userProgress?.current_streak ?? null,
       level: ctx.userProgress?.level ?? null,
-      calories_consumed_today: ctx.todaySnapshot?.calories_consumed ?? null,
+      calories_consumed_today: freshConsumed,
       deficit_block: ctx.userProgress?.deficit_block ?? null,
     },
     { stage, model: lastResult.model },
@@ -588,8 +594,8 @@ export async function processMessage(
   // daily_balance (com exercício), o que divergia do card e gerava falso
   // positivo em dias com exercício abaixo da meta.
   const eatingBalanceForSentiment =
-    ctx.todaySnapshot?.calories_consumed != null && ctx.dailyTargets.calories_target != null
-      ? eatingBalance(ctx.todaySnapshot.calories_consumed, ctx.dailyTargets.calories_target)
+    freshConsumed != null && ctx.dailyTargets.calories_target != null
+      ? eatingBalance(freshConsumed, ctx.dailyTargets.calories_target)
       : null
   if (eatingBalanceForSentiment != null) {
     const sentimentMismatch = detectSentimentMismatch(finalText, eatingBalanceForSentiment)

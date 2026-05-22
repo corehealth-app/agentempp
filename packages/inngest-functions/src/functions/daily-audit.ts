@@ -257,8 +257,9 @@ export const dailyAuditFn = inngest.createFunction(
     else if (autofix.applied > 0)
       alerts.push(`🔧 ${autofix.applied} bloco(s) auto-corrigido(s): ${autofix.details.join(', ')}`)
     if (metrics.pipelineErrors > 0) alerts.push(`🔴 ${metrics.pipelineErrors} pipeline.error`)
-    if (metrics.numericMismatch > 3) alerts.push(`⚠️ ${metrics.numericMismatch} numeric_mismatch`)
-    if (metrics.sentimentMismatch > 0) alerts.push(`⚠️ ${metrics.sentimentMismatch} sentiment_mismatch`)
+    if (metrics.numericMismatch > 3) alerts.push(`⚠️ ${metrics.numericMismatch} numeric mismatch`)
+    if (metrics.sentimentMismatch > 0)
+      alerts.push(`⚠️ ${metrics.sentimentMismatch} sentiment mismatch`)
     if (metrics.compositeRejected > 2) alerts.push(`⚠️ ${metrics.compositeRejected} composite rejected`)
     if (!metrics.snapshotIntegrityOk) alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
     if (metrics.balance != null && metrics.balance < 20)
@@ -315,22 +316,37 @@ export const dailyAuditFn = inngest.createFunction(
       return { ok: true, alerts: alerts.length, sent: false }
     }
 
-    await step.run('send-telegram', async () => {
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: adminChatId,
-          text: msg,
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-        }),
-      })
+    // Envio RESILIENTE (bug 2026-05-21): antes era parse_mode:Markdown e lançava
+    // erro em !res.ok. Um underscore no conteúdo ("sentiment_mismatch") quebrava
+    // o Markdown legado (400) → o passo lançava → Inngest re-rodava a função
+    // inteira → relatório duplicado no banco e ZERO entrega no Telegram.
+    // Agora: tenta Markdown, cai pra texto puro se falhar, e NUNCA lança (um
+    // erro de envio não deve re-rodar a auditoria). Loga falha pra visibilidade.
+    const sent = await step.run('send-telegram', async () => {
+      const post = (useMarkdown: boolean) =>
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: adminChatId,
+            text: msg,
+            ...(useMarkdown ? { parse_mode: 'Markdown' } : {}),
+            disable_web_page_preview: true,
+          }),
+        })
+      let res = await post(true)
+      if (!res.ok) res = await post(false) // Markdown quebrou → texto puro
       if (!res.ok) {
-        throw new Error(`Telegram send failed ${res.status}`)
+        const body = await res.text().catch(() => '')
+        await supabase.from('product_events').insert({
+          event: 'audit.telegram_failed',
+          properties: { status: res.status, body: body.slice(0, 200) },
+        })
+        return false
       }
+      return true
     })
 
-    return { ok: true, alerts: alerts.length, sent: true, ...metrics }
+    return { ok: true, alerts: alerts.length, sent, ...metrics }
   },
 )

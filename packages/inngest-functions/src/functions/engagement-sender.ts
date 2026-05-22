@@ -340,7 +340,11 @@ async function maybeEngageUser(
   // `reevaluation.due` (não resolvida nas últimas 36h) E é o slot matinal,
   // injeta instrução pro LLM pedir o peso atualizado. Quando paciente responde
   // com peso, cadastra_dados_iniciais recalcula meta/protocolo automaticamente.
-  let reevaluationBlock = ''
+  // REAVALIAÇÃO 14 DIAS: o daily-closer marca `reevaluation.due`. ANTES a gente
+  // injetava a instrução no prompt, mas o LLM IGNORAVA (Roberto 22/05 — mandou só
+  // "bom dia" sem pedir o peso). AGORA só marcamos o flag e ANEXAMOS uma linha
+  // fixa garantida ao final do texto (o LLM não decide se manda).
+  let reevaluationDue = false
   if (slot === 'cafe_da_manha') {
     const { data: revalEvents } = await supabase
       .from('product_events')
@@ -349,15 +353,7 @@ async function maybeEngageUser(
       .eq('event', 'reevaluation.due')
       .gte('occurred_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString())
       .limit(1)
-    if (revalEvents && revalEvents.length > 0) {
-      reevaluationBlock =
-        `\n\n⚠️ HOJE É DIA DE REAVALIAÇÃO (14 dias de acompanhamento). ` +
-        `Na sua mensagem matinal, ALÉM do bom dia, PEÇA ao paciente o peso atual ` +
-        `(e BF%/medidas se ele costuma medir) pra recalcular a meta e ajustar o ` +
-        `protocolo dos próximos 14 dias. Tom: comemorativo (marco de 2 semanas), ` +
-        `não burocrático. Ex: "Hoje fecha 14 dias firmes — bora reavaliar? Me manda ` +
-        `teu peso atual que eu recalibro tua meta."`
-    }
+    reevaluationDue = !!(revalEvents && revalEvents.length > 0)
   }
 
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
@@ -381,7 +377,7 @@ XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
 
-⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${reevaluationBlock}
+⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.
 `.trim()
 
   const result = await llm.complete({
@@ -440,6 +436,17 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
         daily_balance: yesterdayBalance,
       })
     }
+  }
+
+  // REAVALIAÇÃO 14 DIAS — linha DETERMINÍSTICA (Roberto 2026-05-22). O LLM
+  // ignorava a instrução injetada no prompt; agora o pedido de peso é GARANTIDO.
+  // Anexa só no slot matinal quando o daily-closer marcou reevaluation.due.
+  if (reevaluationDue) {
+    text +=
+      '\n\n🎯 Hoje fecha *14 dias* de acompanhamento — dia de reavaliar! ' +
+      'Me manda teu *peso atual* (e BF%/medidas, se você costuma medir) que eu ' +
+      'recalibro tua meta pros próximos 14 dias.'
+    await logEvent('reevaluation.prompt_appended', { slot })
   }
 
   // ENVIA pelo WhatsApp via messaging provider

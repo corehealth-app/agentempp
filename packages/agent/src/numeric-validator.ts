@@ -15,6 +15,7 @@
  */
 
 import type { Json, ServiceClient } from '@mpp/db'
+import { realDailyDeficit } from '@mpp/core'
 
 // Config cache (60s) — controla threshold + on/off via /settings/global
 interface ValidatorConfig {
@@ -397,7 +398,7 @@ export function detectDeficitRealMismatch(
   if (!m || m[1] == null) return null
   const claimed = Number(m[1].replace(/\./g, '').replace(',', '.'))
   if (!Number.isFinite(claimed)) return null
-  const correct = Math.max(0, Math.round(params.designDeficit - params.dailyBalance))
+  const correct = Math.max(0, Math.round(realDailyDeficit(params.designDeficit, params.dailyBalance)))
   if (Math.abs(claimed - correct) <= tol) return null
   return {
     claimed,

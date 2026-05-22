@@ -8,6 +8,7 @@ import {
   reconcileBalanceProse,
   replaceLooseBlockMentions,
 } from '@mpp/agent'
+import { realDailyDeficit } from '@mpp/core'
 import {
   createMessagingProvider,
   sendHumanized,
@@ -294,24 +295,42 @@ async function maybeEngageUser(
   const yesterdayLocalDate = yesterdayDate.toISOString().slice(0, 10)
   const { data: snapYesterday } = await supabase
     .from('daily_snapshots')
-    .select('calories_consumed, calories_target, daily_balance')
+    .select('calories_consumed, calories_target, daily_balance, exercise_calories')
     .eq('user_id', userId)
     .eq('date', yesterdayLocalDate)
     .maybeSingle()
   const yesterdayBalance = (snapYesterday as { daily_balance?: number } | null)?.daily_balance
 
+  // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
+  const { data: profileRow } = await supabase
+    .from('user_profiles')
+    .select('current_protocol, deficit_level')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const designDeficit =
+    (profileRow as { current_protocol?: string | null } | null)?.current_protocol === 'recomposicao'
+      ? ((profileRow as { deficit_level?: number | null } | null)?.deficit_level ?? 500)
+      : 0
+
   // FIX #3 (Paulo 2026-05-20 11:17): o LLM recebia o balanço cru ("458 kcal,
   // negativo=déficit") e mesmo assim chamou +458 (superávit) de "déficit". Agora
   // o RÓTULO é decidido em código e entregue pronto — o LLM não decide o sinal.
+  // Déficit REAL de ontem = vs MANUTENÇÃO (o que de fato emagrece e o bloco
+  // credita), NÃO o saldo vs meta. Decisão Roberto 2026-05-22: comunicar o real
+  // (ex: 897), não o 397; e creditar o exercício quando houve. O RÓTULO é
+  // decidido em código — o LLM não decide número nem sinal (FIX #3 2026-05-20).
   let yesterdayLabel: string | null = null
   if (yesterdayBalance != null) {
-    const mag = Math.abs(Math.round(yesterdayBalance))
+    const realDef = Math.round(realDailyDeficit(designDeficit, yesterdayBalance))
+    const yExercise =
+      (snapYesterday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
+    const treinoAjudou = yExercise > 0 ? ' — o treino ajudou a chegar nesse total' : ''
     yesterdayLabel =
-      yesterdayBalance < -50
-        ? `déficit de ${mag} kcal (comeu ABAIXO da meta — bom pro processo)`
-        : yesterdayBalance > 50
-          ? `superávit de ${mag} kcal (comeu ACIMA da meta — NÃO chame de déficit; o bloco ainda pode creditar pois a meta é menor que a manutenção, mas o saldo do dia foi positivo)`
-          : `praticamente na meta (${mag} kcal de diferença)`
+      realDef > 50
+        ? `déficit real de ${realDef} kcal vs manutenção (o que de fato emagrece e alimenta o bloco 7700)${treinoAjudou}`
+        : realDef < -50
+          ? `superávit de ${Math.abs(realDef)} kcal acima da manutenção (comeu mais do que gastou — NÃO chame de déficit)`
+          : `praticamente em manutenção (${Math.abs(realDef)} kcal de diferença)`
   }
 
   const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'

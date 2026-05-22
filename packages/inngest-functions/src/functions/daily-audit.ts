@@ -1,3 +1,4 @@
+import { looksLikeRegistrationRequest } from '@mpp/agent'
 import { inngest } from '../client.js'
 import { recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
@@ -172,7 +173,66 @@ export const dailyAuditFn = inngest.createFunction(
         if (!recomputed || recomputed === 0) reevaluationPending++
       }
 
+      // 12. Pedido de registro de refeição SEM resposta NEM meal_log (caso Erika
+      // 2026-05-17: pediu 3× "Registre meu almoço" e o agente ficou MUDO →
+      // refeição perdida por silêncio). O guard fake-write NÃO pega isso (não há
+      // texto do agente afirmando registro). Janela: inbounds entre 24h e SILENCE_H
+      // atrás (folga pro agente responder antes de alertar). Flag se, na janela de
+      // SILENCE_H após o pedido, NÃO houve nem outbound nem meal_log. Conta por
+      // USUÁRIO (1 basta), pra não inflar com pedidos repetidos.
+      const SILENCE_H = 3
+      const { data: inboundRows } = await supabase
+        .from('messages')
+        .select('user_id, content, content_type, created_at')
+        .eq('direction', 'in')
+        .gte('created_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
+        .lt('created_at', new Date(Date.now() - SILENCE_H * 3600 * 1000).toISOString())
+        .order('created_at', { ascending: true })
+      const inboundMsgs = (inboundRows ?? []) as Array<{
+        user_id: string
+        content: string | null
+        content_type: string
+        created_at: string
+      }>
+      const unansweredUserIds = new Set<string>()
+      for (const m of inboundMsgs) {
+        if (unansweredUserIds.has(m.user_id)) continue
+        if (!looksLikeRegistrationRequest({ content: m.content, contentType: m.content_type }))
+          continue
+        const until = new Date(
+          new Date(m.created_at).getTime() + SILENCE_H * 3600 * 1000,
+        ).toISOString()
+        const { count: replied } = await supabase
+          .from('messages')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('user_id', m.user_id)
+          .eq('direction', 'out')
+          .gt('created_at', m.created_at)
+          .lte('created_at', until)
+        if (replied && replied > 0) continue
+        const { count: logged } = await supabase
+          .from('meal_logs')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('user_id', m.user_id)
+          .gt('created_at', m.created_at)
+          .lte('created_at', until)
+        if (logged && logged > 0) continue
+        unansweredUserIds.add(m.user_id)
+      }
+      let unansweredNames = ''
+      if (unansweredUserIds.size > 0) {
+        const { data: us } = await supabase
+          .from('users')
+          .select('name')
+          .in('id', [...unansweredUserIds])
+        unansweredNames = ((us ?? []) as Array<{ name: string | null }>)
+          .map((u) => u.name ?? '?')
+          .join(', ')
+      }
+
       return {
+        unansweredRegistrations: unansweredUserIds.size,
+        unansweredNames,
         pipelineErrors: pipelineErrors ?? 0,
         numericMismatch: numericMismatch ?? 0,
         sentimentMismatch: sentimentMismatch ?? 0,
@@ -291,6 +351,10 @@ export const dailyAuditFn = inngest.createFunction(
       alerts.push(
         `🔴 ${metrics.reevaluationPending} reavaliação(ões) sem recálculo há +24h — processar (peso/fome → meta)`,
       )
+    if (metrics.unansweredRegistrations > 0)
+      alerts.push(
+        `🔴 ${metrics.unansweredRegistrations} pedido(s) de registro SEM resposta nem meal_log (agente mudo → refeição perdida): ${metrics.unansweredNames}`,
+      )
 
     const overallStatus = alerts.length === 0 ? '✅ Tudo OK' : '⚠️ Atenção'
 
@@ -304,6 +368,7 @@ export const dailyAuditFn = inngest.createFunction(
       `• Composite rejected: ${metrics.compositeRejected}\n` +
       `• Snapshot integrity: ${metrics.snapshotIntegrityOk ? 'OK' : `❌ ${metrics.snapshotDivergencias} diff`}\n` +
       `• Reavaliação pendente (+24h): ${metrics.reevaluationPending}\n` +
+      `• Registro sem resposta: ${metrics.unansweredRegistrations}${metrics.unansweredRegistrations > 0 ? ` (${metrics.unansweredNames})` : ''}\n` +
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke
         ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`

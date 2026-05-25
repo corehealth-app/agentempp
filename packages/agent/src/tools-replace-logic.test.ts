@@ -41,6 +41,8 @@ interface CapturedEvent {
 
 function makeContextAndSupabase(opts: MockOptions) {
   const events: CapturedEvent[] = []
+  const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
+  const mealInserts: Array<Record<string, unknown>> = []
   let finalReplace: boolean | undefined = opts.llmSentReplace
 
   // Helper que retorna chain "Supabase-like" que ignora qualquer método
@@ -79,7 +81,10 @@ function makeContextAndSupabase(opts: MockOptions) {
         }
         return {
           ...((mealChain(false) as object)),
-          insert: () => chain([]),
+          insert: (row: Record<string, unknown> | Record<string, unknown>[]) => {
+            for (const r of Array.isArray(row) ? row : [row]) mealInserts.push(r)
+            return chain([])
+          },
           delete: () => chain([]),
         }
       }
@@ -110,7 +115,8 @@ function makeContextAndSupabase(opts: MockOptions) {
         upsert: () => chain([]),
       }
     },
-    rpc: async (fn: string) => {
+    rpc: async (fn: string, params?: Record<string, unknown>) => {
+      rpcCalls.push({ fn, params: params ?? {} })
       if (fn === 'search_food_trgm') return { data: [], error: null }
       if (fn === 'snapshot_add_meal')
         return {
@@ -124,6 +130,8 @@ function makeContextAndSupabase(opts: MockOptions) {
   return {
     supabase,
     events,
+    rpcCalls,
+    mealInserts,
     ctx: {
       supabase,
       userId: 'user-test',
@@ -455,5 +463,57 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
       ctx,
     )
     expect(events.find((e) => e.event === 'tool.items_deduped')).toBeUndefined()
+  })
+})
+
+describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de dia anterior)', () => {
+  it('consumed_date de ontem → snapshot e consumed_at no DIA CERTO, não no dia da gravação', async () => {
+    const { ctx, rpcCalls, mealInserts } = makeContextAndSupabase({})
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        items: [{ food_name: 'arroz branco cozido', quantity_g: 100 }],
+        consumed_date: '2026-05-20',
+      },
+      ctx,
+    )
+    // snapshot_add_meal (incremento, p_kcal>=0) deve ir pro dia 20, não pra hoje
+    const add = rpcCalls.find(
+      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
+    )
+    expect(add?.params.p_date).toBe('2026-05-20')
+    // o meal_log gravado deve ter consumed_at caindo no dia 20
+    expect(mealInserts.length).toBeGreaterThan(0)
+    expect(String(mealInserts[0]?.consumed_at)).toContain('2026-05-20')
+  })
+
+  it('sem consumed_date → usa HOJE (não 2026-05-20)', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({})
+    await registraRefeicao.execute(
+      { meal_type: 'jantar', items: [{ food_name: 'arroz branco cozido', quantity_g: 100 }] },
+      ctx,
+    )
+    const add = rpcCalls.find(
+      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
+    )
+    expect(add?.params.p_date).not.toBe('2026-05-20')
+    expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('consumed_date inválido (formato errado) → cai pra hoje (ignora)', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({})
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        items: [{ food_name: 'arroz branco cozido', quantity_g: 100 }],
+        consumed_date: 'ontem',
+      },
+      ctx,
+    )
+    const add = rpcCalls.find(
+      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
+    )
+    expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(add?.params.p_date).not.toBe('ontem')
   })
 })

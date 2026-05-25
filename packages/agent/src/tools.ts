@@ -18,7 +18,7 @@ import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
-import { countryToTimezone, getLocalDateString } from './timezone-utils.js'
+import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-utils.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 
 export interface ToolContext {
@@ -306,6 +306,7 @@ export const registraRefeicao: ToolDefinition = {
     '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
     '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' + +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
+    '📅 DIA DA REFEIÇÃO: por padrão assume HOJE. Se o paciente disser que a refeição foi de um DIA ANTERIOR ("isso foi ontem", "comi ontem à noite", "esse jantar foi de ontem"), passe `consumed_date` (YYYY-MM-DD) com a data certa — senão a refeição entra no dia errado. ' +
     '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca", ou "é cuscuz, não farofa", ou "o pão é francês"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Inclui também quando ele diz "apenas N unidades" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.',
   parameters: z.object({
     meal_type: z
@@ -351,9 +352,33 @@ export const registraRefeicao: ToolDefinition = {
       .describe(
         'Correções de IDENTIDADE de alimento que o paciente fez (ex: "batata" → "mandioca"). O sistema aprende e reaplica. NÃO use pra mudança de quantidade.',
       ),
+    consumed_date: z
+      .string()
+      .optional()
+      .describe(
+        'Data em que a refeição foi CONSUMIDA, formato YYYY-MM-DD. Use APENAS quando a refeição foi de um DIA ANTERIOR (paciente diz "isso foi ontem", "comi ontem à noite", "esse jantar foi de ontem"). Omita pra refeição de HOJE.',
+      ),
   }),
   execute: async (args, ctx) => {
-    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
+    const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const today = getLocalDateString(tz)
+    // Fix B (2026-05-25): a refeição pode ser de um DIA ANTERIOR ("isso foi de
+    // ontem" — caso real do Paulo). Antes a tool SEMPRE usava o dia da GRAVAÇÃO
+    // e nunca gravava consumed_at (caía no DEFAULT now()), então "registra o
+    // jantar de ontem" era IMPOSSÍVEL e a única saída era backfill manual (fonte
+    // nº1 de inconsistência). Agora respeita `consumed_date` em tudo: snapshot do
+    // dia certo + consumed_at explícito.
+    const effectiveDate =
+      args.consumed_date && /^\d{4}-\d{2}-\d{2}$/.test(args.consumed_date)
+        ? args.consumed_date
+        : today
+    // consumed_at: hoje → agora; dia passado → meio-dia LOCAL daquele dia (cai
+    // na data certa em qualquer fuso, e o recompute por consumed_at do closer/
+    // auditoria fica fiel).
+    const consumedAtIso =
+      effectiveDate === today
+        ? new Date().toISOString()
+        : `${effectiveDate}T12:00:00${getTzOffset(tz)}`
 
     // Idempotência: se essa msg já gerou meal_logs, skipa snapshot increment.
     // Protege contra retry de Inngest e LLM emitindo a mesma tool 2x no turno.
@@ -748,7 +773,7 @@ export const registraRefeicao: ToolDefinition = {
         .from('daily_snapshots')
         .select('id')
         .eq('user_id', ctx.userId)
-        .eq('date', today)
+        .eq('date', effectiveDate)
         .maybeSingle()
       const snapId = (snapToday as { id: string } | null)?.id ?? null
       type RemoveRow = {
@@ -806,7 +831,7 @@ export const registraRefeicao: ToolDefinition = {
           rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
         }).rpc('snapshot_add_meal', {
           p_user_id: ctx.userId,
-          p_date: today,
+          p_date: effectiveDate,
           p_kcal: -removed.kcal,
           p_protein: -removed.prot,
           p_carbs: -removed.carb,
@@ -828,7 +853,7 @@ export const registraRefeicao: ToolDefinition = {
           event: 'tool.replace_without_target',
           properties: {
             meal_type: args.meal_type,
-            date: today,
+            date: effectiveDate,
             note: 'replace=true mas nenhum meal_log existente desse tipo hoje',
           },
         })
@@ -968,7 +993,7 @@ export const registraRefeicao: ToolDefinition = {
         .from('daily_snapshots')
         .select('id')
         .eq('user_id', ctx.userId)
-        .eq('date', today)
+        .eq('date', effectiveDate)
         .maybeSingle()
       const existingSnapId = (snapToday as { id: string } | null)?.id ?? null
       if (existingSnapId) {
@@ -1004,7 +1029,7 @@ export const registraRefeicao: ToolDefinition = {
               properties: {
                 meal_type: args.meal_type,
                 provider_message_id: ctx.providerMessageId ?? null,
-                date: today,
+                date: effectiveDate,
                 skipped_count: skipped.length,
                 skipped,
                 note: 'item idêntico (nome+qtd) já registrado hoje nesse meal_type por msg anterior — não reinsere (caso Paulo 2026-05-24)',
@@ -1050,7 +1075,7 @@ export const registraRefeicao: ToolDefinition = {
       }>
     }).rpc('snapshot_add_meal', {
       p_user_id: ctx.userId,
-      p_date: today,
+      p_date: effectiveDate,
       p_kcal: totalsToAdd.kcal,
       p_protein: totalsToAdd.protein_g,
       p_carbs: totalsToAdd.carbs_g,
@@ -1081,6 +1106,7 @@ export const registraRefeicao: ToolDefinition = {
         fat_g: item.fat_g,
         source: item.source,
         confidence: item.similarity,
+        consumed_at: consumedAtIso,
         raw_provider_message_id: ctx.providerMessageId ?? null,
       })
     }

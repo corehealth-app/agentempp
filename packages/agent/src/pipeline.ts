@@ -26,6 +26,11 @@ import {
   replaceLooseBlockMentions,
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
+import {
+  composePostRegistrationMessage,
+  isPureRegistrationTurn,
+  type RegistrationEntry,
+} from './post-registration-message.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -395,6 +400,86 @@ export async function processMessage(
           success: false,
           error: err,
         })
+      }
+    }
+
+    // ── FASE 1 (Roberto 2026-05-25): REGISTRO PURO → resposta montada pelo SISTEMA ──
+    // Se este turno foi SÓ registra_refeicao/registra_treino (com sucesso) e o
+    // paciente NÃO fez pergunta, o sistema compõe a resposta (frase fixa + tabela
+    // + card canônico) e PULA a 2ª chamada do LLM — que só re-redigia (e às vezes
+    // errava/variava). Coaching/conversa segue com a IA nos demais turnos.
+    // Gatilho conservador: qualquer outra tool no turno, ou "?" na msg do paciente,
+    // cai no fluxo normal (LLM responde). O card determinístico ainda passa pelo
+    // FIX C pós-loop (idempotente) + auditorias.
+    const iterEntries = toolCallsSummary.slice(-result.toolCalls.length)
+    if (isPureRegistrationTurn(iterEntries, input.text)) {
+      const todayStr = getLocalDateString(ctx.timezone)
+      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
+        deps.supabase
+          .from('daily_snapshots')
+          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
+          .eq('user_id', userId)
+          .eq('date', todayStr)
+          .maybeSingle(),
+        deps.supabase.from('user_progress').select('deficit_block').eq('user_id', userId).maybeSingle(),
+      ])
+      if (snapDet) {
+        const s = snapDet as {
+          calories_consumed: number
+          calories_target: number | null
+          protein_g: number
+          protein_target: number | null
+          exercise_calories: number
+        }
+        const registrations: RegistrationEntry[] = iterEntries.map((e) => {
+          if (e.name === 'registra_treino') {
+            const a = (e.arguments ?? {}) as { workout_type?: string; duration_min?: number }
+            const r = (e.result ?? {}) as { kcal_burned?: number }
+            return {
+              tool: 'registra_treino',
+              workoutType: a.workout_type ?? null,
+              durationMin: a.duration_min ?? null,
+              kcalBurned: r.kcal_burned ?? 0,
+            }
+          }
+          const a = (e.arguments ?? {}) as { meal_type?: string | null }
+          const r = (e.result ?? {}) as {
+            already_logged?: boolean
+            meal?: { items?: RegistrationEntry['items']; totals?: RegistrationEntry['totals'] }
+          }
+          return {
+            tool: 'registra_refeicao',
+            mealType: a.meal_type ?? null,
+            items: r.meal?.items ?? [],
+            totals: r.meal?.totals,
+            alreadyLogged: r.already_logged === true,
+          }
+        })
+        finalText = composePostRegistrationMessage({
+          registrations,
+          card: {
+            caloriesConsumed: s.calories_consumed,
+            caloriesTarget: s.calories_target,
+            proteinG: Number(s.protein_g),
+            proteinTarget: s.protein_target,
+            exerciseCalories: s.exercise_calories,
+            deficitBlock: (progDet as { deficit_block: number } | null)?.deficit_block ?? 0,
+            protocol:
+              (ctx.profile.currentProtocol as
+                | 'recomposicao'
+                | 'ganho_massa'
+                | 'manutencao'
+                | null) ?? null,
+            last14d: ctx.last14d,
+          },
+        })
+        messages.push({ role: 'assistant', content: finalText })
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.deterministic_registration',
+          properties: { stage, tools: iterEntries.map((e) => e.name) },
+        })
+        break
       }
     }
   }

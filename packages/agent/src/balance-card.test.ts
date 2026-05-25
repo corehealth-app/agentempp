@@ -198,4 +198,18 @@ describe('replaceLooseBlockMentions — menções soltas de Bloco 7700', () => {
     expect(out.replacements).toBeGreaterThanOrEqual(2)
     expect(out.text).not.toContain('3.000')
   })
+
+  // Bug Roberto 2026-05-25: engagement "bom dia" disse "2.958 de 7.700 (38%)" quando
+  // o real era 1.235 (16%). O guard NÃO pegou porque a frase tinha palavras entre
+  // "bloco 7700" e o número ("agora em") e usava "de" no lugar de "/".
+  it('Roberto 2026-05-25: "bloco 7700 agora em 2.958 kcal de 7.700 (38%)" → corrige p/ real', () => {
+    const t =
+      'Ontem você fechou com **479 kcal de déficit** — saldo no bloco 7700 agora em **2.958 kcal de 7.700** (38%).'
+    const out = replaceLooseBlockMentions(t, 1235)
+    expect(out.replacements).toBeGreaterThanOrEqual(1)
+    expect(out.text).not.toContain('2.958')
+    expect(out.text).toContain('1.235')
+    expect(out.text).not.toContain('38%')
+    expect(out.text).toContain('16%')
+  })
 })

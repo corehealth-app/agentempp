@@ -1,7 +1,24 @@
-import { looksLikeRegistrationRequest } from '@mpp/agent'
+import { getTzOffset, looksLikeRegistrationRequest } from '@mpp/agent'
 import { inngest } from '../client.js'
 import { recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
+
+/**
+ * Gap de integridade de UM snapshot: |consumido_no_snapshot − soma_dos_logs|.
+ *
+ * Função pura (testável) — a soma dos logs DEVE vir filtrada por `consumed_at`
+ * caindo na data local do snapshot (mesma invariante do daily-closer), NÃO por
+ * `snapshot_id`. Ver comentário na coleta de métricas pro porquê.
+ */
+export function snapshotIntegrityGap(
+  snapshotConsumed: number,
+  logsSummedByConsumedAt: number,
+): number {
+  return Math.abs((Number(snapshotConsumed) || 0) - (Number(logsSummedByConsumedAt) || 0))
+}
+
+/** Tolerância de divergência snapshot vs meal_logs (kcal). */
+export const SNAPSHOT_INTEGRITY_TOL_KCAL = 50
 
 /**
  * Worker: auditoria automática diária do agente.
@@ -130,25 +147,63 @@ export const dailyAuditFn = inngest.createFunction(
         .limit(1)
       const balance = (balanceData?.[0]?.properties?.limit_remaining_usd as number) ?? null
 
-      // 10. Integridade snapshots últimos 3d
+      // 10. Integridade snapshots últimos 3d.
+      //
+      // ⚠️ ANTES comparávamos calories_consumed com a soma dos meal_logs POR
+      // `snapshot_id` — isso dava FALSO-POSITIVO de divergência: quando um
+      // meal_log tem o `snapshot_id` linkado ao dia errado (acontece com
+      // backfills/correções), a soma por snapshot_id não bate com o
+      // calories_consumed, MESMO quando o valor real por `consumed_at` está
+      // certo. A linkagem por snapshot_id não é a invariante do sistema.
+      //
+      // O daily-closer calcula calories_consumed somando meal_logs por
+      // `consumed_at` no intervalo [00:00..23:59] da DATA LOCAL do snapshot
+      // (fuso do paciente — ver closeUserDay: startOfDay/endOfDay com
+      // getTzOffset). Essa é a invariante correta. Replicamos aqui pra
+      // auditar o mesmo que o closer produz e eliminar o alarme fantasma.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: snapData } = await (supabase as any)
         .from('daily_snapshots')
-        .select('id, calories_consumed')
+        .select('id, user_id, date, calories_consumed')
         .gte('date', new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().slice(0, 10))
-      const snaps = (snapData ?? []) as Array<{ id: string; calories_consumed: number }>
+      const snaps = (snapData ?? []) as Array<{
+        id: string
+        user_id: string
+        date: string
+        calories_consumed: number
+      }>
+      // Timezone por usuário (igual o closer usa pra montar a janela do dia).
+      // Default America/Sao_Paulo, idêntico ao fallback do daily-closer.
+      const userIds = [...new Set(snaps.map((s) => s.user_id))]
+      const tzByUser = new Map<string, string>()
+      if (userIds.length > 0) {
+        const { data: us } = await supabase
+          .from('users')
+          .select('id, timezone')
+          .in('id', userIds)
+        for (const u of (us ?? []) as Array<{ id: string; timezone: string | null }>) {
+          tzByUser.set(u.id, u.timezone ?? 'America/Sao_Paulo')
+        }
+      }
       let divergencias = 0
       for (const s of snaps) {
+        const tz = tzByUser.get(s.user_id) ?? 'America/Sao_Paulo'
+        // Janela do dia local do snapshot — exatamente como o closer monta.
+        const startOfDay = `${s.date}T00:00:00${getTzOffset(tz)}`
+        const endOfDay = `${s.date}T23:59:59${getTzOffset(tz)}`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: ml } = await (supabase as any)
           .from('meal_logs')
           .select('kcal')
-          .eq('snapshot_id', s.id)
+          .eq('user_id', s.user_id)
+          .gte('consumed_at', startOfDay)
+          .lte('consumed_at', endOfDay)
         const sum = (ml ?? []).reduce(
           (acc: number, r: { kcal: number }) => acc + (Number(r.kcal) || 0),
           0,
         )
-        if (Math.abs(s.calories_consumed - sum) > 50) divergencias++
+        if (snapshotIntegrityGap(s.calories_consumed, sum) > SNAPSHOT_INTEGRITY_TOL_KCAL)
+          divergencias++
       }
 
       // 11. Reavaliações disparadas há >24h e NÃO processadas (Roberto 2026-05-22).

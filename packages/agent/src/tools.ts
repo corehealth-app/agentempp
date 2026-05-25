@@ -937,6 +937,108 @@ export const registraRefeicao: ToolDefinition = {
     const config = await loadCalcConfig(ctx.supabase)
     const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
 
+    // ========================================================================
+    // DEDUP CONTRA O DIA (Paulo 2026-05-24) — Bug A, 4ª camada
+    // ========================================================================
+    // Caso real: Paulo registrou o café (whey 114g + leite 70g) às 08:44.
+    // Às 12:28 mandou FOTO do almoço; ao processar, o LLM RE-INSERIU whey+leite
+    // em meal_type='cafe' (linhas duplicadas) → café contado em dobro (+184 kcal).
+    //
+    // As 3 dedups anteriores não pegam esse caso:
+    //  - idempotência por raw_provider_message_id → só retry da MESMA mensagem.
+    //  - janela de correção (30min) → café 08:44 vs foto 12:28 = 3h44, fora.
+    //  - dedup intra-array → só dentro da MESMA chamada.
+    //
+    // 4ª camada (determinística): quando NÃO é correção (replace !== true) e há
+    // meal_type, busca os meal_logs JÁ registrados hoje no mesmo
+    // (user_id, snapshot_id, meal_type) e descarta dos itens a inserir aqueles
+    // cujo NOME normalizado + QUANTIDADE arredondada já existem. Chave é
+    // nome+quantidade (NÃO só nome) pra não bloquear quem come o mesmo item em
+    // quantidade diferente no mesmo tipo de refeição.
+    //
+    // Importante: filtra ANTES do snapshot_add_meal, então o snapshot recebe só
+    // os itens que sobraram — senão o snapshot inflaria mesmo sem o meal_log
+    // duplicado.
+    let itemsToInsert = calc.items
+    let totalsToAdd = calc.totals
+    if (args.replace !== true && args.meal_type && calc.items.length > 0) {
+      // Resolve o snapshot do dia local (mesma estratégia do path de replace:
+      // por (user_id, date) em vez de range de created_at em UTC).
+      const { data: snapToday } = await ctx.supabase
+        .from('daily_snapshots')
+        .select('id')
+        .eq('user_id', ctx.userId)
+        .eq('date', today)
+        .maybeSingle()
+      const existingSnapId = (snapToday as { id: string } | null)?.id ?? null
+      if (existingSnapId) {
+        const { data: sameMealRows } = await ctx.supabase
+          .from('meal_logs')
+          .select('food_name, quantity_g')
+          .eq('user_id', ctx.userId)
+          .eq('snapshot_id', existingSnapId)
+          .eq('meal_type', args.meal_type)
+        const existing = (sameMealRows ?? []) as Array<{
+          food_name: string
+          quantity_g: number
+        }>
+        if (existing.length > 0) {
+          const normName = (s: string) =>
+            s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+          // Chave = nome normalizado + quantidade arredondada (g inteiro).
+          const dedupKey = (food: string, qty: number) =>
+            `${normName(food)}|${Math.round(qty)}`
+          const existingKeys = new Set(existing.map((r) => dedupKey(r.food_name, r.quantity_g)))
+          const skipped: Array<{ food_name: string; quantity_g: number }> = []
+          const survivors = calc.items.filter((it) => {
+            if (existingKeys.has(dedupKey(it.food_name, it.quantity_g))) {
+              skipped.push({ food_name: it.food_name, quantity_g: it.quantity_g })
+              return false
+            }
+            return true
+          })
+          if (skipped.length > 0) {
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'tool.meal_item_redup_skipped',
+              properties: {
+                meal_type: args.meal_type,
+                provider_message_id: ctx.providerMessageId ?? null,
+                date: today,
+                skipped_count: skipped.length,
+                skipped,
+                note: 'item idêntico (nome+qtd) já registrado hoje nesse meal_type por msg anterior — não reinsere (caso Paulo 2026-05-24)',
+              },
+            })
+            itemsToInsert = survivors
+            // Recalcula os totais a somar no snapshot SÓ com os sobreviventes.
+            totalsToAdd = survivors.reduce(
+              (acc, it) => ({
+                kcal: acc.kcal + Number(it.kcal ?? 0),
+                protein_g: acc.protein_g + Number(it.protein_g ?? 0),
+                carbs_g: acc.carbs_g + Number(it.carbs_g ?? 0),
+                fat_g: acc.fat_g + Number(it.fat_g ?? 0),
+                fiber_g: acc.fiber_g + Number((it as { fiber_g?: number }).fiber_g ?? 0),
+              }),
+              { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
+            )
+          }
+        }
+      }
+    }
+
+    // Se TODOS os itens eram duplicatas do dia, não toca no snapshot nem insere
+    // nada — responde coerentemente (sem card fantasma de refeição "nova").
+    if (itemsToInsert.length === 0) {
+      return {
+        success: true,
+        already_logged: true,
+        meal: { items: [], totals: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 } },
+        warnings: calc.user_warnings,
+        replaced: replacedSummary,
+      }
+    }
+
     // RPC atomic: cria ou incrementa snapshot SEM race condition.
     const { data: updated, error: updErr } = await (ctx.supabase as unknown as {
       rpc: (
@@ -949,10 +1051,10 @@ export const registraRefeicao: ToolDefinition = {
     }).rpc('snapshot_add_meal', {
       p_user_id: ctx.userId,
       p_date: today,
-      p_kcal: calc.totals.kcal,
-      p_protein: calc.totals.protein_g,
-      p_carbs: calc.totals.carbs_g,
-      p_fat: calc.totals.fat_g,
+      p_kcal: totalsToAdd.kcal,
+      p_protein: totalsToAdd.protein_g,
+      p_carbs: totalsToAdd.carbs_g,
+      p_fat: totalsToAdd.fat_g,
       p_calories_target: targets.calories_target,
       p_protein_target: targets.protein_target,
     })
@@ -960,9 +1062,13 @@ export const registraRefeicao: ToolDefinition = {
     if (!updated) throw new Error('snapshot_add_meal returned null')
     const snapshotId = updated.id
 
-    // Insere cada item em meal_logs com upsert idempotente
-    // (UNIQUE composite user_id,raw_provider_message_id,food_name).
-    for (const item of calc.items) {
+    // Insere cada item em meal_logs (apenas os sobreviventes da dedup).
+    // TODO: a UNIQUE composite (user_id, raw_provider_message_id, food_name)
+    // garante idempotência só por mensagem; o ideal seria um .upsert() com
+    // ON CONFLICT DO NOTHING, mas o supabase-js exige declarar onConflict com
+    // o nome exato da constraint — fica como follow-up pra não arriscar trocar
+    // semântica do insert puro sem validar a constraint em prod.
+    for (const item of itemsToInsert) {
       await ctx.supabase.from('meal_logs').insert({
         user_id: ctx.userId,
         snapshot_id: snapshotId,
@@ -982,7 +1088,10 @@ export const registraRefeicao: ToolDefinition = {
     return {
       success: true,
       meal: {
-        items: calc.items.map((i) => ({
+        // Reporta SÓ os itens que foram de fato inseridos (sobreviventes da
+        // dedup contra o dia) — senão o card mostraria itens duplicados que
+        // não entraram no snapshot.
+        items: itemsToInsert.map((i) => ({
           name: i.food_name,
           matched_to: i.matched_taco_name || null,
           quantity_g: i.quantity_g,
@@ -996,7 +1105,7 @@ export const registraRefeicao: ToolDefinition = {
           fat_g: i.fat_g,
           source: i.source,
         })),
-        totals: calc.totals,
+        totals: totalsToAdd,
       },
       day_totals: updated,
       warnings: calc.user_warnings,

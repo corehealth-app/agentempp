@@ -205,8 +205,14 @@ export function estimateMacros(foodName: string): {
   if (/castanha|amêndoa|noz|amendoim|pistache|avelã|macadâmia|granola/.test(n)) {
     return { category: 'oleaginosa', kcal: 580, protein: 18, carbs: 20, fat: 50, fiber: 8 }
   }
-  // Bebidas zero
-  if (/[áa]gua|ch[áa]\b|caf[ée]\s+preto|refri\s+zero|adoçant/.test(n)) {
+  // Bebidas zero — refrigerantes/bebidas com qualificador zero/diet/light
+  // (coca zero, coca-cola zero, guaraná zero, refri diet, soda light, etc.).
+  // Bug Luciana 2026-05-25: regex antigo só pegava "refri zero" literal.
+  if (
+    /[áa]gua|ch[áa]\b|caf[ée]\s+preto|adoçant/.test(n) ||
+    (/\b(zero|diet|light|sem a[çc][uú]car|sem calorias?)\b/.test(n) &&
+      /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|t[ôo]nica|energ[ée]tico)\b/.test(n))
+  ) {
     return { category: 'bebida_zero', kcal: 1, protein: 0, carbs: 0, fat: 0, fiber: 0 }
   }
   // Fallback genérico — prato preparado
@@ -273,6 +279,30 @@ export function extractAnchor(foodName: string): string | null {
   if (tokens.length === 0) return null
   tokens.sort((a, b) => b.length - a.length)
   return tokens[0] ?? null
+}
+
+/**
+ * Detecta bebida ZERO/diet/light (caloria desprezível) — Bug Luciana 2026-05-25.
+ *
+ * Caso real: paciente disse "a coca é zero", o agente respondeu "tem caloria
+ * zerada" mas GRAVOU "coca-cola zero" com 136,5 kcal — o valor da coca NORMAL.
+ * Causa: a food_db tem "coca-cola" (~42 kcal/100g) mas NÃO tem o alias zero, e o
+ * "zero" é tratado como qualifier de preparo (PREPARATION_QUALIFIERS), então o
+ * trigram casa a coca cheia e o qualificador "zero" é simplesmente descartado.
+ *
+ * Aqui forçamos macros ~0 ANTES do match quando o nome tem qualificador de
+ * zero-caloria E é claramente uma bebida/refrigerante. Suco, leite, água de
+ * coco e a coca NORMAL não casam (sem qualificador zero) e seguem o fluxo normal.
+ */
+const ZERO_CAL_QUALIFIER = /\b(zero|diet|light|sem a[çc][uú]car|sem calorias?)\b/i
+const DRINK_KEYWORD = /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|tônica|t[ôo]nica|energ[ée]tico)\b/i
+
+export function isZeroCalDrink(foodName: string, matchCategory?: string | null): boolean {
+  const n = foodName.toLowerCase()
+  if (!ZERO_CAL_QUALIFIER.test(n)) return false
+  // É bebida pelo nome OU pela categoria do match no food_db (ex.: "bebidas").
+  const cat = (matchCategory ?? '').toLowerCase()
+  return DRINK_KEYWORD.test(n) || cat === 'bebidas' || cat === 'bebida'
 }
 
 /**
@@ -533,6 +563,34 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (let it of items) {
+    // ── PRIORIDADE -2: BEBIDA ZERO/DIET/LIGHT (Bug Luciana 2026-05-25) ──────
+    // Roda ANTES de tudo. Se o nome já deixa claro que é refrigerante/bebida
+    // zero ("coca zero", "guaraná diet", "refri light"), força macros ~0 e NÃO
+    // deixa o trigram casar a versão cheia (coca-cola normal ~42 kcal/100g) e
+    // gravar caloria que o paciente nem ingeriu. Detecção por categoria do
+    // food_db ("bebidas") fica no fluxo de match abaixo, pra casos sem keyword.
+    if (isZeroCalDrink(it.food_name)) {
+      const natZero = naturalUnit(it.food_name, it.quantity_g)
+      auditWarnings.push(
+        `"${it.food_name}" tratado como bebida zero-caloria (forçado ~0 kcal — qualificador zero/diet/light + bebida).`,
+      )
+      matched.push({
+        food_name: it.food_name,
+        matched_taco_name: '[bebida zero]',
+        matched_taco_id: null,
+        quantity_g: it.quantity_g,
+        kcal: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        fiber_g: 0,
+        similarity: 1.0,
+        source: 'taco',
+        display_qty: natZero.display_qty,
+        display_unit: natZero.display_unit,
+      })
+      continue
+    }
     // ── PRIORIDADE -1: MAPA DE CORREÇÕES DO PACIENTE (Roberto 2026-05-14) ───
     // Roda ANTES de tudo. Se o paciente já corrigiu esse alimento ("batata" →
     // "mandioca"), remapeia o nome aqui. Precedência: correção > histórico >
@@ -845,6 +903,33 @@ export async function calcMealMacros(
     const isShortQuery = queryWords <= 2 || queryLen <= 15
     const matchThreshold = isShortQuery ? 0.3 : 0.45
     if (m.id != null && m.kcal_per_100g != null && m.similarity >= matchThreshold && anchorMatches) {
+      // Camada 2 do guard de bebida zero (Bug Luciana 2026-05-25): nome sem
+      // keyword de bebida ("zero" + nome genérico) mas que casou um item de
+      // categoria "bebidas" no food_db. Aqui usamos a CATEGORIA do match pra
+      // forçar ~0 antes de aceitar a caloria cheia do alimento-base.
+      if (isZeroCalDrink(it.food_name, m.category)) {
+        const natZ = naturalUnit(it.food_name, it.quantity_g)
+        auditWarnings.push(
+          `"${it.food_name}" tratado como bebida zero-caloria via categoria do match "${m.category}" (forçado ~0 kcal em vez de ${(m.kcal_per_100g * factor).toFixed(1)}).`,
+        )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: m.name_pt ?? '[bebida zero]',
+          matched_taco_id: m.id,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: m.similarity,
+          source: 'taco',
+          display_qty: natZ.display_qty,
+          display_unit: natZ.display_unit,
+        })
+        continue
+      }
+
       const kcal = +(m.kcal_per_100g * factor).toFixed(1)
       const protein = +((m.protein_g ?? 0) * factor).toFixed(2)
       const carbs = +((m.carbs_g ?? 0) * factor).toFixed(2)

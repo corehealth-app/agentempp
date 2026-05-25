@@ -6,7 +6,7 @@ import {
   loadCalcConfig,
   loadDailyTargets,
   reconcileBalanceProse,
-  replaceLooseBlockMentions,
+  reconcileBlocoMention,
   reevaluationKickoff,
 } from '@mpp/agent'
 import { realDailyDeficit } from '@mpp/core'
@@ -406,20 +406,33 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     return { sent: false, reason: 'LLM vazio' }
   }
 
-  // ANTI-ALUCINAÇÃO no engagement (Roberto 2026-05-20): o "Bom dia" do Haiku
-  // disse "saldo de 5.029 kcal no bloco" quando o valor REAL era 5.586. O
-  // engagement-sender não passa pelo pipeline.ts (que tem o card canônico +
-  // replaceLooseBlockMentions), então as menções de bloco aqui ficavam sem
-  // correção. Aplicamos a mesma varredura: substitui menções soltas de Bloco
-  // 7700 pelo valor real do user_progress.deficit_block.
+  // ANTI-ALUCINAÇÃO no engagement (Roberto 2026-05-20 / 2026-05-25): o "Bom dia"
+  // do Haiku disse "saldo de 5.029 kcal no bloco" quando o real era 5.586; e
+  // depois "2.958 / 7.700 (38%)" quando o real era 1.235. O engagement-sender
+  // não passa pelo pipeline.ts (que tem o card canônico + reconciliação), então
+  // o NÚMERO DO BLOCO que o LLM escreve aqui ficava SEM validação contra o banco.
+  // Fix (E): o número do bloco vira DETERMINÍSTICO igual aos outros rótulos
+  // (realDailyDeficit, yesterdayLabel) — vem do user_progress.deficit_block, não
+  // do LLM. reconcileBlocoMention substitui qualquer menção pelo valor canônico
+  // (com % recalculado); se o texto não menciona bloco, fica inalterado.
   const progDeficitBlock = (progress as { deficit_block?: number } | null)?.deficit_block
   if (progDeficitBlock != null) {
-    const looseFix = replaceLooseBlockMentions(text, progDeficitBlock)
-    if (looseFix.replacements > 0) {
-      text = looseFix.text
+    const before = text
+    text = reconcileBlocoMention(before, { deficitBlock: progDeficitBlock })
+    if (text !== before) {
+      // Evento de auditoria do fix (E): a auditoria mede quantas vezes o número
+      // alucinado do bloco precisou ser corrigido pelo valor do banco (old/new).
+      await logEvent('engagement.bloco_reconciled', {
+        context: 'engagement',
+        deficit_block: progDeficitBlock,
+        blocks_completed: (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0,
+        old: before,
+        new: text,
+      })
+      // Mantém o evento legado pra contagem no daily-audit (llm.loose_bloco_replaced).
       await logEvent('llm.loose_bloco_replaced', {
         context: 'engagement',
-        replacements: looseFix.replacements,
+        replacements: 1,
       })
     }
   }

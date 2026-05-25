@@ -186,7 +186,9 @@ export function replaceLooseBlockMentions(
   // Padrão A: "Bloco 7700: **X / 7.700 kcal** (Y%)" ou "Bloco 7700: X kcal de 7700"
   // Captura número + porcentagem opcional. Permite ** envolvendo todo o
   // valor "**X / 7.700 kcal**", "kcal" final opcional, "(Y%)" opcional.
-  const patA = /\bbloco\s*7\.?700[:\s]*\*{0,2}\s*(\d{1,4}(?:[.,]\d{3})?)\s*\*{0,2}\s*(?:kcal\s*)?(?:\/|de|kcal\s*de)\s*\*{0,2}\s*7\.?700(?:\s*kcal)?\s*\*{0,2}(?:\s*\(\s*(\d{1,3})\s*%\s*\))?/gi
+  // [^\d\n]{0,25}? (não-guloso): permite palavras entre "bloco 7700" e o número
+  // (ex: "bloco 7700 agora em 2.958..."). Bug Roberto 2026-05-25.
+  const patA = /\bbloco\s*7\.?700[^\d\n]{0,25}?\*{0,2}\s*(\d{1,4}(?:[.,]\d{3})?)\s*\*{0,2}\s*(?:kcal\s*)?(?:\/|de|kcal\s*de)\s*\*{0,2}\s*7\.?700(?:\s*kcal)?\s*\*{0,2}(?:\s*\(\s*(\d{1,3})\s*%\s*\))?/gi
   result = result.replace(patA, (full, numStr, pctStr) => {
     const claimed = Number(String(numStr).replace(/\./g, '').replace(',', '.'))
     if (!Number.isFinite(claimed) || !shouldReplace(claimed)) return full
@@ -200,7 +202,8 @@ export function replaceLooseBlockMentions(
   // Cuidado: já consumimos o "Bloco 7700: X / 7.700" no patA acima, então o que
   // sobra é menção solta. Match flag /g mantém estado, não repete dentro do mesmo
   // texto após replace.
-  const patB = /(\d{1,4}(?:[.,]\d{3})?)\s*\/\s*7\.?700\b/g
+  // Aceita "/" OU "de" (ex: "2.958 kcal de 7.700"), com "kcal" opcional. Bug Roberto 2026-05-25.
+  const patB = /(\d{1,4}(?:[.,]\d{3})?)\s*(?:kcal\s*)?(?:\/|de)\s*7\.?700\b/gi
   result = result.replace(patB, (full, numStr) => {
     const claimed = Number(String(numStr).replace(/\./g, '').replace(',', '.'))
     if (!Number.isFinite(claimed) || !shouldReplace(claimed)) return full
@@ -209,4 +212,32 @@ export function replaceLooseBlockMentions(
   })
 
   return { text: result, replacements: count }
+}
+
+/**
+ * Reconcilia QUALQUER menção do bloco 7700 na prosa pelo valor canônico do
+ * banco (`user_progress.deficit_block`), com o % recalculado de
+ * `round(deficitBlock / 7700 * 100)`.
+ *
+ * Bug (E) Roberto 2026-05-25: a mensagem matinal de engajamento chama o LLM
+ * direto (NÃO passa pelo card canônico do pipeline.ts), então o número do bloco
+ * que o LLM escreve não era validado contra o banco — ele ALUCINOU "2.958 / 7.700
+ * (38%)" quando o real era 1.235. O número do bloco tem que vir do banco, igual
+ * aos outros rótulos determinísticos do engagement-sender (realDailyDeficit etc).
+ *
+ * Wrapper de assinatura simples sobre `replaceLooseBlockMentions` (que concentra
+ * os padrões já endurecidos — "N / 7.700", "N/7700", "bloco 7700 ... N kcal de
+ * 7700"). Mantém uma fonte única de regex pra não dar drift no exato caso que
+ * este fix existe pra cobrir. Retorna o texto reconciliado; se não há menção de
+ * bloco (ou o número já está correto), devolve o texto inalterado — NÃO força o
+ * bloco a aparecer.
+ *
+ * Use `replaceLooseBlockMentions` direto quando precisar do `replacements` pra
+ * auditoria/log; este wrapper é o ponto de uso quando só importa o texto final.
+ */
+export function reconcileBlocoMention(
+  text: string,
+  { deficitBlock }: { deficitBlock: number },
+): string {
+  return replaceLooseBlockMentions(text, deficitBlock).text
 }

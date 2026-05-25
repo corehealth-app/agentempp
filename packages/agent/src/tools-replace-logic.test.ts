@@ -23,7 +23,13 @@ import type { ServiceClient } from '@mpp/db'
 type RecentLog = { food_name: string; quantity_g: number; meal_type?: string }
 
 interface MockOptions {
+  /** Logs dentro da janela de 30min (consultados via .gte('created_at')) —
+   * alimentam a detecção objetiva de correção por overlap. */
   recentLogs?: RecentLog[]
+  /** Logs já registrados HOJE no snapshot (consultados sem .gte) — alimentam a
+   * 4ª camada de dedup contra o dia (caso Paulo 2026-05-24). Fora da janela
+   * de 30min, então NÃO aparecem em recentLogs. Default: igual recentLogs. */
+  dayLogs?: RecentLog[]
   recentUserMessages?: string[]
   llmSentReplace?: boolean
 }
@@ -52,13 +58,27 @@ function makeContextAndSupabase(opts: MockOptions) {
   const supabase = {
     from: (table: string) => {
       if (table === 'meal_logs') {
-        // O execute() chama várias vezes meal_logs com queries diferentes.
-        // Mais simples: retornar os logs configurados pra qualquer query.
-        // O bloco de detecção objetiva usa .eq('meal_type', X).gte('created_at').limit().
-        // Idempotência usa .eq('raw_provider_message_id', X).
-        // Sem providerMessageId, idempotência não pega. Replace block deleta — fingir 0 rows.
+        // O execute() chama várias vezes meal_logs com queries diferentes:
+        //  - detecção objetiva por overlap: .gte('created_at', 30minAgo).limit() → janela 30min.
+        //  - 4ª camada de dedup contra o dia: .eq('snapshot_id').eq('meal_type') SEM .gte → dia inteiro.
+        //  - idempotência: .eq('raw_provider_message_id', X) (sem providerMessageId, não pega).
+        //  - replace block: deleta — fingir 0 rows.
+        // Roteia por presença de .gte(): com gte → recentLogs (janela), sem gte → dayLogs (dia).
+        const dayLogs = opts.dayLogs ?? opts.recentLogs ?? []
+        const recentLogs = opts.recentLogs ?? []
+        // Chain stateful que lembra se .gte() foi chamado pra decidir o dataset no await.
+        const mealChain = (usedGte: boolean): unknown => {
+          const obj: Record<string, unknown> = {}
+          for (const m of ['select', 'eq', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+            obj[m] = () => mealChain(usedGte)
+          }
+          obj.gte = () => mealChain(true)
+          obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
+            Promise.resolve(cb({ data: usedGte ? recentLogs : dayLogs, error: null }))
+          return obj
+        }
         return {
-          ...((chain(opts.recentLogs ?? []) as object)),
+          ...((mealChain(false) as object)),
           insert: () => chain([]),
           delete: () => chain([]),
         }
@@ -354,6 +374,67 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(dups).toHaveLength(2)
     expect(dups[0]?.repeated).toBe(2)
     expect(dups[0]?.summed_g).toBe(600) // 300 + 300 somados (paciente comeu 2 burritos é semanticamente o mesmo que 1 de 600g)
+  })
+
+  // BUG do PAULO 2026-05-24 (4ª camada — re-inserção fantasma contra o dia):
+  // Café (whey 114g + leite 70g) registrado 08:44. Às 12:28 Paulo mandou FOTO
+  // do almoço; o LLM RE-INSERIU whey+leite em meal_type='cafe' → café contado
+  // em dobro. As 3 dedups anteriores não pegam (idempotência só por msg, janela
+  // de correção 30min, dedup intra-array). Fix: dedup determinística contra os
+  // meal_logs JÁ registrados hoje no mesmo (snapshot, meal_type), por nome+qtd.
+  it('item idêntico (nome+qtd) já registrado hoje no MESMO meal_type por msg anterior (>30min) → NÃO reinsere — bug do PAULO', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      // dayLogs = registrado no café às 08:44 (fora da janela de 30min, então
+      // NÃO entra em recentLogs — só no dataset do dia).
+      dayLogs: [
+        { food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' },
+        { food_name: 'leite integral', quantity_g: 70, meal_type: 'cafe' },
+      ],
+      recentLogs: [], // nada nos últimos 30min → sem evidência de correção
+      recentUserMessages: ['mandei foto do almoço'],
+      llmSentReplace: false,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: false,
+        items: [
+          { food_name: 'Whey Protein', quantity_g: 114 }, // mesmo (case/normalize) + mesma qtd
+          { food_name: 'leite integral', quantity_g: 70 }, // idêntico
+        ],
+      },
+      ctx,
+    )
+    // Deve ter pulado os itens duplicados (não reinsere)
+    const redup = events.find((e) => e.event === 'tool.meal_item_redup_skipped')
+    expect(redup).toBeDefined()
+    expect(redup?.properties.skipped_count).toBe(2)
+    // NÃO deve ter virado replace (não é correção)
+    expect(events.find((e) => e.event === 'tool.replace_implicit_detected')).toBeUndefined()
+  })
+
+  it('mesmo item em QUANTIDADE diferente → insere normal (não bloqueia) — não-regressão', async () => {
+    const { ctx, events } = makeContextAndSupabase({
+      dayLogs: [
+        { food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' },
+      ],
+      recentLogs: [],
+      // menciona "café" pra fixar meal_type (suprime autocorrect por hora).
+      recentUserMessages: ['tomei mais um whey no café agora'],
+      llmSentReplace: false,
+    })
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: false,
+        items: [
+          { food_name: 'whey protein', quantity_g: 60 }, // MESMO nome, qtd DIFERENTE
+        ],
+      },
+      ctx,
+    )
+    // Quantidade diferente → não é o mesmo registro → NÃO pula
+    expect(events.find((e) => e.event === 'tool.meal_item_redup_skipped')).toBeUndefined()
   })
 
   it('items SEM duplicação NÃO dispara dedup event', async () => {

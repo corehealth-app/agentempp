@@ -654,3 +654,151 @@ describe('naturalUnit — pó vs líquido (Roberto 2026-05-15)', () => {
     expect(naturalUnit('leite com whey', 200).display_unit).toBe('ml')
   })
 })
+
+describe('calcMealMacros — bebida zero/diet/light (Bug Luciana 2026-05-25)', () => {
+  // Caso real: paciente disse "a coca é zero", o agente respondeu "caloria
+  // zerada" e mostrou 0 no card, mas GRAVOU "coca-cola zero" com 136,5 kcal —
+  // o valor da coca NORMAL. Causa: food_db tem "coca-cola" (~42 kcal/100g) mas
+  // não tem o alias zero; o trigram casa a versão cheia e o qualificador "zero"
+  // (tratado como preparo) é descartado. O guard determinístico força ~0.
+
+  it('"coca-cola zero, 350g" ⇒ kcal ~0 (NÃO ~147 da coca normal)', async () => {
+    // Mock simula o bug: o trigram retorna a COCA NORMAL (42 kcal/100g) pro
+    // termo "coca-cola zero". O guard de bebida zero precisa interceptar ANTES.
+    const mock = makeMock({
+      'coca-cola zero': {
+        id: 700,
+        name_pt: 'coca-cola',
+        category: 'bebidas',
+        similarity: 0.92,
+        kcal_per_100g: 42,
+        protein_g: 0,
+        carbs_g: 10.6,
+        fat_g: 0,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'coca-cola zero', quantity_g: 350 }], 'BR')
+    expect(r.items[0]?.kcal).toBeLessThanOrEqual(2)
+    expect(r.totals.kcal).toBeLessThanOrEqual(2)
+    expect(r.items[0]?.carbs_g).toBe(0)
+    expect(r.items[0]?.protein_g).toBe(0)
+    expect(r.items[0]?.fat_g).toBe(0)
+    // Não polui o paciente com aviso — é tratamento silencioso (audit only).
+    expect(r.user_warnings).toHaveLength(0)
+  })
+
+  it('"coca zero" e "guaraná zero" também zeram', async () => {
+    const mock = makeMock({
+      'coca zero': {
+        id: 700,
+        name_pt: 'coca-cola',
+        category: 'bebidas',
+        similarity: 0.85,
+        kcal_per_100g: 42,
+        protein_g: 0,
+        carbs_g: 10.6,
+        fat_g: 0,
+        fiber_g: 0,
+      },
+      'guaraná zero': {
+        id: 701,
+        name_pt: 'guaraná',
+        category: 'bebidas',
+        similarity: 0.85,
+        kcal_per_100g: 39,
+        protein_g: 0,
+        carbs_g: 10,
+        fat_g: 0,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(
+      mock,
+      [
+        { food_name: 'coca zero', quantity_g: 350 },
+        { food_name: 'guaraná zero', quantity_g: 350 },
+      ],
+      'BR',
+    )
+    expect(r.items[0]?.kcal).toBeLessThanOrEqual(2)
+    expect(r.items[1]?.kcal).toBeLessThanOrEqual(2)
+  })
+
+  it('camada 2: "monster zero" (sem keyword de refri) zera via categoria "bebidas" do match', async () => {
+    // Nome não tem refri/coca/guaraná, mas o match cai numa linha de categoria
+    // "bebidas" + o qualificador "zero" → força ~0 pela categoria.
+    const mock = makeMock({
+      'monster zero': {
+        id: 702,
+        name_pt: 'monster energy',
+        category: 'bebidas',
+        similarity: 0.8,
+        kcal_per_100g: 48,
+        protein_g: 0,
+        carbs_g: 12,
+        fat_g: 0,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'monster zero', quantity_g: 300 }], 'BR')
+    expect(r.items[0]?.kcal).toBeLessThanOrEqual(2)
+  })
+
+  it('NÃO-REGRESSÃO: "coca-cola, 350g" (normal) ⇒ kcal cheio (~147)', async () => {
+    const mock = makeMock({
+      'coca-cola': {
+        id: 700,
+        name_pt: 'coca-cola',
+        category: 'bebidas',
+        similarity: 1,
+        kcal_per_100g: 42,
+        protein_g: 0,
+        carbs_g: 10.6,
+        fat_g: 0,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'coca-cola', quantity_g: 350 }], 'BR')
+    expect(r.items[0]?.kcal).toBeCloseTo(147, 0)
+    expect(r.items[0]?.source).toBe('taco')
+  })
+
+  it('NÃO-REGRESSÃO: "suco de laranja" (bebida calórica, sem zero) NÃO zera', async () => {
+    const mock = makeMock({
+      'suco de laranja': {
+        id: 703,
+        name_pt: 'suco de laranja',
+        category: 'bebidas',
+        similarity: 1,
+        kcal_per_100g: 45,
+        protein_g: 0.7,
+        carbs_g: 10,
+        fat_g: 0.2,
+        fiber_g: 0.2,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'suco de laranja', quantity_g: 200 }], 'BR')
+    expect(r.items[0]?.kcal).toBeCloseTo(90, 0)
+  })
+
+  it('NÃO-REGRESSÃO: "leite zero lactose" NÃO é confundido com bebida zero-caloria', async () => {
+    // "zero lactose" tem "zero" mas leite NÃO é refrigerante nem casa keyword de
+    // bebida gaseosa — deve manter as calorias do leite.
+    const mock = makeMock({
+      'leite zero lactose': {
+        id: 704,
+        name_pt: 'leite zero lactose',
+        category: 'lacteos',
+        similarity: 1,
+        kcal_per_100g: 42,
+        protein_g: 3.2,
+        carbs_g: 4.8,
+        fat_g: 1,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'leite zero lactose', quantity_g: 200 }], 'BR')
+    expect(r.items[0]?.kcal).toBeGreaterThan(50)
+  })
+})

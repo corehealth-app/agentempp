@@ -1345,6 +1345,41 @@ export const registraTreino: ToolDefinition = {
       }
     }
 
+    // 2ª camada de dedup (Paulo 2026-05-26): a MESMA caminhada foi descrita em
+    // mensagens DIFERENTES (pmid diferente) e duplicou — a idempotência por pmid
+    // acima não pega. Se um treino IDÊNTICO (tipo + duração) já foi registrado
+    // nas últimas 6h, é re-processamento → não duplica. (Espelha a 4ª camada de
+    // dedup do registra_refeicao; janela de 6h evita bloquear treino repetido
+    // legítimo de manhã+noite.)
+    if (args.duration_min != null) {
+      const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+      const { data: recentSame } = await ctx.supabase
+        .from('workout_logs')
+        .select('id')
+        .eq('user_id', ctx.userId)
+        .eq('workout_type', args.workout_type)
+        .eq('duration_min', args.duration_min)
+        .gte('created_at', sixHoursAgo)
+        .limit(1)
+      if (recentSame && recentSame.length > 0) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.workout_redup_skipped',
+          properties: {
+            workout_type: args.workout_type,
+            duration_min: args.duration_min,
+            provider_message_id: ctx.providerMessageId ?? null,
+            note: 'treino idêntico (tipo+duração) já registrado nas últimas 6h — não reinsere (caso Paulo 2026-05-26)',
+          },
+        })
+        return {
+          success: true,
+          deduped: true,
+          message: `Treino ${args.workout_type} (${args.duration_min}min) já registrado recentemente. Não duplicou.`,
+        }
+      }
+    }
+
     // Targets calóricos
     const cfg = await loadCalcConfig(ctx.supabase)
     const tgt = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)

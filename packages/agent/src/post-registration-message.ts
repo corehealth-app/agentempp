@@ -134,6 +134,10 @@ export function composePostRegistrationMessage(input: PostRegistrationInput): st
   const blocks: string[] = []
   for (const reg of input.registrations) {
     if (reg.tool === 'registra_treino') {
+      if (reg.alreadyLogged) {
+        blocks.push('Treino registrado ✅\n\n_(já estava registrado)_')
+        continue
+      }
       const dur = reg.durationMin ? ` (${reg.durationMin} min)` : ''
       const wt = reg.workoutType ?? 'Treino'
       blocks.push(`Treino registrado ✅\n\n🏋️ ${wt}${dur} — ${fmt(reg.kcalBurned ?? 0)} kcal`)

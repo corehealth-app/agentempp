@@ -434,12 +434,13 @@ export async function processMessage(
         const registrations: RegistrationEntry[] = iterEntries.map((e) => {
           if (e.name === 'registra_treino') {
             const a = (e.arguments ?? {}) as { workout_type?: string; duration_min?: number }
-            const r = (e.result ?? {}) as { kcal_burned?: number }
+            const r = (e.result ?? {}) as { kcal_burned?: number; deduped?: boolean }
             return {
               tool: 'registra_treino',
               workoutType: a.workout_type ?? null,
               durationMin: a.duration_min ?? null,
               kcalBurned: r.kcal_burned ?? 0,
+              alreadyLogged: r.deduped === true,
             }
           }
           const a = (e.arguments ?? {}) as { meal_type?: string | null }

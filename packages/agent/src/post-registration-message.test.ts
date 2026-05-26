@@ -145,6 +145,24 @@ describe('composePostRegistrationMessage', () => {
     expect(msg).toContain('🏃🏻 Exercício: **250 kcal** _(acelera o bloco 7700)_')
   })
 
+  it('treino deduped (alreadyLogged) → "já estava registrado", sem linha de kcal', () => {
+    const msg = composePostRegistrationMessage({
+      registrations: [{ tool: 'registra_treino', workoutType: 'caminhada', durationMin: 60, alreadyLogged: true }],
+      card: {
+        caloriesConsumed: 1000,
+        caloriesTarget: 1041,
+        proteinG: 72,
+        proteinTarget: 87,
+        exerciseCalories: 168,
+        deficitBlock: 1846,
+        protocol: 'recomposicao',
+      },
+    })
+    expect(msg).toContain('Treino registrado ✅')
+    expect(msg).toContain('_(já estava registrado)_')
+    expect(msg).not.toContain('🏋️')
+  })
+
   it('alreadyLogged (dedup) → sem tabela, só confirmação + card', () => {
     const msg = composePostRegistrationMessage({
       registrations: [{ tool: 'registra_refeicao', mealType: 'cafe', alreadyLogged: true }],

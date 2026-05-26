@@ -1,6 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { sendHumanized } from './humanizer.js'
+import { chunkMessage, sendHumanized } from './humanizer.js'
 import type { MessagingProvider } from './types.js'
+
+describe('chunkMessage — não quebra em "." de número', () => {
+  it('mensagem longa com decimais/milhar não estilhaça no ponto', () => {
+    const long =
+      'Você mandou muito bem hoje, ritmo de quem assume o processo. ' +
+      'O prato tinha 3.8g de proteína, 42.1g de carboidrato e 0.3g de gordura por porção, '.repeat(8) +
+      'e o total do dia fechou em 1.041 kcal.'
+    const chunks = chunkMessage(long)
+    // Nenhum chunk pode terminar num decimal partido ("3." / "42.")
+    for (const c of chunks) expect(c).not.toMatch(/\d+\.$/)
+    // Os decimais sobrevivem inteiros
+    expect(chunks.join(' ')).toContain('3.8g')
+    expect(chunks.join(' ')).toContain('1.041 kcal')
+  })
+})
 
 // Card determinístico de registro (Fase 1) com vários itens + decimais nos macros.
 // Bug (Roberto 2026-05-26): sendHumanized quebrava isso em VÁRIAS mensagens

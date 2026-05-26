@@ -49,8 +49,12 @@ export function chunkMessage(text: string, maxChars = 280): string[] {
       chunks.push(p)
       continue
     }
-    // Sub-divide por sentença
-    const sentences = p.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [p]
+    // Sub-divide por sentença: terminador (. ! ?) seguido de ESPAÇO ou fim.
+    // NÃO quebra em "." de decimal/milhar ("3.8g", "42.1g", "1.000") nem no
+    // meio de item — o ponto sem espaço depois (decimal) não é fim de frase.
+    // (Bug Roberto 2026-05-26: o split antigo quebrava em todo "." → decimais
+    // dos macros estilhaçavam mensagens longas.)
+    const sentences = p.split(/(?<=[.!?])\s+/).filter(Boolean)
     let current = ''
     for (const s of sentences) {
       const trimmed = s.trim()

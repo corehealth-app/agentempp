@@ -88,7 +88,7 @@ export function CalcConfigForm({ items }: { items: ConfigItem[] }) {
   )
 }
 
-function CalcField({ item }: { item: ConfigItem }) {
+export function CalcField({ item }: { item: ConfigItem }) {
   // Decide visualização baseada no shape do valor
   const isNumber = typeof item.value === 'number'
   const isObject =

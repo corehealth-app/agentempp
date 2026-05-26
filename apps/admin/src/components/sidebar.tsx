@@ -11,6 +11,7 @@ import {
   Cpu,
   CreditCard,
   FileText,
+  FunctionSquare,
   Apple,
   Wrench,
   Key,
@@ -77,6 +78,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { label: 'Global', href: '/settings/global', icon: Settings },
       { label: 'Cálculos', href: '/settings/calc', icon: Calculator },
+      { label: 'Fórmulas', href: '/formulas', icon: FunctionSquare },
       { label: 'Banco de alimentos', href: '/settings/foods', icon: Apple },
       { label: 'API Keys', href: '/settings/api-keys', icon: Key },
       { label: 'Stripe', href: '/settings/stripe', icon: CreditCard },

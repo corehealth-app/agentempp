@@ -457,6 +457,8 @@ export const processMessageFn = inngest.createFunction(
           charsPerSecond: humanizer.chars_per_second,
           inReplyTo: providerMessageId,
           replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+          // Card determinístico de registro → 1 mensagem só (sem fragmentar).
+          singleMessage: result.singleMessage === true,
         }),
       )
       sentCount = sendResults.filter((r) => r.status === 'sent').length

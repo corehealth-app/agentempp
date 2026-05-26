@@ -239,6 +239,8 @@ export async function processMessage(
   // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
   let fakeWriteRetried = false
   let prematureBlockRetried = false
+  // Card determinístico de registro → enviar como UMA mensagem (sem split).
+  let deterministicRegistration = false
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
@@ -475,6 +477,7 @@ export async function processMessage(
           },
         })
         messages.push({ role: 'assistant', content: finalText })
+        deterministicRegistration = true
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'pipeline.deterministic_registration',
@@ -748,6 +751,8 @@ export async function processMessage(
     // paciente manda áudio. Resposta sempre em texto. Áudio do agente só é usado
     // pelo cron de engajamento (random 25%) — não como espelho da entrada.
     preferAudio: false,
+    // Card determinístico vai em 1 mensagem (não pode ser quebrado pelo humanizer).
+    singleMessage: deterministicRegistration,
     toolCalls: toolCallsSummary,
     stage,
     modelUsed: lastResult.model,

@@ -31,6 +31,9 @@ export interface AgentOutput {
   text: string
   /** Se houve sugestão de output em áudio. */
   preferAudio: boolean
+  /** Enviar como UMA mensagem só (sem split do humanizer) — usado no card
+   * determinístico de registro, que não pode ser quebrado em vários envios. */
+  singleMessage?: boolean
   toolCalls: Array<{ name: string; arguments: unknown; result?: unknown; error?: string }>
   stage: AgentStage
   modelUsed: string

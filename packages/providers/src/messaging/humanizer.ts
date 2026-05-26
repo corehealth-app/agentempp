@@ -20,6 +20,9 @@ export interface HumanizeOpts {
   charsPerSecond?: number
   /** Mostrar typing indicator entre chunks (default true) */
   showTyping?: boolean
+  /** Enviar como UMA mensagem só — NÃO quebra em chunks (\n\n nem frase).
+   * Usado em card determinístico de registro (não pode chegar fragmentado). */
+  singleMessage?: boolean
 }
 
 const DEFAULT_OPTS: Required<HumanizeOpts> = {
@@ -27,6 +30,7 @@ const DEFAULT_OPTS: Required<HumanizeOpts> = {
   maxDelay: 4000,
   charsPerSecond: 50,
   showTyping: true,
+  singleMessage: false,
 }
 
 /**
@@ -89,7 +93,8 @@ export async function sendHumanized(
   opts?: HumanizeOpts & SendOpts & SendHumanizedExtra,
 ): Promise<SendResult[]> {
   const config = { ...DEFAULT_OPTS, ...opts }
-  const chunks = chunkMessage(text)
+  // singleMessage: card determinístico vai inteiro, sem split (\n\n nem frase).
+  const chunks = config.singleMessage ? [text.trim()] : chunkMessage(text)
   const results: SendResult[] = []
 
   // Typing indicator real só é possível 1× (Cloud API). Mostra antes do 1º chunk.

@@ -211,4 +211,61 @@ export function composeStatusMessage(card: BalanceCardData, progress: StatusProg
   return `${c}\n\n${line}`
 }
 
+// ── #2 RESULTADO DE REAVALIAÇÃO (Roberto 2026-05-27) ────────────────────────
+// Quando o paciente responde a reavaliação (peso/fotos/fome), o sistema confirma
+// a NOVA meta (os números que valem os próximos 14 dias) de forma determinística,
+// em vez de a IA re-redigir. Gatilho ESTREITO (no pipeline): só em reavaliação
+// real (stage de protocolo ativo + reevaluation.due recente), nunca no onboarding.
+
+const REEVAL_TOOLS = ['cadastra_dados_iniciais', 'define_protocolo']
+const PROTOCOL_LABEL: Record<string, string> = {
+  recomposicao: 'Recomposição corporal',
+  ganho_massa: 'Ganho de massa muscular',
+  manutencao: 'Manutenção',
+}
+
+/**
+ * Parte barata do gatilho de reavaliação (checa só as tools do turno):
+ *  - todas as tools = cadastra_dados_iniciais/define_protocolo, com sucesso;
+ *  - há ao menos um cadastra_dados_iniciais (o peso — sinal canônico da reavaliação);
+ *  - o paciente não fez pergunta (sem "?").
+ * A confirmação de que É reavaliação (não onboarding/update casual) fica no
+ * pipeline (stage ativo + reevaluation.due recente).
+ */
+export function isReevalToolTurn(
+  entries: Array<{ name: string; error?: unknown; result?: unknown }>,
+  patientText: string | null | undefined,
+): boolean {
+  if (entries.length === 0) return false
+  const allReeval = entries.every(
+    (e) => REEVAL_TOOLS.includes(e.name) && !e.error && !!e.result,
+  )
+  const hasCadastra = entries.some((e) => e.name === 'cadastra_dados_iniciais')
+  if (!allReeval || !hasCadastra) return false
+  if (/\?/.test(patientText ?? '')) return false
+  return true
+}
+
+export interface ReevalResult {
+  caloriesTarget: number | null
+  proteinTarget: number | null
+  protocol: string | null
+}
+
+/** Mensagem determinística de fim de reavaliação: confirma a nova meta + próxima em 14d. */
+export function composeReevalResultMessage(r: ReevalResult): string {
+  const lines = ['Reavaliação concluída ✅', '']
+  if (r.caloriesTarget != null && r.proteinTarget != null) {
+    lines.push(
+      `🎯 Nova meta: **${fmt(r.caloriesTarget)} kcal** | **${gram(Number(r.proteinTarget))} g** de proteína`,
+    )
+  } else if (r.caloriesTarget != null) {
+    lines.push(`🎯 Nova meta: **${fmt(r.caloriesTarget)} kcal**`)
+  }
+  if (r.protocol) lines.push(`📋 Protocolo: ${PROTOCOL_LABEL[r.protocol] ?? r.protocol}`)
+  lines.push('')
+  lines.push('Próxima reavaliação em 14 dias. Seguimos! 💪')
+  return lines.join('\n')
+}
+
 export type { BalanceCardData }

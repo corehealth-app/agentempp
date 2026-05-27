@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   composePostRegistrationMessage,
+  composeReevalResultMessage,
   composeStatusMessage,
   formatMealTable,
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
+  isReevalToolTurn,
   type MealItem,
 } from './post-registration-message.js'
 
@@ -254,5 +256,64 @@ describe('composeStatusMessage', () => {
       blocksCompleted: 0,
     })
     expect(msg).toContain('🏅 Sequência: **1 dia consecutivo**')
+  })
+})
+
+describe('isReevalToolTurn (parte barata do gatilho de reavaliação)', () => {
+  it('cadastra_dados_iniciais (peso) com sucesso, sem pergunta → dispara', () => {
+    expect(isReevalToolTurn([{ name: 'cadastra_dados_iniciais', result: {} }], 'peso 80, fome moderada')).toBe(true)
+    expect(
+      isReevalToolTurn(
+        [
+          { name: 'cadastra_dados_iniciais', result: {} },
+          { name: 'define_protocolo', result: {} },
+        ],
+        '80kg, fome muita',
+      ),
+    ).toBe(true)
+  })
+
+  it('sem cadastra (só define_protocolo) → NÃO dispara', () => {
+    expect(isReevalToolTurn([{ name: 'define_protocolo', result: {} }], 'fome moderada')).toBe(false)
+  })
+
+  it('outra tool no turno ou pergunta → NÃO dispara', () => {
+    expect(
+      isReevalToolTurn(
+        [
+          { name: 'cadastra_dados_iniciais', result: {} },
+          { name: 'registra_refeicao', result: {} },
+        ],
+        '80kg',
+      ),
+    ).toBe(false)
+    expect(isReevalToolTurn([{ name: 'cadastra_dados_iniciais', result: {} }], 'peso 80, e a meta muda?')).toBe(false)
+    expect(isReevalToolTurn([{ name: 'cadastra_dados_iniciais', error: 'x' }], '80kg')).toBe(false)
+    expect(isReevalToolTurn([], '80kg')).toBe(false)
+  })
+})
+
+describe('composeReevalResultMessage', () => {
+  it('confirma nova meta + protocolo + próxima em 14 dias', () => {
+    const msg = composeReevalResultMessage({
+      caloriesTarget: 1037,
+      proteinTarget: 85.5,
+      protocol: 'recomposicao',
+    })
+    expect(msg).toContain('Reavaliação concluída ✅')
+    expect(msg).toContain('🎯 Nova meta: **1.037 kcal** | **85.5 g** de proteína')
+    expect(msg).toContain('📋 Protocolo: Recomposição corporal')
+    expect(msg).toContain('Próxima reavaliação em 14 dias')
+  })
+
+  it('sem proteína → só kcal; sem protocolo → omite linha', () => {
+    const msg = composeReevalResultMessage({
+      caloriesTarget: 2000,
+      proteinTarget: null,
+      protocol: null,
+    })
+    expect(msg).toContain('🎯 Nova meta: **2.000 kcal**')
+    expect(msg).not.toContain('proteína')
+    expect(msg).not.toContain('📋 Protocolo:')
   })
 })

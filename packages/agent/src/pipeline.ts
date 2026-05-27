@@ -28,9 +28,11 @@ import {
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import {
   composePostRegistrationMessage,
+  composeReevalResultMessage,
   composeStatusMessage,
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
+  isReevalToolTurn,
   type RegistrationEntry,
 } from './post-registration-message.js'
 import { detectFakeWrite } from './fake-write-detector.js'
@@ -550,6 +552,50 @@ export async function processMessage(
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'pipeline.deterministic_status',
+          properties: { stage, tools: iterEntries.map((e) => e.name) },
+        })
+        break
+      }
+    } else if (isReevalToolTurn(iterEntries, input.text) && stage !== 'coleta_dados') {
+      // ── #2 RESULTADO DE REAVALIAÇÃO (Roberto 2026-05-27): paciente respondeu
+      // peso/fome → sistema confirma a NOVA meta de forma determinística (números
+      // que valem os próximos 14 dias), sem a IA re-redigir. Gatilho ESTREITO:
+      // exige reevaluation.due recente (últimas 48h) — nunca dispara no onboarding
+      // nem em update casual. Se não for reavaliação real → fluxo normal (LLM).
+      const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+      const [{ data: revalDue }, { data: profRow }] = await Promise.all([
+        deps.supabase
+          .from('product_events')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('event', 'reevaluation.due')
+          .gte('occurred_at', since)
+          .limit(1),
+        deps.supabase
+          .from('user_profiles')
+          .select('current_protocol')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ])
+      if (revalDue && revalDue.length > 0) {
+        const cadastra = iterEntries.find((e) => e.name === 'cadastra_dados_iniciais')
+        const cr = (cadastra?.result ?? {}) as {
+          calories_target_today?: number | null
+          protein_target_today_g?: number | null
+        }
+        finalText = composeReevalResultMessage({
+          caloriesTarget: cr.calories_target_today ?? null,
+          proteinTarget: cr.protein_target_today_g ?? null,
+          protocol:
+            (profRow as { current_protocol?: string | null } | null)?.current_protocol ??
+            ctx.profile.currentProtocol ??
+            null,
+        })
+        messages.push({ role: 'assistant', content: finalText })
+        deterministicRegistration = true // reusa o flag de single-message
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.deterministic_reeval',
           properties: { stage, tools: iterEntries.map((e) => e.name) },
         })
         break

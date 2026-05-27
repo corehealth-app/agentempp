@@ -35,6 +35,7 @@ import {
   isReevalToolTurn,
   type RegistrationEntry,
 } from './post-registration-message.js'
+import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -1179,14 +1180,6 @@ function resolveStage(profile: UserProfile): AgentStage {
   return profile.currentProtocol
 }
 
-/** locale do paciente → idioma das regras ('pt-BR' default). */
-function normalizeRuleLang(locale: string | null | undefined): 'pt-BR' | 'en' | 'es' {
-  const l = (locale ?? '').toLowerCase()
-  if (l.startsWith('en')) return 'en'
-  if (l.startsWith('es')) return 'es'
-  return 'pt-BR'
-}
-
 async function loadActivePrompt(
   supabase: ServiceClient,
   stage: AgentStage,
@@ -1201,26 +1194,11 @@ async function loadActivePrompt(
   if (error) throw error
   if (!data) return null
 
-  // ECONOMIA DE TOKEN #1 (Roberto 2026-05-27): a view agrega TODAS as regras
-  // ativas em PT/EN/ES toda vez. Re-agregamos aqui filtrando por idioma do
-  // paciente: mantém pt-BR (base do método) + idioma do paciente + agnóstico
-  // (null); descarta as duplicatas localizadas de OUTRO idioma. Paciente pt-BR
-  // perde ~7,5k tokens (16 regras en/es) por turno, sem perder nada. Formato
-  // idêntico ao da view (verificado: '## '||topic||E'\n\n'||content joinado por
-  // E'\n\n---\n\n', ordem display_order) — só dropa os blocos de idioma estranho.
-  const lang = normalizeRuleLang(locale)
-  const { data: rules } = await supabase
-    .from('agent_rules')
-    .select('topic, content, language')
-    .eq('status', 'active')
-    .or(`tipo.eq.regras_gerais,tipo.eq.${stage}`)
-    .order('display_order', { ascending: true })
-  const rows = (rules ?? []) as Array<{ topic: string; content: string; language: string | null }>
-  const kept = rows.filter((r) => r.language == null || r.language === 'pt-BR' || r.language === lang)
-  const system_prompt =
-    kept.length > 0
-      ? kept.map((r) => `## ${r.topic}\n\n${r.content}`).join('\n\n---\n\n')
-      : (data as { system_prompt: string }).system_prompt // fallback: prompt cheio da view
+  // ECONOMIA DE TOKEN #1: re-agrega o system_prompt filtrando pelo idioma do
+  // paciente (helper compartilhado com o engajamento). Fallback pro prompt cheio
+  // da view se a query falhar / não retornar regras.
+  const filtered = await loadFilteredSystemPrompt(supabase, stage, locale)
+  const system_prompt = filtered ?? (data as { system_prompt: string }).system_prompt
 
   return { ...data, system_prompt } as {
     stage: AgentStage

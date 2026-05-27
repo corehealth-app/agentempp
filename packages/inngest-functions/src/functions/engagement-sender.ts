@@ -5,6 +5,7 @@ import {
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
+  loadFilteredSystemPrompt,
   reconcileBlocoMention,
   reconcileRealDeficitProse,
   reevaluationKickoff,
@@ -268,6 +269,14 @@ async function maybeEngageUser(
     return { sent: false, reason: 'sem prompt engajamento' }
   }
 
+  // ECONOMIA DE TOKEN #1: filtra as regras do prompt pelo idioma do paciente
+  // (mesmo helper do pipeline). Paciente pt-BR não carrega as duplicatas en/es.
+  // Fallback pro prompt cheio da view se a query falhar.
+  const filteredSystem =
+    (await loadFilteredSystemPrompt(supabase, 'engajamento', userTyped?.locale)) ??
+    prompt.system_prompt ??
+    ''
+
   // Estado do user
   const { data: progress } = await supabase
     .from('user_progress')
@@ -394,7 +403,7 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
 
   const result = await llm.complete({
     model: prompt.model,
-    systemPrompt: prompt.system_prompt ?? '',
+    systemPrompt: filteredSystem,
     messages: [
       {
         role: 'user',

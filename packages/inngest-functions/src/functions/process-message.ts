@@ -285,6 +285,26 @@ export const processMessageFn = inngest.createFunction(
         }
       } else {
         logger.warn('Vision skipped', { reason: vRes.ok ? 'sem imagens' : vRes.reason })
+        // Observabilidade (Roberto 2026-05-27 08:47): a falha de visão NUNCA
+        // virava evento — só logger.warn do Inngest, inacessível sem `vercel
+        // logs` ao vivo. Confirmado: 0 logs de falha de download em 10 dias.
+        // Agora grava product_events com o motivo exato (token/timeout/CDN/5xx)
+        // pra auditoria saber a causa e medir frequência.
+        if (!vRes.ok) {
+          await step.run('log-vision-download-failed', async () => {
+            const { supabase } = createWorkerDeps()
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'vision.download_failed',
+              properties: {
+                provider_message_id: providerMessageId,
+                reason: String(vRes.reason ?? '').slice(0, 500),
+                photo_count: allMediaUrls.length,
+                had_caption: !!text,
+              },
+            })
+          })
+        }
         if (text) {
           // Se não conseguiu ler mas tem caption, usa só a caption
           enrichedText = text

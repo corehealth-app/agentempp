@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   validateNumericClaims,
   reconcileBalanceProse,
+  reconcileRealDeficitProse,
   detectDeficitRealMismatch,
   detectPrematureBlockCompletion,
 } from './numeric-validator.js'
@@ -233,5 +234,44 @@ describe('reconcileBalanceProse — corrige rótulo/magnitude na prosa (Paulo 20
   it('saldo null/undefined é no-op seguro', () => {
     expect(reconcileBalanceProse('qualquer texto', null).replacements).toBe(0)
     expect(reconcileBalanceProse('qualquer texto', undefined).replacements).toBe(0)
+  })
+})
+
+describe('reconcileRealDeficitProse — matinal usa déficit REAL vs manutenção (Paulo 2026-05-27)', () => {
+  it('BUG do Paulo: "excedente de 119 kcal real" com realDef +381 vira "déficit real de 381 kcal vs manutenção"', () => {
+    const text = 'Ontem fechou com excedente de 119 kcal real — o treino ajudou bastante nesse total.'
+    const r = reconcileRealDeficitProse(text, 381)
+    expect(r.replacements).toBe(1)
+    expect(r.text).toContain('déficit real de 381 kcal vs manutenção')
+    expect(r.text).not.toMatch(/excedente/i)
+    expect(r.text).toContain('o treino ajudou') // não toca o resto da prosa
+  })
+
+  it('NÃO altera quando a prosa já diz déficit (sinal certo) — magnitude do LLM preservada', () => {
+    const text = 'Ontem você fechou com déficit real de 505 kcal vs manutenção. Mandou bem!'
+    const r = reconcileRealDeficitProse(text, 505)
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(text)
+  })
+
+  it('superávit real: "déficit de 919 kcal" com realDef -919 vira "superávit ... acima da manutenção"', () => {
+    const text = 'Ontem você teve 919 kcal de déficit, ótimo ritmo.'
+    const r = reconcileRealDeficitProse(text, -919)
+    expect(r.replacements).toBe(1)
+    expect(r.text).toContain('superávit de 919 kcal acima da manutenção')
+    expect(r.text).not.toMatch(/d[ée]ficit/i)
+  })
+
+  it('Roberto correto: "919 kcal acima da manutenção" com realDef -919 fica intacto', () => {
+    const text = 'Ontem você acumulou 919 kcal acima da manutenção — dia mais flexível, tudo bem.'
+    const r = reconcileRealDeficitProse(text, -919)
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(text)
+  })
+
+  it('on_target (|realDef| ≤ tolerância) e null/undefined são no-op', () => {
+    expect(reconcileRealDeficitProse('quase em manutenção, 20 kcal', 20).replacements).toBe(0)
+    expect(reconcileRealDeficitProse('texto', null).replacements).toBe(0)
+    expect(reconcileRealDeficitProse('texto', undefined).replacements).toBe(0)
   })
 })

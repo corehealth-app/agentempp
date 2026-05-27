@@ -366,6 +366,76 @@ export function reconcileBalanceProse(
 }
 
 /**
+ * Reconcilia a afirmação de BALANÇO DE ONTEM da mensagem matinal contra o
+ * DÉFICIT REAL vs MANUTENÇÃO (realDailyDeficit = designDeficit − dailyBalance).
+ *
+ * Por que existe ALÉM de reconcileBalanceProse: aquela valida contra o
+ * daily_balance (vs META). A matinal comunica o real vs MANUTENÇÃO — e os dois
+ * DISCORDAM de sinal na zona "acima da meta, porém abaixo da manutenção"
+ * (Paulo 2026-05-27: daily_balance +119 = excedente vs meta, mas realDef +381 =
+ * déficit real vs manutenção). Nessa zona, reconcileBalanceProse NÃO pega a
+ * inversão "excedente de 119" — pior, poderia CORROMPER um correto "déficit
+ * real de 381" achando que é excedente. Por isso a matinal usa ESTA função.
+ *
+ *   realDef > tol  → déficit real (emagrece / alimenta o bloco 7700)
+ *   realDef < -tol → superávit acima da manutenção (comeu mais do que gastou)
+ *
+ * Só reescreve quando o SINAL da prosa (déficit ↔ superávit/excedente) diverge
+ * do realDef; frase com sinal certo fica intacta (magnitude do LLM preservada).
+ */
+export function reconcileRealDeficitProse(
+  text: string,
+  realDef: number | null | undefined,
+  opts: { tolerance?: number } = {},
+): { text: string; replacements: number } {
+  if (!text || realDef == null) return { text, replacements: 0 }
+  const tol = opts.tolerance ?? 50
+  const realSign: 'deficit' | 'surplus' | 'on_target' =
+    realDef > tol ? 'deficit' : realDef < -tol ? 'surplus' : 'on_target'
+  if (realSign === 'on_target') return { text, replacements: 0 }
+
+  const mag = Math.abs(Math.round(realDef))
+  const replacement =
+    realSign === 'deficit'
+      ? `déficit real de ${mag} kcal vs manutenção`
+      : `superávit de ${mag} kcal acima da manutenção`
+  const wordToSign = (w: string): 'deficit' | 'surplus' =>
+    /^d[ée]f/i.test(w) ? 'deficit' : 'surplus'
+
+  let replacements = 0
+  let out = text
+
+  // Padrão A: "<palavra> (real|leve|...)? de <n> kcal[ real][ vs/acima/abaixo manutenção]?"
+  out = out.replace(
+    /\b(d[ée]ficit|super[áa]vit|excedente)\b(?:\s+(?:real|leve|pequen[oa]|grande))?\s+de\s+[\d.,]+\s*kcal(?:\s+reais?)?(?:\s+(?:vs\.?\s+manuten[çc][ãa]o|(?:acima|abaixo)\s+da\s+manuten[çc][ãa]o))?/gi,
+    (full: string, word: string) => {
+      if (wordToSign(word) === realSign) return full
+      replacements++
+      return /^[A-ZÀ-Ý]/.test(full.trimStart())
+        ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+        : replacement
+    },
+  )
+
+  // Padrão B: "<n> kcal (de <palavra> | acima/abaixo da manutenção)"
+  out = out.replace(
+    /[\d.,]+\s*kcal\s+(?:de\s+(d[ée]ficit|super[áa]vit|excedente)\b|(acima|abaixo)\s+da\s+manuten[çc][ãa]o)/gi,
+    (full: string, word: string | undefined, dir: string | undefined) => {
+      const sign: 'deficit' | 'surplus' = word
+        ? wordToSign(word)
+        : dir && /acima/i.test(dir)
+          ? 'surplus'
+          : 'deficit'
+      if (sign === realSign) return full
+      replacements++
+      return replacement
+    },
+  )
+
+  return { text: out, replacements }
+}
+
+/**
  * Detecta o erro do "déficit real" (Roberto 2026-05-21): o LLM, ao narrar um
  * dia COM exercício, calcula "déficit real = exercício − excedente" e ESQUECE
  * que a meta já tem o déficit programado embutido. Ex: excedente 126, exercício

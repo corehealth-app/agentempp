@@ -118,22 +118,60 @@ export class WhatsAppCloudProvider implements MessagingProvider {
   }
 
   async downloadMedia(mediaId: string): Promise<Blob> {
+    // Retry com backoff: a falha mais comum (Roberto 2026-05-27 08:47) é
+    // transitória — timeout/hiccup da CDN lookaside ou 5xx momentâneo da Graph
+    // API. 1 foto falhou enquanto outras do mesmo paciente/dia funcionaram.
+    // Retentamos só falhas transitórias (rede / 408 / 429 / 5xx); erro
+    // definitivo (401/403/404 = token/ID inválido) sobe na hora.
     // 1. resolve URL
-    const metaRes = await fetch(`${this.base}/${mediaId}`, {
-      headers: { Authorization: `Bearer ${this.cfg.accessToken}` },
-    })
-    const meta = (await metaRes.json()) as { url?: string; error?: { message?: string } }
-    if (!metaRes.ok || !meta.url) {
+    const meta = await this.fetchWithRetry(
+      `${this.base}/${mediaId}`,
+      { headers: { Authorization: `Bearer ${this.cfg.accessToken}` } },
+      `resolve mediaId=${mediaId}`,
+    )
+    const metaJson = (await meta.json()) as { url?: string; error?: { message?: string } }
+    if (!metaJson.url) {
       throw new Error(
-        `downloadMedia: failed to resolve mediaId=${mediaId} (${metaRes.status} ${meta.error?.message ?? 'sem url'})`,
+        `downloadMedia: failed to resolve mediaId=${mediaId} (${meta.status} ${metaJson.error?.message ?? 'sem url'})`,
       )
     }
     // 2. baixa bytes
-    const r = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${this.cfg.accessToken}` },
-    })
-    if (!r.ok) throw new Error(`downloadMedia failed: ${r.status}`)
+    const r = await this.fetchWithRetry(
+      metaJson.url,
+      { headers: { Authorization: `Bearer ${this.cfg.accessToken}` } },
+      `download bytes mediaId=${mediaId}`,
+    )
     return await r.blob()
+  }
+
+  /**
+   * fetch com até 3 tentativas (backoff 300ms/900ms) em falhas TRANSITÓRIAS:
+   * erro de rede (fetch throw), timeout (408), rate limit (429) ou 5xx.
+   * Erros definitivos (4xx exceto 408/429) sobem imediatamente — retry não
+   * resolveria token/ID inválido. Lança no esgotamento das tentativas.
+   */
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    label: string,
+    attempts = 3,
+  ): Promise<Response> {
+    let lastErr: unknown
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetch(url, init)
+        if (res.ok) return res
+        const transient = res.status === 408 || res.status === 429 || res.status >= 500
+        if (!transient || i === attempts - 1) {
+          throw new Error(`downloadMedia [${label}] failed: ${res.status}`)
+        }
+      } catch (e) {
+        lastErr = e
+        if (i === attempts - 1) throw e instanceof Error ? e : new Error(String(e))
+      }
+      await new Promise((r) => setTimeout(r, 300 * (i + 1) ** 2))
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`downloadMedia [${label}] failed`)
   }
 
   async markRead(providerMessageId: string): Promise<void> {

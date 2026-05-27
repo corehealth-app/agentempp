@@ -5,8 +5,8 @@ import {
   getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
-  reconcileBalanceProse,
   reconcileBlocoMention,
+  reconcileRealDeficitProse,
   reevaluationKickoff,
 } from '@mpp/agent'
 import { realDailyDeficit } from '@mpp/core'
@@ -296,11 +296,20 @@ async function maybeEngageUser(
   const yesterdayLocalDate = yesterdayDate.toISOString().slice(0, 10)
   const { data: snapYesterday } = await supabase
     .from('daily_snapshots')
-    .select('calories_consumed, calories_target, daily_balance, exercise_calories')
+    .select('calories_consumed, calories_target, daily_balance, exercise_calories, day_status')
     .eq('user_id', userId)
     .eq('date', yesterdayLocalDate)
     .maybeSingle()
   const yesterdayBalance = (snapYesterday as { daily_balance?: number } | null)?.daily_balance
+  // GUARD dia incompleto (Erika 2026-05-27): a Erika não registrou nada ontem
+  // (consumido=0, day_status='pending_close'), mas daily_balance=0 → realDef=500
+  // → a matinal disse "fechou com 500 kcal de déficit" + parabéns. Déficit
+  // FABRICADO. Só afirmamos balanço de ontem se o dia teve consumo real E não
+  // ficou incompleto/sem fechar (mesma régua do crédito do bloco no closer).
+  const yConsumed = (snapYesterday as { calories_consumed?: number } | null)?.calories_consumed ?? 0
+  const yStatus = (snapYesterday as { day_status?: string } | null)?.day_status
+  const yesterdayUsable =
+    yConsumed > 0 && yStatus !== 'incomplete_no_response' && yStatus !== 'pending_close'
 
   // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
   const { data: profileRow } = await supabase
@@ -321,8 +330,10 @@ async function maybeEngageUser(
   // (ex: 897), não o 397; e creditar o exercício quando houve. O RÓTULO é
   // decidido em código — o LLM não decide número nem sinal (FIX #3 2026-05-20).
   let yesterdayLabel: string | null = null
-  if (yesterdayBalance != null) {
+  let yesterdayRealDef: number | null = null
+  if (yesterdayBalance != null && yesterdayUsable) {
     const realDef = Math.round(realDailyDeficit(designDeficit, yesterdayBalance))
+    yesterdayRealDef = realDef
     const yExercise =
       (snapYesterday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
     const treinoAjudou = yExercise > 0 ? ' — o treino ajudou a chegar nesse total' : ''
@@ -438,16 +449,20 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   }
 
   // FIX #3 (guard): se mesmo com o rótulo pronto o LLM inverter déficit/superávit
-  // na prosa (ex: "458 kcal de déficit" quando ontem foi superávit), corrige o
-  // texto pelo saldo real de ontem antes de enviar.
-  if (yesterdayBalance != null) {
-    const balFix = reconcileBalanceProse(text, yesterdayBalance)
+  // na prosa, corrige antes de enviar. Usa o DÉFICIT REAL vs manutenção (não o
+  // daily_balance vs meta) — Paulo 2026-05-27: daily_balance +119 = "excedente"
+  // vs meta, mas realDef +381 = déficit real; o LLM escreveu "excedente de 119
+  // real" e o reconciliador-por-saldo NÃO pegava (pior: corromperia o correto
+  // "déficit real de 381"). reconcileRealDeficitProse valida pelo realDef.
+  if (yesterdayRealDef != null) {
+    const balFix = reconcileRealDeficitProse(text, yesterdayRealDef)
     if (balFix.replacements > 0) {
       text = balFix.text
       await logEvent('llm.balance_prose_reconciled', {
         context: 'engagement',
         replacements: balFix.replacements,
-        daily_balance: yesterdayBalance,
+        real_deficit: yesterdayRealDef,
+        daily_balance: yesterdayBalance ?? null,
       })
     }
   }

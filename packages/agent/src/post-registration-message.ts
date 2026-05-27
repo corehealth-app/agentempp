@@ -156,4 +156,59 @@ export function composePostRegistrationMessage(input: PostRegistrationInput): st
   return `${blocks.join('\n\n')}\n\n${card}`
 }
 
+// ── #1 STATUS SOB DEMANDA (Roberto 2026-05-27) ──────────────────────────────
+// "como tô / quanto falta / meu bloco" → o sistema responde com o card canônico
+// (mesma fonte do registro), sem a 2ª chamada do LLM. Gatilho conservador: só
+// quando a única tool foi consulta_progresso E a msg é status PURO (sem coaching/
+// pergunta extra). Qualquer pergunta de coaching junto → fallback pro LLM.
+
+const STATUS_TOOLS = ['consulta_progresso']
+// Trailing `(?![\p{L}])` em vez de `\b`: `\b` usa só [A-Za-z0-9_] e FALHA depois de
+// letra acentuada (ex: "tô" termina em "ô"). O lookahead Unicode resolve e ainda
+// evita falso-positivo "como tomate" (não-status) ao exigir não-letra após "tô".
+/** Intenção de status puro do paciente. */
+const STATUS_INTENT =
+  /\b(como\s+(t[oô]|estou|vou|t[aá]\s+(meu|o)\s+dia|t[aá]\s+indo)|quanto\s+(falta|me\s+resta|sobra|tenho)|meu\s+bloco|status\s+do\s+dia|resumo\s+do\s+dia|como\s+est[aá]\s+(meu\s+dia|o\s+dia))(?![\p{L}])/iu
+/** Marcadores de coaching/decisão/pergunta extra → NÃO é status puro (generoso = mais fallback). */
+const STATUS_COACHING_MARKER =
+  /\b(posso|consigo|devo|pode|por\s*qu[eê]|porqu[eê]|o\s+que|qual|quais|como\s+fa[çc]o|recomenda|sugest|acha|vale\s+a\s+pena|melhor|troc|substitu|jantar|almo[çc]ar|comer|treinar)/i
+
+/**
+ * Decide se o turno é uma CONSULTA DE STATUS PURA que o sistema pode responder
+ * (sem 2ª chamada do LLM). Conservador:
+ *  - todas as tools do turno = consulta_progresso, com sucesso;
+ *  - a msg do paciente tem intenção de status E não tem marcador de coaching.
+ */
+export function isPureStatusQueryTurn(
+  entries: Array<{ name: string; error?: unknown; result?: unknown }>,
+  patientText: string | null | undefined,
+): boolean {
+  if (entries.length === 0) return false
+  const allStatus = entries.every((e) => STATUS_TOOLS.includes(e.name) && !e.error && !!e.result)
+  if (!allStatus) return false
+  const text = patientText ?? ''
+  if (!STATUS_INTENT.test(text)) return false
+  if (STATUS_COACHING_MARKER.test(text)) return false
+  return true
+}
+
+export interface StatusProgress {
+  currentStreak: number
+  level: number
+  xpTotal: number
+  blocksCompleted: number
+}
+
+/**
+ * Compõe a resposta de status, sem LLM: card de balanço canônico + 1 linha de
+ * progresso (sequência/nível/blocos). Mesmos números do registro/engajamento.
+ */
+export function composeStatusMessage(card: BalanceCardData, progress: StatusProgress): string {
+  const c = renderBalanceCard(card)
+  const seq =
+    progress.currentStreak === 1 ? '1 dia consecutivo' : `${progress.currentStreak} dias consecutivos`
+  const line = `🏅 Sequência: **${seq}** · Nível ${progress.level} (${fmt(progress.xpTotal)} XP) · ${progress.blocksCompleted} bloco(s) de 7.700 completo(s)`
+  return `${c}\n\n${line}`
+}
+
 export type { BalanceCardData }

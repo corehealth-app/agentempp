@@ -28,7 +28,9 @@ import {
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import {
   composePostRegistrationMessage,
+  composeStatusMessage,
   isPureRegistrationTurn,
+  isPureStatusQueryTurn,
   type RegistrationEntry,
 } from './post-registration-message.js'
 import { detectFakeWrite } from './fake-write-detector.js'
@@ -481,6 +483,73 @@ export async function processMessage(
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'pipeline.deterministic_registration',
+          properties: { stage, tools: iterEntries.map((e) => e.name) },
+        })
+        break
+      }
+    } else if (isPureStatusQueryTurn(iterEntries, input.text)) {
+      // ── #1 STATUS PURO (Roberto 2026-05-27): "como tô / quanto falta / meu
+      // bloco" → o sistema responde com o card canônico + linha de progresso,
+      // SEM a 2ª chamada do LLM. Mesma fonte de números do registro/FIX C.
+      // Gatilho conservador (só consulta_progresso + intenção de status pura);
+      // qualquer coaching junto cai no fluxo normal (LLM responde).
+      const todayStr = getLocalDateString(ctx.timezone)
+      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
+        deps.supabase
+          .from('daily_snapshots')
+          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
+          .eq('user_id', userId)
+          .eq('date', todayStr)
+          .maybeSingle(),
+        deps.supabase
+          .from('user_progress')
+          .select('deficit_block, current_streak, level, xp_total, blocks_completed')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ])
+      if (snapDet) {
+        const s = snapDet as {
+          calories_consumed: number
+          calories_target: number | null
+          protein_g: number
+          protein_target: number | null
+          exercise_calories: number
+        }
+        const p = (progDet ?? {}) as {
+          deficit_block?: number
+          current_streak?: number
+          level?: number
+          xp_total?: number
+          blocks_completed?: number
+        }
+        finalText = composeStatusMessage(
+          {
+            caloriesConsumed: s.calories_consumed,
+            caloriesTarget: s.calories_target,
+            proteinG: Number(s.protein_g),
+            proteinTarget: s.protein_target,
+            exerciseCalories: s.exercise_calories,
+            deficitBlock: p.deficit_block ?? 0,
+            protocol:
+              (ctx.profile.currentProtocol as
+                | 'recomposicao'
+                | 'ganho_massa'
+                | 'manutencao'
+                | null) ?? null,
+            last14d: ctx.last14d,
+          },
+          {
+            currentStreak: p.current_streak ?? 0,
+            level: p.level ?? 1,
+            xpTotal: p.xp_total ?? 0,
+            blocksCompleted: p.blocks_completed ?? 0,
+          },
+        )
+        messages.push({ role: 'assistant', content: finalText })
+        deterministicRegistration = true // reusa o flag de single-message (card não fragmenta)
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.deterministic_status',
           properties: { stage, tools: iterEntries.map((e) => e.name) },
         })
         break

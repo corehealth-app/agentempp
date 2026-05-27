@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   composePostRegistrationMessage,
+  composeStatusMessage,
   formatMealTable,
   isPureRegistrationTurn,
+  isPureStatusQueryTurn,
   type MealItem,
 } from './post-registration-message.js'
 
@@ -179,5 +181,78 @@ describe('composePostRegistrationMessage', () => {
     expect(msg).toContain('Café registrado ✅')
     expect(msg).toContain('_(já estava registrado)_')
     expect(msg).not.toContain('**Café:**')
+  })
+})
+
+describe('isPureStatusQueryTurn (gatilho do status determinístico)', () => {
+  const ok = [{ name: 'consulta_progresso', result: { progresso: {} } }]
+
+  it('status puro ("como tô?") com consulta_progresso → dispara', () => {
+    expect(isPureStatusQueryTurn(ok, 'como tô?')).toBe(true)
+    expect(isPureStatusQueryTurn(ok, 'quanto falta pro bloco?')).toBe(true)
+    expect(isPureStatusQueryTurn(ok, 'como tá meu dia')).toBe(true)
+    expect(isPureStatusQueryTurn(ok, 'resumo do dia')).toBe(true)
+  })
+
+  it('status + coaching ("como tô? consigo comer pizza?") → NÃO dispara (fallback LLM)', () => {
+    expect(isPureStatusQueryTurn(ok, 'como tô? consigo comer pizza?')).toBe(false)
+    expect(isPureStatusQueryTurn(ok, 'quanto falta? posso jantar fora?')).toBe(false)
+    expect(isPureStatusQueryTurn(ok, 'como tô e o que como no jantar?')).toBe(false)
+  })
+
+  it('sem intenção de status → NÃO dispara', () => {
+    expect(isPureStatusQueryTurn(ok, 'oi, tudo bem?')).toBe(false)
+    expect(isPureStatusQueryTurn(ok, 'qual minha meta hoje?')).toBe(false)
+  })
+
+  it('outra tool no turno ou tool com erro → NÃO dispara', () => {
+    expect(isPureStatusQueryTurn([{ name: 'registra_refeicao', result: {} }], 'como tô?')).toBe(false)
+    expect(
+      isPureStatusQueryTurn(
+        [
+          { name: 'consulta_progresso', result: {} },
+          { name: 'consulta_metricas', result: {} },
+        ],
+        'como tô?',
+      ),
+    ).toBe(false)
+    expect(isPureStatusQueryTurn([{ name: 'consulta_progresso', error: 'x' }], 'como tô?')).toBe(false)
+    expect(isPureStatusQueryTurn([], 'como tô?')).toBe(false)
+  })
+})
+
+describe('composeStatusMessage', () => {
+  const card = {
+    caloriesConsumed: 800,
+    caloriesTarget: 1458,
+    proteinG: 60,
+    proteinTarget: 120,
+    exerciseCalories: 0,
+    deficitBlock: 5783,
+    protocol: 'recomposicao' as const,
+  }
+
+  it('monta card canônico + linha de progresso', () => {
+    const msg = composeStatusMessage(card, {
+      currentStreak: 7,
+      level: 2,
+      xpTotal: 155,
+      blocksCompleted: 0,
+    })
+    expect(msg).toContain('🔥 Consumido: **800 / 1.458 kcal') // card canônico
+    expect(msg).toContain('📊 Bloco 7700:')
+    expect(msg).toContain('🏅 Sequência: **7 dias consecutivos**')
+    expect(msg).toContain('Nível 2 (155 XP)')
+    expect(msg).toContain('0 bloco(s) de 7.700 completo(s)')
+  })
+
+  it('singular "1 dia consecutivo"', () => {
+    const msg = composeStatusMessage(card, {
+      currentStreak: 1,
+      level: 1,
+      xpTotal: 10,
+      blocksCompleted: 0,
+    })
+    expect(msg).toContain('🏅 Sequência: **1 dia consecutivo**')
   })
 })

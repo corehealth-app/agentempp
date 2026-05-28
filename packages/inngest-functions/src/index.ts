@@ -12,6 +12,7 @@ import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.j
 import { dailyAuditFn } from './functions/daily-audit.js'
 import { sampleJudgeFn } from './functions/sample-judge.js'
 import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
+import { pendingCleanupFn } from './functions/pending-cleanup.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -25,6 +26,7 @@ export const allFunctions = [
   dailyAuditFn,
   sampleJudgeFn,
   interactiveButtonHandlerFn,
+  pendingCleanupFn,
 ]
 
 export {
@@ -39,4 +41,5 @@ export {
   dailyAuditFn,
   sampleJudgeFn,
   interactiveButtonHandlerFn,
+  pendingCleanupFn,
 }

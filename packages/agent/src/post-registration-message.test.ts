@@ -358,6 +358,51 @@ describe('composePendingProposal — proposta + botões pro tap [Sim, registrar]
     expect(out.buttons[1]!.title.length).toBeLessThanOrEqual(20)
   })
 
+  it('foto: abertura é "Vi isso na sua foto (Almoço):" (Roberto 2026-05-28)', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: [item({ name: 'arroz', display_qty: 150, kcal: 192 })],
+      totals: { kcal: 192, protein_g: 3, carbs_g: 42, fat_g: 0 },
+      sourceContentType: 'image',
+    })
+    expect(out.body).toContain('Vi isso na sua foto (Almoço):')
+    expect(out.body).not.toContain('Entendi isso pro seu')
+  })
+
+  it('áudio: abertura é "Entendi isso do áudio (Almoço):"', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: [item({ name: 'arroz', display_qty: 150, kcal: 192 })],
+      totals: { kcal: 192, protein_g: 3, carbs_g: 42, fat_g: 0 },
+      sourceContentType: 'audio',
+    })
+    expect(out.body).toContain('Entendi isso do áudio (Almoço):')
+  })
+
+  it('treino via foto: "Vi isso na sua foto (treino):"', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'workout',
+      workoutType: 'musculacao',
+      durationMin: 40,
+      kcalEst: 339,
+      sourceContentType: 'image',
+    })
+    expect(out.body).toContain('Vi isso na sua foto (treino):')
+  })
+
+  it('texto default (sourceContentType ausente ou text): "Entendi isso pro seu"', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: [item({ name: 'arroz', display_qty: 150, kcal: 192 })],
+      totals: { kcal: 192, protein_g: 3, carbs_g: 42, fat_g: 0 },
+      sourceContentType: 'text',
+    })
+    expect(out.body).toContain('Entendi isso pro seu Almoço:')
+  })
+
   it('respeita o limite de 1024 chars do Meta (trunca preservando "Confirma?")', () => {
     const manyItems = Array.from({ length: 80 }, (_, i) =>
       item({ name: `item número ${i} com nome longo pra estourar`, display_qty: 100, kcal: 50 }),

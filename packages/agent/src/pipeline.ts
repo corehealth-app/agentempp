@@ -418,13 +418,20 @@ export async function processMessage(
           const buttonsEnabled =
             (ctx.userMetadata as { buttons_enabled?: boolean } | null)?.buttons_enabled === true
 
-          if (buttonsEnabled && !exprResult.eligible) {
-            // Cancela qualquer pending anterior em aberto pra esse user
+          // FIX (Roberto 2026-05-28): cancelar pendings em aberto SEMPRE que
+          // o paciente faz nova registra_refeicao — seja express OU não-express.
+          // Antes só cancelava no caminho "criar novo pending", então express com
+          // pending antigo aberto deixava órfão → paciente tocava Sim no antigo
+          // → registrava em DOBRO (express + antigo). UPDATE é no-op se nada bate.
+          if (buttonsEnabled) {
             await deps.supabase
               .from('pending_registrations')
               .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
               .eq('user_id', userId)
               .eq('status', 'pending')
+          }
+
+          if (buttonsEnabled && !exprResult.eligible) {
             // Cria o pending novo
             const args = validated as {
               meal_type?: string | null
@@ -463,6 +470,7 @@ export async function processMessage(
               mealType: args.meal_type ?? 'outro',
               items: proposalItems,
               totals: proposalTotals,
+              sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: input.text ?? null,
               express_eligible: false,
@@ -544,18 +552,23 @@ export async function processMessage(
           const buttonsEnabled =
             (ctx.userMetadata as { buttons_enabled?: boolean } | null)?.buttons_enabled === true
 
-          if (buttonsEnabled && !exprRes.eligible) {
+          // FIX (mesmo do registra_refeicao acima): cancela pending em aberto
+          // SEMPRE — express ou não — pra evitar duplicação caso tape Sim no antigo.
+          if (buttonsEnabled) {
             await deps.supabase
               .from('pending_registrations')
               .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
               .eq('user_id', userId)
               .eq('status', 'pending')
+          }
 
+          if (buttonsEnabled && !exprRes.eligible) {
             const proposal = {
               kind: 'workout' as const,
               workoutType: wArgs.workout_type ?? 'treino',
               durationMin: wArgs.duration_min ?? null,
               kcalEst: wArgs.estimated_kcal_from_image ?? null,
+              sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: input.text ?? null,
               express_eligible: false,

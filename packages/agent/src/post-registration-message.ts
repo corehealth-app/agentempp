@@ -286,6 +286,10 @@ export interface PendingProposal {
   workoutType?: string
   durationMin?: number | null
   kcalEst?: number | null
+  /** Tipo da mensagem que originou a proposta (Roberto 2026-05-28). Varia o
+   * texto da abertura: foto → "Vi isso na sua foto"; áudio → "Entendi do áudio";
+   * texto default → "Entendi isso pro seu ...". */
+  sourceContentType?: 'text' | 'image' | 'audio' | null
 }
 
 export interface PendingProposalMessage {
@@ -303,20 +307,27 @@ export function composePendingProposal(
     { id: `edit_${pendingId}`, title: 'Editar' },
   ]
 
+  // Abertura varia por tipo de origem (foto/áudio/texto) — Roberto 2026-05-28
+  const sourceOpening = (label: string): string => {
+    if (proposal.sourceContentType === 'image') return `Vi isso na sua foto (${label}):`
+    if (proposal.sourceContentType === 'audio') return `Entendi isso do áudio (${label}):`
+    return `Entendi isso pro seu ${label}:`
+  }
+
   if (proposal.kind === 'workout') {
     const wt = proposal.workoutType ?? 'treino'
     const dur = proposal.durationMin ? ` (${proposal.durationMin} min)` : ''
     const kcal = proposal.kcalEst != null ? ` — ${fmt(proposal.kcalEst)} kcal` : ''
     return {
-      body: `Entendi isso pro seu treino:\n\n🏋️ ${wt}${dur}${kcal}\n\nConfirma?`,
+      body: `${sourceOpening('treino')}\n\n🏋️ ${wt}${dur}${kcal}\n\nConfirma?`,
       buttons,
     }
   }
 
   // meal
-  const label = MEAL_LABEL[proposal.mealType ?? 'outro'] ?? MEAL_LABEL.outro
+  const label = MEAL_LABEL[proposal.mealType ?? 'outro'] ?? MEAL_LABEL.outro ?? 'Refeição'
   const items = proposal.items ?? []
-  const lines = [`Entendi isso pro seu ${label}:`, '']
+  const lines = [sourceOpening(label), '']
   for (const it of items) {
     lines.push(`• ${it.name} (${displayQty(it)}) — ${fmt(it.kcal)} kcal`)
   }

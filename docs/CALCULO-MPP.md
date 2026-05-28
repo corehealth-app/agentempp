@@ -54,14 +54,24 @@ daily_balance = consumido − meta − exercício
 
 1 kg de gordura = 7700 kcal. O bloco acumula o déficit creditado por dia.
 
-Crédito por dia (fiel ao `daily-closer` + `computeProgress`):
+**MODELO LÍQUIDO (Roberto 2026-05-28):** o cofrinho é **líquido** — dia bom
+soma, dia ruim **subtrai**. Pra perder 1 kg de fato, precisa de déficit
+*líquido* de 7700 kcal (não só "somar os dias bons"). Um dia de superávit
+re-armazena energia → tem que descontar do progresso.
+
+Crédito por dia (fonte única: `@mpp/core/engine/bloco` `creditDayToBloco`):
 ```
-newDeficit = max(0, designDeficit_efetivo + (−daily_balance))
+newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
 ```
 - `designDeficit_efetivo = designDeficit` se o dia credita; senão 0.
-- `deficit_block = soma(newDeficit) % 7700`; `blocks_completed = floor(soma / 7700)`.
-- Código: `packages/core/src/progress-calc.ts` (`computeProgress`),
-  `packages/inngest-functions/src/functions/daily-closer.ts`.
+- Ex dia bom: dd 500, balance −343 → +843 no bloco.
+- Ex excedente leve: dd 500, balance +357 → +143 no bloco.
+- Ex dia ruim (excedente > dd): dd 500, balance +1000 → **−500** no bloco.
+- `deficit_block = max(0, soma) % 7700`; `blocks_completed = floor(max(0, soma) / 7700)`.
+- **O cofrinho do paciente nunca fica negativo** (clamp em 0 no total). Se
+  uma sequência de dias ruins zerar o cofrinho, recomeça do zero pro próximo.
+- Código: `packages/core/src/engine/bloco.ts`. Chamado por `computeProgress`,
+  `daily-closer.ts` e `bloco-recompute.ts`.
 - Recálculo do zero (auditoria/backfill): `lib/bloco-recompute.ts`.
 
 ### Quando um dia CREDITA o bloco (regras de integridade)

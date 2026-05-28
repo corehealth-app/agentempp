@@ -22,27 +22,42 @@ export interface DayCreditInput {
 
 export function creditDayToBloco(d: DayCreditInput): number {
   if (!d.hasActivity) return 0
-  if (d.dayStatus === 'user_skipped') return Math.max(0, d.designDeficit - d.dailyBalance)
+  // user_skipped: paciente confirmou pulou uma refeição — dailyBalance reflete o
+  // que ELE comeu nas outras (dado real). Pode ser negativo (superávit).
+  if (d.dayStatus === 'user_skipped') return d.designDeficit - d.dailyBalance
   if (
     d.caloriesTarget != null &&
     d.caloriesTarget > 0 &&
     d.caloriesConsumed < 0.5 * d.caloriesTarget
   ) {
+    // Defesa contra sub-registro (paciente logou < 50% da meta): valor observado
+    // é fake (não comeu de verdade tão pouco). Credita só designDeficit ou 0.
     return d.dayStatus === 'complete' || d.dayStatus == null ? d.designDeficit : 0
   }
+  // Incomplete_no_response: lembrete enviado, paciente não respondeu → dado
+  // INCERTO. Mantém max(0) — não dá pra debitar com base em dado parcial.
   if (d.dayStatus === 'incomplete_no_response') return Math.max(0, -d.dailyBalance)
-  // Crédito = designDeficit − dailyBalance (= designDeficit + déficit observado).
-  // Fiel ao computeProgress: um excedente alimentar pequeno é absorvido pelo
-  // designDeficit (ex: dd 500, balance +357 → 143); o max(0) zera só quando o
-  // excedente supera o designDeficit. NÃO colocar guard `if (dailyBalance>0) return 0`
-  // — isso sub-creditaria dias de excedente leve e divergiria da produção.
-  return Math.max(0, d.designDeficit - d.dailyBalance)
+  // ── MODELO LÍQUIDO (Roberto 2026-05-28) ──────────────────────────────────
+  // Crédito = designDeficit − dailyBalance, podendo ser NEGATIVO em dia de
+  // superávit. Antes era `Math.max(0, ...)` (cofrinho só subia). Mudança de
+  // método autorizada pelo Roberto: "dia ruim TIRA do cofrinho" — mais fiel à
+  // fisiologia (pra perder 1kg precisa de déficit LÍQUIDO de 7700, não só somar
+  // os dias bons). Exemplo: dd 500, balance +1000 → −500 no cofrinho.
+  // O floor passou pro NÍVEL DO TOTAL em accumulateBloco — o cofrinho do paciente
+  // nunca fica negativo (cofrinho zerou = recomeça do zero pro próximo bloco).
+  return d.designDeficit - d.dailyBalance
 }
 
 export function accumulateBloco(credits: number[]): {
   deficitBlock: number
   blocksCompleted: number
 } {
-  const total = Math.round(credits.reduce((a, b) => a + b, 0))
+  // MODELO LÍQUIDO (Roberto 2026-05-28): credits podem ser negativos (superávit
+  // subtrai). Clamp total em 0 — cofrinho do paciente nunca fica negativo,
+  // mesmo após uma sequência de dias ruins. Se o paciente acumulou progresso
+  // que cruzou bloco(s) (ex: 8000 = 1 bloco completo + 300) e depois teve um
+  // dia ruim grande, o total decresce e blocksCompleted/deficitBlock recalculam
+  // naturalmente (8000 → 7500 = 0 bloco + 7500 no atual).
+  const total = Math.max(0, Math.round(credits.reduce((a, b) => a + b, 0)))
   return { deficitBlock: total % KCAL_BLOCK, blocksCompleted: Math.floor(total / KCAL_BLOCK) }
 }

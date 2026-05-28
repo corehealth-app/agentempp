@@ -31,8 +31,14 @@ describe('creditDayToBloco — regra de crédito por dia (fiel ao daily-closer)'
   it('excedente leve (dd absorve): dd 500, balance +357 → 143 (fiel ao computeProgress)', () => {
     expect(creditDayToBloco({ ...base, caloriesConsumed: 2200, dailyBalance: 357 })).toBe(143)
   })
-  it('excedente grande (> designDeficit): crédito 0, nunca negativo', () => {
-    expect(creditDayToBloco({ ...base, caloriesConsumed: 2600, dailyBalance: 700 })).toBe(0)
+  // MODELO LÍQUIDO (Roberto 2026-05-28): excedente que supera o designDeficit
+  // gera crédito NEGATIVO — o dia ruim subtrai do cofrinho acumulado. Antes
+  // era max(0, ...) → cofrinho só subia. Floor passou pro accumulateBloco.
+  it('excedente grande (> designDeficit): dd 500, balance +700 → -200 (modelo líquido)', () => {
+    expect(creditDayToBloco({ ...base, caloriesConsumed: 2600, dailyBalance: 700 })).toBe(-200)
+  })
+  it('superávit extremo: dd 500, balance +2000 → -1500 (subtrai pesado)', () => {
+    expect(creditDayToBloco({ ...base, caloriesConsumed: 3900, dailyBalance: 2000 })).toBe(-1500)
   })
   it('protocolo não-recomp (designDeficit 0) on-plan: crédito 0', () => {
     expect(creditDayToBloco({ ...base, designDeficit: 0, dailyBalance: 0 })).toBe(0)
@@ -48,6 +54,17 @@ describe('accumulateBloco', () => {
   })
   it('arredonda a soma antes do módulo', () => {
     expect(accumulateBloco([100.4, 100.4])).toEqual({ deficitBlock: 201, blocksCompleted: 0 })
+  })
+  // MODELO LÍQUIDO (Roberto 2026-05-28): credits negativos subtraem do total.
+  it('caso Roberto: cofrinho em 2000 + dia ruim -500 → 1500', () => {
+    expect(accumulateBloco([2000, -500])).toEqual({ deficitBlock: 1500, blocksCompleted: 0 })
+  })
+  it('clamp: sequência grande de dia ruim NÃO deixa cofrinho negativo', () => {
+    expect(accumulateBloco([300, -500, -200])).toEqual({ deficitBlock: 0, blocksCompleted: 0 })
+  })
+  it('décimos bons cruzam bloco; dia ruim grande retrocede', () => {
+    // 8000 (= 1 bloco + 300) + dia ruim -500 → 7500 (0 bloco + 7500 no atual)
+    expect(accumulateBloco([8000, -500])).toEqual({ deficitBlock: 7500, blocksCompleted: 0 })
   })
 })
 

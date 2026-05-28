@@ -42,6 +42,7 @@ import {
   isWorkoutExpressEligible,
   type ExpressInput,
 } from './express-mode-detector.js'
+import { calcMealMacros } from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -438,33 +439,37 @@ export async function processMessage(
               items: Array<{
                 food_name: string
                 quantity_g?: number
-                display_qty?: number | null
-                display_unit?: string | null
-                kcal?: number
-                protein_g?: number
-                carbs_g?: number
-                fat_g?: number
               }>
             }
-            const proposalItems = args.items.map((it) => ({
-              name: it.food_name,
-              quantity_g: it.quantity_g ?? 0,
-              display_qty: it.display_qty ?? null,
-              display_unit: it.display_unit ?? null,
-              kcal: it.kcal ?? 0,
-              protein_g: it.protein_g ?? 0,
-              carbs_g: it.carbs_g ?? 0,
-              fat_g: it.fat_g ?? 0,
-            }))
-            const proposalTotals = proposalItems.reduce(
-              (acc, it) => ({
-                kcal: acc.kcal + it.kcal,
-                protein_g: acc.protein_g + it.protein_g,
-                carbs_g: acc.carbs_g + it.carbs_g,
-                fat_g: acc.fat_g + it.fat_g,
-              }),
-              { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+            // FIX (Roberto 2026-05-28): a LLM passa só {food_name, quantity_g}.
+            // kcal/macros vêm da resolução TACO via calcMealMacros — o mesmo
+            // que registra_refeicao usa internamente. Sem isso o pending vinha
+            // com 0 kcal (Roberto viu na tela: "0 kcal" em todos os itens).
+            const resolved = await calcMealMacros(
+              deps.supabase,
+              args.items.map((it) => ({
+                food_name: it.food_name,
+                quantity_g: it.quantity_g ?? 0,
+              })),
+              ctx.country ?? 'BR',
+              userId,
             )
+            const proposalItems = resolved.items.map((m) => ({
+              name: m.food_name,
+              quantity_g: m.quantity_g,
+              display_qty: m.display_qty ?? null,
+              display_unit: m.display_unit ?? null,
+              kcal: m.kcal ?? 0,
+              protein_g: m.protein_g ?? 0,
+              carbs_g: m.carbs_g ?? 0,
+              fat_g: m.fat_g ?? 0,
+            }))
+            const proposalTotals = {
+              kcal: resolved.totals.kcal,
+              protein_g: resolved.totals.protein_g,
+              carbs_g: resolved.totals.carbs_g,
+              fat_g: resolved.totals.fat_g,
+            }
             const proposal = {
               kind: 'meal' as const,
               mealType: args.meal_type ?? 'outro',

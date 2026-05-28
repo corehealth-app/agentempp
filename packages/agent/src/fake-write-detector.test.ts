@@ -91,4 +91,33 @@ describe('detectFakeWrite', () => {
     expect(r.isFake).toBe(true)
     expect(r.kind).toBe('correction')
   })
+
+  // Bug Paulo 2026-05-28: "Registrei as duas caminhadas de 60 minutos cada"
+  // sem chamar registra_treino → guard antigo passava (zero kcal/emoji); fix:
+  // adiciona assinatura de TREINO (duração + tipo).
+  it('detects WORKOUT fake write (duração + tipo, sem kcal) — caso Paulo 2026-05-28', () => {
+    const r = detectFakeWrite({
+      content:
+        'Registrei as duas caminhadas de 60 minutos cada. Mas quero confirmar — foram duas sessões separadas hoje (120 minutos no total) ou foi uma única de 60 minutos?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
+  it('detects workout fake (musculação 40 min, sem kcal)', () => {
+    const r = detectFakeWrite({
+      content: 'Anotado: musculação de 40 minutos.',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+  })
+
+  it('NÃO confunde com prosa que só fala de treino sem afirmar registro', () => {
+    const r = detectFakeWrite({
+      content: 'Posso te ajudar com sua musculação de 30 minutos hoje?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
 })

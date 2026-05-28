@@ -43,10 +43,19 @@ export interface FakeWriteResult {
   kind: 'registration' | 'correction' | null
 }
 
+// Assinatura de TREINO (Paulo 2026-05-28): bug real do detector que só pegava
+// REFEIÇÃO. Caso: "Registrei as duas caminhadas de 60 minutos cada..." sem
+// chamar registra_treino. Texto tinha "registrei" + "minutos" + "caminhadas"
+// mas zero kcal/🔥/💪/📊 → guard antigo retornava isFake=false → fantasma
+// passava. Confirmado: workout_logs vazio, tools_audit não tem registra_treino.
+const WORKOUT_SIGNATURE =
+  /\b\d+\s*(min|minutos?|hora|horas?|h)\b.*\b(caminhada|musculaç[ãa]o|treino|corrida|bike|bicicleta|nataç[ãa]o|alongamento|yoga|pilates|exerc[íi]cio|peso|for[çc]a|cross\w*)\b|\b(caminhada|musculaç[ãa]o|treino|corrida|bike|bicicleta|nataç[ãa]o|exerc[íi]cio).*\b\d+\s*(min|hora)/i
+
 /**
  * Retorna isFake=true quando o texto afirma registro/correção + tem assinatura
- * de card (kcal ou emoji 🔥💪📊) MAS nenhuma tool de gravação rodou no turno.
- * Correção tem prioridade no `kind` (decide a mensagem de retry: replace=true).
+ * de card (kcal/🔥💪📊 pra refeição OU duração+tipo pra treino) MAS nenhuma
+ * tool de gravação rodou no turno. Correção tem prioridade no `kind` (decide
+ * a mensagem de retry: replace=true).
  */
 export function detectFakeWrite({
   content,
@@ -55,7 +64,8 @@ export function detectFakeWrite({
   if (registrationToolCalled) return { isFake: false, kind: null }
 
   const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
-  if (!hasFoodSignature) return { isFake: false, kind: null }
+  const hasWorkoutSignature = WORKOUT_SIGNATURE.test(content)
+  if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }
   if (REGISTRATION_CLAIM.test(content) || MEAL_CARD.test(content))

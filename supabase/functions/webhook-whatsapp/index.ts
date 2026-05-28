@@ -172,6 +172,45 @@ Deno.serve(async (req: Request) => {
           await supabase.from('user_progress').insert({ user_id: userId })
         }
 
+        // ============================================================
+        //  INTERACTIVE BUTTON TAP (Roberto 2026-05-28 — Fase A botões #4)
+        //  Tap do paciente em [Sim, registrar]/[Editar] chega como msg.type
+        //  'interactive' com button_reply.id (nosso ID interno tipo
+        //  "confirm_<pending_id>" ou "edit_<pending_id>"). NÃO passa pelo
+        //  buffer — é ação discreta, handler determinístico imediato.
+        // ============================================================
+        if (
+          msg.type === 'interactive' &&
+          msg.interactive?.type === 'button_reply' &&
+          msg.interactive?.button_reply?.id
+        ) {
+          const buttonId = msg.interactive.button_reply.id as string
+          const buttonTitle = (msg.interactive.button_reply.title as string) ?? ''
+          await supabase.from('messages').insert({
+            user_id: userId,
+            direction: 'in',
+            role: 'user',
+            content_type: 'interactive',
+            content: buttonId, // facilita query por id; o título fica no raw_payload
+            provider: 'whatsapp_cloud',
+            provider_message_id: msg.id,
+            raw_payload: msg,
+          })
+          await sendInngestEvent(
+            'interactive.button.tapped',
+            {
+              userId,
+              wpp: msg.from,
+              buttonId,
+              buttonTitle,
+              providerMessageId: msg.id,
+              tappedAt: new Date().toISOString(),
+            },
+            0, // sem delay — tap é ação imediata
+          )
+          continue
+        }
+
         const contentType =
           msg.type === 'text'
             ? 'text'

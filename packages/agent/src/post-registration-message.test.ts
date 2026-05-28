@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
   composeStatusMessage,
@@ -315,5 +316,59 @@ describe('composeReevalResultMessage', () => {
     expect(msg).toContain('🎯 Nova meta: **2.000 kcal**')
     expect(msg).not.toContain('proteína')
     expect(msg).not.toContain('📋 Protocolo:')
+  })
+})
+
+// ── FASE A botões #4 (Roberto 2026-05-28) ─────────────────────────────────────
+describe('composePendingProposal — proposta + botões pro tap [Sim, registrar] / [Editar]', () => {
+  const pendingId = 'abc12345-6789-4abc-89de-0123456789ab' // uuid v4 válido
+
+  it('refeição: monta corpo com items + total + "Confirma?" + 2 botões', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: [
+        item({ name: 'arroz branco cozido', display_qty: 150, kcal: 192 }),
+        item({ name: 'camarão cozido', display_qty: 100, kcal: 130 }),
+      ],
+      totals: { kcal: 322, protein_g: 25.7, carbs_g: 42, fat_g: 0.3 },
+    })
+    expect(out.body).toContain('Entendi isso pro seu Almoço:')
+    expect(out.body).toContain('• arroz branco cozido (150g) — 192 kcal')
+    expect(out.body).toContain('• camarão cozido (100g) — 130 kcal')
+    expect(out.body).toContain('Total: 322 kcal | 25.7g proteína | 42g carboidrato | 0.3g gordura')
+    expect(out.body).toContain('Confirma?')
+    expect(out.buttons).toEqual([
+      { id: `confirm_${pendingId}`, title: 'Sim, registrar' },
+      { id: `edit_${pendingId}`, title: 'Editar' },
+    ])
+  })
+
+  it('treino: monta linha com tipo+duração+kcal + botões', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'workout',
+      workoutType: 'caminhada',
+      durationMin: 30,
+      kcalEst: 82,
+    })
+    expect(out.body).toBe('Entendi isso pro seu treino:\n\n🏋️ caminhada (30 min) — 82 kcal\n\nConfirma?')
+    expect(out.buttons).toHaveLength(2)
+    expect(out.buttons[0]!.title).toBe('Sim, registrar')
+    expect(out.buttons[0]!.title.length).toBeLessThanOrEqual(20) // limite Meta
+    expect(out.buttons[1]!.title.length).toBeLessThanOrEqual(20)
+  })
+
+  it('respeita o limite de 1024 chars do Meta (trunca preservando "Confirma?")', () => {
+    const manyItems = Array.from({ length: 80 }, (_, i) =>
+      item({ name: `item número ${i} com nome longo pra estourar`, display_qty: 100, kcal: 50 }),
+    )
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: manyItems,
+      totals: { kcal: 4000, protein_g: 100, carbs_g: 400, fat_g: 80 },
+    })
+    expect(out.body.length).toBeLessThanOrEqual(1024)
+    expect(out.body).toContain('Confirma?')
   })
 })

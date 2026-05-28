@@ -13,6 +13,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type {
   HSMTemplate,
+  InteractiveButton,
   MessagingProvider,
   NormalizedInbound,
   QualityStatus,
@@ -78,6 +79,50 @@ export class WhatsAppCloudProvider implements MessagingProvider {
         ...(url.startsWith('http') ? { link: url } : { id: url }),
         ...(caption ? { caption } : {}),
       },
+    })
+  }
+
+  /**
+   * Mensagem com botões de reply (max 3) — Meta Cloud "interactive button".
+   * Intra-janela de 24h NÃO precisa template aprovado. Roberto 2026-05-28 (Fase A
+   * dos botões + modo express). Limites Meta: 3 botões, title <=20 chars,
+   * body <=1024 chars, id <=256 chars. Valido antes de mandar pra falhar rápido.
+   */
+  async sendInteractive(
+    to: string,
+    body: string,
+    buttons: InteractiveButton[],
+    opts?: SendOpts,
+  ): Promise<SendResult> {
+    if (buttons.length === 0 || buttons.length > 3) {
+      throw new Error(`sendInteractive: buttons.length must be 1-3, got ${buttons.length}`)
+    }
+    if (body.length === 0 || body.length > 1024) {
+      throw new Error(`sendInteractive: body length must be 1-1024, got ${body.length}`)
+    }
+    for (const b of buttons) {
+      if (!b.id || b.id.length > 256) {
+        throw new Error(`sendInteractive: button id length must be 1-256, got ${b.id.length}`)
+      }
+      if (!b.title || b.title.length > 20) {
+        throw new Error(`sendInteractive: button title length must be 1-20, got ${b.title.length} ("${b.title}")`)
+      }
+    }
+    return this.post({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        action: {
+          buttons: buttons.map((b) => ({
+            type: 'reply',
+            reply: { id: b.id, title: b.title },
+          })),
+        },
+      },
+      ...(opts?.replyTo ? { context: { message_id: opts.replyTo } } : {}),
     })
   }
 

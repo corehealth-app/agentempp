@@ -828,6 +828,36 @@ export type Database = {
           },
         ]
       }
+      method_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          embedding: string | null
+          id: string
+          page_title: string
+          protocol: string | null
+        }
+        Insert: {
+          chunk_index?: number
+          content: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          page_title: string
+          protocol?: string | null
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          page_title?: string
+          protocol?: string | null
+        }
+        Relationships: []
+      }
       pending_approvals: {
         Row: {
           application_error: string | null
@@ -879,6 +909,54 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_registrations: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          proposal: Json
+          proposal_msg_id: string | null
+          resolved_at: string | null
+          status: Database["public"]["Enums"]["pending_registration_status"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          proposal: Json
+          proposal_msg_id?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["pending_registration_status"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          proposal?: Json
+          proposal_msg_id?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["pending_registration_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_registrations_proposal_msg_id_fkey"
+            columns: ["proposal_msg_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processed_messages: {
         Row: {
           processed_at: string
@@ -925,6 +1003,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      prompt_backups: {
+        Row: {
+          backed_up_at: string
+          char_count: number | null
+          id: string
+          label: string | null
+          stage: string
+          system_prompt: string
+        }
+        Insert: {
+          backed_up_at?: string
+          char_count?: number | null
+          id?: string
+          label?: string | null
+          stage: string
+          system_prompt: string
+        }
+        Update: {
+          backed_up_at?: string
+          char_count?: number | null
+          id?: string
+          label?: string | null
+          stage?: string
+          system_prompt?: string
+        }
+        Relationships: []
       }
       reevaluations: {
         Row: {
@@ -1873,6 +1978,19 @@ export type Database = {
       f_unaccent: { Args: { "": string }; Returns: string }
       get_global_config: { Args: { p_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      match_method_chunks: {
+        Args: {
+          filter_protocol?: string
+          match_count?: number
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          distance: number
+          page_title: string
+          protocol: string
+        }[]
+      }
       pause_user: {
         Args: { p_days: number; p_user_id: string }
         Returns: undefined
@@ -2043,6 +2161,12 @@ export type Database = {
       hunger_enum: "pouca" | "moderada" | "muita"
       meal_type_enum: "cafe" | "almoco" | "lanche" | "jantar" | "ceia" | "outro"
       msg_role_enum: "user" | "assistant" | "system" | "tool"
+      pending_registration_status:
+        | "pending"
+        | "confirmed"
+        | "edited"
+        | "expired"
+        | "cancelled"
       plan_enum: "trial" | "mensal" | "anual"
       protocol_enum: "recomposicao" | "ganho_massa" | "manutencao"
       review_flag_enum:
@@ -2205,6 +2329,13 @@ export const Constants = {
       hunger_enum: ["pouca", "moderada", "muita"],
       meal_type_enum: ["cafe", "almoco", "lanche", "jantar", "ceia", "outro"],
       msg_role_enum: ["user", "assistant", "system", "tool"],
+      pending_registration_status: [
+        "pending",
+        "confirmed",
+        "edited",
+        "expired",
+        "cancelled",
+      ],
       plan_enum: ["trial", "mensal", "anual"],
       protocol_enum: ["recomposicao", "ganho_massa", "manutencao"],
       review_flag_enum: [

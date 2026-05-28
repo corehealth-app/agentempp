@@ -11,6 +11,7 @@ import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.js'
 import { dailyAuditFn } from './functions/daily-audit.js'
 import { sampleJudgeFn } from './functions/sample-judge.js'
+import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -23,6 +24,7 @@ export const allFunctions = [
   openrouterBalanceCheckFn,
   dailyAuditFn,
   sampleJudgeFn,
+  interactiveButtonHandlerFn,
 ]
 
 export {
@@ -36,4 +38,5 @@ export {
   openrouterBalanceCheckFn,
   dailyAuditFn,
   sampleJudgeFn,
+  interactiveButtonHandlerFn,
 }

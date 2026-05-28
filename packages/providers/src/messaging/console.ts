@@ -6,6 +6,7 @@
  */
 import type {
   HSMTemplate,
+  InteractiveButton,
   MessagingProvider,
   NormalizedInbound,
   QualityStatus,
@@ -67,6 +68,20 @@ export class ConsoleProvider implements MessagingProvider {
     const id = this.newId()
     this.write(
       `\n${this.color('🎙️ Agente (áudio) →', 'magenta')} ${this.color(to, 'dim')}\n${this.color(audioUrl, 'dim')}\n`,
+    )
+    return { providerMessageId: id, status: 'sent' }
+  }
+
+  async sendInteractive(
+    to: string,
+    body: string,
+    buttons: InteractiveButton[],
+    _opts?: SendOpts,
+  ): Promise<SendResult> {
+    const id = this.newId()
+    const btnStr = buttons.map((b) => `[${b.title}]`).join(' ')
+    this.write(
+      `\n${this.color('🤖 Agente (botões) →', 'green')} ${this.color(to, 'dim')}\n${body}\n${this.color(btnStr, 'dim')}\n`,
     )
     return { providerMessageId: id, status: 'sent' }
   }

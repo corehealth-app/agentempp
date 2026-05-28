@@ -53,6 +53,14 @@ export interface QualityStatus {
   tier: string
 }
 
+/** Botão de reply em mensagem interactive (WhatsApp). */
+export interface InteractiveButton {
+  /** ID livre — fica embutido no inbound do tap (button_reply.id). Limite Meta: 256 chars. */
+  id: string
+  /** Texto exibido no botão. Limite Meta: 20 chars (não inclui emoji bem). */
+  title: string
+}
+
 export interface MessagingProvider {
   readonly name: string
 
@@ -61,6 +69,15 @@ export interface MessagingProvider {
   sendAudio(to: string, audioUrl: string): Promise<SendResult>
   sendImage(to: string, url: string, caption?: string): Promise<SendResult>
   sendTemplate(to: string, template: HSMTemplate): Promise<SendResult>
+  /** Mensagem com botões de reply (max 3). Body up to 1024 chars.
+   * Intra-janela 24h — sem aprovação de template. Tap chega como inbound
+   * type='interactive', button_reply: { id, title }. Roberto 2026-05-28 (Fase A). */
+  sendInteractive(
+    to: string,
+    body: string,
+    buttons: InteractiveButton[],
+    opts?: SendOpts,
+  ): Promise<SendResult>
 
   // Reações (emoji em mensagem específica)
   /** emoji '' (string vazia) remove a reação */

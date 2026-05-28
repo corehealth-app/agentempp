@@ -268,4 +268,75 @@ export function composeReevalResultMessage(r: ReevalResult): string {
   return lines.join('\n')
 }
 
+// ── PENDING PROPOSAL: BOTÕES [Sim, registrar] / [Editar] (Roberto 2026-05-28) ──
+// Compõe a mensagem que o agente envia ao paciente pra ele CONFIRMAR antes de gravar.
+// Não chama a tool de gravar — só propõe. A gravação real só acontece quando o
+// paciente toca [Sim, registrar] (handler determinístico em interactive-handler.ts).
+// Resolve a classe `llm.fake_write_detected`: a gravação vira do TAP, não da decisão
+// do LLM. Plano completo: /root/.claude/plans/botoes-whatsapp.md (opção #4, Fase A).
+//
+// Limite Meta: body 1024 chars, title 20 chars. A função enforca limites realistas
+// (refeição até 10 items cabe folgado; treino é uma linha só).
+
+export interface PendingProposal {
+  kind: 'meal' | 'workout'
+  mealType?: string
+  items?: MealItem[]
+  totals?: MealTotals
+  workoutType?: string
+  durationMin?: number | null
+  kcalEst?: number | null
+}
+
+export interface PendingProposalMessage {
+  body: string
+  buttons: Array<{ id: string; title: string }>
+}
+
+/** Compõe o corpo (texto) + os 2 botões pra mensagem interactive da proposta. */
+export function composePendingProposal(
+  pendingId: string,
+  proposal: PendingProposal,
+): PendingProposalMessage {
+  const buttons = [
+    { id: `confirm_${pendingId}`, title: 'Sim, registrar' },
+    { id: `edit_${pendingId}`, title: 'Editar' },
+  ]
+
+  if (proposal.kind === 'workout') {
+    const wt = proposal.workoutType ?? 'treino'
+    const dur = proposal.durationMin ? ` (${proposal.durationMin} min)` : ''
+    const kcal = proposal.kcalEst != null ? ` — ${fmt(proposal.kcalEst)} kcal` : ''
+    return {
+      body: `Entendi isso pro seu treino:\n\n🏋️ ${wt}${dur}${kcal}\n\nConfirma?`,
+      buttons,
+    }
+  }
+
+  // meal
+  const label = MEAL_LABEL[proposal.mealType ?? 'outro'] ?? MEAL_LABEL.outro
+  const items = proposal.items ?? []
+  const lines = [`Entendi isso pro seu ${label}:`, '']
+  for (const it of items) {
+    lines.push(`• ${it.name} (${displayQty(it)}) — ${fmt(it.kcal)} kcal`)
+  }
+  if (proposal.totals) {
+    const t = proposal.totals
+    lines.push('')
+    lines.push(
+      `Total: ${fmt(t.kcal)} kcal | ${gram(t.protein_g)}g proteína | ${gram(t.carbs_g)}g carboidrato | ${gram(t.fat_g)}g gordura`,
+    )
+  }
+  lines.push('')
+  lines.push('Confirma?')
+  let body = lines.join('\n')
+  // Salvaguarda hard contra estouro de 1024 chars do Meta (refeição absurda):
+  // trunca preservando o "Confirma?" no fim.
+  if (body.length > 1024) {
+    const tail = '\n…\n\nConfirma?'
+    body = body.slice(0, 1024 - tail.length) + tail
+  }
+  return { body, buttons }
+}
+
 export type { BalanceCardData }

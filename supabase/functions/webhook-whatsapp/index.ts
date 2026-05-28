@@ -217,10 +217,15 @@ Deno.serve(async (req: Request) => {
         // Dispara evento com delay — Inngest aciona buffer-flush após debounce.
         // Cada msg dispara um evento, mas o worker é idempotente:
         // só processa se ainda houver buffer com flush_after expirado.
+        //
+        // MARGEM 1500ms (Roberto/Paulo 2026-05-27): antes era +200ms — RACE quando
+        // msg2 chega perto do fim do debounce: a RPC de append da msg2 não terminava
+        // antes do dispatch fire, e o flush rodava só com msg1 (foto ignorada,
+        // 8 ocorrências em 7d). 1500ms cobre o tempo de RPC com folga.
         await sendInngestEvent(
           'buffer.flush',
           { userId, count: aggregatedCount, fired_at: new Date().toISOString() },
-          debounceMs + 200,
+          debounceMs + 1500,
         )
       }
     }

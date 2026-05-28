@@ -1380,6 +1380,63 @@ export const registraTreino: ToolDefinition = {
       }
     }
 
+    // 3ª camada: CORREÇÃO de treino (Roberto 2026-05-27). Paulo registrou caminhada
+    // 60min, corrigiu pra 30min → o sistema SOMOU (60+30=90min/247kcal) em vez de
+    // SUBSTITUIR. Dedup só pega tipo+duração igual. Espelha o `replace` do
+    // registra_refeicao: se a mensagem do paciente tem intenção de correção E já
+    // existe treino do MESMO TIPO nas últimas 2h, deletamos o antigo, abatemos
+    // o kcal do snapshot, e seguimos pro insert normal (que soma o novo).
+    if (args.duration_min != null) {
+      const correctionWord = detectCorrectionIntent(ctx.recentUserMessages ?? [])
+      if (correctionWord) {
+        const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+        const { data: oldOnes } = await ctx.supabase
+          .from('workout_logs')
+          .select('id, estimated_kcal, duration_min')
+          .eq('user_id', ctx.userId)
+          .eq('workout_type', args.workout_type)
+          .gte('created_at', twoHoursAgo)
+        const oldRows = (oldOnes ?? []) as Array<{
+          id: string
+          estimated_kcal: number | null
+          duration_min: number | null
+        }>
+        if (oldRows.length > 0) {
+          const oldKcalSum = oldRows.reduce((s, w) => s + (w.estimated_kcal ?? 0), 0)
+          await ctx.supabase
+            .from('workout_logs')
+            .delete()
+            .in('id', oldRows.map((r) => r.id))
+          // Abate o kcal antigo do snapshot (negativo) — o insert normal abaixo
+          // soma o novo kcal. Net: troca o antigo pelo novo.
+          if (oldKcalSum > 0) {
+            await (ctx.supabase as unknown as {
+              rpc: (
+                n: string,
+                p: Record<string, unknown>,
+              ) => Promise<{ error: { message?: string } | null }>
+            }).rpc('snapshot_add_workout', {
+              p_user_id: ctx.userId,
+              p_date: today,
+              p_exercise_kcal: -oldKcalSum,
+            })
+          }
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.workout_replaced',
+            properties: {
+              workout_type: args.workout_type,
+              correction_word: correctionWord,
+              old_count: oldRows.length,
+              old_kcal_sum: oldKcalSum,
+              old_durations: oldRows.map((r) => r.duration_min),
+              new_duration_min: args.duration_min,
+            },
+          })
+        }
+      }
+    }
+
     // Targets calóricos
     const cfg = await loadCalcConfig(ctx.supabase)
     const tgt = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)

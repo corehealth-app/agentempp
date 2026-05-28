@@ -71,3 +71,134 @@ describe('registra_treino — dedup (Paulo 2026-05-26)', () => {
     expect(events.find((e) => e.event === 'tool.workout_redup_skipped')).toBeDefined()
   })
 })
+
+// ── FIX #3 CORREÇÃO DE TREINO (Roberto 2026-05-27) ───────────────────────────
+// Paulo: caminhada 60min → "Correção: a caminhada é 30 minutos" → soma virou
+// 60+30=90min/247kcal. Esperado: deletar o antigo, abater kcal do snapshot,
+// inserir o novo. Verifica que o evento 'tool.workout_replaced' foi logado e
+// que o supabase recebeu delete + rpc com kcal negativo.
+
+function makeReplaceCtx(opts: { hasOldWorkoutSameType: boolean; correctionMsg: string }) {
+  const events: Array<{ event: string; properties: Record<string, unknown> }> = []
+  const rpcCalls: Array<{ name: string; params: Record<string, unknown> }> = []
+  const deleteCalls: Array<{ table: string }> = []
+
+  // workout_logs cadeia: distingue camadas pelo padrão de chamadas.
+  //   - .eq('raw_provider_message_id', ...) → idempotência pmid (devolve [])
+  //   - .eq('duration_min', X).gte(...) → dedup tipo+duração (devolve [])
+  //   - .eq('workout_type', X).gte(...) SEM .eq('duration_min', ...) → 3ª camada
+  //     (correção) — aqui devolve o treino antigo se opts.hasOldWorkoutSameType
+  function wlChain() {
+    let hasDuration = false
+    let hasGte = false
+    const o: Record<string, unknown> = {}
+    const term = () => {
+      const oldRow = hasGte && !hasDuration && opts.hasOldWorkoutSameType
+        ? [{ id: 'old-1', estimated_kcal: 165, duration_min: 60 }]
+        : []
+      return Promise.resolve({ data: oldRow, error: null })
+    }
+    for (const m of ['select', 'order', 'limit', 'maybeSingle', 'single', 'in', 'is', 'lt', 'lte', 'gt']) {
+      o[m] = () => o
+    }
+    o.eq = (col: string) => {
+      if (col === 'duration_min') hasDuration = true
+      return o
+    }
+    o.gte = () => {
+      hasGte = true
+      return o
+    }
+    o.then = (cb: (v: { data: unknown; error: null }) => unknown) => term().then(cb as never)
+    o.delete = () => ({ in: () => { deleteCalls.push({ table: 'workout_logs' }); return Promise.resolve({ data: null, error: null }) } })
+    o.insert = () => Promise.resolve({ data: null, error: null })
+    return o
+  }
+  const supabase = {
+    from: (t: string) => {
+      if (t === 'workout_logs') return wlChain()
+      if (t === 'product_events') {
+        return {
+          insert: (e: { event: string; properties: Record<string, unknown> }) => {
+            events.push(e)
+            return Promise.resolve({ data: null, error: null })
+          },
+        }
+      }
+      if (t === 'user_profiles') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { weight_kg: 70 }, error: null }) }) }),
+        }
+      }
+      return { insert: () => Promise.resolve({ data: null, error: null }), select: () => Promise.resolve({ data: [], error: null }) }
+    },
+    rpc: async (name: string, params: Record<string, unknown>) => {
+      rpcCalls.push({ name, params })
+      if (name === 'snapshot_add_workout') {
+        return { data: { id: 's1', exercise_calories: 82, training_done: true }, error: null }
+      }
+      if (name === 'calc_workout_kcal') return { data: 82, error: null }
+      return { data: null, error: null }
+    },
+  } as unknown as ServiceClient
+
+  return {
+    events,
+    rpcCalls,
+    deleteCalls,
+    ctx: {
+      supabase,
+      userId: 'u1',
+      userWpp: '5511999999999',
+      userCountry: 'BR',
+      userTimezone: 'America/Sao_Paulo',
+      providerMessageId: 'pmid-correcao',
+      recentUserMessages: [opts.correctionMsg],
+    },
+  }
+}
+
+describe('registra_treino — correção via texto SUBSTITUI em vez de SOMAR (Roberto 2026-05-27)', () => {
+  // O fix roda ANTES do insert normal (que usa loadCalcConfig + outros mocks pesados).
+  // Os testes ignoram falhas posteriores (try/catch) e verificam só os EFEITOS do fix:
+  // delete + evento 'tool.workout_replaced' + rpc com kcal negativo.
+
+  it('texto com "Correção: caminhada é 30 min" + caminhada 60min recente → deleta antigo, abate kcal, insere novo', async () => {
+    const { ctx, events, rpcCalls, deleteCalls } = makeReplaceCtx({
+      hasOldWorkoutSameType: true,
+      correctionMsg: 'Correção: a caminhada é 30 minutos , foi considerado calorias de 60 minutos',
+    })
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await registraTreino.execute({ workout_type: 'caminhada', duration_min: 30 } as any, ctx as any)
+    } catch {
+      /* mock incompleto pro fluxo de insert — só auditamos o que o fix faz antes */
+    }
+    expect(deleteCalls.length).toBeGreaterThan(0) // deletou o antigo
+    const replacedEvent = events.find((e) => e.event === 'tool.workout_replaced')
+    expect(replacedEvent).toBeDefined()
+    expect(replacedEvent!.properties.old_kcal_sum).toBe(165)
+    expect(replacedEvent!.properties.new_duration_min).toBe(30)
+    // RPC chamado com kcal NEGATIVO pra abater o antigo do snapshot
+    const negRpc = rpcCalls.find(
+      (c) => c.name === 'snapshot_add_workout' && (c.params.p_exercise_kcal as number) < 0,
+    )
+    expect(negRpc).toBeDefined()
+    expect(negRpc!.params.p_exercise_kcal).toBe(-165)
+  })
+
+  it('SEM intenção de correção (msg neutra) → não substitui (delete e evento não disparam)', async () => {
+    const { ctx, events, deleteCalls } = makeReplaceCtx({
+      hasOldWorkoutSameType: true,
+      correctionMsg: 'Acabei de fazer caminhada de 30 min',
+    })
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await registraTreino.execute({ workout_type: 'caminhada', duration_min: 30 } as any, ctx as any)
+    } catch {
+      /* idem */
+    }
+    expect(deleteCalls.length).toBe(0)
+    expect(events.find((e) => e.event === 'tool.workout_replaced')).toBeUndefined()
+  })
+})

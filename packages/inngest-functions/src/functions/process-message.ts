@@ -1,3 +1,4 @@
+import { detectPendingResponse } from '@mpp/agent'
 import {
   GeminiVision,
   GroqSTT,
@@ -56,6 +57,58 @@ export const processMessageFn = inngest.createFunction(
       META_APP_SECRET: process.env.META_APP_SECRET,
       META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
     })
+
+    // === FASE B/D — DEC-3: paciente digita "sim"/"editar" em vez de tocar ===
+    // Antes de qualquer outro processamento, se for texto curto que casa com
+    // padrão de confirm/edit E houver pending em aberto pra esse paciente,
+    // tratamos como TAP — dispara o mesmo evento Inngest do botão (handler
+    // determinístico). Conservador: só fica ativo pra paciente com
+    // buttons_enabled, e só intercepta texto curto. Roberto 2026-05-28.
+    if (contentType === 'text' && text) {
+      const responseKind = detectPendingResponse(text)
+      if (responseKind) {
+        const handled = await step.run('text-pending-fallback', async () => {
+          const { supabase } = createWorkerDeps()
+          const { data: pending } = await supabase
+            .from('pending_registrations')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('status', 'pending')
+            .gt('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const pendingId = (pending as { id: string } | null)?.id
+          if (!pendingId) return { dispatched: false, reason: 'no_active_pending' }
+          await inngest.send({
+            name: 'interactive.button.tapped',
+            data: {
+              userId,
+              wpp,
+              buttonId: `${responseKind}_${pendingId}`,
+              buttonTitle: responseKind === 'confirm' ? 'Sim, registrar' : 'Editar',
+              providerMessageId,
+              tappedAt: new Date().toISOString(),
+            },
+          })
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pending.text_fallback',
+            properties: { pendingId, response: responseKind, text_preview: text.slice(0, 50) },
+          })
+          return { dispatched: true, pendingId, responseKind }
+        })
+        if ((handled as { dispatched?: boolean })?.dispatched) {
+          return {
+            ok: true,
+            sent: 0,
+            reason: 'text_fallback_to_button_handler',
+            kind: responseKind,
+          }
+        }
+        // Sem pending ativo → cai no fluxo normal (LLM responde)
+      }
+    }
 
     // === Step 1: ack ===
     await step.run('ack', async () => {

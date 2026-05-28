@@ -37,6 +37,43 @@ export interface ExpressResult {
   items_count?: number
 }
 
+// Duração explícita no texto: "30 min", "30 minutos", "1 h", "1 hora".
+const DURATION_REGEX = /\b\d+\s*(min|minuto|hora|h\b)/i
+
+export interface WorkoutExpressInput {
+  contentType: 'text' | 'image' | 'audio'
+  patientText: string
+  workoutType?: string | null
+  durationMin?: number | null
+}
+
+/**
+ * Detector de express pra TREINO (Fase D botões #4).
+ * Texto claro com duração explícita ("30 min de caminhada") = express.
+ * Foto/áudio/vago = botão.
+ */
+export function isWorkoutExpressEligible(input: WorkoutExpressInput): ExpressResult {
+  if (input.contentType !== 'text') {
+    return { eligible: false, reason: `content_type_${input.contentType}` }
+  }
+  if (!input.patientText || input.patientText.trim().length === 0) {
+    return { eligible: false, reason: 'empty_text' }
+  }
+  if (UNCERTAINTY_MARKERS.test(input.patientText)) {
+    return { eligible: false, reason: 'uncertainty_marker' }
+  }
+  if (!input.workoutType) {
+    return { eligible: false, reason: 'no_workout_type' }
+  }
+  if (!input.durationMin || input.durationMin <= 0) {
+    return { eligible: false, reason: 'no_duration' }
+  }
+  if (!DURATION_REGEX.test(input.patientText)) {
+    return { eligible: false, reason: 'no_explicit_duration_in_text' }
+  }
+  return { eligible: true, reason: 'ok' }
+}
+
 export function isMealExpressEligible(input: ExpressInput): ExpressResult {
   if (input.contentType !== 'text') {
     return { eligible: false, reason: `content_type_${input.contentType}` }

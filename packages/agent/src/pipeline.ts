@@ -37,7 +37,11 @@ import {
   type RegistrationEntry,
 } from './post-registration-message.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
-import { isMealExpressEligible, type ExpressInput } from './express-mode-detector.js'
+import {
+  isMealExpressEligible,
+  isWorkoutExpressEligible,
+  type ExpressInput,
+} from './express-mode-detector.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -510,6 +514,98 @@ export async function processMessage(
                 meal_type: (validated as { meal_type?: string }).meal_type,
                 items_count: exprResult.items_count,
                 qty_markers_found: exprResult.qty_markers_found,
+              },
+            })
+          }
+        }
+        // ── FASE D: registra_treino também via botão ──────────────────────────
+        if (
+          tc.name === 'registra_treino' &&
+          result.toolCalls.length === 1 &&
+          (validated as { replace?: boolean }).replace !== true
+        ) {
+          const wArgs = validated as {
+            workout_type?: string
+            duration_min?: number | null
+            intensity?: string | null
+            estimated_kcal_from_image?: number | null
+          }
+          const exprRes = isWorkoutExpressEligible({
+            contentType:
+              ctx.lastInboundContentType === 'image'
+                ? 'image'
+                : ctx.lastInboundContentType === 'audio'
+                  ? 'audio'
+                  : 'text',
+            patientText: input.text ?? '',
+            workoutType: wArgs.workout_type ?? null,
+            durationMin: wArgs.duration_min ?? null,
+          })
+          const buttonsEnabled =
+            (ctx.userMetadata as { buttons_enabled?: boolean } | null)?.buttons_enabled === true
+
+          if (buttonsEnabled && !exprRes.eligible) {
+            await deps.supabase
+              .from('pending_registrations')
+              .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
+              .eq('user_id', userId)
+              .eq('status', 'pending')
+
+            const proposal = {
+              kind: 'workout' as const,
+              workoutType: wArgs.workout_type ?? 'treino',
+              durationMin: wArgs.duration_min ?? null,
+              kcalEst: wArgs.estimated_kcal_from_image ?? null,
+              source_provider_message_id: input.providerMessageId ?? null,
+              source_text: input.text ?? null,
+              express_eligible: false,
+              express_reason: exprRes.reason,
+              // guarda os args completos pro handler chamar registraTreino depois
+              raw_args: wArgs,
+            }
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+            const { data: pendRow } = await deps.supabase
+              .from('pending_registrations')
+              .insert({ user_id: userId, proposal, expires_at: expiresAt })
+              .select('id')
+              .single()
+            const pendingId = (pendRow as { id: string } | null)?.id
+            if (pendingId) {
+              const { body, buttons } = composePendingProposal(pendingId, proposal)
+              interactivePayload = { body, buttons, pendingId }
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.pending_created',
+                properties: {
+                  pendingId,
+                  kind: 'workout',
+                  workout_type: proposal.workoutType,
+                  duration_min: proposal.durationMin,
+                  express_reason: exprRes.reason,
+                },
+              })
+              toolCallsSummary.push({
+                name: tc.name,
+                arguments: validated,
+                result: { success: true, deferred_to_button: true, pendingId },
+              })
+              messages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                content: JSON.stringify({ success: true, deferred_to_button: true, pendingId }),
+              })
+              deterministicRegistration = true
+              finalText = ''
+              break
+            }
+          } else if (exprRes.eligible) {
+            await deps.supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pipeline.express_used',
+              properties: {
+                kind: 'workout',
+                workout_type: wArgs.workout_type,
+                duration_min: wArgs.duration_min,
               },
             })
           }

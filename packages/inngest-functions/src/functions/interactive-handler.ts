@@ -22,6 +22,7 @@
 import {
   composePostRegistrationMessage,
   registraRefeicao,
+  registraTreino,
   type MealItem,
   type MealTotals,
   type RegistrationEntry,
@@ -159,20 +160,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           mealType?: string
           items?: MealItem[]
           totals?: MealTotals
+          workoutType?: string
+          durationMin?: number | null
+          kcalEst?: number | null
+          raw_args?: Record<string, unknown>
           source_provider_message_id?: string
-        }
-
-        // Por enquanto Fase B só cobre meal (treino entra na Fase D)
-        if (proposal.kind !== 'meal' || !proposal.items || proposal.items.length === 0) {
-          await supabase.from('product_events').insert({
-            user_id: userId,
-            event: 'pending.confirmed',
-            properties: { pendingId, kind: proposal.kind ?? 'unknown', note: 'kind_no_handler_yet' },
-          })
-          await messaging
-            .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
-            .catch(() => {})
-          return { handled: true, action: 'confirmed_stub', pendingId }
         }
 
         // Carrega user pra timezone (pra computar a data local no tool)
@@ -185,33 +177,67 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           (usr as { timezone?: string | null } | null)?.timezone ?? 'America/Sao_Paulo'
         const userCountry = (usr as { country?: string | null } | null)?.country ?? 'BR'
 
-        // Chama a tool de gravar diretamente (bypassando LLM) com os items
-        // resolvidos do pending. O ctx vem do handler do tap.
-        const toolResult = (await registraRefeicao.execute(
-          {
-            meal_type: proposal.mealType ?? 'outro',
-            items: proposal.items.map((it) => ({
-              food_name: it.name,
-              quantity_g: it.quantity_g,
-              display_qty: it.display_qty,
-              display_unit: it.display_unit,
-              kcal: it.kcal,
-              protein_g: it.protein_g,
-              carbs_g: it.carbs_g,
-              fat_g: it.fat_g,
-            })),
-            replace: false,
-          } as never,
-          {
-            supabase,
-            userId,
-            userWpp: wpp,
-            userCountry,
-            userTimezone,
-            providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
-            recentUserMessages: [],
-          } as never,
-        )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+        const toolCtx = {
+          supabase,
+          userId,
+          userWpp: wpp,
+          userCountry,
+          userTimezone,
+          providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
+          recentUserMessages: [],
+        }
+
+        // Chama a tool de gravar diretamente (bypassando LLM) com os dados
+        // resolvidos no pending. Branch por kind: meal usa registraRefeicao;
+        // workout usa registraTreino. Resultado vai pro mesmo card determinístico.
+        let mealToolResult:
+          | { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+          | null = null
+        let workoutToolResult:
+          | { success?: boolean; kcal_burned?: number; deduped?: boolean }
+          | null = null
+
+        if (proposal.kind === 'workout') {
+          const raw = proposal.raw_args ?? {}
+          workoutToolResult = (await registraTreino.execute(
+            {
+              workout_type: proposal.workoutType ?? (raw.workout_type as string) ?? 'treino',
+              duration_min:
+                proposal.durationMin ?? (raw.duration_min as number | undefined) ?? undefined,
+              intensity: (raw.intensity as string | undefined) ?? undefined,
+              estimated_kcal_from_image:
+                proposal.kcalEst ??
+                (raw.estimated_kcal_from_image as number | undefined) ??
+                undefined,
+            } as never,
+            toolCtx as never,
+          )) as { success?: boolean; kcal_burned?: number; deduped?: boolean }
+        } else {
+          // meal (default)
+          if (!proposal.items || proposal.items.length === 0) {
+            await messaging
+              .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
+              .catch(() => {})
+            return { handled: true, action: 'confirmed_empty', pendingId }
+          }
+          mealToolResult = (await registraRefeicao.execute(
+            {
+              meal_type: proposal.mealType ?? 'outro',
+              items: proposal.items.map((it) => ({
+                food_name: it.name,
+                quantity_g: it.quantity_g,
+                display_qty: it.display_qty,
+                display_unit: it.display_unit,
+                kcal: it.kcal,
+                protein_g: it.protein_g,
+                carbs_g: it.carbs_g,
+                fat_g: it.fat_g,
+              })),
+              replace: false,
+            } as never,
+            toolCtx as never,
+          )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+        }
 
         // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)
         const todayStr = new Date(
@@ -249,19 +275,28 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         const p = (prog ?? {}) as { deficit_block?: number }
         const proto = (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
 
-        const finalItems = toolResult.meal?.items ?? proposal.items
-        const finalTotals =
-          toolResult.meal?.totals ??
-          proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
-
-        const registrations: RegistrationEntry[] = [
-          {
-            tool: 'registra_refeicao',
-            mealType: proposal.mealType ?? 'outro',
-            items: finalItems,
-            totals: finalTotals,
-          },
-        ]
+        // Constrói a entry de registro pra alimentar composePostRegistrationMessage
+        const registrations: RegistrationEntry[] =
+          proposal.kind === 'workout'
+            ? [
+                {
+                  tool: 'registra_treino',
+                  workoutType: proposal.workoutType ?? null,
+                  durationMin: proposal.durationMin ?? null,
+                  kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
+                  alreadyLogged: workoutToolResult?.deduped === true,
+                },
+              ]
+            : [
+                {
+                  tool: 'registra_refeicao',
+                  mealType: proposal.mealType ?? 'outro',
+                  items: mealToolResult?.meal?.items ?? proposal.items ?? [],
+                  totals:
+                    mealToolResult?.meal?.totals ??
+                    proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+                },
+              ]
         const text = composePostRegistrationMessage({
           registrations,
           card: {
@@ -299,15 +334,24 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.confirmed',
-          properties: {
-            pendingId,
-            kind: 'meal',
-            meal_type: proposal.mealType,
-            items_count: proposal.items.length,
-            tool_success: toolResult.success === true,
-          },
+          properties:
+            proposal.kind === 'workout'
+              ? {
+                  pendingId,
+                  kind: 'workout',
+                  workout_type: proposal.workoutType,
+                  duration_min: proposal.durationMin,
+                  tool_success: workoutToolResult?.success === true,
+                }
+              : {
+                  pendingId,
+                  kind: 'meal',
+                  meal_type: proposal.mealType,
+                  items_count: proposal.items?.length ?? 0,
+                  tool_success: mealToolResult?.success === true,
+                },
         })
-        return { handled: true, action: 'confirmed', pendingId }
+        return { handled: true, action: 'confirmed', pendingId, kind: proposal.kind ?? 'meal' }
       }
 
       // ── EDIT ──

@@ -19,7 +19,14 @@
  * no-op (pending já está em estado terminal). Pending expirado / não-existente
  * → mensagem informativa.
  */
-import { createMessagingProvider } from '@mpp/providers'
+import {
+  composePostRegistrationMessage,
+  registraRefeicao,
+  type MealItem,
+  type MealTotals,
+  type RegistrationEntry,
+} from '@mpp/agent'
+import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 
@@ -137,21 +144,169 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         return { handled: true, action: 'expired' }
       }
 
-      // ── CONFIRM ──
-      // Fase A: marca status, manda ack simples. A gravação real (chamar
-      // registra_refeicao/treino com base em row.proposal) entra na Fase B.
+      // ── CONFIRM (Fase B) ──
+      // Marca status, GRAVA de verdade chamando registra_refeicao com items da
+      // proposta (bypassando o LLM — items já foram resolvidos no turno original),
+      // e responde com o card determinístico igual à Fase 1.
       if (action === 'confirm') {
         await supabase
           .from('pending_registrations')
           .update({ status: 'confirmed', resolved_at: new Date().toISOString() })
           .eq('id', pendingId)
+
+        const proposal = row.proposal as {
+          kind?: 'meal' | 'workout'
+          mealType?: string
+          items?: MealItem[]
+          totals?: MealTotals
+          source_provider_message_id?: string
+        }
+
+        // Por enquanto Fase B só cobre meal (treino entra na Fase D)
+        if (proposal.kind !== 'meal' || !proposal.items || proposal.items.length === 0) {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pending.confirmed',
+            properties: { pendingId, kind: proposal.kind ?? 'unknown', note: 'kind_no_handler_yet' },
+          })
+          await messaging
+            .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
+            .catch(() => {})
+          return { handled: true, action: 'confirmed_stub', pendingId }
+        }
+
+        // Carrega user pra timezone (pra computar a data local no tool)
+        const { data: usr } = await supabase
+          .from('users')
+          .select('timezone, country')
+          .eq('id', userId)
+          .maybeSingle()
+        const userTimezone =
+          (usr as { timezone?: string | null } | null)?.timezone ?? 'America/Sao_Paulo'
+        const userCountry = (usr as { country?: string | null } | null)?.country ?? 'BR'
+
+        // Chama a tool de gravar diretamente (bypassando LLM) com os items
+        // resolvidos do pending. O ctx vem do handler do tap.
+        const toolResult = (await registraRefeicao.execute(
+          {
+            meal_type: proposal.mealType ?? 'outro',
+            items: proposal.items.map((it) => ({
+              food_name: it.name,
+              quantity_g: it.quantity_g,
+              display_qty: it.display_qty,
+              display_unit: it.display_unit,
+              kcal: it.kcal,
+              protein_g: it.protein_g,
+              carbs_g: it.carbs_g,
+              fat_g: it.fat_g,
+            })),
+            replace: false,
+          } as never,
+          {
+            supabase,
+            userId,
+            userWpp: wpp,
+            userCountry,
+            userTimezone,
+            providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
+            recentUserMessages: [],
+          } as never,
+        )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+
+        // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)
+        const todayStr = new Date(
+          new Date().toLocaleString('en-US', { timeZone: userTimezone }),
+        )
+          .toISOString()
+          .slice(0, 10)
+        const [{ data: snap }, { data: prog }, { data: prof }] = await Promise.all([
+          supabase
+            .from('daily_snapshots')
+            .select(
+              'calories_consumed, calories_target, protein_g, protein_target, exercise_calories',
+            )
+            .eq('user_id', userId)
+            .eq('date', todayStr)
+            .maybeSingle(),
+          supabase
+            .from('user_progress')
+            .select('deficit_block')
+            .eq('user_id', userId)
+            .maybeSingle(),
+          supabase
+            .from('user_profiles')
+            .select('current_protocol')
+            .eq('user_id', userId)
+            .maybeSingle(),
+        ])
+        const s = (snap ?? {}) as {
+          calories_consumed?: number
+          calories_target?: number | null
+          protein_g?: number
+          protein_target?: number | null
+          exercise_calories?: number
+        }
+        const p = (prog ?? {}) as { deficit_block?: number }
+        const proto = (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
+
+        const finalItems = toolResult.meal?.items ?? proposal.items
+        const finalTotals =
+          toolResult.meal?.totals ??
+          proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+
+        const registrations: RegistrationEntry[] = [
+          {
+            tool: 'registra_refeicao',
+            mealType: proposal.mealType ?? 'outro',
+            items: finalItems,
+            totals: finalTotals,
+          },
+        ]
+        const text = composePostRegistrationMessage({
+          registrations,
+          card: {
+            caloriesConsumed: s.calories_consumed ?? 0,
+            caloriesTarget: s.calories_target ?? null,
+            proteinG: Number(s.protein_g ?? 0),
+            proteinTarget: s.protein_target ?? null,
+            exerciseCalories: s.exercise_calories ?? 0,
+            deficitBlock: p.deficit_block ?? 0,
+            protocol:
+              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+          },
+        })
+
+        await sendHumanized(messaging, wpp, text, {
+          singleMessage: true,
+          minDelay: 0,
+          maxDelay: 0,
+          showTyping: false,
+          inReplyTo: providerMessageId,
+        }).catch(() => {})
+
+        // Persiste a msg out
+        await supabase.from('messages').insert({
+          user_id: userId,
+          direction: 'out',
+          role: 'assistant',
+          content_type: 'text',
+          content: text,
+          provider: 'whatsapp_cloud',
+          agent_stage: 'recomposicao',
+          delivery_status: 'sent',
+        })
+
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.confirmed',
-          properties: { pendingId, kind: (row.proposal as { kind?: string }).kind ?? 'unknown' },
+          properties: {
+            pendingId,
+            kind: 'meal',
+            meal_type: proposal.mealType,
+            items_count: proposal.items.length,
+            tool_success: toolResult.success === true,
+          },
         })
-        // ack mínimo na Fase A; Fase B substitui pela renderização do card oficial
-        await messaging.sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId }).catch(() => {})
         return { handled: true, action: 'confirmed', pendingId }
       }
 

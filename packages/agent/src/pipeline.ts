@@ -27,6 +27,7 @@ import {
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 import {
+  composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
   composeStatusMessage,
@@ -36,6 +37,7 @@ import {
   type RegistrationEntry,
 } from './post-registration-message.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
+import { isMealExpressEligible, type ExpressInput } from './express-mode-detector.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -104,6 +106,12 @@ interface UserContext {
   countryDetectedFromWpp: string | null
   /** Locale escolhido pelo paciente (pt-BR, en, es, etc). */
   locale: string | null
+  /** Metadata raw de users.metadata (jsonb). Usado pra feature flags
+   * (ex: buttons_enabled pra Fase B opção #4) e unit_system. */
+  userMetadata: Record<string, unknown> | null
+  /** Tipo da última mensagem inbound do paciente (Fase B botões #4 —
+   * foto/áudio NUNCA são express, mesmo com texto perfeito de legenda). */
+  lastInboundContentType: 'text' | 'audio' | 'image' | null
   /** Sistema de medidas: 'metric' (kg/cm) ou 'imperial' (lb/in). */
   unitSystem: 'metric' | 'imperial' | null
   /** Timezone IANA do paciente (ex: America/Sao_Paulo). Default 'America/Sao_Paulo'. */
@@ -246,6 +254,9 @@ export async function processMessage(
   let prematureBlockRetried = false
   // Card determinístico de registro → enviar como UMA mensagem (sem split).
   let deterministicRegistration = false
+  // FASE B (Roberto 2026-05-28, botões #4): se virou pending → o caller manda
+  // sendInteractive em vez de sendHumanized, e o pipeline NÃO chama o LLM de novo.
+  let interactivePayload: NonNullable<AgentOutput['interactive']> | null = null
   for (let iter = 0; iter < max; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
@@ -373,6 +384,138 @@ export async function processMessage(
       }
       try {
         const validated = tool.parameters.parse(parsed)
+
+        // ── FASE B BOTÕES (Roberto 2026-05-28, opção #4) ──────────────────────
+        // Quando o paciente está no opt-in (users.metadata.buttons_enabled) E o
+        // LLM chamou SÓ registra_refeicao (sem mistura com outras tools) E o
+        // texto NÃO é express (foto/áudio/vago/sem gramas) → em vez de gravar
+        // direto, criamos um pending_registrations + retornamos interactive
+        // payload pro caller (process-message) mandar [Sim, registrar] [Editar].
+        // Correção (replace=true) NÃO entra no botão — paciente já decidiu.
+        if (
+          tc.name === 'registra_refeicao' &&
+          result.toolCalls.length === 1 &&
+          (validated as { replace?: boolean }).replace !== true
+        ) {
+          const exprInput: ExpressInput = {
+            contentType:
+              ctx.lastInboundContentType === 'image'
+                ? 'image'
+                : ctx.lastInboundContentType === 'audio'
+                  ? 'audio'
+                  : 'text',
+            patientText: input.text ?? '',
+            items:
+              (validated as { items?: Array<{ food_name: string; quantity_g?: number }> })
+                .items ?? [],
+          }
+          const exprResult = isMealExpressEligible(exprInput)
+          // Opt-in por paciente: users.metadata.buttons_enabled === true.
+          const buttonsEnabled =
+            (ctx.userMetadata as { buttons_enabled?: boolean } | null)?.buttons_enabled === true
+
+          if (buttonsEnabled && !exprResult.eligible) {
+            // Cancela qualquer pending anterior em aberto pra esse user
+            await deps.supabase
+              .from('pending_registrations')
+              .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
+              .eq('user_id', userId)
+              .eq('status', 'pending')
+            // Cria o pending novo
+            const args = validated as {
+              meal_type?: string | null
+              items: Array<{
+                food_name: string
+                quantity_g?: number
+                display_qty?: number | null
+                display_unit?: string | null
+                kcal?: number
+                protein_g?: number
+                carbs_g?: number
+                fat_g?: number
+              }>
+            }
+            const proposalItems = args.items.map((it) => ({
+              name: it.food_name,
+              quantity_g: it.quantity_g ?? 0,
+              display_qty: it.display_qty ?? null,
+              display_unit: it.display_unit ?? null,
+              kcal: it.kcal ?? 0,
+              protein_g: it.protein_g ?? 0,
+              carbs_g: it.carbs_g ?? 0,
+              fat_g: it.fat_g ?? 0,
+            }))
+            const proposalTotals = proposalItems.reduce(
+              (acc, it) => ({
+                kcal: acc.kcal + it.kcal,
+                protein_g: acc.protein_g + it.protein_g,
+                carbs_g: acc.carbs_g + it.carbs_g,
+                fat_g: acc.fat_g + it.fat_g,
+              }),
+              { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+            )
+            const proposal = {
+              kind: 'meal' as const,
+              mealType: args.meal_type ?? 'outro',
+              items: proposalItems,
+              totals: proposalTotals,
+              source_provider_message_id: input.providerMessageId ?? null,
+              source_text: input.text ?? null,
+              express_eligible: false,
+              express_reason: exprResult.reason,
+            }
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+            const { data: pendRow } = await deps.supabase
+              .from('pending_registrations')
+              .insert({ user_id: userId, proposal, expires_at: expiresAt })
+              .select('id')
+              .single()
+            const pendingId = (pendRow as { id: string } | null)?.id
+            if (pendingId) {
+              const { body, buttons } = composePendingProposal(pendingId, proposal)
+              interactivePayload = { body, buttons, pendingId }
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.pending_created',
+                properties: {
+                  pendingId,
+                  kind: 'meal',
+                  meal_type: proposal.mealType,
+                  items_count: proposalItems.length,
+                  express_reason: exprResult.reason,
+                },
+              })
+              // Marca o tool_call como "deferido" pro LLM não retentar
+              toolCallsSummary.push({
+                name: tc.name,
+                arguments: validated,
+                result: { success: true, deferred_to_button: true, pendingId },
+              })
+              messages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                content: JSON.stringify({ success: true, deferred_to_button: true, pendingId }),
+              })
+              // Bypassa o resto: hijack do flag singleMessage + sai do loop iter
+              deterministicRegistration = true
+              finalText = '' // o envio é via sendInteractive no caller
+              break // sai do for-tool loop
+            }
+            // Se INSERT falhou, cai pro execute normal (failsafe).
+          } else if (exprResult.eligible) {
+            await deps.supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pipeline.express_used',
+              properties: {
+                meal_type: (validated as { meal_type?: string }).meal_type,
+                items_count: exprResult.items_count,
+                qty_markers_found: exprResult.qty_markers_found,
+              },
+            })
+          }
+        }
+        // ── fim da interceptação de botões ────────────────────────────────────
+
         const toolStart = Date.now()
         const out = await tool.execute(validated, toolCtx)
         toolCallsSummary.push({ name: tc.name, arguments: validated, result: out })
@@ -869,6 +1012,9 @@ export async function processMessage(
     preferAudio: false,
     // Card determinístico vai em 1 mensagem (não pode ser quebrado pelo humanizer).
     singleMessage: deterministicRegistration,
+    // Fase B botões #4: se houver proposta pendente, o caller envia
+    // sendInteractive em vez de sendHumanized.
+    ...(interactivePayload ? { interactive: interactivePayload } : {}),
     toolCalls: toolCallsSummary,
     stage,
     modelUsed: lastResult.model,
@@ -1146,6 +1292,16 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     countryConfirmed: !!userTyped?.country_confirmed,
     countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
     locale: userTyped?.locale ?? null,
+    userMetadata: (userTyped?.metadata as Record<string, unknown> | null) ?? null,
+    lastInboundContentType: (() => {
+      // Última msg inbound: pra Fase B detector express decidir se é foto/áudio.
+      const lastIn = (msgs ?? []).find(
+        (m) => (m as { direction?: string }).direction === 'in',
+      ) as { content_type?: string | null } | undefined
+      const ct = lastIn?.content_type ?? null
+      if (ct === 'image' || ct === 'audio' || ct === 'text') return ct
+      return null
+    })(),
     unitSystem,
     timezone: userTyped?.timezone ?? 'America/Sao_Paulo',
     dailyTargets,

@@ -373,6 +373,53 @@ export const processMessageFn = inngest.createFunction(
     })
 
     // === Step 4: envio ===
+    // FASE B BOTÕES (Roberto 2026-05-28): se o pipeline retornou uma proposta
+    // pendente (paciente está no opt-in + a refeição não era express), manda via
+    // sendInteractive em vez do sendHumanized normal. O pending já foi criado
+    // no DB; aqui só anexa o providerMessageId da msg out pra responder no tap.
+    if (result.interactive) {
+      const ix = result.interactive
+      const sendRes = await step.run('send-interactive', async () => {
+        if (!messaging.sendInteractive) {
+          throw new Error('messaging provider sem sendInteractive')
+        }
+        return messaging.sendInteractive(wpp, ix.body, ix.buttons, { replyTo: providerMessageId })
+      })
+      const { supabase } = createWorkerDeps()
+      if (sendRes.providerMessageId) {
+        // anexa o id da msg out pra que o tap possa responder/quotar
+        await supabase
+          .from('pending_registrations')
+          .update({ proposal_msg_id: sendRes.providerMessageId })
+          .eq('id', ix.pendingId)
+      }
+      await supabase.from('messages').insert({
+        user_id: userId,
+        direction: 'out',
+        role: 'assistant',
+        content_type: 'interactive',
+        content: ix.body,
+        provider: 'whatsapp_cloud',
+        provider_message_id: sendRes.providerMessageId ?? null,
+        agent_stage: result.stage,
+        model_used: result.modelUsed,
+        prompt_tokens: result.promptTokens,
+        completion_tokens: result.completionTokens,
+        cost_usd: result.costUsd,
+        latency_ms: result.latencyMs,
+        delivery_status: sendRes.status,
+        delivery_error: sendRes.error ? { error: sendRes.error } : null,
+      })
+      return {
+        ok: true,
+        sent: 1,
+        mode: 'interactive',
+        pendingId: ix.pendingId,
+        stage: result.stage,
+        media: mediaSummary,
+      }
+    }
+
     if (!result.text || !result.text.trim()) {
       await messaging.react(wpp, providerMessageId, '🤔').catch(() => {})
       return { ok: true, sent: 0, reason: 'empty', stage: result.stage, media: mediaSummary }

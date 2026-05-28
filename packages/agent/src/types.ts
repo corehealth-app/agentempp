@@ -34,6 +34,15 @@ export interface AgentOutput {
   /** Enviar como UMA mensagem só (sem split do humanizer) — usado no card
    * determinístico de registro, que não pode ser quebrado em vários envios. */
   singleMessage?: boolean
+  /** Proposta de registro pendente de confirmação por botão WhatsApp (Roberto
+   * 2026-05-28, Fase B opção #4). Quando presente, o caller (process-message)
+   * envia messaging.sendInteractive em vez de sendHumanized. O pending JÁ está
+   * gravado no banco; `pendingId` permite atualizar proposal_msg_id após envio. */
+  interactive?: {
+    body: string
+    buttons: Array<{ id: string; title: string }>
+    pendingId: string
+  }
   toolCalls: Array<{ name: string; arguments: unknown; result?: unknown; error?: string }>
   stage: AgentStage
   modelUsed: string

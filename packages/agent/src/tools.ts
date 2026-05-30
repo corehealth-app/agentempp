@@ -1093,8 +1093,16 @@ export const registraRefeicao: ToolDefinition = {
     // ON CONFLICT DO NOTHING, mas o supabase-js exige declarar onConflict com
     // o nome exato da constraint — fica como follow-up pra não arriscar trocar
     // semântica do insert puro sem validar a constraint em prod.
+    // Bug Roberto 2026-05-29 21:37: handler do tap rodou esta tool, snapshot foi
+    // criado, mas os 5 inserts deste loop falharam silenciosamente — a tool
+    // retornou `success:true` e o paciente recebeu "Café registrado ✅" sem
+    // nada gravado. Causa: ausência de error check no await do supabase-js
+    // (erro retorna em `{ data, error }`, não throw). Agora: throw em qualquer
+    // erro de insert + verificação pós-loop por count, garantindo que o
+    // success não mente. Inngest faz retry da step.run em throw — visibilidade.
+    const insertErrors: string[] = []
     for (const item of itemsToInsert) {
-      await ctx.supabase.from('meal_logs').insert({
+      const { error: insErr } = await ctx.supabase.from('meal_logs').insert({
         user_id: ctx.userId,
         snapshot_id: snapshotId,
         meal_type: args.meal_type ?? null,
@@ -1109,6 +1117,25 @@ export const registraRefeicao: ToolDefinition = {
         consumed_at: consumedAtIso,
         raw_provider_message_id: ctx.providerMessageId ?? null,
       })
+      if (insErr) {
+        insertErrors.push(`${item.food_name}: ${insErr.message ?? 'unknown'}`)
+      }
+    }
+    if (insertErrors.length > 0) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.meal_logs_insert_failed',
+        properties: {
+          provider_message_id: ctx.providerMessageId ?? null,
+          meal_type: args.meal_type ?? null,
+          snapshot_id: snapshotId,
+          attempted: itemsToInsert.length,
+          errors: insertErrors,
+        },
+      })
+      throw new Error(
+        `meal_logs insert failed (${insertErrors.length}/${itemsToInsert.length}): ${insertErrors.join('; ')}`,
+      )
     }
 
     return {

@@ -51,6 +51,18 @@ export interface FakeWriteResult {
 const WORKOUT_SIGNATURE =
   /\b\d+\s*(min|minutos?|hora|horas?|h)\b.*\b(caminhada|musculaç[ãa]o|treino|corrida|bike|bicicleta|nataç[ãa]o|alongamento|yoga|pilates|exerc[íi]cio|peso|for[çc]a|cross\w*)\b|\b(caminhada|musculaç[ãa]o|treino|corrida|bike|bicicleta|nataç[ãa]o|exerc[íi]cio).*\b\d+\s*(min|hora)/i
 
+// Bug Roberto 2026-05-29 21:41: LLM IMITOU o formato exato do
+// composePendingProposal pra almoço — "Vi isso nas suas fotos (Almoço):" +
+// lista de itens + "Confirma?" — mas SEM chamar registra_refeicao. Como o
+// pipeline interception só dispara quando a tool foi chamada, NÃO houve
+// pending criado nem interactive payload com botões. Paciente recebeu uma
+// proposta-fantasma sem botões; quando respondeu por texto, agente perdeu o
+// contexto e autocorrigiu pra jantar. Este padrão complementa as assinaturas
+// de kcal/workout: detecta a IMITAÇÃO de proposta de botão sem tool.
+const FAKE_PROPOSAL =
+  /\bvi\s+isso\s+na\s+sua\s+(?:foto|áudio|audio)|\bvi\s+isso\s+nas\s+suas\s+fotos\b|\bentendi\s+do\s+áudio\b|\bentendi\s+do\s+audio\b/i
+const PROPOSAL_QUESTION = /\bconfirma\??\s*$|\bregistro\?\s*$/i
+
 /**
  * Retorna isFake=true quando o texto afirma registro/correção + tem assinatura
  * de card (kcal/🔥💪📊 pra refeição OU duração+tipo pra treino) MAS nenhuma
@@ -62,6 +74,14 @@ export function detectFakeWrite({
   registrationToolCalled,
 }: FakeWriteInput): FakeWriteResult {
   if (registrationToolCalled) return { isFake: false, kind: null }
+
+  // Proposta-fake (Roberto 2026-05-29): LLM imita "Vi isso na sua foto …
+  // Confirma?" sem chamar tool. Não tem kcal/workout signature mas é claro
+  // que o LLM achou que tava propondo um botão → força retry pra ele chamar
+  // registra_refeicao e o pipeline criar o pending com botões de verdade.
+  if (FAKE_PROPOSAL.test(content) && PROPOSAL_QUESTION.test(content.trim())) {
+    return { isFake: true, kind: 'registration' }
+  }
 
   const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
   const hasWorkoutSignature = WORKOUT_SIGNATURE.test(content)

@@ -199,19 +199,41 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
         if (proposal.kind === 'workout') {
           const raw = proposal.raw_args ?? {}
-          workoutToolResult = (await registraTreino.execute(
-            {
-              workout_type: proposal.workoutType ?? (raw.workout_type as string) ?? 'treino',
-              duration_min:
-                proposal.durationMin ?? (raw.duration_min as number | undefined) ?? undefined,
-              intensity: (raw.intensity as string | undefined) ?? undefined,
-              estimated_kcal_from_image:
-                proposal.kcalEst ??
-                (raw.estimated_kcal_from_image as number | undefined) ??
-                undefined,
-            } as never,
-            toolCtx as never,
-          )) as { success?: boolean; kcal_burned?: number; deduped?: boolean }
+          try {
+            workoutToolResult = (await registraTreino.execute(
+              {
+                workout_type: proposal.workoutType ?? (raw.workout_type as string) ?? 'treino',
+                duration_min:
+                  proposal.durationMin ?? (raw.duration_min as number | undefined) ?? undefined,
+                intensity: (raw.intensity as string | undefined) ?? undefined,
+                estimated_kcal_from_image:
+                  proposal.kcalEst ??
+                  (raw.estimated_kcal_from_image as number | undefined) ??
+                  undefined,
+              } as never,
+              toolCtx as never,
+            )) as { success?: boolean; kcal_burned?: number; deduped?: boolean }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'interactive.handler.tool_failed',
+              properties: {
+                pendingId,
+                kind: 'workout',
+                workout_type: proposal.workoutType,
+                provider_message_id: toolCtx.providerMessageId,
+                error: msg,
+              },
+            })
+            await supabase
+              .from('pending_registrations')
+              .update({ status: 'pending', resolved_at: null })
+              .eq('id', pendingId)
+              .eq('status', 'confirmed')
+            logger.error('registraTreino.execute throw no tap', { pendingId, userId, error: msg })
+            throw err
+          }
         } else {
           // meal (default)
           if (!proposal.items || proposal.items.length === 0) {
@@ -220,23 +242,55 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               .catch(() => {})
             return { handled: true, action: 'confirmed_empty', pendingId }
           }
-          mealToolResult = (await registraRefeicao.execute(
-            {
-              meal_type: proposal.mealType ?? 'outro',
-              items: proposal.items.map((it) => ({
-                food_name: it.name,
-                quantity_g: it.quantity_g,
-                display_qty: it.display_qty,
-                display_unit: it.display_unit,
-                kcal: it.kcal,
-                protein_g: it.protein_g,
-                carbs_g: it.carbs_g,
-                fat_g: it.fat_g,
-              })),
-              replace: false,
-            } as never,
-            toolCtx as never,
-          )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+          // Bug Roberto 2026-05-29 21:37: tool retornava success=true mesmo
+          // com 0 inserts (loop sem error check em tools.ts:1097 — corrigido).
+          // Aqui também: try/catch que LOGA + RE-THROW pra Inngest retry +
+          // alerta no Telegram quando o tap falhar.
+          try {
+            mealToolResult = (await registraRefeicao.execute(
+              {
+                meal_type: proposal.mealType ?? 'outro',
+                items: proposal.items.map((it) => ({
+                  food_name: it.name,
+                  quantity_g: it.quantity_g,
+                  display_qty: it.display_qty,
+                  display_unit: it.display_unit,
+                  kcal: it.kcal,
+                  protein_g: it.protein_g,
+                  carbs_g: it.carbs_g,
+                  fat_g: it.fat_g,
+                })),
+                replace: false,
+              } as never,
+              toolCtx as never,
+            )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'interactive.handler.tool_failed',
+              properties: {
+                pendingId,
+                kind: 'meal',
+                meal_type: proposal.mealType,
+                items_count: proposal.items?.length ?? 0,
+                provider_message_id: toolCtx.providerMessageId,
+                error: msg,
+              },
+            })
+            // Desfaz o confirmed pra paciente conseguir tentar de novo
+            await supabase
+              .from('pending_registrations')
+              .update({ status: 'pending', resolved_at: null })
+              .eq('id', pendingId)
+              .eq('status', 'confirmed')
+            logger.error('registraRefeicao.execute throw no tap', {
+              pendingId,
+              userId,
+              error: msg,
+            })
+            throw err
+          }
         }
 
         // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)

@@ -1265,7 +1265,13 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     .order('created_at', { ascending: false })
     .limit(RECENT_MESSAGES_LIMIT)
 
+  // .slice() ANTES do .reverse() — reverse() muta in-place. Sem o slice, a
+  // ordem do `msgs` original fica ASC, e o `lastInboundContentType` (linha
+  // ~1412) abaixo passa a pegar a inbound MAIS ANTIGA da janela em vez da
+  // mais recente — bug Paulo+Roberto 2026-05-30 (sourceContentType invertido:
+  // text→image e image→text).
   const recentMessages = (msgs ?? [])
+    .slice()
     .reverse()
     .filter((m) => m.content)
     .map((m) => ({

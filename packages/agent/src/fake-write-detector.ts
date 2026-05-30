@@ -85,6 +85,19 @@ export function detectFakeWrite({
 
   const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
   const hasWorkoutSignature = WORKOUT_SIGNATURE.test(content)
+
+  // Proposta-fake genérica (Roberto 2026-05-30 13:47): LLM disse "Entendido!
+  // Então incluo também o ovo... • leite com whey 190 kcal... Total: 568 kcal
+  // ... Confirma?" — tem kcal + bullets + "Confirma?" no fim, MAS sem verbo de
+  // claim ("incluo" não bate REGISTRATION_CLAIM, "vi isso" não bate
+  // FAKE_PROPOSAL). Critério mais amplo: refeição-signature + ≥2 bullets de
+  // itens + termina com "Confirma?" → é proposta de botão sem tool. Retry.
+  if (hasFoodSignature && PROPOSAL_QUESTION.test(content.trim())) {
+    const bulletCount = (content.match(/(?:^|\n)\s*[•\-*]\s/g) ?? []).length
+    if (bulletCount >= 2) {
+      return { isFake: true, kind: 'registration' }
+    }
+  }
   if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }

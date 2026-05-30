@@ -120,4 +120,22 @@ describe('detectFakeWrite', () => {
     })
     expect(r.isFake).toBe(false)
   })
+
+  it('detecta proposta-fake genérica: bullets+kcal+Confirma? sem verbo de claim (caso Roberto 2026-05-30 "Entendido! Então incluo também...")', () => {
+    const r = detectFakeWrite({
+      content:
+        'Entendido! Então incluo também o ovo frito e a geleia, completando o café de sempre:\n\n• leite com whey (200 ml): 190 kcal\n• ovo frito (1 unidade): 94 kcal\n• pao frances (1 pão): 150 kcal\n\nTotal: 434 kcal\n\nConfirma?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
+  it('NÃO flaga pergunta solta com kcal mas sem bullets (ex: "tem 200 kcal? Confirma?")', () => {
+    const r = detectFakeWrite({
+      content: 'O pão francês tem cerca de 150 kcal. Confirma?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
 })

@@ -325,6 +325,46 @@ export interface VisionPromptOverrides {
   classifier?: string
 }
 
+/**
+ * Parser tolerante a markdown — Claude Sonnet 4.5 via OpenRouter NÃO respeita
+ * `response_format: { type: 'json_object' }` (OpenAI-only feature) e às vezes
+ * envolve a resposta em ```json ... ``` ou responde em prosa com bloco JSON
+ * embutido. Bug Roberto+Amanda 2026-05-30 logo após troca pra Claude:
+ * 4 fotos falharam parse → agente disse "Não consegui abrir a foto" embora
+ * tivesse identificado tudo certo. Pega: (1) JSON puro, (2) code fence
+ * ```json…``` (com ou sem language tag), (3) maior bloco {…} dentro do texto.
+ * Retorna {} se não achar nada parseável (caller decide o que fazer).
+ */
+function parseJsonLoose(raw: string): Record<string, unknown> {
+  if (!raw) return {}
+  // 1. Tenta JSON puro
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    /* segue */
+  }
+  // 2. Code fence ```json ... ``` (ou ``` ... ```)
+  const fence = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/i)
+  if (fence?.[1]) {
+    try {
+      return JSON.parse(fence[1]) as Record<string, unknown>
+    } catch {
+      /* segue */
+    }
+  }
+  // 3. Maior bloco {...} balanceado no texto
+  const first = raw.indexOf('{')
+  const last = raw.lastIndexOf('}')
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(raw.slice(first, last + 1)) as Record<string, unknown>
+    } catch {
+      /* segue */
+    }
+  }
+  return {}
+}
+
 export class GeminiVision {
   private client: OpenAI
   private model: string
@@ -420,13 +460,11 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let parsed: Record<string, unknown> = {}
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
+    const parsed = parseJsonLoose(raw)
+    if (Object.keys(parsed).length === 0) {
       throw new Error(`Vision (meal) JSON inválido: ${raw.slice(0, 200)}`)
     }
-    // Parser tolerante — modelos novos (gemini 2.5) divergem do schema:
+    // Parser tolerante — modelos novos (gemini 2.5 / claude sonnet) divergem do schema:
     // aceita items|meal_contents|foods e cada item aceita name|item|food_name
     // + quantity_g_estimate|estimate_grams|grams|qty_g|quantity. Strings viram numbers.
     const rawItems =
@@ -498,17 +536,16 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let p: {
+    const parsed = parseJsonLoose(raw)
+    if (Object.keys(parsed).length === 0) {
+      throw new Error(`Vision (body) JSON inválido: ${raw.slice(0, 200)}`)
+    }
+    const p = parsed as {
       view?: VisionBodyAnalysis['view']
       bf_percent_estimate?: number
       bf_confidence?: number
       composition_notes?: string
       posture_notes?: string
-    } = {}
-    try {
-      p = JSON.parse(raw)
-    } catch {
-      throw new Error(`Vision (body) JSON inválido: ${raw.slice(0, 200)}`)
     }
     return {
       type: 'body',
@@ -540,15 +577,14 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let p: {
+    const parsed = parseJsonLoose(raw)
+    if (Object.keys(parsed).length === 0) {
+      throw new Error(`Vision (scale) JSON inválido: ${raw.slice(0, 200)}`)
+    }
+    const p = parsed as {
       weight_kg?: number
       confidence?: number
       unit_detected?: VisionScaleAnalysis['unit_detected']
-    } = {}
-    try {
-      p = JSON.parse(raw)
-    } catch {
-      throw new Error(`Vision (scale) JSON inválido: ${raw.slice(0, 200)}`)
     }
     return {
       type: 'scale',
@@ -591,7 +627,11 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let p: {
+    const parsed = parseJsonLoose(raw)
+    if (Object.keys(parsed).length === 0) {
+      throw new Error(`Vision (nutrition_label) JSON inválido: ${raw.slice(0, 200)}`)
+    }
+    const p = parsed as {
       product_name?: string | null
       serving_size_g?: number | string | null
       per_serving?: {
@@ -608,11 +648,6 @@ export class GeminiVision {
       }
       confidence?: number | string
       notes?: string
-    } = {}
-    try {
-      p = JSON.parse(raw)
-    } catch {
-      throw new Error(`Vision (nutrition_label) JSON inválido: ${raw.slice(0, 200)}`)
     }
     const toNum = (v: unknown): number | null => {
       if (v == null || v === '') return null
@@ -660,12 +695,11 @@ export class GeminiVision {
       ],
     })
     const raw = completion.choices[0]?.message?.content ?? ''
-    let p: { description?: string } = {}
-    try {
-      p = JSON.parse(raw)
-    } catch {
-      p = { description: raw.slice(0, 300) }
-    }
+    const parsed = parseJsonLoose(raw)
+    const p =
+      Object.keys(parsed).length > 0
+        ? (parsed as { description?: string })
+        : { description: raw.slice(0, 300) }
     return {
       type: 'other',
       description: p.description ?? '',

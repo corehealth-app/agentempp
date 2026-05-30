@@ -138,4 +138,23 @@ describe('detectFakeWrite', () => {
     })
     expect(r.isFake).toBe(false)
   })
+
+  it('detecta proposta-fake SEM kcal: bullets com quantidade em (g) + Confirma? (caso Roberto 2026-05-30 14:24 "fica assim: • risoto (200g)...")', () => {
+    const r = detectFakeWrite({
+      content:
+        'Entendido! Então o almoço fica assim:\n\n**Prato principal:**\n• risoto (200g)\n• queijo ralado (30g)\n• fraldinha assada (120g)\n\n**Salada:**\n• alface mista (60g)\n• tomate cereja (50g)\n\nConfirma?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
+  it('NÃO flaga lista sem quantidades em unidade conhecida (ex: lembrete "Confirma?")', () => {
+    const r = detectFakeWrite({
+      content:
+        'Vou te lembrar de:\n• beber água\n• fazer 30 min de caminhada\n\nConfirma?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
 })

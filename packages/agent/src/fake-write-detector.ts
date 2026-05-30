@@ -98,6 +98,21 @@ export function detectFakeWrite({
       return { isFake: true, kind: 'registration' }
     }
   }
+
+  // Proposta-fake SEM kcal (Roberto 2026-05-30 14:24): variante que escapou a
+  // regra acima — LLM mandou "Então o almoço fica assim: • risoto (200g) •
+  // queijo ralado (30g) ... Confirma?" SEM kcal e SEM emojis (só quantidades
+  // em g/ml/unidade). Paciente teve que digitar "Confirma" pra forçar tool.
+  // Critério: ≥2 bullets COM quantidade em (g)/(ml)/(unidade) + "Confirma?"
+  // no fim → mesma intenção de proposta de botão, kind=registration.
+  if (PROPOSAL_QUESTION.test(content.trim())) {
+    const bulletLines = content.match(/(?:^|\n)\s*[•\-*]\s+[^\n]+/g) ?? []
+    const QTY_IN_BULLET = /\(\s*\d+(?:[.,]\d+)?\s*(?:g|ml|kg|l|unidades?|fatia|p[ãa]o)\b/i
+    const bulletsWithQty = bulletLines.filter((l) => QTY_IN_BULLET.test(l))
+    if (bulletsWithQty.length >= 2) {
+      return { isFake: true, kind: 'registration' }
+    }
+  }
   if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }

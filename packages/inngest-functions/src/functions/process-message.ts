@@ -1,4 +1,4 @@
-import { detectPendingResponse } from '@mpp/agent'
+import { detectPendingResponse, splitMealAndCard } from '@mpp/agent'
 import {
   GeminiVision,
   GroqSTT,
@@ -569,18 +569,46 @@ export const processMessageFn = inngest.createFunction(
       // Process-message usa response_max_delay_ms (maior que engagement
       // pra parecer "pensando" antes de responder).
       const humanizer = await loadHumanizerConfig(supabase)
-      const sendResults = await step.run('send-to-user', async () =>
-        sendHumanized(messaging, wpp, result.text, {
+      // Roberto 2026-05-30: msg consolidada de registro estava densa demais
+      // (tabela 5 itens + total + card num bloco só). Pra registro
+      // determinístico (singleMessage=true), divide em 2 envios: parte 1 =
+      // confirmação + tabela; parte 2 = card de balanço. splitMealAndCard
+      // detecta pelo marker "🔥 Consumido:" — devolve card=null se a msg não
+      // for de registro (aí cai no envio único de sempre).
+      const splitForRegistration = result.singleMessage === true
+      const splitParts = splitForRegistration ? splitMealAndCard(result.text) : null
+      const sendResults = await step.run('send-to-user', async () => {
+        if (splitParts && splitParts.card) {
+          const r1 = await sendHumanized(messaging, wpp, splitParts.meal, {
+            showTyping: true,
+            minDelay: humanizer.min_delay_ms,
+            maxDelay: humanizer.response_max_delay_ms,
+            charsPerSecond: humanizer.chars_per_second,
+            inReplyTo: providerMessageId,
+            replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+            singleMessage: true,
+          })
+          // Pausa curta entre as 2 msgs (sensação de "tá pensando" antes do card).
+          await new Promise((res) => setTimeout(res, 1500))
+          const r2 = await sendHumanized(messaging, wpp, splitParts.card, {
+            showTyping: true,
+            minDelay: humanizer.min_delay_ms,
+            maxDelay: humanizer.response_max_delay_ms,
+            charsPerSecond: humanizer.chars_per_second,
+            singleMessage: true,
+          })
+          return [...r1, ...r2]
+        }
+        return sendHumanized(messaging, wpp, result.text, {
           showTyping: true,
           minDelay: humanizer.min_delay_ms,
           maxDelay: humanizer.response_max_delay_ms,
           charsPerSecond: humanizer.chars_per_second,
           inReplyTo: providerMessageId,
           replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-          // Card determinístico de registro → 1 mensagem só (sem fragmentar).
           singleMessage: result.singleMessage === true,
-        }),
-      )
+        })
+      })
       sentCount = sendResults.filter((r) => r.status === 'sent').length
       failedCount = sendResults.filter((r) => r.status !== 'sent').length
       deliveryError = sendResults.find((r) => r.error)?.error

@@ -23,6 +23,7 @@ import {
   composePostRegistrationMessage,
   registraRefeicao,
   registraTreino,
+  splitMealAndCard,
   type MealItem,
   type MealTotals,
   type RegistrationEntry,
@@ -365,13 +366,26 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           },
         })
 
-        await sendHumanized(messaging, wpp, text, {
+        // Roberto 2026-05-30: divide tabela do card em 2 envios pra ficar
+        // menos denso. splitMealAndCard usa o marker "🔥 Consumido:" — se
+        // não achar (mensagem sem card), card=null e envia tudo numa só.
+        const { meal: mealPart, card: cardPart } = splitMealAndCard(text)
+        await sendHumanized(messaging, wpp, mealPart, {
           singleMessage: true,
           minDelay: 0,
           maxDelay: 0,
           showTyping: false,
           inReplyTo: providerMessageId,
         }).catch(() => {})
+        if (cardPart) {
+          await new Promise((res) => setTimeout(res, 1500))
+          await sendHumanized(messaging, wpp, cardPart, {
+            singleMessage: true,
+            minDelay: 0,
+            maxDelay: 0,
+            showTyping: false,
+          }).catch(() => {})
+        }
 
         // Persiste a msg out
         await supabase.from('messages').insert({

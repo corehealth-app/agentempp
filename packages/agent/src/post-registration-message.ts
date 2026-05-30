@@ -156,6 +156,26 @@ export function composePostRegistrationMessage(input: PostRegistrationInput): st
   return `${blocks.join('\n\n')}\n\n${card}`
 }
 
+/**
+ * Split a mensagem de registro em 2 partes pra envio fragmentado: confirmação
+ * + tabela da refeição/treino (parte 1) e card de balanço diário (parte 2).
+ * Critério: o card de balanço SEMPRE começa com "🔥 Consumido:" (renderBalanceCard).
+ * Se o marker não existir (mensagem que não é registro), devolve a string toda
+ * como `meal` e `card=null` — caller manda só uma msg.
+ *
+ * Roberto 2026-05-30: msg consolidada estava muito densa (5 itens + total +
+ * card num único bloco). Dividir deixa o paciente ler em 2 etapas naturais
+ * sem perder informação.
+ */
+export function splitMealAndCard(text: string): { meal: string; card: string | null } {
+  const markerIdx = text.indexOf('🔥 Consumido:')
+  if (markerIdx === -1) return { meal: text, card: null }
+  const meal = text.slice(0, markerIdx).trimEnd()
+  const card = text.slice(markerIdx).trimStart()
+  if (!meal || !card) return { meal: text, card: null }
+  return { meal, card }
+}
+
 // ── #1 STATUS SOB DEMANDA (Roberto 2026-05-27) ──────────────────────────────
 // "como tô / quanto falta / meu bloco" → o sistema responde com o card canônico
 // (mesma fonte do registro), sem a 2ª chamada do LLM. Gatilho conservador: só

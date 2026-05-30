@@ -8,6 +8,7 @@ import {
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
+  splitMealAndCard,
   type MealItem,
 } from './post-registration-message.js'
 
@@ -415,5 +416,43 @@ describe('composePendingProposal — proposta + botões pro tap [Sim, registrar]
     })
     expect(out.body.length).toBeLessThanOrEqual(1024)
     expect(out.body).toContain('Confirma?')
+  })
+})
+
+describe('splitMealAndCard', () => {
+  it('divide mensagem de registro completa em meal + card pelo marker 🔥 Consumido', () => {
+    const msg = composePostRegistrationMessage({
+      registrations: [
+        {
+          tool: 'registra_refeicao',
+          mealType: 'cafe',
+          items: [item({ name: 'ovo frito', kcal: 94 })],
+          totals: { kcal: 94, protein_g: 7, carbs_g: 0.3, fat_g: 7 },
+        },
+      ],
+      card: {
+        caloriesConsumed: 94,
+        caloriesTarget: 1843,
+        proteinG: 7,
+        proteinTarget: 100,
+        exerciseCalories: 0,
+        deficitBlock: 1000,
+        protocol: 'recomposicao',
+        last14d: null,
+      },
+    })
+    const split = splitMealAndCard(msg)
+    expect(split.card).not.toBeNull()
+    expect(split.meal).toContain('Café registrado ✅')
+    expect(split.meal).toContain('**Total:')
+    expect(split.meal).not.toContain('🔥 Consumido')
+    expect(split.card).toContain('🔥 Consumido')
+    expect(split.card).toContain('📊 Bloco 7700')
+  })
+
+  it('msg sem card → card=null, meal=texto inteiro', () => {
+    const split = splitMealAndCard('Oi, tudo bem?')
+    expect(split.card).toBeNull()
+    expect(split.meal).toBe('Oi, tudo bem?')
   })
 })

@@ -37,7 +37,7 @@ const GROUP_DESCRIPTIONS: Record<string, string> = {
     'Simula tempo de digitação humano antes de enviar resposta. chars_per_second + min/max delay define o ritmo.',
   numeric_validator:
     'Validador pós-resposta que detecta alucinação numérica. enabled (on/off) + threshold_pct (% de erro tolerado).',
-  vision: 'Modelo de vision (default gemini-2.5-flash) e threshold de confiança pra meal logging.',
+  vision: 'Modelo de vision (default anthropic/claude-sonnet-4.5 desde 2026-05-30) e threshold de confiança pra meal logging.',
   tts: 'Configurações ElevenLabs pra text-to-speech (similarity, speed, stability, style + se rewriter está ativo).',
   rate_limit: 'Limites por usuário (msgs/min e custo/dia em USD).',
   alerts:

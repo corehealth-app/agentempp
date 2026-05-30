@@ -17,7 +17,7 @@ import OpenAI from 'openai'
 export interface VisionConfig {
   apiKey: string
   baseURL?: string
-  model?: string // default 'google/gemini-2.5-flash'
+  model?: string // default 'anthropic/claude-sonnet-4.5' (era gemini-2.5-flash até 2026-05-30; trocado após A/B Bug Roberto — Claude é o único que estima quantidades em gramas e marca confidence baixa quando incerto, reduzindo alucinação tipo 'achocolatado + linguiça')
   /** Modelo opcional usado APENAS para nutrition_label. Sonnet 4.6 Vision
    * (anthropic/claude-sonnet-4.6) tem OCR muito superior pra texto denso de
    * rótulo. Caso Amanda 2026-05-16: gemini-2.5-flash falhou 3x lendo rótulo
@@ -340,7 +340,7 @@ export class GeminiVision {
       timeout: 60_000,
       maxRetries: 1,
     })
-    this.model = cfg.model ?? 'google/gemini-2.5-flash'
+    this.model = cfg.model ?? 'anthropic/claude-sonnet-4.5'
     this.nutritionLabelModel = cfg.nutritionLabelModel ?? this.model
     this.prompts = {
       meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,

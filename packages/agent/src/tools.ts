@@ -683,7 +683,17 @@ export const registraRefeicao: ToolDefinition = {
           (order.indexOf(expected) >= 0 ? order.indexOf(expected) : 0),
       )
 
-      const shouldAutoCorrect = args.meal_type !== expected && !userMentionedMeal && distance >= 2
+      // Bloqueia autocorrect quando replace=true — autocorrect cross-meal-type
+      // + replace=true é catastrófico: LLM manda {meal_type:'lanche', replace:true}
+      // pra corrigir lanche, autocorrect vira pra 'cafe', replace=true APAGA todos
+      // os meal_logs do CAFÉ do dia (sem relação com a intenção do LLM). Caso
+      // Amanda 2026-05-30: empanada do lanche da manhã sumiu por isso. Em replace
+      // sempre confia no LLM; mismatch fica só como log.
+      const shouldAutoCorrect =
+        args.meal_type !== expected &&
+        !userMentionedMeal &&
+        distance >= 2 &&
+        args.replace !== true
 
       if (args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
@@ -1048,6 +1058,63 @@ export const registraRefeicao: ToolDefinition = {
               { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
             )
           }
+        }
+      }
+    }
+
+    // ── PRÉ-FILTRAGEM por (pmid, food_name) — Amanda 2026-05-30 13:32 ──
+    // Bug observado em prod: LLM no retry mandou registra_refeicao com 2 itens
+    // {empanada + pastel} usando mesmo pmid; pastel já tinha sido inserido na
+    // tentativa anterior → UNIQUE (user_id, raw_provider_message_id, food_name)
+    // bloqueou. Sem filtragem prévia, o snapshot_add_meal abaixo já incrementa
+    // por TODOS os itens — então o pastel dup adicionava 306 kcal duplicada ao
+    // snapshot mesmo o meal_log sendo rejeitado. Drift: snap=1071, sum=764.
+    // Fix: query (pmid, food_name) existentes, filtra os duplicados de
+    // itemsToInsert E subtrai do totalsToAdd ANTES do snapshot_add_meal.
+    if (ctx.providerMessageId && itemsToInsert.length > 0) {
+      const { data: existingForPmid } = await ctx.supabase
+        .from('meal_logs')
+        .select('food_name')
+        .eq('user_id', ctx.userId)
+        .eq('raw_provider_message_id', ctx.providerMessageId)
+      const existingNames = new Set(
+        ((existingForPmid ?? []) as Array<{ food_name: string }>).map((r) =>
+          r.food_name.toLowerCase().trim(),
+        ),
+      )
+      if (existingNames.size > 0) {
+        const dupRemoved: typeof itemsToInsert = []
+        itemsToInsert = itemsToInsert.filter((it) => {
+          if (existingNames.has(it.food_name.toLowerCase().trim())) {
+            dupRemoved.push(it)
+            return false
+          }
+          return true
+        })
+        if (dupRemoved.length > 0) {
+          // Recalcula totalsToAdd só com sobreviventes pra snapshot_add_meal
+          // não receber kcal de itens que NÃO serão inseridos.
+          totalsToAdd = itemsToInsert.reduce(
+            (acc, it) => ({
+              kcal: acc.kcal + Number(it.kcal ?? 0),
+              protein_g: acc.protein_g + Number(it.protein_g ?? 0),
+              carbs_g: acc.carbs_g + Number(it.carbs_g ?? 0),
+              fat_g: acc.fat_g + Number(it.fat_g ?? 0),
+              fiber_g: acc.fiber_g + Number((it as { fiber_g?: number }).fiber_g ?? 0),
+            }),
+            { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
+          )
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.meal_logs_skipped_dup_pmid',
+            properties: {
+              provider_message_id: ctx.providerMessageId,
+              meal_type: args.meal_type ?? null,
+              skipped_count: dupRemoved.length,
+              skipped: dupRemoved.map((i) => ({ food_name: i.food_name, kcal: i.kcal })),
+              note: 'item já existia em meal_logs com mesmo (pmid, food_name) — pulado e não somado ao snapshot',
+            },
+          })
         }
       }
     }

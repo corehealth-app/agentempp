@@ -443,16 +443,21 @@ export const dailyAuditFn = inngest.createFunction(
       `• Cache hit rate: ${metrics.avgHitRate}%\n` +
       `• Saldo OpenRouter: ${metrics.balance != null ? `*$${metrics.balance.toFixed(2)}*` : 'n/d'}\n`
 
-    // Loga sempre (histórico)
-    await supabase.from('product_events').insert({
-      event: 'audit.daily_report',
-      properties: {
-        ...metrics,
-        alerts_count: alerts.length,
-        bloco_autofixed: autofix.applied,
-        bloco_diverge: autofix.divergeCount,
-        bloco_circuit_broke: autofix.circuitBroke,
-      },
+    // Loga sempre (histórico). Envolto em step.run pra Inngest cachear —
+    // sem isso, qualquer retry/restart do handler re-executa o insert e
+    // duplica o evento. Observado em prod 2026-05-30: 2 inserts por horário
+    // de cron, distância 2-35s, números idênticos.
+    await step.run('persist-audit-event', async () => {
+      await supabase.from('product_events').insert({
+        event: 'audit.daily_report',
+        properties: {
+          ...metrics,
+          alerts_count: alerts.length,
+          bloco_autofixed: autofix.applied,
+          bloco_diverge: autofix.divergeCount,
+          bloco_circuit_broke: autofix.circuitBroke,
+        },
+      })
     })
 
     // Envia Telegram só se há alertas OU sempre (config). Default: sempre,

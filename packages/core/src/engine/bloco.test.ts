@@ -25,6 +25,36 @@ describe('creditDayToBloco — regra de crédito por dia (fiel ao daily-closer)'
   it('incomplete >=50%: credita só o déficit observado (sem designDeficit)', () => {
     expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response' })).toBe(343)
   })
+  // Opção C (Roberto 2026-05-31): incomplete + paciente continuou interagindo
+  // após reminder → credita normal (igual complete), pq não sumiu.
+  it('incomplete + interactedAfterReminder=true: credita igual complete (Luciana 30/05)', () => {
+    // Caso Luciana 30/05: cal=1527, target=1106, balance=+421, dd=500 → 500-421 = 79
+    expect(
+      creditDayToBloco({
+        hasActivity: true,
+        dayStatus: 'incomplete_no_response',
+        caloriesConsumed: 1527,
+        caloriesTarget: 1106,
+        dailyBalance: 421,
+        designDeficit: 500,
+        interactedAfterReminder: true,
+      }),
+    ).toBe(79)
+  })
+  it('incomplete + interactedAfterReminder=false: mantém comportamento conservador antigo', () => {
+    // Mesmo input mas SEM interação após reminder → max(0, -421) = 0
+    expect(
+      creditDayToBloco({
+        hasActivity: true,
+        dayStatus: 'incomplete_no_response',
+        caloriesConsumed: 1527,
+        caloriesTarget: 1106,
+        dailyBalance: 421,
+        designDeficit: 500,
+        interactedAfterReminder: false,
+      }),
+    ).toBe(0)
+  })
   it('user_skipped: credita normal mesmo com consumo baixo (Roberto 19/05 = 832)', () => {
     expect(creditDayToBloco({ ...base, dayStatus: 'user_skipped', caloriesConsumed: 2076, dailyBalance: -332 })).toBe(832)
   })

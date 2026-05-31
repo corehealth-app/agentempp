@@ -16,6 +16,7 @@ interface SnapRow {
   daily_balance: number | null
   day_status: string | null
   training_done: boolean | null
+  gap_reminder_sent_at: string | null
 }
 
 /**
@@ -53,7 +54,7 @@ export async function recomputeUserBloco(
   const { data: snaps } = await supabase
     .from('daily_snapshots')
     .select(
-      'id, calories_consumed, calories_target, exercise_calories, daily_balance, day_status, training_done',
+      'id, calories_consumed, calories_target, exercise_calories, daily_balance, day_status, training_done, gap_reminder_sent_at',
     )
     .eq('user_id', userId)
     .eq('day_closed', true)
@@ -73,9 +74,40 @@ export async function recomputeUserBloco(
     }
   }
 
+  // Opção C (Roberto 2026-05-31): pra dias incomplete_no_response, computa se o
+  // paciente interagiu após o gap reminder. Faz uma query única dos timestamps
+  // de criação dos meal/workout logs do usuário e checa por snapshot.
+  const reminderDates = rows
+    .filter((r) => r.day_status === 'incomplete_no_response' && r.gap_reminder_sent_at)
+    .map((r) => r.gap_reminder_sent_at as string)
+  const minReminder = reminderDates.length > 0 ? reminderDates.reduce((a, b) => (a < b ? a : b)) : null
+  let allLogTimestamps: string[] = []
+  if (minReminder) {
+    const [{ data: m }, { data: w }] = await Promise.all([
+      supabase
+        .from('meal_logs')
+        .select('created_at')
+        .eq('user_id', userId)
+        .gt('created_at', minReminder),
+      supabase
+        .from('workout_logs')
+        .select('created_at')
+        .eq('user_id', userId)
+        .gt('created_at', minReminder),
+    ])
+    allLogTimestamps = [
+      ...((m ?? []) as Array<{ created_at: string }>).map((r) => r.created_at),
+      ...((w ?? []) as Array<{ created_at: string }>).map((r) => r.created_at),
+    ]
+  }
+
   const credits = rows.map((s) => {
     const hasAct =
       (mealCounts[s.id] ?? 0) > 0 || (s.exercise_calories ?? 0) > 0 || !!s.training_done
+    const interactedAfterReminder =
+      s.day_status === 'incomplete_no_response' && s.gap_reminder_sent_at
+        ? allLogTimestamps.some((t) => t > (s.gap_reminder_sent_at as string))
+        : false
     return creditDayToBloco({
       hasActivity: hasAct,
       dayStatus: (s.day_status ?? null) as
@@ -87,6 +119,7 @@ export async function recomputeUserBloco(
       caloriesTarget: s.calories_target,
       dailyBalance: s.daily_balance ?? 0,
       designDeficit,
+      interactedAfterReminder,
     })
   })
   const { deficitBlock, blocksCompleted } = accumulateBloco(credits)

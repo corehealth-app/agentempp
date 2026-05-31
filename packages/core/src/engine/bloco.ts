@@ -18,6 +18,11 @@ export interface DayCreditInput {
   caloriesTarget: number | null
   dailyBalance: number
   designDeficit: number
+  /** Roberto 2026-05-31 (opção C): paciente registrou ≥1 refeição/treino DEPOIS
+   * do gap reminder daquele dia? Sinal de que continuou interagindo, não sumiu.
+   * Quando true + dayStatus='incomplete_no_response', credita normal (igual
+   * complete) em vez de zerar. Default false (comportamento antigo preservado). */
+  interactedAfterReminder?: boolean
 }
 
 export function creditDayToBloco(d: DayCreditInput): number {
@@ -34,9 +39,17 @@ export function creditDayToBloco(d: DayCreditInput): number {
     // é fake (não comeu de verdade tão pouco). Credita só designDeficit ou 0.
     return d.dayStatus === 'complete' || d.dayStatus == null ? d.designDeficit : 0
   }
-  // Incomplete_no_response: lembrete enviado, paciente não respondeu → dado
-  // INCERTO. Mantém max(0) — não dá pra debitar com base em dado parcial.
-  if (d.dayStatus === 'incomplete_no_response') return Math.max(0, -d.dailyBalance)
+  // Incomplete_no_response: lembrete enviado, paciente não respondeu sobre o
+  // gap específico. Opção C (Roberto 2026-05-31): se paciente CONTINUOU
+  // interagindo após o lembrete (registrou refeição/treino depois), confia no
+  // dado e credita normal — sinal de que está usando o sistema, não sumiu.
+  // Caso real Luciana 30/05: registrou jantar 23:40 após gap reminder 21:31
+  // mas não confirmou se pulou o lanche → antes ganhava 0, agora ganha o
+  // crédito real do dia. Se NÃO interagiu (sumiu), mantém max(0) conservador.
+  if (d.dayStatus === 'incomplete_no_response') {
+    if (d.interactedAfterReminder === true) return d.designDeficit - d.dailyBalance
+    return Math.max(0, -d.dailyBalance)
+  }
   // ── MODELO LÍQUIDO (Roberto 2026-05-28) ──────────────────────────────────
   // Crédito = designDeficit − dailyBalance, podendo ser NEGATIVO em dia de
   // superávit. Antes era `Math.max(0, ...)` (cofrinho só subia). Mudança de

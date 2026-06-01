@@ -472,7 +472,7 @@ export class GeminiVision {
       (parsed.meal_contents as unknown[]) ??
       (parsed.foods as unknown[]) ??
       []
-    const items: VisionMealAnalysis['items'] = (rawItems as Array<Record<string, unknown>>).map(
+    const itemsRaw: VisionMealAnalysis['items'] = (rawItems as Array<Record<string, unknown>>).map(
       (it) => {
         const name =
           (it.name as string) ??
@@ -496,6 +496,37 @@ export class GeminiVision {
         }
       },
     )
+    // Bug Roberto 2026-06-01 08:50 BRT: Claude vision retornou "pão de forma
+    // tostado (25g)" 2x na MESMA proposta (alucinação OU 2 pedaços idênticos
+    // na foto). Paciente teve que editar manualmente. Aqui dedup por
+    // (nome_normalizado, quantidade arredondada): se 2+ entries idênticas,
+    // mantém só a 1ª e SOMA a quantidade do restante. Ex: 2× "pão (25g)" →
+    // 1× "pão (50g)". Conserva o total visto mas evita linha duplicada.
+    const normName = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+    const seen = new Map<string, number>()
+    const items: VisionMealAnalysis['items'] = []
+    for (const it of itemsRaw) {
+      const key = normName(it.name)
+      if (!key) {
+        items.push(it)
+        continue
+      }
+      const existingIdx = seen.get(key)
+      if (existingIdx == null) {
+        seen.set(key, items.length)
+        items.push(it)
+      } else {
+        // Mesmo nome — soma quantidade, mantém menor confidence
+        const e = items[existingIdx]!
+        items[existingIdx] = {
+          ...e,
+          quantity_g_estimate: e.quantity_g_estimate + it.quantity_g_estimate,
+          confidence: Math.min(e.confidence, it.confidence),
+          notes: e.notes ?? it.notes,
+        }
+      }
+    }
     const meal_context =
       (parsed.meal_context as string) ??
       (parsed.context as string) ??

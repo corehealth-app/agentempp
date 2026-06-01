@@ -410,11 +410,49 @@ export const processMessageFn = inngest.createFunction(
         })
       }
       await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
-      await messaging
-        .sendText(wpp, 'Tive um problema agora. Tenta de novo em alguns segundos? 🙏', {
-          replyTo: providerMessageId,
+
+      // Roberto+Paulo 2026-05-31 22h BRT: pipeline.error 402 (OpenRouter sem
+      // saldo). O fallback existia mas tinha `.catch(() => {})` silencioso —
+      // se o sendText falhasse (replyTo p/ msg antiga rejeitado, Meta API
+      // intermitente etc), paciente ficava sem resposta NENHUMA e a gente nem
+      // sabia. Agora: detecta tipo de erro p/ msg mais útil + retry sem
+      // replyTo se falhar + LOGA o resultado.
+      const errMsgLower = (err instanceof Error ? err.message : String(err)).toLowerCase()
+      const is402 = errMsgLower.includes('402') || errMsgLower.includes('credits')
+      const fallbackText = is402
+        ? 'Tive uma falha técnica de instante e não consegui processar agora. Já fui notificado aqui. Pode reenviar em uns minutos? 🙏'
+        : 'Tive um problema agora. Tenta de novo em alguns segundos? 🙏'
+
+      let fallbackSent = false
+      let fallbackError: string | null = null
+      try {
+        await messaging.sendText(wpp, fallbackText, { replyTo: providerMessageId })
+        fallbackSent = true
+      } catch (e1) {
+        // 1ª tentativa falhou — replyTo pode ter rejeitado. Retry sem replyTo.
+        try {
+          await messaging.sendText(wpp, fallbackText)
+          fallbackSent = true
+        } catch (e2) {
+          fallbackError = e2 instanceof Error ? e2.message : String(e2)
+        }
+      }
+      try {
+        const { supabase: supA } = createWorkerDeps()
+        await supA.from('product_events').insert({
+          user_id: userId,
+          event: fallbackSent
+            ? 'pipeline.error.fallback_sent'
+            : 'pipeline.error.fallback_failed',
+          properties: {
+            provider_message_id: providerMessageId,
+            is_402: is402,
+            fallback_error: fallbackError,
+          },
         })
-        .catch(() => {})
+      } catch {
+        /* logging opcional, não bloqueia */
+      }
       throw err
     }
 

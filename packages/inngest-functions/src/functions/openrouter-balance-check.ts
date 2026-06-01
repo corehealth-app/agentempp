@@ -17,7 +17,13 @@ import { createWorkerDeps } from '../lib/env.js'
  */
 export const openrouterBalanceCheckFn = inngest.createFunction(
   { id: 'openrouter-balance-check', retries: 1, concurrency: { limit: 1 } },
-  { event: 'openrouter.balance.tick' },
+  // Bug Roberto/Paulo 2026-05-31 22h BRT: saldo zerou silenciosamente, ninguém
+  // foi alertado pq esse handler dependia do event `openrouter.balance.tick`
+  // que NUNCA era disparado (sem cron registrado). Trocado pra cron nativo
+  // Inngest 4×/dia (4h/10h/16h/22h BRT). O daily-audit lê o último evento
+  // `openrouter.balance_checked` — com check rodando, esse valor passa a ser
+  // recente. Antes reportava $71 quando real era $0,12.
+  { cron: 'TZ=America/Sao_Paulo 0 4,10,16,22 * * *' },
   async ({ step, logger }) => {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

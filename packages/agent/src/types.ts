@@ -42,6 +42,12 @@ export interface AgentOutput {
     body: string
     buttons: Array<{ id: string; title: string }>
     pendingId: string
+    /** Quando definido, envia como List Message (Roberto 2026-06-01, Fase 2
+     * botões onboarding) — pra perguntas com 4-10 opções (botão simples
+     * limita a 3). `buttonText` é o rótulo do botão "abrir lista". */
+    list?: {
+      buttonText: string
+    }
   }
   toolCalls: Array<{ name: string; arguments: unknown; result?: unknown; error?: string }>
   stage: AgentStage

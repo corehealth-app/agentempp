@@ -38,7 +38,11 @@ import {
   splitMealAndCard,
   type RegistrationEntry,
 } from './post-registration-message.js'
-import { makeOnboardingButtonId, parseOnboardingButtonTag } from './onboarding-button.js'
+import {
+  makeOnboardingButtonId,
+  parseOnboardingButtonTag,
+  parseOnboardingListTag,
+} from './onboarding-button.js'
 import { generateEducationalComment, type EduCommentInput } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import {
@@ -367,6 +371,34 @@ export async function processMessage(
         })
         messages.push({ role: 'assistant', content })
         finalText = '' // envio via interactive, não via sendHumanized
+        break
+      }
+
+      // Fase 2 (Roberto 2026-06-01): [LIST:...] pra perguntas com 4-10 opções
+      // (activity_level: 5; training_frequency: 8). WhatsApp renderiza como
+      // botão "Escolher" → dropdown. Mesmo id pattern btn_<field>_<value>.
+      const onbListProposal = parseOnboardingListTag(content)
+      if (onbListProposal) {
+        const buttons = onbListProposal.options.map((o) => ({
+          id: makeOnboardingButtonId(onbListProposal.field, o.value),
+          title: o.label,
+        }))
+        interactivePayload = {
+          body: onbListProposal.body,
+          buttons,
+          pendingId: '',
+          list: { buttonText: onbListProposal.buttonText },
+        }
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.onboarding_list_sent',
+          properties: {
+            field: onbListProposal.field,
+            options: onbListProposal.options.map((o) => o.value),
+          },
+        })
+        messages.push({ role: 'assistant', content })
+        finalText = ''
         break
       }
 

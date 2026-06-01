@@ -471,6 +471,17 @@ export const processMessageFn = inngest.createFunction(
     if (result.interactive) {
       const ix = result.interactive
       const sendRes = await step.run('send-interactive', async () => {
+        // Roberto 2026-06-01 Fase 2 botões onboarding: se `list` presente,
+        // envia como List Message (4-10 opções, dropdown). Senão, botão simples.
+        if (ix.list) {
+          if (!messaging.sendInteractiveList) {
+            throw new Error('messaging provider sem sendInteractiveList')
+          }
+          const items = ix.buttons.map((b) => ({ id: b.id, title: b.title }))
+          return messaging.sendInteractiveList(wpp, ix.body, ix.list.buttonText, items, {
+            replyTo: providerMessageId,
+          })
+        }
         if (!messaging.sendInteractive) {
           throw new Error('messaging provider sem sendInteractive')
         }

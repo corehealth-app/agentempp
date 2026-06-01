@@ -14,6 +14,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type {
   HSMTemplate,
   InteractiveButton,
+  InteractiveListItem,
   MessagingProvider,
   NormalizedInbound,
   QualityStatus,
@@ -120,6 +121,67 @@ export class WhatsAppCloudProvider implements MessagingProvider {
             type: 'reply',
             reply: { id: b.id, title: b.title },
           })),
+        },
+      },
+      ...(opts?.replyTo ? { context: { message_id: opts.replyTo } } : {}),
+    })
+  }
+
+  /**
+   * List Message (Roberto 2026-06-01 — Fase 2 botões onboarding). Pra
+   * perguntas com 4-10 opções (botão simples limita a 3). Renderiza no
+   * WhatsApp como botão "Ver opções" que abre lista dropdown. Tap chega como
+   * inbound type=interactive, list_reply={id,title}. Limites Meta: max 10 rows
+   * por section, title <=24 chars, description <=72, id <=200, button <=20.
+   */
+  async sendInteractiveList(
+    to: string,
+    body: string,
+    buttonText: string,
+    items: InteractiveListItem[],
+    opts?: SendOpts,
+  ): Promise<SendResult> {
+    if (items.length < 1 || items.length > 10) {
+      throw new Error(`sendInteractiveList: items.length must be 1-10, got ${items.length}`)
+    }
+    if (body.length === 0 || body.length > 1024) {
+      throw new Error(`sendInteractiveList: body length must be 1-1024, got ${body.length}`)
+    }
+    if (!buttonText || buttonText.length > 20) {
+      throw new Error(`sendInteractiveList: button text must be 1-20, got ${buttonText.length}`)
+    }
+    for (const it of items) {
+      if (!it.id || it.id.length > 200) {
+        throw new Error(`sendInteractiveList: item id length must be 1-200, got ${it.id.length}`)
+      }
+      if (!it.title || it.title.length > 24) {
+        throw new Error(
+          `sendInteractiveList: item title length must be 1-24, got ${it.title.length} ("${it.title}")`,
+        )
+      }
+      if (it.description && it.description.length > 72) {
+        throw new Error(`sendInteractiveList: item description length must be <=72`)
+      }
+    }
+    return this.post({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: body },
+        action: {
+          button: buttonText,
+          sections: [
+            {
+              title: 'Opções',
+              rows: items.map((it) => ({
+                id: it.id,
+                title: it.title,
+                ...(it.description ? { description: it.description } : {}),
+              })),
+            },
+          ],
         },
       },
       ...(opts?.replyTo ? { context: { message_id: opts.replyTo } } : {}),

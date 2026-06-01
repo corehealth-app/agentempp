@@ -24,6 +24,8 @@ export type OnboardingField =
   | 'water_intake'
   | 'food_organization'
   | 'current_protocol'
+  | 'activity_level'
+  | 'training_frequency'
 
 export const ONBOARDING_FIELD_VALUES: Record<OnboardingField, string[]> = {
   sex: ['masculino', 'feminino'],
@@ -31,7 +33,14 @@ export const ONBOARDING_FIELD_VALUES: Record<OnboardingField, string[]> = {
   water_intake: ['pouco', 'moderado', 'bastante'],
   food_organization: ['sim', 'nao'],
   current_protocol: ['recomposicao', 'ganho_massa', 'manutencao'],
+  // Activity level: 5 opções (precisa List Message). Fase 2 Roberto 2026-06-01.
+  activity_level: ['sedentario', 'leve', 'moderado', 'alto', 'atleta'],
+  // Training frequency: 0-7 dias/semana. Number coerção feita no handler.
+  training_frequency: ['0', '1', '2', '3', '4', '5', '6', '7'],
 }
+
+/** Fields que SÓ vão via List Message (têm 4+ opções). */
+export const LIST_ONLY_FIELDS: OnboardingField[] = ['activity_level', 'training_frequency']
 
 export interface OnboardingButtonOption {
   /** Texto que aparece no botão (máx 20 chars no WhatsApp). */
@@ -98,24 +107,68 @@ export function makeOnboardingButtonId(field: OnboardingField, value: string): s
   return `btn_${field}_${value}`
 }
 
-const ONBOARDING_BTN_ID_RE = /^btn_([a-z_]+)_([a-z_]+)$/i
+const ONBOARDING_BTN_ID_RE = /^btn_([a-z_0-9]+)$/i
 
 export function parseOnboardingButtonId(
   id: string,
 ): { field: OnboardingField; value: string } | null {
   const m = id.match(ONBOARDING_BTN_ID_RE)
   if (!m) return null
-  // O nome do field tem underscore (food_organization). Separar pelo último
-  // underscore não funciona — precisa testar contra a lista de fields conhecidos.
-  // Estratégia: pega o suffix mais longo que bate com um value válido.
-  const all = m[1] + '_' + m[2]
+  // Field pode ter underscore (food_organization, training_frequency).
+  // Value pode ser número (0-7 pra training_frequency). Match testando contra
+  // lista de fields conhecidos — pega o que começa com 'field_'.
+  const rest = m[1]!
   for (const field of Object.keys(ONBOARDING_FIELD_VALUES) as OnboardingField[]) {
-    if (all.startsWith(field + '_')) {
-      const value = all.slice(field.length + 1)
+    if (rest.startsWith(field + '_')) {
+      const value = rest.slice(field.length + 1)
       if (ONBOARDING_FIELD_VALUES[field].includes(value)) {
         return { field, value }
       }
     }
   }
   return null
+}
+
+/**
+ * Tag de List Message: [LIST:field:Label1=val1|Label2=val2|...|Label10=val10]
+ * Aceita 4-10 opções. Pra perguntas com até 3, use [BTN:...] (mais simples).
+ */
+const LIST_TAG_REGEX = /\[LIST:([a-z_]+):([^\]]+)\]/i
+
+export interface OnboardingListProposal {
+  body: string
+  field: OnboardingField
+  /** Texto do botão "abrir lista" (max 20 chars). Default: "Escolher" */
+  buttonText: string
+  options: OnboardingButtonOption[]
+}
+
+export function parseOnboardingListTag(text: string): OnboardingListProposal | null {
+  if (!text) return null
+  const m = text.match(LIST_TAG_REGEX)
+  if (!m) return null
+
+  const field = m[1]!.toLowerCase() as OnboardingField
+  if (!(field in ONBOARDING_FIELD_VALUES)) return null
+
+  const rawOpts = m[2]!.split('|').map((s) => s.trim()).filter(Boolean)
+  if (rawOpts.length < 2 || rawOpts.length > 10) return null
+
+  const validValues = ONBOARDING_FIELD_VALUES[field]
+  const options: OnboardingButtonOption[] = []
+  for (const opt of rawOpts) {
+    const eqIdx = opt.indexOf('=')
+    if (eqIdx === -1) return null
+    const label = opt.slice(0, eqIdx).trim()
+    const value = opt.slice(eqIdx + 1).trim().toLowerCase()
+    if (!label || !value) return null
+    if (label.length > 24) return null
+    if (!validValues.includes(value)) return null
+    options.push({ label, value })
+  }
+
+  const body = text.slice(0, m.index!).trimEnd()
+  if (!body) return null
+
+  return { body, field, buttonText: 'Escolher', options }
 }

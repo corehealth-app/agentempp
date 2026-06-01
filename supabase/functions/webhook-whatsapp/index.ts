@@ -179,13 +179,18 @@ Deno.serve(async (req: Request) => {
         //  "confirm_<pending_id>" ou "edit_<pending_id>"). NÃO passa pelo
         //  buffer — é ação discreta, handler determinístico imediato.
         // ============================================================
-        if (
-          msg.type === 'interactive' &&
-          msg.interactive?.type === 'button_reply' &&
-          msg.interactive?.button_reply?.id
-        ) {
-          const buttonId = msg.interactive.button_reply.id as string
-          const buttonTitle = (msg.interactive.button_reply.title as string) ?? ''
+        // Roberto 2026-06-01 Fase 2: List Message (4-10 opções) chega como
+        // `list_reply` em vez de `button_reply`. Mesmo handler (id já tem
+        // formato btn_<field>_<value> compatível). 1 só branch pra ambos.
+        const interactiveReply =
+          msg.type === 'interactive' && msg.interactive?.type === 'button_reply'
+            ? msg.interactive?.button_reply
+            : msg.type === 'interactive' && msg.interactive?.type === 'list_reply'
+              ? msg.interactive?.list_reply
+              : null
+        if (interactiveReply?.id) {
+          const buttonId = interactiveReply.id as string
+          const buttonTitle = (interactiveReply.title as string) ?? ''
           await supabase.from('messages').insert({
             user_id: userId,
             direction: 'in',

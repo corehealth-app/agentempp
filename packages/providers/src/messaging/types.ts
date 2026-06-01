@@ -61,6 +61,16 @@ export interface InteractiveButton {
   title: string
 }
 
+/** Item de List Message (WhatsApp). Pra perguntas com 4+ opções (botão simples limita a 3). */
+export interface InteractiveListItem {
+  /** ID livre — fica embutido no inbound do tap (list_reply.id). Limite Meta: 200 chars. */
+  id: string
+  /** Texto da opção. Limite Meta: 24 chars. */
+  title: string
+  /** Subtexto opcional. Limite Meta: 72 chars. */
+  description?: string
+}
+
 export interface MessagingProvider {
   readonly name: string
 
@@ -76,6 +86,16 @@ export interface MessagingProvider {
     to: string,
     body: string,
     buttons: InteractiveButton[],
+    opts?: SendOpts,
+  ): Promise<SendResult>
+  /** List Message (WhatsApp) pra perguntas com 4-10 opções. Roberto 2026-06-01
+   * (Fase 2 botões onboarding). Tap chega como list_reply: { id, title }.
+   * buttonText: rótulo do botão "abrir lista" (ex: "Escolher", "Ver opções"). */
+  sendInteractiveList(
+    to: string,
+    body: string,
+    buttonText: string,
+    items: InteractiveListItem[],
     opts?: SendOpts,
   ): Promise<SendResult>
 

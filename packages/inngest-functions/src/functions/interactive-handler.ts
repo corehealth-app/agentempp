@@ -21,9 +21,11 @@
  */
 import {
   composePostRegistrationMessage,
+  generateEducationalComment,
   registraRefeicao,
   registraTreino,
   splitMealAndCard,
+  type EduCommentInput,
   type MealItem,
   type MealTotals,
   type RegistrationEntry,
@@ -352,7 +354,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                     proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
                 },
               ]
-        const text = composePostRegistrationMessage({
+        const textBase = composePostRegistrationMessage({
           registrations,
           card: {
             caloriesConsumed: s.calories_consumed ?? 0,
@@ -365,6 +367,46 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
           },
         })
+
+        // Roberto 2026-06-01: chama Haiku pra gerar comentário educativo
+        // 2-4 frases (microvitória → identidade → orientação) que entra
+        // entre tabela e card. Degradação graciosa: se falhar/timeout,
+        // segue sem comentário.
+        const { llm } = createWorkerDeps()
+        const eduComment = await generateEducationalComment(llm, {
+          kind:
+            proposal.kind === 'workout'
+              ? 'treino'
+              : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
+          items:
+            proposal.kind !== 'workout'
+              ? (mealToolResult?.meal?.items as EduCommentInput['items']) ?? undefined
+              : undefined,
+          totals:
+            proposal.kind !== 'workout'
+              ? (mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined
+              : undefined,
+          workout:
+            proposal.kind === 'workout'
+              ? {
+                  type: proposal.workoutType ?? 'treino',
+                  durationMin: proposal.durationMin,
+                  kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
+                }
+              : undefined,
+          protocol:
+            (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+        })
+
+        let text = textBase
+        if (eduComment) {
+          const splitTmp = splitMealAndCard(textBase)
+          if (splitTmp.card) {
+            text = `${splitTmp.meal}\n\n${eduComment}\n\n${splitTmp.card}`
+          } else {
+            text = `${textBase}\n\n${eduComment}`
+          }
+        }
 
         // Roberto 2026-05-30: divide tabela do card em 2 envios pra ficar
         // menos denso. splitMealAndCard usa o marker "🔥 Consumido:" — se

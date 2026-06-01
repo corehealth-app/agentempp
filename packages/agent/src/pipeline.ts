@@ -34,8 +34,10 @@ import {
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
+  splitMealAndCard,
   type RegistrationEntry,
 } from './post-registration-message.js'
+import { generateEducationalComment, type EduCommentInput } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import {
   isMealExpressEligible,
@@ -738,6 +740,43 @@ export async function processMessage(
             last14d: ctx.last14d,
           },
         })
+
+        // Roberto 2026-06-01: a Fase 1 (determinístico) tirou o comentário
+        // educativo de 2-4 frases que o LLM redigia pós-registro — Roberto
+        // sentiu falta. Solução: 1 chamada Haiku PEQUENA só pro comentário,
+        // sem refazer tabela/card (continuam determinísticos). Se falhar/
+        // timeout, registro segue sem comentário (degradação graciosa).
+        const protocol =
+          (ctx.profile.currentProtocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ??
+          null
+        const eduComment = await generateEducationalComment(deps.llm, {
+          kind: registrations[0]?.tool === 'registra_treino'
+            ? 'treino'
+            : (registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro',
+          items: registrations[0]?.items as EduCommentInput['items'],
+          totals: registrations[0]?.totals,
+          workout:
+            registrations[0]?.tool === 'registra_treino'
+              ? {
+                  type: registrations[0]?.workoutType ?? 'treino',
+                  durationMin: registrations[0]?.durationMin,
+                  kcalBurned: registrations[0]?.kcalBurned ?? 0,
+                }
+              : undefined,
+          protocol,
+          locale: ctx.locale,
+        })
+        if (eduComment) {
+          // Insere ANTES do card (marker "🔥 Consumido:") pra ficar entre
+          // tabela e card — mesma posição que o LLM antigo usava.
+          const split = splitMealAndCard(finalText)
+          if (split.card) {
+            finalText = `${split.meal}\n\n${eduComment}\n\n${split.card}`
+          } else {
+            finalText = `${finalText}\n\n${eduComment}`
+          }
+        }
+
         messages.push({ role: 'assistant', content: finalText })
         deterministicRegistration = true
         await deps.supabase.from('product_events').insert({

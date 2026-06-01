@@ -176,6 +176,34 @@ export function splitMealAndCard(text: string): { meal: string; card: string | n
   return { meal, card }
 }
 
+/**
+ * Roberto 2026-06-01: marker invisível usado pra delimitar o comentário
+ * educativo, permitindo splitar em 3 bolhas (tabela | comentário | card).
+ * Zero-width space (U+200B) é renderizado como nada no WhatsApp mas sobrevive
+ * aos validators de pipeline (que mexem em texto/números, não em whitespace).
+ */
+export const EDU_COMMENT_MARKER = '​​​'
+
+/**
+ * Split em 3 partes — tabela do registro, comentário educativo, card de
+ * balanço. Marker do comentário é EDU_COMMENT_MARKER (zero-width tripla),
+ * inserido pelo pipeline/handler antes de concatenar o comentário. Se não
+ * houver marker, devolve só meal+card (igual splitMealAndCard).
+ */
+export function splitRegistrationParts(text: string): {
+  meal: string
+  comment: string | null
+  card: string | null
+} {
+  const { meal: mealCard, card } = splitMealAndCard(text)
+  const idx = mealCard.indexOf(EDU_COMMENT_MARKER)
+  if (idx === -1) return { meal: mealCard, comment: null, card }
+  const meal = mealCard.slice(0, idx).trimEnd()
+  const comment = mealCard.slice(idx + EDU_COMMENT_MARKER.length).trimStart()
+  if (!meal || !comment) return { meal: mealCard, comment: null, card }
+  return { meal, comment, card }
+}
+
 // ── #1 STATUS SOB DEMANDA (Roberto 2026-05-27) ──────────────────────────────
 // "como tô / quanto falta / meu bloco" → o sistema responde com o card canônico
 // (mesma fonte do registro), sem a 2ª chamada do LLM. Gatilho conservador: só

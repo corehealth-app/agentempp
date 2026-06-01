@@ -1,4 +1,4 @@
-import { detectPendingResponse, splitMealAndCard } from '@mpp/agent'
+import { detectPendingResponse, splitRegistrationParts } from '@mpp/agent'
 import {
   GeminiVision,
   GroqSTT,
@@ -607,35 +607,40 @@ export const processMessageFn = inngest.createFunction(
       // Process-message usa response_max_delay_ms (maior que engagement
       // pra parecer "pensando" antes de responder).
       const humanizer = await loadHumanizerConfig(supabase)
-      // Roberto 2026-05-30: msg consolidada de registro estava densa demais
-      // (tabela 5 itens + total + card num bloco só). Pra registro
-      // determinístico (singleMessage=true), divide em 2 envios: parte 1 =
-      // confirmação + tabela; parte 2 = card de balanço. splitMealAndCard
-      // detecta pelo marker "🔥 Consumido:" — devolve card=null se a msg não
-      // for de registro (aí cai no envio único de sempre).
+      // Roberto 2026-06-01: msg de registro vai em ATÉ 3 bolhas: tabela |
+      // comentário educativo (se Haiku gerou) | card de balanço. Cada parte
+      // ganha respiro próprio (almoço com 8 itens + comentário ficava 1.4kb
+      // numa msg só). Marker '🔥 Consumido:' separa card; marker invisível
+      // EDU_COMMENT_MARKER separa comentário. Se nenhum marker presente,
+      // cai no envio único.
       const splitForRegistration = result.singleMessage === true
-      const splitParts = splitForRegistration ? splitMealAndCard(result.text) : null
+      const parts = splitForRegistration ? splitRegistrationParts(result.text) : null
       const sendResults = await step.run('send-to-user', async () => {
-        if (splitParts && splitParts.card) {
-          const r1 = await sendHumanized(messaging, wpp, splitParts.meal, {
+        if (parts && (parts.card || parts.comment)) {
+          const baseOpts = {
             showTyping: true,
             minDelay: humanizer.min_delay_ms,
             maxDelay: humanizer.response_max_delay_ms,
             charsPerSecond: humanizer.chars_per_second,
+            singleMessage: true,
+          }
+          const r1 = await sendHumanized(messaging, wpp, parts.meal, {
+            ...baseOpts,
             inReplyTo: providerMessageId,
             replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-            singleMessage: true,
           })
-          // Pausa curta entre as 2 msgs (sensação de "tá pensando" antes do card).
-          await new Promise((res) => setTimeout(res, 1500))
-          const r2 = await sendHumanized(messaging, wpp, splitParts.card, {
-            showTyping: true,
-            minDelay: humanizer.min_delay_ms,
-            maxDelay: humanizer.response_max_delay_ms,
-            charsPerSecond: humanizer.chars_per_second,
-            singleMessage: true,
-          })
-          return [...r1, ...r2]
+          const all = [...r1]
+          if (parts.comment) {
+            await new Promise((res) => setTimeout(res, 1500))
+            const r2 = await sendHumanized(messaging, wpp, parts.comment, baseOpts)
+            all.push(...r2)
+          }
+          if (parts.card) {
+            await new Promise((res) => setTimeout(res, 1500))
+            const r3 = await sendHumanized(messaging, wpp, parts.card, baseOpts)
+            all.push(...r3)
+          }
+          return all
         }
         return sendHumanized(messaging, wpp, result.text, {
           showTyping: true,

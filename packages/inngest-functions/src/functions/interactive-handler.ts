@@ -21,10 +21,12 @@
  */
 import {
   composePostRegistrationMessage,
+  EDU_COMMENT_MARKER,
   generateEducationalComment,
   registraRefeicao,
   registraTreino,
   splitMealAndCard,
+  splitRegistrationParts,
   type EduCommentInput,
   type MealItem,
   type MealTotals,
@@ -168,6 +170,10 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           kcalEst?: number | null
           raw_args?: Record<string, unknown>
           source_provider_message_id?: string
+          /** Roberto 2026-06-01: pending de correção. Quando true, o execute
+           * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
+           * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
+          replace?: boolean
         }
 
         // Carrega user pra timezone (pra computar a data local no tool)
@@ -263,7 +269,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   carbs_g: it.carbs_g,
                   fat_g: it.fat_g,
                 })),
-                replace: false,
+                replace: proposal.replace === true,
               } as never,
               toolCtx as never,
             )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
@@ -402,16 +408,19 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         if (eduComment) {
           const splitTmp = splitMealAndCard(textBase)
           if (splitTmp.card) {
-            text = `${splitTmp.meal}\n\n${eduComment}\n\n${splitTmp.card}`
+            text = `${splitTmp.meal}\n\n${EDU_COMMENT_MARKER}${eduComment}\n\n${splitTmp.card}`
           } else {
-            text = `${textBase}\n\n${eduComment}`
+            text = `${textBase}\n\n${EDU_COMMENT_MARKER}${eduComment}`
           }
         }
 
-        // Roberto 2026-05-30: divide tabela do card em 2 envios pra ficar
-        // menos denso. splitMealAndCard usa o marker "🔥 Consumido:" — se
-        // não achar (mensagem sem card), card=null e envia tudo numa só.
-        const { meal: mealPart, card: cardPart } = splitMealAndCard(text)
+        // Roberto 2026-06-01: divide em ATÉ 3 bolhas — tabela | comentário
+        // educativo | card de balanço — pra cada parte ter respiro próprio.
+        // Antes a tabela+comentário ia numa bolha só, ficava densa demais
+        // (almoço 8 itens + 4 linhas de comentário = 1.4kb numa msg). Se
+        // não houver comentário (Haiku falhou), splitRegistrationParts
+        // devolve comment=null e envia 2 bolhas (tabela | card).
+        const { meal: mealPart, comment: commentPart, card: cardPart } = splitRegistrationParts(text)
         await sendHumanized(messaging, wpp, mealPart, {
           singleMessage: true,
           minDelay: 0,
@@ -419,6 +428,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           showTyping: false,
           inReplyTo: providerMessageId,
         }).catch(() => {})
+        if (commentPart) {
+          await new Promise((res) => setTimeout(res, 1500))
+          await sendHumanized(messaging, wpp, commentPart, {
+            singleMessage: true,
+            minDelay: 0,
+            maxDelay: 0,
+            showTyping: false,
+          }).catch(() => {})
+        }
         if (cardPart) {
           await new Promise((res) => setTimeout(res, 1500))
           await sendHumanized(messaging, wpp, cardPart, {

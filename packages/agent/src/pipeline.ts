@@ -31,6 +31,7 @@ import {
   composePostRegistrationMessage,
   composeReevalResultMessage,
   composeStatusMessage,
+  EDU_COMMENT_MARKER,
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
@@ -398,12 +399,11 @@ export async function processMessage(
         // texto NÃO é express (foto/áudio/vago/sem gramas) → em vez de gravar
         // direto, criamos um pending_registrations + retornamos interactive
         // payload pro caller (process-message) mandar [Sim, registrar] [Editar].
-        // Correção (replace=true) NÃO entra no botão — paciente já decidiu.
-        if (
-          tc.name === 'registra_refeicao' &&
-          result.toolCalls.length === 1 &&
-          (validated as { replace?: boolean }).replace !== true
-        ) {
+        // Roberto 2026-06-01: removido o bloqueio de `replace !== true` —
+        // correção também passa por botão agora, padronizando UX e dando
+        // chance do paciente ver o que vai ser SUBSTITUÍDO antes de confirmar
+        // (replace é destrutivo).
+        if (tc.name === 'registra_refeicao' && result.toolCalls.length === 1) {
           const exprInput: ExpressInput = {
             contentType:
               ctx.lastInboundContentType === 'image'
@@ -438,6 +438,7 @@ export async function processMessage(
             // Cria o pending novo
             const args = validated as {
               meal_type?: string | null
+              replace?: boolean
               items: Array<{
                 food_name: string
                 quantity_g?: number
@@ -482,6 +483,10 @@ export async function processMessage(
               source_text: input.text ?? null,
               express_eligible: false,
               express_reason: exprResult.reason,
+              // Roberto 2026-06-01: salva replace pra handler do tap propagar
+              // pro registra_refeicao.execute. Sem isso, correção que veio via
+              // botão viraria INSERT em vez de SUBSTITUIR (dupla contagem).
+              replace: args.replace === true,
             }
             const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
@@ -768,12 +773,15 @@ export async function processMessage(
         })
         if (eduComment) {
           // Insere ANTES do card (marker "🔥 Consumido:") pra ficar entre
-          // tabela e card — mesma posição que o LLM antigo usava.
+          // tabela e card — mesma posição que o LLM antigo usava. Marca o
+          // comentário com EDU_COMMENT_MARKER (zero-width) pra splitRegistrationParts
+          // poder dividir em 3 bolhas no envio (Roberto 2026-06-01: 1 bolha
+          // ficava muito densa com tabela de 8 itens + comentário juntos).
           const split = splitMealAndCard(finalText)
           if (split.card) {
-            finalText = `${split.meal}\n\n${eduComment}\n\n${split.card}`
+            finalText = `${split.meal}\n\n${EDU_COMMENT_MARKER}${eduComment}\n\n${split.card}`
           } else {
-            finalText = `${finalText}\n\n${eduComment}`
+            finalText = `${finalText}\n\n${EDU_COMMENT_MARKER}${eduComment}`
           }
         }
 

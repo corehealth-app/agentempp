@@ -20,6 +20,7 @@ import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-utils.js'
 import { detectCorrectionIntent } from './correction-detector.js'
+import { classifyWeightGoal } from './weight-goal-classifier.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -278,6 +279,80 @@ export const defineProtocolo: ToolDefinition = {
           : args.protocol === 'ganho_massa'
             ? `BMR × activity_factor × ${config.ganho_massa_surplus_multiplier} (superávit leve)`
             : 'BMR × activity_factor (manutenção)',
+    }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// define_meta_peso — registra a meta de PESO (kg) + classifica viabilidade
+// ----------------------------------------------------------------------------
+// Roberto 2026-06-01: paciente pensa em "quero pesar X kg", não em IMC.
+// Tool recebe o peso alvo, calcula IMC alvo, classifica (saudável/sobrepeso/
+// obesidade/abaixo) e retorna mensagem pro LLM redigir variando. Grava no
+// user_profiles via goal_type='peso_kg' + goal_value=X.
+export const defineMetaPeso: ToolDefinition = {
+  name: 'define_meta_peso',
+  description:
+    'Salva a meta de PESO em kg que o paciente quer atingir + retorna classificação automática da viabilidade (saudável/abaixo/sobrepeso/obesidade/agressiva). ' +
+    '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada com altura E peso atual; (2) o paciente declarou EXPLICITAMENTE o peso alvo ("quero pesar 65kg", "minha meta é 70"). ' +
+    'NÃO USE quando o paciente especulou ("acho que 60 seria bom") ou pediu sua opinião antes — pergunte/oriente primeiro. ' +
+    'A tool retorna: imc_alvo, faixa saudável da altura dele, semanas estimadas no ritmo seguro, e uma MENSAGEM-BASE conforme a classificação. ' +
+    'IMPORTANTE: a mensagem retornada NÃO é literal — varie o jeito de dizer mas MANTENHA os números (peso mínimo/máximo saudável, IMC alvo, semanas). NUNCA invente valor de IMC ou faixa saudável — use os da tool.',
+  parameters: z.object({
+    target_weight_kg: z
+      .number()
+      .min(30)
+      .max(300)
+      .describe('Peso alvo do paciente em quilos (positivo, 30-300). Se ele falou em libras, converta antes: kg = lb × 0.4536.'),
+  }),
+  execute: async (args, ctx) => {
+    // Busca peso atual + altura do profile
+    const { data: prof } = await ctx.supabase
+      .from('user_profiles')
+      .select('weight_kg, height_cm')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    const p = prof as { weight_kg: number | null; height_cm: number | null } | null
+    if (!p?.weight_kg || !p?.height_cm) {
+      return {
+        success: false,
+        error:
+          'Peso atual ou altura ainda não cadastrados. Pergunte ao paciente e chame cadastra_dados_iniciais primeiro.',
+      }
+    }
+
+    const assessment = classifyWeightGoal({
+      currentWeightKg: Number(p.weight_kg),
+      targetWeightKg: args.target_weight_kg,
+      heightCm: Number(p.height_cm),
+    })
+
+    // Grava no banco
+    const { error } = await ctx.supabase
+      .from('user_profiles')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({
+        goal_type: 'peso_kg',
+        goal_value: args.target_weight_kg,
+        updated_at: new Date().toISOString(),
+      } as any)
+      .eq('user_id', ctx.userId)
+    if (error) throw error
+
+    return {
+      success: true,
+      target_weight_kg: args.target_weight_kg,
+      classification: assessment.classification,
+      imc_atual: assessment.imcAtual,
+      imc_alvo: assessment.imcAlvo,
+      peso_minimo_saudavel_kg: assessment.pesoMinimoSaudavelKg,
+      peso_maximo_saudavel_kg: assessment.pesoMaximoSaudavelKg,
+      semanas_para_meta_ritmo_seguro: assessment.semanasParaMetaSeguro,
+      direction: assessment.direction,
+      delta_kg: assessment.deltaKg,
+      // ⚠️ Use ESTA mensagem como base — varie o jeito de dizer mas MANTENHA
+      // todos os números (IMC, faixa, semanas). NUNCA invente valores.
+      message_template: assessment.message,
     }
   },
 }
@@ -2085,6 +2160,7 @@ export const consultaResumoPeriodo: ToolDefinition = {
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
+  defineMetaPeso,
   registraRefeicao,
   registraTreino,
   consultaProgresso,

@@ -20,9 +20,11 @@
  * → mensagem informativa.
  */
 import {
+  cadastraDadosIniciais,
   composePostRegistrationMessage,
   EDU_COMMENT_MARKER,
   generateEducationalComment,
+  parseOnboardingButtonId,
   registraRefeicao,
   registraTreino,
   splitMealAndCard,
@@ -77,6 +79,48 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
     return await step.run('handle-tap', async () => {
       const { supabase } = createWorkerDeps()
+
+      // Roberto 2026-06-01: botão de onboarding (`btn_<field>_<value>`)
+      // dispara cadastra_dados_iniciais direto. Padrão diferente do
+      // confirm/edit (que envolvem pending_registrations).
+      const onbBtn = parseOnboardingButtonId(buttonId)
+      if (onbBtn) {
+        try {
+          await cadastraDadosIniciais.execute(
+            { [onbBtn.field]: onbBtn.value } as never,
+            { supabase, userId, userWpp: wpp, userCountry: 'BR', userTimezone: 'America/Sao_Paulo', providerMessageId, recentUserMessages: [] } as never,
+          )
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'interactive.onboarding_tap_failed',
+            properties: { buttonId, field: onbBtn.field, value: onbBtn.value, error: msg },
+          })
+          logger.error('onboarding cadastra falhou', { userId, buttonId, error: msg })
+          throw err
+        }
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'interactive.onboarding_tap',
+          properties: { buttonId, field: onbBtn.field, value: onbBtn.value },
+        })
+        // Dispara nova mensagem in pra próxima iteração do LLM continuar onboarding
+        // com o dado já gravado. Texto descritivo pro LLM saber o que aconteceu.
+        await inngest.send({
+          name: 'message.received',
+          data: {
+            userId,
+            wpp,
+            text: `[Paciente respondeu via botão: ${onbBtn.field}=${onbBtn.value}]`,
+            timestamp: new Date().toISOString(),
+            providerMessageId: providerMessageId ?? `onb_tap_${Date.now()}`,
+            provider: 'whatsapp_cloud',
+            contentType: 'text',
+          },
+        })
+        return { handled: true, action: 'onboarding_tap', field: onbBtn.field, value: onbBtn.value }
+      }
 
       const match = buttonId.match(BUTTON_ID_PATTERN)
       if (!match) {

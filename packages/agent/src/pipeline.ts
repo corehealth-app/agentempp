@@ -38,6 +38,7 @@ import {
   splitMealAndCard,
   type RegistrationEntry,
 } from './post-registration-message.js'
+import { makeOnboardingButtonId, parseOnboardingButtonTag } from './onboarding-button.js'
 import { generateEducationalComment, type EduCommentInput } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import {
@@ -343,6 +344,30 @@ export async function processMessage(
             'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
         })
         continue
+      }
+
+      // Roberto 2026-06-01: botões no onboarding. Se o LLM emitiu tag
+      // [BTN:field:opt1=val1|opt2=val2] no texto, transforma em interactive.
+      // Só pra fields enum suportados (sex, hunger_level, water_intake,
+      // food_organization, current_protocol). Demais perguntas vão texto normal.
+      const onbProposal = parseOnboardingButtonTag(content)
+      if (onbProposal) {
+        const buttons = onbProposal.options.map((o) => ({
+          id: makeOnboardingButtonId(onbProposal.field, o.value),
+          title: o.label,
+        }))
+        interactivePayload = { body: onbProposal.body, buttons, pendingId: '' }
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.onboarding_button_sent',
+          properties: {
+            field: onbProposal.field,
+            options: onbProposal.options.map((o) => o.value),
+          },
+        })
+        messages.push({ role: 'assistant', content })
+        finalText = '' // envio via interactive, não via sendHumanized
+        break
       }
 
       finalText = content

@@ -11,8 +11,23 @@
  * for repetição literal, é falso positivo → pipeline força retry.
  */
 
-const FALSE_DUP_PATTERN =
-  /\b(veio|lista|mensagem|m[s]?g|parece|t[áa]\s+vindo)\s+duplicad/i
+// Padrões de "acusação de duplicação" — LLM aprende sinônimos novos quase toda
+// semana, por isso o regex precisa cobrir variações:
+//   - "veio duplicad" / "veio em duplicidade"
+//   - "lista duplicad" / "mensagem duplicad"
+//   - "repetiu (os mesmos|esses) (itens|alimentos)" + "duas vezes / 2 vezes"
+//   - "veio em duas (mensagens|msgs)" / "duas vezes" / "2 vezes"
+//   - "duas porções (de cada)" / "2 porções"
+const FALSE_DUP_PATTERN = new RegExp(
+  [
+    String.raw`\b(veio|lista|mensagem|m[s]?g|parece|t[áa]\s+vindo)\s+duplicad`,
+    String.raw`\brepetiu\s+(os\s+)?(mesmos|esses|os)?\s*(itens|alimentos)`,
+    String.raw`\b(veio|chegou|t[áa]\s+vindo)\s+em\s+(duas|2)\s+(mensagens|msgs|vezes)`,
+    String.raw`\b(duas|2)\s+por[çc][õo]es\s+(de\s+cada|iguais|iguais\?|mesmo)`,
+    String.raw`\bvoc[êe]\s+mandou\s+(os\s+)?(mesmos|esses)\s+itens\s+(duas|2)\s+vezes`,
+  ].join('|'),
+  'i',
+)
 
 /**
  * Verifica se a msg do paciente tem REPETIÇÃO LITERAL (mesma string 2x,

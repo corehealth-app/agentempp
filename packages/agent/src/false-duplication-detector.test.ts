@@ -74,4 +74,32 @@ describe('detectFalseDuplicationClaim', () => {
       ),
     ).toBe(false)
   })
+
+  // Casos novos 2026-06-02 — LLM aprende sinônimos
+  it('pega "repetiu os mesmos itens duas vezes" (caso Luciana 02/06 13:31 BRT)', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Anotado! Só confirma — você repetiu os mesmos itens duas vezes. Foi uma porção só?',
+        '90 gramas de arroz\n140 de carne moída',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "veio em duas mensagens"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Parece que veio em duas mensagens — registro só uma vez?',
+        '90g arroz\n140g carne',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "você mandou os mesmos itens duas vezes"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Você mandou os mesmos itens duas vezes — confirma só uma porção?',
+        'arroz\ncarne moída',
+      ),
+    ).toBe(true)
+  })
 })

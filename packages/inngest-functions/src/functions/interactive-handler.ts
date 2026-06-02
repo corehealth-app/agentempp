@@ -182,7 +182,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         await messaging
           .sendText(
             wpp,
-            'Esse registro expirou (demorou mais de 30min). Me manda de novo o que comeu?',
+            'Esse registro expirou (demorou mais de 1h). Me manda de novo o que comeu?',
             { replyTo: providerMessageId },
           )
           .catch(() => {})

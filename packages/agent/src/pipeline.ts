@@ -573,7 +573,7 @@ export async function processMessage(
               // botão viraria INSERT em vez de SUBSTITUIR (dupla contagem).
               replace: args.replace === true,
             }
-            const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
               .from('pending_registrations')
               .insert({ user_id: userId, proposal, expires_at: expiresAt })
@@ -673,7 +673,7 @@ export async function processMessage(
               // guarda os args completos pro handler chamar registraTreino depois
               raw_args: wArgs,
             }
-            const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
               .from('pending_registrations')
               .insert({ user_id: userId, proposal, expires_at: expiresAt })

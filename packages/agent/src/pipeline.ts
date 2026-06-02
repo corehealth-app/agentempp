@@ -52,6 +52,7 @@ import {
 } from './express-mode-detector.js'
 import { calcMealMacros } from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
+import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
@@ -265,6 +266,7 @@ export async function processMessage(
   // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
   let fakeWriteRetried = false
   let prematureBlockRetried = false
+  let falseDuplicationRetried = false
   // Card determinístico de registro → enviar como UMA mensagem (sem split).
   let deterministicRegistration = false
   // FASE B (Roberto 2026-05-28, botões #4): se virou pending → o caller manda
@@ -346,6 +348,32 @@ export async function processMessage(
           role: 'user',
           content:
             'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
+        })
+        continue
+      }
+
+      // Guard de FALSO POSITIVO de duplicação (Roberto 2026-06-02):
+      // LLM acusa "veio duplicada" pra msg que tem múltiplos itens distintos
+      // (ex: "45 min musculação e 19 min bicicleta"). Agent_rule sozinha não
+      // segurou — defesa em código. Retry forçado pedindo processar como veio.
+      if (
+        !falseDuplicationRetried &&
+        detectFalseDuplicationClaim(content, input.text)
+      ) {
+        falseDuplicationRetried = true
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.false_duplication_caught',
+          properties: {
+            stage,
+            patient_text: (input.text ?? '').slice(0, 200),
+            agent_text: content.slice(0, 200),
+          },
+        })
+        messages.push({ role: 'assistant', content })
+        messages.push({
+          role: 'user',
+          content: `SISTEMA (não é o paciente): o paciente NÃO mandou mensagem duplicada. O texto original recebido foi: "${input.text}". Processe COMO VEIO, SEM acusar duplicação. Se há múltiplos itens conectados (ex: "X e Y", "X, Y, Z" ou em linhas separadas), são itens DISTINTOS — registre TODOS. Refaça a resposta agora.`,
         })
         continue
       }

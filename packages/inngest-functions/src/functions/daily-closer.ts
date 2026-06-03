@@ -441,6 +441,23 @@ async function closeUserDay(
     })
   }
 
+  // Eduardo 2026-06-03: destacar quando paciente FECHA um novo bloco 7700
+  // (marco grande do método — ~1kg de gordura perdido por bloco no modelo).
+  // O engagement matinal do próximo dia detecta esse evento e injeta no
+  // contexto pro LLM mencionar de forma destacada (sem inventar números).
+  if (next.blocksCompleted > prev.blocksCompleted) {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'bloco7700.block_completed',
+      properties: {
+        snapshot_date: yesterday,
+        previous_count: prev.blocksCompleted,
+        new_count: next.blocksCompleted,
+        kg_estimate: next.blocksCompleted, // 1kg = 7700 kcal no modelo MPP
+      },
+    })
+  }
+
   // REAVALIAÇÃO 14 DIAS (Roberto 2026-05-20): MPP prevê reavaliação periódica
   // (peso/BF%/meta) a cada 14 dias. A coluna user_progress.next_reevaluation
   // existia mas nunca era populada nem checada. Agora:

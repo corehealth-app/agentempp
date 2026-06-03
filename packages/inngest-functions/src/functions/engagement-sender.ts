@@ -377,6 +377,30 @@ async function maybeEngageUser(
     reevaluationDue = !!(revalEvents && revalEvents.length > 0)
   }
 
+  // Eduardo 2026-06-03: destaca quando paciente fechou bloco novo na noite
+  // anterior. daily-closer emite `bloco7700.block_completed` quando
+  // blocks_completed incrementa. Engagement matinal seguinte pega + injeta no
+  // contexto pro LLM mencionar com destaque (marco do método MPP).
+  let blockCompletedHighlight = ''
+  if (slot === 'manha') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: blockEvents } = await (supabase as any)
+      .from('product_events')
+      .select('properties')
+      .eq('user_id', userId)
+      .eq('event', 'bloco7700.block_completed')
+      .gte('occurred_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order('occurred_at', { ascending: false })
+      .limit(1)
+    const be = (blockEvents?.[0]?.properties ?? null) as {
+      new_count?: number
+      previous_count?: number
+    } | null
+    if (be?.new_count && be.new_count > (be.previous_count ?? 0)) {
+      blockCompletedHighlight = `\n\n🎉 MARCO IMPORTANTE: o paciente FECHOU O ${be.new_count}º BLOCO DO 7700 ontem (acumulou ${be.new_count} × 7.700 kcal de déficit líquido, equivalente a ~${be.new_count} kg de gordura no modelo MPP). DESTAQUE isso na mensagem matinal — celebra de verdade, ancora identidade ("você está construindo isso há ${be.new_count} blocos"), MAS SEM exagero (não invente número de kg perdido na balança — é estimativa do modelo, não medição). Use só uma linha bem feita, não vire palestra. NUNCA invente outro número (% gordura, kg balança) — só o número de blocos é o destaque.`
+    }
+  }
+
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
 ⚠️ IDIOMA DO PACIENTE: **${userLanguage}** (locale salvo). Responda nesse idioma. Não infira pelo timezone — paciente pode morar fora mas falar outra língua.
@@ -398,7 +422,7 @@ XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
 
-⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.
+⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${blockCompletedHighlight}
 `.trim()
 
   const result = await llm.complete({

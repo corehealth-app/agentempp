@@ -1050,9 +1050,17 @@ export async function calcMealMacros(
         )
       }
       // ────────────────────────────────────────────────────────────────────
-      // FALLBACK 1: tenta reusar do histórico do paciente (Roberto pediu:
-      // "pode já colocar pra ele usar alimentos já informados ou identificados
-      // nas próximas refeições"). Busca meal_logs últimos 30d com mesmo nome.
+      // FALLBACK 1: reusa do histórico do paciente (Roberto pediu: "pode já
+      // colocar pra ele usar alimentos já informados ou identificados nas
+      // próximas refeições").
+      //
+      // Fix Q3 Roberto 2026-06-03: antes pegava só o último meal_log e aplicava
+      // ratio direto — chamadas consecutivas podiam pegar logs diferentes, e
+      // kcal variava entre propostas do MESMO turno (caso Luciana 02/06:
+      // alface crespa 6→4 kcal, milho 34→14 kcal). Agora calcula MEDIANA de
+      // kcal/100g (e dos macros) sobre todos os logs do paciente do mesmo
+      // food_name nos últimos 30d. Mediana é resistente a outliers + estável
+      // entre chamadas (mesmos logs entram → mesmo resultado sai).
       // ────────────────────────────────────────────────────────────────────
       const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1066,39 +1074,76 @@ export async function calcMealMacros(
         .neq('source', 'no_match')
         .neq('source', 'composite_rejected')
         .order('created_at', { ascending: false })
-        .limit(1)
-      if (prior && prior.length > 0 && prior[0].quantity_g > 0) {
-        const p = prior[0]
-        // Calcula per-100g do registro anterior e aplica na qty atual
-        const ratio = it.quantity_g / Number(p.quantity_g)
-        const reKcal = +(Number(p.kcal) * ratio).toFixed(1)
-        const reProt = +(Number(p.protein_g) * ratio).toFixed(2)
-        const reCarb = +(Number(p.carbs_g) * ratio).toFixed(2)
-        const reFat = +(Number(p.fat_g) * ratio).toFixed(2)
-        auditWarnings.push(
-          `"${it.food_name}" reusado de registro anterior (${p.kcal} kcal/${p.quantity_g}g → ${reKcal} kcal pra ${it.quantity_g}g).`,
-        )
-        const natRe = naturalUnit(it.food_name, it.quantity_g)
-        matched.push({
-          food_name: it.food_name,
-          matched_taco_name: '[reuso histórico]',
-          matched_taco_id: null,
-          quantity_g: it.quantity_g,
-          kcal: reKcal,
-          protein_g: reProt,
-          carbs_g: reCarb,
-          fat_g: reFat,
-          fiber_g: 0,
-          similarity: 1.0,
-          source: 'taco',
-          display_qty: natRe.display_qty,
-          display_unit: natRe.display_unit,
-        })
-        totals.kcal += reKcal
-        totals.protein_g += reProt
-        totals.carbs_g += reCarb
-        totals.fat_g += reFat
-        continue
+        .limit(20)
+      if (prior && prior.length > 0) {
+        // Normaliza tudo pra per-100g (kcal/100g, P/100g, C/100g, G/100g),
+        // descarta linhas com quantity_g ≤ 0 (lixo).
+        const per100g = (prior as Array<{ quantity_g: number; kcal: number; protein_g: number; carbs_g: number; fat_g: number }>)
+          .filter((p) => Number(p.quantity_g) > 0)
+          .map((p) => {
+            const q = Number(p.quantity_g)
+            return {
+              kcal: (Number(p.kcal) / q) * 100,
+              protein_g: (Number(p.protein_g) / q) * 100,
+              carbs_g: (Number(p.carbs_g) / q) * 100,
+              fat_g: (Number(p.fat_g) / q) * 100,
+            }
+          })
+        if (per100g.length > 0) {
+          const median = (arr: number[]): number => {
+            const sorted = [...arr].sort((a, b) => a - b)
+            const mid = Math.floor(sorted.length / 2)
+            return sorted.length % 2 === 0
+              ? (sorted[mid - 1]! + sorted[mid]!) / 2
+              : sorted[mid]!
+          }
+          const medKcal100 = median(per100g.map((p) => p.kcal))
+          const medProt100 = median(per100g.map((p) => p.protein_g))
+          const medCarb100 = median(per100g.map((p) => p.carbs_g))
+          const medFat100 = median(per100g.map((p) => p.fat_g))
+          const q = it.quantity_g
+          const reKcal = +((medKcal100 * q) / 100).toFixed(1)
+          const reProt = +((medProt100 * q) / 100).toFixed(2)
+          const reCarb = +((medCarb100 * q) / 100).toFixed(2)
+          const reFat = +((medFat100 * q) / 100).toFixed(2)
+          auditWarnings.push(
+            `"${it.food_name}" reusado de ${per100g.length} registros (mediana: ${medKcal100.toFixed(0)} kcal/100g → ${reKcal} kcal pra ${q}g).`,
+          )
+          // Loga pra auditoria (Roberto 2026-06-03): rastreabilidade de
+          // quando reuso de histórico foi usado em vez de TACO.
+          await supaTyped.from('product_events').insert({
+            user_id: userIdHint ?? null,
+            event: 'meal_calc.history_reused',
+            properties: {
+              food_name: it.food_name,
+              source_log_count: per100g.length,
+              kcal_per_100g_median: +medKcal100.toFixed(1),
+              quantity_g: q,
+              kcal_result: reKcal,
+            },
+          })
+          const natRe = naturalUnit(it.food_name, it.quantity_g)
+          matched.push({
+            food_name: it.food_name,
+            matched_taco_name: '[reuso histórico]',
+            matched_taco_id: null,
+            quantity_g: it.quantity_g,
+            kcal: reKcal,
+            protein_g: reProt,
+            carbs_g: reCarb,
+            fat_g: reFat,
+            fiber_g: 0,
+            similarity: 1.0,
+            source: 'taco',
+            display_qty: natRe.display_qty,
+            display_unit: natRe.display_unit,
+          })
+          totals.kcal += reKcal
+          totals.protein_g += reProt
+          totals.carbs_g += reCarb
+          totals.fat_g += reFat
+          continue
+        }
       }
       // ────────────────────────────────────────────────────────────────────
       // FALLBACK 2: sem reuso — ESTIMA por categoria (em vez de zerar).

@@ -397,7 +397,17 @@ async function maybeEngageUser(
       previous_count?: number
     } | null
     if (be?.new_count && be.new_count > (be.previous_count ?? 0)) {
+      // Modo "fechou ontem" — celebração forte
       blockCompletedHighlight = `\n\n🎉 MARCO IMPORTANTE: o paciente FECHOU O ${be.new_count}º BLOCO DO 7700 ontem (acumulou ${be.new_count} × 7.700 kcal de déficit líquido, equivalente a ~${be.new_count} kg de gordura no modelo MPP). DESTAQUE isso na mensagem matinal — celebra de verdade, ancora identidade ("você está construindo isso há ${be.new_count} blocos"), MAS SEM exagero (não invente número de kg perdido na balança — é estimativa do modelo, não medição). Use só uma linha bem feita, não vire palestra. NUNCA invente outro número (% gordura, kg balança) — só o número de blocos é o destaque.`
+    } else {
+      // Modo "acumulado" (Roberto 2026-06-03): se NÃO fechou bloco novo ontem
+      // MAS já tem ≥1 bloco fechado, MENCIONA no Bom dia como marco de
+      // constância (uma linha discreta). Antes o Haiku às vezes ignorava
+      // (caso real: Roberto 3 blocos sem menção no engagement).
+      const blocksAcumulados = (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0
+      if (blocksAcumulados >= 1) {
+        blockCompletedHighlight = `\n\nDESTAQUE OBRIGATÓRIO: o paciente já tem **${blocksAcumulados} bloco(s) completo(s) do 7700** acumulado(s) (~${blocksAcumulados} kg de gordura no modelo MPP — estimativa do método, NÃO inventar número de balança). Mencione esse marco no Bom dia como prova de constância — UMA linha curta, sem virar palestra. NÃO invente outro número (% gordura, kg medido). Se já mencionou em mensagens anteriores, varie a forma (não repete a mesma frase todo dia).`
+      }
     }
   }
 

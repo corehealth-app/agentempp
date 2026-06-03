@@ -18,10 +18,23 @@
  */
 export type Protocol = 'recomposicao' | 'ganho_massa' | 'manutencao' | null | undefined
 
-export function reevaluationKickoff(protocol: Protocol): string {
+export interface ReevaluationKickoffOptions {
+  /** Meta de peso atual do paciente (kg), se houver. Vem de user_profiles.goal_value
+   * quando goal_type='peso_kg'. Roberto 2026-06-03: na reavaliação, perguntar se
+   * a meta continua a mesma. Se null/undefined, omite Q4 (paciente ainda não
+   * definiu meta de peso — não tem o que reconfirmar). */
+  currentTargetWeightKg?: number | null
+}
+
+export function reevaluationKickoff(
+  protocol: Protocol,
+  opts: ReevaluationKickoffOptions = {},
+): string {
+  const hasTargetWeight = typeof opts.currentTargetWeightKg === 'number' && opts.currentTargetWeightKg > 0
+  const totalPerguntas = hasTargetWeight ? 4 : 3
   const abertura =
-    '🎯 Hoje fecha *14 dias* de acompanhamento — hora da sua reavaliação! ' +
-    'Vou coletar 3 dados pra recalibrar tua meta com precisão. Me manda:'
+    `🎯 Hoje fecha *14 dias* de acompanhamento — hora da sua reavaliação! ` +
+    `Vou coletar ${totalPerguntas} dados pra recalibrar tua meta com precisão. Me manda:`
   const q1 = '\n\n1) Qual teu *peso atual*?'
   const q2 =
     '\n2) Me manda *3 fotos* pra eu checar a tendência de gordura — *frente, lado e costas* (ou diz "sem fotos").'
@@ -40,5 +53,14 @@ export function reevaluationKickoff(protocol: Protocol): string {
       q3 = '\n3) Como tá tua *fome* na média desses dias — *muita, moderada ou baixa*?'
       break
   }
-  return abertura + q1 + q2 + q3
+
+  // Q4 opcional (Roberto 2026-06-03): confirma meta de peso. Manual MPP §2.18
+  // não menciona isso explicitamente — é extensão pra reaproveitar o `define_meta_peso`
+  // (criado pra onboarding) na reavaliação. Só inclui se paciente já tem meta
+  // de peso definida (goal_type='peso_kg'); caso contrário, omite.
+  const q4 = hasTargetWeight
+    ? `\n4) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
+    : ''
+
+  return abertura + q1 + q2 + q3 + q4
 }

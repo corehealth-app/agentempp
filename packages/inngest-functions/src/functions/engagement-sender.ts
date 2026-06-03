@@ -516,10 +516,25 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   if (reevaluationDue) {
     // Script oficial do manual por protocolo (peso + 3 fotos + Q3 específica:
     // fome/treinos/atividade). Antes pedia "peso e BF%/medidas" — fora do manual.
+    // Roberto 2026-06-03: adiciona Q4 OPCIONAL "sua meta de peso continua sendo
+    // Xkg ou mudou?" — só se paciente já tem meta de peso definida
+    // (goal_type='peso_kg'). Reusa tool define_meta_peso pra processar resposta.
     const proto = (profileRow as { current_protocol?: string | null } | null)
       ?.current_protocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null | undefined
-    text += '\n\n' + reevaluationKickoff(proto)
-    await logEvent('reevaluation.prompt_appended', { slot, protocol: proto ?? null })
+    const profTyped = profileRow as {
+      goal_type?: string | null
+      goal_value?: number | null
+    } | null
+    const currentTargetWeightKg =
+      profTyped?.goal_type === 'peso_kg' && typeof profTyped?.goal_value === 'number'
+        ? Number(profTyped.goal_value)
+        : null
+    text += '\n\n' + reevaluationKickoff(proto, { currentTargetWeightKg })
+    await logEvent('reevaluation.prompt_appended', {
+      slot,
+      protocol: proto ?? null,
+      has_target_weight: currentTargetWeightKg != null,
+    })
   }
 
   // ENVIA pelo WhatsApp via messaging provider

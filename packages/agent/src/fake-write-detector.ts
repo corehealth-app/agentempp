@@ -113,6 +113,21 @@ export function detectFakeWrite({
       return { isFake: true, kind: 'registration' }
     }
   }
+
+  // Rascunho com kcal inventada (Roberto 2026-06-03 15:41): LLM mandou
+  // "Entendi isso pro seu almoço: • alface crespa (40g) — 6 kcal • alface roxa
+  // (20g) — 3 kcal ... Tem proteína nessa refeição?" — kcal em ≥2 bullets de
+  // itens MAS termina com pergunta legítima (não "Confirma?") → escapa as
+  // regras acima. Resultado: kcal inventada exibida ao paciente; quando a
+  // tool roda na segunda passada, os números são diferentes e parece bug de
+  // consistência. Critério: ≥2 bullets do formato "• <nome> (<qty>) — <X> kcal"
+  // e nenhuma tool de registro chamada → força retry pro LLM chamar
+  // registra_refeicao ANTES de mostrar kcal.
+  const KCAL_BULLET = /(?:^|\n)\s*[•\-*]\s+[^\n]+\(\s*\d+(?:[.,]\d+)?\s*(?:g|ml|kg|l|unidades?|fatia|p[ãa]o)[^\n]*?\d+(?:[.,]\d+)?\s*kcal/i
+  const kcalBullets = content.match(new RegExp(KCAL_BULLET.source, 'gi')) ?? []
+  if (kcalBullets.length >= 2) {
+    return { isFake: true, kind: 'registration' }
+  }
   if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }

@@ -18,6 +18,8 @@
 //   - "repetiu (os mesmos|esses) (itens|alimentos)" + "duas vezes / 2 vezes"
 //   - "veio em duas (mensagens|msgs)" / "duas vezes" / "2 vezes"
 //   - "duas porções (de cada)" / "2 porções"
+//   - "(lista|mensagem) veio igual" / "veio igual das duas vezes" (Roberto 03/06)
+//   - "(as duas|2) (mensagens|listas) (vieram|chegaram) iguais"
 const FALSE_DUP_PATTERN = new RegExp(
   [
     String.raw`\b(veio|lista|mensagem|m[s]?g|parece|t[áa]\s+vindo)\s+duplicad`,
@@ -25,6 +27,9 @@ const FALSE_DUP_PATTERN = new RegExp(
     String.raw`\b(veio|chegou|t[áa]\s+vindo)\s+em\s+(duas|2)\s+(mensagens|msgs|vezes)`,
     String.raw`\b(duas|2)\s+por[çc][õo]es\s+(de\s+cada|iguais|iguais\?|mesmo)`,
     String.raw`\bvoc[êe]\s+mandou\s+(os\s+)?(mesmos|esses)\s+itens\s+(duas|2)\s+vezes`,
+    String.raw`\b(lista|mensagem|m[s]?g)\s+(veio|chegou|t[áa]\s+vindo)\s+igual\b`,
+    String.raw`\b(veio|chegou)\s+igual\s+(das|nas)?\s*(duas|2)?\s*(vezes|mensagens|msgs)`,
+    String.raw`\b(as\s+)?(duas|2)\s+(mensagens|msgs|listas)\s+(vieram|chegaram|s[ãa]o|est[ãa]o)\s+iguais`,
   ].join('|'),
   'i',
 )

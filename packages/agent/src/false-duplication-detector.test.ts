@@ -102,4 +102,51 @@ describe('detectFalseDuplicationClaim', () => {
       ),
     ).toBe(true)
   })
+
+  // Caso Roberto 03/06 12:49 BRT: variante "lista veio igual das duas vezes"
+  it('pega "lista veio igual das duas vezes" (caso Roberto 03/06)', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Não entendi o que você quer mudar — parece que a lista veio igual das duas vezes.',
+        'leite com whey 200ml, ovo frito, pao integral, geleia, queijo',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "mensagem veio igual"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'A mensagem veio igual à anterior — é uma porção só?',
+        '90g arroz / 140g carne',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "as duas mensagens vieram iguais"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'As duas mensagens vieram iguais — registro só uma vez?',
+        '90g arroz e 140g carne',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "veio igual nas duas vezes"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'A lista veio igual nas duas vezes, posso considerar só uma?',
+        'arroz feijao carne',
+      ),
+    ).toBe(true)
+  })
+
+  // Verifica que ainda NÃO flaga quando paciente realmente repetiu (variante igual)
+  it('NÃO flaga "lista veio igual" quando paciente realmente repetiu (linha 2x)', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'A lista veio igual nas duas vezes — só uma porção?',
+        'arroz com feijao\narroz com feijao',
+      ),
+    ).toBe(false)
+  })
 })

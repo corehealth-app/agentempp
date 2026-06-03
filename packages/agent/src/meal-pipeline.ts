@@ -324,13 +324,17 @@ async function matchFood(
   fat_g: number | null
   fiber_g: number | null
 }> {
-  // Normaliza + filtra por país (BR=TACO; US=USDA quando populado, etc.)
+  // Pede 5 candidatos pra fazer tie-break determinístico em código (Roberto+Luciana
+  // 2026-06-03: alface crespa retornava 6 kcal numa chamada e 4 noutra; milho 34 vs 14
+  // — postgres não garante ordem estável em ORDER BY similarity DESC quando há
+  // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-5, ordena por
+  // (similarity DESC, id ASC) em JS — mesma chamada, mesmo retorno, sempre).
   const { data, error } = await (supabase as unknown as {
     rpc: (n: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
   }).rpc('search_food_trgm', {
     search_term: name.toLowerCase(),
     min_similarity: 0.2,
-    max_results: 1,
+    max_results: 5,
     p_country: country,
   })
 
@@ -360,7 +364,19 @@ async function matchFood(
   const rows = (data ?? []) as Row[]
   if (error || rows.length === 0) return empty
 
-  const top = rows[0]
+  // Tie-break determinístico: similarity DESC, id ASC. Empate de similarity
+  // (até 0.001 de diferença, abaixo do ruído de cast real→float) → menor id,
+  // que é estável entre chamadas e entre pacientes.
+  const sorted = [...rows].sort((a, b) => {
+    const simA = a.similarity ?? 0
+    const simB = b.similarity ?? 0
+    if (Math.abs(simA - simB) > 0.001) return simB - simA
+    const idA = a.id ?? Number.MAX_SAFE_INTEGER
+    const idB = b.id ?? Number.MAX_SAFE_INTEGER
+    return idA - idB
+  })
+
+  const top = sorted[0]
   if (!top) return empty
   return {
     id: top.id ?? null,

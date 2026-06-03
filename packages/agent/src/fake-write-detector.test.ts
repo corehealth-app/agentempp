@@ -157,4 +157,38 @@ describe('detectFakeWrite', () => {
     })
     expect(r.isFake).toBe(false)
   })
+
+  // Bug Roberto 2026-06-03 15:41: LLM mandou rascunho com kcal inventada +
+  // pergunta legítima no fim ("tem proteína?") — escapou de PROPOSAL_QUESTION
+  // porque não termina com "Confirma?". Resultado: kcal inventada exibida,
+  // depois quando a tool roda no segundo turno as kcal são diferentes e
+  // parece bug de consistência. Detector novo: ≥2 bullets "• <nome> (<qty>) — X kcal"
+  // + nenhuma tool → fake.
+  it('detecta rascunho com kcal inventada + pergunta legítima no fim (Roberto 2026-06-03 15:41)', () => {
+    const r = detectFakeWrite({
+      content:
+        'Entendi isso pro seu almoço:\n\n• alface crespa (40g) — 6 kcal\n• alface roxa (20g) — 3 kcal\n• tomate cereja (60g) — 11 kcal\n• milho em conserva (40g) — 34 kcal\n• molho para salada (15g) — 57 kcal\n\n**Total: 111 kcal | 2.8g proteína | 18.2g carboidrato | 5.8g gordura**\n\nTem proteína nessa refeição? Frango, ovo, atum — algo assim?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('registration')
+  })
+
+  it('NÃO flaga kcal bullet quando a tool FOI chamada (cenário normal)', () => {
+    const r = detectFakeWrite({
+      content:
+        '**Almoço:**\n• alface crespa (40g) — 4 kcal\n• milho (40g) — 14 kcal\n\nTotal: 18 kcal',
+      registrationToolCalled: true,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga prosa com kcal solta sem padrão bullet+qty+kcal', () => {
+    const r = detectFakeWrite({
+      content:
+        'No geral, o almoço de hoje deve ter entre 400 e 600 kcal. Banana tem cerca de 90 kcal. Como está o seu apetite?',
+      registrationToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
 })

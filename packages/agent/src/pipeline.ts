@@ -45,6 +45,7 @@ import {
 } from './onboarding-button.js'
 import { generateEducationalComment, type EduCommentInput } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
+import { routeModel } from './model-router.js'
 import {
   isMealExpressEligible,
   isWorkoutExpressEligible,
@@ -191,6 +192,30 @@ export async function processMessage(
   const promptRow = await loadActivePrompt(deps.supabase, stage, ctx.locale)
   if (!promptRow) {
     throw new Error(`No active prompt found for stage ${stage}`)
+  }
+
+  // 4b. Router de modelo (Fase 6 redução custo — 2026-06-04): troca Sonnet→Haiku
+  // pra turns determinísticos (saudações, status questions, agradecimentos).
+  // Feature flag `router.haiku_enabled` em global_config (default true). Logo
+  // o promptRow.model passa a refletir a decisão do router.
+  const haikuEnabled = await loadRouterFlag(deps.supabase)
+  const routed = routeModel(promptRow.model, haikuEnabled, {
+    text: input.text,
+    contentType: input.contentType ?? 'text',
+    stage,
+    lastInboundContentType: ctx.lastInboundContentType,
+    isReentry: ctx.isReentry,
+    hasOpenPending: await hasOpenPending(deps.supabase, userId),
+  })
+  if (routed.changed) {
+    await logModelRouted(deps.supabase, userId, {
+      from: promptRow.model,
+      to: routed.model,
+      reason: routed.reason,
+      stage,
+      text_preview: (input.text ?? '').slice(0, 80),
+    })
+    ;(promptRow as { model: string }).model = routed.model
   }
 
   // 5. call agent (with tool loop)
@@ -1626,6 +1651,55 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
       parameters: zodToJsonSchema(t.parameters),
     },
   }))
+}
+
+// ─── Router de modelo (Fase 6 — 2026-06-04) ──────────────────────────────────
+
+let routerFlagCache: { value: boolean; expiresAt: number } | null = null
+const ROUTER_FLAG_TTL_MS = 60_000
+
+async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
+  const now = Date.now()
+  if (routerFlagCache && routerFlagCache.expiresAt > now) return routerFlagCache.value
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('global_config')
+    .select('value')
+    .eq('key', 'router.haiku_enabled')
+    .maybeSingle()
+  // Default TRUE — Haiku routing fica ligado. Pra desligar: UPDATE global_config
+  // SET value='false' WHERE key='router.haiku_enabled'.
+  const value =
+    data && (data as { value: unknown }).value !== undefined
+      ? (data as { value: unknown }).value !== false &&
+        (data as { value: unknown }).value !== 'false'
+      : true
+  routerFlagCache = { value, expiresAt: now + ROUTER_FLAG_TTL_MS }
+  return value
+}
+
+async function hasOpenPending(supabase: ServiceClient, userId: string): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('pending_registrations')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .limit(1)
+  return Array.isArray(data) && data.length > 0
+}
+
+async function logModelRouted(
+  supabase: ServiceClient,
+  userId: string,
+  payload: { from: string; to: string; reason: string; stage: string; text_preview: string },
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('product_events').insert({
+    user_id: userId,
+    event: 'pipeline.model_routed',
+    properties: payload,
+  })
 }
 
 function formatUserContext(

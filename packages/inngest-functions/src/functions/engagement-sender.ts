@@ -381,8 +381,11 @@ async function maybeEngageUser(
   // anterior. daily-closer emite `bloco7700.block_completed` quando
   // blocks_completed incrementa. Engagement matinal seguinte pega + injeta no
   // contexto pro LLM mencionar com destaque (marco do método MPP).
+  // 2026-06-04: gate era `slot === 'manha'` mas esse slot não existe na config
+  // (slots reais: cafe_da_manha, meio_da_manha, almoco, ...). Bug detectado no
+  // Bom dia do Roberto 04/06 que omitiu os 3 blocos acumulados.
   let blockCompletedHighlight = ''
-  if (slot === 'manha') {
+  if (slot === 'cafe_da_manha' || slot === 'meio_da_manha') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: blockEvents } = await (supabase as any)
       .from('product_events')

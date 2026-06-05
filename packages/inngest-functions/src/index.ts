@@ -13,6 +13,7 @@ import { dailyAuditFn } from './functions/daily-audit.js'
 import { sampleJudgeFn } from './functions/sample-judge.js'
 import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
+import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -27,6 +28,7 @@ export const allFunctions = [
   sampleJudgeFn,
   interactiveButtonHandlerFn,
   pendingCleanupFn,
+  foodDbGapsReportFn,
 ]
 
 export {
@@ -42,4 +44,5 @@ export {
   sampleJudgeFn,
   interactiveButtonHandlerFn,
   pendingCleanupFn,
+  foodDbGapsReportFn,
 }

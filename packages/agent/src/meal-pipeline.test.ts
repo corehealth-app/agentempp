@@ -874,3 +874,103 @@ describe('estimateMacros — empanados/fritos (Roberto 2026-06-05)', () => {
     expect(r.category).toBe('carne')
   })
 })
+
+describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Roberto 2026-06-05)', () => {
+  it('"frango à milanesa" matchando entry com "milanesa" no nome MAS kcal=120/100g → REJEITA pelo sanity 4', async () => {
+    // Anchor "milanesa" passa (aparece no nome do match), mas kcal absurdamente
+    // baixo (120) pra categoria empanado_frango (piso 200) → rejeita e estima.
+    const mock = makeMock({
+      'frango à milanesa': {
+        id: 999,
+        name_pt: 'frango à milanesa light errado',
+        category: 'pratos',
+        similarity: 0.85,
+        kcal_per_100g: 120,
+        protein_g: 25,
+        carbs_g: 5,
+        fat_g: 2,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'frango à milanesa', quantity_g: 160 }], 'BR')
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.kcal).toBeCloseTo(448, 0) // 280 × 1.6
+    expect(r.audit_warnings.some((w) => /piso 200/.test(w))).toBe(true)
+  })
+
+  it('"bife à parmegiana" matchando entry de parmegiana mal cadastrada 150 kcal → REJEITA', async () => {
+    const mock = makeMock({
+      'bife à parmegiana': {
+        id: 998,
+        name_pt: 'bife à parmegiana versão antiga',
+        category: 'pratos',
+        similarity: 0.9,
+        kcal_per_100g: 150,
+        protein_g: 18,
+        carbs_g: 8,
+        fat_g: 7,
+        fiber_g: 0.5,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'bife à parmegiana', quantity_g: 200 }], 'BR')
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.kcal).toBeCloseTo(600, 0) // empanado_carne 300 × 2
+  })
+
+  it('NÃO rejeita match legítimo (frango à milanesa matchando 280 kcal/100g)', async () => {
+    const mock = makeMock({
+      'frango à milanesa': {
+        id: 451,
+        name_pt: 'frango à milanesa',
+        category: 'pratos',
+        similarity: 1.0,
+        kcal_per_100g: 280,
+        protein_g: 23,
+        carbs_g: 11,
+        fat_g: 16,
+        fiber_g: 0.5,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'frango à milanesa', quantity_g: 160 }], 'BR')
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.kcal).toBeCloseTo(448, 0)
+  })
+
+  it('NÃO afeta alimentos comuns sem trigger (frango assado)', async () => {
+    const mock = makeMock({
+      'frango assado': {
+        id: 397,
+        name_pt: 'frango assado',
+        category: 'carnes',
+        similarity: 1.0,
+        kcal_per_100g: 190,
+        protein_g: 29,
+        carbs_g: 0,
+        fat_g: 8,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'frango assado', quantity_g: 160 }], 'BR')
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.kcal).toBeCloseTo(304, 0)
+  })
+
+  it('"azeite" matchando algo absurdo de 50 kcal/100g → rejeita pelo sanity 4 (piso 500)', async () => {
+    // Anchor "azeite" passa (aparece no match). kcal 50 < piso 500.
+    const mock = makeMock({
+      azeite: {
+        id: 997,
+        name_pt: 'azeite diet falso',
+        category: 'gorduras',
+        similarity: 0.9,
+        kcal_per_100g: 50,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 5,
+        fiber_g: 0,
+      },
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'azeite', quantity_g: 10 }], 'BR')
+    expect(r.items[0]?.source).toBe('llm_estimate')
+  })
+})

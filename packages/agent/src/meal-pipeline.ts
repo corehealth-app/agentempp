@@ -1049,6 +1049,64 @@ export async function calcMealMacros(
         continue
       }
 
+      // Sanity 4 — DENSIDADE CALÓRICA BAIXA DEMAIS (Roberto 2026-06-05):
+      // espelho do sanity 2 mas pro lado oposto. Bug observado: "frango à
+      // milanesa" matchou (sim<threshold mas anchor passou) algo com 165 kcal/100g.
+      // Real é ~280. Resultado: paciente registra menos kcal que ingeriu.
+      //
+      // Categoria implícita pelo nome → mínimo esperado de kcal/100g. Se match
+      // veio abaixo do piso, REJEITA e cai no fallback (estimateMacros) que
+      // tem categorias defensivas (empanado_frango=280, etc).
+      const minKcalRules: Array<{ pattern: RegExp; minKcal: number; label: string }> = [
+        {
+          // Empanados/fritos brasileiros — piso 200 kcal/100g
+          pattern:
+            /(milanesa|empanad[oa]s?|parmegiana|parmigiana|(?:^|\s)[àa]\s+passarinho|schnitzel|nuggets?|escalope|cordon\s*bleu)/,
+          minKcal: 200,
+          label: 'empanado/frito',
+        },
+        {
+          // Gorduras puras — piso 500 (óleo/azeite/manteiga ~870-900)
+          pattern: /^(azeite|óleo de \w+|manteiga|margarina|banha)$/,
+          minKcal: 500,
+          label: 'gordura pura',
+        },
+      ]
+      const subRule = minKcalRules.find((r) => r.pattern.test(lowerName))
+      if (subRule && (m.kcal_per_100g ?? 0) < subRule.minKcal) {
+        auditWarnings.push(
+          `"${it.food_name}" rejeitou match em "${m.name_pt}" (${m.kcal_per_100g} kcal/100g) — abaixo do piso ${subRule.minKcal} pra categoria "${subRule.label}". Caindo em fallback estimateMacros.`,
+        )
+        const est = estimateMacros(it.food_name)
+        const estKcal = +((est.kcal * it.quantity_g) / 100).toFixed(1)
+        const estProt = +((est.protein * it.quantity_g) / 100).toFixed(2)
+        const estCarbs = +((est.carbs * it.quantity_g) / 100).toFixed(2)
+        const estFat = +((est.fat * it.quantity_g) / 100).toFixed(2)
+        const estFiber = +((est.fiber * it.quantity_g) / 100).toFixed(2)
+        const natR = naturalUnit(it.food_name, it.quantity_g)
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: `[estimativa ${est.category}]`,
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: estKcal,
+          protein_g: estProt,
+          carbs_g: estCarbs,
+          fat_g: estFat,
+          fiber_g: estFiber,
+          similarity: 0,
+          source: 'llm_estimate',
+          display_qty: natR.display_qty,
+          display_unit: natR.display_unit,
+        })
+        totals.kcal += estKcal
+        totals.protein_g += estProt
+        totals.carbs_g += estCarbs
+        totals.fat_g += estFat
+        totals.fiber_g += estFiber
+        continue
+      }
+
       const nat = naturalUnit(it.food_name, it.quantity_g)
       matched.push({
         food_name: it.food_name,

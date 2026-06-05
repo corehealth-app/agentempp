@@ -152,6 +152,30 @@ export function estimateMacros(foodName: string): {
   if (/br[óo]colis|couve-flor|abobrinha|berinjela|pepino|tomate|cenoura|beterraba|chuchu|vagem|ervilha|milho|aspargo|palmito/.test(n)) {
     return { category: 'vegetal', kcal: 35, protein: 2, carbs: 7, fat: 0.3, fiber: 2 }
   }
+  // Empanados / fritos calóricos (Roberto 2026-06-05): tem que vir ANTES de
+  // peixe/carne/frango pq esses preparos brasileiros agregam farinha+óleo na
+  // fritura. Bug observado: "frango à milanesa" caía em categoria 'frango'
+  // (165 kcal/100g) quando o real é ~280. Cobre milanesa, empanado, parmegiana,
+  // à passarinho, schnitzel, nuggets, escalope, e variantes com "frito".
+  // \b não funciona com 'à' (não é \w em ASCII). Uso (^|\s|[^\w]) como
+  // boundary que tolera acento. "passarinho" pode vir como "à passarinho" ou
+  // "a passarinho".
+  if (
+    /(?:^|\s)(milanesa|empanad[oa]s?|parmegiana|parmigiana|schnitzel|nuggets?|escalope|cordon\s*bleu)(?:\s|$|,|\.)/.test(n) ||
+    /(?:^|\s)[àa]\s+passarinho(?:\s|$)/.test(n) ||
+    /\b(frito|fritos?)\b.*(frango|peixe|carne|bife|peru|cordeiro|porco|costela)/.test(n) ||
+    /(frango|peixe|carne|bife|peru|cordeiro|porco|costela).*\b(frito|fritos?)\b/.test(n)
+  ) {
+    // Carne empanada/frita: gordura mais alta. Frango/peixe: gordura menor.
+    if (/peixe|atum|salmão|tilápia|merluza|sardinha|bacalhau/.test(n)) {
+      return { category: 'empanado_peixe', kcal: 220, protein: 18, carbs: 13, fat: 11, fiber: 0.5 }
+    }
+    if (/carne|bife|picanha|patinho|porco|costela|cordeiro/.test(n)) {
+      return { category: 'empanado_carne', kcal: 300, protein: 22, carbs: 12, fat: 17, fiber: 0.5 }
+    }
+    // default empanado (frango/peru)
+    return { category: 'empanado_frango', kcal: 280, protein: 23, carbs: 11, fat: 16, fiber: 0.5 }
+  }
   // Embutidos / frios processados
   if (/salame|presunto|mortadela|peito\s+de\s+peru|peru|peito\s+de\s+frango\s+defumado|salsicha|kani|kani\s+kama|sushi/.test(n)) {
     return { category: 'embutido', kcal: 180, protein: 18, carbs: 2, fat: 11, fiber: 0 }

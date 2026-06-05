@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest'
 //      protein_mismatch) vão pra user_warnings.
 //   4. Match composite direto (alias completo, sim>=0.85) tem precedência sobre auto-split.
 
-import { calcMealMacros, naturalUnit } from './meal-pipeline.js'
+import { calcMealMacros, estimateMacros, naturalUnit } from './meal-pipeline.js'
 import type { ServiceClient } from '@mpp/db'
 
 type MockRow = {
@@ -800,5 +800,77 @@ describe('calcMealMacros — bebida zero/diet/light (Bug Luciana 2026-05-25)', (
     })
     const r = await calcMealMacros(mock, [{ food_name: 'leite zero lactose', quantity_g: 200 }], 'BR')
     expect(r.items[0]?.kcal).toBeGreaterThan(50)
+  })
+})
+
+describe('estimateMacros — empanados/fritos (Roberto 2026-06-05)', () => {
+  it('frango à milanesa → categoria empanado_frango (280 kcal/100g)', () => {
+    const r = estimateMacros('frango à milanesa')
+    expect(r.category).toBe('empanado_frango')
+    expect(r.kcal).toBe(280)
+  })
+
+  it('frango empanado → empanado_frango', () => {
+    const r = estimateMacros('frango empanado')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  it('filé de frango empanado → empanado_frango', () => {
+    const r = estimateMacros('filé de frango empanado')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  it('bife à milanesa → empanado_carne (300 kcal/100g, mais gordura)', () => {
+    const r = estimateMacros('bife à milanesa')
+    expect(r.category).toBe('empanado_carne')
+    expect(r.kcal).toBe(300)
+  })
+
+  it('bife à parmegiana → empanado_carne', () => {
+    const r = estimateMacros('bife à parmegiana')
+    expect(r.category).toBe('empanado_carne')
+  })
+
+  it('peixe à milanesa → empanado_peixe (220 kcal/100g)', () => {
+    const r = estimateMacros('peixe à milanesa')
+    expect(r.category).toBe('empanado_peixe')
+    expect(r.kcal).toBe(220)
+  })
+
+  it('nuggets de frango → empanado_frango', () => {
+    const r = estimateMacros('nuggets de frango')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  it('frango à passarinho → empanado_frango', () => {
+    const r = estimateMacros('frango à passarinho')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  it('frango frito → empanado_frango (regex frito + proteína)', () => {
+    const r = estimateMacros('frango frito')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  it('schnitzel → empanado_frango', () => {
+    const r = estimateMacros('schnitzel')
+    expect(r.category).toBe('empanado_frango')
+  })
+
+  // Garante que NÃO regrediu casos normais
+  it('frango assado SEM "milanesa/frito" → categoria frango (165 kcal)', () => {
+    const r = estimateMacros('frango assado')
+    expect(r.category).toBe('frango')
+    expect(r.kcal).toBe(165)
+  })
+
+  it('peixe grelhado → categoria peixe (130 kcal)', () => {
+    const r = estimateMacros('peixe grelhado')
+    expect(r.category).toBe('peixe')
+  })
+
+  it('bife grelhado → categoria carne (200 kcal)', () => {
+    const r = estimateMacros('bife grelhado')
+    expect(r.category).toBe('carne')
   })
 })

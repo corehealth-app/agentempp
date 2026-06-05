@@ -365,16 +365,32 @@ async function maybeEngageUser(
   // injetava a instrução no prompt, mas o LLM IGNORAVA (Roberto 22/05 — mandou só
   // "bom dia" sem pedir o peso). AGORA só marcamos o flag e ANEXAMOS uma linha
   // fixa garantida ao final do texto (o LLM não decide se manda).
+  // 2026-06-05: BUG observado Roberto recebeu reevaluação 04/06 E 05/06.
+  // Causa: a query antiga só checava "tem reevaluation.due nas últimas 36h",
+  // sem confirmar se já foi consumida. Como o evento .due fica disparado por
+  // dias, toda manhã dentro da janela disparava reavaliação de novo. Fix: só
+  // dispara se o .due mais recente ainda não tem .prompt_appended posterior.
   let reevaluationDue = false
   if (slot === 'cafe_da_manha') {
-    const { data: revalEvents } = await supabase
+    const { data: dueEvents } = await supabase
       .from('product_events')
-      .select('id')
+      .select('occurred_at')
       .eq('user_id', userId)
       .eq('event', 'reevaluation.due')
       .gte('occurred_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString())
+      .order('occurred_at', { ascending: false })
       .limit(1)
-    reevaluationDue = !!(revalEvents && revalEvents.length > 0)
+    const lastDueAt = ((dueEvents ?? []) as Array<{ occurred_at: string }>)[0]?.occurred_at
+    if (lastDueAt) {
+      const { data: appendedEvents } = await supabase
+        .from('product_events')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('event', 'reevaluation.prompt_appended')
+        .gte('occurred_at', lastDueAt)
+        .limit(1)
+      reevaluationDue = !appendedEvents || appendedEvents.length === 0
+    }
   }
 
   // Eduardo 2026-06-03: destaca quando paciente fechou bloco novo na noite

@@ -190,10 +190,14 @@ function buildReminderText(name: string, gap: MealType[]): string {
     ceia: 'ceia',
   }
   const list = gap.map((mt) => labels[mt]).join(' e ')
+  // Texto original (até 2026-06-08) era ambíguo: "Sem essa confirmação, o dia
+  // fica como incompleto" — Roberto leu como "já era, o dia perdeu agora".
+  // Fix: deixa explícito que dá tempo de responder até o fechamento.
   return (
     `Olá ${name}, antes de fechar o dia: você não registrou ${list} hoje. ` +
-    `Se comeu, me descreve rapidão o que foi (ou manda foto). ` +
+    `Se comeu, me descreve rapidão o que foi (ou manda foto) — ` +
+    `dá tempo de registrar agora ou até amanhã cedo. ` +
     `Se realmente pulou, é só responder "pulei". ` +
-    `Sem essa confirmação, o dia fica como incompleto — e o bloco 7700 não credita.`
+    `Sem resposta até o fechamento, o dia fica como incompleto — e o bloco 7700 não credita.`
   )
 }

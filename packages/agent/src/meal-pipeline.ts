@@ -642,7 +642,18 @@ export async function calcMealMacros(
     //     user_warning pro agente confirmar com o paciente.
     if (userIdHint) {
       const corr = await lookupFoodCorrection(supabase, userIdHint, it.food_name)
-      if (corr) {
+      // 2026-06-09: status='learning' (confirmed_count=1) NÃO APLICA mais
+      // silencioso. Bug observado Amanda+Paulo: 1 correção pontual virou regra
+      // eterna ("ovo cozido"→"ovo frito" forçou ovo frito mesmo Amanda dizendo
+      // cozido 3× depois). Agora só 'active' (count≥2) aplica. 'learning' fica
+      // só pra audit/observabilidade — paciente precisa repetir mesma correção
+      // antes de virar regra automática.
+      if (corr && corr.needs_confirmation) {
+        auditWarnings.push(
+          `"${it.food_name}" tem correção pendente "${corr.corrected_to}" (status=learning, count=1) — NÃO aplicada automaticamente, paciente precisa repetir pra virar active.`,
+        )
+      }
+      if (corr && !corr.needs_confirmation) {
         if (corr.custom_macros) {
           const f = it.quantity_g / 100
           const kcal = +(corr.custom_macros.kcal_per_100g * f).toFixed(1)

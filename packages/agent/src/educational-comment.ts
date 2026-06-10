@@ -76,6 +76,39 @@ D) **NUNCA TROQUE O TIPO DE REFEIÇÃO**
    Lanche ≠ jantar. Sobremesa ≠ proteína principal. Não sugira "troque sobremesa por
    ovo" — o paciente queria sobremesa, não proteína.
 
+REGRAS NOVAS (Roberto 2026-06-09):
+
+E) **NUNCA INVENTE ITEM QUE NÃO ESTÁ NA LISTA — INVIOLÁVEL**
+   ❌ Bug observado: paciente comeu "leite com whey + ovo frito + pão francês + geleia
+       + queijo mussarela". Comentário disse "reduz um pouco da manteiga ou do óleo
+       que tempera os itens". MANTEIGA E ÓLEO NÃO ESTAVAM NA LISTA.
+   ✅ A orientação SÓ pode mencionar itens que APARECEM na lista da refeição. Se a
+       gordura está alta mas você não sabe qual item específico cortar, NÃO INVENTE.
+       Identifique o item de maior gordura/100g na lista e sugira reduzir AQUELE.
+   ✅ Não use frases vagas tipo "aquele item com 29g de carboidrato em 50g" — isso
+       é o mesmo que dizer "o item" (regra A). Sempre NOMEIE.
+
+F) **SEPARE EM PARÁGRAFOS — INVIOLÁVEL** (manual MPP § estrutura)
+   Em vez de uma frase corrida que mistura microvitória + identidade + orientação,
+   USE QUEBRA DE LINHA pra separar:
+
+   Parágrafo 1: MICROVITÓRIA + IDENTIDADE (1 frase ou 2 curtas, fluindo).
+   [LINHA EM BRANCO]
+   Parágrafo 2: ORIENTAÇÃO (1 frase, opcional — só se houver cuidado-carb/cuidado-gordura).
+
+   ❌ ERRADO (frase corrida, tudo junto):
+   "Café com 44g de proteína — começo forte. Você está construindo o hábito de
+    priorizar proteína. O carboidrato ficou elevado (52g) — da próxima reduz o pão."
+
+   ✅ CERTO (parágrafos separados):
+   "Café com 44g de proteína — começo forte. Você está construindo o hábito de
+    priorizar proteína mesmo nos momentos descontraídos.
+
+    O carboidrato ficou um pouco alto (52g) — na próxima, considera reduzir o pão
+    francês (29g de carboidrato pra 50g) pela metade."
+
+   Roberto pediu explicitamente: SEPARAR a frase de educação da frase de elogio.
+
 Responda APENAS o comentário (sem cabeçalho, sem prefixo, sem repetir tabela/card).`
 
 export interface EduCommentInput {
@@ -130,12 +163,49 @@ export async function generateEducationalComment(
     const result = await Promise.race([llmPromise, timeoutPromise])
     if (result === null) return ''
     const content = (result.content ?? '').trim()
-    // Sanity: remove markdown extra acidental e mantém só 1ª linha-bloco
-    return content.replace(/^\s*```[\s\S]*?```\s*/g, '').trim()
+    const cleaned = content.replace(/^\s*```[\s\S]*?```\s*/g, '').trim()
+    // Defesa (Roberto 2026-06-09): se o comentário menciona alimento que NÃO
+    // está na lista da refeição, drop o comentário inteiro (melhor sem
+    // orientação que com orientação inventada). Caso real: café sem manteiga
+    // nem óleo recebeu "reduz a manteiga ou óleo" — inventou itens.
+    if (input.items && input.items.length > 0 && hasPhantomFoodMention(cleaned, input.items)) {
+      return ''
+    }
+    return cleaned
   } catch {
     // Erro de LLM (saldo, timeout, parser) — degradação graciosa, sem comentário
     return ''
   }
+}
+
+/**
+ * Detecta menção a alimento "fantasma" — palavras-chave de comida (manteiga,
+ * óleo, açúcar, bacon, etc) que NÃO aparecem na lista de items registrados.
+ * Conservador: só flag quando há menção EXPLÍCITA com sugestão ("reduz a
+ * manteiga", "menos óleo") — não pega menções abstratas.
+ */
+export function hasPhantomFoodMention(
+  comment: string,
+  items: Array<{ food_name: string }>,
+): boolean {
+  const lc = comment.toLowerCase()
+  const listedNames = items.map((i) => i.food_name.toLowerCase()).join(' ')
+  // Top alimentos comuns que aparecem como sugestão genérica
+  const phantomCandidates = [
+    'manteiga', 'azeite', 'óleo', 'oleo', 'maionese', 'bacon', 'açúcar', 'acucar',
+    'mel', 'creme de leite', 'requeijão', 'requeijao', 'queijo amarelo',
+  ]
+  // Só flag se: aparece na sugestão (com verbo de orientação) E não está na lista
+  const orientationVerb = /(reduz|diminui|corta|tira|substitui|troca|menos)/
+  for (const phantom of phantomCandidates) {
+    if (lc.includes(phantom) && !listedNames.includes(phantom)) {
+      // Checa se está em contexto de sugestão
+      const idx = lc.indexOf(phantom)
+      const before = lc.slice(Math.max(0, idx - 50), idx)
+      if (orientationVerb.test(before)) return true
+    }
+  }
+  return false
 }
 
 function formatUserPayload(input: EduCommentInput): string {

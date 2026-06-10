@@ -531,9 +531,16 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     expect(r.user_warnings).toHaveLength(0)
   })
 
-  it('correção LEARNING (1ª vez) → aplica MAS pede confirmação via user_warning', async () => {
+  it('correção LEARNING (1ª vez) → NÃO aplica silencioso (2026-06-09 fix)', async () => {
+    // Mudança 2026-06-09 após bug Amanda+Paulo: status='learning' (count=1)
+    // não APLICA mais o remapeamento — só registra audit_warning. Paciente
+    // precisa repetir mesma correção pra virar 'active' antes de aplicar.
     const mock = makeMock(
       {
+        batata: {
+          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
+          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+        },
         mandioca: {
           id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
           similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
@@ -545,10 +552,13 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
       ],
     )
     const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
-    expect(r.items[0]?.food_name).toBe('mandioca')
-    // learning → DEVE ter user_warning pedindo confirmação
-    expect(r.user_warnings.length).toBeGreaterThan(0)
-    expect(r.user_warnings.join(' ')).toMatch(/corrigiu isso antes|me avisa/i)
+    // learning NÃO aplica → segue como batata
+    expect(r.items[0]?.food_name).toBe('batata')
+    expect(r.items[0]?.kcal).toBe(86)
+    // user_warnings VAZIO (não atrapalha paciente)
+    expect(r.user_warnings).toHaveLength(0)
+    // audit_warning registra a correção pendente pra observabilidade
+    expect(r.audit_warnings.some((w) => /correção pendente|count=1/i.test(w))).toBe(true)
   })
 
   it('sem userId → mapa de correções NÃO é consultado', async () => {

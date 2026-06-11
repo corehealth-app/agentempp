@@ -46,16 +46,34 @@ const FOOD_WORKOUT_KEYWORDS = new RegExp(
 
 /**
  * Saudações/agradecimentos curtos isolados — resposta simples, Haiku basta.
+ * Expandido 2026-06-11: cobre confirmações comuns, "pulei", "isso", "exato",
+ * "perfeito", e respostas curtas de sim/não com pontuação variada.
  */
 const TRIVIAL_GREETING = new RegExp(
-  '^\\s*(ok|okay|valeu|obrigad[oa]|brigad[oa]|t[áa]|tá|tudo certo|certo|bele|beleza|' +
+  '^\\s*(ok|okay|okey|valeu|obrigad[oa]|brigad[oa]|t[áa]|tá|tudo certo|certo|bele|beleza|' +
     'legal|show|massa|tranquilo|saquei|entendi|claro|fechou|pode crer|bacana|joia|' +
-    'top|👍|🙏|❤️|👏|✅|sim|n[ãa]o)\\s*[!\\.]?\\s*$',
+    'top|👍|🙏|❤️|👏|✅|🤝|💪|sim|n[ãa]o|pulei|jejum|' +
+    // Confirmações expandidas
+    'isso|exato|exatamente|perfeito|correto|pode ser|pode crer|certinho|certim|' +
+    'aham|uhum|hmm|né|nem|nao|né mesmo|exato isso|' +
+    // Confirmações curtas com pontuação simples
+    'sim sim|n[ãa]o n[ãa]o|claro que sim|claro que n[ãa]o|com certeza)\\s*[!\\.\\?]?\\s*$',
   'i',
 )
 
 const GREETING_OPENER = new RegExp(
-  '^\\s*(bom dia|boa tarde|boa noite|oi|ol[áa]|hey|hi|hello|e a[íi])\\s*[!?\\.]?\\s*$',
+  '^\\s*(bom dia|boa tarde|boa noite|oi|ol[áa]|hey|hi|hello|e a[íi]|' +
+    'oi tudo bem|ola tudo bem|tudo bem|tudo bom|como vai|' +
+    'salve|fala|opa|eaí)\\s*[!?\\.,]?\\s*$',
+  'i',
+)
+
+/**
+ * Peso/medida pura — "75kg" / "82 kg" / "1,75m" / "IMC 24". Resposta determinística
+ * via cadastra_dados_iniciais. Haiku basta.
+ */
+const PURE_MEASUREMENT = new RegExp(
+  '^\\s*(\\d{1,3}[,.]?\\d{0,2})\\s*(kg|kgs|quilos?|kilo|kilos|g\\b|grama|cm|m\\b|metros?|imc|bf|gordura)\\s*[!\\.]?\\s*$',
   'i',
 )
 
@@ -161,6 +179,11 @@ export function routeModel(
     return { model: defaultModel, changed: false, reason: 'long_text' }
   }
 
+  // PURE_MEASUREMENT antes de FOOD_WORKOUT — "75kg" sozinho é peso, não comida
+  if (PURE_MEASUREMENT.test(text)) {
+    return { model: HAIKU_MODEL, changed: true, reason: 'pure_measurement' }
+  }
+
   // Texto menciona comida/treino → Sonnet (registro de refeição/exercício)
   if (FOOD_WORKOUT_KEYWORDS.test(text)) {
     return { model: defaultModel, changed: false, reason: 'food_workout_keyword' }
@@ -175,6 +198,9 @@ export function routeModel(
   }
   if (STATUS_QUESTION.test(text)) {
     return { model: HAIKU_MODEL, changed: true, reason: 'status_question' }
+  }
+  if (PURE_MEASUREMENT.test(text)) {
+    return { model: HAIKU_MODEL, changed: true, reason: 'pure_measurement' }
   }
 
   // Default — não tem critério positivo pra Haiku, mantém Sonnet

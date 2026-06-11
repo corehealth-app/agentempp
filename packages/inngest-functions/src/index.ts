@@ -14,6 +14,7 @@ import { sampleJudgeFn } from './functions/sample-judge.js'
 import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
+import { mealGapReminderFn } from './functions/meal-gap-reminder.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -29,6 +30,7 @@ export const allFunctions = [
   interactiveButtonHandlerFn,
   pendingCleanupFn,
   foodDbGapsReportFn,
+  mealGapReminderFn,
 ]
 
 export {
@@ -45,4 +47,5 @@ export {
   interactiveButtonHandlerFn,
   pendingCleanupFn,
   foodDbGapsReportFn,
+  mealGapReminderFn,
 }

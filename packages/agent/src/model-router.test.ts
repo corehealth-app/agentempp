@@ -170,3 +170,73 @@ describe('routeModel', () => {
     })
   })
 })
+
+describe('routeModel — expansão 2026-06-11 (intents adicionais → Haiku)', () => {
+  function ctx2(text: string) {
+    return {
+      text,
+      contentType: 'text' as const,
+      stage: 'recomposicao',
+      lastInboundContentType: 'text' as const,
+      isReentry: false,
+      hasOpenPending: false,
+    }
+  }
+
+  it('"pulei" → Haiku (confirmação de skip)', () => {
+    const r = routeModel(SONNET, true, ctx2('pulei'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"isso" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('isso'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"perfeito" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('perfeito'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"correto" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('correto'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"aham" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('aham'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"75kg" → Haiku (peso isolado)', () => {
+    const r = routeModel(SONNET, true, ctx2('75kg'))
+    expect(r.model).toBe(HAIKU)
+    expect(r.reason).toBe('pure_measurement')
+  })
+
+  it('"82 kg" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('82 kg'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"1,75m" → Haiku (altura)', () => {
+    const r = routeModel(SONNET, true, ctx2('1,75m'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"tudo bem" → Haiku (greeting opener)', () => {
+    const r = routeModel(SONNET, true, ctx2('tudo bem'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  it('"opa" → Haiku', () => {
+    const r = routeModel(SONNET, true, ctx2('opa'))
+    expect(r.model).toBe(HAIKU)
+  })
+
+  // Garante que casos complexos NÃO foram afetados
+  it('"comi 200g de frango" → Sonnet (food_workout_keyword)', () => {
+    const r = routeModel(SONNET, true, ctx2('comi 200g de frango'))
+    expect(r.model).toBe(SONNET)
+  })
+})

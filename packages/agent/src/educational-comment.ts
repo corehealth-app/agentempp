@@ -138,6 +138,18 @@ export interface EduCommentOpts {
   model?: string
   /** Timeout em ms. Default 8000 — passou disso, devolve '' sem bloquear o registro. */
   timeoutMs?: number
+  /** Supabase pra tentar curated phrase ANTES de chamar Haiku (Sprint 3.1
+   * — Roberto 2026-06-11). Quando disponível, consulta
+   * `food_education_phrases` e usa frase curada se houver. Senão cai pro Haiku. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase?: any
+  userId?: string
+  state?: {
+    protocol?: 'recomposicao' | 'manutencao' | 'ganho_massa' | null
+    protein_pct?: number
+    kcal_pct?: number
+    deficit_block_pct?: number
+  }
 }
 
 export async function generateEducationalComment(
@@ -147,6 +159,32 @@ export async function generateEducationalComment(
 ): Promise<string> {
   const model = opts.model ?? 'anthropic/claude-haiku-4.5'
   const timeoutMs = opts.timeoutMs ?? 8000
+
+  // CURATED PHRASE FIRST (Roberto 2026-06-11): se há frase curada pelo
+  // Roberto pro alimento âncora, usa ela em vez de chamar Haiku. Economia
+  // ~$8-12/mês quando planilha cobrir top-30 alimentos.
+  if (
+    opts.supabase &&
+    opts.userId &&
+    input.kind !== 'treino' &&
+    input.items &&
+    input.items.length > 0
+  ) {
+    try {
+      const { selectCuratedPhrase } = await import('./curated-phrase-selector.js')
+      const curated = await selectCuratedPhrase(opts.supabase, {
+        items: input.items,
+        userId: opts.userId,
+        state: opts.state,
+        language: input.locale ?? 'pt-BR',
+      })
+      if (curated.phrase) {
+        return curated.phrase
+      }
+    } catch {
+      // se falhar (ex: tabela vazia, query error), cai pro Haiku normal
+    }
+  }
 
   const userPayload = formatUserPayload(input)
 

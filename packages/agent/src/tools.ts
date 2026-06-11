@@ -16,6 +16,8 @@ import {
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros } from './meal-pipeline.js'
+import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
+import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-utils.js'
@@ -586,6 +588,44 @@ export const registraRefeicao: ToolDefinition = {
     // GUARDA-CHUVA DETERMINÍSTICO (defesa em profundidade contra erro do LLM)
     // ========================================================================
 
+    // (-1) PHANTOM ITEMS (Amanda 2026-06-11): se o LLM propôs itens que NÃO
+    // foram mencionados pelo paciente nem aparecem em propostas/cards recentes
+    // do agente, E o paciente acabou de NEGAR algo ("não", "esquece"), é
+    // alucinação clara (cross-day contamination, contexto sujo). Bloquear o
+    // tool call e devolver erro pro LLM corrigir.
+    if (args.items && args.items.length > 0 && ctx.recentUserMessages) {
+      const phantomCheck = detectPhantomItems({
+        proposedItems: args.items.map((i: { food_name: string }) => ({
+          food_name: i.food_name,
+        })),
+        recentUserMessages: ctx.recentUserMessages,
+        // recentAgentTexts não está no ctx hoje; passamos vazio (conservador)
+        recentAgentTexts: [],
+      })
+      if (phantomCheck.shouldBlock) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.phantom_items_blocked',
+          properties: {
+            meal_type: args.meal_type,
+            phantom_items: phantomCheck.phantomItems,
+            denial_trigger: phantomCheck.denialTrigger,
+            recent_user_msgs_count: ctx.recentUserMessages.length,
+          },
+        })
+        return {
+          success: false,
+          error:
+            'BLOQUEADO: você está tentando registrar itens (' +
+            phantomCheck.phantomItems.join(', ') +
+            ') que o paciente NÃO MENCIONOU. O paciente acabou de NEGAR algo ("' +
+            (phantomCheck.denialTrigger ?? '') +
+            '"). NÃO ALUCINE itens. Releia o que o paciente disse e proponha SÓ o que ele realmente falou OU itens visíveis na foto identificados via vision. Se for café da manhã e ele só descreveu café, registre só café.',
+        }
+      }
+    }
+
+
     // (0) EVIDÊNCIA OBJETIVA DE CORREÇÃO — sobreposição de food_names em janela curta.
     //
     // Casos reais que cobrimos:
@@ -697,20 +737,45 @@ export const registraRefeicao: ToolDefinition = {
     }
 
     // Caso A: LLM mandou replace=false mas há evidência objetiva → auto-aplica
+    // EXCEÇÃO (Luciana 2026-06-10): se paciente disse "segunda fatia", "mais um",
+    // "outro pedaço" etc nas últimas msgs, é ADIÇÃO e NÃO correção. Não pode
+    // virar replace=true ou o item anterior será apagado. Detector roda só
+    // quando há overlap forte (objectiveCorrectionEvidence=true) — overlap por
+    // sobreposição de food_name SEM intent verbal de correção pode ser
+    // legitimamente o mesmo alimento de novo (2ª porção). Intent verbal de
+    // ADIÇÃO é o sinal mais forte que isso é adição, não correção.
     let implicitReplaceDetected = false
     if (args.replace !== true && objectiveCorrectionEvidence) {
-      args.replace = true
-      implicitReplaceDetected = true
-      await ctx.supabase.from('product_events').insert({
-        user_id: ctx.userId,
-        event: 'tool.replace_implicit_detected',
-        properties: {
-          meal_type: args.meal_type,
-          overlap_ratio: overlapMeta?.ratio,
-          recent_names: overlapMeta?.recent,
-          new_names: overlapMeta?.new,
-        },
-      })
+      const additionTrigger = detectAdditionInRecentMessages(
+        (ctx.recentUserMessages ?? []).map((c) => ({ role: 'user' as const, content: c })),
+        4,
+      )
+      if (additionTrigger) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_blocked_addition_intent',
+          properties: {
+            meal_type: args.meal_type,
+            overlap_ratio: overlapMeta?.ratio,
+            recent_names: overlapMeta?.recent,
+            new_names: overlapMeta?.new,
+            addition_trigger: additionTrigger,
+          },
+        })
+      } else {
+        args.replace = true
+        implicitReplaceDetected = true
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_implicit_detected',
+          properties: {
+            meal_type: args.meal_type,
+            overlap_ratio: overlapMeta?.ratio,
+            recent_names: overlapMeta?.recent,
+            new_names: overlapMeta?.new,
+          },
+        })
+      }
     }
 
     // (1) AUTO-CORRIGE meal_type pela hora local do paciente.

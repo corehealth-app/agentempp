@@ -30,6 +30,11 @@ const FALSE_DUP_PATTERN = new RegExp(
     String.raw`\b(lista|mensagem|m[s]?g)\s+(veio|chegou|t[áa]\s+vindo)\s+igual\b`,
     String.raw`\b(veio|chegou)\s+igual\s+(das|nas)?\s*(duas|2)?\s*(vezes|mensagens|msgs)`,
     String.raw`\b(as\s+)?(duas|2)\s+(mensagens|msgs|listas)\s+(vieram|chegaram|s[ãa]o|est[ãa]o)\s+iguais`,
+    // Amanda 2026-06-11: "Mandou duas vezes — ..." sem "você" sem "mesmos itens"
+    String.raw`(?:^|\s)mandou\s+(?:isso\s+)?(?:duas|2)\s+vezes\b`,
+    String.raw`(?:^|\s)mandou\s+(?:o\s+mesmo|a\s+mesma|esse\s+item)`,
+    // Variantes curtas que LLM gera às vezes:
+    String.raw`\b(?:percebi|notei|reparei)\s+que\s+(?:voc[êe]\s+)?(?:mandou|enviou|repetiu)\s+(?:duas|2)\s+vezes`,
   ].join('|'),
   'i',
 )

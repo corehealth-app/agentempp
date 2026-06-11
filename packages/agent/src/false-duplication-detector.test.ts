@@ -150,3 +150,50 @@ describe('detectFalseDuplicationClaim', () => {
     ).toBe(false)
   })
 })
+
+describe('detectFalseDuplicationClaim — Amanda 2026-06-11 (sintoma 3)', () => {
+  it('pega "Mandou duas vezes — registro uma taça..." sem "você" sem "mesmos itens"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Mandou duas vezes — registro uma taça de 100 ml de suco de laranja no café, certo?',
+        '100mL suco de laranja',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "mandou isso 2 vezes"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Hmm, mandou isso 2 vezes — registro só uma vez, certo?',
+        '50g de chocolate',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega "mandou o mesmo item"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Acho que mandou o mesmo item antes — registro só uma vez?',
+        '1 maçã',
+      ),
+    ).toBe(true)
+  })
+
+  it('pega variante "percebi que você enviou duas vezes"', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Percebi que você enviou duas vezes — registro 1 vez só?',
+        'banana',
+      ),
+    ).toBe(true)
+  })
+
+  it('NÃO flaga quando paciente REALMENTE mandou texto duplicado', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Mandou duas vezes — registro só uma?',
+        'banana\nbanana',
+      ),
+    ).toBe(false)
+  })
+})

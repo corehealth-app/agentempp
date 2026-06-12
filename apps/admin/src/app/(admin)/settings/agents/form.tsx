@@ -18,14 +18,23 @@ import { updateAgentConfig } from './actions'
 const ALL_TOOLS = [
   'cadastra_dados_iniciais',
   'define_protocolo',
+  'define_meta_peso',
   'registra_refeicao',
   'registra_treino',
   'consulta_progresso',
+  'consulta_metricas',
+  'consulta_resumo_periodo',
+  'consulta_reavaliacao_protocolo',
+  'registra_metrica_diaria',
+  'marca_refeicao_pulada',
   'atualiza_data_user',
   'encerra_atendimento',
   'delete_user',
   'pausar_agente',
   'retomar_agente',
+  'confirma_pais_residencia',
+  'gera_dieta',
+  'gera_treino',
 ] as const
 
 interface Props {

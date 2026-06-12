@@ -28,6 +28,10 @@ export interface ToolContext {
   supabase: ServiceClient
   userId: string
   userWpp: string
+  /** LLM disponível pra tools que precisam gerar conteúdo (gera_dieta,
+   * gera_treino). Injetado pelo pipeline. Opcional pra retrocompatibilidade. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  llm?: any
   /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
   userCountry?: string
   /** Timezone IANA do paciente (default America/Sao_Paulo). Usado pra
@@ -2222,6 +2226,309 @@ export const consultaResumoPeriodo: ToolDefinition = {
   },
 }
 
+// ----------------------------------------------------------------------------
+// gera_dieta — Sprint 4.1 (Roberto 2026-06-11)
+// ----------------------------------------------------------------------------
+export const geraDieta: ToolDefinition = {
+  name: 'gera_dieta',
+  description:
+    'Gera uma prescrição de dieta personalizada + lista de compras pro paciente, baseada no ' +
+    'perfil dele (meta calórica/proteica, protocolo, restrições) e no histórico de alimentos que ele já come. ' +
+    'Use APENAS quando o paciente pedir EXPLICITAMENTE pra gerar/montar AGORA — frases imperativas diretas: ' +
+    '"monta um cardápio pra mim agora", "me gera a dieta", "preciso da lista de compras". ' +
+    'NÃO use quando paciente está só TIRANDO DÚVIDA ou EXPLORANDO ("é possível ter uma dieta X?", ' +
+    '"quero entender melhor sobre dieta"). Nesse caso, responda a dúvida sem chamar a tool, e CONFIRME antes: ' +
+    '"Quer que eu gere agora um cardápio personalizado pra você?". ' +
+    'NÃO use quando ele só descreve o que come (isso é registra_refeicao). ' +
+    'A dieta é referência (sugestão flexível), não rígida — paciente pode adaptar. ' +
+    'Modo "daily" = 1 dia. Modo "weekly" também é 1 dia hoje (variação semanal ainda não está completa). ' +
+    'Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.',
+  parameters: z.object({
+    horizon: z
+      .enum(['daily', 'weekly'])
+      .default('daily')
+      .describe('Período da prescrição. "weekly" recomendado quando paciente quer planejamento semanal'),
+    meals_per_day: z
+      .number()
+      .int()
+      .min(2)
+      .max(6)
+      .default(4)
+      .optional()
+      .describe('Número de refeições por dia (default 4: café/almoço/lanche/jantar)'),
+    restrictions: z
+      .array(z.string())
+      .optional()
+      .describe('Alergias ou restrições do paciente (ex: ["lactose", "glúten"])'),
+    preferences: z
+      .array(z.string())
+      .optional()
+      .describe('Alimentos preferidos pra incluir (ex: ["frango", "ovo", "tapioca"])'),
+  }),
+  execute: async (args, ctx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sp = ctx.supabase as any
+
+    // 1. Carrega perfil do paciente
+    const { data: u } = await sp
+      .from('users')
+      .select('name, country, locale')
+      .eq('id', ctx.userId)
+      .maybeSingle()
+    const { data: p } = await sp
+      .from('user_profiles')
+      .select('sex, birth_date, weight_kg, height_cm, activity_level, current_protocol')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    const ageFromBirth = (bd: string | null | undefined): number | null =>
+      bd ? Math.floor((Date.now() - new Date(bd).getTime()) / 31557600000) : null
+    const { data: up } = await sp
+      .from('user_progress')
+      .select('current_bf_percent')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+
+    // 2. Carrega targets calóricos/proteicos
+    const cfg = await loadCalcConfig(ctx.supabase)
+    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
+
+    // 3. Carrega histórico de alimentos (últimos 30d, top 30 mais frequentes)
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    const { data: histLogs } = await sp
+      .from('meal_logs')
+      .select('food_name')
+      .eq('user_id', ctx.userId)
+      .gte('created_at', since)
+    const freqMap = new Map<string, number>()
+    for (const r of (histLogs ?? []) as Array<{ food_name: string }>) {
+      const k = r.food_name.toLowerCase().trim()
+      freqMap.set(k, (freqMap.get(k) ?? 0) + 1)
+    }
+    const historical_foods = Array.from(freqMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30)
+      .map(([food_name, frequency]) => ({ food_name, frequency }))
+
+    // Rate-limit: max 2 gerações nas últimas 2h. Evita loop/abuso (cada
+    // chamada custa ~$0.05 de LLM).
+    const cooldownSince = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+    const { data: recent } = await sp
+      .from('product_events')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('event', 'diet.generated')
+      .gte('occurred_at', cooldownSince)
+    if ((recent ?? []).length >= 2) {
+      return {
+        success: false,
+        error:
+          'Já geramos 2 cardápios nas últimas 2h. Espera um pouco e me avisa se quer outra versão — explique pro paciente sem chamar a tool de novo.',
+      }
+    }
+
+    // 4. Gera via diet-generator
+    const { generateDietPlan, saveDietPlan } = await import('./diet-generator.js')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const llm = (ctx as any).llm
+    if (!llm) {
+      return {
+        success: false,
+        error: 'LLM não disponível no contexto da tool. Configure ctx.llm.',
+      }
+    }
+    const plan = await generateDietPlan(llm, ctx.supabase, {
+      userId: ctx.userId,
+      profile: {
+        name: u?.name ?? null,
+        sex: (p?.sex as 'masculino' | 'feminino' | null) ?? null,
+        age: ageFromBirth(p?.birth_date),
+        weight_kg: p?.weight_kg ?? null,
+        height_cm: p?.height_cm ?? null,
+        activity_level: (p?.activity_level as 'sedentario' | 'leve' | 'moderado' | 'alto' | 'atleta' | null) ?? null,
+        protocol: (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
+        meta_kcal: targets.calories_target ?? null,
+        meta_protein_g: targets.protein_target ?? null,
+        bf_percent: up?.current_bf_percent ?? null,
+        restrictions: args.restrictions ?? [],
+        preferences: args.preferences ?? [],
+      },
+      historical_foods,
+      meals_per_day: args.meals_per_day,
+      mode: 'referencia',
+      horizon: args.horizon ?? 'daily',
+    })
+    if (!plan) {
+      return { success: false, error: 'Falha ao gerar dieta. Tente novamente em alguns segundos.' }
+    }
+    const saved = await saveDietPlan(ctx.supabase, plan)
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'diet.generated',
+      properties: {
+        prescription_id: saved.id,
+        horizon: plan.horizon,
+        meals_count: plan.daily_meals.length,
+        shopping_items: plan.shopping_list.length,
+      },
+    })
+    return {
+      success: true,
+      prescription_id: saved.id,
+      horizon: plan.horizon,
+      meta_kcal: plan.meta_kcal,
+      meta_protein_g: plan.meta_protein_g,
+      daily_meals: plan.daily_meals,
+      shopping_list: plan.shopping_list,
+      message:
+        'Dieta gerada com sucesso. Apresente ao paciente: liste as refeições com itens + macros + horários sugeridos, depois a lista de compras agrupada por categoria. ' +
+        'Termine com nota: "Isso é referência — adapte conforme seu dia. Me avise se quiser ajustar algo."',
+    }
+  },
+}
+
+// ----------------------------------------------------------------------------
+// gera_treino — Sprint 4.2 (Roberto 2026-06-11)
+// ----------------------------------------------------------------------------
+export const geraTreino: ToolDefinition = {
+  name: 'gera_treino',
+  description:
+    'Gera UM plano de treino semanal personalizado pro paciente. ' +
+    'Use APENAS depois de PERGUNTAR E CONFIRMAR com o paciente OS TRÊS dados: ' +
+    '(1) equipamentos disponíveis (lista detalhada ou foto), ' +
+    '(2) quantos dias por semana topa treinar, ' +
+    '(3) nível atual de musculação: iniciante (nunca treinou ou parou >6 meses), intermediário (1-2a treinando constante), ou avançado (3a+ com técnica). ' +
+    'NUNCA chute training_level — pergunte explícito. ' +
+    'O plano é ESPORÁDICO: gera UMA vez, sistema entrega o treino do dia automaticamente todo dia ' +
+    '(cron determinístico, sem regerar com LLM). Paciente pode pedir regenerar se equipamentos/rotina mudarem. ' +
+    'NÃO use pra "vou fazer um treino agora" (isso é registra_treino). ' +
+    'Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.',
+  parameters: z.object({
+    available_equipment: z
+      .array(z.string())
+      .min(1)
+      .describe('Lista de equipamentos identificados (ex: ["halteres 5-30kg", "barra fixa", "elástico"])'),
+    location: z
+      .enum(['academia_completa', 'academia_limitada', 'casa'])
+      .describe('Local onde o paciente vai treinar'),
+    days_per_week: z
+      .number()
+      .int()
+      .min(1)
+      .max(7)
+      .describe('Dias por semana que o paciente topa treinar'),
+    training_days: z
+      .array(z.string())
+      .optional()
+      .describe('Dias específicos da semana (ex: ["seg","qua","sex"])'),
+    training_level: z
+      .enum(['iniciante', 'intermediario', 'avancado'])
+      .describe('Nível atual de musculação do paciente'),
+    goes_to_failure: z
+      .boolean()
+      .optional()
+      .describe('Topa treinar até falha muscular? (false = abordagem mais guiada/segura)'),
+    limitations: z
+      .array(z.string())
+      .optional()
+      .describe('Lesões/dores/limitações (ex: ["dor no joelho", "lombar sensível"])'),
+    priority_muscles: z
+      .array(z.string())
+      .optional()
+      .describe('Grupos musculares de prioridade (ex: ["glúteos", "MMII"])'),
+  }),
+  execute: async (args, ctx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sp = ctx.supabase as any
+    const { data: u } = await sp
+      .from('users')
+      .select('name')
+      .eq('id', ctx.userId)
+      .maybeSingle()
+    const { data: p } = await sp
+      .from('user_profiles')
+      .select('sex, birth_date, weight_kg, height_cm, current_protocol')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    const ageFromBirthT = (bd: string | null | undefined): number | null =>
+      bd ? Math.floor((Date.now() - new Date(bd).getTime()) / 31557600000) : null
+    const { data: up } = await sp
+      .from('user_progress')
+      .select('current_bf_percent')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+
+    // Rate-limit: max 1 geração de plano nas últimas 24h. Treino é
+    // esporádico — paciente NÃO precisa regenerar 5x/dia.
+    const cooldownSinceT = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    const { data: recentT } = await sp
+      .from('product_events')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('event', 'training.plan_generated')
+      .gte('occurred_at', cooldownSinceT)
+    if ((recentT ?? []).length >= 1) {
+      return {
+        success: false,
+        error:
+          'Já geramos um plano de treino nas últimas 24h. Pra regenerar, peça pro paciente esperar até amanhã ou avisar Eduardo. Não chame a tool de novo.',
+      }
+    }
+
+    const { generateTrainingPlan, saveTrainingPlan } = await import('./training-plan-generator.js')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const llm = (ctx as any).llm
+    if (!llm) {
+      return { success: false, error: 'LLM não disponível no contexto da tool.' }
+    }
+    const plan = await generateTrainingPlan(llm, ctx.supabase, {
+      userId: ctx.userId,
+      profile: {
+        name: u?.name ?? null,
+        sex: (p?.sex as 'masculino' | 'feminino' | null) ?? null,
+        age: ageFromBirthT(p?.birth_date),
+        weight_kg: p?.weight_kg ?? null,
+        height_cm: p?.height_cm ?? null,
+        protocol: (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
+        bf_percent: up?.current_bf_percent ?? null,
+        training_level: args.training_level,
+        limitations: args.limitations ?? [],
+        priority_muscles: args.priority_muscles ?? [],
+      },
+      days_per_week: args.days_per_week,
+      training_days: args.training_days,
+      available_equipment: args.available_equipment,
+      location: args.location,
+      goes_to_failure: args.goes_to_failure,
+    })
+    if (!plan) {
+      return { success: false, error: 'Falha ao gerar plano de treino. Tente novamente.' }
+    }
+    const saved = await saveTrainingPlan(ctx.supabase, plan)
+    await ctx.supabase.from('product_events').insert({
+      user_id: ctx.userId,
+      event: 'training.plan_generated',
+      properties: {
+        plan_id: saved.id,
+        plan_type: plan.plan_type,
+        days_per_week: plan.days_per_week,
+        equipment_count: args.available_equipment.length,
+        location: args.location,
+      },
+    })
+    return {
+      success: true,
+      plan_id: saved.id,
+      plan_type: plan.plan_type,
+      days_per_week: plan.days_per_week,
+      weekly_schedule: plan.weekly_schedule,
+      progression_rule: plan.progression_rule,
+      message:
+        'Plano de treino gerado e salvo. Apresente ao paciente: visão geral (split + dias) + 1º treino completo com execução passo-a-passo. ' +
+        'Mencione: "Te envio o treino do dia automaticamente todo dia de manhã. Avise se precisar regenerar o plano."',
+    }
+  },
+}
+
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
@@ -2240,6 +2547,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   pausarAgente,
   retomarAgente,
   confirmaPaisResidencia,
+  geraDieta,
+  geraTreino,
 ]
 
 export function getToolByName(name: string): ToolDefinition | undefined {

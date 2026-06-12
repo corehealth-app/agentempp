@@ -476,6 +476,7 @@ export async function processMessage(
       supabase: deps.supabase,
       userId,
       userWpp: input.from,
+      llm: deps.llm,
       userCountry: ctx.country ?? 'BR',
       userTimezone: ctx.timezone,
       providerMessageId: input.providerMessageId,

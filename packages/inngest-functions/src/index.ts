@@ -15,6 +15,7 @@ import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
 import { mealGapReminderFn } from './functions/meal-gap-reminder.js'
+import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -31,6 +32,7 @@ export const allFunctions = [
   pendingCleanupFn,
   foodDbGapsReportFn,
   mealGapReminderFn,
+  trainingDailyDeliveryFn,
 ]
 
 export {
@@ -48,4 +50,5 @@ export {
   pendingCleanupFn,
   foodDbGapsReportFn,
   mealGapReminderFn,
+  trainingDailyDeliveryFn,
 }

@@ -332,7 +332,14 @@ export async function processMessage(
         (tc) =>
           (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
       )
-      const fake = detectFakeWrite({ content, registrationToolCalled })
+      const prescriptionToolCalled = toolCallsSummary.some(
+        (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
+      )
+      const fake = detectFakeWrite({
+        content,
+        registrationToolCalled,
+        prescriptionToolCalled,
+      })
 
       if (fake.isFake && !fakeWriteRetried) {
         fakeWriteRetried = true
@@ -347,12 +354,17 @@ export async function processMessage(
           },
         })
         messages.push({ role: 'assistant', content })
+        const retryMsg =
+          fake.kind === 'correction'
+            ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
+            : fake.kind === 'diet_fake'
+              ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
+              : fake.kind === 'training_fake'
+                ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
+                : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.'
         messages.push({
           role: 'user',
-          content:
-            fake.kind === 'correction'
-              ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
-              : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.',
+          content: retryMsg,
         })
         continue
       }
@@ -1175,7 +1187,14 @@ export async function processMessage(
     // Camada 2: o retry da Camada 1 falhou (LLM insistiu em não chamar a tool)
     // ou o card veio por caminho não-terminal → o texto final ainda afirma
     // registro/correção sem tool = escrita NÃO persistiu. Sinal crítico.
-    const fakeFinal = detectFakeWrite({ content: finalText, registrationToolCalled })
+    const prescriptionToolCalled = toolCallsSummary.some(
+      (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
+    )
+    const fakeFinal = detectFakeWrite({
+      content: finalText,
+      registrationToolCalled,
+      prescriptionToolCalled,
+    })
     if (fakeFinal.isFake) {
       await deps.supabase.from('product_events').insert({
         user_id: userId,

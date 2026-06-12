@@ -12,7 +12,11 @@
  * entrega o que está em `training_plans.weekly_schedule`.
  *
  * Anti-spam:
- *   - Só envia se paciente tiver `users.metadata.proactive_reminders = true`
+ *   - Só envia se paciente tiver `users.metadata.training_reminders = true`
+ *     (opt-in específico — NÃO usa proactive_reminders, que é só pra refeição).
+ *     A flag é ativada automaticamente quando saveTrainingPlan persiste um
+ *     plano (em training-plan-generator.ts). Pacientes Roberto/Eduardo
+ *     hardcoded como testers durante rollout.
  *   - Skip se já recebeu treino hoje (event `training.daily_delivered`)
  */
 import { inngest } from '../client.js'
@@ -111,7 +115,17 @@ export const trainingDailyDeliveryFn = inngest.createFunction(
 
     let sent = 0
     for (const cand of candidates) {
-      const optIn = Boolean((cand.metadata as { proactive_reminders?: boolean } | null)?.proactive_reminders)
+      // Opt-in específico pra treino: NÃO usa proactive_reminders (que é só
+      // pra refeição). Paciente precisa consentir explicitamente em receber
+      // treino diário às 06:30 BRT. Fallback durante rollout: se
+      // training_reminders ausente E paciente é Roberto/Eduardo (testers),
+      // assume true. Pra outros, NÃO envia até opt-in explícito.
+      const meta = (cand.metadata as { training_reminders?: boolean } | null) ?? null
+      const explicitOptIn = meta?.training_reminders === true
+      const isTester =
+        cand.id === '118587e3-e752-4a23-b304-57231d7ef40f' /* Roberto */ ||
+        cand.id === '76ed4dc3-ef24-4ecf-b9c4-2effd61ea193' /* Eduardo */
+      const optIn = explicitOptIn || isTester
       if (!optIn) continue
 
       await step.run(`deliver-${cand.id}`, async () => {

@@ -36,12 +36,36 @@ export interface FakeWriteInput {
   content: string
   /** registra_refeicao OU registra_treino foi chamada com sucesso no turno. */
   registrationToolCalled: boolean
+  /** gera_dieta OU gera_treino foi chamada com sucesso no turno. */
+  prescriptionToolCalled?: boolean
 }
 
 export interface FakeWriteResult {
   isFake: boolean
-  kind: 'registration' | 'correction' | null
+  kind: 'registration' | 'correction' | 'diet_fake' | 'training_fake' | null
 }
+
+// Card de DIETA inventado (Sprint 4.1 review 2026-06-12): LLM apresenta
+// "Café da manhã: ... Almoço: ... Lista de compras: ..." sem chamar
+// `gera_dieta`. Paciente vai pra cozinha seguir uma dieta que ninguém
+// salvou e cujos macros não foram validados. Critério: ≥2 "headers de
+// refeição" (Café/Almoço/Lanche/Jantar) seguido de itens E uma seção
+// "Lista de compras" no mesmo turno.
+const DIET_REFEICAO_HEADER =
+  /\b(?:caf[ée]\s+da\s+manh[ãa]|almo[çc]o|lanche\s+(?:da\s+)?(?:manh[ãa]|tarde)|jantar|ceia)\s*:/gi
+const DIET_SHOPPING =
+  /\b(?:lista\s+de\s+compras|compras\s+da\s+semana|mercado|hortifruti)\s*[:\n]/i
+const DIET_TOTAL =
+  /\b(?:total\s+(?:di[áa]rio|do\s+dia)|kcal\s+totais|prote[ií]na\s+total)\b/i
+
+// Plano de TREINO inventado: LLM apresenta "Treino A: ... Treino B: ..."
+// ou "Segunda: ... Quarta: ..." com exercícios+séries+reps sem chamar
+// `gera_treino`. Paciente segue um plano não salvo, cron diário nunca
+// dispara, e regenerar bloqueia 24h pelo rate-limit.
+const TRAINING_DAY_HEADER =
+  /\b(?:treino\s+[ABCabc]|segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo|dia\s+\d)\s*:/gi
+const TRAINING_EXERCISE_LINE =
+  /(?:^|\n)\s*[•\-*]?\s*[^\n]{4,40}\s+\d+\s*[x×]\s*\d+/g
 
 // Assinatura de TREINO (Paulo 2026-05-28): bug real do detector que só pegava
 // REFEIÇÃO. Caso: "Registrei as duas caminhadas de 60 minutos cada..." sem
@@ -72,8 +96,31 @@ const PROPOSAL_QUESTION = /\bconfirma\??\s*$|\bregistro\?\s*$/i
 export function detectFakeWrite({
   content,
   registrationToolCalled,
+  prescriptionToolCalled,
 }: FakeWriteInput): FakeWriteResult {
   if (registrationToolCalled) return { isFake: false, kind: null }
+
+  // --- Detectores de prescrição-fantasma (rodam ANTES das regras antigas
+  // porque cardápio inventado tem aparência profissional, paciente segue
+  // sem questionar). Só dispara se gera_dieta/gera_treino NÃO foram chamadas.
+  if (!prescriptionToolCalled) {
+    // DIET FAKE: ≥2 headers de refeição + (lista de compras OU total diário).
+    // Os 2 sinais juntos diferenciam cardápio inventado de uma simples
+    // explicação ("almoço: arroz + frango" em uma linha não dispara).
+    const dietHeaders = content.match(DIET_REFEICAO_HEADER) ?? []
+    const hasDietContext = DIET_SHOPPING.test(content) || DIET_TOTAL.test(content)
+    if (dietHeaders.length >= 2 && hasDietContext) {
+      return { isFake: true, kind: 'diet_fake' }
+    }
+
+    // TRAINING FAKE: ≥1 header de dia/treino + ≥3 linhas de exercício no
+    // formato "Nome NxR". Apenas explicar "vou treinar segunda" não dispara.
+    const trainingHeaders = content.match(TRAINING_DAY_HEADER) ?? []
+    const exerciseLines = content.match(TRAINING_EXERCISE_LINE) ?? []
+    if (trainingHeaders.length >= 1 && exerciseLines.length >= 3) {
+      return { isFake: true, kind: 'training_fake' }
+    }
+  }
 
   // Proposta-fake (Roberto 2026-05-29): LLM imita "Vi isso na sua foto …
   // Confirma?" sem chamar tool. Não tem kcal/workout signature mas é claro

@@ -191,4 +191,104 @@ describe('detectFakeWrite', () => {
     })
     expect(r.isFake).toBe(false)
   })
+
+  // --- Novos detectores: prescrição-fantasma (Sprint 4.1 review 2026-06-12)
+
+  it('flags DIET_FAKE: 2+ headers de refeição + lista de compras + sem gera_dieta', () => {
+    const r = detectFakeWrite({
+      content: `Café da manhã: ovo mexido (2un), pão integral, café
+Almoço: arroz, frango grelhado, salada
+Jantar: tilápia, batata-doce
+
+Lista de compras:
+- 12 ovos
+- 1kg de frango
+- pão integral`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('diet_fake')
+  })
+
+  it('flags DIET_FAKE: 2+ refeições + total diário + sem gera_dieta', () => {
+    const r = detectFakeWrite({
+      content: `Almoço: arroz 100g, frango 150g
+Jantar: tilápia 200g, batata-doce 150g
+Total diário: 1850 kcal`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('diet_fake')
+  })
+
+  it('NÃO flaga DIET_FAKE quando gera_dieta foi chamada', () => {
+    const r = detectFakeWrite({
+      content: `Café da manhã: ovo, pão
+Almoço: arroz, frango
+Lista de compras: ovos, pão, arroz`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: true,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga DIET_FAKE com 1 header só (explicação simples)', () => {
+    const r = detectFakeWrite({
+      content: 'Almoço: o ideal é ter proteína + carbo + vegetais. Lista de compras curta amanhã.',
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('flags TRAINING_FAKE: treino A com ≥3 exercícios + sem gera_treino', () => {
+    const r = detectFakeWrite({
+      content: `Treino A:
+- Agachamento 4x10
+- Leg press 3x12
+- Cadeira extensora 3x15
+Treino B: peito e tríceps`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('training_fake')
+  })
+
+  it('flags TRAINING_FAKE: dias da semana + ≥3 exercícios', () => {
+    const r = detectFakeWrite({
+      content: `Segunda: inferiores
+- Agachamento 4x8
+- Stiff 3x10
+- Cadeira extensora 3x12`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('training_fake')
+  })
+
+  it('NÃO flaga TRAINING_FAKE quando gera_treino foi chamada', () => {
+    const r = detectFakeWrite({
+      content: `Treino A:
+- Agachamento 4x10
+- Leg press 3x12
+- Cadeira extensora 3x15`,
+      registrationToolCalled: false,
+      prescriptionToolCalled: true,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga TRAINING_FAKE em prosa solta sem ≥3 exercícios', () => {
+    const r = detectFakeWrite({
+      content:
+        'Treino A pode ser pernas, segunda costuma ser o melhor dia. Agachamento 4x10 é base boa.',
+      registrationToolCalled: false,
+      prescriptionToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
 })

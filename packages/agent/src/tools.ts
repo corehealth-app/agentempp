@@ -2361,6 +2361,20 @@ export const geraDieta: ToolDefinition = {
       return { success: false, error: 'Falha ao gerar dieta. Tente novamente em alguns segundos.' }
     }
     const saved = await saveDietPlan(ctx.supabase, plan)
+    if (!saved.id) {
+      // Save falhou — NÃO registra diet.generated (senão rate-limit
+      // bloqueia 2h sem prescription real). Loga separado pra audit.
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'diet.save_failed',
+        properties: { horizon: plan.horizon, meals_count: plan.daily_meals.length },
+      })
+      return {
+        success: false,
+        error:
+          'Gerei o cardápio mas tive problema ao salvar. Pede pro paciente tentar de novo em alguns segundos.',
+      }
+    }
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'diet.generated',
@@ -2504,6 +2518,21 @@ export const geraTreino: ToolDefinition = {
       return { success: false, error: 'Falha ao gerar plano de treino. Tente novamente.' }
     }
     const saved = await saveTrainingPlan(ctx.supabase, plan)
+    if (!saved.id) {
+      // Cron de entrega faz inner join com training_plans active=true.
+      // Sem ID salvo, paciente nunca recebe o treino diário. Não registra
+      // training.plan_generated (rate-limit 24h ficaria preso sem plano).
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'training.save_failed',
+        properties: { days_per_week: plan.days_per_week, location: args.location },
+      })
+      return {
+        success: false,
+        error:
+          'Gerei o plano mas tive problema ao salvar. Pede pro paciente tentar de novo em alguns segundos.',
+      }
+    }
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'training.plan_generated',

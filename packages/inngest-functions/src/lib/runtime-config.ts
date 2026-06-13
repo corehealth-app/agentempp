@@ -73,6 +73,7 @@ export interface VisionRuntimeConfig {
     body?: string
     scale?: string
     nutrition_label?: string
+    equipment?: string
     other?: string
     classifier?: string
   }
@@ -126,7 +127,7 @@ export async function loadVisionConfig(
   }
   for (const row of ruleRows ?? []) {
     const key = row.slug.replace(/^vision-/, '') as keyof VisionRuntimeConfig['prompts']
-    if (['meal', 'body', 'scale', 'nutrition_label', 'other', 'classifier'].includes(key) && row.content) {
+    if (['meal', 'body', 'scale', 'nutrition_label', 'equipment', 'other', 'classifier'].includes(key) && row.content) {
       merged.prompts[key] = row.content
     }
   }

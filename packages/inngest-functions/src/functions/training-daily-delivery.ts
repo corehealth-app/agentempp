@@ -1,11 +1,12 @@
 /**
  * Entrega diária do treino (Sprint 4.2b — Roberto pediu 2026-06-11 via áudio).
  *
- * Cron 06:30 BRT. Para cada paciente com plano ativo em `training_plans`:
- *   - Calcula dia da semana local (com timezone do user)
- *   - Busca `getTodayTraining(supabase, user_id, dia_label)`
- *   - Se hoje é dia de treino → envia mensagem determinística com o resumo
- *     do treino do dia (focus, exercícios, séries/reps, dicas de execução).
+ * Cron `0 * * * *` (hora cheia UTC). Pra cada paciente com plano ativo em
+ * `training_plans`:
+ *   - Calcula hora local do timezone do user; só envia quando hora == target
+ *     (DEFAULT_DELIVERY_HOUR=7 ou metadata.training_delivery_hour custom).
+ *   - Calcula dia da semana local e busca `getTodayTraining(supabase, user_id, dia_label)`.
+ *   - Se hoje é dia de treino → envia mensagem determinística com o resumo.
  *   - Se NÃO é dia de treino → silêncio (não polui).
  *
  * SEM LLM. Custo zero. Plano é gerado UMA vez via tool `gera_treino`, cron só
@@ -15,9 +16,9 @@
  *   - Só envia se paciente tiver `users.metadata.training_reminders = true`
  *     (opt-in específico — NÃO usa proactive_reminders, que é só pra refeição).
  *     A flag é ativada automaticamente quando saveTrainingPlan persiste um
- *     plano (em training-plan-generator.ts). Pacientes Roberto/Eduardo
- *     hardcoded como testers durante rollout.
- *   - Skip se já recebeu treino hoje (event `training.daily_delivered`)
+ *     plano. Lista de testers vem de `global_config` (chave
+ *     `training_reminders.tester_user_ids`) — controla rollout sem deploy.
+ *   - Skip se já recebeu treino nas últimas 22h (event `training.daily_delivered`).
  */
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
@@ -77,13 +78,52 @@ function formatTraining(day: TrainingDay): string {
   return lines.join('\n')
 }
 
+/**
+ * Hora local em que o cron entrega. Por padrão 7h da manhã no TZ do
+ * paciente. Pra customizar por paciente: users.metadata.training_delivery_hour
+ * (0-23). Hora cheia única — só dispara quando localHour === target.
+ */
+const DEFAULT_DELIVERY_HOUR = 7
+
+function getLocalHour(now: Date, timezone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(now)
+    const h = parts.find((p) => p.type === 'hour')?.value
+    if (!h) return null
+    const n = parseInt(h, 10)
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
 export const trainingDailyDeliveryFn = inngest.createFunction(
   { id: 'training-daily-delivery', retries: 1 },
-  { cron: 'TZ=America/Sao_Paulo 30 6 * * *' },
+  // Roda a cada hora cheia em UTC. Pra cada paciente, calcula a hora local
+  // do TZ dele e só envia se bate com training_delivery_hour (default 7).
+  // Vale pra qualquer fuso — paciente em Lisboa recebe 7h Lisboa, em
+  // Tóquio recebe 7h Tóquio.
+  { cron: '0 * * * *' },
   async ({ step, logger }) => {
     const deps = createWorkerDeps()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sp = deps.supabase as any
+
+    // Lista de testers UUIDs vem do global_config (não hardcoded). Permite
+    // expandir/contrair rollout sem deploy.
+    const testerUserIds = await step.run('load-testers', async () => {
+      const { data } = await sp
+        .from('global_config')
+        .select('value')
+        .eq('key', 'training_reminders.tester_user_ids')
+        .maybeSingle()
+      const v = (data as { value?: string[] } | null)?.value
+      return Array.isArray(v) ? v : []
+    })
 
     const candidates = await step.run('list-candidates', async () => {
       const { data, error } = await sp
@@ -116,21 +156,34 @@ export const trainingDailyDeliveryFn = inngest.createFunction(
     let sent = 0
     for (const cand of candidates) {
       // Opt-in específico pra treino: NÃO usa proactive_reminders (que é só
-      // pra refeição). Paciente precisa consentir explicitamente em receber
-      // treino diário às 06:30 BRT. Fallback durante rollout: se
-      // training_reminders ausente E paciente é Roberto/Eduardo (testers),
-      // assume true. Pra outros, NÃO envia até opt-in explícito.
-      const meta = (cand.metadata as { training_reminders?: boolean } | null) ?? null
+      // pra refeição). saveTrainingPlan seta metadata.training_reminders=true
+      // automaticamente quando paciente acabou de gerar plano. Lista de
+      // testers vem de global_config (chave training_reminders.tester_user_ids)
+      // pra rollout controlado sem deploy. Sem opt-in nem tester → não envia.
+      const meta = (cand.metadata as
+        | { training_reminders?: boolean; training_delivery_hour?: number }
+        | null) ?? null
       const explicitOptIn = meta?.training_reminders === true
-      const isTester =
-        cand.id === '118587e3-e752-4a23-b304-57231d7ef40f' /* Roberto */ ||
-        cand.id === '76ed4dc3-ef24-4ecf-b9c4-2effd61ea193' /* Eduardo */
+      const isTester = testerUserIds.includes(cand.id)
       const optIn = explicitOptIn || isTester
       if (!optIn) continue
 
+      // Só dispara quando a hora local do paciente == hora alvo. Cron roda
+      // a cada hora, então pra qualquer fuso a janela é 1h. Default 7h.
+      const tz = cand.timezone ?? 'America/Sao_Paulo'
+      const localHour = getLocalHour(new Date(), tz)
+      const targetHour =
+        typeof meta?.training_delivery_hour === 'number' &&
+        meta.training_delivery_hour >= 0 &&
+        meta.training_delivery_hour <= 23
+          ? meta.training_delivery_hour
+          : DEFAULT_DELIVERY_HOUR
+      if (localHour !== targetHour) continue
+
       await step.run(`deliver-${cand.id}`, async () => {
-        // Dedup intra-dia: janela de 22h (suficiente p/ qualquer fuso entre
-        // disparos consecutivos do cron 24h). Coluna correta é `occurred_at`.
+        // Dedup intra-dia: janela de 22h (defensivo — o dedup primário é o
+        // filtro localHour===targetHour que só matches 1×/dia por paciente).
+        // Coluna correta é `occurred_at` (não created_at).
         const sinceIso = new Date(Date.now() - 22 * 3600 * 1000).toISOString()
         const { data: already } = await sp
           .from('product_events')
@@ -141,7 +194,6 @@ export const trainingDailyDeliveryFn = inngest.createFunction(
           .limit(1)
         if ((already ?? []).length > 0) return
 
-        const tz = cand.timezone ?? 'America/Sao_Paulo'
         let todayLabelStr: string
         try {
           todayLabelStr = dayLabel(new Date(), tz)

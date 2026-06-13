@@ -27,7 +27,13 @@ export interface VisionConfig {
   heliconeApiKey?: string
 }
 
-export type VisionImageType = 'meal' | 'body' | 'scale' | 'nutrition_label' | 'other'
+export type VisionImageType =
+  | 'meal'
+  | 'body'
+  | 'scale'
+  | 'nutrition_label'
+  | 'equipment'
+  | 'other'
 
 export interface VisionMealAnalysis {
   type: 'meal'
@@ -78,6 +84,30 @@ export interface VisionOtherAnalysis {
   latencyMs: number
 }
 
+/**
+ * Equipamentos de musculação/cardio identificados em foto. Usado por
+ * `gera_treino` (Sprint 4.2): paciente envia foto da academia/casa, vision
+ * extrai lista de equipamentos disponíveis, agente pergunta confirmação e
+ * chama a tool com a lista.
+ */
+export interface VisionEquipmentAnalysis {
+  type: 'equipment'
+  /** Lista normalizada de equipamentos identificados, ex: "halteres 5-30kg",
+   * "barra fixa", "elástico médio", "banco regulável", "leg press 45°". */
+  equipment: string[]
+  /** Local inferido: 'academia_completa' (sala com várias máquinas),
+   * 'academia_limitada' (espaço pequeno, poucos itens) ou 'casa'. */
+  location: 'academia_completa' | 'academia_limitada' | 'casa' | null
+  /** Confiança 0-1 — se foto pouco nítida, baixa. */
+  confidence: number
+  /** Observações livres ("foto borrada", "alguns equipamentos cortados"). */
+  notes?: string
+  raw_response: string
+  promptTokens: number
+  completionTokens: number
+  latencyMs: number
+}
+
 /** Tabela nutricional de embalagem (Amanda 2026-05-16 mandou foto de rótulo
  * 3x e gemini-2.5-flash não conseguiu extrair os valores; agente ficou
  * pedindo foto melhor em loop). Quando vision detecta rótulo, faz OCR
@@ -119,6 +149,7 @@ export type VisionAnalysis =
   | VisionBodyAnalysis
   | VisionScaleAnalysis
   | VisionNutritionLabelAnalysis
+  | VisionEquipmentAnalysis
   | VisionOtherAnalysis
 
 const MEAL_SYSTEM_PROMPT = `Você é um nutricionista brasileiro experiente analisando uma foto de refeição. Sua acurácia é crítica — o paciente toma decisão de protocolo a partir desses dados.
@@ -297,13 +328,32 @@ Retorne APENAS JSON com este formato exato:
   "notes": "tabela completa, valores nítidos"
 }`
 
-const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 5 palavras (sem aspas, sem nada além):
+const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 6 palavras (sem aspas, sem nada além):
 
 meal             — foto de refeição/comida no prato/bebida pronta pra consumir
 nutrition_label  — foto de TABELA NUTRICIONAL (rótulo da embalagem, quadro de "Valor energético / Carboidratos / Proteínas / Gorduras" tipicamente em pt-BR ANVISA)
 body             — foto corporal de pessoa (frente/lado/costas)
 scale            — foto de balança digital, fita métrica, ou medidor mostrando número
+equipment        — foto de EQUIPAMENTOS DE MUSCULAÇÃO ou cardio: halteres, anilhas, barras, máquinas (leg press, supino, smith), elásticos, banco, esteira, bike, sala de academia, área de treino em casa
 other            — qualquer outra coisa (embalagem fechada sem tabela visível, paisagem, etc)`
+
+const EQUIPMENT_SYSTEM_PROMPT = `Você é um avaliador de equipamentos de treino. Olha a foto e enumera os equipamentos disponíveis pra musculação/cardio com PRECISÃO. Retorne APENAS um JSON válido com este schema:
+
+{
+  "equipment": ["item 1", "item 2", ...],
+  "location": "academia_completa" | "academia_limitada" | "casa" | null,
+  "confidence": 0.0 a 1.0,
+  "notes": "obs livre (foto borrada, recorte ruim, etc)"
+}
+
+REGRAS:
+- Use nomes COMPLETOS e específicos: "halteres 5-30kg" (faixa estimada), "barra olímpica + anilhas (até 100kg estimado)", "leg press 45°", "cadeira extensora", "banco regulável", "smith machine", "máquina de cabos polia dupla", "elástico forte/médio/leve", "barra fixa", "anilhas avulsas 5-20kg".
+- Se identificar 5+ máquinas/equipamentos grandes → location='academia_completa'.
+- Se identificar 2-4 itens em espaço pequeno → location='academia_limitada'.
+- Se identificar poucos itens em ambiente residencial (sala, quarto, garagem) → location='casa'.
+- Se foto não tem equipamentos visíveis → "equipment": [], location=null, confidence baixa.
+- NÃO invente itens não visíveis. NÃO sugira treinos — só catalogue o que vê.
+- confidence reflete nitidez + ângulo. Borrado/cortado → < 0.5.`
 
 function buildHeaders(cfg: VisionConfig): Record<string, string> {
   const headers: Record<string, string> = {
@@ -321,6 +371,7 @@ export interface VisionPromptOverrides {
   body?: string
   scale?: string
   nutrition_label?: string
+  equipment?: string
   other?: string
   classifier?: string
 }
@@ -387,6 +438,7 @@ export class GeminiVision {
       body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
       scale: cfg.prompts?.scale ?? SCALE_SYSTEM_PROMPT,
       nutrition_label: cfg.prompts?.nutrition_label ?? NUTRITION_LABEL_SYSTEM_PROMPT,
+      equipment: cfg.prompts?.equipment ?? EQUIPMENT_SYSTEM_PROMPT,
       other: cfg.prompts?.other ?? OTHER_SYSTEM_PROMPT,
       classifier: cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
     }
@@ -416,6 +468,7 @@ export class GeminiVision {
     if (txt.startsWith('meal')) return 'meal'
     if (txt.startsWith('body')) return 'body'
     if (txt.startsWith('scale')) return 'scale'
+    if (txt.startsWith('equipment')) return 'equipment'
     return 'other'
   }
 
@@ -433,7 +486,54 @@ export class GeminiVision {
     if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
     if (type === 'scale') return this.analyzeScale(imageUrl)
     if (type === 'nutrition_label') return this.analyzeNutritionLabel(imageUrl, options.userMessage)
+    if (type === 'equipment') return this.analyzeEquipment(imageUrl)
     return this.analyzeOther(imageUrl)
+  }
+
+  async analyzeEquipment(imageUrl: string): Promise<VisionEquipmentAnalysis> {
+    const start = Date.now()
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: 0.2,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: this.prompts.equipment },
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: imageUrl } }],
+        },
+      ],
+    })
+    const raw = completion.choices[0]?.message?.content ?? ''
+    const parsed = parseJsonLoose(raw) as {
+      equipment?: unknown
+      location?: unknown
+      confidence?: unknown
+      notes?: unknown
+    }
+    const equipmentList = Array.isArray(parsed.equipment)
+      ? parsed.equipment.filter((e): e is string => typeof e === 'string').slice(0, 30)
+      : []
+    const allowedLocations = ['academia_completa', 'academia_limitada', 'casa'] as const
+    const location =
+      typeof parsed.location === 'string' &&
+      (allowedLocations as readonly string[]).includes(parsed.location)
+        ? (parsed.location as (typeof allowedLocations)[number])
+        : null
+    const confidenceRaw = typeof parsed.confidence === 'number' ? parsed.confidence : 0
+    const confidence = Math.max(0, Math.min(1, confidenceRaw))
+    return {
+      type: 'equipment',
+      equipment: equipmentList,
+      location,
+      confidence,
+      notes: typeof parsed.notes === 'string' ? parsed.notes.slice(0, 300) : undefined,
+      raw_response: raw,
+      promptTokens: completion.usage?.prompt_tokens ?? 0,
+      completionTokens: completion.usage?.completion_tokens ?? 0,
+      latencyMs: Date.now() - start,
+    }
   }
 
   async analyzeMeal(imageUrl: string, userMessage?: string): Promise<VisionMealAnalysis> {

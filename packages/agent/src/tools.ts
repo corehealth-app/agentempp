@@ -2241,7 +2241,7 @@ export const geraDieta: ToolDefinition = {
     '"Quer que eu gere agora um cardápio personalizado pra você?". ' +
     'NÃO use quando ele só descreve o que come (isso é registra_refeicao). ' +
     'A dieta é referência (sugestão flexível), não rígida — paciente pode adaptar. ' +
-    'Modo "daily" = 1 dia. Modo "weekly" também é 1 dia hoje (variação semanal ainda não está completa). ' +
+    'Modo "daily" = 1 dia padrão (paciente repete/adapta). Modo "weekly" = 7 dias variados (mais completo, recomendado pra adesão). ' +
     'Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.',
   parameters: z.object({
     horizon: z

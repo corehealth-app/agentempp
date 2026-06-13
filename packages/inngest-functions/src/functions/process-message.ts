@@ -306,6 +306,20 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [tabela nutricional]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
             )
+          } else if (img.type === 'equipment') {
+            const confPct = (img.confidence * 100).toFixed(0)
+            const items = img.equipment.length > 0 ? img.equipment.join(', ') : '(nenhum item visível)'
+            const locLine = img.location ? `  local inferido: ${img.location}` : '  local: indeterminado'
+            // Guidance pro LLM: confirmar com paciente + perguntar dias/semana
+            // e nível antes de chamar gera_treino. NUNCA chamar a tool direto
+            // da foto (description da tool é clara sobre os 3 dados obrigatórios).
+            const guidance =
+              img.equipment.length > 0
+                ? `\n  ✅ AÇÃO: liste os equipamentos detectados PRO PACIENTE, pergunte (a) faltou algum? (b) quantos dias/semana topa treinar? (c) nível atual (iniciante/intermediario/avancado)? SÓ chame gera_treino DEPOIS das 3 confirmações.`
+                : `\n  ⚠️ AÇÃO: foto sem equipamentos visíveis ou pouco clara. Peça pro paciente listar os equipamentos por texto.`
+            blocks.push(
+              `${idx} [equipamentos de treino] (conf ${confPct}%):\n  detectados: ${items}\n${locLine}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
+            )
           } else {
             blocks.push(`${idx} [outra]:\n  ${img.description}`)
           }

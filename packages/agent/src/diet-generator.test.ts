@@ -34,7 +34,11 @@ const VALID_PROFILE: DietGeneratorInput = {
   },
 }
 
-function buildValidLLMOutput(totalKcalPerMeal: number, mealCount = 2): string {
+function buildValidLLMOutput(
+  totalKcalPerMeal: number,
+  mealCount = 2,
+  totalProteinPerMeal = 35,
+): string {
   const meals = Array.from({ length: mealCount }, (_, i) => ({
     meal_type: i === 0 ? 'cafe' : 'almoco',
     time_suggestion: i === 0 ? '07:30' : '12:30',
@@ -43,13 +47,13 @@ function buildValidLLMOutput(totalKcalPerMeal: number, mealCount = 2): string {
         food_name: 'ovo',
         quantity_g: 100,
         kcal: totalKcalPerMeal,
-        protein_g: 12,
+        protein_g: totalProteinPerMeal,
         carbs_g: 1,
         fat_g: 8,
       },
     ],
     total_kcal: totalKcalPerMeal,
-    total_protein_g: 12,
+    total_protein_g: totalProteinPerMeal,
   }))
   return JSON.stringify({
     daily_meals: meals,
@@ -228,6 +232,14 @@ describe('generateDietPlan — pipeline com mock LLM', () => {
     expect(result).toBeNull()
   })
 
+  it('rejeita drift de proteína > 20% mesmo com kcal OK (cobertura isolada)', async () => {
+    // 4 refeições × 450 kcal = 1800 (meta 1800, drift kcal 0%)
+    // 4 refeições × 10 g protein = 40g (meta 140g, drift protein 71%) → REJEITADO.
+    const llm = mockLLM(buildValidLLMOutput(450, 4, 10))
+    const result = await generateDietPlan(llm, mockSupabase, VALID_PROFILE)
+    expect(result).toBeNull()
+  })
+
   it('aceita drift dentro de ±15% da meta', async () => {
     // Meta = 1800. 4 refeições × 450 = 1800 → drift 0% → ACEITO.
     const llm = mockLLM(buildValidLLMOutput(450, 4))
@@ -304,14 +316,14 @@ describe('generateDietPlan — pipeline com mock LLM', () => {
     expect(result).toBeNull()
   })
 
-  it('aceita quando meta_kcal=0 (paciente sem meta ainda — não aplica drift)', async () => {
+  it('aceita quando meta_kcal=0 E meta_protein=0 (paciente sem metas — desliga drift)', async () => {
     const profileNoMeta = {
       ...VALID_PROFILE,
-      profile: { ...VALID_PROFILE.profile, meta_kcal: 0 },
+      profile: { ...VALID_PROFILE.profile, meta_kcal: 0, meta_protein_g: 0 },
     }
     const llm = mockLLM(buildValidLLMOutput(500, 2))
     const result = await generateDietPlan(llm, mockSupabase, profileNoMeta)
-    // Não rejeita por drift (meta=0 desliga check)
+    // Não rejeita por drift (ambas metas=0 desligam check)
     expect(result).not.toBeNull()
   })
 })

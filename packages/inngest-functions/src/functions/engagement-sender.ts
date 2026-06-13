@@ -430,6 +430,65 @@ async function maybeEngageUser(
     }
   }
 
+  // Sugestão de frase de continuidade do banco curado (Roberto 2026-06-13).
+  // LRU + sorteio entre as 20 menos usadas pra evitar repetição. Não força:
+  // LLM pode usar/adaptar/ignorar. Reduz custo de generation e mantém Roberto
+  // no controle do tom.
+  //
+  // SLOT MAPPING (review 4 medium):
+  //   - cafe_da_manha/meio_da_manha → ['morning', 'continuity', 'any']
+  //   - QUALQUER slot quando exerciseKcal > 0 → adiciona 'workout' (libera as 12
+  //     frases de movimento que ficavam órfãs antes)
+  //   - demais slots → ['continuity', 'any']
+  let motivationalSuggestion = ''
+  let pickedPhraseId: string | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sp = supabase as any
+    const eligibleSlots: string[] =
+      slot === 'cafe_da_manha' || slot === 'meio_da_manha'
+        ? ['morning', 'continuity', 'any']
+        : ['continuity', 'any']
+    if (typeof exerciseKcal === 'number' && exerciseKcal > 0) {
+      eligibleSlots.push('workout')
+    }
+    // Tiebreak por id quando last_used_at empata (jitter inicial já atenua,
+    // mas o tiebreak protege rotação após gerações futuras).
+    const { data: phrases } = await sp
+      .from('engagement_phrases')
+      .select('id, phrase, picked_count')
+      .eq('active', true)
+      .eq('language', userLanguage)
+      .in('slot', eligibleSlots)
+      .order('last_used_at', { ascending: true, nullsFirst: true })
+      .order('id', { ascending: true })
+      .limit(20)
+    const pool = (phrases ?? []) as Array<{ id: string; phrase: string; picked_count: number }>
+    if (pool.length > 0) {
+      // Sorteio entre top-5 LRU pra variar (não pegar sempre idx 0).
+      const picked = pool[Math.floor(Math.random() * Math.min(pool.length, 5))]
+      if (picked) {
+        motivationalSuggestion = picked.phrase
+        pickedPhraseId = picked.id
+        // Incrementa picked_count + atualiza last_used_at imediatamente.
+        // used_count fica pra depois (substring match no texto final do LLM).
+        await sp
+          .from('engagement_phrases')
+          .update({
+            picked_count: picked.picked_count + 1,
+            last_used_at: new Date().toISOString(),
+          })
+          .eq('id', picked.id)
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[engagement] falha ao buscar frase curada (segue sem):', err)
+  }
+  const motivationalLine = motivationalSuggestion
+    ? `\n\n💡 SUGESTÃO de frase de continuidade do banco curado do Roberto (use TEXTUALMENTE OU ADAPTE se encaixar naturalmente; se não couber no fluxo, ignore): "${motivationalSuggestion}"`
+    : ''
+
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
 ⚠️ IDIOMA DO PACIENTE: **${userLanguage}** (locale salvo). Responda nesse idioma. Não infira pelo timezone — paciente pode morar fora mas falar outra língua.
@@ -451,7 +510,7 @@ XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
 
-⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${blockCompletedHighlight}
+⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${blockCompletedHighlight}${motivationalLine}
 `.trim()
 
   const result = await llm.complete({
@@ -631,6 +690,31 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
         },
       })
     } else {
+      // Detecta se LLM aproveitou a sugestão do banco — incrementa used_count
+      // só quando substring significativa apareceu no texto final. Substring
+      // de 30 chars (~5-6 palavras) evita falso positivo por palavras comuns.
+      // Best-effort: falha silenciosa.
+      if (pickedPhraseId && motivationalSuggestion && text) {
+        const needle = motivationalSuggestion.slice(0, 30).toLowerCase()
+        const usedInText = needle.length >= 15 && text.toLowerCase().includes(needle)
+        if (usedInText) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const sp = supabase as any
+            const { data: cur } = await sp
+              .from('engagement_phrases')
+              .select('used_count')
+              .eq('id', pickedPhraseId)
+              .maybeSingle()
+            await sp
+              .from('engagement_phrases')
+              .update({ used_count: (cur?.used_count ?? 0) + 1 })
+              .eq('id', pickedPhraseId)
+          } catch {
+            // ignora
+          }
+        }
+      }
       const sendResults = await sendHumanized(messaging, wpp, text, {
         showTyping: false,
         minDelay: humanizer.min_delay_ms,

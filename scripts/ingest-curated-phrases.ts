@@ -76,9 +76,17 @@ async function main() {
   if (!token) throw new Error('SUPABASE_ACCESS_TOKEN não definido em env.')
   const projectRef = 'xuxehkhdvjivitduarvb'
 
-  const foodFile = JSON.parse(
+  const foodFileA = JSON.parse(
     readFileSync(resolve('scripts/data/curated-phrases-food.json'), 'utf-8'),
   ) as FoodFile
+  const foodFileB = JSON.parse(
+    readFileSync(resolve('scripts/data/curated-phrases-food-phase-b.json'), 'utf-8'),
+  ) as FoodFile
+  const foodFile: FoodFile = {
+    _language: foodFileA._language,
+    _curated_by: foodFileA._curated_by,
+    blocks: [...foodFileA.blocks, ...foodFileB.blocks],
+  }
   const engagementFile = JSON.parse(
     readFileSync(resolve('scripts/data/curated-phrases-engagement.json'), 'utf-8'),
   ) as EngagementFile
@@ -160,7 +168,7 @@ async function main() {
     })
     .join(',\n')
   await execSql(
-    `INSERT INTO engagement_phrases (phrase, slot, language, curated_by, active, usage_count) VALUES ${engagementValues};`,
+    `INSERT INTO engagement_phrases (phrase, slot, language, curated_by, active, picked_count) VALUES ${engagementValues};`,
     projectRef,
     token,
   )

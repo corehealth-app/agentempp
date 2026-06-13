@@ -150,6 +150,9 @@ export interface EduCommentOpts {
     kcal_pct?: number
     deficit_block_pct?: number
   }
+  /** Embeddings provider pra cascade semântica do curated-phrase selector.
+   * Quando ausente, selector usa só .eq() exato (degradação graciosa). */
+  embeddings?: { embed(text: string): Promise<number[]> }
 }
 
 export async function generateEducationalComment(
@@ -177,6 +180,7 @@ export async function generateEducationalComment(
         userId: opts.userId,
         state: opts.state,
         language: input.locale ?? 'pt-BR',
+        embeddings: opts.embeddings,
       })
       if (curated.phrase) {
         return curated.phrase

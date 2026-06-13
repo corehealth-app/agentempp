@@ -902,6 +902,9 @@ export async function processMessage(
             supabase: deps.supabase,
             userId,
             state: { protocol },
+            // Cascade semântica: resolve foods compostos (aveia em flocos,
+            // iogurte zero açúcar) via embedding similarity.
+            embeddings: deps.embeddings,
           },
         )
         if (eduComment) {

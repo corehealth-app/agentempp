@@ -35,6 +35,10 @@ export interface PhraseSelectorInput {
   }
   /** Idioma. */
   language?: string
+  /** Embeddings provider pra cascade semântica (opcional). Quando ausente,
+   * selector só usa .eq() exato — degradação graciosa. Quando presente e
+   * .eq() retorna vazio, faz similarity search via pgvector. */
+  embeddings?: { embed(text: string): Promise<number[]> }
 }
 
 export interface PhraseSelectorResult {
@@ -145,14 +149,19 @@ export async function selectCuratedPhrase(
   }
   const canonicalName = normalize(anchor.food_name)
   const language = input.language ?? 'pt-BR'
-  // Plural/singular tolerance: tenta variantes do nome canônico. DB armazena
-  // normalizado (lowercase, sem acento), então .in() com EQ é exato e usa
-  // index. Mais barato que ilike + cobre 'ovo'↔'ovos', etc.
+  // Cascade lookup (HIGH/Eduardo escolha estrutural):
+  //   1) .eq() exato com variantes plural/singular (fast path, 0 custo)
+  //   2) Se vazio, similarity via embedding (resolve "aveia em flocos" → "aveia")
+  // Audit empírico pós-deploy mostrou que meal_logs em prod usa nomes
+  // compostos ("X em flocos", "Y zero açúcar", "Z desnatado") enquanto
+  // Roberto entregou nomes-base. .eq() pegava 0 hits. Embeddings semânticos
+  // (text-embedding-3-large 1024d) distinguem polaridade (desnatado vs
+  // condensado têm distance significativa).
   const lookupVariants = generateLookupVariants(canonicalName)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sp = supabase as any
-  const { data: rows } = await sp
+  let { data: rows } = await sp
     .from('food_education_phrases')
     .select('id, phrase, tags, usage_count, last_used_at')
     .eq('active', true)
@@ -160,6 +169,36 @@ export async function selectCuratedPhrase(
     .in('food_canonical_name', lookupVariants)
     .order('last_used_at', { ascending: true, nullsFirst: true })
     .limit(50)
+
+  // Cascade 2: se .eq() vazio, busca semântica via RPC.
+  let matchedViaEmbedding = false
+  let embeddingSimilarity: number | null = null
+  if ((!rows || rows.length === 0) && input.embeddings) {
+    try {
+      const queryVec = await input.embeddings.embed(canonicalName)
+      // Threshold 0.80 calibrado empiricamente (audit Paulo's foods):
+      //  - 0.85 perdia 'aveia em flocos'→'aveia' (sim=0.844)
+      //  - 0.70 incluía 'leite desnatado'→'leite condensado' (polaridade errada!)
+      //  - 0.80 = sweet spot: pega variações de nome ('X picado',
+      //    'Y em flocos', 'Z zero açúcar') sem pegar substituições
+      //    semânticas que confundem polaridade ('grelhado' vs 'frito').
+      const { data: vecRows } = await sp.rpc('match_food_phrases', {
+        query_embedding: queryVec,
+        match_threshold: 0.8,
+        match_count: 50,
+        match_language: language,
+      })
+      if (vecRows && vecRows.length > 0) {
+        rows = vecRows
+        matchedViaEmbedding = true
+        embeddingSimilarity = (vecRows[0] as { similarity?: number })?.similarity ?? null
+      }
+    } catch (err) {
+      // Embedding falhou (timeout, sem credencial) — cai pro fallback Haiku
+      // eslint-disable-next-line no-console
+      console.warn('[curated-phrase] embedding cascade failed:', err)
+    }
+  }
 
   const candidates = ((rows ?? []) as Array<{
     id: string
@@ -271,10 +310,16 @@ export async function selectCuratedPhrase(
   // Restante: lowercase consistente
   finalPhrase = finalPhrase.replace(/\{alimento\}/gi, () => foodLower)
 
+  // reason inclui o caminho do match pra audit: 'selected' (exact) ou
+  // 'selected_embedding:0.84' (cascade semântica)
+  const reasonStr = matchedViaEmbedding
+    ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
+    : 'selected'
+
   return {
     phrase: finalPhrase,
     food_canonical_name: canonicalName,
     phrase_id: picked.id,
-    reason: 'selected',
+    reason: reasonStr,
   }
 }

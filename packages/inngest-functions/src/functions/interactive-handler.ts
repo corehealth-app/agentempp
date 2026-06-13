@@ -422,7 +422,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // 2-4 frases (microvitória → identidade → orientação) que entra
         // entre tabela e card. Degradação graciosa: se falhar/timeout,
         // segue sem comentário.
-        const { llm, supabase: deps2Supabase } = createWorkerDeps()
+        const { llm, supabase: deps2Supabase, embeddings: deps2Embeddings } = createWorkerDeps()
         const eduComment = await generateEducationalComment(
           llm,
           {
@@ -457,6 +457,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               protocol:
                 (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
             },
+            // Cascade semântica pra resolver foods compostos.
+            embeddings: deps2Embeddings,
           },
         )
 

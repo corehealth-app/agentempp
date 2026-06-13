@@ -1,0 +1,192 @@
+{
+  "_source": "Banco de educação alimentar.pdf — Roberto 2026-06-13 (FASE E: +15 frases × 8 blocos C+C2)",
+  "_curated_by": "roberto-2026-06-13",
+  "_language": "pt-BR",
+  "_note": "Combinada com A/B/C/C2/D = ~45 frases/bloco em 8 blocos prioritários. Total acumulado: ~80% do PDF.",
+  "blocks": [
+    {
+      "bloco_id": "ruim_fritos_imersao",
+      "polaridade": "ruim",
+      "categoria_label": "Fritos imersão (FASE E)",
+      "alimentos": ["batata frita", "frango frito", "nuggets", "coxinha", "pastel", "kibe frito", "bolinho de queijo", "mandioca frita", "polenta frita", "peixe frito", "torresmo", "onion rings", "salgados fritos", "banana frita", "aipim frito"],
+      "frases": [
+        "{alimento} é uma escolha bastante prazerosa para muitas pessoas. Como concentra calorias na gordura absorvida, vale dosar a frequência.",
+        "{alimento} ganha sabor extra durante a fritura, mas isso também eleva o impacto calórico da refeição.",
+        "{alimento} reúne fatores que aumentam a palatabilidade da preparação, principalmente pelo óleo absorvido.",
+        "{alimento} é uma opção saborosa que pode aparecer em ocasiões especiais sem comprometer o equilíbrio geral da alimentação.",
+        "{alimento} costuma ser um pedido recorrente justamente pela combinação de crocância externa e maciez interna que a fritura proporciona.",
+        "{alimento} apresenta valor calórico mais elevado quando comparado a preparações assadas ou grelhadas do mesmo alimento.",
+        "{alimento} costuma trazer satisfação imediata ao comer. Equilibrar com refeições mais leves no resto do dia ajuda no balanço calórico.",
+        "{alimento} é uma preparação que ganha apelo pela textura e pelo aroma, características intensificadas pelo método de cozimento em óleo.",
+        "{alimento} pode ser consumido sem problemas, desde que dentro de uma rotina alimentar variada e com atenção à frequência.",
+        "{alimento} concentra mais energia em pequenas porções por causa do óleo incorporado durante o preparo.",
+        "{alimento} costuma fazer parte de refeições mais descontraídas. Manter esse consumo ocasional é uma estratégia sustentável.",
+        "{alimento} é um alimento que merece atenção ao tamanho da porção, já que a fritura aumenta significativamente as calorias.",
+        "{alimento} traz uma experiência sensorial intensa ao paladar. Saber dosar a quantidade ajuda a manter o equilíbrio alimentar.",
+        "{alimento} é uma escolha comum em momentos sociais. Aproveitar nessas ocasiões sem culpa, mas com porção controlada, é uma boa estratégia.",
+        "{alimento} pode permanecer na alimentação sem necessidade de exclusão. A consciência do método de preparo já ajuda em escolhas futuras."
+      ]
+    },
+    {
+      "bloco_id": "ruim_doces_sobremesas",
+      "polaridade": "ruim",
+      "categoria_label": "Doces (FASE E)",
+      "alimentos": ["chocolate", "brigadeiro", "bolo", "pudim", "torta", "brownie", "cookie", "donut", "sonho", "rocambole", "paçoca", "pé de moleque", "bala", "caramelo", "doce de leite", "leite condensado", "bombom", "mousse", "pavê", "cheesecake"],
+      "frases": [
+        "{alimento} é um alimento altamente prazeroso e pode fazer parte da rotina alimentar quando consumido de forma consciente e equilibrada.",
+        "{alimento} apresenta uma combinação de sabor e textura que favorece o desejo por novas porções. Observar esse comportamento pode ajudar em escolhas mais conscientes.",
+        "{alimento} costuma ser associado a momentos felizes e comemorações. Aproveitar esses momentos sem exageros é uma forma saudável de manter equilíbrio.",
+        "{alimento} concentra muitas calorias em pequenas porções e tende a oferecer pouca saciedade. Por isso, reduzir um pouco a quantidade pode gerar um impacto positivo importante.",
+        "{alimento} desperta prazer imediato e isso faz parte da nossa biologia. Encontrar um equilíbrio entre satisfação e moderação costuma trazer resultados mais duradouros.",
+        "{alimento} pode ser apreciado sem culpa, mas lembrar que ele fornece muita energia e pouca saciedade ajuda a fazer escolhas mais conscientes.",
+        "{alimento} faz parte das escolhas favoritas de muitas pessoas, e isso é completamente esperado. Saber dosar a quantidade é mais eficiente que evitar totalmente.",
+        "{alimento} costuma estar presente em ocasiões especiais. Manter esse consumo planejado favorece uma relação saudável com a alimentação.",
+        "{alimento} estimula naturalmente os mecanismos de recompensa do cérebro. Reconhecer esse efeito ajuda a evitar o consumo automático.",
+        "{alimento} costuma agradar bastante pelo sabor doce. Saborear pequenas porções devagar pode trazer mais prazer do que consumir grandes quantidades rapidamente.",
+        "{alimento} pode fazer parte de uma alimentação equilibrada quando a frequência é controlada. Tudo é uma questão de balanço.",
+        "{alimento} é um alimento que entrega muito sabor em poucas mordidas. Aproveitá-lo com calma costuma ser mais satisfatório.",
+        "{alimento} oferece prazer ao paladar, mas o consumo frequente pode dificultar o controle calórico ao longo do tempo.",
+        "{alimento} pode ser uma escolha consciente em dias especiais. Aproveitar com moderação mantém o equilíbrio sem privação excessiva.",
+        "{alimento} é uma escolha que envolve mais emoção do que necessidade nutricional. Reconhecer isso ajuda a fazer escolhas mais alinhadas com seus objetivos."
+      ]
+    },
+    {
+      "bloco_id": "ruim_bebidas_adocadas",
+      "polaridade": "ruim",
+      "categoria_label": "Bebidas adoçadas (FASE E)",
+      "alimentos": ["refrigerante", "suco industrializado", "néctar", "achocolatado", "milkshake", "energético", "chá adoçado", "café com açúcar", "cappuccino adoçado", "vitamina adoçada"],
+      "frases": [
+        "{alimento} costuma agradar pelo sabor marcante, mas substituir parte do consumo por água pode ser uma das maneiras mais simples de reduzir calorias sem alterar muito a rotina.",
+        "{alimento} pode parecer uma pequena escolha, porém hábitos repetidos diariamente têm grande impacto na alimentação ao longo do tempo.",
+        "{alimento} oferece prazer ao paladar, mas bebidas adoçadas normalmente contribuem pouco para controlar a fome. Equilibrar sua frequência pode ser uma boa estratégia.",
+        "{alimento} pode ser consumida sem culpa em ocasiões especiais, mas fazer da água sua bebida principal tende a favorecer melhores resultados no longo prazo.",
+        "{alimento} é uma escolha que muitas pessoas apreciam. Apenas lembre-se de que calorias líquidas costumam gerar pouca saciedade.",
+        "{alimento} é refrescante e saborosa, mas as calorias presentes nessa bebida tendem a oferecer pouca saciedade. Priorizar água pode facilitar o controle da alimentação.",
+        "{alimento} costuma ser escolhida pelo prazer que proporciona. Ainda assim, vale lembrar que bebidas adoçadas favorecem um consumo energético elevado com baixa capacidade de saciar.",
+        "{alimento} pode trazer uma sensação imediata de satisfação pelo sabor, mas dificilmente mantém essa sensação por muito tempo.",
+        "{alimento} oferece muito sabor em poucos goles, porém as calorias líquidas normalmente passam despercebidas.",
+        "{alimento} é uma bebida bastante popular, mas trocar algumas porções por água ao longo da semana já pode representar uma boa redução no consumo de calorias.",
+        "{alimento} costuma ser muito agradável ao paladar. Apesar disso, bebidas adoçadas oferecem baixa saciedade e podem aumentar o consumo energético diário.",
+        "{alimento} pode ser apreciada ocasionalmente, mas fazer da água sua principal bebida é uma estratégia simples para favorecer uma alimentação equilibrada.",
+        "{alimento} reúne sabor e praticidade, porém suas calorias líquidas dificilmente promovem a mesma sensação de plenitude que uma refeição nutritiva.",
+        "{alimento} pode fazer parte de momentos especiais, mas no dia a dia vale priorizar bebidas que hidratem sem acrescentar calorias desnecessárias.",
+        "{alimento} é uma bebida saborosa, porém a forma líquida faz com que suas calorias sejam consumidas rapidamente e com pouca influência sobre a saciedade."
+      ]
+    },
+    {
+      "bloco_id": "bom_legumes",
+      "polaridade": "bom",
+      "categoria_label": "Legumes (FASE E)",
+      "alimentos": ["brócolis", "couve-flor", "abobrinha", "chuchu", "berinjela", "cenoura", "pepino", "tomate", "quiabo", "vagem", "abóbora", "repolho"],
+      "frases": [
+        "{alimento} favorece uma alimentação mais equilibrada ao oferecer nutrientes importantes e contribuir para uma saciedade mais duradoura.",
+        "{alimento} é uma escolha que agrega qualidade nutricional à refeição e ajuda a construir hábitos alimentares mais saudáveis.",
+        "{alimento} demonstra uma ótima estratégia para montar pratos mais completos, volumosos e naturalmente mais saciantes.",
+        "{alimento} é um alimento que merece destaque por unir poucas calorias, grande volume e excelente qualidade nutricional.",
+        "{alimento} contribui para uma refeição mais rica em fibras, ajudando a prolongar a sensação de satisfação após comer.",
+        "{alimento} ajuda a aumentar o volume do prato de forma inteligente, permitindo refeições mais fartas sem excesso de calorias.",
+        "{alimento} é uma excelente forma de adicionar nutrientes importantes ao prato enquanto favorece uma alimentação mais equilibrada.",
+        "{alimento} oferece uma combinação muito interessante de fibras, vitaminas e minerais, contribuindo para refeições mais nutritivas e saciantes.",
+        "{alimento} é uma ótima escolha para quem deseja aumentar a qualidade da alimentação sem abrir mão de refeições saborosas e abundantes.",
+        "{alimento} ajuda a construir um prato com melhor densidade nutricional, oferecendo muitos benefícios para relativamente poucas calorias.",
+        "{alimento} favorece refeições mais completas e pode contribuir para um melhor controle da fome ao longo do dia graças ao seu alto volume.",
+        "{alimento} demonstra uma excelente escolha alimentar. Alimentos desse grupo costumam oferecer grande quantidade de nutrientes e poucas calorias.",
+        "{alimento} ajuda a criar refeições mais equilibradas, promovendo saciedade e aumentando a qualidade nutricional do prato de maneira natural.",
+        "{alimento} é uma escolha que demonstra cuidado com a alimentação, agregando volume e nutrição com baixa carga calórica.",
+        "{alimento} reúne características que tornam a refeição mais nutritiva sem aumentar significativamente a ingestão energética."
+      ]
+    },
+    {
+      "bloco_id": "bom_frutas",
+      "polaridade": "bom",
+      "categoria_label": "Frutas (FASE E)",
+      "alimentos": ["maçã", "pera", "laranja", "mexerica", "kiwi", "morango", "melão", "melancia", "mamão", "manga", "abacaxi", "ameixa", "pêssego"],
+      "frases": [
+        "{alimento} possui um perfil nutricional muito interessante e pode ser uma excelente estratégia para aumentar a saciedade de forma leve e saborosa.",
+        "{alimento} fornece nutrientes importantes e costuma ser uma alternativa mais nutritiva para satisfazer a vontade de consumir alimentos doces.",
+        "{alimento} ajuda a enriquecer a alimentação com vitaminas, minerais e fibras, favorecendo uma rotina alimentar mais equilibrada.",
+        "{alimento} é uma excelente forma de adicionar mais cor, sabor e nutrientes ao prato, contribuindo para uma alimentação variada.",
+        "{alimento} apresenta uma combinação de água e fibras que ajuda a aumentar o volume da alimentação sem acrescentar muitas calorias.",
+        "{alimento} é naturalmente doce e costuma agradar ao paladar enquanto oferece nutrientes importantes para o bom funcionamento do organismo.",
+        "{alimento} demonstra que escolhas simples podem trazer grandes benefícios, oferecendo saciedade e qualidade nutricional em uma única porção.",
+        "{alimento} contribui para uma alimentação rica em compostos protetores e fibras, favorecendo tanto a saúde quanto o controle da fome.",
+        "{alimento} é uma excelente alternativa para incluir mais alimentos naturais na rotina, promovendo variedade e equilíbrio alimentar.",
+        "{alimento} oferece nutrientes essenciais e costuma ser uma opção bastante interessante para complementar lanches e sobremesas de forma saudável.",
+        "{alimento} reúne características que favorecem uma alimentação prazerosa e nutritiva, ajudando a aumentar a ingestão de fibras no dia a dia.",
+        "{alimento} é uma escolha que combina sabor naturalmente doce com uma composição rica em vitaminas e fibras, favorecendo uma maior saciedade.",
+        "{alimento} pode ajudar você a sentir mais satisfação após as refeições graças à sua combinação de fibras, água e nutrientes importantes.",
+        "{alimento} representa uma forma inteligente de consumir algo doce enquanto fornece componentes importantes para uma alimentação equilibrada.",
+        "{alimento} é uma excelente opção para quem deseja aumentar a qualidade nutricional da alimentação de forma simples e saborosa."
+      ]
+    },
+    {
+      "bloco_id": "bom_ovos",
+      "polaridade": "bom",
+      "categoria_label": "Ovos (FASE E)",
+      "alimentos": ["ovo cozido", "ovo mexido", "omelete", "clara de ovo"],
+      "frases": [
+        "{alimento} é um aliado importante para quem deseja aumentar a ingestão de proteínas e manter uma alimentação mais equilibrada.",
+        "{alimento} costuma ser uma excelente escolha por combinar boa qualidade nutricional com alta capacidade de promover saciedade.",
+        "{alimento} ajuda a enriquecer nutricionalmente a refeição e favorece uma digestão mais lenta quando associado a fibras e vegetais.",
+        "{alimento} oferece proteínas essenciais para o organismo e pode contribuir para uma maior sensação de satisfação após a refeição.",
+        "{alimento} é uma ótima estratégia para aumentar a quantidade de proteína da refeição e favorecer o controle da fome.",
+        "{alimento} reúne características que o tornam um excelente alimento para compor refeições nutritivas, equilibradas e saciantes.",
+        "{alimento} contribui para refeições de maior qualidade nutricional, promovendo boa saciedade e auxiliando na manutenção muscular.",
+        "{alimento} é uma escolha que demonstra atenção à qualidade da alimentação, oferecendo proteína e favorecendo refeições mais completas.",
+        "{alimento} apresenta uma excelente relação proteína/caloria, característica que costuma facilitar o controle alimentar e aumentar a saciedade.",
+        "{alimento} é um alimento que vale a pena manter na rotina por oferecer proteína de qualidade e contribuir para refeições mais satisfatórias.",
+        "{alimento} ajuda a equilibrar a refeição ao fornecer proteínas importantes para a saúde e para o controle do apetite.",
+        "{alimento} faz parte de um padrão alimentar que favorece maior saciedade e melhor qualidade nutricional ao longo do dia.",
+        "{alimento} é uma excelente opção para quem busca refeições saborosas, nutritivas e capazes de promover uma sensação prolongada de satisfação.",
+        "{alimento} oferece um perfil nutricional muito interessante, sendo rico em proteínas e contribuindo para refeições mais equilibradas e saciantes.",
+        "{alimento} merece destaque por ser uma escolha nutritiva, rica em proteínas e capaz de aumentar a saciedade, ajudando você a construir uma alimentação equilibrada de forma simples e sustentável."
+      ]
+    },
+    {
+      "bloco_id": "bom_verduras",
+      "polaridade": "bom",
+      "categoria_label": "Verduras (FASE E)",
+      "alimentos": ["alface", "rúcula", "agrião", "espinafre", "acelga", "couve", "almeirão", "chicória", "escarola"],
+      "frases": [
+        "{alimento} aumenta o volume da refeição e favorece uma alimentação mais satisfatória sem adicionar muitas calorias.",
+        "{alimento} representa uma escolha que combina leveza, qualidade nutricional e auxílio na saciedade.",
+        "{alimento} é um excelente aliado para quem busca refeições mais nutritivas e naturalmente menos calóricas.",
+        "{alimento} fornece fibras e água em abundância, combinação que contribui para aumentar a sensação de saciedade.",
+        "{alimento} é uma ótima estratégia para deixar a refeição mais nutritiva, volumosa e equilibrada.",
+        "{alimento} faz parte de um grupo de alimentos que merece estar presente com frequência no prato devido à sua riqueza nutricional.",
+        "{alimento} contribui para uma alimentação mais variada, aumentando a oferta de vitaminas, minerais e compostos antioxidantes.",
+        "{alimento} ajuda a equilibrar a refeição ao fornecer grande volume com baixa quantidade de calorias.",
+        "{alimento} é uma escolha que favorece tanto a saúde quanto o controle da fome, graças ao seu teor de fibras e água.",
+        "{alimento} acrescenta qualidade nutricional ao prato e ajuda a prolongar a sensação de saciedade de forma natural.",
+        "{alimento} é uma excelente forma de enriquecer a alimentação e aumentar a variedade de nutrientes consumidos diariamente.",
+        "{alimento} demonstra uma escolha consciente, aumentando o volume e a qualidade da refeição sem elevar muito as calorias.",
+        "{alimento} oferece uma combinação muito interessante de fibras, vitaminas e minerais, contribuindo para refeições mais completas.",
+        "{alimento} é uma excelente estratégia para aumentar a densidade nutricional do prato mantendo baixa densidade calórica.",
+        "{alimento} mostra uma excelente estratégia alimentar: adicionar mais volume, fibras e nutrientes ao prato sem aumentar significativamente a ingestão de calorias."
+      ]
+    },
+    {
+      "bloco_id": "ruim_sorvetes",
+      "polaridade": "ruim",
+      "categoria_label": "Sorvetes (FASE E)",
+      "alimentos": ["sorvete", "gelato", "milkshake", "sundae", "casquinha", "picolé cremoso", "frozen dessert"],
+      "frases": [
+        "{alimento} costuma ser difícil de resistir, e isso é completamente natural. Consumir em porções menores pode ajudar a equilibrar prazer e saúde.",
+        "{alimento} oferece muito sabor e conforto, mas relativamente pouca saciedade. Pequenas reduções na quantidade podem trazer benefícios importantes.",
+        "{alimento} pode ser apreciado dentro de uma alimentação equilibrada. O segredo costuma estar mais na frequência e na porção do que na exclusão.",
+        "{alimento} é uma escolha muito saborosa e prazerosa. Apenas vale lembrar que pequenas porções já concentram uma quantidade significativa de calorias.",
+        "{alimento} apresenta uma combinação de açúcar e gordura que torna sua aceitação muito alta. Aproveitá-lo com consciência pode facilitar seus objetivos.",
+        "{alimento} costuma ser consumido em momentos especiais e pode continuar fazendo parte da rotina, desde que haja equilíbrio nas quantidades.",
+        "{alimento} entrega muito prazer ao paladar, mas tende a oferecer menos saciedade do que outras opções nutricionalmente mais completas.",
+        "{alimento} é um alimento que muitas pessoas apreciam justamente pela intensidade do sabor. Consumir com moderação permite aproveitar esse prazer de forma equilibrada.",
+        "{alimento} possui alta densidade energética, fornecendo muitas calorias em pouco volume. Esse é um bom motivo para prestar atenção às porções.",
+        "{alimento} pode parecer leve, mas concentra uma quantidade importante de energia. Consumir conscientemente ajuda no controle da alimentação.",
+        "{alimento} costuma ser uma excelente fonte de prazer, mas não de saciedade. Por isso, é comum sentir vontade de continuar consumindo.",
+        "{alimento} reúne características que estimulam naturalmente o apetite. Entender esse mecanismo ajuda a fazer escolhas mais conscientes.",
+        "{alimento} é altamente saboroso e isso faz parte de sua natureza. Equilibrar sua presença na rotina costuma ser mais sustentável do que tentar eliminá-lo.",
+        "{alimento} proporciona uma experiência muito agradável ao paladar, mas seu alto teor calórico merece atenção quando o objetivo é controlar o peso.",
+        "{alimento} é um alimento que costuma agradar facilmente por sua textura e sabor. Consumir porções moderadas pode ser suficiente para aproveitar esse momento."
+      ]
+    }
+  ]
+}

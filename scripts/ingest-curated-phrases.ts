@@ -90,6 +90,14 @@ async function main() {
   const foodFileC2 = JSON.parse(
     readFileSync(resolve('scripts/data/curated-phrases-food-phase-c2.json'), 'utf-8'),
   ) as FoodFile
+  // Fase D: +15 frases nos 12 blocos pendentes (chegar a 30/bloco em TODOS).
+  const foodFileD = JSON.parse(
+    readFileSync(resolve('scripts/data/curated-phrases-food-phase-d.json'), 'utf-8'),
+  ) as FoodFile
+  // Fase E: +15 frases nos 8 blocos C+C2 (chegar a 45/bloco em prioritários).
+  const foodFileE = JSON.parse(
+    readFileSync(resolve('scripts/data/curated-phrases-food-phase-e.json'), 'utf-8'),
+  ) as FoodFile
   const foodFile: FoodFile = {
     _language: foodFileA._language,
     _curated_by: foodFileA._curated_by,
@@ -98,34 +106,47 @@ async function main() {
       ...foodFileB.blocks,
       ...foodFileC.blocks,
       ...foodFileC2.blocks,
+      ...foodFileD.blocks,
+      ...foodFileE.blocks,
     ],
   }
   const engagementFile = JSON.parse(
     readFileSync(resolve('scripts/data/curated-phrases-engagement.json'), 'utf-8'),
   ) as EngagementFile
 
-  // Expandir cartesiano food. IMPORTANTE: bloco_id e polaridade vão em
-  // COLUNAS dedicadas (não em tags jsonb) — tags são reservadas pra
-  // STATE-tags filtradas pelo selector (recomp, protein_low, etc).
-  // Colocar metadata de bloco em tags fazia o filtro do selector eliminar
-  // todas as candidatas (review #4). Tags fica '{}' = frase universal.
+  // Expandir cartesiano food. Dedup via fingerprint (bloco+alimento+phrase)
+  // evita gravar linhas duplicadas quando fases copiaram a mesma frase
+  // (review HIGH: Fase D duplicou 15 frases da B; E duplicou 3). Sem dedup,
+  // selector ordena LRU e o paciente recebe a mesma string com IDs diferentes.
   const foodRows: Array<{
     food_canonical_name: string
     phrase: string
     bloco_id: string
     polaridade: string
   }> = []
+  const seenFingerprints = new Set<string>()
+  let duplicatasDescartadas = 0
   for (const block of foodFile.blocks) {
     for (const alimento of block.alimentos) {
+      const canonical = normalize(alimento)
       for (const frase of block.frases) {
+        const fingerprint = `${block.bloco_id}|${canonical}|${frase}`
+        if (seenFingerprints.has(fingerprint)) {
+          duplicatasDescartadas++
+          continue
+        }
+        seenFingerprints.add(fingerprint)
         foodRows.push({
-          food_canonical_name: normalize(alimento),
+          food_canonical_name: canonical,
           phrase: frase, // mantém {alimento} literal; selector substitui em runtime
           bloco_id: block.bloco_id,
           polaridade: block.polaridade,
         })
       }
     }
+  }
+  if (duplicatasDescartadas > 0) {
+    console.log(`[food] dedup: ${duplicatasDescartadas} duplicatas descartadas`)
   }
 
   console.log(`[food] cartesiano: ${foodRows.length} linhas (${foodFile.blocks.length} blocos)`)

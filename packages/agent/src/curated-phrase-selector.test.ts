@@ -13,6 +13,14 @@ function mockSupabase(rows: Array<{
   usage_count: number
   last_used_at: string | null
 }>): ServiceClient {
+  // Mock thenable chain pra .from('user_phrase_cooldown')...{select,eq,...}
+  const cooldownChain = {
+    select: () => cooldownChain,
+    eq: () => cooldownChain,
+    gte: () => cooldownChain,
+    in: async () => ({ data: [] }), // nenhuma frase em cooldown
+    upsert: async () => ({ data: null }), // upsert no-op
+  }
   const updateChain = {
     update: () => updateChain,
     eq: async () => ({ data: null }),
@@ -21,11 +29,16 @@ function mockSupabase(rows: Array<{
     select: () => selectChain,
     eq: () => selectChain,
     ilike: () => selectChain,
+    in: () => selectChain,
     order: () => selectChain,
     limit: async () => ({ data: rows }),
   }
   return {
-    from: (t: string) => (t === 'food_education_phrases' ? { ...selectChain, ...updateChain } : updateChain),
+    from: (t: string) => {
+      if (t === 'food_education_phrases') return { ...selectChain, ...updateChain }
+      if (t === 'user_phrase_cooldown') return cooldownChain
+      return updateChain
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any
 }
@@ -200,5 +213,88 @@ describe('selectCuratedPhrase — substitui {alimento}', () => {
     const result = await selectCuratedPhrase(supa, { userId: 'u-1', items: [] })
     expect(result.reason).toBe('no_anchor')
     expect(result.phrase).toBeNull()
+  })
+
+  it('retorna no_anchor quando TODOS items têm kcal=0 (água, chá puro)', async () => {
+    const supa = mockSupabase([])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [
+        { food_name: 'água', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+        { food_name: 'chá verde', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      ],
+    })
+    expect(result.reason).toBe('no_anchor')
+  })
+
+  it('ignora items com kcal=0 e escolhe anchor entre os scorables (azeite no salada)', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p',
+        phrase: '{alimento} é uma escolha saborosa.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [
+        { food_name: 'água', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+        { food_name: 'salada', kcal: 50, protein_g: 2, carbs_g: 10, fat_g: 0 },
+      ],
+    })
+    expect(result.phrase).toBe('Salada é uma escolha saborosa.')
+  })
+
+  it('capitaliza após pontuação inicial ("— {alimento}…")', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p',
+        phrase: '— {alimento} é uma escolha equilibrada.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'frango', kcal: 200, protein_g: 30, carbs_g: 0, fat_g: 8 }],
+    })
+    expect(result.phrase).toBe('— Frango é uma escolha equilibrada.')
+  })
+
+  it('capitaliza após aspas ("{alimento}…")', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p',
+        phrase: '"{alimento}" tem boa saciedade.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'ovo', kcal: 70, protein_g: 6, carbs_g: 0, fat_g: 5 }],
+    })
+    expect(result.phrase).toContain('Ovo')
+  })
+})
+
+describe('pickAnchorFood — filter kcal=0', () => {
+  it('retorna null quando TODOS items são kcal=0', () => {
+    expect(pickAnchorFood([
+      { food_name: 'água', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      { food_name: 'sal', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    ])).toBeNull()
+  })
+
+  it('filtra kcal=0 e retorna o melhor scorable', () => {
+    const r = pickAnchorFood([
+      { food_name: 'chá', kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      { food_name: 'arroz', kcal: 130, protein_g: 3, carbs_g: 28, fat_g: 0 },
+    ])
+    expect(r?.food_name).toBe('arroz')
   })
 })

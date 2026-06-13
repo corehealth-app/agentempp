@@ -463,10 +463,31 @@ async function maybeEngageUser(
       .order('last_used_at', { ascending: true, nullsFirst: true })
       .order('id', { ascending: true })
       .limit(20)
-    const pool = (phrases ?? []) as Array<{ id: string; phrase: string; picked_count: number }>
+    let pool = (phrases ?? []) as Array<{ id: string; phrase: string; picked_count: number }>
+    // Cooldown user×phrase (7 dias) — review high #3 do audit.
     if (pool.length > 0) {
-      // Sorteio entre top-5 LRU pra variar (não pegar sempre idx 0).
-      const picked = pool[Math.floor(Math.random() * Math.min(pool.length, 5))]
+      const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+      const phraseIds = pool.map((p) => p.id)
+      const { data: recent } = await sp
+        .from('user_phrase_cooldown')
+        .select('phrase_id')
+        .eq('user_id', userId)
+        .eq('phrase_table', 'engagement')
+        .gte('last_seen_at', cooldownSince)
+        .in('phrase_id', phraseIds)
+      const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
+      const notRecent = pool.filter((p) => !seenIds.has(p.id))
+      if (notRecent.length > 0) pool = notRecent
+    }
+    if (pool.length > 0) {
+      // Sorteio determinístico (review medium): retries inngest re-executam
+      // step.run em throw, Math.random pegaria frase diferente. Hash por
+      // (userId + slot + date) — mesma frase no retry, rotação por dia.
+      const dayKey = new Date().toISOString().slice(0, 10)
+      const seedStr = `${userId}|${slot}|${dayKey}`
+      let seed = 0
+      for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
+      const picked = pool[Math.abs(seed) % Math.min(pool.length, 5)]
       if (picked) {
         motivationalSuggestion = picked.phrase
         pickedPhraseId = picked.id
@@ -479,6 +500,16 @@ async function maybeEngageUser(
             last_used_at: new Date().toISOString(),
           })
           .eq('id', picked.id)
+        // Cooldown user×phrase (engagement)
+        await sp.from('user_phrase_cooldown').upsert(
+          {
+            user_id: userId,
+            phrase_table: 'engagement',
+            phrase_id: picked.id,
+            last_seen_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,phrase_table,phrase_id' },
+        )
       }
     }
   } catch (err) {
@@ -652,6 +683,31 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   let contentType: 'text' | 'audio' = 'text'
   let ttsMediaId: string | undefined
 
+  // Detecta se LLM aproveitou a sugestão curada — ANTES do branch
+  // audio/texto (review low: detector estava só no else=texto, ~25% das
+  // execuções com audio_probability default subestimavam used_count).
+  if (pickedPhraseId && motivationalSuggestion && text) {
+    const needle = motivationalSuggestion.slice(0, 30).toLowerCase()
+    const usedInText = needle.length >= 15 && text.toLowerCase().includes(needle)
+    if (usedInText) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sp = supabase as any
+        const { data: cur } = await sp
+          .from('engagement_phrases')
+          .select('used_count')
+          .eq('id', pickedPhraseId)
+          .maybeSingle()
+        await sp
+          .from('engagement_phrases')
+          .update({ used_count: (cur?.used_count ?? 0) + 1 })
+          .eq('id', pickedPhraseId)
+      } catch {
+        // ignora
+      }
+    }
+  }
+
   try {
     if (sendAsAudio) {
       contentType = 'audio'
@@ -690,31 +746,6 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
         },
       })
     } else {
-      // Detecta se LLM aproveitou a sugestão do banco — incrementa used_count
-      // só quando substring significativa apareceu no texto final. Substring
-      // de 30 chars (~5-6 palavras) evita falso positivo por palavras comuns.
-      // Best-effort: falha silenciosa.
-      if (pickedPhraseId && motivationalSuggestion && text) {
-        const needle = motivationalSuggestion.slice(0, 30).toLowerCase()
-        const usedInText = needle.length >= 15 && text.toLowerCase().includes(needle)
-        if (usedInText) {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const sp = supabase as any
-            const { data: cur } = await sp
-              .from('engagement_phrases')
-              .select('used_count')
-              .eq('id', pickedPhraseId)
-              .maybeSingle()
-            await sp
-              .from('engagement_phrases')
-              .update({ used_count: (cur?.used_count ?? 0) + 1 })
-              .eq('id', pickedPhraseId)
-          } catch {
-            // ignora
-          }
-        }
-      }
       const sendResults = await sendHumanized(messaging, wpp, text, {
         showTyping: false,
         minDelay: humanizer.min_delay_ms,

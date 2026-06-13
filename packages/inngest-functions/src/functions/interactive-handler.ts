@@ -422,31 +422,43 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // 2-4 frases (microvitória → identidade → orientação) que entra
         // entre tabela e card. Degradação graciosa: se falhar/timeout,
         // segue sem comentário.
-        const { llm } = createWorkerDeps()
-        const eduComment = await generateEducationalComment(llm, {
-          kind:
-            proposal.kind === 'workout'
-              ? 'treino'
-              : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
-          items:
-            proposal.kind !== 'workout'
-              ? (mealToolResult?.meal?.items as EduCommentInput['items']) ?? undefined
-              : undefined,
-          totals:
-            proposal.kind !== 'workout'
-              ? (mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined
-              : undefined,
-          workout:
-            proposal.kind === 'workout'
-              ? {
-                  type: proposal.workoutType ?? 'treino',
-                  durationMin: proposal.durationMin,
-                  kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
-                }
-              : undefined,
-          protocol:
-            (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
-        })
+        const { llm, supabase: deps2Supabase } = createWorkerDeps()
+        const eduComment = await generateEducationalComment(
+          llm,
+          {
+            kind:
+              proposal.kind === 'workout'
+                ? 'treino'
+                : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
+            items:
+              proposal.kind !== 'workout'
+                ? (mealToolResult?.meal?.items as EduCommentInput['items']) ?? undefined
+                : undefined,
+            totals:
+              proposal.kind !== 'workout'
+                ? (mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined
+                : undefined,
+            workout:
+              proposal.kind === 'workout'
+                ? {
+                    type: proposal.workoutType ?? 'treino',
+                    durationMin: proposal.durationMin,
+                    kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
+                  }
+                : undefined,
+            protocol:
+              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+          },
+          {
+            // ATIVA curated-phrase path (review CRITICAL).
+            supabase: deps2Supabase,
+            userId,
+            state: {
+              protocol:
+                (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+            },
+          },
+        )
 
         let text = textBase
         if (eduComment) {

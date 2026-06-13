@@ -877,23 +877,33 @@ export async function processMessage(
         const protocol =
           (ctx.profile.currentProtocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ??
           null
-        const eduComment = await generateEducationalComment(deps.llm, {
-          kind: registrations[0]?.tool === 'registra_treino'
-            ? 'treino'
-            : (registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro',
-          items: registrations[0]?.items as EduCommentInput['items'],
-          totals: registrations[0]?.totals,
-          workout:
-            registrations[0]?.tool === 'registra_treino'
-              ? {
-                  type: registrations[0]?.workoutType ?? 'treino',
-                  durationMin: registrations[0]?.durationMin,
-                  kcalBurned: registrations[0]?.kcalBurned ?? 0,
-                }
-              : undefined,
-          protocol,
-          locale: ctx.locale,
-        })
+        const eduComment = await generateEducationalComment(
+          deps.llm,
+          {
+            kind: registrations[0]?.tool === 'registra_treino'
+              ? 'treino'
+              : (registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro',
+            items: registrations[0]?.items as EduCommentInput['items'],
+            totals: registrations[0]?.totals,
+            workout:
+              registrations[0]?.tool === 'registra_treino'
+                ? {
+                    type: registrations[0]?.workoutType ?? 'treino',
+                    durationMin: registrations[0]?.durationMin,
+                    kcalBurned: registrations[0]?.kcalBurned ?? 0,
+                  }
+                : undefined,
+            protocol,
+            locale: ctx.locale,
+          },
+          {
+            // ATIVA curated-phrase path (review CRITICAL: sem isso fica
+            // dead code e Haiku é sempre chamado).
+            supabase: deps.supabase,
+            userId,
+            state: { protocol },
+          },
+        )
         if (eduComment) {
           // Insere ANTES do card (marker "🔥 Consumido:") pra ficar entre
           // tabela e card — mesma posição que o LLM antigo usava. Marca o

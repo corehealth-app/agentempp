@@ -1,0 +1,191 @@
+{
+  "_source": "Banco de educação alimentar.pdf — Roberto 2026-06-13 (FASE C2: +15 frases por bloco — restantes)",
+  "_curated_by": "roberto-2026-06-13",
+  "_language": "pt-BR",
+  "blocks": [
+    {
+      "bloco_id": "ruim_sorvetes",
+      "polaridade": "ruim",
+      "categoria_label": "Sorvetes (continuação)",
+      "alimentos": ["sorvete", "gelato", "milkshake", "sundae", "casquinha", "picolé cremoso", "frozen dessert"],
+      "frases": [
+        "{alimento} costuma ser difícil de consumir em pequenas quantidades justamente por sua combinação de sabores e textura. Observar a porção pode ser uma estratégia simples.",
+        "{alimento} é extremamente saboroso, mas também fornece muitas calorias antes mesmo de gerar saciedade. Consumir com moderação costuma ser uma boa estratégia.",
+        "{alimento} é um daqueles alimentos que costumam trazer muito prazer ao comer. Justamente por isso, vale observar a frequência e a porção consumida.",
+        "{alimento} apresenta alta densidade calórica, oferecendo muita energia em pequenas quantidades.",
+        "{alimento} tende a estimular o desejo por mais algumas colheradas ou porções. Esse efeito é comum e faz parte das características desse tipo de alimento.",
+        "{alimento} reúne ingredientes que naturalmente aumentam seu sabor e sua atratividade. Consumir de forma consciente é uma excelente estratégia.",
+        "{alimento} costuma ser muito apreciado justamente pela combinação de cremosidade e sabor doce.",
+        "{alimento} fornece bastante prazer ao paladar, mas relativamente pouca saciedade em relação às calorias ingeridas. Vale a pena aproveitar sem exageros.",
+        "{alimento} é um alimento que pode ser apreciado sem restrições rígidas, mas por possuir muitas calorias, merece atenção às porções.",
+        "{alimento} costuma ser muito saboroso e agradável, o que torna fácil consumir quantidades maiores do que o necessário.",
+        "{alimento} é uma opção que desperta prazer imediato, mas tende a saciar menos do que alimentos ricos em proteínas e fibras.",
+        "{alimento} oferece uma combinação de sabores que naturalmente incentiva o consumo. Moderação continua sendo uma das melhores estratégias.",
+        "{alimento} costuma entregar muito sabor em poucas colheradas, mas também concentra muitas calorias.",
+        "{alimento} ativa mecanismos naturais de recompensa do cérebro, tornando sua experiência muito prazerosa. Isso explica por que é comum querer repetir.",
+        "{alimento} combina ingredientes que favorecem o prazer ao comer, mas também aumentam sua densidade calórica."
+      ]
+    },
+    {
+      "bloco_id": "ruim_alta_densidade_calorica",
+      "polaridade": "ruim",
+      "categoria_label": "Alta densidade calórica (continuação)",
+      "alimentos": ["óleo", "azeite", "manteiga", "margarina", "farofa", "castanhas", "amendoim", "pasta de amendoim", "nozes", "amêndoas", "coco seco", "nutella", "leite condensado", "chantilly"],
+      "frases": [
+        "{alimento} costuma ser consumido com facilidade justamente por ser muito saboroso. Como também é bastante calórico, pequenas reduções na quantidade podem gerar benefícios importantes.",
+        "A alta densidade calórica de {alimento} faz com que poucas porções já forneçam bastante energia. Consumir de forma consciente é uma maneira simples de manter uma alimentação equilibrada.",
+        "É natural sentir vontade de consumir {alimento}. Seu sabor costuma ser marcante, mas sua concentração de calorias também merece atenção. Ajustar as porções pode fazer diferença.",
+        "Muitos alimentos muito saborosos, como {alimento}, também apresentam alta densidade calórica. Aproveitá-los com moderação permite desfrutar do sabor sem exageros.",
+        "{alimento} concentra bastante energia em pequenas quantidades, característica que o torna muito prazeroso ao paladar.",
+        "Pequenas quantidades de {alimento} já podem representar uma parcela significativa das calorias da refeição.",
+        "Consumir {alimento} pode fazer parte de uma alimentação saudável. Apenas vale lembrar que seu alto teor calórico faz com que pequenas porções sejam suficientes para aproveitar seu sabor.",
+        "Alimentos como {alimento} são naturalmente mais concentrados em calorias. Ter atenção às quantidades costuma ser mais eficiente do que tentar eliminá-los da alimentação.",
+        "É comum consumir {alimento} rapidamente, já que costuma ser muito saboroso. Como fornece muitas calorias em pouco volume, consumir com atenção pode favorecer melhores escolhas.",
+        "{alimento} reúne sabor e praticidade, mas também concentra bastante energia em pequenas quantidades. O controle das porções é uma excelente estratégia.",
+        "Pequenas porções de {alimento} já entregam muito sabor e também muitas calorias. Consumir conscientemente permite aproveitar o alimento mantendo uma alimentação equilibrada.",
+        "{alimento} costuma agradar bastante ao paladar, mas sua alta densidade calórica faz com que pequenas quantidades já representem um consumo energético importante.",
+        "O sabor intenso de {alimento} explica sua popularidade. Como concentra muitas calorias, observar a quantidade consumida pode facilitar o alcance dos seus objetivos.",
+        "Aproveitar {alimento} faz parte de uma alimentação prazerosa. Apenas vale lembrar que seu elevado valor calórico torna interessante consumir com moderação.",
+        "{alimento} combina muito sabor com alta concentração de calorias. Encontrar equilíbrio na frequência e na quantidade costuma ser uma excelente estratégia."
+      ]
+    },
+    {
+      "bloco_id": "ruim_carb_refinados",
+      "polaridade": "ruim",
+      "categoria_label": "Carb refinados (continuação)",
+      "alimentos": ["arroz branco", "pão francês", "pão branco", "macarrão tradicional", "tapioca", "cuscuz refinado", "torradas", "biscoito água e sal", "cream cracker", "farinha branca"],
+      "frases": [
+        "Refeições contendo {alimento} tendem a ficar ainda melhores quando incluem boas fontes de proteína e fibras, favorecendo maior equilíbrio nutricional.",
+        "{alimento} é uma escolha comum e faz parte da cultura alimentar de muitas famílias. Acrescentar vegetais e proteínas pode tornar essa refeição ainda mais completa.",
+        "{alimento} pode contribuir para uma alimentação equilibrada quando consumido dentro de um prato variado e rico em diferentes grupos alimentares.",
+        "Uma refeição com {alimento} costuma oferecer melhores resultados quando acompanhada por alimentos ricos em proteína e fibras, promovendo saciedade prolongada.",
+        "{alimento} pode ser consumido tranquilamente. Para aumentar o tempo de saciedade, experimente combiná-lo com carnes magras, ovos ou leguminosas.",
+        "O equilíbrio é o que faz diferença. {alimento} associado a proteínas e vegetais tende a compor refeições mais nutritivas e satisfatórias.",
+        "{alimento} fornece energia importante para o organismo. Quando faz parte de uma refeição completa, contribui para uma alimentação saudável e equilibrada.",
+        "Não é necessário excluir {alimento}. Pequenos ajustes, como incluir saladas e proteínas, costumam melhorar bastante a qualidade da refeição.",
+        "{alimento} pode permanecer no cardápio. Combinar diferentes grupos alimentares é uma estratégia simples para aumentar a saciedade e favorecer escolhas mais equilibradas.",
+        "Refeições contendo {alimento} ficam ainda mais completas quando incluem fibras e proteínas, ajudando a reduzir a fome nas horas seguintes.",
+        "{alimento} pode fazer parte dos seus hábitos alimentares. Apenas lembre-se de que proteínas e vegetais são grandes aliados para tornar a refeição mais satisfatória.",
+        "Acrescentar legumes, verduras e proteínas à refeição onde aparece {alimento} pode ajudar a prolongar a sensação de saciedade.",
+        "{alimento} é um alimento versátil e presente em diversas culturas. Quando combinado com proteínas e fibras, tende a oferecer uma experiência alimentar ainda mais completa.",
+        "Uma refeição equilibrada vai muito além de um único alimento. Se houver {alimento} no prato, incluir proteínas e vegetais pode ser uma excelente estratégia.",
+        "Equilibrar {alimento} com alimentos ricos em proteína e fibras favorece uma digestão mais lenta e uma saciedade mais prolongada."
+      ]
+    },
+    {
+      "bloco_id": "ruim_fast_food_ultrapalataveis",
+      "polaridade": "ruim",
+      "categoria_label": "Fast food (continuação)",
+      "alimentos": ["pizza", "hambúrguer", "cheeseburger", "cachorro-quente", "lasanha industrializada", "salgados", "chips", "doritos", "cheetos", "nachos", "sanduíches de fast food"],
+      "frases": [
+        "{alimento} é naturalmente muito atrativo ao paladar e costuma despertar vontade de repetir. Conhecer essa característica ajuda a fazer escolhas mais conscientes sem precisar abrir mão do alimento.",
+        "{alimento} foi pensado para proporcionar máximo sabor, tornando fácil consumir grandes porções. Pequenos ajustes na quantidade podem trazer benefícios importantes sem reduzir o prazer da refeição.",
+        "{alimento} faz parte daqueles alimentos que despertam muito prazer ao comer. Por isso, é comum que a quantidade consumida seja maior do que a planejada.",
+        "{alimento} combina diferentes estímulos sensoriais que tornam a refeição especialmente agradável. Essa característica aumenta a chance de consumir calorias além da necessidade.",
+        "{alimento} é uma opção muito saborosa e faz sentido que desperte tanto interesse. Apenas vale lembrar que alimentos muito palatáveis costumam facilitar o consumo excessivo quando não há atenção às quantidades.",
+        "{alimento} costuma agradar justamente porque reúne sabores intensos e texturas marcantes.",
+        "{alimento} proporciona uma experiência gastronômica muito prazerosa. Por esse motivo, é comum que a saciedade demore a ser percebida.",
+        "{alimento} estimula fortemente o prazer ao comer e isso explica sua popularidade. Ao mesmo tempo, essa característica pode favorecer o consumo além da fome.",
+        "{alimento} reúne ingredientes que ativam intensamente nossos sentidos durante a refeição. Essa combinação torna importante observar a quantidade consumida para evitar excessos.",
+        "{alimento} costuma ser uma escolha que traz muito prazer ao paladar. Justamente por isso, pequenas porções já podem ser suficientes para aproveitar seu sabor.",
+        "{alimento} é um exemplo de alimento altamente palatável, capaz de estimular o consumo rápido e em grandes quantidades. Comer devagar pode favorecer uma melhor percepção da saciedade.",
+        "{alimento} chama atenção pelo sabor marcante e pela textura agradável. Essas características tornam importante consumir com moderação para manter uma alimentação equilibrada.",
+        "{alimento} desperta prazer imediato ao comer e faz parte dos alimentos mais atrativos para muitas pessoas.",
+        "{alimento} costuma oferecer uma combinação intensa de sabores, favorecendo o desejo de continuar comendo.",
+        "{alimento} reúne elementos que estimulam naturalmente o sistema de recompensa do cérebro. Isso torna comum consumir mais do que o planejado."
+      ]
+    },
+    {
+      "bloco_id": "bom_ovos",
+      "polaridade": "bom",
+      "categoria_label": "Ovos (continuação)",
+      "alimentos": ["ovo cozido", "ovo mexido", "omelete", "clara de ovo"],
+      "frases": [
+        "{alimento} é uma escolha que merece destaque por contribuir para refeições mais nutritivas, equilibradas e com maior poder de saciedade.",
+        "{alimento} é uma escolha que favorece a saciedade e pode ajudar a reduzir a vontade de beliscar entre as refeições.",
+        "{alimento} oferece proteínas de alta qualidade, nutriente essencial para manutenção muscular e para uma alimentação mais satisfatória.",
+        "{alimento} costuma ser uma excelente opção para quem deseja refeições mais completas sem consumir calorias em excesso.",
+        "{alimento} ajuda a construir refeições equilibradas ao fornecer proteína de qualidade e promover maior sensação de plenitude após comer.",
+        "{alimento} é uma alternativa inteligente para aumentar a saciedade da refeição e melhorar sua qualidade nutricional.",
+        "{alimento} combina excelente valor nutricional com uma boa capacidade de controlar a fome ao longo do dia.",
+        "{alimento} faz parte de um grupo de alimentos que ajudam a tornar a alimentação mais nutritiva e naturalmente mais saciante.",
+        "{alimento} fornece proteínas importantes para preservar a massa muscular e favorecer uma sensação prolongada de satisfação.",
+        "{alimento} é uma escolha simples, prática e rica em proteínas, contribuindo para refeições mais equilibradas.",
+        "{alimento} oferece uma combinação interessante de nutrição e saciedade, sendo um ótimo aliado para quem busca melhorar a qualidade da alimentação.",
+        "{alimento} ajuda a tornar a refeição mais completa e nutritiva, favorecendo uma sensação de saciedade que pode durar por mais tempo.",
+        "{alimento} apresenta uma excelente qualidade nutricional e costuma ser uma ótima opção para compor refeições equilibradas.",
+        "{alimento} representa uma escolha muito interessante por oferecer proteína de qualidade e ajudar no controle natural da fome.",
+        "{alimento} favorece refeições mais nutritivas e equilibradas, ajudando a promover saciedade sem necessidade de grandes volumes de comida."
+      ]
+    },
+    {
+      "bloco_id": "bom_verduras",
+      "polaridade": "bom",
+      "categoria_label": "Verduras (continuação)",
+      "alimentos": ["alface", "rúcula", "agrião", "espinafre", "acelga", "couve", "almeirão", "chicória", "escarola"],
+      "frases": [
+        "{alimento} faz parte de um grupo de alimentos que combina grande volume com poucas calorias, favorecendo refeições mais satisfatórias.",
+        "{alimento} é uma ótima escolha para complementar o prato e aumentar sua qualidade nutricional sem elevar muito o valor energético.",
+        "{alimento} contribui para uma alimentação rica em vitaminas, minerais e fibras, tornando a refeição mais completa.",
+        "{alimento} ajuda a aumentar naturalmente o volume do prato, estratégia que pode favorecer maior saciedade durante a refeição.",
+        "{alimento} oferece muitos benefícios nutricionais enquanto mantém baixo teor calórico, tornando-se uma excelente opção para o dia a dia.",
+        "{alimento} é uma escolha que favorece refeições mais equilibradas, volumosas e nutricionalmente completas.",
+        "{alimento} fornece fibras que auxiliam na saciedade e contribuem para uma alimentação de melhor qualidade.",
+        "{alimento} é um ingrediente que acrescenta valor nutricional à refeição praticamente sem aumentar a quantidade de calorias.",
+        "{alimento} ajuda a tornar o prato mais nutritivo e volumoso, facilitando uma alimentação equilibrada e prazerosa.",
+        "{alimento} demonstra uma excelente estratégia alimentar: aumentar a qualidade nutricional da refeição sem aumentar significativamente as calorias.",
+        "{alimento} é uma ótima opção para compor refeições leves, nutritivas e capazes de promover boa saciedade.",
+        "{alimento} faz parte dos alimentos que oferecem muito volume e diversos nutrientes importantes com baixo valor calórico.",
+        "{alimento} contribui para refeições mais completas e equilibradas ao fornecer fibras e micronutrientes essenciais.",
+        "{alimento} é uma excelente forma de enriquecer a refeição, trazendo mais volume, fibras e nutrientes importantes.",
+        "{alimento} ajuda a construir um prato mais colorido, variado e rico em compostos benéficos para a saúde."
+      ]
+    },
+    {
+      "bloco_id": "bom_frutas",
+      "polaridade": "bom",
+      "categoria_label": "Frutas (continuação)",
+      "alimentos": ["maçã", "pera", "laranja", "mexerica", "kiwi", "morango", "melão", "melancia", "mamão", "manga", "abacaxi", "ameixa", "pêssego"],
+      "frases": [
+        "{alimento} é uma ótima maneira de incluir vitaminas e compostos antioxidantes na alimentação, contribuindo para uma rotina alimentar mais variada e nutritiva.",
+        "{alimento} é uma escolha que combina praticidade, sabor e benefícios nutricionais. Sua composição favorece uma alimentação equilibrada e rica em nutrientes.",
+        "{alimento} pode ajudar a tornar sua alimentação mais leve e nutritiva, oferecendo fibras, vitaminas e uma doçura natural que costuma agradar ao paladar.",
+        "{alimento} é uma excelente opção para enriquecer a alimentação com nutrientes importantes sem adicionar grandes quantidades de calorias.",
+        "{alimento} demonstra que é possível cuidar da alimentação sem abrir mão do prazer de comer algo saboroso. Suas fibras contribuem para maior saciedade ao longo do dia.",
+        "{alimento} fornece nutrientes importantes e costuma gerar uma sensação de satisfação superior à de muitos doces industrializados.",
+        "{alimento} é naturalmente rica em compostos que favorecem uma alimentação equilibrada, além de contribuir para uma maior sensação de saciedade.",
+        "{alimento} ajuda a compor refeições mais nutritivas e pode ser uma excelente estratégia para incluir mais fibras e vitaminas na rotina.",
+        "{alimento} alia sabor e valor nutricional em uma única escolha, oferecendo nutrientes importantes e favorecendo uma alimentação mais equilibrada.",
+        "{alimento} possui características que ajudam a prolongar a saciedade e podem facilitar o controle da fome entre as refeições.",
+        "{alimento} representa uma excelente forma de consumir algo doce de maneira natural, aproveitando ao mesmo tempo fibras, vitaminas e antioxidantes.",
+        "{alimento} é uma ótima opção para quem busca mais qualidade nutricional sem abrir mão do sabor.",
+        "{alimento} oferece um equilíbrio interessante entre sabor e saciedade, tornando-se uma excelente aliada para uma alimentação mais saudável.",
+        "{alimento} pode contribuir para refeições mais completas graças à presença de fibras, vitaminas e compostos bioativos naturalmente presentes na fruta.",
+        "{alimento} é uma escolha que une prazer e nutrição."
+      ]
+    },
+    {
+      "bloco_id": "bom_legumes",
+      "polaridade": "bom",
+      "categoria_label": "Legumes (continuação)",
+      "alimentos": ["brócolis", "couve-flor", "abobrinha", "chuchu", "berinjela", "cenoura", "pepino", "tomate", "quiabo", "vagem", "abóbora", "repolho"],
+      "frases": [
+        "{alimento} faz parte de uma estratégia muito inteligente para quem busca emagrecer: aumentar o volume da refeição com alimentos leves e nutritivos.",
+        "{alimento} é uma escolha que favorece a saciedade, pois ocupa espaço no prato e no estômago sem concentrar muitas calorias.",
+        "{alimento} é um aliado importante para quem deseja comer bem sem exagerar nas calorias, graças à sua baixa densidade energética.",
+        "{alimento} permite aumentar o tamanho da refeição mantendo um bom equilíbrio entre volume e calorias.",
+        "{alimento} fornece fibras que contribuem para uma digestão mais lenta e uma sensação de satisfação prolongada após a refeição.",
+        "{alimento} demonstra uma excelente composição do prato. Quanto maior a presença de vegetais, maior tende a ser a qualidade nutricional da refeição.",
+        "{alimento} é uma excelente maneira de aumentar a saciedade sem precisar aumentar significativamente o consumo de calorias.",
+        "{alimento} mostra uma ótima estratégia alimentar, pois aumenta o volume da refeição enquanto mantém uma baixa concentração calórica.",
+        "{alimento} ajuda a tornar a refeição mais completa e equilibrada, oferecendo nutrientes essenciais e favorecendo uma maior sensação de satisfação.",
+        "{alimento} é uma escolha que costuma beneficiar tanto o controle do peso quanto a qualidade geral da alimentação.",
+        "{alimento} fornece nutrientes importantes para o organismo e ainda ajuda a prolongar a saciedade, tornando a refeição mais eficiente.",
+        "{alimento} contribui para refeições mais coloridas, variadas e ricas em compostos benéficos para a saúde.",
+        "{alimento} aumenta naturalmente o volume da refeição e favorece mecanismos fisiológicos de saciedade, ajudando no controle da fome.",
+        "{alimento} representa uma escolha inteligente para quem busca refeições mais leves, nutritivas e satisfatórias.",
+        "{alimento} é um excelente aliado para aumentar a ingestão de fibras e micronutrientes importantes sem elevar muito as calorias do prato."
+      ]
+    }
+  ]
+}

@@ -57,11 +57,16 @@ export function pickAnchorFood(
   items: PhraseSelectorInput['items'],
 ): { food_name: string; weight: number } | null {
   if (!items || items.length === 0) return null
+  // Filtra items com kcal=0 (água, chá puro, temperos) — não merecem ser
+  // anchor (não há frase educativa relevante). Se TODOS são 0kcal, retorna
+  // null (caller cai pro fallback Haiku ou skip).
+  const scorable = items.filter((it) => it.kcal > 0)
+  if (scorable.length === 0) return null
   let best: { food_name: string; weight: number } | null = null
-  for (const it of items) {
+  for (const it of scorable) {
     // Peso: kcal + bonus por densidade proteica + bonus por densidade gorda
-    const proteinDensity = it.kcal > 0 ? (it.protein_g * 4) / it.kcal : 0
-    const fatDensity = it.kcal > 0 ? (it.fat_g * 9) / it.kcal : 0
+    const proteinDensity = (it.protein_g * 4) / it.kcal
+    const fatDensity = (it.fat_g * 9) / it.kcal
     const weight = it.kcal + proteinDensity * 50 + fatDensity * 30
     if (!best || weight > best.weight) {
       best = { food_name: it.food_name, weight }
@@ -71,15 +76,40 @@ export function pickAnchorFood(
 }
 
 /**
- * Normaliza nome pra match em `food_canonical_name`.
+ * Normaliza nome pra match em `food_canonical_name`. Lowercase + remove
+ * diacríticos (acentos) + colapsa espaços. Usa \p{Diacritic} (unicode
+ * property) — mais robusto que `[̀-ͯ]` literal que pode falhar dependendo
+ * da fonte do arquivo.
  */
 function normalize(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/\p{Diacritic}/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+/**
+ * Variantes do nome pra busca tolerante (plural ↔ singular comum em PT-BR).
+ * Selector tenta cada variante até achar match. Resolve 'ovo' ↔ 'ovos',
+ * 'banana' ↔ 'bananas', 'castanha' ↔ 'castanhas', 'azeite' ↔ 'azeites'.
+ * Não tenta lematização semântica (ovo→ovinhos: false-positives).
+ */
+function generateLookupVariants(canonicalName: string): string[] {
+  const variants = new Set<string>()
+  variants.add(canonicalName)
+  // Plural: adicionar 's' se não termina em 's'
+  if (!canonicalName.endsWith('s')) variants.add(canonicalName + 's')
+  // Singular: tirar 's' final se termina em 's' (mas só pra palavras >= 4 chars
+  // pra evitar 'arroz' → 'arro')
+  if (canonicalName.endsWith('s') && canonicalName.length >= 5) {
+    variants.add(canonicalName.slice(0, -1))
+  }
+  // Plural -ão → -ões (limão → limões)
+  if (canonicalName.endsWith('ao')) variants.add(canonicalName.slice(0, -2) + 'oes')
+  if (canonicalName.endsWith('oes')) variants.add(canonicalName.slice(0, -3) + 'ao')
+  return [...variants]
 }
 
 /**
@@ -115,6 +145,10 @@ export async function selectCuratedPhrase(
   }
   const canonicalName = normalize(anchor.food_name)
   const language = input.language ?? 'pt-BR'
+  // Plural/singular tolerance: tenta variantes do nome canônico. DB armazena
+  // normalizado (lowercase, sem acento), então .in() com EQ é exato e usa
+  // index. Mais barato que ilike + cobre 'ovo'↔'ovos', etc.
+  const lookupVariants = generateLookupVariants(canonicalName)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sp = supabase as any
@@ -123,7 +157,7 @@ export async function selectCuratedPhrase(
     .select('id, phrase, tags, usage_count, last_used_at')
     .eq('active', true)
     .eq('language', language)
-    .ilike('food_canonical_name', canonicalName)
+    .in('food_canonical_name', lookupVariants)
     .order('last_used_at', { ascending: true, nullsFirst: true })
     .limit(50)
 
@@ -152,11 +186,40 @@ export async function selectCuratedPhrase(
     return Object.keys(c.tags).some((k) => stateTags.has(k))
   })
 
-  const pool = filtered.length > 0 ? filtered : candidates
+  let pool = filtered.length > 0 ? filtered : candidates
 
-  // Sorteio determinístico: pega a primeira do pool (já ordenada por
-  // last_used_at ASC NULLS FIRST → menos usada vem primeiro).
-  const picked = pool[0]
+  // Cooldown por (user, phrase): filtra frases que esse user viu nas
+  // últimas 7 dias. Resolve repetição literal pra mesmo paciente em
+  // refeições consecutivas (review high #3). Só aplica se userId presente.
+  if (input.userId) {
+    const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+    const phraseIds = pool.map((c) => c.id)
+    const { data: recent } = await sp
+      .from('user_phrase_cooldown')
+      .select('phrase_id')
+      .eq('user_id', input.userId)
+      .eq('phrase_table', 'food')
+      .gte('last_seen_at', cooldownSince)
+      .in('phrase_id', phraseIds)
+    const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
+    const notRecent = pool.filter((c) => !seenIds.has(c.id))
+    // Se TODAS foram vistas <7d, usa pool original (melhor repetir do que
+    // mandar fallback Haiku — paciente pode até notar a repetição mas o
+    // tom continua certo).
+    if (notRecent.length > 0) pool = notRecent
+  }
+
+  // Sorteio determinístico entre top-3 — retries inngest cachean step.run
+  // por SAÍDA, mas qualquer throw após selectCuratedPhrase força re-execução.
+  // Math.random pegaria frase diferente no retry, criando órfãos no cooldown
+  // (review medium). Hash baseado em (userId + canonicalName + date) garante
+  // mesma frase no retry. Date em YYYY-MM-DD pra rotação diária natural.
+  const today = new Date().toISOString().slice(0, 10)
+  const seedStr = `${input.userId ?? 'anon'}|${canonicalName}|${today}`
+  let seed = 0
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
+  const idx = Math.abs(seed) % Math.min(pool.length, 3)
+  const picked = pool[idx]
   if (!picked) {
     return {
       phrase: null,
@@ -175,6 +238,19 @@ export async function selectCuratedPhrase(
     })
     .eq('id', picked.id)
 
+  // Upsert cooldown pra esse user×phrase. Idempotente via ON CONFLICT.
+  if (input.userId) {
+    await sp.from('user_phrase_cooldown').upsert(
+      {
+        user_id: input.userId,
+        phrase_table: 'food',
+        phrase_id: picked.id,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,phrase_table,phrase_id' },
+    )
+  }
+
   // Substitui placeholder {alimento} pelo nome do anchor. Quando o
   // placeholder está no INÍCIO da frase, capitaliza a primeira letra
   // (food_name vem em lowercase do meal_pipeline; sem capitalizar saía
@@ -186,8 +262,12 @@ export async function selectCuratedPhrase(
   const foodLower = anchor.food_name.toLowerCase()
   let finalPhrase = picked.phrase
   // Substitui {alimento} no início (com possível espaço/pontuação antes) —
-  // capitaliza
-  finalPhrase = finalPhrase.replace(/^\s*\{alimento\}/i, () => capFirst(anchor.food_name))
+  // capitaliza. Cobre: "{alimento}…", "— {alimento}…", "\"{alimento}…",
+  // "({alimento})…", "* {alimento}…", "1. {alimento}…", etc.
+  finalPhrase = finalPhrase.replace(
+    /^[\s\-—–"'`(\[*•·>#\d.)]*\{alimento\}/i,
+    (match) => match.replace(/\{alimento\}/i, capFirst(anchor.food_name)),
+  )
   // Restante: lowercase consistente
   finalPhrase = finalPhrase.replace(/\{alimento\}/gi, () => foodLower)
 

@@ -98,6 +98,13 @@ async function main() {
   const foodFileE = JSON.parse(
     readFileSync(resolve('scripts/data/curated-phrases-food-phase-e.json'), 'utf-8'),
   ) as FoodFile
+  // Fase F: completa blocos meio/cauda até ~50/bloco. Fase G: fecha top 8.
+  const foodFileF = JSON.parse(
+    readFileSync(resolve('scripts/data/curated-phrases-food-phase-f.json'), 'utf-8'),
+  ) as FoodFile
+  const foodFileG = JSON.parse(
+    readFileSync(resolve('scripts/data/curated-phrases-food-phase-g.json'), 'utf-8'),
+  ) as FoodFile
   const foodFile: FoodFile = {
     _language: foodFileA._language,
     _curated_by: foodFileA._curated_by,
@@ -108,6 +115,8 @@ async function main() {
       ...foodFileC2.blocks,
       ...foodFileD.blocks,
       ...foodFileE.blocks,
+      ...foodFileF.blocks,
+      ...foodFileG.blocks,
     ],
   }
   const engagementFile = JSON.parse(

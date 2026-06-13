@@ -1,0 +1,150 @@
+{
+  "_source": "Banco de frases para educação alimentar.pdf — Roberto 2026-06-13 (FASE A: 6 blocos prioritários)",
+  "_curated_by": "roberto-2026-06-13",
+  "_language": "pt-BR",
+  "_pending_phase_b": [
+    "ruim_sorvetes (Bloco 3)",
+    "ruim_carnes_gordurosas (Bloco 4)",
+    "ruim_embutidos (Bloco 5)",
+    "ruim_molhos_caloricos (Bloco 6)",
+    "ruim_alta_densidade_calorica (Bloco 8)",
+    "ruim_carb_refinados (Bloco 9)",
+    "ruim_baixa_proteina_caloria (Bloco 10)",
+    "ruim_fast_food_ultrapalataveis (Bloco 11)",
+    "ruim_calorias_invisiveis (Bloco 12)",
+    "bom_ovos (Bloco 2)",
+    "bom_verduras (Bloco 4)",
+    "bom_leguminosas (Bloco 6)",
+    "bom_iogurtes_proteicos (Bloco 7)",
+    "bom_fibras (Bloco 8)",
+    "bom_baixa_densidade_calorica (Bloco 9)",
+    "bom_gorduras_saudaveis (Bloco 10)",
+    "bom_peixes (Bloco 11)",
+    "bom_alta_proteina_caloria (Bloco 12)",
+    "bom_min_processados (Bloco 13)",
+    "bom_grande_volume (Bloco 14)",
+    "bom_proteinas_fibras (Bloco 15)"
+  ],
+  "blocks": [
+    {
+      "bloco_id": "ruim_fritos_imersao",
+      "polaridade": "ruim",
+      "categoria_label": "Fritos por imersão",
+      "alimentos": ["batata frita", "frango frito", "nuggets", "coxinha", "pastel", "kibe frito", "bolinho de queijo", "mandioca frita", "polenta frita", "peixe frito", "torresmo", "onion rings", "salgados fritos", "banana frita", "aipim frito"],
+      "frases": [
+        "{alimento} é uma escolha que agrada muitas pessoas. A combinação da textura crocante com a gordura torna esse tipo de preparo especialmente saboroso. Porém, durante a fritura por imersão, o alimento absorve óleo e concentra mais calorias. Sempre que possível, alternar com versões assadas ou grelhadas pode ser uma ótima estratégia.",
+        "{alimento} costuma conquistar pelo sabor e pela crocância, características que despertam prazer ao comer. Apesar disso, a fritura aumenta significativamente a quantidade de calorias da preparação. Reduzir a frequência ou buscar outras formas de preparo pode contribuir para uma alimentação mais equilibrada.",
+        "{alimento} faz parte da rotina e das preferências de muitas pessoas. Isso é natural, já que alimentos fritos costumam ser muito saborosos. O ponto de atenção é que absorvem óleo durante o preparo e acabam fornecendo mais calorias. Pequenos ajustes já podem gerar grandes resultados.",
+        "{alimento} é um alimento que costuma agradar pelo sabor marcante e pela textura crocante. No entanto, a fritura por imersão aumenta bastante sua densidade calórica. Sempre que possível, vale experimentar versões assadas ou preparadas na air fryer.",
+        "{alimento} oferece uma experiência muito prazerosa ao paladar, o que explica por que tantas pessoas gostam desse tipo de preparo. Porém, a absorção de óleo durante a fritura aumenta significativamente as calorias da refeição.",
+        "{alimento} é naturalmente muito atrativo por reunir crocância, aroma e sabor intenso. Apesar disso, a fritura adiciona uma quantidade importante de gordura ao alimento. Consumir com moderação pode facilitar o controle da ingestão calórica.",
+        "{alimento} ganha muito sabor quando preparado por fritura, mas também passa a concentrar uma quantidade maior de gordura e calorias. Equilibrar a frequência de consumo é uma estratégia inteligente.",
+        "{alimento} pode fazer parte da alimentação sem culpa. Apenas vale lembrar que preparações fritas absorvem óleo durante o cozimento, concentrando mais calorias do que outras formas de preparo.",
+        "{alimento} é um exemplo de alimento que fica ainda mais saboroso quando frito. Porém, essa mesma característica aumenta seu valor energético. Buscar equilíbrio costuma trazer melhores resultados do que restrições radicais.",
+        "{alimento} é uma escolha prazerosa para muitas pessoas. Saber que a fritura aumenta a absorção de óleo ajuda a fazer escolhas mais conscientes sem precisar abrir mão completamente desse alimento.",
+        "{alimento} pode fazer parte de uma alimentação equilibrada, mas merece atenção por causa da quantidade de óleo incorporada durante a fritura. Alternar métodos de preparo é uma excelente estratégia.",
+        "{alimento} é um daqueles alimentos difíceis de resistir, justamente pela combinação de gordura e crocância. Consumir com equilíbrio ajuda a aproveitar seu sabor sem exagerar nas calorias.",
+        "{alimento} é naturalmente muito saboroso quando frito. Se fizer parte da sua rotina, alternar com versões assadas pode ser uma maneira simples de reduzir calorias sem perder o prazer de comer.",
+        "{alimento} costuma ser muito saboroso graças à crocância proporcionada pela fritura. Em compensação, essa preparação também concentra mais calorias do que versões assadas ou grelhadas.",
+        "{alimento} pode ser apreciado sem culpa, mas conhecer o impacto da fritura sobre a quantidade de calorias permite fazer escolhas mais conscientes. Alternar com versões assadas, grelhadas ou preparadas na air fryer é uma forma prática de manter o sabor e favorecer seus objetivos."
+      ]
+    },
+    {
+      "bloco_id": "ruim_doces_sobremesas",
+      "polaridade": "ruim",
+      "categoria_label": "Doces e sobremesas",
+      "alimentos": ["chocolate", "brigadeiro", "bolo", "pudim", "torta", "brownie", "cookie", "donut", "sonho", "rocambole", "paçoca", "pé de moleque", "bala", "caramelo", "doce de leite", "leite condensado", "bombom", "mousse", "pavê", "cheesecake"],
+      "frases": [
+        "{alimento} é uma escolha que naturalmente desperta prazer. O sabor doce ativa mecanismos de recompensa no cérebro, tornando esse tipo de alimento muito atrativo. Como costuma concentrar muitas calorias e oferecer pouca saciedade, vale apreciar com equilíbrio e em porções moderadas.",
+        "{alimento} chama atenção pelo sabor doce e pela sensação de conforto que proporciona. Isso é completamente normal. Apenas lembre-se de que alimentos desse grupo costumam fornecer muitas calorias e pouca saciedade, tornando interessante consumi-los com moderação.",
+        "{alimento} faz parte daqueles alimentos que agradam facilmente ao paladar. O desafio é que concentra muitas calorias em pequenas porções e tende a não prolongar a saciedade. Aproveitar com consciência pode ajudar no seu equilíbrio alimentar.",
+        "{alimento} costuma despertar vontade de repetir a porção justamente pelo sabor doce e agradável. Embora possa fazer parte da alimentação, consumir quantidades moderadas é uma estratégia que favorece seus objetivos.",
+        "{alimento} oferece muito prazer ao paladar, característica que faz parte do comportamento alimentar humano. Ao mesmo tempo, costuma apresentar alta densidade calórica e baixa capacidade de gerar saciedade, tornando importante observar as porções.",
+        "{alimento} é um exemplo de alimento muito saboroso e que ativa naturalmente a sensação de recompensa. Como fornece muitas calorias e pouca saciedade, reservar seu consumo para ocasiões especiais pode ser uma boa estratégia.",
+        "{alimento} pode fazer parte de uma alimentação equilibrada. O importante é lembrar que alimentos doces costumam facilitar um consumo maior antes que a sensação de saciedade apareça.",
+        "{alimento} desperta prazer porque combina características que nosso cérebro naturalmente aprecia. O equilíbrio está em aproveitar esse momento sem deixar que ele represente uma grande parte das calorias do dia.",
+        "{alimento} pode trazer satisfação imediata, mas normalmente não mantém a sensação de saciedade por muito tempo. Consumir com atenção às porções pode facilitar o controle da alimentação.",
+        "{alimento} costuma ser difícil de resistir justamente porque o sabor doce ativa circuitos naturais de prazer no cérebro. O segredo está no equilíbrio, e não na proibição.",
+        "{alimento} é um alimento que desperta prazer e faz parte da rotina de muitas pessoas. Quando consumido com moderação, pode conviver com uma alimentação equilibrada.",
+        "{alimento} oferece uma experiência muito agradável ao paladar, mas costuma concentrar muitas calorias em pouco volume. Observar a quantidade consumida pode fazer bastante diferença.",
+        "{alimento} pode fazer parte da alimentação sem culpa. Apenas vale lembrar que pequenas porções já fornecem uma quantidade significativa de calorias.",
+        "{alimento} é um alimento pensado para proporcionar prazer ao comer. Aproveitá-lo de forma consciente costuma trazer resultados melhores do que tentar eliminá-lo completamente.",
+        "{alimento} pode ser apreciado sem necessidade de restrições extremas. A atenção às porções costuma ser muito mais eficaz do que eliminar completamente esse tipo de alimento.",
+        "{alimento} é um alimento muito saboroso e faz sentido que desperte vontade de consumir. Aproveitá-lo com moderação e sem restrições radicais costuma ser uma estratégia mais sustentável para manter uma alimentação equilibrada e prazerosa."
+      ]
+    },
+    {
+      "bloco_id": "ruim_bebidas_adocadas",
+      "polaridade": "ruim",
+      "categoria_label": "Bebidas adoçadas",
+      "alimentos": ["refrigerante", "suco industrializado", "néctar", "achocolatado", "milkshake", "energético", "chá adoçado", "café com açúcar", "cappuccino adoçado", "vitamina adoçada"],
+      "frases": [
+        "{alimento} costuma estar presente em momentos de lazer e descontração, sendo uma escolha bastante saborosa. Vale lembrar que as calorias consumidas na forma líquida promovem pouca saciedade, fazendo com que a fome permaneça mesmo após o consumo. Priorizar água ou bebidas sem açúcar no dia a dia pode ser uma estratégia simples para reduzir calorias.",
+        "{alimento} pode tornar uma refeição ainda mais prazerosa, mas bebidas adoçadas normalmente geram pouca saciedade. Isso significa que é possível consumir muitas calorias sem perceber. Sempre que possível, experimente alternar com opções sem açúcar.",
+        "{alimento} é uma bebida apreciada por muitas pessoas e faz parte de diversos momentos especiais. Porém, as calorias líquidas costumam saciar menos do que os alimentos sólidos, tornando seu consumo frequente um ponto de atenção.",
+        "{alimento} oferece muito sabor, mas as calorias presentes em bebidas adoçadas normalmente não reduzem a fome na mesma proporção. Pequenas substituições por água ou bebidas sem açúcar podem contribuir para uma alimentação mais equilibrada.",
+        "{alimento} pode ser uma escolha prazerosa, mas vale lembrar que bebidas adoçadas fornecem calorias com baixa capacidade de promover saciedade. Reduzir a frequência de consumo pode favorecer seus objetivos.",
+        "{alimento} costuma acompanhar refeições e momentos agradáveis. Ainda assim, por ser uma fonte de calorias líquidas, tende a gerar pouca sensação de saciedade. Priorizar água na maior parte do dia é uma estratégia inteligente.",
+        "{alimento} agrada pelo sabor e pela praticidade, porém suas calorias líquidas são rapidamente consumidas sem gerar grande saciedade. Alternar com versões sem açúcar pode ajudar a reduzir a ingestão calórica.",
+        "{alimento} é uma bebida muito popular, mas costuma fornecer calorias que passam despercebidas ao longo do dia. Observar a frequência de consumo pode ser uma forma simples de melhorar a qualidade da alimentação.",
+        "{alimento} faz parte do dia a dia de muitas pessoas. Apenas vale lembrar que calorias ingeridas na forma líquida costumam gerar menos saciedade do que alimentos sólidos, facilitando um consumo energético maior.",
+        "{alimento} pode trazer prazer ao paladar, mas dificilmente reduz a fome por muito tempo. Isso acontece porque bebidas adoçadas oferecem pouca saciedade em relação às calorias que fornecem.",
+        "{alimento} é uma escolha comum e totalmente compreensível. O ponto de atenção é que bebidas adoçadas acrescentam calorias à alimentação sem proporcionar a mesma sensação de plenitude que os alimentos sólidos.",
+        "{alimento} costuma ser consumida quase sem esforço, justamente por ser líquida. Isso faz com que seja fácil ingerir muitas calorias antes mesmo de perceber.",
+        "{alimento} pode parecer uma escolha pequena, mas as calorias presentes em bebidas adoçadas também contam ao longo do dia. Dar preferência à água na maior parte das refeições pode trazer benefícios.",
+        "{alimento} pode ser consumida ocasionalmente sem problemas, mas priorizar bebidas sem açúcar na rotina ajuda a reduzir calorias de maneira quase imperceptível.",
+        "{alimento} é uma escolha que muitas pessoas apreciam. Apenas lembre-se de que calorias líquidas costumam gerar pouca saciedade, tornando a água e as bebidas sem açúcar excelentes alternativas para o dia a dia."
+      ]
+    },
+    {
+      "bloco_id": "bom_proteina_magra",
+      "polaridade": "bom",
+      "categoria_label": "Proteína magra (mensagem master)",
+      "alimentos": ["peito de frango", "filé de frango", "peixe", "tilápia", "merluza", "atum", "sardinha", "patinho", "coxão mole", "lagarto", "maminha sem gordura", "clara de ovo", "ovos", "lombo suíno magro", "peito de peru natural"],
+      "frases": [
+        "Excelente escolha! Alimentos ricos em proteína costumam promover maior saciedade, ajudando você a permanecer satisfeito por mais tempo. Além disso, a proteína é fundamental para a manutenção da massa muscular, especialmente durante o emagrecimento. Incluir boas fontes proteicas nas refeições é uma estratégia inteligente para favorecer seus resultados sem aumentar excessivamente as calorias."
+      ]
+    },
+    {
+      "bloco_id": "bom_legumes",
+      "polaridade": "bom",
+      "categoria_label": "Legumes",
+      "alimentos": ["brócolis", "couve-flor", "abobrinha", "chuchu", "berinjela", "cenoura", "pepino", "tomate", "quiabo", "vagem", "abóbora", "repolho"],
+      "frases": [
+        "{alimento} é uma excelente escolha para enriquecer sua refeição. Além de fornecer bastante volume com poucas calorias, também oferece fibras, vitaminas e minerais que ajudam a promover mais saciedade e qualidade nutricional.",
+        "{alimento} merece destaque por ser um alimento que aumenta o volume do prato sem elevar significativamente as calorias. Essa estratégia costuma favorecer uma alimentação mais equilibrada e satisfatória.",
+        "{alimento} contribui para uma refeição mais nutritiva e completa. Rico em fibras e micronutrientes, ajuda a aumentar a saciedade enquanto mantém uma baixa densidade calórica.",
+        "{alimento} é um ótimo aliado para quem busca uma alimentação equilibrada. Seu alto teor de água e fibras ajuda a preencher o prato e promover maior satisfação com menos calorias.",
+        "{alimento} adiciona cor, sabor e nutrientes importantes à refeição. Além disso, ajuda a aumentar a saciedade sem elevar muito a ingestão calórica.",
+        "{alimento} é uma ótima forma de aumentar a qualidade nutricional do prato. Seu baixo valor calórico aliado à presença de fibras favorece uma sensação de saciedade mais prolongada.",
+        "{alimento} é um excelente exemplo de alimento que entrega muito volume para poucas calorias, favorecendo uma alimentação saborosa e equilibrada.",
+        "{alimento} oferece uma excelente relação entre volume e calorias, permitindo refeições mais fartas e equilibradas.",
+        "{alimento} ajuda a aumentar o tamanho da refeição sem aumentar proporcionalmente as calorias, uma estratégia muito útil para quem deseja controlar a ingestão energética.",
+        "{alimento} é um alimento que combina baixa densidade calórica com alta qualidade nutricional, favorecendo escolhas inteligentes no dia a dia.",
+        "{alimento} representa uma escolha que favorece a saúde e também o controle da fome, graças à combinação de fibras e alto teor de água.",
+        "{alimento} merece reconhecimento como uma excelente escolha. Seu alto volume, aliado à presença de fibras, vitaminas e minerais, ajuda a tornar a refeição mais nutritiva, satisfatória e favorável aos seus objetivos de saúde."
+      ]
+    },
+    {
+      "bloco_id": "bom_frutas",
+      "polaridade": "bom",
+      "categoria_label": "Frutas",
+      "alimentos": ["maçã", "pera", "laranja", "mexerica", "kiwi", "morango", "melão", "melancia", "mamão", "manga", "abacaxi", "ameixa", "pêssego"],
+      "frases": [
+        "{alimento} é uma excelente escolha para o dia a dia. Rica em fibras, água e vitaminas, ajuda a aumentar a saciedade de forma natural e pode ser uma ótima alternativa para quem deseja cuidar da alimentação sem abrir mão do sabor.",
+        "{alimento} combina sabor, praticidade e qualidade nutricional. Seu conteúdo de fibras e água contribui para uma maior saciedade, tornando-a uma ótima opção para substituir doces industrializados.",
+        "{alimento} oferece um sabor naturalmente doce e uma composição rica em nutrientes importantes. Além de fornecer vitaminas e fibras, ajuda a promover mais saciedade ao longo do dia.",
+        "{alimento} pode ser uma grande aliada de uma alimentação equilibrada. Sua combinação de fibras, água e compostos naturais favorece a saciedade e torna essa escolha ainda mais interessante.",
+        "{alimento} entrega muito mais do que sabor. Rica em vitaminas, fibras e compostos bioativos, contribui para uma alimentação nutritiva e ajuda a controlar melhor a fome.",
+        "{alimento} é uma forma prática e saborosa de incluir mais nutrientes na rotina. Seu teor de fibras favorece a saciedade e pode ajudar a reduzir a vontade de consumir doces.",
+        "{alimento} possui uma doçura natural que costuma satisfazer o paladar sem a necessidade de grandes quantidades de açúcar adicionado. Além disso, oferece fibras e vitaminas importantes para o organismo.",
+        "{alimento} pode ser uma excelente alternativa para momentos em que surge vontade de comer algo doce. Além do sabor agradável, fornece nutrientes importantes e costuma gerar mais saciedade.",
+        "{alimento} é um exemplo de como alimentos naturais conseguem unir prazer e qualidade nutricional. Seu consumo contribui para uma alimentação mais equilibrada.",
+        "{alimento} oferece fibras e água em uma combinação que ajuda a aumentar a saciedade de forma natural, tornando essa escolha especialmente interessante para o controle alimentar.",
+        "{alimento} apresenta um sabor naturalmente agradável e ainda ajuda a fornecer fibras importantes para prolongar a sensação de saciedade.",
+        "{alimento} pode ser uma excelente aliada para reduzir o consumo de doces industrializados, oferecendo sabor naturalmente adocicado e boa saciedade.",
+        "{alimento} reúne características muito positivas para uma alimentação equilibrada: sabor naturalmente doce, boa quantidade de fibras, vitaminas e compostos bioativos que favorecem a saciedade e tornam essa uma excelente escolha para o dia a dia."
+      ]
+    }
+  ]
+}

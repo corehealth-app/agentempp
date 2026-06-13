@@ -175,8 +175,24 @@ export async function selectCuratedPhrase(
     })
     .eq('id', picked.id)
 
+  // Substitui placeholder {alimento} pelo nome do anchor. Quando o
+  // placeholder está no INÍCIO da frase, capitaliza a primeira letra
+  // (food_name vem em lowercase do meal_pipeline; sem capitalizar saía
+  // "chocolate é uma escolha…" — review #4 medium). Demais ocorrências
+  // mantêm o caso original (lowercase) pra fluir gramaticalmente.
+  // Usa função no replacement (não string) pra evitar interpretação de
+  // $1, $&, $` etc se food_name contém esses caracteres.
+  const capFirst = (s: string) => (s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1))
+  const foodLower = anchor.food_name.toLowerCase()
+  let finalPhrase = picked.phrase
+  // Substitui {alimento} no início (com possível espaço/pontuação antes) —
+  // capitaliza
+  finalPhrase = finalPhrase.replace(/^\s*\{alimento\}/i, () => capFirst(anchor.food_name))
+  // Restante: lowercase consistente
+  finalPhrase = finalPhrase.replace(/\{alimento\}/gi, () => foodLower)
+
   return {
-    phrase: picked.phrase,
+    phrase: finalPhrase,
     food_canonical_name: canonicalName,
     phrase_id: picked.id,
     reason: 'selected',

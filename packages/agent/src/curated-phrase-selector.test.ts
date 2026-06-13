@@ -1,5 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { pickAnchorFood, inferTags } from './curated-phrase-selector.js'
+import type { ServiceClient } from '@mpp/db'
+import {
+  pickAnchorFood,
+  inferTags,
+  selectCuratedPhrase,
+} from './curated-phrase-selector.js'
+
+function mockSupabase(rows: Array<{
+  id: string
+  phrase: string
+  tags: Record<string, unknown> | null
+  usage_count: number
+  last_used_at: string | null
+}>): ServiceClient {
+  const updateChain = {
+    update: () => updateChain,
+    eq: async () => ({ data: null }),
+  }
+  const selectChain = {
+    select: () => selectChain,
+    eq: () => selectChain,
+    ilike: () => selectChain,
+    order: () => selectChain,
+    limit: async () => ({ data: rows }),
+  }
+  return {
+    from: (t: string) => (t === 'food_education_phrases' ? { ...selectChain, ...updateChain } : updateChain),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any
+}
 
 describe('pickAnchorFood', () => {
   it('escolhe item com mais kcal e proteína densa', () => {
@@ -56,5 +85,120 @@ describe('inferTags', () => {
     const tags = inferTags({ protocol: 'ganho_massa', kcal_pct: 85 })
     expect(tags).toContain('ganho_massa')
     expect(tags).toContain('kcal_high')
+  })
+})
+
+describe('selectCuratedPhrase — substitui {alimento}', () => {
+  it('troca {alimento} pelo food_name original do anchor', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-1',
+        phrase: '{alimento} é uma escolha saborosa, com atenção às porções.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'Chocolate', kcal: 500, protein_g: 5, carbs_g: 60, fat_g: 30 }],
+    })
+    expect(result.phrase).toBe('Chocolate é uma escolha saborosa, com atenção às porções.')
+    expect(result.reason).toBe('selected')
+  })
+
+  it('capitaliza primeira letra quando food_name vem lowercase (caso comum em prod)', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-cap',
+        phrase: '{alimento} é uma escolha saborosa.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'chocolate', kcal: 500, protein_g: 5, carbs_g: 60, fat_g: 30 }],
+    })
+    expect(result.phrase).toBe('Chocolate é uma escolha saborosa.')
+  })
+
+  it('preserva acentos do food_name original', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-2',
+        phrase: '{alimento} é uma ótima fonte de fibras.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'Maçã', kcal: 80, protein_g: 1, carbs_g: 20, fat_g: 0 }],
+    })
+    expect(result.phrase).toContain('Maçã')
+  })
+
+  it('multiplas ocorrências: 1ª capitalizada, demais lowercase', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-3',
+        phrase: '{alimento} hoje, {alimento} amanhã. Vale moderar.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'brigadeiro', kcal: 90, protein_g: 1, carbs_g: 15, fat_g: 3 }],
+    })
+    expect(result.phrase).toBe('Brigadeiro hoje, brigadeiro amanhã. Vale moderar.')
+  })
+
+  it('food_name com caracteres especiais ($, &) não é interpretado como regex replacement', async () => {
+    // Bug do String.replace: se replacement string contém $1, $&, $`, etc,
+    // são interpretados como backrefs. Selector usa função pra evitar isso.
+    const supa = mockSupabase([
+      {
+        id: 'p-esp',
+        phrase: '{alimento} é caro.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'doce r$10', kcal: 100, protein_g: 1, carbs_g: 20, fat_g: 1 }],
+    })
+    // Espera "Doce r$10 é caro" — sem interpretação de $10 como backref
+    expect(result.phrase).toBe('Doce r$10 é caro.')
+  })
+
+  it('frase sem placeholder fica intacta', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-4',
+        phrase: 'Excelente escolha! Proteína magra ajuda na saciedade.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'frango', kcal: 200, protein_g: 30, carbs_g: 0, fat_g: 8 }],
+    })
+    expect(result.phrase).toBe('Excelente escolha! Proteína magra ajuda na saciedade.')
+  })
+
+  it('retorna no_anchor quando items vazio', async () => {
+    const supa = mockSupabase([])
+    const result = await selectCuratedPhrase(supa, { userId: 'u-1', items: [] })
+    expect(result.reason).toBe('no_anchor')
+    expect(result.phrase).toBeNull()
   })
 })

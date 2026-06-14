@@ -43,7 +43,11 @@ import {
   parseOnboardingButtonTag,
   parseOnboardingListTag,
 } from './onboarding-button.js'
-import { generateEducationalComment, type EduCommentInput } from './educational-comment.js'
+import {
+  generateEducationalComment,
+  adaptToolItemsToEduInput,
+  type EduCommentInput,
+} from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import { routeModel } from './model-router.js'
 import {
@@ -883,7 +887,13 @@ export async function processMessage(
             kind: registrations[0]?.tool === 'registra_treino'
               ? 'treino'
               : (registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro',
-            items: registrations[0]?.items as EduCommentInput['items'],
+            // Adapter (P0 audit 2026-06-13): a tool registra_refeicao retorna
+            // items com chave `name` (tools.ts:1359), EduCommentInput espera
+            // `food_name`. adaptToolItemsToEduInput é função pura testável —
+            // ver tool-items-adapter.test.ts pra cobertura do shape real.
+            items: adaptToolItemsToEduInput(
+              registrations[0]?.items as Parameters<typeof adaptToolItemsToEduInput>[0],
+            ),
             totals: registrations[0]?.totals,
             workout:
               registrations[0]?.tool === 'registra_treino'

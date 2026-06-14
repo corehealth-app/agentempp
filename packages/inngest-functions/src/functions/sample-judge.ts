@@ -37,7 +37,13 @@ export const sampleJudgeFn = inngest.createFunction(
         rate: Number.isFinite(rate) && rate > 0 && rate <= 1 ? rate : 0.1,
       }
     })
-    if (!cfg.enabled) return { skipped: true, reason: 'disabled' }
+    if (!cfg.enabled) {
+      await supabase.from('product_events').insert({
+        event: 'sample_judge.skipped',
+        properties: { reason: 'disabled' },
+      })
+      return { skipped: true, reason: 'disabled' }
+    }
 
     const candidates = await step.run('pick-candidates', async () => {
       const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
@@ -69,7 +75,13 @@ export const sampleJudgeFn = inngest.createFunction(
         .slice(0, 15)
     })
 
-    if (candidates.length === 0) return { ok: true, judged: 0 }
+    if (candidates.length === 0) {
+      await supabase.from('product_events').insert({
+        event: 'sample_judge.skipped',
+        properties: { reason: 'no_candidates', sample_rate: cfg.rate },
+      })
+      return { ok: true, judged: 0 }
+    }
 
     let judged = 0
     for (const c of candidates) {
@@ -113,6 +125,18 @@ export const sampleJudgeFn = inngest.createFunction(
       judged += did
     }
     logger.info('sample-judge done', { judged, candidates: candidates.length })
+    // Telemetria P1 (audit 2026-06-13): antes só logger.info; query
+    // `event LIKE '%judge%'` em product_events retornava vazio mesmo com
+    // 104 inserts lifetime em llm_evaluations. Agora gera sinal explícito.
+    await supabase.from('product_events').insert({
+      event: 'sample_judge.completed',
+      properties: {
+        judged,
+        candidates: candidates.length,
+        sample_rate: cfg.rate,
+        model: JUDGE_MODEL,
+      },
+    })
     return { ok: true, judged }
   },
 )

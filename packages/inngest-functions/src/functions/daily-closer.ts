@@ -170,6 +170,14 @@ async function closeUserDay(
         })
       }
     }
+    // Telemetria: paciente totalmente inativo no dia (sem refeição, treino
+    // nem mensagem). Emite skipped pra dashboard distinguir "fechou" de
+    // "inativo" — sinal útil pra Eduardo ver quem sumiu.
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'daily_closer.skipped',
+      properties: { reason: 'inactive_day', snapshot_date: yesterday },
+    })
     return { skipped: true, reason: 'sem atividade nem conversa' }
   }
 
@@ -458,6 +466,34 @@ async function closeUserDay(
     })
   }
 
+  // Telemetria P0 (audit 2026-06-13): antes o único sinal de fechamento era
+  // o upsert em daily_snapshots. Agora também grava product_events pra
+  // dashboard distinguir "fechou+ativo" de "skipped". Outros skipped (fora
+  // janela / já fechado) NÃO emitem — rodam 24x11 vezes/dia e inflariam
+  // product_events sem ganho de sinal.
+  //
+  // ORDEM IMPORTANTE (review adversarial HIGH): emite ANTES de
+  // checkReevaluation. Se a reavaliação falhar (5xx Supabase ao ler/escrever
+  // user_progress.next_reevaluation), o snapshot já foi gravado com
+  // day_closed=true, user_progress já foi upsertado, badges/bloco já emitidos.
+  // Logar o completed por último escondia fechamentos parciais — agora o
+  // dashboard conta corretamente.
+  await supabase.from('product_events').insert({
+    user_id: userId,
+    event: 'daily_closer.completed',
+    properties: {
+      snapshot_date: yesterday,
+      calories_consumed: Math.round(kcalConsumed),
+      calories_target: targets.calories_target,
+      exercise_calories: Math.round(exerciseKcal),
+      training_done: trainingDone,
+      day_status: snap.day_status ?? null,
+      xp_earned: xpEarned,
+      blocks_completed: next.blocksCompleted,
+      blocks_completed_delta: next.blocksCompleted - prev.blocksCompleted,
+    },
+  })
+
   // REAVALIAÇÃO 14 DIAS (Roberto 2026-05-20): MPP prevê reavaliação periódica
   // (peso/BF%/meta) a cada 14 dias. A coluna user_progress.next_reevaluation
   // existia mas nunca era populada nem checada. Agora:
@@ -465,7 +501,20 @@ async function closeUserDay(
   //  - due: se yesterday >= next_reevaluation, loga evento + avança +14d.
   //    A MENSAGEM ao paciente sai pelo engagement matinal (cafe_da_manha) que
   //    detecta o evento `reevaluation.due` — evita mandar 3h da manhã.
-  await checkReevaluation(supabase, userId, yesterday)
+  //
+  // Try/catch isolado: falha aqui não afeta o fechamento já registrado.
+  try {
+    await checkReevaluation(supabase, userId, yesterday)
+  } catch (err) {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'reevaluation.check_failed',
+      properties: {
+        snapshot_date: yesterday,
+        error: String(err instanceof Error ? err.message : err).slice(0, 300),
+      },
+    })
+  }
 
   return { skipped: false }
 }

@@ -334,6 +334,63 @@ export const processMessageFn = inngest.createFunction(
           types: vRes.images.map((i) => i.type),
           latency: vRes.latency_ms,
         })
+        // Observabilidade vision (audit P2 2026-06-13): cada imagem analisada
+        // gera UM product_event 'vision.analyzed'. Antes só `vision.download_failed`
+        // virava evento — sucesso era cego, sem medir latência/confidence/
+        // distribuição de type sem `vercel logs` ao vivo. Latência é do batch
+        // (Promise.all paralelo), mesma pra todas as imagens do turno.
+        await step.run('log-vision-analyzed', async () => {
+          try {
+            const { supabase } = createWorkerDeps()
+            const rows = vRes.images.map((img) => {
+              let confidence: number | null = null
+              if (img.type === 'meal') {
+                confidence = img.items.length > 0
+                  ? img.items.reduce((acc, it) => acc + (it.confidence ?? 0), 0) / img.items.length
+                  : null
+              } else if (img.type === 'body') {
+                confidence = img.bf_confidence
+              } else if (
+                img.type === 'scale' ||
+                img.type === 'equipment' ||
+                img.type === 'nutrition_label'
+              ) {
+                confidence = img.confidence
+              }
+              const model =
+                img.type === 'nutrition_label'
+                  ? visionCfg.nutrition_label_model
+                  : visionCfg.model
+              return {
+                user_id: userId,
+                event: 'vision.analyzed',
+                properties: {
+                  provider_message_id: providerMessageId,
+                  type: img.type,
+                  latency_ms: vRes.latency_ms,
+                  confidence,
+                  model,
+                  photo_count: vRes.images.length,
+                  had_caption: !!text,
+                },
+              }
+            })
+            // supabase-js v2 NÃO lança em 4xx/5xx (RLS, FK, payload errado);
+            // o erro vem em { error }. Sem capturar, telemetria zera silenciosa
+            // — exatamente o padrão que escondeu o bug do edu_comment 36h.
+            const { error: insertErr } = await supabase.from('product_events').insert(rows)
+            if (insertErr) {
+              logger.warn('vision.analyzed insert error', {
+                code: insertErr.code,
+                message: insertErr.message,
+              })
+            }
+          } catch (logErr) {
+            logger.warn('vision.analyzed event log failed', {
+              error: logErr instanceof Error ? logErr.message : String(logErr),
+            })
+          }
+        })
         // Persiste a ESTIMATIVA de BF% da foto num campo separado (sub-projeto B).
         // NUNCA sobrescreve body_fat_percent (confirmado pelo paciente/Roberto).
         if (bodyBf != null) {

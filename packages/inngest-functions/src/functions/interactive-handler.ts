@@ -20,6 +20,7 @@
  * → mensagem informativa.
  */
 import {
+  adaptToolItemsToEduInput,
   cadastraDadosIniciais,
   composePostRegistrationMessage,
   EDU_COMMENT_MARKER,
@@ -430,9 +431,17 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               proposal.kind === 'workout'
                 ? 'treino'
                 : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
+            // Adapter (P0 audit 2026-06-13): tool retorna items com chave
+            // `name`, EduCommentInput espera `food_name`. Fallback proposal.items
+            // quando a tool deduplica tudo (mesmo padrão de L401).
             items:
               proposal.kind !== 'workout'
-                ? (mealToolResult?.meal?.items as EduCommentInput['items']) ?? undefined
+                ? adaptToolItemsToEduInput(
+                    (mealToolResult?.meal?.items as Parameters<
+                      typeof adaptToolItemsToEduInput
+                    >[0]) ??
+                      (proposal.items as Parameters<typeof adaptToolItemsToEduInput>[0]),
+                  )
                 : undefined,
             totals:
               proposal.kind !== 'workout'

@@ -147,6 +147,18 @@ export async function selectCuratedPhrase(
   if (!anchor) {
     return { phrase: null, food_canonical_name: null, phrase_id: null, reason: 'no_anchor' }
   }
+  // Defesa: shape inválido (food_name undefined). O bug histórico era a tool
+  // retornar items com chave `name` e o cast TS mascarar isso; quando o
+  // adapter no caller falha (ou rota nova esquece), anchor.food_name vira
+  // undefined e normalize lançava TypeError engolido pelo catch silencioso.
+  if (!anchor.food_name || typeof anchor.food_name !== 'string') {
+    return {
+      phrase: null,
+      food_canonical_name: null,
+      phrase_id: null,
+      reason: 'invalid_anchor_shape',
+    }
+  }
   const canonicalName = normalize(anchor.food_name)
   const language = input.language ?? 'pt-BR'
   // Cascade lookup (HIGH/Eduardo escolha estrutural):

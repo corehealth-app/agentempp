@@ -111,6 +111,41 @@ F) **SEPARE EM PARÁGRAFOS — INVIOLÁVEL** (manual MPP § estrutura)
 
 Responda APENAS o comentário (sem cabeçalho, sem prefixo, sem repetir tabela/card).`
 
+/**
+ * Adapta items do tool registra_refeicao (chave `name`) pro shape do
+ * EduCommentInput (`food_name`). DRY pros callers — antes cada um repetia
+ * o map com cast, e o cast TS mascarava o mismatch em runtime (P0 bug
+ * 2026-06-13: catch silencioso + items[].name vs items[].food_name).
+ *
+ * Aceita os dois shapes (tool result tem `name`, payload do edu tem
+ * `food_name`) — primeiro que estiver presente vence, vazio cai no
+ * hardening invalid_anchor_shape do selector.
+ */
+export function adaptToolItemsToEduInput(
+  items:
+    | Array<{
+        name?: string
+        food_name?: string
+        quantity_g: number
+        kcal?: number
+        protein_g?: number
+        carbs_g?: number
+        fat_g?: number
+      }>
+    | undefined
+    | null,
+): EduCommentInput['items'] {
+  if (!items) return undefined
+  return items.map((i) => ({
+    food_name: (i.name ?? i.food_name ?? '') as string,
+    quantity_g: i.quantity_g,
+    kcal: i.kcal ?? 0,
+    protein_g: i.protein_g ?? 0,
+    carbs_g: i.carbs_g ?? 0,
+    fat_g: i.fat_g ?? 0,
+  }))
+}
+
 export interface EduCommentInput {
   /** Tipo da refeição registrada (ou 'treino' pra exercício). */
   kind: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia' | 'outro' | 'treino'
@@ -155,13 +190,39 @@ export interface EduCommentOpts {
   embeddings?: { embed(text: string): Promise<number[]> }
 }
 
+/**
+ * Telemetria edu-comment (audit P2 2026-06-13): cada ponto do funil grava
+ * product_event. Antes era cego — impossível distinguir curated_hit de
+ * timeout de phantom_drop. Try/catch interno garante never-block.
+ */
+async function emitEdu(
+  opts: EduCommentOpts,
+  event: string,
+  properties: Record<string, unknown>,
+): Promise<void> {
+  if (!opts.supabase || !opts.userId) return
+  try {
+    await opts.supabase.from('product_events').insert({
+      user_id: opts.userId,
+      event,
+      properties: { stage: 'edu-comment', ...properties },
+    })
+  } catch {
+    // never block
+  }
+}
+
 export async function generateEducationalComment(
   llm: OpenRouterLLM,
   input: EduCommentInput,
   opts: EduCommentOpts = {},
 ): Promise<string> {
   const model = opts.model ?? 'anthropic/claude-haiku-4.5'
-  const timeoutMs = opts.timeoutMs ?? 8000
+  // Timeout 12s (audit 2026-06-13): 8s era apertado — Haiku 4.5 com 300 tokens
+  // é ~3-5s em cenário ideal, mas P95 com cold start ou roteamento OpenRouter
+  // passa de 8s. Custo de esperar mais 4s vale a pena — alternativa é cortar
+  // comentário sem aviso.
+  const timeoutMs = opts.timeoutMs ?? 12000
 
   // CURATED PHRASE FIRST (Roberto 2026-06-11): se há frase curada pelo
   // Roberto pro alimento âncora, usa ela em vez de chamar Haiku. Economia
@@ -183,15 +244,53 @@ export async function generateEducationalComment(
         embeddings: opts.embeddings,
       })
       if (curated.phrase) {
+        await emitEdu(opts, 'edu_comment.curated_hit', {
+          kind: input.kind,
+          anchor: curated.food_canonical_name,
+          reason: curated.reason,
+        })
         return curated.phrase
       }
-    } catch {
-      // se falhar (ex: tabela vazia, query error), cai pro Haiku normal
+      // Defesa em camadas (audit P0 2026-06-13): se reason=invalid_anchor_shape
+      // significa que o adapter de items quebrou (bug histórico voltou). NÃO
+      // pode ser confundido com curated_miss normal — evento dedicado pra
+      // dashboard alertar imediatamente em regressão futura.
+      if (curated.reason === 'invalid_anchor_shape') {
+        await emitEdu(opts, 'edu_comment.adapter_regression', {
+          kind: input.kind,
+          items_preview: input.items?.slice(0, 3).map((i) => ({
+            food_name: i.food_name,
+            kcal: i.kcal,
+          })),
+          severity: 'critical',
+        })
+      } else {
+        // curated_miss legítimo (planilha incompleta) — fire-and-forget,
+        // não bloqueia turno do paciente.
+        void emitEdu(opts, 'edu_comment.curated_miss', {
+          kind: input.kind,
+          anchor: curated.food_canonical_name,
+          reason: curated.reason,
+        })
+      }
+    } catch (err) {
+      // Antes era catch silencioso — bug do shape mismatch (P0 audit) ficou
+      // 36h+ invisível. Agora loga em product_events pra alertar caso
+      // similar recorra.
+      await emitEdu(opts, 'edu_comment.curated_error', {
+        error: String(err instanceof Error ? err.message : err).slice(0, 200),
+      })
     }
   }
 
   const userPayload = formatUserPayload(input)
+  const startedAt = Date.now()
 
+  // haiku_started é fire-and-forget — ele é PRE-trabalho útil; awaitar adiciona
+  // ~80-150ms de RTT ao Supabase antes do Haiku começar, latência sentida pelo
+  // paciente. emitEdu já é never-throw internamente.
+  void emitEdu(opts, 'edu_comment.haiku_started', { model, kind: input.kind })
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const llmPromise = llm.complete({
       model,
@@ -201,21 +300,56 @@ export async function generateEducationalComment(
       maxTokens: 300,
       metadata: { Stage: 'edu-comment' },
     })
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
+    // Defesa contra unhandledRejection: o openrouter SDK não recebe AbortSignal
+    // hoje, então quando o timeout ganha o race, o llmPromise continua pendente
+    // e pode rejeitar mais tarde (timeout interno 90s, 5xx). Sem .catch attach
+    // o Node sinaliza unhandledRejection. Silencia defensivamente.
+    llmPromise.catch(() => {})
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), timeoutMs)
+    })
     const result = await Promise.race([llmPromise, timeoutPromise])
-    if (result === null) return ''
+    // Limpa o timer SE o llmPromise resolveu primeiro — evita timer pendente
+    // mantendo o event loop ativo após o step.run retornar.
+    if (timer) clearTimeout(timer)
+    if (result === null) {
+      await emitEdu(opts, 'edu_comment.haiku_timeout', {
+        timeoutMs,
+        elapsedMs: Date.now() - startedAt,
+      })
+      return ''
+    }
     const content = (result.content ?? '').trim()
     const cleaned = content.replace(/^\s*```[\s\S]*?```\s*/g, '').trim()
+    if (!cleaned) {
+      await emitEdu(opts, 'edu_comment.haiku_empty', {
+        rawLen: content.length,
+        elapsedMs: Date.now() - startedAt,
+      })
+      return ''
+    }
     // Defesa (Roberto 2026-06-09): se o comentário menciona alimento que NÃO
     // está na lista da refeição, drop o comentário inteiro (melhor sem
     // orientação que com orientação inventada). Caso real: café sem manteiga
     // nem óleo recebeu "reduz a manteiga ou óleo" — inventou itens.
     if (input.items && input.items.length > 0 && hasPhantomFoodMention(cleaned, input.items)) {
+      await emitEdu(opts, 'edu_comment.phantom_drop', {
+        commentPreview: cleaned.slice(0, 160),
+        itemNames: input.items.map((i) => i.food_name),
+      })
       return ''
     }
+    await emitEdu(opts, 'edu_comment.haiku_success', {
+      length: cleaned.length,
+      elapsedMs: Date.now() - startedAt,
+    })
     return cleaned
-  } catch {
-    // Erro de LLM (saldo, timeout, parser) — degradação graciosa, sem comentário
+  } catch (err) {
+    if (timer) clearTimeout(timer)
+    await emitEdu(opts, 'edu_comment.haiku_error', {
+      error: String(err instanceof Error ? err.message : err).slice(0, 200),
+      elapsedMs: Date.now() - startedAt,
+    })
     return ''
   }
 }

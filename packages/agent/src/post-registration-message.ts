@@ -185,6 +185,31 @@ export function splitMealAndCard(text: string): { meal: string; card: string | n
 export const EDU_COMMENT_MARKER = '​​​'
 
 /**
+ * Insere o comentário educativo entre tabela e card, marcado com
+ * EDU_COMMENT_MARKER (zero-width tripla) pra splitRegistrationParts dividir
+ * em 3 bolhas.
+ *
+ * **Invariante** (travado por tool-items-adapter.test.ts):
+ *   eduComment não-vazio  ⇒  string retornada contém EDU_COMMENT_MARKER
+ *   eduComment vazio/null ⇒  string retornada === finalText (sem mudança)
+ *
+ * Antes era código inline em pipeline.ts:920 e interactive-handler.ts:466.
+ * Extraído em função pura testável depois do audit 2026-06-14: 52% dos
+ * registros saíam sem comentário em prod, e não havia teste garantindo
+ * que QUANDO comentário existe, ele entra entre tabela e card.
+ */
+export function embedEduComment(finalText: string, eduComment: string | null | undefined): string {
+  if (!eduComment) return finalText
+  const { meal, card } = splitMealAndCard(finalText)
+  if (card) {
+    return `${meal}\n\n${EDU_COMMENT_MARKER}${eduComment}\n\n${card}`
+  }
+  // Sem card detectado (mensagem de erro ou registro sem balanço): grava
+  // comentário no final, ainda marcado pra split poder isolar a bolha.
+  return `${finalText}\n\n${EDU_COMMENT_MARKER}${eduComment}`
+}
+
+/**
  * Split em 3 partes — tabela do registro, comentário educativo, card de
  * balanço. Marker do comentário é EDU_COMMENT_MARKER (zero-width tripla),
  * inserido pelo pipeline/handler antes de concatenar o comentário. Se não

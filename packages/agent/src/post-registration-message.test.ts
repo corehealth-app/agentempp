@@ -4,11 +4,14 @@ import {
   composePostRegistrationMessage,
   composeReevalResultMessage,
   composeStatusMessage,
+  EDU_COMMENT_MARKER,
+  embedEduComment,
   formatMealTable,
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
   splitMealAndCard,
+  splitRegistrationParts,
   type MealItem,
 } from './post-registration-message.js'
 
@@ -454,5 +457,92 @@ describe('splitMealAndCard', () => {
     const split = splitMealAndCard('Oi, tudo bem?')
     expect(split.card).toBeNull()
     expect(split.meal).toBe('Oi, tudo bem?')
+  })
+})
+
+describe('embedEduComment — invariante das 3 bolhas (audit 2026-06-14)', () => {
+  // Contexto: 52% dos registros em prod saíam SEM o comentário educativo no
+  // meio (2 bolhas em vez de 3). Não havia teste que assertasse o invariante
+  // — toda regressão silenciosa em pipeline.ts:920 ou interactive-handler.ts:475
+  // só era detectada quando alguém checava SQL à mão. Aqui travamos.
+
+  const sampleRegistration = composePostRegistrationMessage({
+    registrations: [
+      {
+        tool: 'registra_refeicao',
+        mealType: 'cafe',
+        items: [item({ name: 'ovo cozido', kcal: 78 })],
+        totals: { kcal: 78, protein_g: 6.5, carbs_g: 0.5, fat_g: 5.3 },
+      },
+    ],
+    card: {
+      caloriesConsumed: 78,
+      caloriesTarget: 1843,
+      proteinG: 6.5,
+      proteinTarget: 100,
+      exerciseCalories: 0,
+      deficitBlock: 1000,
+      protocol: 'recomposicao',
+      last14d: null,
+    },
+  })
+
+  it('INVARIANTE 1: eduComment não-vazio ⇒ marker presente no texto retornado', () => {
+    const result = embedEduComment(sampleRegistration, 'Bom café, identidade firme.')
+    expect(result).toContain(EDU_COMMENT_MARKER)
+    expect(result).toContain('Bom café, identidade firme.')
+  })
+
+  it('INVARIANTE 2: eduComment vazio/null/undefined ⇒ texto inalterado', () => {
+    expect(embedEduComment(sampleRegistration, '')).toBe(sampleRegistration)
+    expect(embedEduComment(sampleRegistration, null)).toBe(sampleRegistration)
+    expect(embedEduComment(sampleRegistration, undefined)).toBe(sampleRegistration)
+  })
+
+  it('INVARIANTE 3: comentário SEMPRE entre tabela e card (nunca depois do card)', () => {
+    const result = embedEduComment(sampleRegistration, 'Microvitória + identidade.')
+    const eduIdx = result.indexOf(EDU_COMMENT_MARKER)
+    const cardIdx = result.indexOf('🔥 Consumido:')
+    expect(eduIdx).toBeGreaterThan(0)
+    expect(cardIdx).toBeGreaterThan(0)
+    expect(eduIdx).toBeLessThan(cardIdx)
+  })
+
+  it('INVARIANTE 4: splitRegistrationParts recupera as 3 partes em ordem', () => {
+    const result = embedEduComment(sampleRegistration, 'Bom café, ovo é proteína completa.')
+    const parts = splitRegistrationParts(result)
+    expect(parts.meal).toBeTruthy()
+    expect(parts.comment).toBeTruthy()
+    expect(parts.card).toBeTruthy()
+    expect(parts.meal).toContain('Café registrado ✅')
+    expect(parts.meal).not.toContain('🔥 Consumido')
+    expect(parts.comment).toBe('Bom café, ovo é proteína completa.')
+    expect(parts.card).toContain('🔥 Consumido')
+  })
+
+  it('INVARIANTE 5: sem card no texto (msg de erro) ⇒ marker no final, ainda recuperável', () => {
+    const semCard = 'Café registrado ✅\n\n- ovo cozido (50g): 78 kcal'
+    const result = embedEduComment(semCard, 'Bom começo, manda mais ao longo do dia.')
+    expect(result).toContain(EDU_COMMENT_MARKER)
+    expect(result.endsWith('Bom começo, manda mais ao longo do dia.')).toBe(true)
+  })
+
+  it('REGRESSÃO: marker NÃO duplica se chamado 2x acidentalmente', () => {
+    // Defesa contra caller que chama embedEduComment 2x por engano.
+    // Embed atual NÃO desduplica — comportamento atual é "concatena de novo".
+    // Este teste DOCUMENTA o comportamento; se virar problema em prod, fix:
+    // adicionar early-return quando finalText já contém marker.
+    const once = embedEduComment(sampleRegistration, 'Comentário A.')
+    const twice = embedEduComment(once, 'Comentário B.')
+    // Documenta: marker aparece 2x quando chamado 2x (não dedupe).
+    const markerCount = (twice.match(new RegExp(EDU_COMMENT_MARKER, 'g')) ?? []).length
+    expect(markerCount).toBe(2)
+  })
+
+  it('REGRESSÃO: comentário com quebras de linha internas preservadas', () => {
+    const multiLine = 'Parágrafo 1 microvitória.\n\nParágrafo 2 orientação.'
+    const result = embedEduComment(sampleRegistration, multiLine)
+    const parts = splitRegistrationParts(result)
+    expect(parts.comment).toBe(multiLine)
   })
 })

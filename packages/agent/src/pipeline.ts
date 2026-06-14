@@ -31,11 +31,10 @@ import {
   composePostRegistrationMessage,
   composeReevalResultMessage,
   composeStatusMessage,
-  EDU_COMMENT_MARKER,
+  embedEduComment,
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
-  splitMealAndCard,
   type RegistrationEntry,
 } from './post-registration-message.js'
 import {
@@ -917,19 +916,11 @@ export async function processMessage(
             embeddings: deps.embeddings,
           },
         )
-        if (eduComment) {
-          // Insere ANTES do card (marker "🔥 Consumido:") pra ficar entre
-          // tabela e card — mesma posição que o LLM antigo usava. Marca o
-          // comentário com EDU_COMMENT_MARKER (zero-width) pra splitRegistrationParts
-          // poder dividir em 3 bolhas no envio (Roberto 2026-06-01: 1 bolha
-          // ficava muito densa com tabela de 8 itens + comentário juntos).
-          const split = splitMealAndCard(finalText)
-          if (split.card) {
-            finalText = `${split.meal}\n\n${EDU_COMMENT_MARKER}${eduComment}\n\n${split.card}`
-          } else {
-            finalText = `${finalText}\n\n${EDU_COMMENT_MARKER}${eduComment}`
-          }
-        }
+        // embedEduComment é função pura testável (invariante: eduComment
+        // não-vazio ⇒ marker presente). Antes era código inline aqui e
+        // duplicado em interactive-handler.ts — 52% dos registros saíam
+        // sem comentário em prod e não havia teste do invariante.
+        finalText = embedEduComment(finalText, eduComment)
 
         messages.push({ role: 'assistant', content: finalText })
         deterministicRegistration = true

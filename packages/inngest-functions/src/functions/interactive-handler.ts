@@ -23,12 +23,11 @@ import {
   adaptToolItemsToEduInput,
   cadastraDadosIniciais,
   composePostRegistrationMessage,
-  EDU_COMMENT_MARKER,
+  embedEduComment,
   generateEducationalComment,
   parseOnboardingButtonId,
   registraRefeicao,
   registraTreino,
-  splitMealAndCard,
   splitRegistrationParts,
   type EduCommentInput,
   type MealItem,
@@ -471,15 +470,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           },
         )
 
-        let text = textBase
-        if (eduComment) {
-          const splitTmp = splitMealAndCard(textBase)
-          if (splitTmp.card) {
-            text = `${splitTmp.meal}\n\n${EDU_COMMENT_MARKER}${eduComment}\n\n${splitTmp.card}`
-          } else {
-            text = `${textBase}\n\n${EDU_COMMENT_MARKER}${eduComment}`
-          }
-        }
+        // embedEduComment é função pura testável (invariante: eduComment
+        // não-vazio ⇒ marker presente). Antes era código duplicado entre
+        // pipeline.ts e este handler — 52% dos registros saíam sem
+        // comentário em prod e não havia teste do invariante.
+        const text = embedEduComment(textBase, eduComment)
 
         // Roberto 2026-06-01: divide em ATÉ 3 bolhas — tabela | comentário
         // educativo | card de balanço — pra cada parte ter respiro próprio.

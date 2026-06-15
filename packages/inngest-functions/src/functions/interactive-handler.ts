@@ -238,6 +238,14 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           userTimezone,
           providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
           recentUserMessages: [],
+          // Bug I2 (Luciana 2026-06-14 15:44 BRT, pending bfdad07b): tap em
+          // pending antigo gravava meal_type ERRADO. proposal.mealType='cafe'
+          // (salvo às 13h) virava 'lanche' no DB (autocorrect por localHour=15),
+          // enquanto o card mostrava "Café registrado". Quando há mealType
+          // explícito no proposal — paciente VIU e CLICOU pra confirmar —
+          // ele é canônico: desliga autocorrect na tool. workout não usa.
+          trustMealType:
+            proposal.kind !== 'workout' && typeof proposal.mealType === 'string',
         }
 
         // Chama a tool de gravar diretamente (bypassando LLM) com os dados
@@ -294,6 +302,163 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
               .catch(() => {})
             return { handled: true, action: 'confirmed_empty', pendingId }
+          }
+          // ── BUG I4 (Roberto 2026-06-14 17:05 BRT — macarronada 350g) ──
+          // Itens "zerados" por composite_rejected/no_match no meal-pipeline
+          // chegam aqui com kcal=0 mas quantity_g cheio (sólido), e o tap
+          // inseria meal_log com 0 kcal — paciente sub-declarava sem rastro.
+          // Regra: sólidos com >30g e 0 kcal SÃO erro de parsing (água/chá/
+          // refri-zero/gelo/condimento podem ter 0 kcal legítimo e são
+          // tratados pelo whitelist de nome).
+          //
+          // Estratégia (review adversarial 2026-06-15):
+          //   1ª tentativa: bloquear all-or-nothing, pedir correção textual.
+          //   2ª tentativa (paciente reta'pa): degradar pra best-effort —
+          //   registra só os itens OK, ignora os suspeitos e avisa.
+          //
+          // Normalização NFD remove diacríticos ANTES da regex — `\b` em JS
+          // sem flag `u` trata 'á/ã/ç' como NON-WORD; sem isso o whitelist
+          // ficava DEAD pra qualquer alimento PT-BR acentuado (review CRITICAL).
+          const stripAccents = (s: string): string =>
+            s
+              .normalize('NFD')
+              .replace(/\p{Diacritic}/gu, '')
+              .toLowerCase()
+          // Whitelist de zero-cal legítimos. Tudo já normalizado pra ASCII.
+          const ZERO_CAL_NAME_RE =
+            /\b(agua|gelo|gelos|cha|chas|cafe\s+preto|cafe\s+sem\s+acucar|cafe\s+sem|mostarda|vinagre|limao|shoyu|molho\s+shoyu|sal|pimenta|gengibre|alho|acafrao|canela|oregano|salsinha|cebolinha|coentro|manjericao|hortela|aji-no-moto|caldo\s+knorr|caldo\s+de\s+galinha|caldo\s+de\s+legumes)\b/
+          // Bebidas zero/diet/light — qualifier + keyword de bebida. Pega
+          // Coca/Guaraná/Pepsi/Sprite/Fanta/Schweppes/Powerade/Gatorade/Red
+          // Bull/H2O/isotônico/etc sem precisar listar cada marca.
+          const ZERO_CAL_DRINK_QUALIFIER_RE =
+            /\b(zero|diet|light|sem\s+acucar|sem\s+adocante)\b/
+          const DRINK_KEYWORD_RE =
+            /\b(refri\w*|refrigerante|coca|coca-cola|guarana|pepsi|sprite|fanta|schweppes|powerade|gatorade|red\s*bull|skol|brahma|antarctica|sukita|tonica|isotonico|energetico|soda|h2o|monster|burn|aguardente)\b/
+          const isLegitZeroCal = (name: string): boolean => {
+            const n = stripAccents(name)
+            if (ZERO_CAL_NAME_RE.test(n)) return true
+            if (ZERO_CAL_DRINK_QUALIFIER_RE.test(n) && DRINK_KEYWORD_RE.test(n)) return true
+            return false
+          }
+          const suspiciousItems = proposal.items.filter((it) => {
+            const kcal = Number(it.kcal ?? 0)
+            const qty = Number(it.quantity_g ?? 0)
+            if (kcal > 0) return false
+            if (qty <= 30) return false
+            const nm = String(it.name ?? '')
+            if (isLegitZeroCal(nm)) return false
+            return true
+          })
+          // Verifica se já bloqueamos esse pending nas últimas 4h —
+          // sinal de retry. Evita loop infinito de block quando paciente
+          // insiste em re-confirmar via texto curto.
+          let isRetryAfterBlock = false
+          if (suspiciousItems.length > 0) {
+            const since4hIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
+            const { data: prevBlock } = await supabase
+              .from('product_events')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('event', 'tap.blocked_zero_kcal')
+              .gte('occurred_at', since4hIso)
+              .filter('properties->>pendingId', 'eq', pendingId)
+              .limit(1)
+            isRetryAfterBlock = ((prevBlock ?? []) as Array<{ id: string }>).length > 0
+          }
+          if (suspiciousItems.length > 0 && !isRetryAfterBlock) {
+            await supabase
+              .from('pending_registrations')
+              .update({ status: 'pending', resolved_at: null })
+              .eq('id', pendingId)
+              .eq('status', 'confirmed')
+
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.blocked_zero_kcal',
+              properties: {
+                pendingId,
+                meal_type: proposal.mealType ?? null,
+                provider_message_id: providerMessageId ?? null,
+                suspicious_items: suspiciousItems.map((it) => ({
+                  name: it.name,
+                  quantity_g: it.quantity_g,
+                })),
+                ok_items_count: proposal.items.length - suspiciousItems.length,
+                total_items: proposal.items.length,
+                note:
+                  'item sólido com >30g e 0 kcal indica composite_rejected/no_match no parser — não grava com zeros (bug I4 Roberto 2026-06-14)',
+              },
+            })
+
+            const namesList = suspiciousItems
+              .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
+              .join(', ')
+            const askText =
+              suspiciousItems.length === 1
+                ? `Não consegui calcular ${namesList} direito (deu 0 kcal). Me diz o que tinha de mais perto, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só me responder "registra mesmo assim".`
+                : `Não consegui calcular esses itens direito: ${namesList}. Me diz o que tinha de mais perto em cada um, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só responder "registra mesmo assim".`
+            await messaging
+              .sendText(wpp, askText, { replyTo: providerMessageId })
+              .catch(() => {})
+
+            await supabase.from('messages').insert({
+              user_id: userId,
+              direction: 'out',
+              role: 'assistant',
+              content_type: 'text',
+              content: askText,
+              provider: 'whatsapp_cloud',
+              agent_stage: 'recomposicao',
+              delivery_status: 'sent',
+            })
+
+            return {
+              handled: true,
+              action: 'blocked_zero_kcal',
+              pendingId,
+              suspicious_count: suspiciousItems.length,
+            }
+          }
+          // RETRY após block — best-effort: grava só os itens OK e avisa
+          // que os suspeitos foram ignorados. Se TODOS são suspeitos,
+          // confirma como veio (paciente insistiu, melhor 0 kcal
+          // visível que silêncio).
+          if (suspiciousItems.length > 0 && isRetryAfterBlock) {
+            const okItems = proposal.items.filter((it) => !suspiciousItems.includes(it))
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.blocked_zero_kcal_retry',
+              properties: {
+                pendingId,
+                ok_items_count: okItems.length,
+                suspicious_count: suspiciousItems.length,
+                action: okItems.length > 0 ? 'register_ok_drop_suspicious' : 'register_as_is',
+              },
+            })
+            if (okItems.length > 0) {
+              // Reescreve proposal.items pra só conter os OK — flui pro
+              // path normal do registraRefeicao abaixo.
+              proposal.items = okItems
+              const skipNames = suspiciousItems
+                .map((it) => `"${it.name}"`)
+                .join(', ')
+              const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
+              await messaging
+                .sendText(wpp, warnText, { replyTo: providerMessageId })
+                .catch(() => {})
+              await supabase.from('messages').insert({
+                user_id: userId,
+                direction: 'out',
+                role: 'assistant',
+                content_type: 'text',
+                content: warnText,
+                provider: 'whatsapp_cloud',
+                agent_stage: 'recomposicao',
+                delivery_status: 'sent',
+              })
+            }
+            // Se okItems.length === 0, segue com proposal.items original
+            // (todos zerados) — paciente insistiu, registro best-effort.
           }
           // Bug Roberto 2026-05-29 21:37: tool retornava success=true mesmo
           // com 0 inserts (loop sem error check em tools.ts:1097 — corrigido).

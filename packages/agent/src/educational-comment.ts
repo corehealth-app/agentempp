@@ -241,6 +241,10 @@ export async function generateEducationalComment(
         userId: opts.userId,
         state: opts.state,
         language: input.locale ?? 'pt-BR',
+        // Nível 1 defensivo (bug I3 2026-06-14): passa o slot pra selector
+        // descartar frases temporalmente incompatíveis (ex: "Whey de manhã…"
+        // em jantar). Sem isso o filtro vira no-op.
+        mealKind: input.kind,
         embeddings: opts.embeddings,
       })
       if (curated.phrase) {

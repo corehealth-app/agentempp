@@ -35,6 +35,13 @@ export interface PhraseSelectorInput {
   }
   /** Idioma. */
   language?: string
+  /** Tipo da refeição em que a frase será renderizada (Nível 1 defensivo —
+   * bug I3 2026-06-14: frase "Whey de manhã…" caiu em jantar do Roberto).
+   * Quando presente, o selector descarta frases cujo TEXTO contém palavras
+   * temporais incompatíveis com esse slot (ex: "manhã" em jantar/ceia,
+   * "antes de dormir" em café/almoço). Quando ausente, o filtro é no-op
+   * (degradação graciosa). */
+  mealKind?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia' | 'outro' | 'treino'
   /** Embeddings provider pra cascade semântica (opcional). Quando ausente,
    * selector só usa .eq() exato — degradação graciosa. Quando presente e
    * .eq() retorna vazio, faz similarity search via pgvector. */
@@ -114,6 +121,125 @@ function generateLookupVariants(canonicalName: string): string[] {
   if (canonicalName.endsWith('ao')) variants.add(canonicalName.slice(0, -2) + 'oes')
   if (canonicalName.endsWith('oes')) variants.add(canonicalName.slice(0, -3) + 'ao')
   return [...variants]
+}
+
+/**
+ * Nível 1 defensivo (bug I3 2026-06-14): detecta incompatibilidade temporal
+ * entre o TEXTO da frase curada e o slot (meal_type) em que ela seria
+ * renderizada. Ex.: frase "Whey de manhã…" não pode cair em jantar do
+ * paciente — quebra o tom e parece bug de relógio.
+ *
+ * Estratégia: regex em palavras-âncora temporais explícitas. Conservador
+ * (só rejeita combinações claramente erradas). NÃO usa NLP nem LLM.
+ *
+ * Slot → palavras temporais ACEITAS (frase OK se mencionar) e BLOQUEADAS
+ * (frase REJEITADA se mencionar):
+ *   cafe / lanche_da_manha → 'manhã', 'cedo', 'logo cedo', 'café da manhã'
+ *     OK. 'noite', 'jantar', 'antes de dormir', 'ceia' BLOQUEIA.
+ *   almoco → 'almoço' OK. 'manhã', 'café da manhã', 'antes de dormir',
+ *     'ceia', 'noite' BLOQUEIA.
+ *   lanche (genérico/tarde) → 'tarde', 'lanche' OK. 'manhã', 'cedo',
+ *     'antes de dormir', 'ceia' BLOQUEIA.
+ *   jantar → 'jantar', 'noite' OK. 'manhã', 'cedo', 'café da manhã'
+ *     BLOQUEIA.
+ *   ceia → 'ceia', 'antes de dormir', 'noite' OK. 'manhã', 'cedo',
+ *     'café da manhã', 'almoço' BLOQUEIA.
+ *   outro / treino / undefined → sem filtro (passa).
+ *
+ * Frases que mencionam MÚLTIPLAS refeições ("almoço, jantar, e até em
+ * vitaminas verdes no café da manhã") são tratadas como universais —
+ * citam ≥3 slots, descrevem versatilidade. Não bloqueiam.
+ */
+export function isTemporallyCompatible(
+  phrase: string,
+  mealKind?: PhraseSelectorInput['mealKind'],
+): { ok: true } | { ok: false; reason: string } {
+  if (!mealKind || mealKind === 'outro' || mealKind === 'treino') return { ok: true }
+  // Normaliza phrase pra match case-insensitive. Mantém acentos pra preservar
+  // semântica "manhã"≠"manha" (a 2ª é gíria) — apenas baixa caixa.
+  const p = phrase.toLowerCase()
+  // BOUNDARY PT-BR: \b do JS não trata 'ã', 'é', 'ç' como word chars, então
+  // 'manhã' tem \b ANTES de 'ã' (falha o match). Usamos boundary manual:
+  // (?:^|[^a-zà-úãõçâêôîû]) — começo de string OU char não-alfa-PT-BR.
+  // Lookbehind seria mais limpo mas Node 14+ suporta — usamos non-capturing
+  // group e padrão de início/fim. Trabalhamos com a string em lowercase.
+  const W = '[^a-zà-úãõçâêôîû]' // char NÃO-alfabético PT-BR (delimitador)
+  const B = `(?:^|${W})` // boundary à esquerda
+  const E = `(?=${W}|$)` // boundary à direita (lookahead)
+  const has = (needle: RegExp): boolean => needle.test(p)
+  const reCafeManha = new RegExp(`${B}caf[eé] da manh[ãa]${E}`, 'i')
+  const reManha = new RegExp(`${B}manh[ãa]${E}`, 'i')
+  const reCedo = new RegExp(`${B}(logo )?cedo${E}`, 'i')
+  const reAlmoco = new RegExp(`${B}almo[çc]o${E}`, 'i')
+  const reTarde = new RegExp(`${B}(?:[àa]|na|da) tarde${E}`, 'i')
+  const reJantar = new RegExp(`${B}jantar${E}`, 'i')
+  const reNoite = new RegExp(`${B}(?:[àa]|na|da|de) noite${E}`, 'i')
+  const reAntesDormir = new RegExp(`${B}antes de dormir${E}`, 'i')
+  const reCeia = new RegExp(`${B}ceia${E}`, 'i')
+
+  // Conta quantos slots distintos a frase referencia. Se >=3, é uma frase
+  // "versátil" que descreve flexibilidade entre refeições — não bloqueia.
+  const slotsMentioned =
+    (reCafeManha.test(p) || reManha.test(p) || reCedo.test(p) ? 1 : 0) +
+    (reAlmoco.test(p) ? 1 : 0) +
+    (reTarde.test(p) ? 1 : 0) +
+    (reJantar.test(p) || reNoite.test(p) ? 1 : 0) +
+    (reAntesDormir.test(p) || reCeia.test(p) ? 1 : 0)
+  if (slotsMentioned >= 3) return { ok: true }
+
+  // Regras de bloqueio por slot.
+  switch (mealKind) {
+    case 'cafe': {
+      if (has(reJantar)) return { ok: false, reason: 'phrase_mentions_jantar_in_cafe' }
+      if (has(reAntesDormir)) return { ok: false, reason: 'phrase_mentions_antes_dormir_in_cafe' }
+      if (has(reCeia)) return { ok: false, reason: 'phrase_mentions_ceia_in_cafe' }
+      if (has(reNoite)) return { ok: false, reason: 'phrase_mentions_noite_in_cafe' }
+      // "almoço" sozinho em frase de café também é estranho ("X é ideal pro almoço")
+      if (has(reAlmoco) && !has(reCafeManha) && !has(reManha))
+        return { ok: false, reason: 'phrase_mentions_almoco_only_in_cafe' }
+      return { ok: true }
+    }
+    case 'almoco': {
+      if (has(reCafeManha)) return { ok: false, reason: 'phrase_mentions_cafe_in_almoco' }
+      if (has(reAntesDormir))
+        return { ok: false, reason: 'phrase_mentions_antes_dormir_in_almoco' }
+      if (has(reCeia)) return { ok: false, reason: 'phrase_mentions_ceia_in_almoco' }
+      // "manhã" / "cedo" isolados em frase de almoço são incompatíveis
+      if ((has(reManha) || has(reCedo)) && !has(reAlmoco) && !has(reJantar))
+        return { ok: false, reason: 'phrase_mentions_manha_only_in_almoco' }
+      return { ok: true }
+    }
+    case 'lanche': {
+      // Lanche é o slot mais genérico em PT-BR (manhã ou tarde). Bloqueia só
+      // os extremos noturnos.
+      if (has(reAntesDormir))
+        return { ok: false, reason: 'phrase_mentions_antes_dormir_in_lanche' }
+      if (has(reCeia)) return { ok: false, reason: 'phrase_mentions_ceia_in_lanche' }
+      if (has(reJantar) && !has(reTarde) && !has(reManha))
+        return { ok: false, reason: 'phrase_mentions_jantar_only_in_lanche' }
+      return { ok: true }
+    }
+    case 'jantar': {
+      if (has(reCafeManha)) return { ok: false, reason: 'phrase_mentions_cafe_in_jantar' }
+      // "manhã" / "cedo" isolados em frase de jantar = bug I3 exato (Whey de manhã)
+      if ((has(reManha) || has(reCedo)) && !has(reJantar) && !has(reNoite))
+        return { ok: false, reason: 'phrase_mentions_manha_only_in_jantar' }
+      // "almoço" sozinho em jantar também é estranho
+      if (has(reAlmoco) && !has(reJantar) && !has(reNoite))
+        return { ok: false, reason: 'phrase_mentions_almoco_only_in_jantar' }
+      return { ok: true }
+    }
+    case 'ceia': {
+      if (has(reCafeManha)) return { ok: false, reason: 'phrase_mentions_cafe_in_ceia' }
+      if (has(reAlmoco) && !has(reCeia) && !has(reAntesDormir))
+        return { ok: false, reason: 'phrase_mentions_almoco_only_in_ceia' }
+      if ((has(reManha) || has(reCedo)) && !has(reCeia) && !has(reAntesDormir))
+        return { ok: false, reason: 'phrase_mentions_manha_only_in_ceia' }
+      return { ok: true }
+    }
+    default:
+      return { ok: true }
+  }
 }
 
 /**
@@ -238,6 +364,24 @@ export async function selectCuratedPhrase(
   })
 
   let pool = filtered.length > 0 ? filtered : candidates
+
+  // Nível 1 defensivo (bug I3 2026-06-14): descarta frases cujo TEXTO menciona
+  // refeição/horário incompatível com o slot atual. Ex.: "Whey de manhã…" em
+  // jantar do Roberto. Se TODAS forem incompatíveis, retorna null
+  // (no_temporally_compatible_phrase) — caller cai pro Haiku, melhor do que
+  // mandar frase quebrada.
+  if (input.mealKind) {
+    const compatible = pool.filter((c) => isTemporallyCompatible(c.phrase, input.mealKind).ok)
+    if (compatible.length === 0) {
+      return {
+        phrase: null,
+        food_canonical_name: canonicalName,
+        phrase_id: null,
+        reason: 'no_temporally_compatible_phrase',
+      }
+    }
+    pool = compatible
+  }
 
   // Cooldown por (user, phrase): filtra frases que esse user viu nas
   // últimas 7 dias. Resolve repetição literal pra mesmo paciente em

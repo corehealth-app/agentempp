@@ -64,22 +64,91 @@ export const processMessageFn = inngest.createFunction(
     // tratamos como TAP — dispara o mesmo evento Inngest do botão (handler
     // determinístico). Conservador: só fica ativo pra paciente com
     // buttons_enabled, e só intercepta texto curto. Roberto 2026-05-28.
+    //
+    // BUG T3 (2026-06-15) + review adversarial:
+    //   - Janela 4h via created_at (era 24h livre antes): confirmação fora
+    //     dessa janela quase sempre é coincidência ou pending órfão antigo.
+    //     4h cobre cenário comum "paciente sai do WhatsApp e volta depois"
+    //     sem abrir falso positivo de "ok" referindo a outra coisa.
+    //   - 2 sub-casos de orphan: existe pending stale (>4h) → manda msg
+    //     determinística pedindo o que registrar; nenhum pending → silêncio
+    //     (cai no LLM normal pq pode ser msg ambígua).
+    //   - Telemetria `pending.text_fallback_orphan` diferenciada.
     if (contentType === 'text' && text) {
       const responseKind = detectPendingResponse(text)
       if (responseKind) {
         const handled = await step.run('text-pending-fallback', async () => {
           const { supabase } = createWorkerDeps()
+          const nowMs = Date.now()
+          const fourHoursAgoIso = new Date(nowMs - 4 * 60 * 60 * 1000).toISOString()
+          const nowIso = new Date(nowMs).toISOString()
           const { data: pending } = await supabase
             .from('pending_registrations')
             .select('id')
             .eq('user_id', userId)
             .eq('status', 'pending')
-            .gt('expires_at', new Date().toISOString())
+            .gt('expires_at', nowIso)
+            .gte('created_at', fourHoursAgoIso)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
           const pendingId = (pending as { id: string } | null)?.id
-          if (!pendingId) return { dispatched: false, reason: 'no_active_pending' }
+          if (!pendingId) {
+            // Sub-caso: existe pending STALE (>4h e <expires_at, geralmente
+            // <24h)? Diferencia "orphan_no_pending_at_all" de
+            // "orphan_with_stale_pending" — só o 2º merece resposta
+            // determinística (paciente confirmou tarde, perdeu a janela).
+            const { data: stalePending } = await supabase
+              .from('pending_registrations')
+              .select('id, created_at, proposal')
+              .eq('user_id', userId)
+              .eq('status', 'pending')
+              .gt('expires_at', nowIso)
+              .lt('created_at', fourHoursAgoIso)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            const stale = stalePending as
+              | { id: string; created_at: string; proposal?: { mealType?: string } | null }
+              | null
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pending.text_fallback_orphan',
+              properties: {
+                response: responseKind,
+                text_preview: text.slice(0, 50),
+                window: '4h',
+                stale_pending: stale != null,
+                stale_pending_id: stale?.id ?? null,
+              },
+            })
+            if (stale) {
+              // Manda msg determinística: paciente confirmou tarde demais.
+              const mealHint = stale.proposal?.mealType
+                ? ` (era ${stale.proposal.mealType})`
+                : ''
+              const askText = `Recebi seu "${text.trim()}", mas a proposta${mealHint} ficou esperando muito tempo e eu não posso registrar com certeza. Pode me mandar de novo o que você comeu? Ou clicar no botão da proposta velha (se ainda estiver no chat).`
+              await messaging
+                .sendText(wpp, askText, { replyTo: providerMessageId })
+                .catch(() => {})
+              await supabase.from('messages').insert({
+                user_id: userId,
+                direction: 'out',
+                role: 'assistant',
+                content_type: 'text',
+                content: askText,
+                provider: 'whatsapp_cloud',
+                agent_stage: 'recomposicao',
+                delivery_status: 'sent',
+              })
+              return {
+                dispatched: false,
+                reason: 'stale_pending_too_old',
+                stale_pending_id: stale.id,
+              }
+            }
+            return { dispatched: false, reason: 'no_recent_pending' }
+          }
           await inngest.send({
             name: 'interactive.button.tapped',
             data: {
@@ -106,7 +175,18 @@ export const processMessageFn = inngest.createFunction(
             kind: responseKind,
           }
         }
-        // Sem pending ativo → cai no fluxo normal (LLM responde)
+        // Sub-caso T3: stale_pending_too_old já mandou msg determinística
+        // pedindo o paciente reenviar — NÃO cai pro LLM (evita LLM
+        // improvisar "Sim, e aí?" sem contexto).
+        if ((handled as { reason?: string })?.reason === 'stale_pending_too_old') {
+          return {
+            ok: true,
+            sent: 1,
+            reason: 'stale_pending_handled_deterministically',
+            kind: responseKind,
+          }
+        }
+        // no_recent_pending genuíno → cai no fluxo normal (LLM responde)
       }
     }
 

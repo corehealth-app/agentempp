@@ -3,6 +3,7 @@ import type { ServiceClient } from '@mpp/db'
 import {
   pickAnchorFood,
   inferTags,
+  isTemporallyCompatible,
   selectCuratedPhrase,
 } from './curated-phrase-selector.js'
 
@@ -296,5 +297,140 @@ describe('pickAnchorFood — filter kcal=0', () => {
       { food_name: 'arroz', kcal: 130, protein_g: 3, carbs_g: 28, fat_g: 0 },
     ])
     expect(r?.food_name).toBe('arroz')
+  })
+})
+
+describe('isTemporallyCompatible — Nível 1 defensivo (bug I3 2026-06-14)', () => {
+  // Bug exato: frase id=3166910f... "Whey de manhã é o tipo de hábito…"
+  // foi renderizada no JANTAR do Roberto em 2026-06-14 22:27.
+  it('bug I3: "Whey de manhã…" REJEITADA em jantar', () => {
+    const r = isTemporallyCompatible(
+      'Whey de manhã é o tipo de hábito que separa quem leva o processo a sério de quem só pensa em emagrecer.',
+      'jantar',
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toMatch(/manha_only_in_jantar/)
+  })
+
+  it('"Café com whey logo cedo trava a fome…" REJEITADA em jantar', () => {
+    const r = isTemporallyCompatible(
+      'Café com whey logo cedo trava a fome até o almoço — 20g de proteína num item só, escolha sólida pra recomp.',
+      'jantar',
+    )
+    expect(r.ok).toBe(false)
+  })
+
+  it('"Whey de manhã…" ACEITA em cafe', () => {
+    expect(
+      isTemporallyCompatible('Whey de manhã é o tipo de hábito…', 'cafe').ok,
+    ).toBe(true)
+  })
+
+  it('frase universal (3+ slots) PASSA em qualquer meal', () => {
+    const versatil =
+      'Acelga pode aparecer em quase todas as refeições principais — almoço, jantar, e até em vitaminas verdes no café da manhã.'
+    expect(isTemporallyCompatible(versatil, 'cafe').ok).toBe(true)
+    expect(isTemporallyCompatible(versatil, 'almoco').ok).toBe(true)
+    expect(isTemporallyCompatible(versatil, 'jantar').ok).toBe(true)
+    expect(isTemporallyCompatible(versatil, 'ceia').ok).toBe(true)
+  })
+
+  it('"proteína leve para o jantar" ACEITA em jantar, REJEITADA em cafe', () => {
+    const phrase = 'Salmao é uma proteína de digestão geralmente mais leve, opção para o jantar.'
+    expect(isTemporallyCompatible(phrase, 'jantar').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'cafe').ok).toBe(false)
+  })
+
+  it('"antes de dormir" REJEITADA em cafe/almoco/lanche', () => {
+    const phrase = 'Cuidado com castanha antes de dormir — gordura demora a digerir.'
+    expect(isTemporallyCompatible(phrase, 'cafe').ok).toBe(false)
+    expect(isTemporallyCompatible(phrase, 'almoco').ok).toBe(false)
+    expect(isTemporallyCompatible(phrase, 'lanche').ok).toBe(false)
+    expect(isTemporallyCompatible(phrase, 'ceia').ok).toBe(true)
+  })
+
+  it('frase neutra (sem palavra temporal) PASSA em qualquer slot', () => {
+    const phrase = 'Frango é proteína magra de alto valor biológico.'
+    expect(isTemporallyCompatible(phrase, 'cafe').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'almoco').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'jantar').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'ceia').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'lanche').ok).toBe(true)
+  })
+
+  it('mealKind ausente ou "outro"/"treino" → no-op (sempre passa)', () => {
+    const phrase = 'Whey de manhã é hábito de quem leva a sério.'
+    expect(isTemporallyCompatible(phrase, undefined).ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'outro').ok).toBe(true)
+    expect(isTemporallyCompatible(phrase, 'treino').ok).toBe(true)
+  })
+
+  it('case-insensitive: "MANHÃ" maiúsculo também detecta', () => {
+    expect(isTemporallyCompatible('Whey de MANHÃ é hábito…', 'jantar').ok).toBe(false)
+  })
+})
+
+describe('selectCuratedPhrase — filtro temporal integrado', () => {
+  it('reason=no_temporally_compatible_phrase quando todas frases são incompatíveis', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-whey-manha',
+        phrase: 'Whey de manhã é o tipo de hábito que separa…',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const r = await selectCuratedPhrase(supa, {
+      userId: 'roberto-prod',
+      items: [{ food_name: 'leite com whey', kcal: 200, protein_g: 25, carbs_g: 8, fat_g: 5 }],
+      mealKind: 'jantar',
+    })
+    expect(r.phrase).toBeNull()
+    expect(r.reason).toBe('no_temporally_compatible_phrase')
+  })
+
+  it('escolhe a única frase compatível quando há mix', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-incompat',
+        phrase: 'Whey de manhã é o tipo de hábito…',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+      {
+        id: 'p-neutral',
+        phrase: '{alimento} é proteína de qualidade.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const r = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'leite com whey', kcal: 200, protein_g: 25, carbs_g: 8, fat_g: 5 }],
+      mealKind: 'jantar',
+    })
+    expect(r.phrase).toBe('Leite com whey é proteína de qualidade.')
+    expect(r.phrase_id).toBe('p-neutral')
+  })
+
+  it('mealKind ausente = sem filtro (compat com call sites antigos)', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-whey',
+        phrase: 'Whey de manhã é hábito…',
+        tags: null,
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const r = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'whey', kcal: 100, protein_g: 20, carbs_g: 2, fat_g: 1 }],
+      // sem mealKind
+    })
+    expect(r.phrase).toBe('Whey de manhã é hábito…')
   })
 })

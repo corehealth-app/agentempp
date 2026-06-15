@@ -48,6 +48,14 @@ export interface ToolContext {
    * "corrige", "errei", etc) ou bug do LLM (foto nova classificada como
    * correção). NÃO substitui prompt rule, é defesa em profundidade. */
   recentUserMessages?: string[]
+  /** Quando true, `registra_refeicao` NÃO aplica autocorrect de meal_type
+   * pela hora local. Setado SÓ pelo caminho do tap de botão (interactive-
+   * handler `action='confirm'`), onde `proposal.mealType` veio de uma
+   * proposta explícita que o paciente clicou. Bug I2 (Luciana 2026-06-14
+   * 15:44 BRT, pending bfdad07b): pending criado às 13h com mealType='cafe',
+   * paciente clicou 2h47min depois (localHour=15) → autocorrect virava pra
+   * 'lanche' silenciosamente, divergindo do card "Café registrado". */
+  trustMealType?: boolean
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -835,6 +843,7 @@ export const registraRefeicao: ToolDefinition = {
       // sempre confia no LLM; mismatch fica só como log.
       const shouldAutoCorrect =
         args.meal_type !== expected &&
+        !ctx.trustMealType &&
         !userMentionedMeal &&
         distance >= 2 &&
         args.replace !== true
@@ -852,6 +861,7 @@ export const registraRefeicao: ToolDefinition = {
             timezone: tz,
             distance,
             user_mentioned_meal: userMentionedMeal,
+            trusted_tap: ctx.trustMealType === true,
             replace: args.replace ?? false,
           },
         })

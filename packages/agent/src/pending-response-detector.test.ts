@@ -34,4 +34,31 @@ describe('detectPendingResponse — paciente digita em vez de tocar botão', () 
     expect(detectPendingResponse(null)).toBe(null)
     expect(detectPendingResponse(undefined)).toBe(null)
   })
+
+  // Bug T3 (2026-06-15): bare "pode" considerado mas REJEITADO no review
+  // adversarial — em PT-BR "pode" é polissêmico (go-ahead genérico,
+  // "é possível", concordância vaga). Falso-positivo de gravar refeição
+  // sem confirmação real era risco maior que cobrir T3.
+  it('bare "pode" → null (polissêmico em PT-BR, risco de falso positivo)', () => {
+    expect(detectPendingResponse('pode')).toBe(null)
+    expect(detectPendingResponse('Pode')).toBe(null)
+    expect(detectPendingResponse('pode.')).toBe(null)
+  })
+
+  it('"pode registrar" continua casando (intenção explícita)', () => {
+    expect(detectPendingResponse('pode registrar')).toBe('confirm')
+    expect(detectPendingResponse('Pode registrar.')).toBe('confirm')
+  })
+
+  it('"registra mesmo assim" / "manda ver" → confirm (resposta ao block I4)', () => {
+    expect(detectPendingResponse('registra mesmo assim')).toBe('confirm')
+    expect(detectPendingResponse('pode mesmo assim')).toBe('confirm')
+    expect(detectPendingResponse('manda ver')).toBe('confirm')
+    expect(detectPendingResponse('manda registrar')).toBe('confirm')
+  })
+
+  it('"pode passar..." ou "pode trocar X" → null (não é confirmação)', () => {
+    expect(detectPendingResponse('pode trocar o arroz por feijão?')).toBe(null)
+    expect(detectPendingResponse('pode passar a receita?')).toBe(null)
+  })
 })

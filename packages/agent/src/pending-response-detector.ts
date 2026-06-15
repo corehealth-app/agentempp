@@ -11,11 +11,19 @@
  * Conservador: só faz match em texto CURTO e com padrão claro. Texto longo
  * (ex: "sim, comi também 100g de arroz") NÃO bate — a intenção é registrar
  * algo novo, não confirmar o pending.
+ *
+ * BUG T3 (2026-06-15): considerei bare "pode" mas review adversarial
+ * mostrou que "pode" em PT-BR é polissêmico ("go ahead" genérico,
+ * "é possível", concordância vaga). Falso-positivo de gravar refeição que
+ * o paciente NÃO confirmou era risco real. Mantemos só "pode registrar"
+ * (intenção explícita). Caso T3 (paciente diz "sim" sem pending criado)
+ * agora é endereçado pela telemetria `pending.text_fallback_orphan` +
+ * mensagem determinística em process-message.ts.
  */
 
 // Confirmações simples
 const CONFIRM_PATTERN =
-  /^\s*(s|sim|s[ií]|t[áa]|ok|isso|isso\s+mesmo|confirma|confirmo|registra|pode\s+registrar|positivo|👍|✅|👌)\s*[.!]?\s*$/i
+  /^\s*(s|sim|s[ií]|t[áa]|ok|isso|isso\s+mesmo|confirma|confirmo|registra|pode\s+registrar|registra\s+mesmo\s+assim|pode\s+mesmo\s+assim|manda\s+(ver|brasa|pra|registrar)|positivo|👍|✅|👌)\s*[.!]?\s*$/i
 
 // Pedido de correção
 const EDIT_PATTERN =

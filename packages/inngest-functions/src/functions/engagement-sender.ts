@@ -1,4 +1,5 @@
 import {
+  getLocalDateMinusDays,
   getLocalDateString,
   getLocalHour,
   getMealPattern,
@@ -299,10 +300,14 @@ async function maybeEngageUser(
   const consumedProtein = (snapToday as { protein_g?: number } | null)?.protein_g ?? 0
   const exerciseKcal = (snapToday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
 
-  // Snapshot do dia anterior — pra "déficit de ontem" no engajamento da manhã
-  const yesterdayDate = new Date(`${todayLocalDate}T00:00:00${tzOffset(userTimezone)}`)
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
-  const yesterdayLocalDate = yesterdayDate.toISOString().slice(0, 10)
+  // Snapshot do dia anterior — pra "déficit de ontem" no engajamento da manhã.
+  // BUG I1 (review adversarial 2026-06-15): a lógica manual via
+  // new Date(`${todayLocal}T00:00:00${tzOffset(userTimezone)}`).setDate(-1)
+  // estava ERRADA por -1 dia em timezones POSITIVOS (Asia/*, Australia/*,
+  // etc) porque Node em UTC reinterpretava a data instanciada. Em prod Brasil
+  // (-03:00) nunca disparou, mas é regressão latente. getLocalDateMinusDays
+  // usa Intl.DateTimeFormat (timezone-aware) e bate em qualquer offset.
+  const yesterdayLocalDate = getLocalDateMinusDays(userTimezone, 1)
   const { data: snapYesterday } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, calories_target, daily_balance, exercise_calories, day_status')
@@ -317,8 +322,7 @@ async function maybeEngageUser(
   // ficou incompleto/sem fechar (mesma régua do crédito do bloco no closer).
   const yConsumed = (snapYesterday as { calories_consumed?: number } | null)?.calories_consumed ?? 0
   const yStatus = (snapYesterday as { day_status?: string } | null)?.day_status
-  const yesterdayUsable =
-    yConsumed > 0 && yStatus !== 'incomplete_no_response' && yStatus !== 'pending_close'
+  const yTarget = (snapYesterday as { calories_target?: number } | null)?.calories_target ?? null
 
   // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
   const { data: profileRow } = await supabase
@@ -331,16 +335,62 @@ async function maybeEngageUser(
       ? ((profileRow as { deficit_level?: number | null } | null)?.deficit_level ?? 500)
       : 0
 
+  // ── BUG I1 (Luciana 2026-06-14/15) ──
+  // Engagement matinal aluc**inava sobre o fechamento de ontem ("saldo positivo",
+  // "1º bloco completo", "dentro da meta") quando ontem foi SUB-REGISTRO, dia
+  // INCOMPLETO ou EXCEDENTE. Causa: o LLM só recebia yesterdayLabel (positivo
+  // quando havia balanço) ou "Sem dados de ontem" — sem distinguir os ramos
+  // críticos. Agora consultamos bloco7700.skipped_* events do dia anterior e
+  // montamos um VEREDITO objetivo que o LLM SÓ pode reportar (regra
+  // inviolável no prompt — ver linha do "REGRA INVIOLÁVEL SOBRE ONTEM").
+  const since36hIso = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
+  const { data: evRawRow } = await supabase
+    .from('product_events')
+    .select('event, properties, occurred_at')
+    .eq('user_id', userId)
+    .in('event', [
+      'bloco7700.skipped_subregistro',
+      'bloco7700.skipped_incomplete_day',
+      'bloco7700.skipped_inactive_day',
+      'bloco7700.block_completed',
+    ])
+    .gte('occurred_at', since36hIso)
+    .order('occurred_at', { ascending: false })
+  const yEvents =
+    (evRawRow as Array<{
+      event: string
+      properties: Record<string, unknown> | null
+      occurred_at: string
+    }> | null) ?? []
+  const yEventByName = (name: string) =>
+    yEvents.find(
+      (e) =>
+        e.event === name &&
+        ((e.properties?.date ?? e.properties?.snapshot_date) as string | undefined) ===
+          yesterdayLocalDate,
+    )
+  const skSub = yEventByName('bloco7700.skipped_subregistro')
+  const skInc = yEventByName('bloco7700.skipped_incomplete_day')
+  const skIna = yEventByName('bloco7700.skipped_inactive_day')
+  const blkOk = yEventByName('bloco7700.block_completed')
+  const anySkipped = !!(skSub || skInc || skIna)
+  const isIncompleteStatus =
+    yStatus === 'incomplete_no_response' || yStatus === 'pending_close'
+  const isInactive = yConsumed <= 0
+  const isOverTarget =
+    typeof yesterdayBalance === 'number' && yesterdayBalance > 100 // excedente > 100 kcal vs meta
+
   // FIX #3 (Paulo 2026-05-20 11:17): o LLM recebia o balanço cru ("458 kcal,
   // negativo=déficit") e mesmo assim chamou +458 (superávit) de "déficit". Agora
   // o RÓTULO é decidido em código e entregue pronto — o LLM não decide o sinal.
   // Déficit REAL de ontem = vs MANUTENÇÃO (o que de fato emagrece e o bloco
   // credita), NÃO o saldo vs meta. Decisão Roberto 2026-05-22: comunicar o real
-  // (ex: 897), não o 397; e creditar o exercício quando houve. O RÓTULO é
-  // decidido em código — o LLM não decide número nem sinal (FIX #3 2026-05-20).
+  // (ex: 897), não o 397; e creditar o exercício quando houve.
   let yesterdayLabel: string | null = null
   let yesterdayRealDef: number | null = null
-  if (yesterdayBalance != null && yesterdayUsable) {
+  const yesterdayClosedOk =
+    !anySkipped && yStatus === 'complete' && yConsumed > 0 && !isOverTarget
+  if (yesterdayBalance != null && yesterdayClosedOk) {
     const realDef = Math.round(realDailyDeficit(designDeficit, yesterdayBalance))
     yesterdayRealDef = realDef
     const yExercise =
@@ -352,6 +402,46 @@ async function maybeEngageUser(
         : realDef < -50
           ? `superávit de ${Math.abs(realDef)} kcal acima da manutenção (comeu mais do que gastou — NÃO chame de déficit)`
           : `praticamente em manutenção (${Math.abs(realDef)} kcal de diferença)`
+  }
+
+  // Veredito objetivo do dia anterior. Ordem de prioridade: skipped > inativo >
+  // excedente > fechou OK > sem dados. O LLM SÓ pode usar essa string como
+  // verdade sobre ontem — regra inviolável injetada abaixo no prompt.
+  let yesterdayVerdict: string
+  if (!snapYesterday) {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): SEM DADOS — não fale como se o dia tivesse fechado. ` +
+      `Convide o paciente a registrar hoje sem afirmar nada sobre ontem.`
+  } else if (skSub) {
+    const pct = (skSub.properties?.pct ?? skSub.properties?.completion_pct) as number | undefined
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): SUB-REGISTRO (consumido ${yConsumed} kcal vs meta ${yTarget ?? '?'} kcal` +
+      (pct != null ? `, ${pct}%` : '') +
+      `). O sistema NÃO creditou bloco 7700. ` +
+      `NÃO fale "fechou bem" / "déficit" / "bloco completo". ` +
+      `Convide a retomar hoje sem cobrar.`
+  } else if (skInc || isIncompleteStatus) {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): DIA INCOMPLETO (paciente não respondeu lembretes / fechamento parcial). ` +
+      `O sistema NÃO creditou bloco. ` +
+      `NÃO finja fechamento. Convide a retomar com leveza.`
+  } else if (skIna || isInactive) {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): SEM ATIVIDADE (zero registros). ` +
+      `NÃO fale em "fechamento" nem "déficit". ` +
+      `Reconheça que ontem foi inativo e convide a começar hoje.`
+  } else if (isOverTarget && typeof yesterdayBalance === 'number') {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): EXCEDENTE (consumiu ${yConsumed} kcal vs meta ${yTarget ?? '?'} kcal — saldo +${yesterdayBalance} kcal). ` +
+      `NÃO chame de "dentro da meta" nem "déficit". ` +
+      `Reconheça sem julgar e convide a retomar hoje.`
+  } else if (yesterdayLabel != null) {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): FECHOU OK — ${yesterdayLabel}` +
+      (blkOk ? '. BLOCO 7700 FECHADO ontem (marco grande do método).' : '.')
+  } else {
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): dados insuficientes — não invente fechamento.`
   }
 
   const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'
@@ -534,12 +624,14 @@ DADOS REAIS DO DIA — USE ESTES VALORES, NÃO INVENTE:
 - Meta de proteína de hoje: ${targetProtein}${typeof targetProtein === 'number' ? ' g' : ''}
 - Consumido até agora: ${consumedKcal} kcal | ${consumedProtein} g proteína
 - Exercício hoje: ${exerciseKcal} kcal queimadas
-${yesterdayLabel != null ? `- Balanço de ONTEM (${yesterdayLocalDate}): ${yesterdayLabel}` : '- Sem dados de ontem'}
+- ${yesterdayVerdict}
 
 Sequência atual: ${progress?.current_streak ?? 0} dias consecutivos
 XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
 Blocos completos: ${progress?.blocks_completed ?? 0}
+
+⚠️ REGRA INVIOLÁVEL SOBRE ONTEM (bug I1 — Luciana 2026-06-14/15): se a linha "Ontem" acima disser SUB-REGISTRO, DIA INCOMPLETO, SEM ATIVIDADE, EXCEDENTE ou SEM DADOS, você está PROIBIDO de dizer "fechou bem", "saldo positivo", "bloco completo", "dentro da meta", "déficit" ou qualquer coisa que sugira sucesso no fechamento de ontem. SÓ celebre fechamento quando a linha disser FECHOU OK.
 
 ⚠️ IMPORTANTE: ao escrever a mensagem, use SOMENTE português. Não use "streak" (escreva "sequência" ou "dias consecutivos"). Não use "level" (escreva "nível"). Não use "workout/mindset/timing/boost/craving" ou qualquer palavra em inglês. Tradução obrigatória — veja a regra idioma-do-paciente.${blockCompletedHighlight}${motivationalLine}
 `.trim()
@@ -616,6 +708,46 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
         real_deficit: yesterdayRealDef,
         daily_balance: yesterdayBalance ?? null,
       })
+    }
+  }
+
+  // ── BUG I1 hallucination guard (review adversarial 2026-06-15) ──
+  // Quando o veredito de ontem é negativo (SUB-REGISTRO / DIA INCOMPLETO /
+  // SEM ATIVIDADE / EXCEDENTE / SEM DADOS), a regra no prompt PROÍBE o LLM
+  // de celebrar fechamento. Mas Haiku às vezes ignora regras "PROIBIDO" no
+  // prompt (~5-10% das gerações). Hard-guard pós-LLM: escaneia frases
+  // proibidas no texto e, se achar, substitui por fallback determinístico
+  // (mesmo padrão do reconcileBlocoMention).
+  const verdictIsNegative =
+    yesterdayVerdict.startsWith('Ontem') &&
+    (yesterdayVerdict.includes('SUB-REGISTRO') ||
+      yesterdayVerdict.includes('DIA INCOMPLETO') ||
+      yesterdayVerdict.includes('SEM ATIVIDADE') ||
+      yesterdayVerdict.includes('EXCEDENTE') ||
+      yesterdayVerdict.includes('SEM DADOS') ||
+      yesterdayVerdict.includes('dados insuficientes'))
+  if (verdictIsNegative) {
+    // Padrões que indicam alucinação de fechamento positivo. Case-insensitive.
+    const HALLUCINATION_RE =
+      /\b(fechou\s+(bem|com\s+deficit|com\s+saldo|dentro\s+da\s+meta)|saldo\s+positivo|bloco(?:\s+(?:de\s+7\.?700)?)?\s+(?:completo|fechado)|completou\s+(?:o\s+)?bloco|dentro\s+da\s+meta|deficit\s+real\s+de|deficit\s+de\s+\d|superavit|excedeu\s+a\s+meta\s+e\s+ainda\s+assim)/i
+    const noAccent = text.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    if (HALLUCINATION_RE.test(noAccent)) {
+      const fallback =
+        yesterdayVerdict.includes('SUB-REGISTRO')
+          ? 'Bom dia! Ontem ficou só com registro parcial — o que importa é retomar hoje sem cobrar. Manda o que comer, vamos juntos.'
+          : yesterdayVerdict.includes('DIA INCOMPLETO')
+            ? 'Bom dia! Ontem o dia ficou em aberto — sem drama, hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.'
+            : yesterdayVerdict.includes('SEM ATIVIDADE')
+              ? 'Bom dia! Ontem foi um dia parado por aqui — acontece. Hoje a gente recomeça: manda o primeiro registro quando comer.'
+              : yesterdayVerdict.includes('EXCEDENTE')
+                ? 'Bom dia! Ontem o consumo passou um pouco da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.'
+                : 'Bom dia! Sobre ontem não tenho dados certos pra comentar. Hoje recomeçamos do zero — manda o primeiro registro quando comer.'
+      await logEvent('engagement.hallucinated_closure', {
+        verdict: yesterdayVerdict.slice(0, 200),
+        original_preview: text.slice(0, 300),
+        replaced_with: 'deterministic_fallback',
+      })
+      text = fallback
     }
   }
 

@@ -56,6 +56,7 @@ import {
 } from './express-mode-detector.js'
 import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
+import { runToolGuard } from './tools/tool-guards.js'
 import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
@@ -892,6 +893,36 @@ export async function processMessage(
             })
             continue
           }
+        }
+
+        // ACT-3 prevention plan 2026-06-16: tool guard pós-LLM.
+        // Cada tool em GUARDS valida `validated` ANTES do execute. Rejeição
+        // emite `tool_rejected_by_guard` + força retry com hint dirigido.
+        // Defesa determinística — não depende de prompt obedecer.
+        const guardResult = await runToolGuard(tc.name, validated as Record<string, unknown>, {
+          supabase: deps.supabase,
+          userId,
+          trustedTap: false,
+          visionPending: ctx.visionPending,
+        })
+        if (!guardResult.ok) {
+          toolCallsSummary.push({
+            name: tc.name,
+            arguments: validated,
+            error: `guard:${guardResult.reason}`,
+          })
+          const retryHint =
+            guardResult.retry_hint ??
+            `SISTEMA: a tool ${tc.name} foi rejeitada pelo guard (${guardResult.reason}). Reformule e tente de novo.`
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({
+              error: `guard_rejected:${guardResult.reason}`,
+              reason: retryHint,
+            }),
+          })
+          continue
         }
 
         const toolStart = Date.now()

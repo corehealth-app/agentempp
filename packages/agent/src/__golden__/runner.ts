@@ -37,6 +37,10 @@ export interface GoldenFixture {
   /** Esperado: presença de tokens-chave no texto final (não exato — palavras
    * canônicas do card/método). Cada item == regex substring. */
   expected_text_contains: string[]
+  /** Esperado AUSENTE no texto final — pra travar regressão de alucinação.
+   * Ex: I1 engagement matinal NÃO pode dizer "saldo positivo" quando dia
+   * anterior foi sub-registro. Cada item == regex substring. */
+  expected_text_not_contains?: string[]
 }
 
 /**
@@ -100,6 +104,12 @@ export function diffGolden(
   for (const re of fixture.expected_text_contains) {
     if (!new RegExp(re, 'i').test(normalized)) {
       diffs.push(`text missing pattern: /${re}/`)
+    }
+  }
+  // Tokens-chave que NÃO podem estar (anti-alucinação)
+  for (const re of fixture.expected_text_not_contains ?? []) {
+    if (new RegExp(re, 'i').test(normalized)) {
+      diffs.push(`text contains forbidden pattern: /${re}/`)
     }
   }
   return diffs

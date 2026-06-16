@@ -424,10 +424,31 @@ export const processMessageFn = inngest.createFunction(
             const { supabase } = createWorkerDeps()
             const rows = vRes.images.map((img) => {
               let confidence: number | null = null
+              // FIX 4 (Roberto 2026-06-15): expor meal_items + meal_context
+              // no properties pra pipeline.ts conseguir detectar "foto pendente
+              // de registro" sem precisar re-rodar vision. Caso real: paciente
+              // mandou foto, respondeu disambiguação, LLM chamou
+              // marca_refeicao_pulada em vez de registra_refeicao — foto
+              // perdida. Com meal_items aqui, o pipeline carrega visionPending
+              // do estado e bloqueia o skip.
+              let mealItems:
+                | Array<{ name: string; quantity_g_estimate: number; confidence: number }>
+                | null = null
+              let mealContext: string | null = null
+              let needsDisambiguation = false
               if (img.type === 'meal') {
                 confidence = img.items.length > 0
                   ? img.items.reduce((acc, it) => acc + (it.confidence ?? 0), 0) / img.items.length
                   : null
+                mealItems = img.items.map((it) => ({
+                  name: it.name,
+                  quantity_g_estimate: it.quantity_g_estimate,
+                  confidence: it.confidence,
+                }))
+                mealContext = img.meal_context ?? null
+                needsDisambiguation = img.items.some(
+                  (it) => it.confidence < visionCfg.meal_confidence_threshold,
+                )
               } else if (img.type === 'body') {
                 confidence = img.bf_confidence
               } else if (
@@ -452,6 +473,10 @@ export const processMessageFn = inngest.createFunction(
                   model,
                   photo_count: vRes.images.length,
                   had_caption: !!text,
+                  // FIX 4 — telemetria rica pro gate funcionar
+                  meal_items: mealItems,
+                  meal_context: mealContext,
+                  needs_disambiguation: needsDisambiguation,
                 },
               }
             })

@@ -11,6 +11,128 @@ import type { ServiceClient } from '@mpp/db'
 export interface MealItemInput {
   food_name: string
   quantity_g: number
+  /**
+   * Kcal informado EXPLICITAMENTE pelo paciente no texto ("rap 10 : 70 calorias").
+   * Quando presente e ≥ 0, OVERRIDE o kcal do TACO/histórico/estimativa.
+   * Os macros P/C/F são re-escalonados proporcionalmente à kcal original (mantém
+   * o RATIO da fonte — TACO ou estimateMacros).
+   *
+   * Bug Luciana 2026-06-16: paciente repetiu "rap 10 : 70 calorias" 4× e o
+   * sistema gravou wrap 140 kcal todas as vezes porque o pipeline ignorava o
+   * número de kcal do texto e usava só o lookup do food_db.
+   */
+  user_kcal?: number
+}
+
+/**
+ * Parse de "X cal/kcal/calorias" no texto do paciente, associando a um item.
+ *
+ * Estratégia (heurística simples conforme spec):
+ *   1. Tokeniza o texto por separadores fortes (vírgula, dois-pontos, "e",
+ *      "+", quebra de linha) — cada trecho representa "um item + opcionais".
+ *   2. Em cada trecho com kcal, associa ao ÚLTIMO item cujo food_name aparece
+ *      naquele trecho (substring case/acento-insensitive). Se nenhum item bate,
+ *      associa ao item da última posição mencionada anteriormente.
+ *   3. Retorna Map de food_name → kcal (último valor vence se múltiplas
+ *      menções; conservador).
+ *
+ * Pura — sem I/O. Testável.
+ */
+export function parseUserKcalOverrides(
+  patientText: string | null | undefined,
+  items: Array<{ food_name: string }>,
+): Map<string, number> {
+  const out = new Map<string, number>()
+  if (!patientText || items.length === 0) return out
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  // Regex: número (inteiro ou decimal com . ou ,) + kcal/cal/calorias/caloria.
+  // Aceita "70 kcal", "70kcal", "70 calorias", "70cal", "70,5 kcal".
+  // NÃO aceita "g/grama/gramas" pra não casar com peso — pega só energia.
+  const KCAL_RE = /(\d+(?:[.,]\d+)?)\s*(?:k?cal(?:orias?)?)\b/gi
+  // Trechos: split por ',', ':', ';', '|', '\n', '+', " e " (com espaços).
+  // ATENÇÃO ao decimal "70,5" — vírgula entre dígitos NÃO é separador.
+  // Lookbehind/ahead: split em [,:;|\n+] SÓ quando não está entre dígitos.
+  // ` e ` (com espaços ao redor) é separador linguístico.
+  const segments = patientText.split(/(?<!\d)[,:;|\n+](?!\d)|(?<!\d),(?!\d)|(?:\s+e\s+)/i)
+  // Normaliza nomes dos itens uma vez
+  const normItems = items.map((it) => ({ raw: it.food_name, norm: normalize(it.food_name) }))
+  // Default lastSeenItem: se só há UM item na refeição, ele é o alvo presumido
+  // de qualquer kcal mencionada no texto (cobre caso "rap 10 : 70 cal" onde o
+  // paciente escreveu "rap" mas LLM normalizou pra "wrap" no food_name).
+  let lastSeenItem: string | null = items.length === 1 ? (items[0]?.food_name ?? null) : null
+
+  // HARDENING (review HIGH KCAL-MULTI-ITEM 2026-06-16): primeiro passo — coletar
+  // segmentos com kcal mas SEM item identificado por nome. Vou alinhar esses
+  // por ordem com os items que ainda não receberam override (caso "rap 10 :
+  // 70 cal e suco" com items=[wrap, suco] — segmento#1 tem kcal sem nome
+  // batendo, segmento#2 cita 'suco' sem kcal; alinhamento por ordem dá
+  // wrap=70, suco sem override).
+  type SegInfo = { seg: string; segNorm: string; lastKcal: number | null; bestItem: string | null }
+  const segInfos: SegInfo[] = []
+
+  for (const segRaw of segments) {
+    const seg = segRaw.trim()
+    if (!seg) continue
+    const segNorm = normalize(seg)
+    let bestItem: string | null = null
+    let bestPos = -1
+    for (const ni of normItems) {
+      if (!ni.norm) continue
+      const pos = segNorm.lastIndexOf(ni.norm)
+      if (pos > bestPos) {
+        bestPos = pos
+        bestItem = ni.raw
+      }
+      const firstWord = ni.norm.split(/\s+/)[0]
+      if (firstWord && firstWord.length >= 3) {
+        const pf = segNorm.lastIndexOf(firstWord)
+        if (pf > bestPos) {
+          bestPos = pf
+          bestItem = ni.raw
+        }
+      }
+    }
+    let lastKcal: number | null = null
+    let m: RegExpExecArray | null
+    KCAL_RE.lastIndex = 0
+    while ((m = KCAL_RE.exec(seg)) !== null) {
+      const n = Number(m[1]!.replace(',', '.'))
+      if (Number.isFinite(n) && n >= 0) lastKcal = n
+    }
+    segInfos.push({ seg, segNorm, lastKcal, bestItem })
+  }
+
+  // Passo 1: aplica os overrides com bestItem definido.
+  for (const info of segInfos) {
+    if (info.bestItem) lastSeenItem = info.bestItem
+    if (info.lastKcal == null) continue
+    const target = info.bestItem ?? lastSeenItem
+    if (target) out.set(target, info.lastKcal)
+  }
+
+  // Passo 2: alinhamento por ORDEM — segmentos com kcal mas sem item identificado
+  // ficam órfãos. Quando há exatamente N segmentos-órfãos e ≤N items sem override
+  // ainda, alinhar por posição na lista. Cobre "rap 10 : 70 cal e suco" com
+  // items=[wrap, suco]: segmento#1 (kcal=70, bestItem=null) alinha com wrap
+  // (1º item sem override); segmento#2 (kcal=null) ignora.
+  const orphanSegsWithKcal = segInfos.filter((s) => s.lastKcal != null && s.bestItem === null)
+  const itemsWithoutOverride = items.filter((it) => !out.has(it.food_name))
+  if (
+    orphanSegsWithKcal.length > 0 &&
+    itemsWithoutOverride.length > 0 &&
+    orphanSegsWithKcal.length <= itemsWithoutOverride.length
+  ) {
+    for (let i = 0; i < orphanSegsWithKcal.length; i++) {
+      const seg = orphanSegsWithKcal[i]
+      const item = itemsWithoutOverride[i]
+      if (seg && item && seg.lastKcal != null && !out.has(item.food_name)) {
+        out.set(item.food_name, seg.lastKcal)
+      }
+    }
+  }
+
+  return out
 }
 
 export interface MealItemMatched {
@@ -603,6 +725,53 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (let it of items) {
+    // ── PRIORIDADE -3: KCAL EXPLÍCITO DO PACIENTE (Bug Luciana 2026-06-16) ──
+    // Quando o paciente disse "rap 10 : 70 calorias", o número de kcal é fonte
+    // de verdade — override total do TACO/histórico/estimativa. P/C/F vêm da
+    // proporção do `estimateMacros` (categoria implícita), re-escalonados pro
+    // novo total de kcal mantendo o ratio P/C/F.
+    //
+    // Caso real: Luciana mandou "rap 10 : 70 calorias" 4× e o sistema gravou
+    // wrap 140 kcal todas as vezes porque ignorava o número no texto. Aqui
+    // o agente registra exatamente o que o paciente disse — sem segunda chance
+    // do trigram dominar.
+    if (it.user_kcal != null && it.user_kcal >= 0 && it.quantity_g > 0) {
+      const est = estimateMacros(it.food_name)
+      const baselineKcal = (est.kcal * it.quantity_g) / 100
+      // Ratio P/C/F do baseline (por unidade de kcal). Se baseline for 0 (raro),
+      // grava kcal e P/C/F=0 — paciente forçou o valor exato.
+      const ratio = baselineKcal > 0 ? it.user_kcal / baselineKcal : 0
+      const scaledProt = +((est.protein * it.quantity_g) / 100 * ratio).toFixed(2)
+      const scaledCarb = +((est.carbs * it.quantity_g) / 100 * ratio).toFixed(2)
+      const scaledFat = +((est.fat * it.quantity_g) / 100 * ratio).toFixed(2)
+      const scaledFib = +((est.fiber * it.quantity_g) / 100 * ratio).toFixed(2)
+      const overrideKcal = +it.user_kcal.toFixed(1)
+      const natU = naturalUnit(it.food_name, it.quantity_g)
+      auditWarnings.push(
+        `"${it.food_name}" usou kcal informado pelo paciente (${overrideKcal} kcal) em vez do lookup TACO (baseline categoria "${est.category}" ~${baselineKcal.toFixed(0)} kcal). P/C/F re-escalonados.`,
+      )
+      matched.push({
+        food_name: it.food_name,
+        matched_taco_name: `[kcal informado pelo paciente] ${est.category}`,
+        matched_taco_id: null,
+        quantity_g: it.quantity_g,
+        kcal: overrideKcal,
+        protein_g: scaledProt,
+        carbs_g: scaledCarb,
+        fat_g: scaledFat,
+        fiber_g: scaledFib,
+        similarity: 1.0,
+        source: 'taco',
+        display_qty: natU.display_qty,
+        display_unit: natU.display_unit,
+      })
+      totals.kcal += overrideKcal
+      totals.protein_g += scaledProt
+      totals.carbs_g += scaledCarb
+      totals.fat_g += scaledFat
+      totals.fiber_g += scaledFib
+      continue
+    }
     // ── PRIORIDADE -2: BEBIDA ZERO/DIET/LIGHT (Bug Luciana 2026-05-25) ──────
     // Roda ANTES de tudo. Se o nome já deixa claro que é refrigerante/bebida
     // zero ("coca zero", "guaraná diet", "refri light"), força macros ~0 e NÃO

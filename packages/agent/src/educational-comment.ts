@@ -217,6 +217,35 @@ export async function generateEducationalComment(
   input: EduCommentInput,
   opts: EduCommentOpts = {},
 ): Promise<string> {
+  // Defesa interna (bug Roberto 2026-06-16): se a tool deduplicou 100% dos
+  // itens (already_logged=true ⇒ items=[]), o composePostRegistrationMessage
+  // emite "já estava registrado" SEM tabela — mas o Haiku, sem itens no
+  // payload, improvisa contradição ("lanche apareceu zerada, saiu sem comer,
+  // lista não carregou"). Treino não tem items (usa workout.*), então só
+  // bloqueia refeição vazia. Defesa em camadas com o guard do caller.
+  //
+  // HARDENING (review HIGH H3 2026-06-16): também bloqueia quando items
+  // existe mas TODOS têm kcal=0 ou totals.kcal=0 (calc-failed) — payload
+  // tecnicamente populado mas semanticamente zerado vai gerar o mesmo
+  // improviso ("aveia saiu zerada").
+  if (input.kind !== 'treino') {
+    const noItems = !input.items || input.items.length === 0
+    const totalsZero =
+      input.totals != null &&
+      (input.totals.kcal ?? 0) === 0 &&
+      (input.totals.protein_g ?? 0) === 0
+    const allItemsZeroKcal =
+      input.items != null &&
+      input.items.length > 0 &&
+      input.items.every((it) => (it.kcal ?? 0) === 0)
+    if (noItems || totalsZero || allItemsZeroKcal) {
+      await emitEdu(opts, 'edu_comment.skipped_empty_items', {
+        kind: input.kind,
+        reason: noItems ? 'no_items' : totalsZero ? 'totals_zero' : 'all_items_zero_kcal',
+      })
+      return ''
+    }
+  }
   const model = opts.model ?? 'anthropic/claude-haiku-4.5'
   // Timeout 12s (audit 2026-06-13): 8s era apertado — Haiku 4.5 com 300 tokens
   // é ~3-5s em cenário ideal, mas P95 com cold start ou roteamento OpenRouter

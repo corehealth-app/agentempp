@@ -252,7 +252,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // resolvidos no pending. Branch por kind: meal usa registraRefeicao;
         // workout usa registraTreino. Resultado vai pro mesmo card determinístico.
         let mealToolResult:
-          | { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+          | {
+              success?: boolean
+              already_logged?: boolean
+              meal?: { items?: MealItem[]; totals?: MealTotals }
+            }
           | null = null
         let workoutToolResult:
           | { success?: boolean; kcal_burned?: number; deduped?: boolean }
@@ -481,7 +485,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 replace: proposal.replace === true,
               } as never,
               toolCtx as never,
-            )) as { success?: boolean; meal?: { items?: MealItem[]; totals?: MealTotals } }
+            )) as {
+              success?: boolean
+              already_logged?: boolean
+              meal?: { items?: MealItem[]; totals?: MealTotals }
+            }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             await supabase.from('product_events').insert({
@@ -588,7 +596,33 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // entre tabela e card. Degradação graciosa: se falhar/timeout,
         // segue sem comentário.
         const { llm, supabase: deps2Supabase, embeddings: deps2Embeddings } = createWorkerDeps()
-        const eduComment = await generateEducationalComment(
+        // Guard caller-side (bug Roberto 2026-06-16): quando a tool retornou
+        // already_logged=true (dedup parcial OU total), o card diz "já estava
+        // registrado". Chamar Haiku aqui com items vazios (dedup 100%) gera
+        // improviso contradizendo o card; chamar com items só parciais gera
+        // comentário sobre refeição "nova" que não é nova. Mais defensivo:
+        // qualquer already_logged=true pula o Haiku.
+        // Review HIGH H4: condição anterior exigia items.length===0 também,
+        // o que falhava em dedup parcial. Agora só already_logged é
+        // suficiente. Defesa em camadas com o guard interno de
+        // generateEducationalComment.
+        const skipEdu =
+          proposal.kind !== 'workout' && mealToolResult?.already_logged === true
+        if (skipEdu) {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'edu_comment.skipped_dedup',
+            properties: {
+              pendingId,
+              meal_type: proposal.mealType ?? null,
+              proposed_items_count: proposal.items?.length ?? 0,
+              stage: 'interactive-handler',
+            },
+          })
+        }
+        const eduComment = skipEdu
+          ? ''
+          : await generateEducationalComment(
           llm,
           {
             kind:

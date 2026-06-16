@@ -31,18 +31,93 @@ const MEAL_CARD = /total\s+(?:da\s+)?refei[çc][ãa]o/i
 const CORRECTION_CLAIM =
   /\b(?:corrig(?:i|ido|ida|idos|idas)|corre[çc][ãa]o|substitu(?:í|i|ído|ido|ída|ida)|re-?registr(?:ei|ado|ada)|troquei|atualiz(?:ei|ado|ada))/i
 
+// Skip explícito (Roberto 2026-06-16): paciente confirma que NÃO comeu uma
+// refeição. Tool correta é `marca_refeicao_pulada`, NÃO `registra_refeicao`.
+// Sem este detector dedicado, "Pulei o almoço, anotado." cai na regex
+// REGISTRATION_CLAIM via "anotado" → retry força registra_refeicao →
+// LLM inventa refeição vazia ou refaz uma anterior. Bug caso Roberto
+// 2026-06-15 23:06 BRT: "Pulei" → Haiku "Anotado: jantar pulado" → fake_write
+// detectou registration → Haiku no retry copiou items do LANCHE anterior
+// e propôs registrar como pending fantasma.
+const SKIP_CLAIM =
+  /\b(?:pul(?:ei|ado|ada)|n[ãa]o\s+com(?:i|ia)|n[ãa]o\s+(?:almoc(?:ei|ava)|jantei|cafei|lanchei|ceei)|fiquei\s+sem\s+(?:caf[ée]|almo[çc]o|lanche|jantar|ceia)|passei\s+direto|estou\s+em\s+jejum|t[ôo]\s+em\s+jejum|sem\s+(?:almo[çc]ar|jantar|caf[ée])\s+hoje)\b/i
+
+// ABANDONO total — paciente NÃO está pulando UMA refeição, está reportando
+// o dia inteiro sem comer. Não disparar skip-fake-write (caso clínico, não
+// caso de tool). Daily-closer trata via incomplete_no_response.
+const ABANDONMENT_CLAIM =
+  /\bn[ãa]o\s+com(?:i|ia)\s+nada\s+(?:hoje|o\s+dia)|n[ãa]o\s+com(?:i|ia)\s+o\s+dia\s+(?:inteiro|todo)|jejum\s+(?:total|do\s+dia)|nada\s+(?:hoje|o\s+dia\s+inteiro)\b/i
+
+// CONTEXTOS NEGATIVOS — paciente disse algo que CASA SKIP_CLAIM mas o
+// contexto é claramente social/clínico, não skip de refeição. Bloqueia
+// false positives (review CRITICAL 2026-06-16):
+//  - "passei direto pra cama / pra casa / pro quarto"
+//  - "passei direto pelo restaurante e comi em casa"
+//  - "estou em jejum intermitente até 12h"
+//  - "não comi banana" (negação de ITEM específico, não da refeição)
+const SKIP_NEGATIVE_CONTEXT =
+  /\bpassei\s+direto\s+(?:pra|para|pro|para\s+o|pelo|pelo[s]?|por|em)\s+\w+|jejum\s+intermitente|j(?:i|í)\s+intermitente|n[ãa]o\s+com(?:i|ia)\s+(?:o\s+|a\s+|um[a]?\s+)?[a-zà-ú]+\s*(?:hoje|agora|ontem)?\s*(?:,|\.|$)/i
+
+// SKIP ACKNOWLEDGMENT no CONTENT do LLM — sinaliza que o LLM "anotou" o
+// skip mas pode não ter chamado a tool. Combina com registration claim
+// (anotado/salvo/registrado) — qualquer um basta.
+const SKIP_ACK_CLAIM =
+  /\b(?:pul(?:ado|ada|ados|adas)|sem\s+(?:registro|comer|refei[çc][ãa]o)|fica\s+(?:sem|em\s+branco)\s+(?:o\s+)?(?:caf[ée]|almo[çc]o|lanche|jantar|ceia)|marquei?\s+(?:o\s+)?(?:caf[ée]|almo[çc]o|lanche|jantar|ceia)\s+(?:como\s+)?pulad)/i
+
+// Extrai meal_type literal do texto do paciente. Ordem importa pouco
+// (regexes independentes), mas mantemos café→almoço→lanche→jantar→ceia
+// pra estabilidade.
+// BOUNDARY PT-BR: `\b` do JS não trata 'ã/é/ç' como word chars — então
+// "Café da manhã" tem `\b` ANTES de 'ã' (sem match no final). Usamos
+// boundary custom: começo/fim de string OU char não-alfa-PT-BR.
+const MEAL_KEYWORDS: Array<
+  [RegExp, 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia']
+> = [
+  [/(?:^|[^a-zà-úãõçâêôîû])(?:caf[ée](?:\s+da\s+manh[ãa])?)(?=$|[^a-zà-úãõçâêôîû])/i, 'cafe'],
+  [/(?:^|[^a-zà-úãõçâêôîû])almo[çc](?:o|ar|ei)(?=$|[^a-zà-úãõçâêôîû])/i, 'almoco'],
+  [/(?:^|[^a-zà-úãõçâêôîû])lanch(?:e|ei|ar)(?=$|[^a-zà-úãõçâêôîû])/i, 'lanche'],
+  [/(?:^|[^a-zà-úãõçâêôîû])jant(?:ar|ei|ou)(?=$|[^a-zà-úãõçâêôîû])/i, 'jantar'],
+  [/(?:^|[^a-zà-úãõçâêôîû])ceia(?=$|[^a-zà-úãõçâêôîû])/i, 'ceia'],
+]
+
+/**
+ * Infere meal_type pra skip a partir do texto do paciente. Se o paciente
+ * mencionou explicitamente ("pulei o almoço"), usa isso; senão usa o hint
+ * (geralmente o gap_reminder mais recente ou inferência por hora local).
+ */
+export function inferMealFromSkipText(
+  text: string,
+  hint?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia',
+): 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia' | null {
+  for (const [re, meal] of MEAL_KEYWORDS) {
+    if (re.test(text)) return meal
+  }
+  return hint ?? null
+}
+
 export interface FakeWriteInput {
   /** Texto final que o LLM produziu pro paciente. */
   content: string
+  /** Texto do paciente (último input). Necessário pra detectar skip claim.
+   *  Quando ausente, o branch de skip nunca dispara (zero regressão). */
+  patientText?: string
   /** registra_refeicao OU registra_treino foi chamada com sucesso no turno. */
   registrationToolCalled: boolean
   /** gera_dieta OU gera_treino foi chamada com sucesso no turno. */
   prescriptionToolCalled?: boolean
+  /** marca_refeicao_pulada foi chamada com sucesso no turno. */
+  skipToolCalled?: boolean
+  /** Fallback de meal_type quando texto do paciente não cita (vem do gap
+   *  reminder do dia ou inferência por hora local — pipeline preenche). */
+  mealTypeHint?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
 }
 
 export interface FakeWriteResult {
   isFake: boolean
-  kind: 'registration' | 'correction' | 'diet_fake' | 'training_fake' | null
+  kind: 'registration' | 'correction' | 'diet_fake' | 'training_fake' | 'skip' | null
+  /** Quando kind='skip', meal_type sugerido pro retry msg. Pode ser null
+   *  quando o paciente disse "pulei" sem especificar e não há hint. */
+  inferredMealType?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia' | null
 }
 
 // Card de DIETA inventado (Sprint 4.1 review 2026-06-12): LLM apresenta
@@ -95,10 +170,49 @@ const PROPOSAL_QUESTION = /\bconfirma\??\s*$|\bregistro\?\s*$/i
  */
 export function detectFakeWrite({
   content,
+  patientText,
   registrationToolCalled,
   prescriptionToolCalled,
+  skipToolCalled,
+  mealTypeHint,
 }: FakeWriteInput): FakeWriteResult {
   if (registrationToolCalled) return { isFake: false, kind: null }
+
+  // Bug Roberto 2026-06-15: paciente diz "Pulei", LLM responde "Anotado:
+  // jantar pulado" SEM chamar marca_refeicao_pulada. Antes do fix, esse texto
+  // caía na regex REGISTRATION_CLAIM (via "anotado") e o retry forçava
+  // registra_refeicao — Haiku obediente copiava items do histórico e criava
+  // pending fantasma. Solução: detectar SKIP_CLAIM no texto do paciente
+  // ANTES das regras de registration/correction, e quando marca_refeicao_pulada
+  // NÃO foi chamada, flagrar kind='skip' (retry message dirigido pra skip
+  // tool, não pra registra_refeicao).
+  //
+  // HARDENING (review CRITICAL 2026-06-16): SKIP_CLAIM sozinho gera false
+  // positives massivos ("passei direto pra cama", "não comi banana",
+  // "jejum intermitente"). Pré-condições obrigatórias agora:
+  //  (a) NÃO casa SKIP_NEGATIVE_CONTEXT (filtra "passei direto pra X",
+  //      "jejum intermitente", "não comi <item>")
+  //  (b) NÃO casa ABANDONMENT (clínico, não tool)
+  //  (c) CONTENT do LLM precisa parecer fake-acknowledgment de skip:
+  //      SKIP_ACK_CLAIM OU REGISTRATION_CLAIM (que é o caso real do bug
+  //      Roberto: "Anotado: jantar pulado").
+  // Sem (c), o LLM provavelmente respondeu coisa normal/conversational
+  // (e.g. "Boa noite!" pra "passei direto pra cama") e não há fake-write.
+  if (patientText && !skipToolCalled) {
+    const isAbandonment = ABANDONMENT_CLAIM.test(patientText)
+    const hasNegativeContext = SKIP_NEGATIVE_CONTEXT.test(patientText)
+    const hasSkipClaim = SKIP_CLAIM.test(patientText)
+    if (!isAbandonment && !hasNegativeContext && hasSkipClaim) {
+      // Pré-condição (c): LLM tem que ter "anotado" o skip — senão é
+      // conversa normal e não há fake-write.
+      const llmAcknowledgedSkip =
+        SKIP_ACK_CLAIM.test(content) || REGISTRATION_CLAIM.test(content)
+      if (llmAcknowledgedSkip) {
+        const inferredMealType = inferMealFromSkipText(patientText, mealTypeHint)
+        return { isFake: true, kind: 'skip', inferredMealType }
+      }
+    }
+  }
 
   // --- Detectores de prescrição-fantasma (rodam ANTES das regras antigas
   // porque cardápio inventado tem aparência profissional, paciente segue

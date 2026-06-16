@@ -25,7 +25,7 @@ import {
   renderBalanceCard,
   replaceLooseBlockMentions,
 } from './balance-card.js'
-import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
+import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
 import {
   composePendingProposal,
   composePostRegistrationMessage,
@@ -54,7 +54,7 @@ import {
   isWorkoutExpressEligible,
   type ExpressInput,
 } from './express-mode-detector.js'
-import { calcMealMacros } from './meal-pipeline.js'
+import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
@@ -167,6 +167,17 @@ interface UserContext {
     days_with_data: number
     /** Dias acima da meta (DAM). Limite manutenção: 4. */
     dam: number
+  } | null
+  /** FIX 4 (Roberto 2026-06-15): última foto de refeição analisada por vision
+   *  que AINDA NÃO virou meal_log nem pending. Quando presente, o pipeline
+   *  bloqueia marca_refeicao_pulada e força registra_refeicao (foto perdida
+   *  bug). null quando vision já virou registro/pending OU não houve vision
+   *  de meal nas últimas 24h. */
+  visionPending: {
+    items: Array<{ name: string; quantity_g_estimate: number; confidence: number }>
+    mealContext: string | null
+    occurredAt: string
+    ageMinutes: number
   } | null
 }
 
@@ -338,10 +349,20 @@ export async function processMessage(
       const prescriptionToolCalled = toolCallsSummary.some(
         (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
       )
+      const skipToolCalled = toolCallsSummary.some(
+        (tc) => tc.name === 'marca_refeicao_pulada' && !tc.error,
+      )
+      // Hint de meal_type pra skip detector quando paciente diz "Pulei" sem
+      // especificar (review HIGH SKIP-NO-HINT). Ordem: (1) último gap reminder
+      // no histórico do dia, (2) inferência por hora local.
+      const mealTypeHint = inferMealTypeHint(ctx)
       const fake = detectFakeWrite({
         content,
+        patientText: input.text ?? '',
         registrationToolCalled,
         prescriptionToolCalled,
+        skipToolCalled,
+        mealTypeHint,
       })
 
       if (fake.isFake && !fakeWriteRetried) {
@@ -354,17 +375,20 @@ export async function processMessage(
             kind: fake.kind,
             model: result.model,
             content_preview: content.slice(0, 120),
+            inferred_meal_type: fake.inferredMealType ?? null,
           },
         })
         messages.push({ role: 'assistant', content })
         const retryMsg =
-          fake.kind === 'correction'
-            ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
-            : fake.kind === 'diet_fake'
-              ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
-              : fake.kind === 'training_fake'
-                ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
-                : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.'
+          fake.kind === 'skip'
+            ? `SISTEMA (não é o paciente): o paciente confirmou que PULOU uma refeição. Você respondeu como se tivesse anotado/registrado MAS não chamou a tool \`marca_refeicao_pulada\`. Chame \`marca_refeicao_pulada(meal_type=${fake.inferredMealType ?? '<inferir do contexto>'})\` AGORA. NÃO chame \`registra_refeicao\` — não há refeição pra registrar. NÃO copie items do histórico — o paciente disse pulei, então a refeição NÃO existe.`
+            : fake.kind === 'correction'
+              ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
+              : fake.kind === 'diet_fake'
+                ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
+                : fake.kind === 'training_fake'
+                  ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
+                  : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.'
         messages.push({
           role: 'user',
           content: retryMsg,
@@ -574,12 +598,33 @@ export async function processMessage(
             // kcal/macros vêm da resolução TACO via calcMealMacros — o mesmo
             // que registra_refeicao usa internamente. Sem isso o pending vinha
             // com 0 kcal (Roberto viu na tela: "0 kcal" em todos os itens).
+            // Bug Luciana 2026-06-16: parser de "X cal/kcal/calorias" no texto
+            // do paciente. Quando o paciente cita kcal explícita no mesmo
+            // trecho de um item, OVERRIDE o lookup TACO. Helper devolve Map
+            // food_name → user_kcal; calcMealMacros honra na PRIORIDADE -3.
+            const kcalOverrides = parseUserKcalOverrides(input.text ?? '', args.items)
+            const itemsWithOverrides = args.items.map((it) => ({
+              food_name: it.food_name,
+              quantity_g: it.quantity_g ?? 0,
+              ...(kcalOverrides.has(it.food_name)
+                ? { user_kcal: kcalOverrides.get(it.food_name)! }
+                : {}),
+            }))
+            if (kcalOverrides.size > 0) {
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.user_kcal_override',
+                properties: {
+                  source: 'express_pending',
+                  overrides: Object.fromEntries(kcalOverrides),
+                  items_count: args.items.length,
+                  patient_text: (input.text ?? '').slice(0, 200),
+                },
+              })
+            }
             const resolved = await calcMealMacros(
               deps.supabase,
-              args.items.map((it) => ({
-                food_name: it.food_name,
-                quantity_g: it.quantity_g ?? 0,
-              })),
+              itemsWithOverrides,
               ctx.country ?? 'BR',
               userId,
             )
@@ -762,6 +807,91 @@ export async function processMessage(
           }
         }
         // ── fim da interceptação de botões ────────────────────────────────────
+
+        // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
+        // marca_refeicao_pulada DEPOIS de paciente responder disambiguação de
+        // foto pendente. Gate determinístico: se há foto de meal analisada
+        // pelo vision recente SEM virar registro, REJEITAR skip e forçar
+        // registra_refeicao com items da foto.
+        //
+        // HARDENING H2 (review HIGH 2026-06-16): comparar meal_type do skip
+        // com meal_context da foto / ageMinutes — se claramente diferente
+        // (foto contexto 'café' + skip 'jantar', OU age > 4h e meal_type
+        // diferente), PERMITIR o skip (foto é de outra refeição que o
+        // paciente vai resolver depois) e só logar warning.
+        const attemptedMeal = (validated as { meal_type?: string }).meal_type ?? null
+        if (tc.name === 'marca_refeicao_pulada' && ctx.visionPending != null) {
+          const visionContext = (ctx.visionPending.mealContext ?? '').toLowerCase()
+          const isVisionAboutCafe = /caf[eé]|manh[ãa]|brunch/.test(visionContext)
+          const isVisionAboutAlmoco = /almo[çc]o|lunch/.test(visionContext)
+          const isVisionAboutJantar = /jantar|dinner|noite/.test(visionContext)
+          const isVisionAboutLanche = /lanche|snack|tarde/.test(visionContext)
+          const visionMealType = isVisionAboutCafe
+            ? 'cafe'
+            : isVisionAboutAlmoco
+              ? 'almoco'
+              : isVisionAboutJantar
+                ? 'jantar'
+                : isVisionAboutLanche
+                  ? 'lanche'
+                  : null
+          const ageMinutes = ctx.visionPending.ageMinutes
+          // Skip é claramente de OUTRA refeição? (a) vision identifica meal
+          // E é diferente do skip; OU (b) age > 4h E o paciente menciona
+          // explicitamente o meal_type no texto.
+          const clearlyDifferentMeal =
+            (visionMealType != null && attemptedMeal != null && visionMealType !== attemptedMeal) ||
+            (ageMinutes > 240 && attemptedMeal != null && new RegExp(`\\b${attemptedMeal}\\b`, 'i').test(input.text ?? ''))
+          if (clearlyDifferentMeal) {
+            // Permite skip; só loga warning pra auditoria.
+            await deps.supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pipeline.skip_allowed_different_meal',
+              properties: {
+                attempted_meal_type: attemptedMeal,
+                vision_meal_inferred: visionMealType,
+                vision_age_minutes: ageMinutes,
+              },
+            })
+          } else {
+            await deps.supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pipeline.skip_blocked_by_vision',
+              properties: {
+                attempted_meal_type: attemptedMeal,
+                vision_items_count: ctx.visionPending.items.length,
+                vision_age_minutes: ageMinutes,
+                vision_items_preview: ctx.visionPending.items.map((i) => i.name).slice(0, 5),
+              },
+            })
+            // HARDENING H5 (review HIGH 2026-06-16): trocar JSON.stringify do
+            // payload por PROSA — Haiku tende a tratar JSON como dado opaco,
+            // não como instrução acionável. Prosa direta + lista textual de
+            // items funciona melhor.
+            const itemsList = ctx.visionPending.items
+              .map((it) => `${it.name} (~${it.quantity_g_estimate}g)`)
+              .join(', ')
+            const rejectionMsg =
+              `SISTEMA: tentativa de marca_refeicao_pulada BLOQUEADA. ` +
+              `Você tem foto pendente de registro analisada há ${ageMinutes} min ` +
+              `com os items: ${itemsList}. ` +
+              `Chame registra_refeicao AGORA com esses items (ajuste meal_type e ` +
+              `quantidades conforme a conversa). Só chame marca_refeicao_pulada se ` +
+              `o paciente disser LITERALMENTE "pulei"/"não comi"/"joguei fora" NESSA ` +
+              `mensagem específica E sobre OUTRA refeição (não a da foto).`
+            toolCallsSummary.push({
+              name: tc.name,
+              arguments: validated,
+              error: 'skip_blocked_vision_pending',
+            })
+            messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: rejectionMsg,
+            })
+            continue
+          }
+        }
 
         const toolStart = Date.now()
         const out = await tool.execute(validated, toolCtx)
@@ -1204,20 +1334,28 @@ export async function processMessage(
     const prescriptionToolCalled = toolCallsSummary.some(
       (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
     )
+    const skipToolCalled = toolCallsSummary.some(
+      (tc) => tc.name === 'marca_refeicao_pulada' && !tc.error,
+    )
+    const mealTypeHint = inferMealTypeHint(ctx)
     const fakeFinal = detectFakeWrite({
       content: finalText,
+      patientText: input.text ?? '',
       registrationToolCalled,
       prescriptionToolCalled,
+      skipToolCalled,
+      mealTypeHint,
     })
     if (fakeFinal.isFake) {
       await deps.supabase.from('product_events').insert({
         user_id: userId,
-        event: 'llm.fake_write_unresolved',
+        event: fakeFinal.kind === 'skip' ? 'llm.fake_skip_unresolved' : 'llm.fake_write_unresolved',
         properties: {
           stage,
           kind: fakeFinal.kind,
           model: lastResult.model,
           content_preview: finalText.slice(0, 120),
+          inferred_meal_type: fakeFinal.inferredMealType ?? null,
         },
       })
     }
@@ -1639,7 +1777,167 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
         }
       : null,
     last14d: last14d.days_with_data > 0 ? last14d : null,
+    visionPending: await loadVisionPending(supabase, userId),
   }
+}
+
+/**
+ * FIX 4 (Roberto 2026-06-15): carrega a última foto de refeição analisada
+ * pelo vision que AINDA NÃO virou meal_log nem pending CORRESPONDENTE.
+ * Quando presente, o pipeline injeta no system prompt como "FOTO PENDENTE
+ * DE REGISTRO" e bloqueia chamadas de `marca_refeicao_pulada` (que ocorreriam
+ * pelo LLM confundindo disambiguação com confirmação de skip).
+ *
+ * Janela: 4h (review HIGH H6 2026-06-16: 24h era longo demais, gerava
+ * poluição do prompt por vários turnos quando o bug H1 deixava a foto
+ * "pendente" mesmo quando outra refeição foi registrada).
+ *
+ * Critério de "consumido" (review HIGH H1): NÃO basta haver INSERT após o
+ * vision — comparar items dos meal_logs/pending com items do vision.
+ * Se há overlap de nome ≥ 50% (set-intersection normalizado), foto foi
+ * registrada. Senão, considera pendente.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadVisionPending(supabase: any, userId: string): Promise<UserContext['visionPending']> {
+  // TTL 4h (era 24h)
+  const sinceIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
+  const { data: lastVision } = await supabase
+    .from('product_events')
+    .select('properties, occurred_at')
+    .eq('user_id', userId)
+    .eq('event', 'vision.analyzed')
+    .gte('occurred_at', sinceIso)
+    .order('occurred_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const v = lastVision as
+    | {
+        properties: {
+          type?: string
+          provider_message_id?: string | null
+          meal_items?: Array<{
+            name: string
+            quantity_g_estimate: number
+            confidence: number
+          }> | null
+          meal_context?: string | null
+        }
+        occurred_at: string
+      }
+    | null
+  if (!v) return null
+  if (v.properties.type !== 'meal') return null
+  const mealItems = v.properties.meal_items
+  if (!mealItems || mealItems.length === 0) return null
+
+  const visionIso = v.occurred_at
+  const visionPmid = v.properties.provider_message_id ?? null
+
+  // Normalizar nomes pra comparação
+  const stripAccents = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+  const visionNames = new Set(mealItems.map((it) => stripAccents(it.name)))
+
+  // Busca meal_logs e pending criados APÓS o vision
+  const [mealsAfter, pendingsAfter] = await Promise.all([
+    supabase
+      .from('meal_logs')
+      .select('food_name, provider_message_id')
+      .eq('user_id', userId)
+      .gte('created_at', visionIso),
+    supabase
+      .from('pending_registrations')
+      .select('id, proposal')
+      .eq('user_id', userId)
+      .gte('created_at', visionIso),
+  ])
+  const mealRows = (mealsAfter.data ?? []) as Array<{
+    food_name: string
+    provider_message_id?: string | null
+  }>
+  const pendRows = (pendingsAfter.data ?? []) as Array<{
+    id: string
+    proposal?: { items?: Array<{ name?: string; food_name?: string }> } | null
+  }>
+
+  // (a) match por provider_message_id (fonte autoritativa): se algum
+  // meal_log foi gravado com o mesmo pmid do vision, foto foi processada.
+  if (visionPmid && mealRows.some((r) => r.provider_message_id === visionPmid)) {
+    return null
+  }
+  // (b) match por set-overlap: ≥50% dos items do vision aparecem em
+  // meal_logs OU em pending criado após. Cobre tap → registra_refeicao.
+  const consumedNames = new Set<string>()
+  for (const r of mealRows) consumedNames.add(stripAccents(r.food_name))
+  for (const p of pendRows) {
+    for (const it of p.proposal?.items ?? []) {
+      const nm = it.name ?? it.food_name ?? ''
+      if (nm) consumedNames.add(stripAccents(nm))
+    }
+  }
+  if (consumedNames.size > 0) {
+    let overlap = 0
+    for (const n of visionNames) {
+      if (consumedNames.has(n)) overlap++
+    }
+    const overlapRatio = visionNames.size > 0 ? overlap / visionNames.size : 0
+    if (overlapRatio >= 0.5) return null
+  }
+
+  const ageMinutes = Math.max(
+    0,
+    Math.round((Date.now() - new Date(visionIso).getTime()) / 60_000),
+  )
+  return {
+    items: mealItems,
+    mealContext: v.properties.meal_context ?? null,
+    occurredAt: visionIso,
+    ageMinutes,
+  }
+}
+
+/**
+ * FIX 2 (review HIGH SKIP-NO-HINT 2026-06-16): infere meal_type quando o
+ * paciente diz "Pulei" sem especificar. Sem hint, o retry pro LLM dizia
+ * "<inferir do contexto>" — Haiku chutava errado (ex: "almoco" às 22h).
+ * Ordem: (1) último gap_reminder do dia em recentMessages, (2) hora local
+ * do paciente em janelas MPP (cafe 6-10, almoco 11-14, lanche 15-17,
+ * jantar 19-22, ceia 22-3). Retorna null se ambíguo.
+ */
+function inferMealTypeHint(
+  ctx: UserContext,
+): 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia' | undefined {
+  // (1) gap_reminder explícito nas últimas mensagens assistant. Padrão:
+  // "você não registrou X hoje" / "lembrete: ainda falta Y".
+  const reminderMealRe =
+    /(?:n[ãa]o\s+registrou|n[ãa]o\s+anotou|falta(?:ndo)?|lembrete[^.]*)\s+(?:o\s+)?(caf[ée](?:\s+da\s+manh[ãa])?|almo[çc]o|lanche|jantar|ceia)/i
+  const assistantMsgs = ctx.recentMessages
+    .filter((m) => m.role === 'assistant')
+    .slice(-5)
+    .reverse()
+  for (const m of assistantMsgs) {
+    const match = m.content.match(reminderMealRe)
+    if (match) {
+      const w = (match[1] ?? '').toLowerCase()
+      if (w.startsWith('caf')) return 'cafe'
+      if (w.startsWith('almo')) return 'almoco'
+      if (w.startsWith('lanch')) return 'lanche'
+      if (w.startsWith('jant')) return 'jantar'
+      if (w.startsWith('ceia')) return 'ceia'
+    }
+  }
+  // (2) hora local do paciente.
+  try {
+    const hour = getLocalHour(ctx.timezone)
+    if (hour >= 6 && hour < 11) return 'cafe'
+    if (hour >= 11 && hour < 15) return 'almoco'
+    if (hour >= 15 && hour < 18) return 'lanche'
+    if (hour >= 18 && hour < 22) return 'jantar'
+    if (hour >= 22 || hour < 4) return 'ceia'
+  } catch {
+    // timezone inválido ou getLocalHour falha → não chuta
+  }
+  return undefined
 }
 
 function resolveStage(profile: UserProfile): AgentStage {
@@ -1742,6 +2040,30 @@ function formatUserContext(
 ): string {
   const m = computeMetrics(ctx.profile, new Date(), calcConfig)
   const sections: string[] = []
+
+  // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
+  // marca_refeicao_pulada depois de paciente responder disambiguação. Aviso
+  // EXPLÍCITO no topo do prompt sobre foto pendente força o LLM a chamar
+  // registra_refeicao. Combinado com hard-guard pós-LLM (rejeita
+  // marca_refeicao_pulada quando visionPending != null).
+  if (ctx.visionPending) {
+    const vp = ctx.visionPending
+    const itemsStr = vp.items
+      .map(
+        (it) =>
+          `${it.name} (~${it.quantity_g_estimate}g, conf ${Math.round(it.confidence * 100)}%)`,
+      )
+      .join(', ')
+    sections.push(
+      `### ⚠️ FOTO PENDENTE DE REGISTRO\n` +
+        `Você analisou foto de refeição há ${vp.ageMinutes} min e ela AINDA NÃO foi registrada nem virou pending.\n` +
+        `Items vistos pelo vision: ${itemsStr}.${vp.mealContext ? ` Contexto: ${vp.mealContext}.` : ''}\n` +
+        `→ Chame \`registra_refeicao\` com esses items (ajuste com base na resposta do paciente nesta msg).\n` +
+        `→ NÃO chame \`marca_refeicao_pulada\` — o sistema vai BLOQUEAR a chamada. ` +
+        `A resposta do paciente é pra COMPLETAR a foto, não pra confirmar pulo.\n` +
+        `→ Só chame \`marca_refeicao_pulada\` se o paciente disser LITERALMENTE "pulei"/"não comi"/"joguei fora" NESTA mensagem específica E sobre OUTRA refeição (não a da foto).`,
+    )
+  }
 
   // Reentrada warm: instrução pro LLM no topo
   if (ctx.isReentry && ctx.hoursSinceLastIn != null) {

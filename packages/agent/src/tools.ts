@@ -15,7 +15,7 @@ import {
 } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
-import { calcMealMacros } from './meal-pipeline.js'
+import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -1071,10 +1071,41 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
+    // ── KCAL OVERRIDE DO PACIENTE (Bug Luciana 2026-06-16) ─────────────────
+    // Parse "X cal/kcal/calorias" do texto do paciente (última msg) e anexa
+    // user_kcal nos items que casam. calcMealMacros honra na PRIORIDADE -3.
+    // Defesa em profundidade: o pipeline.ts já faz isso pro caminho express,
+    // aqui cobre o caminho NÃO-express (tap em pending, retry da LLM, etc).
+    const lastPatientText =
+      (ctx.recentUserMessages ?? []).slice(-1)[0] ?? ''
+    const kcalOverrides = parseUserKcalOverrides(lastPatientText, args.items)
+    let itemsForCalc: Array<{ food_name: string; quantity_g: number; user_kcal?: number }> =
+      args.items
+    if (kcalOverrides.size > 0) {
+      itemsForCalc = args.items.map((it: { food_name: string; quantity_g: number }) => ({
+        food_name: it.food_name,
+        quantity_g: it.quantity_g,
+        ...(kcalOverrides.has(it.food_name)
+          ? { user_kcal: kcalOverrides.get(it.food_name)! }
+          : {}),
+      }))
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'pipeline.user_kcal_override',
+        properties: {
+          source: 'tool_registra_refeicao',
+          provider_message_id: ctx.providerMessageId ?? null,
+          overrides: Object.fromEntries(kcalOverrides),
+          items_count: args.items.length,
+          patient_text: lastPatientText.slice(0, 200),
+        },
+      })
+    }
+
     // Calcula macros via TACO
     const calc = await calcMealMacros(
       ctx.supabase,
-      args.items,
+      itemsForCalc,
       ctx.userCountry ?? 'BR',
       ctx.userId,
     )

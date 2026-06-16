@@ -984,3 +984,164 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
     expect(r.items[0]?.source).toBe('llm_estimate')
   })
 })
+
+// ============================================================================
+// Bug Luciana 2026-06-16: kcal explícito no texto deve OVERRIDE o lookup TACO.
+// "rap 10 : 70 calorias" → gravar 70 kcal (não 140 kcal do food_db).
+// ============================================================================
+describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
+  it('"rap 10 : 70 calorias" → associa 70 kcal ao item wrap', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'rap 10 : 70 calorias',
+      [{ food_name: 'wrap' }],
+    )
+    expect(overrides.get('wrap')).toBe(70)
+  })
+
+  it('"100g arroz, 70 kcal" → arroz recebe 70 kcal', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      '100g arroz, 70 kcal',
+      [{ food_name: 'arroz' }],
+    )
+    expect(overrides.get('arroz')).toBe(70)
+  })
+
+  it('"1 wrap" → SEM kcal explícita, retorna Map vazio', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      '1 wrap',
+      [{ food_name: 'wrap' }],
+    )
+    expect(overrides.size).toBe(0)
+  })
+
+  it('"wrap 30g 70 kcal, suco 200ml 80 cal" → ambos itens recebem kcal certo', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'wrap 30g 70 kcal, suco 200ml 80 cal',
+      [{ food_name: 'wrap' }, { food_name: 'suco' }],
+    )
+    expect(overrides.get('wrap')).toBe(70)
+    expect(overrides.get('suco')).toBe(80)
+  })
+
+  it('texto sem números de kcal mas com gramas → Map vazio (não confunde g com kcal)', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      '100g de arroz e 80g de feijão',
+      [{ food_name: 'arroz' }, { food_name: 'feijão' }],
+    )
+    expect(overrides.size).toBe(0)
+  })
+
+  it('decimal com vírgula "70,5 kcal" funciona', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'wrap : 70,5 kcal',
+      [{ food_name: 'wrap' }],
+    )
+    expect(overrides.get('wrap')).toBe(70.5)
+  })
+
+  // Review HIGH KCAL-MULTI-ITEM 2026-06-16: alinhamento por ordem.
+  // Cenário Luciana: paciente diz "rap 10 : 70 calorias e suco" mas
+  // Haiku normaliza items=[{wrap, 50g}, {suco, 200g}]. Antes do fix,
+  // segmento#1 (kcal=70, bestItem=null pq "rap" não casa "wrap" perfeitamente)
+  // → kcal perdido. Agora alinhamento por ordem (1ª orphan-kcal → 1º item
+  // sem override) dá wrap=70.
+  it('multi-item com kcal órfão alinha por ORDEM (rap 10 : 70 cal e suco)', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'rap 10 : 70 calorias e suco',
+      // Items que NÃO casam "rap" diretamente (firstWord não bate "wrap"
+      // se o nome no DB for "tapioca integral" por ex). Aqui forço o cenário
+      // usando food_names que não têm match com "rap".
+      [{ food_name: 'tapioca integral' }, { food_name: 'suco de laranja' }],
+    )
+    // O 1º segmento tem kcal=70 sem item identificado; 2º segmento tem
+    // "suco" mas sem kcal. Alinhamento por ordem: tapioca recebe 70.
+    expect(overrides.get('tapioca integral')).toBe(70)
+    expect(overrides.has('suco de laranja')).toBe(false)
+  })
+
+  it('multi-item: NÃO alinha quando há orphans demais (segurança)', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      // 2 segmentos com kcal órfão pra apenas 1 item — não alinha (ambíguo).
+      '70 cal, 80 cal',
+      [{ food_name: 'wrap' }],
+    )
+    // 2 orphans > 1 item → não aplica alinhamento. Mas como há 1 item,
+    // o lastSeenItem default cobre (último kcal vence).
+    expect(overrides.get('wrap')).toBe(80)
+  })
+})
+
+describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () => {
+  it('user_kcal=70 num wrap → grava 70 kcal mesmo com lookup retornando 140', async () => {
+    const mock = makeMock({
+      wrap: {
+        id: 9999,
+        name_pt: 'wrap integral',
+        category: 'panificacao',
+        similarity: 1,
+        kcal_per_100g: 280, // 140 kcal pra 50g = lookup default
+        protein_g: 8,
+        carbs_g: 40,
+        fat_g: 8,
+        fiber_g: 2,
+      },
+    })
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'wrap', quantity_g: 50, user_kcal: 70 }],
+      'BR',
+    )
+    expect(r.items[0]?.kcal).toBe(70) // override exato
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.matched_taco_name).toMatch(/kcal informado pelo paciente/)
+    expect(r.totals.kcal).toBe(70)
+    // P/C/F re-escalonados (não zerados)
+    expect(r.items[0]?.protein_g).toBeGreaterThan(0)
+    expect(r.items[0]?.carbs_g).toBeGreaterThan(0)
+    expect(r.audit_warnings.some((w) => /kcal informado pelo paciente/i.test(w))).toBe(true)
+  })
+
+  it('user_kcal=0 (paciente disse "0 kcal") → grava 0, P/C/F=0', async () => {
+    const mock = makeMock({})
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'agua com gás', quantity_g: 250, user_kcal: 0 }],
+      'BR',
+    )
+    expect(r.items[0]?.kcal).toBe(0)
+    expect(r.items[0]?.protein_g).toBe(0)
+    expect(r.items[0]?.fat_g).toBe(0)
+    expect(r.totals.kcal).toBe(0)
+  })
+
+  it('SEM user_kcal → lookup TACO normal (override não dispara)', async () => {
+    const mock = makeMock({
+      wrap: {
+        id: 9999,
+        name_pt: 'wrap integral',
+        category: 'panificacao',
+        similarity: 1,
+        kcal_per_100g: 280,
+        protein_g: 8,
+        carbs_g: 40,
+        fat_g: 8,
+        fiber_g: 2,
+      },
+    })
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'wrap', quantity_g: 50 }],
+      'BR',
+    )
+    expect(r.items[0]?.kcal).toBe(140) // lookup default
+    expect(r.items[0]?.matched_taco_name).toBe('wrap integral')
+  })
+})

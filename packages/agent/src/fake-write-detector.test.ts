@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectFakeWrite } from './fake-write-detector.js'
+import { detectFakeWrite, inferMealFromSkipText } from './fake-write-detector.js'
 
 const CARD = `🔥 Consumido: 1.433 / 1.843 kcal\n🎯 Restam: 410 kcal\n📊 Bloco 7700: 5.757 / 7.700`
 
@@ -290,5 +290,109 @@ Treino B: peito e tríceps`,
       prescriptionToolCalled: false,
     })
     expect(r.isFake).toBe(false)
+  })
+})
+
+describe('detectFakeWrite — SKIP claim (bug Roberto 2026-06-15)', () => {
+  // Caso REAL: Roberto: "Pulei" → Haiku "Anotado: jantar pulado hoje. Amanhã
+  // a gente continua." sem chamar marca_refeicao_pulada. Detector deve
+  // flagrar kind='skip' (não 'registration').
+  it('flag SKIP quando "Pulei" + LLM diz "Anotado" sem chamar marca_refeicao_pulada', () => {
+    const r = detectFakeWrite({
+      content: 'Anotado: jantar pulado hoje. Amanhã a gente continua.',
+      patientText: 'Pulei',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+      mealTypeHint: 'jantar',
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('skip')
+    expect(r.inferredMealType).toBe('jantar')
+  })
+
+  it('flag SKIP quando "Pulei o almoço" — infere meal_type sem hint', () => {
+    const r = detectFakeWrite({
+      content: 'Anotado: almoço pulado.',
+      patientText: 'Pulei o almoço',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(true)
+    expect(r.kind).toBe('skip')
+    expect(r.inferredMealType).toBe('almoco')
+  })
+
+  it('NÃO flaga SKIP quando marca_refeicao_pulada foi chamada (happy path)', () => {
+    const r = detectFakeWrite({
+      content: 'Pulou. Beleza, conta na próxima.',
+      patientText: 'Pulei o almoço',
+      registrationToolCalled: false,
+      skipToolCalled: true,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga SKIP em ABANDONMENT "não comi nada hoje" (caso clínico)', () => {
+    const r = detectFakeWrite({
+      content: 'Entendi, sem dúvida. Vamos focar amanhã.',
+      patientText: 'Não comi nada hoje',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  // Review CRITICAL SKIP-FP-NO-CONTENT-GUARD — sem assinatura de skip-ack
+  // no content do LLM, NÃO flagrar. Cobre "passei direto pra cama".
+  it('NÃO flaga SKIP quando LLM responde coisa conversational ("Boa noite!")', () => {
+    const r = detectFakeWrite({
+      content: 'Boa noite! Descansa bem.',
+      patientText: 'passei direto pra cama',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga SKIP em SKIP_NEGATIVE_CONTEXT "passei direto pra cama"', () => {
+    // Mesmo se LLM dissesse "anotado", o NEGATIVE_CONTEXT já bloqueia
+    // antes do guard do content. (Defesa em camadas.)
+    const r = detectFakeWrite({
+      content: 'Anotado.',
+      patientText: 'passei direto pra cama',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga SKIP em "jejum intermitente" (cenário clínico real)', () => {
+    const r = detectFakeWrite({
+      content: 'Tudo bem. Te vejo no almoço então.',
+      patientText: 'Estou em jejum intermitente até 12h',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('NÃO flaga SKIP em negação de ITEM "não comi banana" — LLM responde social', () => {
+    // Sem skip-ack no LLM, não dispara. Mesmo o "não comi" cita item
+    // específico, não refeição inteira.
+    const r = detectFakeWrite({
+      content: 'Beleza, anota o que comeu então.',
+      patientText: 'Não comi banana hoje',
+      registrationToolCalled: false,
+      skipToolCalled: false,
+    })
+    expect(r.isFake).toBe(false)
+  })
+
+  it('inferMealFromSkipText — happy paths', () => {
+    expect(inferMealFromSkipText('Pulei o almoço')).toBe('almoco')
+    expect(inferMealFromSkipText('Não jantei hoje')).toBe('jantar')
+    expect(inferMealFromSkipText('Café da manhã pulado')).toBe('cafe')
+    expect(inferMealFromSkipText('Pulei')).toBe(null)
+    expect(inferMealFromSkipText('Pulei', 'jantar')).toBe('jantar')
   })
 })

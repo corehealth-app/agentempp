@@ -8,8 +8,10 @@ describe('golden runner — primitives', () => {
       { llm_response: 'tudo bem' },
     ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const r1 = await (llm as any).complete({})
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const r2 = await (llm as any).complete({})
     expect(r1.content).toBe('oi')
     expect(r2.content).toBe('tudo bem')
@@ -18,8 +20,10 @@ describe('golden runner — primitives', () => {
   it('buildScriptedLLM repete último turno se exceder roteiro', async () => {
     const llm = buildScriptedLLM([{ llm_response: 'unica' }])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const r1 = await (llm as any).complete({})
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const r2 = await (llm as any).complete({})
     expect(r1.content).toBe('unica')
     expect(r2.content).toBe('unica')

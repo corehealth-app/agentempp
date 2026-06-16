@@ -42,6 +42,18 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/agent/src/**/*.ts", "packages/agent/src/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "error"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

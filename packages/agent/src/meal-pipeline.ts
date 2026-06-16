@@ -585,6 +585,7 @@ export async function lookupFoodCorrection(
   if (!target) return null
   const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
   // Busca por said_name OU corrected_to. Bug Amanda 2026-05-16: ela corrigiu
   // "iogurte de pêssego" → "iogurte de pêssego whey" com custom_macros, depois
@@ -671,6 +672,7 @@ export async function lookupUserHistory(
   const target = normalize(foodName)
   const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
   const { data } = await supaTyped
     .from('meal_logs')
@@ -1342,6 +1344,7 @@ export async function calcMealMacros(
       // ────────────────────────────────────────────────────────────────────
       const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaTyped = supabase as any
       const { data: prior } = await supaTyped
         .from('meal_logs')

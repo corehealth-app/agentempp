@@ -16,6 +16,7 @@ import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
 import { mealGapReminderFn } from './functions/meal-gap-reminder.js'
 import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
+import { regressionBeaconFn } from './functions/regression-beacon.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -33,6 +34,7 @@ export const allFunctions = [
   foodDbGapsReportFn,
   mealGapReminderFn,
   trainingDailyDeliveryFn,
+  regressionBeaconFn,
 ]
 
 export {

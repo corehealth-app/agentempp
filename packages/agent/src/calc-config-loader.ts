@@ -20,6 +20,7 @@ let cached: { config: CalcConfig; expiresAt: number } | null = null
 
 // Aceita qualquer Supabase client tipado ou não — o método from() é genérico.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
 export async function loadCalcConfig(svc: any): Promise<CalcConfig> {
   const now = Date.now()
   if (cached && cached.expiresAt > now) return cached.config
@@ -39,6 +40,7 @@ export async function loadCalcConfig(svc: any): Promise<CalcConfig> {
     const subKey = row.key.replace(/^calc\./, '') as keyof CalcConfig
     if (subKey in merged) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       ;(merged as any)[subKey] = row.value
     }
   }

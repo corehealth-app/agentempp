@@ -143,6 +143,7 @@ export async function generateTrainingPlan(
   input: TrainingGeneratorInput,
 ): Promise<TrainingPlan | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   const logFailure = async (reason: string, extra?: Record<string, unknown>) => {
     // eslint-disable-next-line no-console
@@ -256,6 +257,7 @@ export async function saveTrainingPlan(
   plan: TrainingPlan,
 ): Promise<{ id: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   // INSERT primeiro com active=true, depois desativa os antigos. Se o insert
   // falhar, o paciente continua com o plano antigo (não fica órfão).
@@ -318,6 +320,7 @@ export async function getTodayTraining(
   todayLabel: string, // 'seg', 'ter', etc — calc do timezone do paciente
 ): Promise<{ plan_id: string; day: TrainingDay } | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   const { data } = await sp
     .from('training_plans')

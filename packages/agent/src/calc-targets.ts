@@ -13,6 +13,7 @@ export type { DailyTargets, ProfileRow } from '@mpp/core'
 
 export async function loadDailyTargets(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   svc: any,
   userId: string,
   config: CalcConfig,

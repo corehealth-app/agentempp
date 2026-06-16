@@ -31,6 +31,7 @@ export interface ToolContext {
   /** LLM disponível pra tools que precisam gerar conteúdo (gera_dieta,
    * gera_treino). Injetado pelo pipeline. Opcional pra retrocompatibilidade. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   llm?: any
   /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
   userCountry?: string
@@ -271,6 +272,7 @@ export const defineProtocolo: ToolDefinition = {
     const { error } = await ctx.supabase
       .from('user_profiles')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       .update(updatePayload as any)
       .eq('user_id', ctx.userId)
     if (error) throw error
@@ -349,6 +351,7 @@ export const defineMetaPeso: ToolDefinition = {
         goal_type: 'peso_kg',
         goal_value: args.target_weight_kg,
         updated_at: new Date().toISOString(),
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       } as any)
       .eq('user_id', ctx.userId)
     if (error) throw error
@@ -502,6 +505,7 @@ export const registraRefeicao: ToolDefinition = {
       // cast solto (mesmo padrão de lookupUserHistory). Tabela criada em
       // migration 20260514120000.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaCorr = ctx.supabase as any
       const normalizeName = (s: string) =>
         s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
@@ -2308,6 +2312,7 @@ export const geraDieta: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const sp = ctx.supabase as any
 
     // 1. Carrega perfil do paciente
@@ -2370,6 +2375,7 @@ export const geraDieta: ToolDefinition = {
     // 4. Gera via diet-generator
     const { generateDietPlan, saveDietPlan } = await import('./diet-generator.js')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const llm = (ctx as any).llm
     if (!llm) {
       return {
@@ -2493,6 +2499,7 @@ export const geraTreino: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const sp = ctx.supabase as any
     const { data: u } = await sp
       .from('users')
@@ -2531,6 +2538,7 @@ export const geraTreino: ToolDefinition = {
 
     const { generateTrainingPlan, saveTrainingPlan } = await import('./training-plan-generator.js')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const llm = (ctx as any).llm
     if (!llm) {
       return { success: false, error: 'LLM não disponível no contexto da tool.' }

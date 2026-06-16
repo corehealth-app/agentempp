@@ -1,0 +1,62 @@
+name: Lint @mpp/agent (ban new `as any`)
+
+# ACT-1 prevention plan 2026-06-16: bane `as any` NOVO em packages/agent/src.
+# Casts legacy (40 ocorrências) foram marcados com biome-ignore via script
+# scripts/ban-as-any-suppress-legacy.sh. Override do biome.json escala
+# noExplicitAny pra `error` só em packages/agent/src/** — qualquer cast
+# novo derruba o job.
+#
+# Como rodar localmente antes do push:
+#   pnpm --filter @mpp/agent lint
+#
+# Como suprimir um caso justificado (use só quando há motivo real):
+#   // biome-ignore lint/suspicious/noExplicitAny: <motivo>
+#   const x: any = ...
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/agent/**'
+      - 'biome.json'
+      - '.github/workflows/lint-agent.yml'
+
+jobs:
+  no-new-as-any:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      # Filtramos só noExplicitAny — outros lint errors do agent (formatting,
+      # imports, etc) ficam pra próxima fase. Aqui o foco é prevenir o padrão
+      # que mascarou o bug P0 selector dead (cast `as any` em shape mismatch).
+      - name: Check noExplicitAny errors in packages/agent/src
+        run: |
+          set -e
+          json=$(pnpm exec biome check packages/agent/src --max-diagnostics=999 --reporter=json 2>/dev/null || true)
+          count=$(echo "$json" | node -e '
+            let buf = ""; process.stdin.on("data", c => buf += c);
+            process.stdin.on("end", () => {
+              const j = JSON.parse(buf);
+              let n = 0;
+              for (const d of (j.diagnostics ?? [])) {
+                if (d.category === "lint/suspicious/noExplicitAny") n++;
+              }
+              process.stdout.write(String(n));
+            });
+          ')
+          echo "noExplicitAny errors: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::Novo \`as any\` detectado em packages/agent/src. Use tipo explícito ou suprima com motivo:"
+            echo "  // biome-ignore lint/suspicious/noExplicitAny: <motivo real>"
+            pnpm exec biome check packages/agent/src --max-diagnostics=999 2>&1 | grep -A 3 "noExplicitAny" | head -60
+            exit 1
+          fi

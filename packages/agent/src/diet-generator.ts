@@ -214,6 +214,7 @@ export async function generateDietPlan(
   const horizon = input.horizon ?? 'daily'
   const meals_per_day = input.meals_per_day ?? 4
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   const logFailure = async (reason: string, extra?: Record<string, unknown>) => {
     // console.error pra debug local; product_event pra auditoria/audit dashboard
@@ -408,6 +409,7 @@ export async function saveDietPlan(
   plan: DietPlan,
 ): Promise<{ id: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   const { data, error } = await sp
     .from('prescriptions')

@@ -177,6 +177,7 @@ export interface EduCommentOpts {
    * — Roberto 2026-06-11). Quando disponível, consulta
    * `food_education_phrases` e usa frase curada se houver. Senão cai pro Haiku. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   supabase?: any
   userId?: string
   state?: {

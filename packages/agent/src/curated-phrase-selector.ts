@@ -298,6 +298,7 @@ export async function selectCuratedPhrase(
   const lookupVariants = generateLookupVariants(canonicalName)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
   let { data: rows } = await sp
     .from('food_education_phrases')

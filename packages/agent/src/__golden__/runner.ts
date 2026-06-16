@@ -56,6 +56,7 @@ export function buildScriptedLLM(turns: GoldenScriptedTurn[]): OpenRouterLLM {
       }
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   } as any
 }
 

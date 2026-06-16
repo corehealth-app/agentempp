@@ -64,6 +64,8 @@ describe('registra_treino — dedup (Paulo 2026-05-26)', () => {
   it('treino idêntico (tipo+duração) já registrado nas últimas 6h → deduped, não duplica', async () => {
     const { ctx, events } = makeCtx({ recentSameWorkout: true })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const r = (await registraTreino.execute({ workout_type: 'caminhada', duration_min: 60 } as any, ctx as any)) as {
       deduped?: boolean
     }
@@ -170,6 +172,8 @@ describe('registra_treino — correção via texto SUBSTITUI em vez de SOMAR (Ro
     })
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       await registraTreino.execute({ workout_type: 'caminhada', duration_min: 30 } as any, ctx as any)
     } catch {
       /* mock incompleto pro fluxo de insert — só auditamos o que o fix faz antes */
@@ -194,6 +198,8 @@ describe('registra_treino — correção via texto SUBSTITUI em vez de SOMAR (Ro
     })
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       await registraTreino.execute({ workout_type: 'caminhada', duration_min: 30 } as any, ctx as any)
     } catch {
       /* idem */

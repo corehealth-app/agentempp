@@ -91,6 +91,7 @@ async function retrieveMethodContext(
   try {
     const emb = await deps.embeddings.embed(text)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const { data } = await (deps.supabase as any).rpc('match_method_chunks', {
       query_embedding: emb,
       match_count: 5,
@@ -1798,6 +1799,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
  * registrada. Senão, considera pendente.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
 async function loadVisionPending(supabase: any, userId: string): Promise<UserContext['visionPending']> {
   // TTL 4h (era 24h)
   const sinceIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
@@ -1994,6 +1996,7 @@ async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
   const now = Date.now()
   if (routerFlagCache && routerFlagCache.expiresAt > now) return routerFlagCache.value
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const { data } = await (supabase as any)
     .from('global_config')
     .select('value')
@@ -2012,6 +2015,7 @@ async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
 
 async function hasOpenPending(supabase: ServiceClient, userId: string): Promise<boolean> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const { data } = await (supabase as any)
     .from('pending_registrations')
     .select('id')
@@ -2027,6 +2031,7 @@ async function logModelRouted(
   payload: { from: string; to: string; reason: string; stage: string; text_preview: string },
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   await (supabase as any).from('product_events').insert({
     user_id: userId,
     event: 'pipeline.model_routed',

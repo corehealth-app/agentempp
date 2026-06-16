@@ -13,6 +13,7 @@ function mockLLM(returnText: string): OpenRouterLLM {
   return {
     complete: async () => ({ content: returnText, model: 'mock', stop_reason: 'end_turn' }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   } as any
 }
 

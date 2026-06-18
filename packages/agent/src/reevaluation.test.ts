@@ -74,5 +74,39 @@ describe('reevaluationKickoff — script oficial do manual MPP (14 dias)', () =>
       })
       expect(t).not.toMatch(/4\)/)
     })
+
+    // Audit 06-18 extensão IMC: cobre os 5 pacientes em prod
+    it('goal_type=IMC (5 pacientes em prod) → 4 perguntas, Q4 cita IMC + sugere migração', () => {
+      const t = reevaluationKickoff('recomposicao', { currentTargetImc: 23 })
+      expect(t).toMatch(/Vou coletar 4 dados/i)
+      expect(t).toMatch(/4\) Sua \*meta de IMC\* continua sendo \*23\*/i)
+      // Sugere migração pra peso ou BF (não força)
+      expect(t).toMatch(/peso \(kg\)/i)
+      expect(t).toMatch(/% de gordura/i)
+    })
+
+    it('IMC + peso (raro — 2 goal_types) → prioriza peso', () => {
+      const t = reevaluationKickoff('recomposicao', {
+        currentTargetWeightKg: 70,
+        currentTargetImc: 23,
+      })
+      expect(t).toMatch(/meta de peso/i)
+      expect(t).not.toMatch(/meta de IMC/i)
+    })
+
+    it('IMC + BF (raro) → prioriza BF sobre IMC', () => {
+      const t = reevaluationKickoff('recomposicao', {
+        currentTargetBfPercent: 18,
+        currentTargetImc: 23,
+      })
+      expect(t).toMatch(/meta de gordura/i)
+      expect(t).not.toMatch(/meta de IMC/i)
+    })
+
+    it('IMC zero/negativo → fallback pra 3 perguntas', () => {
+      const t = reevaluationKickoff('recomposicao', { currentTargetImc: 0 })
+      expect(t).not.toMatch(/4\)/)
+      expect(t).not.toMatch(/meta de IMC/i)
+    })
   })
 })

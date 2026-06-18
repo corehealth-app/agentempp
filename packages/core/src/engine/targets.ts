@@ -29,7 +29,7 @@ export interface ProfileRow {
   water_intake: 'pouco' | 'moderado' | 'bastante' | null
   hunger_level: 'pouca' | 'moderada' | 'muita' | null
   current_protocol: 'recomposicao' | 'ganho_massa' | 'manutencao' | null
-  goal_type: 'BF' | 'IMC' | null
+  goal_type: 'BF' | 'IMC' | 'peso_kg' | null
   goal_value: number | null
   deficit_level: 400 | 500 | 600 | null
 }

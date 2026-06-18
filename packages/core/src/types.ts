@@ -13,7 +13,7 @@ export type HungerLevel = 'pouca' | 'moderada' | 'muita'
 
 export type Protocol = 'recomposicao' | 'ganho_massa' | 'manutencao'
 
-export type GoalType = 'BF' | 'IMC'
+export type GoalType = 'BF' | 'IMC' | 'peso_kg'
 
 export type AgentStage =
   | 'coleta_dados'

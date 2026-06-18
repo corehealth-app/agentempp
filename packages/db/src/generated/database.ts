@@ -443,6 +443,45 @@ export type Database = {
           },
         ]
       }
+      engagement_phrases: {
+        Row: {
+          active: boolean
+          created_at: string
+          curated_by: string | null
+          id: string
+          language: string
+          last_used_at: string | null
+          phrase: string
+          picked_count: number
+          slot: string
+          used_count: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          curated_by?: string | null
+          id?: string
+          language?: string
+          last_used_at?: string | null
+          phrase: string
+          picked_count?: number
+          slot?: string
+          used_count?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          curated_by?: string | null
+          id?: string
+          language?: string
+          last_used_at?: string | null
+          phrase?: string
+          picked_count?: number
+          slot?: string
+          used_count?: number
+        }
+        Relationships: []
+      }
       feature_flags: {
         Row: {
           description: string | null
@@ -515,6 +554,54 @@ export type Database = {
           name_pt?: string
           protein_g?: number | null
           source?: string
+        }
+        Relationships: []
+      }
+      food_education_phrases: {
+        Row: {
+          active: boolean
+          bloco_id: string | null
+          created_at: string
+          curated_by: string | null
+          food_canonical_name: string
+          food_name_embedding: string | null
+          id: string
+          language: string | null
+          last_used_at: string | null
+          phrase: string
+          polaridade: string | null
+          tags: Json | null
+          usage_count: number
+        }
+        Insert: {
+          active?: boolean
+          bloco_id?: string | null
+          created_at?: string
+          curated_by?: string | null
+          food_canonical_name: string
+          food_name_embedding?: string | null
+          id?: string
+          language?: string | null
+          last_used_at?: string | null
+          phrase: string
+          polaridade?: string | null
+          tags?: Json | null
+          usage_count?: number
+        }
+        Update: {
+          active?: boolean
+          bloco_id?: string | null
+          created_at?: string
+          curated_by?: string | null
+          food_canonical_name?: string
+          food_name_embedding?: string | null
+          id?: string
+          language?: string | null
+          last_used_at?: string | null
+          phrase?: string
+          polaridade?: string | null
+          tags?: Json | null
+          usage_count?: number
         }
         Relationships: []
       }
@@ -957,6 +1044,56 @@ export type Database = {
           },
         ]
       }
+      prescriptions: {
+        Row: {
+          created_at: string
+          generated_at: string
+          generated_by: string | null
+          id: string
+          last_sent_at: string | null
+          notes: string | null
+          payload: Json
+          type: string
+          user_id: string
+          valid_until: string | null
+          version: number | null
+        }
+        Insert: {
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          last_sent_at?: string | null
+          notes?: string | null
+          payload: Json
+          type: string
+          user_id: string
+          valid_until?: string | null
+          version?: number | null
+        }
+        Update: {
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          last_sent_at?: string | null
+          notes?: string | null
+          payload?: Json
+          type?: string
+          user_id?: string
+          valid_until?: string | null
+          version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prescriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processed_messages: {
         Row: {
           processed_at: string
@@ -1278,6 +1415,62 @@ export type Database = {
           },
         ]
       }
+      training_plans: {
+        Row: {
+          active: boolean
+          created_at: string
+          days_per_week: number
+          equipment_summary: string | null
+          generated_at: string
+          generated_by: string | null
+          id: string
+          notes: string | null
+          plan_type: string
+          user_id: string
+          valid_until: string | null
+          version: number | null
+          weekly_schedule: Json
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          days_per_week: number
+          equipment_summary?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          notes?: string | null
+          plan_type?: string
+          user_id: string
+          valid_until?: string | null
+          version?: number | null
+          weekly_schedule: Json
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          days_per_week?: number
+          equipment_summary?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          notes?: string | null
+          plan_type?: string
+          user_id?: string
+          valid_until?: string | null
+          version?: number | null
+          weekly_schedule?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_plans_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tts_cache: {
         Row: {
           audio_path: string
@@ -1367,6 +1560,35 @@ export type Database = {
           },
         ]
       }
+      user_phrase_cooldown: {
+        Row: {
+          last_seen_at: string
+          phrase_id: string
+          phrase_table: string
+          user_id: string
+        }
+        Insert: {
+          last_seen_at?: string
+          phrase_id: string
+          phrase_table: string
+          user_id: string
+        }
+        Update: {
+          last_seen_at?: string
+          phrase_id?: string
+          phrase_table?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_phrase_cooldown_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           activity_level: Database["public"]["Enums"]["activity_enum"] | null
@@ -1375,6 +1597,7 @@ export type Database = {
           bf_percent_estimated: number | null
           bf_source: string | null
           birth_date: string | null
+          body_fat_measured_at: string | null
           body_fat_percent: number | null
           created_at: string
           current_protocol: Database["public"]["Enums"]["protocol_enum"] | null
@@ -1405,6 +1628,7 @@ export type Database = {
           bf_percent_estimated?: number | null
           bf_source?: string | null
           birth_date?: string | null
+          body_fat_measured_at?: string | null
           body_fat_percent?: number | null
           created_at?: string
           current_protocol?: Database["public"]["Enums"]["protocol_enum"] | null
@@ -1435,6 +1659,7 @@ export type Database = {
           bf_percent_estimated?: number | null
           bf_source?: string | null
           birth_date?: string | null
+          body_fat_measured_at?: string | null
           body_fat_percent?: number | null
           created_at?: string
           current_protocol?: Database["public"]["Enums"]["protocol_enum"] | null
@@ -1978,6 +2203,22 @@ export type Database = {
       f_unaccent: { Args: { "": string }; Returns: string }
       get_global_config: { Args: { p_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      match_food_phrases: {
+        Args: {
+          match_count: number
+          match_language?: string
+          match_threshold: number
+          query_embedding: string
+        }
+        Returns: {
+          id: string
+          last_used_at: string
+          phrase: string
+          similarity: number
+          tags: Json
+          usage_count: number
+        }[]
+      }
       match_method_chunks: {
         Args: {
           filter_protocol?: string
@@ -2157,7 +2398,7 @@ export type Database = {
       config_status: "draft" | "testing" | "active" | "archived"
       content_type_enum: "text" | "audio" | "image" | "template" | "interactive"
       direction_enum: "in" | "out"
-      goal_type_enum: "BF" | "IMC"
+      goal_type_enum: "BF" | "IMC" | "peso_kg"
       hunger_enum: "pouca" | "moderada" | "muita"
       meal_type_enum: "cafe" | "almoco" | "lanche" | "jantar" | "ceia" | "outro"
       msg_role_enum: "user" | "assistant" | "system" | "tool"
@@ -2182,6 +2423,9 @@ export type Database = {
         | "manutencao"
         | "coleta_dados"
         | "regras_gerais"
+        | "vision"
+        | "engajamento"
+        | "analista_diario"
       sex_enum: "masculino" | "feminino"
       sub_status: "trial" | "active" | "past_due" | "canceled" | "expired"
       user_status: "active" | "blocked" | "deleted"
@@ -2325,7 +2569,7 @@ export const Constants = {
       config_status: ["draft", "testing", "active", "archived"],
       content_type_enum: ["text", "audio", "image", "template", "interactive"],
       direction_enum: ["in", "out"],
-      goal_type_enum: ["BF", "IMC"],
+      goal_type_enum: ["BF", "IMC", "peso_kg"],
       hunger_enum: ["pouca", "moderada", "muita"],
       meal_type_enum: ["cafe", "almoco", "lanche", "jantar", "ceia", "outro"],
       msg_role_enum: ["user", "assistant", "system", "tool"],
@@ -2352,6 +2596,9 @@ export const Constants = {
         "manutencao",
         "coleta_dados",
         "regras_gerais",
+        "vision",
+        "engajamento",
+        "analista_diario",
       ],
       sex_enum: ["masculino", "feminino"],
       sub_status: ["trial", "active", "past_due", "canceled", "expired"],

@@ -27,6 +27,13 @@ export interface ReevaluationKickoffOptions {
    * quando goal_type='BF'. Audit 06-18 (caso Roberto): paciente tem goal_type='BF'
    * (4 em prod) e ficava sem Q4 porque código só cobria peso_kg. Estendido. */
   currentTargetBfPercent?: number | null
+  /** Meta de IMC atual do paciente, se houver. Vem de user_profiles.goal_value
+   * quando goal_type='IMC'. Audit 06-18 extensão (Q4 IMC): 5 pacientes em prod
+   * têm goal_type='IMC' e ficavam sem Q4. IMC é derivado (peso/altura²) —
+   * paciente normalmente pensa em peso ou BF. Q4 confirma meta atual MAS
+   * sugere migração (define_meta_peso só aceita weight|BF, então paciente que
+   * aceitar migrar tem ferramenta determinística). */
+  currentTargetImc?: number | null
 }
 
 export function reevaluationKickoff(
@@ -37,7 +44,9 @@ export function reevaluationKickoff(
     typeof opts.currentTargetWeightKg === 'number' && opts.currentTargetWeightKg > 0
   const hasTargetBf =
     typeof opts.currentTargetBfPercent === 'number' && opts.currentTargetBfPercent > 0
-  const hasAnyTarget = hasTargetWeight || hasTargetBf
+  const hasTargetImc =
+    typeof opts.currentTargetImc === 'number' && opts.currentTargetImc > 0
+  const hasAnyTarget = hasTargetWeight || hasTargetBf || hasTargetImc
   const totalPerguntas = hasAnyTarget ? 4 : 3
   const abertura =
     `🎯 Hoje fecha *14 dias* de acompanhamento — hora da sua reavaliação! ` +
@@ -62,15 +71,21 @@ export function reevaluationKickoff(
   }
 
   // Q4 opcional — confirma meta atual. Roberto 2026-06-03 (peso_kg) + audit
-  // 06-18 (BF). Manual MPP §2.18 não menciona, é extensão pra reaproveitar
-  // define_meta_peso (que agora aceita target_weight_kg OU target_bf_percent).
-  // Prioriza peso quando ambos definidos (raro — paciente normalmente tem 1
-  // goal_type só).
+  // 06-18 (BF + IMC). Manual MPP §2.18 não menciona, é extensão pra reaproveitar
+  // define_meta_peso (que aceita target_weight_kg OU target_bf_percent).
+  // Prioridade: peso > BF > IMC. Paciente normalmente tem 1 goal_type só
+  // — ordem importa só pra edge case raro de ambos definidos.
+  // IMC é derivado (peso/altura²) — Q4 sugere migração pra peso/BF (a tool
+  // define_meta_peso não aceita IMC, então é o caminho válido).
   let q4 = ''
   if (hasTargetWeight) {
     q4 = `\n4) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
   } else if (hasTargetBf) {
     q4 = `\n4) Sua *meta de gordura corporal* continua sendo *${opts.currentTargetBfPercent}%* ou mudou? Se mudou, me diz o novo valor.`
+  } else if (hasTargetImc) {
+    q4 =
+      `\n4) Sua *meta de IMC* continua sendo *${opts.currentTargetImc}* ou prefere mudar? ` +
+      `Se quiser, dá pra acompanhar por *peso (kg)* ou *% de gordura* — costuma ser mais fácil de visualizar no dia a dia. Me diz como prefere seguir.`
   }
 
   return abertura + q1 + q2 + q3 + q4

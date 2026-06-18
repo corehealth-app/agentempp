@@ -811,11 +811,24 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
       profTyped?.goal_type === 'BF' && goalValueNum != null && goalValueNum > 0
         ? goalValueNum
         : null
+    // Audit 06-18 extensão IMC: 5 pacientes em prod com goal_type='IMC'
+    // ficavam sem Q4. Q4 confirma meta atual + sugere migração pra peso/BF
+    // (define_meta_peso não aceita IMC, então essa é a saída válida).
+    // Sanity 10-60: IMC fora dessa faixa é lixo (paciente "real" estaria
+    // morto OU é dado corrompido). Caller filtra antes de passar.
+    const currentTargetImc =
+      profTyped?.goal_type === 'IMC' &&
+      goalValueNum != null &&
+      goalValueNum >= 10 &&
+      goalValueNum <= 60
+        ? goalValueNum
+        : null
     text +=
       '\n\n' +
       reevaluationKickoff(proto, {
         currentTargetWeightKg,
         currentTargetBfPercent,
+        currentTargetImc,
       })
     await logEvent('reevaluation.prompt_appended', {
       slot,
@@ -823,6 +836,7 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
       goal_type: profTyped?.goal_type ?? null,
       has_target_weight: currentTargetWeightKg != null,
       has_target_bf: currentTargetBfPercent != null,
+      has_target_imc: currentTargetImc != null,
     })
   }
 

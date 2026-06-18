@@ -13,7 +13,7 @@ import {
   evaluateGainVelocity,
   type SnapshotForAgg,
 } from '@mpp/core'
-import type { ServiceClient } from '@mpp/db'
+import type { ServiceClient, TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
@@ -24,6 +24,7 @@ import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-u
 import { detectCorrectionIntent } from './correction-detector.js'
 import { classifyWeightGoal } from './weight-goal-classifier.js'
 import { classifyBfGoal } from './bf-goal-classifier.js'
+import { detectConsumedDate } from './consumed-date-detector.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -148,6 +149,27 @@ export const cadastraDadosIniciais: ToolDefinition = {
     if (numPositive(args.body_fat_percent)) {
       inRange(args.body_fat_percent!, 3, 60, 'body_fat_percent', 'BF% válido fica em 3-60. Reverifique com o paciente.')
       updates.body_fat_percent = args.body_fat_percent
+      // Audit 06-18 (review HIGH B2 idempotência): timestamp dedicado da
+      // medição. Antes tools usavam proxy via updated_at, mas updated_at
+      // muda por QUALQUER UPDATE do profile — paciente que mediu BF há 6
+      // meses mas mudou peso anteontem passava pelo guard de stale.
+      // Coluna dedicada resolve, MAS só atualizar measured_at quando o
+      // VALOR mudou — LLM tem mania de re-chamar cadastra com mesmo BF
+      // (eco de coleta, re-confirmação), e cada re-chamada resetaria o
+      // timestamp silenciosamente. Buscar valor atual e comparar:
+      const { data: curProf } = await ctx.supabase
+        .from('user_profiles')
+        .select('body_fat_percent')
+        .eq('user_id', ctx.userId)
+        .maybeSingle()
+      const prevBf = (curProf as { body_fat_percent: number | null } | null)?.body_fat_percent
+      const bfChanged = prevBf == null || Number(prevBf) !== Number(args.body_fat_percent)
+      if (bfChanged) {
+        // biome-ignore lint/suspicious/noExplicitAny: tipos gerados (gitignored) podem estar dessincronizados em prod até próximo gen
+        ;(updates as any).body_fat_measured_at = new Date().toISOString()
+      }
+      // Se BF não mudou, body_fat_measured_at fica como estava — preserva
+      // age accurate da medição original.
     }
     if (sanityErrors.length > 0) {
       return { success: false, error: 'sanity_check_failed', issues: sanityErrors }
@@ -244,7 +266,7 @@ export const defineProtocolo: ToolDefinition = {
     goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),
   execute: async (args, ctx) => {
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: TablesUpdate<'user_profiles'> = {
       current_protocol: args.protocol,
       deficit_level: args.deficit_level ?? null,
       goal_type: args.goal_type ?? null,
@@ -272,9 +294,7 @@ export const defineProtocolo: ToolDefinition = {
     }
     const { error } = await ctx.supabase
       .from('user_profiles')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-      .update(updatePayload as any)
+      .update(updatePayload)
       .eq('user_id', ctx.userId)
     if (error) throw error
 
@@ -349,11 +369,16 @@ export const defineMetaPeso: ToolDefinition = {
       { message: 'Passe EXATAMENTE UM dos dois: target_weight_kg OU target_bf_percent (não ambos, não nenhum).' },
     ),
   execute: async (args, ctx) => {
-    // Busca dados do profile (peso atual, altura, sexo, BF atual, updated_at
-    // pra detectar BF stale)
+    // Busca dados do profile (peso atual, altura, sexo, BF atual,
+    // body_fat_measured_at pra detectar BF stale com precisão).
+    // Audit 06-18: body_fat_measured_at dedicado (era proxy via updated_at,
+    // que mudava por qualquer UPDATE no profile e mascarava BF antigo).
     const { data: prof } = await ctx.supabase
       .from('user_profiles')
-      .select('weight_kg, height_cm, sex, body_fat_percent, updated_at')
+      // biome-ignore lint/suspicious/noExplicitAny: select string — tipos gerados (gitignored) podem estar dessincronizados em prod até próximo gen
+      .select(
+        'weight_kg, height_cm, sex, body_fat_percent, body_fat_measured_at, updated_at' as any,
+      )
       .eq('user_id', ctx.userId)
       .maybeSingle()
     const p = prof as {
@@ -361,6 +386,7 @@ export const defineMetaPeso: ToolDefinition = {
       height_cm: number | null
       sex: string | null
       body_fat_percent: number | null
+      body_fat_measured_at: string | null
       updated_at: string | null
     } | null
 
@@ -384,30 +410,39 @@ export const defineMetaPeso: ToolDefinition = {
             'BF atual não cadastrado. Pergunte ao paciente o BF aproximado (foto frente/lado/costas pode ajudar) e chame cadastra_dados_iniciais com body_fat_percent antes de definir a meta.',
         }
       }
-      // Review HIGH: BF atual pode ser stale (paciente mediu há 3 meses,
-      // perdeu 10kg desde então — classificação fica errada). Sem coluna
-      // body_fat_measured_at; usa updated_at do profile como proxy. Não
-      // bloqueia, mas adiciona warning pro LLM perguntar antes de gravar.
+      // Stale BF check (audit 06-18, hardened pelo review B1): SÓ usa
+      // body_fat_measured_at — timestamp dedicado da medição EXPLÍCITA.
+      // ANTES tinha fallback `?? updated_at` mas isso neutralizava a
+      // coluna pra todos os 4 pacientes BF em prod (existing rows ficam
+      // NULL na migration). Agora NULL = stale ABSOLUTO (paciente nunca
+      // confirmou explicitamente o BF — força perguntar).
+      // Backfill defensivo via SQL não foi feito (decisão da migration
+      // 20260619000000): assumir que BF antigos podem estar desatualizados
+      // e forçar paciente confirmar é mais seguro que aceitar valor
+      // potencialmente velho.
       let bfAtualStale = false
       let bfAtualAgeDays: number | null = null
-      if (p.updated_at) {
+      if (p.body_fat_measured_at) {
         const ageDays = Math.floor(
-          (Date.now() - new Date(p.updated_at).getTime()) / (24 * 60 * 60 * 1000),
+          (Date.now() - new Date(p.body_fat_measured_at).getTime()) /
+            (24 * 60 * 60 * 1000),
         )
         bfAtualAgeDays = ageDays
         if (ageDays > 30) bfAtualStale = true
+      } else {
+        // NULL = nunca medido explicitamente (ou pré-migration). Stale absoluto.
+        bfAtualStale = true
       }
       const assessment = classifyBfGoal({
         currentBfPercent: Number(p.body_fat_percent),
         targetBfPercent: args.target_bf_percent,
         sex: p.sex,
       })
-      // biome-ignore lint/suspicious/noExplicitAny: types gerados ainda têm BF|IMC só; peso_kg em prod, BF cobre
       const updateRow = {
-        goal_type: 'BF',
+        goal_type: 'BF' as const,
         goal_value: args.target_bf_percent,
         updated_at: new Date().toISOString(),
-      } as any
+      }
       const { error } = await ctx.supabase
         .from('user_profiles')
         .update(updateRow)
@@ -454,12 +489,11 @@ export const defineMetaPeso: ToolDefinition = {
     })
 
     // Grava no banco
-    // biome-ignore lint/suspicious/noExplicitAny: types gerados ainda têm BF|IMC só; peso_kg só existe em prod
     const updateRow = {
-      goal_type: 'peso_kg',
+      goal_type: 'peso_kg' as const,
       goal_value: targetWeightKg,
       updated_at: new Date().toISOString(),
-    } as any
+    }
     const { error } = await ctx.supabase
       .from('user_profiles')
       .update(updateRow)
@@ -571,10 +605,40 @@ export const registraRefeicao: ToolDefinition = {
     // jantar de ontem" era IMPOSSÍVEL e a única saída era backfill manual (fonte
     // nº1 de inconsistência). Agora respeita `consumed_date` em tudo: snapshot do
     // dia certo + consumed_at explícito.
+    //
+    // Audit 06-18 (Discovery D): `consumed_date` foi adicionado em 2026-05-25
+    // (commit be4c13e) MAS em 434 chamadas desde então foi passado ZERO vezes.
+    // LLM ignora consistentemente a instrução da description. Detector
+    // determinístico pré-LLM injeta o campo quando paciente disse "ontem"/
+    // "anteontem" e o LLM não passou. Defesa em camadas — não substitui o
+    // LLM passar (quando passa, respeita; só preenche o gap).
+    let detectedConsumedDate: string | null = null
+    if (!args.consumed_date && ctx.recentUserMessages?.length) {
+      // Review CDD-3: usar TODAS as msgs do turno (debounce foto+caption
+      // separa msgs; "ontem" pode estar em N-2 e caption "almoço pronto"
+      // em N-1). Concatena com separador pra preservar limites de palavra.
+      const turnText = ctx.recentUserMessages.join(' \n ')
+      const detection = detectConsumedDate(turnText, tz)
+      if (detection) {
+        detectedConsumedDate = detection.consumed_date
+        // Telemetria — pra medir frequência do detector
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.consumed_date_injected',
+          properties: {
+            detected_date: detection.consumed_date,
+            days_ago: detection.days_ago,
+            matched_phrase: detection.matched_phrase,
+            text_preview: turnText.slice(0, 200),
+            messages_count: ctx.recentUserMessages.length,
+          },
+        })
+      }
+    }
     const effectiveDate =
       args.consumed_date && /^\d{4}-\d{2}-\d{2}$/.test(args.consumed_date)
         ? args.consumed_date
-        : today
+        : detectedConsumedDate ?? today
     // consumed_at: hoje → agora; dia passado → meio-dia LOCAL daquele dia (cai
     // na data certa em qualquer fuso, e o recompute por consumed_at do closer/
     // auditoria fica fiel).
@@ -1617,7 +1681,7 @@ export const consultaMetricas: ToolDefinition = {
       training_frequency: number | null
       hunger_level: 'pouca' | 'moderada' | 'muita' | null
       current_protocol: 'recomposicao' | 'ganho_massa' | 'manutencao' | null
-      goal_type: 'BF' | 'IMC' | null
+      goal_type: 'BF' | 'IMC' | 'peso_kg' | null
       goal_value: number | null
       deficit_level: 400 | 500 | 600 | null
       water_intake: 'pouco' | 'moderado' | 'bastante' | null

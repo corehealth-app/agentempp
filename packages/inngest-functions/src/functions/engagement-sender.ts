@@ -323,6 +323,15 @@ async function maybeEngageUser(
   const yConsumed = (snapYesterday as { calories_consumed?: number } | null)?.calories_consumed ?? 0
   const yStatus = (snapYesterday as { day_status?: string } | null)?.day_status
   const yTarget = (snapYesterday as { calories_target?: number } | null)?.calories_target ?? null
+  const yExerciseY =
+    (snapYesterday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
+  // BALANÇO DE COMIDA (consumido − meta, SEM exercício) — é o número que
+  // o paciente vê como "Excedente/Restam" no card do dia. daily_balance
+  // do snapshot é NET (com exercício) e serve só pra realDailyDeficit.
+  // Misturar os dois é a "confusão nº 1 da história deste agente"
+  // (CLAUDE.md). Bug Paulo 2026-06-17: msg disse "+460 kcal" (NET) onde
+  // paciente esperava "+542" (COMIDA — diff de consumed-target=1579-1037).
+  const yEating = yTarget != null ? yConsumed - yTarget : null
 
   // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
   const { data: profileRow } = await supabase
@@ -377,8 +386,11 @@ async function maybeEngageUser(
   const isIncompleteStatus =
     yStatus === 'incomplete_no_response' || yStatus === 'pending_close'
   const isInactive = yConsumed <= 0
-  const isOverTarget =
-    typeof yesterdayBalance === 'number' && yesterdayBalance > 100 // excedente > 100 kcal vs meta
+  // Audit 06-18 (bug Paulo): EXCEDENTE é definido pelo balanço de COMIDA
+  // (consumed − target), não pelo NET (com exercício). Exercício acelera
+  // o bloco mas NÃO converte excedente alimentar em "dentro da meta"
+  // (CLAUDE.md — regra inviolável).
+  const isOverTarget = typeof yEating === 'number' && yEating > 100
 
   // FIX #3 (Paulo 2026-05-20 11:17): o LLM recebia o balanço cru ("458 kcal,
   // negativo=déficit") e mesmo assim chamou +458 (superávit) de "déficit". Agora
@@ -430,10 +442,21 @@ async function maybeEngageUser(
       `Ontem (${yesterdayLocalDate}): SEM ATIVIDADE (zero registros). ` +
       `NÃO fale em "fechamento" nem "déficit". ` +
       `Reconheça que ontem foi inativo e convide a começar hoje.`
-  } else if (isOverTarget && typeof yesterdayBalance === 'number') {
+  } else if (isOverTarget && typeof yEating === 'number') {
+    // Bug Paulo 2026-06-17 (audit 06-18): engagement disse "+460 kcal" usando
+    // NET (com exercício); paciente lê como comida e estranha porque no card
+    // ao vivo viu +542. Solução: comunicar SEMPRE yEating (consumed−target,
+    // SEM exercício). Se houve treino, citar em frase SEPARADA com os dois
+    // números sem somar (CLAUDE.md: "exercício acelera bloco, NÃO libera
+    // comer mais").
+    const treinoNota =
+      yExerciseY > 0
+        ? ` O treino compensou ${yExerciseY} kcal, mas o consumo passou ${yEating} kcal da meta — exercício acelera o bloco, não libera comer mais.`
+        : ''
     yesterdayVerdict =
-      `Ontem (${yesterdayLocalDate}): EXCEDENTE (consumiu ${yConsumed} kcal vs meta ${yTarget ?? '?'} kcal — saldo +${yesterdayBalance} kcal). ` +
+      `Ontem (${yesterdayLocalDate}): EXCEDENTE (consumiu ${yConsumed} kcal vs meta ${yTarget ?? '?'} kcal — comida +${yEating} kcal acima da meta).${treinoNota} ` +
       `NÃO chame de "dentro da meta" nem "déficit". ` +
+      `Use SEMPRE o número da COMIDA (+${yEating}) ao falar do excedente — é o que o paciente vê no card. NÃO use o saldo NET (com exercício). ` +
       `Reconheça sem julgar e convide a retomar hoje.`
   } else if (yesterdayLabel != null) {
     yesterdayVerdict =

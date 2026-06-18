@@ -29,6 +29,16 @@ import { createWorkerDeps } from '../lib/env.js'
 const DEFAULT_THRESHOLD_PCT = 50
 const HOURS_BASELINE = 7 * 24 // 7 dias
 
+// CALIBRAÇÃO (audit 06-18): beacon disparou 4× false-positive sobre
+// llm.fake_write_detected com %change irreal (+479% = 1→6). Quando baseline
+// é pequena, divide-por-pequeno gera ruído. Adicionados 2 guards:
+//   - MIN_BASELINE_COUNT_PER_HOUR: baseline (avg/h) precisa ser >= isso pra
+//     o cálculo de %change valer. Senão skip+log "unstable_baseline".
+//   - MIN_DIFF_ABSOLUTE: além do %, o delta absoluto precisa ser >= isso.
+//     1→6 dá +500% mas é diferença pequena em absoluto — não vale alarme.
+const MIN_BASELINE_COUNT_PER_HOUR = 0.5 // baseline precisa ter >= 12 eventos em 7d
+const MIN_DIFF_ABSOLUTE = 3 // delta count1h vs baseline precisa ser >= 3
+
 interface MetricSpec {
   /** Nome amigável pra alerta. */
   name: string
@@ -218,8 +228,23 @@ export const regressionBeaconFn = inngest.createFunction(
         continue
       }
       const pctChange = ((count1h - baselineAvg) / baselineAvg) * 100
-      const dropAlert = m.direction === 'down' && pctChange < -cfg.threshold
-      const riseAlert = m.direction === 'up' && pctChange > cfg.threshold
+      // Calibração (audit 06-18): pra evitar false positive sobre baseline
+      // pequena (1→6 = +500% mas 5 eventos absolutos não merecem alarme),
+      // exige (a) baseline avg/h >= MIN_BASELINE_COUNT_PER_HOUR E (b) delta
+      // absoluto >= MIN_DIFF_ABSOLUTE. Falha em qualquer = no alert.
+      const absoluteDiff = Math.abs(count1h - baselineAvg)
+      const stableBaseline = baselineAvg >= MIN_BASELINE_COUNT_PER_HOUR
+      const significantDiff = absoluteDiff >= MIN_DIFF_ABSOLUTE
+      const dropAlert =
+        m.direction === 'down' &&
+        pctChange < -cfg.threshold &&
+        stableBaseline &&
+        significantDiff
+      const riseAlert =
+        m.direction === 'up' &&
+        pctChange > cfg.threshold &&
+        stableBaseline &&
+        significantDiff
       checks.push({
         name: m.name,
         count1h,

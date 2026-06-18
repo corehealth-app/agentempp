@@ -23,6 +23,7 @@ import { loadDailyTargets } from './calc-targets.js'
 import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-utils.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { classifyWeightGoal } from './weight-goal-classifier.js'
+import { classifyBfGoal } from './bf-goal-classifier.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -300,35 +301,143 @@ export const defineProtocolo: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
-// define_meta_peso — registra a meta de PESO (kg) + classifica viabilidade
+// define_meta_peso — registra a META (peso kg OU BF %) + classifica viabilidade
 // ----------------------------------------------------------------------------
 // Roberto 2026-06-01: paciente pensa em "quero pesar X kg", não em IMC.
-// Tool recebe o peso alvo, calcula IMC alvo, classifica (saudável/sobrepeso/
-// obesidade/abaixo) e retorna mensagem pro LLM redigir variando. Grava no
-// user_profiles via goal_type='peso_kg' + goal_value=X.
+// Audit 06-18 (caso Roberto BF=20%): estendido pra aceitar TAMBÉM target_bf_percent
+// (XOR — passar exatamente UM dos dois). Tool dispatcha entre classifyWeightGoal
+// e classifyBfGoal e grava no user_profiles via goal_type adequado.
 export const defineMetaPeso: ToolDefinition = {
   name: 'define_meta_peso',
   description:
-    'Salva a meta de PESO em kg que o paciente quer atingir + retorna classificação automática da viabilidade (saudável/abaixo/sobrepeso/obesidade/agressiva). ' +
-    '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada com altura E peso atual; (2) o paciente declarou EXPLICITAMENTE o peso alvo ("quero pesar 65kg", "minha meta é 70"). ' +
-    'NÃO USE quando o paciente especulou ("acho que 60 seria bom") ou pediu sua opinião antes — pergunte/oriente primeiro. ' +
-    'A tool retorna: imc_alvo, faixa saudável da altura dele, semanas estimadas no ritmo seguro, e uma MENSAGEM-BASE conforme a classificação. ' +
-    'IMPORTANTE: a mensagem retornada NÃO é literal — varie o jeito de dizer mas MANTENHA os números (peso mínimo/máximo saudável, IMC alvo, semanas). NUNCA invente valor de IMC ou faixa saudável — use os da tool.',
-  parameters: z.object({
-    target_weight_kg: z
-      .number()
-      .min(30)
-      .max(300)
-      .describe('Peso alvo do paciente em quilos (positivo, 30-300). Se ele falou em libras, converta antes: kg = lb × 0.4536.'),
-  }),
+    'Salva a META do paciente — PESO em kg OU PERCENTUAL DE GORDURA (BF%) — e retorna classificação automática da viabilidade. ' +
+    'PASSE EXATAMENTE UM dos dois parâmetros (XOR):\n' +
+    '  - `target_weight_kg`: quando o paciente fala em peso ("quero pesar 65kg", "minha meta é 70"). Faixa 30-300.\n' +
+    '  - `target_bf_percent`: quando o paciente fala em gordura corporal ("quero chegar em 18%", "minha meta é 20% de BF"). Faixa 3-50.\n' +
+    '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada (peso, altura, sexo, e — se for BF — body_fat_percent atual); (2) o paciente declarou EXPLICITAMENTE o alvo. NÃO USE quando ele especulou ou pediu sua opinião antes.\n' +
+    'Retorno: classificação (ideal/agressiva/sobrepeso/abaixo/manutenção) + números da meta (IMC alvo OU pp de gordura) + faixa saudável + semanas estimadas + MENSAGEM-BASE.\n' +
+    'IMPORTANTE: a mensagem retornada NÃO é literal — varie o jeito de dizer mas MANTENHA os números. NUNCA invente IMC, faixa saudável nem BF essencial — use os da tool.',
+  parameters: z
+    .object({
+      target_weight_kg: z
+        .number({
+          invalid_type_error:
+            'target_weight_kg deve ser número em kg. Se paciente falou em libras: kg = lb × 0.4536.',
+        })
+        .min(20, { message: 'target_weight_kg abaixo de 20kg é fisicamente improvável. Confirme com o paciente — pode ter sido erro de digitação.' })
+        .max(300, { message: 'target_weight_kg acima de 300kg é fisicamente improvável.' })
+        .optional()
+        .describe(
+          'Peso alvo em quilos (20-300). Se paciente falou em libras: kg = lb × 0.4536.',
+        ),
+      target_bf_percent: z
+        .number({
+          invalid_type_error:
+            'target_bf_percent deve ser número (0-60). Use quando paciente fala em %BF/gordura corporal.',
+        })
+        .min(1, { message: 'target_bf_percent abaixo de 1% é fisicamente impossível. Confirme com paciente.' })
+        .max(60, { message: 'target_bf_percent acima de 60% é fisicamente improvável.' })
+        .optional()
+        .describe(
+          'Percentual de gordura corporal alvo (1-60). Use quando paciente fala em %BF/composição corporal. Valores 1-4% caem em unhealthy_low; classifier lida com extremos.',
+        ),
+    })
+    .refine(
+      (a) =>
+        (a.target_weight_kg != null && a.target_bf_percent == null) ||
+        (a.target_weight_kg == null && a.target_bf_percent != null),
+      { message: 'Passe EXATAMENTE UM dos dois: target_weight_kg OU target_bf_percent (não ambos, não nenhum).' },
+    ),
   execute: async (args, ctx) => {
-    // Busca peso atual + altura do profile
+    // Busca dados do profile (peso atual, altura, sexo, BF atual, updated_at
+    // pra detectar BF stale)
     const { data: prof } = await ctx.supabase
       .from('user_profiles')
-      .select('weight_kg, height_cm')
+      .select('weight_kg, height_cm, sex, body_fat_percent, updated_at')
       .eq('user_id', ctx.userId)
       .maybeSingle()
-    const p = prof as { weight_kg: number | null; height_cm: number | null } | null
+    const p = prof as {
+      weight_kg: number | null
+      height_cm: number | null
+      sex: string | null
+      body_fat_percent: number | null
+      updated_at: string | null
+    } | null
+
+    // ── Caminho BF ──────────────────────────────────────────────────────
+    if (args.target_bf_percent != null) {
+      // Review HIGH: sex sem runtime validation — sex_enum pode crescer
+      // pra 'outro'/'nao_informado' e classifier silenciosamente retorna
+      // undefined. Validate explicit aqui.
+      if (p?.sex !== 'masculino' && p?.sex !== 'feminino') {
+        return {
+          success: false,
+          error: p?.sex
+            ? `Sexo registrado como "${p.sex}" não é suportado pela classificação de BF (que precisa de limites por sexo: homem 20%, mulher 28%). Pergunte o sexo biológico do paciente e atualize via cadastra_dados_iniciais com sex='masculino' ou 'feminino'.`
+            : 'Sexo do paciente não cadastrado. Pergunte e chame cadastra_dados_iniciais antes de definir meta de BF (classificação depende do sexo: limite recomp homem 20%, mulher 28%).',
+        }
+      }
+      if (p.body_fat_percent == null) {
+        return {
+          success: false,
+          error:
+            'BF atual não cadastrado. Pergunte ao paciente o BF aproximado (foto frente/lado/costas pode ajudar) e chame cadastra_dados_iniciais com body_fat_percent antes de definir a meta.',
+        }
+      }
+      // Review HIGH: BF atual pode ser stale (paciente mediu há 3 meses,
+      // perdeu 10kg desde então — classificação fica errada). Sem coluna
+      // body_fat_measured_at; usa updated_at do profile como proxy. Não
+      // bloqueia, mas adiciona warning pro LLM perguntar antes de gravar.
+      let bfAtualStale = false
+      let bfAtualAgeDays: number | null = null
+      if (p.updated_at) {
+        const ageDays = Math.floor(
+          (Date.now() - new Date(p.updated_at).getTime()) / (24 * 60 * 60 * 1000),
+        )
+        bfAtualAgeDays = ageDays
+        if (ageDays > 30) bfAtualStale = true
+      }
+      const assessment = classifyBfGoal({
+        currentBfPercent: Number(p.body_fat_percent),
+        targetBfPercent: args.target_bf_percent,
+        sex: p.sex,
+      })
+      // biome-ignore lint/suspicious/noExplicitAny: types gerados ainda têm BF|IMC só; peso_kg em prod, BF cobre
+      const updateRow = {
+        goal_type: 'BF',
+        goal_value: args.target_bf_percent,
+        updated_at: new Date().toISOString(),
+      } as any
+      const { error } = await ctx.supabase
+        .from('user_profiles')
+        .update(updateRow)
+        .eq('user_id', ctx.userId)
+      if (error) throw error
+      return {
+        success: true,
+        goal_type: 'BF',
+        target_bf_percent: args.target_bf_percent,
+        classification: assessment.classification,
+        bf_atual: assessment.bfAtual,
+        bf_alvo: assessment.bfAlvo,
+        bf_minimo_saudavel: assessment.bfMinimoSaudavel,
+        bf_recomp_limit: assessment.bfRecompLimit,
+        semanas_para_meta_ritmo_seguro: assessment.semanasParaMetaSeguro,
+        direction: assessment.direction,
+        delta_pp: assessment.deltaPp,
+        message_template: assessment.message,
+        // Warning de medição antiga (review HIGH): se BF foi cadastrado
+        // há >30d, LLM deve perguntar "BF ainda é X% ou mudou?" antes de
+        // afirmar classificação. NÃO bloqueia gravação — só sinaliza.
+        bf_atual_stale: bfAtualStale,
+        bf_atual_idade_dias: bfAtualAgeDays,
+        ...(bfAtualStale && {
+          message_warning: `Atenção: BF atual (${assessment.bfAtual}%) foi cadastrado há ${bfAtualAgeDays} dias. Antes de fechar a meta, pergunte ao paciente "Seu BF ainda é ${assessment.bfAtual}% ou mudou?" — se ele desde então perdeu peso significativo, a classificação pode estar imprecisa.`,
+        }),
+      }
+    }
+
+    // ── Caminho PESO ────────────────────────────────────────────────────
     if (!p?.weight_kg || !p?.height_cm) {
       return {
         success: false,
@@ -336,29 +445,31 @@ export const defineMetaPeso: ToolDefinition = {
           'Peso atual ou altura ainda não cadastrados. Pergunte ao paciente e chame cadastra_dados_iniciais primeiro.',
       }
     }
+    const targetWeightKg = args.target_weight_kg as number
 
     const assessment = classifyWeightGoal({
       currentWeightKg: Number(p.weight_kg),
-      targetWeightKg: args.target_weight_kg,
+      targetWeightKg,
       heightCm: Number(p.height_cm),
     })
 
     // Grava no banco
+    // biome-ignore lint/suspicious/noExplicitAny: types gerados ainda têm BF|IMC só; peso_kg só existe em prod
+    const updateRow = {
+      goal_type: 'peso_kg',
+      goal_value: targetWeightKg,
+      updated_at: new Date().toISOString(),
+    } as any
     const { error } = await ctx.supabase
       .from('user_profiles')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({
-        goal_type: 'peso_kg',
-        goal_value: args.target_weight_kg,
-        updated_at: new Date().toISOString(),
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-      } as any)
+      .update(updateRow)
       .eq('user_id', ctx.userId)
     if (error) throw error
 
     return {
       success: true,
-      target_weight_kg: args.target_weight_kg,
+      goal_type: 'peso_kg',
+      target_weight_kg: targetWeightKg,
       classification: assessment.classification,
       imc_atual: assessment.imcAtual,
       imc_alvo: assessment.imcAlvo,
@@ -396,7 +507,7 @@ export const registraRefeicao: ToolDefinition = {
     '➕ ADIÇÃO de item a refeição JÁ REGISTRADA ("adicionei X", "esqueci de mencionar Y", "coloca mais Z"): chame com APENAS os itens NOVOS, sem re-listar a refeição inteira, e SEM replace=true. Exemplo: paciente diz "Adicionei uma medida de geleia de morango ao café" → items=[{food_name:"geleia de morango",quantity_g:20}]. Se você re-listar todos os itens da refeição + os novos sem replace=true, DUPLICA as calorias no tracking. ' +
     '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Com replace=true a tool apaga os logs anteriores do meal_type e insere os novos. Sem replace=true, a tool SOMA — gera dupla contagem. Default replace=false (assume nova refeição ou adição). ' +
     '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
-    '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' + +
+    '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
     '📅 DIA DA REFEIÇÃO: por padrão assume HOJE. Se o paciente disser que a refeição foi de um DIA ANTERIOR ("isso foi ontem", "comi ontem à noite", "esse jantar foi de ontem"), passe `consumed_date` (YYYY-MM-DD) com a data certa — senão a refeição entra no dia errado. ' +
     '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca", ou "é cuscuz, não farofa", ou "o pão é francês"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Inclui também quando ele diz "apenas N unidades" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.',

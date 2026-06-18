@@ -21,17 +21,24 @@ export type Protocol = 'recomposicao' | 'ganho_massa' | 'manutencao' | null | un
 export interface ReevaluationKickoffOptions {
   /** Meta de peso atual do paciente (kg), se houver. Vem de user_profiles.goal_value
    * quando goal_type='peso_kg'. Roberto 2026-06-03: na reavaliação, perguntar se
-   * a meta continua a mesma. Se null/undefined, omite Q4 (paciente ainda não
-   * definiu meta de peso — não tem o que reconfirmar). */
+   * a meta continua a mesma. */
   currentTargetWeightKg?: number | null
+  /** Meta de BF% atual do paciente, se houver. Vem de user_profiles.goal_value
+   * quando goal_type='BF'. Audit 06-18 (caso Roberto): paciente tem goal_type='BF'
+   * (4 em prod) e ficava sem Q4 porque código só cobria peso_kg. Estendido. */
+  currentTargetBfPercent?: number | null
 }
 
 export function reevaluationKickoff(
   protocol: Protocol,
   opts: ReevaluationKickoffOptions = {},
 ): string {
-  const hasTargetWeight = typeof opts.currentTargetWeightKg === 'number' && opts.currentTargetWeightKg > 0
-  const totalPerguntas = hasTargetWeight ? 4 : 3
+  const hasTargetWeight =
+    typeof opts.currentTargetWeightKg === 'number' && opts.currentTargetWeightKg > 0
+  const hasTargetBf =
+    typeof opts.currentTargetBfPercent === 'number' && opts.currentTargetBfPercent > 0
+  const hasAnyTarget = hasTargetWeight || hasTargetBf
+  const totalPerguntas = hasAnyTarget ? 4 : 3
   const abertura =
     `🎯 Hoje fecha *14 dias* de acompanhamento — hora da sua reavaliação! ` +
     `Vou coletar ${totalPerguntas} dados pra recalibrar tua meta com precisão. Me manda:`
@@ -54,13 +61,17 @@ export function reevaluationKickoff(
       break
   }
 
-  // Q4 opcional (Roberto 2026-06-03): confirma meta de peso. Manual MPP §2.18
-  // não menciona isso explicitamente — é extensão pra reaproveitar o `define_meta_peso`
-  // (criado pra onboarding) na reavaliação. Só inclui se paciente já tem meta
-  // de peso definida (goal_type='peso_kg'); caso contrário, omite.
-  const q4 = hasTargetWeight
-    ? `\n4) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
-    : ''
+  // Q4 opcional — confirma meta atual. Roberto 2026-06-03 (peso_kg) + audit
+  // 06-18 (BF). Manual MPP §2.18 não menciona, é extensão pra reaproveitar
+  // define_meta_peso (que agora aceita target_weight_kg OU target_bf_percent).
+  // Prioriza peso quando ambos definidos (raro — paciente normalmente tem 1
+  // goal_type só).
+  let q4 = ''
+  if (hasTargetWeight) {
+    q4 = `\n4) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
+  } else if (hasTargetBf) {
+    q4 = `\n4) Sua *meta de gordura corporal* continua sendo *${opts.currentTargetBfPercent}%* ou mudou? Se mudou, me diz o novo valor.`
+  }
 
   return abertura + q1 + q2 + q3 + q4
 }

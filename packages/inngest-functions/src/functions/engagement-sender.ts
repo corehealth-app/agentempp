@@ -334,9 +334,11 @@ async function maybeEngageUser(
   const yEating = yTarget != null ? yConsumed - yTarget : null
 
   // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
+  // Bug raiz audit 06-18: select NÃO incluía goal_type/goal_value, então a Q4
+  // da reavaliação NUNCA disparava (nem pra peso_kg, nem pra BF). Agora inclui.
   const { data: profileRow } = await supabase
     .from('user_profiles')
-    .select('current_protocol, deficit_level')
+    .select('current_protocol, deficit_level, goal_type, goal_value')
     .eq('user_id', userId)
     .maybeSingle()
   const designDeficit =
@@ -782,22 +784,45 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
     // fome/treinos/atividade). Antes pedia "peso e BF%/medidas" — fora do manual.
     // Roberto 2026-06-03: adiciona Q4 OPCIONAL "sua meta de peso continua sendo
     // Xkg ou mudou?" — só se paciente já tem meta de peso definida
-    // (goal_type='peso_kg'). Reusa tool define_meta_peso pra processar resposta.
+    // (goal_type='peso_kg').
+    // Audit 06-18 (caso Roberto BF=20%): estendido pra cobrir goal_type='BF'
+    // também. Em prod 4 pacientes têm goal_type=BF (todos com 20%), 5 com IMC,
+    // 0 com peso_kg — então a Q4 NUNCA disparava na prática. Reusa
+    // define_meta_peso (agora aceita target_bf_percent XOR target_weight_kg).
     const proto = (profileRow as { current_protocol?: string | null } | null)
       ?.current_protocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null | undefined
     const profTyped = profileRow as {
       goal_type?: string | null
-      goal_value?: number | null
+      goal_value?: number | string | null
     } | null
+    // goal_value pode vir como string ("20.00") ou number — coerce explícito.
+    const rawGoalValue = profTyped?.goal_value
+    const goalValueNum =
+      typeof rawGoalValue === 'string'
+        ? Number(rawGoalValue)
+        : typeof rawGoalValue === 'number'
+          ? rawGoalValue
+          : null
     const currentTargetWeightKg =
-      profTyped?.goal_type === 'peso_kg' && typeof profTyped?.goal_value === 'number'
-        ? Number(profTyped.goal_value)
+      profTyped?.goal_type === 'peso_kg' && goalValueNum != null && goalValueNum > 0
+        ? goalValueNum
         : null
-    text += '\n\n' + reevaluationKickoff(proto, { currentTargetWeightKg })
+    const currentTargetBfPercent =
+      profTyped?.goal_type === 'BF' && goalValueNum != null && goalValueNum > 0
+        ? goalValueNum
+        : null
+    text +=
+      '\n\n' +
+      reevaluationKickoff(proto, {
+        currentTargetWeightKg,
+        currentTargetBfPercent,
+      })
     await logEvent('reevaluation.prompt_appended', {
       slot,
       protocol: proto ?? null,
+      goal_type: profTyped?.goal_type ?? null,
       has_target_weight: currentTargetWeightKg != null,
+      has_target_bf: currentTargetBfPercent != null,
     })
   }
 

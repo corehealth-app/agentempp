@@ -434,6 +434,21 @@ async function maybeEngageUser(
       `). O sistema NÃO creditou bloco 7700. ` +
       `NÃO fale "fechou bem" / "déficit" / "bloco completo". ` +
       `Convide a retomar hoje sem cobrar.`
+  } else if ((skInc || isIncompleteStatus) && isOverTarget && typeof yEating === 'number') {
+    // Audit 06-20 (Roberto 2026-06-19): dia fechou incompleto E paciente excedeu
+    // meta (+403 kcal). Antes a cascata caía em "DIA INCOMPLETO" puro e o LLM
+    // mascarava o excedente ("rotina não fechou como esperado"). Branch composto
+    // força reconhecer AMBOS os fatos com o número da comida (+yEating).
+    const treinoNotaComp =
+      yExerciseY > 0
+        ? ` O treino compensou ${yExerciseY} kcal, mas o consumo passou ${yEating} kcal da meta — exercício acelera o bloco, não libera comer mais.`
+        : ''
+    yesterdayVerdict =
+      `Ontem (${yesterdayLocalDate}): DIA INCOMPLETO + EXCEDENTE (paciente registrou refeições mas o dia fechou em aberto; ` +
+      `consumido ${yConsumed} kcal vs meta ${yTarget ?? '?'} kcal — comida +${yEating} kcal acima da meta).${treinoNotaComp} ` +
+      `O sistema NÃO creditou bloco. ` +
+      `Reconheça AMBOS: dia ficou em aberto E houve excedente. Use o número +${yEating} ao falar do excedente — é o que o paciente vê. ` +
+      `NÃO finja fechamento. NÃO chame de "dentro da meta" / "rotina não fechou como esperado" sem citar o excedente. Convide a retomar com leveza.`
   } else if (skInc || isIncompleteStatus) {
     yesterdayVerdict =
       `Ontem (${yesterdayLocalDate}): DIA INCOMPLETO (paciente não respondeu lembretes / fechamento parcial). ` +
@@ -753,20 +768,31 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
       yesterdayVerdict.includes('dados insuficientes'))
   if (verdictIsNegative) {
     // Padrões que indicam alucinação de fechamento positivo. Case-insensitive.
+    // Audit 06-20 (Roberto): regex ampliada — antes não pegava "blocos" (plural),
+    // "completos" (plural) nem "de 7.700 kcal" com "kcal" interpolado entre o
+    // valor e "completos". Frase real que escapou: "4 blocos de 7.700 kcal
+    // completos". Fix: `blocos?`, `completos?|fechados?` e opcional `(?:\s+kcal)?`.
     const HALLUCINATION_RE =
-      /\b(fechou\s+(bem|com\s+deficit|com\s+saldo|dentro\s+da\s+meta)|saldo\s+positivo|bloco(?:\s+(?:de\s+7\.?700)?)?\s+(?:completo|fechado)|completou\s+(?:o\s+)?bloco|dentro\s+da\s+meta|deficit\s+real\s+de|deficit\s+de\s+\d|superavit|excedeu\s+a\s+meta\s+e\s+ainda\s+assim)/i
+      /\b(fechou\s+(bem|com\s+deficit|com\s+saldo|dentro\s+da\s+meta)|saldo\s+positivo|blocos?(?:\s+(?:de\s+7\.?700(?:\s+kcal)?)?)?\s+(?:completos?|fechados?)|completou\s+(?:os?\s+)?blocos?|dentro\s+da\s+meta|deficit\s+real\s+de|deficit\s+de\s+\d|superavit|excedeu\s+a\s+meta\s+e\s+ainda\s+assim)/i
     const noAccent = text.normalize('NFD').replace(/\p{Diacritic}/gu, '')
     if (HALLUCINATION_RE.test(noAccent)) {
+      // Audit 06-20: branch composto INCOMPLETO + EXCEDENTE precisa ser checado
+      // ANTES dos puros (DIA INCOMPLETO / EXCEDENTE), porque o veredito composto
+      // contém ambas as substrings e cairia no primeiro match (DIA INCOMPLETO).
       const fallback =
         yesterdayVerdict.includes('SUB-REGISTRO')
           ? 'Bom dia! Ontem ficou só com registro parcial — o que importa é retomar hoje sem cobrar. Manda o que comer, vamos juntos.'
-          : yesterdayVerdict.includes('DIA INCOMPLETO')
-            ? 'Bom dia! Ontem o dia ficou em aberto — sem drama, hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.'
-            : yesterdayVerdict.includes('SEM ATIVIDADE')
-              ? 'Bom dia! Ontem foi um dia parado por aqui — acontece. Hoje a gente recomeça: manda o primeiro registro quando comer.'
-              : yesterdayVerdict.includes('EXCEDENTE')
-                ? 'Bom dia! Ontem o consumo passou um pouco da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.'
-                : 'Bom dia! Sobre ontem não tenho dados certos pra comentar. Hoje recomeçamos do zero — manda o primeiro registro quando comer.'
+          : yesterdayVerdict.includes('DIA INCOMPLETO + EXCEDENTE') && typeof yEating === 'number'
+            ? `Bom dia! Ontem o dia ficou em aberto e o consumo passou +${yEating} kcal da meta. Sem drama — hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.`
+            : yesterdayVerdict.includes('DIA INCOMPLETO')
+              ? 'Bom dia! Ontem o dia ficou em aberto — sem drama, hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.'
+              : yesterdayVerdict.includes('SEM ATIVIDADE')
+                ? 'Bom dia! Ontem foi um dia parado por aqui — acontece. Hoje a gente recomeça: manda o primeiro registro quando comer.'
+                : yesterdayVerdict.includes('EXCEDENTE') && typeof yEating === 'number'
+                  ? `Bom dia! Ontem o consumo passou +${yEating} kcal da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.`
+                  : yesterdayVerdict.includes('EXCEDENTE')
+                    ? 'Bom dia! Ontem o consumo passou um pouco da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.'
+                    : 'Bom dia! Sobre ontem não tenho dados certos pra comentar. Hoje recomeçamos do zero — manda o primeiro registro quando comer.'
       await logEvent('engagement.hallucinated_closure', {
         verdict: yesterdayVerdict.slice(0, 200),
         original_preview: text.slice(0, 300),

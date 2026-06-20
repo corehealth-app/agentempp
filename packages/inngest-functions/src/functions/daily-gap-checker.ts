@@ -109,7 +109,25 @@ async function checkUserGap(
 
   // Tem gap real. Monta mensagem e envia.
   const gapList = Array.from(gapInfo.gap)
-  const text = buildReminderText(name, gapList)
+
+  // Audit 06-20 (Roberto): busca refeições JÁ registradas hoje pra montar
+  // lembrete acionável ("hoje você registrou: 17:48 lanche, 19:56 jantar.
+  // Algum desses ERA seu almoço?"). Snapshot id é o filtro mais robusto;
+  // sem snapshot (caso novo do dia), todayLogs fica vazia e o texto cai no
+  // fallback simples (mesmo comportamento de antes).
+  type LogRow = { meal_type: string | null; kcal: number | string | null; consumed_at: string }
+  let todayLogs: LogRow[] = []
+  if (snap?.id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('meal_logs')
+      .select('meal_type, kcal, consumed_at')
+      .eq('snapshot_id', snap.id)
+      .order('consumed_at', { ascending: true })
+    todayLogs = (data ?? []) as LogRow[]
+  }
+
+  const text = buildReminderText(name, gapList, todayLogs, userTimezone)
 
   const messaging = createMessagingProvider({
     MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
@@ -127,6 +145,10 @@ async function checkUserGap(
       minDelay: 500,
       maxDelay: 1500,
       charsPerSecond: 60,
+      // Review F9: texto novo (~500 chars) seria estilhaçado em 3 bolhas pelo
+      // humanizer e paciente pode responder antes de ler a hint inteira.
+      // singleMessage garante chegada atômica (cabe em 1 msg WhatsApp, 4096 max).
+      singleMessage: true,
     })
     if (results.some((r) => r.status !== 'sent')) {
       deliveryStatus = 'failed'
@@ -181,23 +203,98 @@ async function checkUserGap(
   return { reminded: true, skipped: false }
 }
 
-function buildReminderText(name: string, gap: MealType[]): string {
-  const labels: Record<MealType, string> = {
+function buildReminderText(
+  name: string,
+  gap: MealType[],
+  todayLogs: Array<{ meal_type: string | null; kcal: number | string | null; consumed_at: string }>,
+  tz: string,
+): string {
+  // Audit 06-20 (review F7): inclui 'outro' no map de labels pra não vazar a
+  // string técnica 'outro' na mensagem ao paciente. Padrão consistente com
+  // post-registration-message.ts (MEAL_LABEL).
+  const labels: Record<string, string> = {
     cafe: 'café da manhã',
     almoco: 'almoço',
     lanche: 'lanche',
     jantar: 'jantar',
     ceia: 'ceia',
+    outro: 'refeição',
   }
-  const list = gap.map((mt) => labels[mt]).join(' e ')
-  // Texto original (até 2026-06-08) era ambíguo: "Sem essa confirmação, o dia
-  // fica como incompleto" — Roberto leu como "já era, o dia perdeu agora".
-  // Fix: deixa explícito que dá tempo de responder até o fechamento.
+  const list = gap.map((mt) => labels[mt] ?? mt).join(' e ')
+
+  // Audit 06-20 (Roberto): lista refeições já registradas hoje com horário
+  // local. Caso real: Roberto comeu camarão+kani às 17:48 ET, virou "lanche",
+  // lembrete às 21:31 perguntou pelo almoço, ele respondeu chicken wings e o
+  // sistema criou 4º jantar em vez de reconhecer que o lanche das 17:48 ERA
+  // o almoço.
+  //
+  // Review F5: NÃO agrupar por meal_type — agrupar perdia o horário dos
+  // logs subsequentes (ex: 2 cookies às 19:09 que viraram jantar após
+  // tortilha+frango às 18:56 sumiam do display). Lista individual mostra
+  // cada log com horário+meal_type+kcal pra paciente identificar.
+  type LogShow = { hour: string; mealType: string; kcal: number }
+  const logs: LogShow[] = []
+  for (const log of todayLogs) {
+    if (!log.meal_type) continue
+    logs.push({
+      hour: formatLocalHourMinute(log.consumed_at, tz),
+      mealType: log.meal_type,
+      kcal: Number(log.kcal) || 0,
+    })
+  }
+
+  const firstGap = gap[0]
+  if (logs.length === 0 || !firstGap) {
+    // Fallback simples (sem registros hoje OU sem gap conhecido): texto antigo.
+    return (
+      `Olá ${name}, antes de fechar o dia: você não registrou ${list} hoje. ` +
+      `Se comeu, me descreve rapidão o que foi (ou manda foto) — ` +
+      `dá tempo de registrar agora ou até amanhã cedo. ` +
+      `Se realmente pulou, é só responder "pulei". ` +
+      `Sem resposta até o fechamento, o dia fica como incompleto — e o bloco 7700 não credita.`
+    )
+  }
+
+  const registradoLines = logs
+    .map((l) => `${l.hour} ${labels[l.mealType] ?? l.mealType} (${Math.round(l.kcal)} kcal)`)
+    .join(', ')
+
+  // Review F6: não usar como exemplo um log que JÁ é do mesmo meal_type do
+  // gap (gera "aquele almoço das 13:42 era o almoço" — nonsense). Filtra os
+  // logs candidatos pra exemplo, excluindo qualquer um já no meal_type do gap.
+  const exampleLogs = logs.filter((l) => l.mealType !== firstGap)
+  const exampleLog = exampleLogs[0]
+
+  // Review F8: plural reformulado pra evitar "Algum desses (X e Y) era X e Y?"
+  // (sujeito singular + lista duplicada). Frase plural mais natural.
+  const reclassifyHint =
+    gap.length === 1
+      ? exampleLog
+        ? `Algum desses ERA seu ${labels[firstGap]}? Se sim, me diz qual horário e eu reclassifico sem dobrar ` +
+          `(ex: "aquele ${labels[exampleLog.mealType] ?? exampleLog.mealType} das ${exampleLog.hour} era o ${labels[firstGap]}"). `
+        : `Algum desses ERA seu ${labels[firstGap]}? Se sim, me diz qual horário e eu reclassifico sem dobrar. `
+      : `Alguma dessas refeições do dia ERA na verdade ${list}? Me diz qual horário e eu reclassifico sem dobrar. `
+
   return (
     `Olá ${name}, antes de fechar o dia: você não registrou ${list} hoje. ` +
-    `Se comeu, me descreve rapidão o que foi (ou manda foto) — ` +
-    `dá tempo de registrar agora ou até amanhã cedo. ` +
+    `Hoje você já registrou: ${registradoLines}. ` +
+    reclassifyHint +
+    `Se ainda vai comer agora ou amanhã cedo, me descreve. ` +
     `Se realmente pulou, é só responder "pulei". ` +
     `Sem resposta até o fechamento, o dia fica como incompleto — e o bloco 7700 não credita.`
   )
+}
+
+function formatLocalHourMinute(iso: string, tz: string): string {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleTimeString('pt-BR', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return iso.slice(11, 16)
+  }
 }

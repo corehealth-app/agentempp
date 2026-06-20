@@ -1014,18 +1014,79 @@ export const registraRefeicao: ToolDefinition = {
           (order.indexOf(expected) >= 0 ? order.indexOf(expected) : 0),
       )
 
+      // Audit 06-20 (Roberto 19/06 23:49 ET): novo guard — se há GAP ABERTO
+      // pro meal_type que o LLM passou (= nenhum log do dia com esse rótulo)
+      // E o claimed vem CRONOLOGICAMENTE ANTES do expected pela hora
+      // (claimed=almoco, expected=jantar), o LLM provavelmente está
+      // respondendo a um lembrete de "falta almoço". NÃO autocorrigir nesse
+      // caso — deixa o LLM gravar o meal_type que ele escolheu.
+      // Evento real: às 22:49 ET Roberto respondeu chicken wings ao lembrete
+      // de almoço; LLM passou claimed='almoco', expected='jantar', distance=2.
+      // Antes: autocorrect virava pra 'jantar' (errado), criando 4º jantar do
+      // dia e mantendo o gap_almoco aberto. Agora: respeita 'almoco', gap fecha.
+      const claimedIdx = order.indexOf(args.meal_type)
+      const expectedIdx = order.indexOf(expected)
+      const isClaimedEarlierThanExpected =
+        claimedIdx >= 0 && expectedIdx >= 0 && claimedIdx < expectedIdx
+      let gapOpenForClaimed = false
+      let gapCheckFailed = false
+      if (isClaimedEarlierThanExpected) {
+        const today = getLocalDateString(tz)
+        // Audit 06-20 (review HIGH F1): janela consumed_at PRECISA ter offset
+        // de timezone, senão Postgres interpreta literal sem offset como UTC e
+        // a janela vira [date 00:00 UTC, date 23:59 UTC] em vez de janela local
+        // do paciente. Pra Roberto em ET (UTC-4 EDT), almoço às 21h ET cai em
+        // 01h UTC do dia seguinte → ficava FORA da janela → autocorrect era
+        // bloqueado mesmo com almoço gravado. Mesmo bug histórico que motivou
+        // o fix em meal-patterns.ts:171-178 e tools.ts:1141-1149.
+        const tzOff = getTzOffset(tz)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: dayLogs, error: gapErr } = await (ctx.supabase as any)
+          .from('meal_logs')
+          .select('meal_type')
+          .eq('user_id', ctx.userId)
+          .gte('consumed_at', `${today}T00:00:00${tzOff}`)
+          .lt('consumed_at', `${today}T23:59:59.999${tzOff}`)
+        if (gapErr) {
+          // Audit 06-20 (review HIGH F2): falha de query NÃO deve bloquear
+          // autocorrect (regressão de defesa em camadas). Default seguro:
+          // gapOpenForClaimed=false → autocorrect funciona como antes do RC1.
+          // Loga evento pra telemetria poder pegar incidentes.
+          gapCheckFailed = true
+          gapOpenForClaimed = false
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.meal_type_gap_check_failed',
+            properties: {
+              claimed: args.meal_type,
+              expected_by_hour: expected,
+              local_hour: localHour,
+              timezone: tz,
+              error: String((gapErr as { message?: string }).message ?? gapErr),
+            },
+          })
+        } else {
+          const types = ((dayLogs ?? []) as Array<{ meal_type: string | null }>).map(
+            (l) => l.meal_type,
+          )
+          gapOpenForClaimed = !types.includes(args.meal_type)
+        }
+      }
+
       // Bloqueia autocorrect quando replace=true — autocorrect cross-meal-type
       // + replace=true é catastrófico: LLM manda {meal_type:'lanche', replace:true}
       // pra corrigir lanche, autocorrect vira pra 'cafe', replace=true APAGA todos
       // os meal_logs do CAFÉ do dia (sem relação com a intenção do LLM). Caso
       // Amanda 2026-05-30: empanada do lanche da manhã sumiu por isso. Em replace
       // sempre confia no LLM; mismatch fica só como log.
+      const blockedByGapOpen = isClaimedEarlierThanExpected && gapOpenForClaimed
       const shouldAutoCorrect =
         args.meal_type !== expected &&
         !ctx.trustMealType &&
         !userMentionedMeal &&
         distance >= 2 &&
-        args.replace !== true
+        args.replace !== true &&
+        !blockedByGapOpen
 
       if (args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
@@ -1042,13 +1103,17 @@ export const registraRefeicao: ToolDefinition = {
             user_mentioned_meal: userMentionedMeal,
             trusted_tap: ctx.trustMealType === true,
             replace: args.replace ?? false,
+            gap_open_for_claimed: gapOpenForClaimed,
+            blocked_by_gap_open: blockedByGapOpen,
+            gap_check_failed: gapCheckFailed,
           },
         })
         if (shouldAutoCorrect) {
           // Discrepância grave + paciente sem nomear meal_type → sobrescreve.
           args.meal_type = expected
         }
-        // Senão: respeita o que LLM passou (paciente nomeou OU diferença pequena).
+        // Senão: respeita o que LLM passou (paciente nomeou OU diferença pequena
+        // OU gap aberto pro meal_type alegado = LLM respondendo a lembrete).
       }
     }
 
@@ -2247,6 +2312,210 @@ export const confirmaPaisResidencia: ToolDefinition = {
 }
 
 // ----------------------------------------------------------------------------
+// reclassifica_refeicao — paciente avisa tardio que rótulo estava errado
+// (audit 2026-06-20, Roberto 19/06: comeu camarão+kani às 17:48 ET, sistema
+// rotulou como "lanche" pela tabela horária, mas pra Roberto era almoço tardio.
+// Gap-checker às 21:31 ET disparou lembrete de almoço; Roberto respondeu com
+// chicken wings que viraram 4º jantar — sem caminho pra dizer "aquele lanche
+// era meu almoço". Esta tool faz UPDATE puro do rótulo sem mexer em kcal/macros,
+// evitando o blocker `replace_blocked_no_correction` que duplicaria calorias
+// se LLM tentasse usar registra_refeicao+replace fora da janela de 30min.)
+// ----------------------------------------------------------------------------
+export const reclassificaRefeicao: ToolDefinition = {
+  name: 'reclassifica_refeicao',
+  description:
+    'Reclassifica refeição JÁ REGISTRADA mudando só o RÓTULO (meal_type), SEM mexer em kcal/macros/quantidade. ' +
+    'Use quando paciente disser que uma refeição registrada tinha o tipo errado: ' +
+    '"aquele lanche das 17:48 era meu almoço", "troca o jantar pelo almoço", "o que eu mandei foi almoço, não jantar". ' +
+    'NÃO use pra correção de comida/quantidade (use registra_refeicao com replace=true). ' +
+    'NÃO use quando paciente quer ADICIONAR refeição nova (use registra_refeicao normal). ' +
+    'A tool busca meal_logs do dia (default hoje) com from_meal_type e troca pra to_meal_type. ' +
+    'Se houver vários logs do mesmo meal_type, use food_hint pra desambiguar (filtro parcial em food_name).',
+  parameters: z.object({
+    from_meal_type: z
+      .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
+      .describe('Rótulo ATUAL (errado) que está no banco'),
+    to_meal_type: z
+      .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
+      .describe('Rótulo NOVO (correto) — deve ser diferente do from'),
+    food_hint: z
+      .string()
+      .optional()
+      .describe(
+        'Trecho parcial do food_name pra desambiguar quando há vários logs com mesmo meal_type. Ex: "camarão" pra mover só os logs com camarão. Case-insensitive, parcial.',
+      ),
+    consumed_date: z
+      .string()
+      .optional()
+      .describe(
+        'Data alvo YYYY-MM-DD (default = hoje no timezone do paciente). Use "ontem" implicitamente passando a data de ontem se o paciente disser "aquele lanche de ontem era almoço".',
+      ),
+  }),
+  execute: async (args, ctx) => {
+    if (args.from_meal_type === args.to_meal_type) {
+      return {
+        success: false,
+        error: 'same_meal_type',
+        message: 'from_meal_type e to_meal_type são iguais — nada a fazer.',
+      }
+    }
+
+    const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const targetDate = args.consumed_date ?? getLocalDateString(tz)
+
+    // Busca snapshot da data alvo. Review F10: captura error pra diferenciar
+    // "não existe" de "query falhou" (RLS, network, etc).
+    const { data: snap, error: snapErr } = await ctx.supabase
+      .from('daily_snapshots')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('date', targetDate)
+      .maybeSingle()
+
+    if (snapErr) {
+      return {
+        success: false,
+        error: 'snapshot_query_failed',
+        date: targetDate,
+        message: `Falha ao buscar snapshot do dia ${targetDate}: ${snapErr.message ?? String(snapErr)}`,
+      }
+    }
+
+    if (!snap) {
+      return {
+        success: false,
+        error: 'snapshot_not_found',
+        date: targetDate,
+        message: `Não encontrei snapshot do dia ${targetDate}. Refeição precisa estar registrada antes de reclassificar.`,
+      }
+    }
+
+    // Busca meal_logs candidatos
+    let query = ctx.supabase
+      .from('meal_logs')
+      .select('id, food_name, kcal, meal_type, consumed_at')
+      .eq('user_id', ctx.userId)
+      .eq('snapshot_id', (snap as { id: string }).id)
+      .eq('meal_type', args.from_meal_type)
+    if (args.food_hint && args.food_hint.trim().length > 0) {
+      query = query.ilike('food_name', `%${args.food_hint.trim()}%`)
+    }
+    const { data: candidates, error: qErr } = await query
+
+    if (qErr) {
+      return {
+        success: false,
+        error: 'candidates_query_failed',
+        message: `Falha ao buscar refeições candidatas: ${qErr.message ?? String(qErr)}`,
+      }
+    }
+
+    const rows = (candidates ?? []) as Array<{
+      id: string
+      food_name: string
+      kcal: number | string
+      meal_type: string
+      consumed_at: string
+    }>
+
+    if (rows.length === 0) {
+      return {
+        success: false,
+        error: 'no_candidates',
+        date: targetDate,
+        from_meal_type: args.from_meal_type,
+        food_hint: args.food_hint ?? null,
+        message: `Não encontrei meal_logs com meal_type=${args.from_meal_type}${args.food_hint ? ` e food_name contendo "${args.food_hint}"` : ''} no dia ${targetDate}.`,
+      }
+    }
+
+    // Audit 06-20 (review F3 HIGH→MEDIUM): se houver >1 candidato após
+    // filtro, NÃO mover tudo silenciosamente — exige LLM pedir desambiguação
+    // ao paciente. Caso real: paciente diz "aquele cookie das 17h era lanche"
+    // e há 2 cookies registrados em horários diferentes. Sem este guard, o
+    // UPDATE moveria os dois sem aviso. Retorna candidates pra LLM oferecer
+    // escolha ao paciente; se o LLM JÁ confirmou a intenção plural, passa
+    // food_hint mais específico (food_name único) ou chama por log id futuramente.
+    if (rows.length > 1) {
+      return {
+        success: false,
+        error: 'ambiguous',
+        date: targetDate,
+        from_meal_type: args.from_meal_type,
+        to_meal_type: args.to_meal_type,
+        food_hint: args.food_hint ?? null,
+        candidates_count: rows.length,
+        candidates: rows.map((r) => ({
+          id: r.id,
+          food_name: r.food_name,
+          kcal: Math.round(Number(r.kcal) || 0),
+          consumed_at: r.consumed_at,
+        })),
+        message:
+          `Encontrei ${rows.length} refeições com meal_type=${args.from_meal_type}${args.food_hint ? ` e food_name contendo "${args.food_hint}"` : ''} no dia ${targetDate}: ` +
+          rows.map((r) => `${r.food_name} (${Math.round(Number(r.kcal) || 0)} kcal)`).join(', ') +
+          `. Pergunte ao paciente qual item especificamente ele quer reclassificar e chame de novo com food_hint mais específico (use food_name distintivo).`,
+      }
+    }
+
+    const ids = rows.map((r) => r.id)
+    const { error: updErr } = await ctx.supabase
+      .from('meal_logs')
+      .update({ meal_type: args.to_meal_type })
+      .in('id', ids)
+
+    if (updErr) {
+      return {
+        success: false,
+        error: 'update_failed',
+        message: updErr.message ?? String(updErr),
+      }
+    }
+
+    // Review F4: INSERT em product_events com try/catch pra não quebrar
+    // a tool se telemetria falhar (UPDATE já aconteceu, paciente não deve
+    // ver erro).
+    try {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.meal_type_reclassified',
+        properties: {
+          date: targetDate,
+          from: args.from_meal_type,
+          to: args.to_meal_type,
+          food_hint: args.food_hint ?? null,
+          meal_log_ids: ids,
+          items_moved: rows.map((r) => ({
+            id: r.id,
+            food_name: r.food_name,
+            kcal: Number(r.kcal) || 0,
+          })),
+          provider_message_id: ctx.providerMessageId ?? null,
+        },
+      })
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[reclassifica_refeicao] product_events insert failed (non-fatal):', e)
+    }
+
+    const totalKcal = rows.reduce((a, r) => a + (Number(r.kcal) || 0), 0)
+    const itemsList = rows.map((r) => r.food_name).join(', ')
+    return {
+      success: true,
+      date: targetDate,
+      from: args.from_meal_type,
+      to: args.to_meal_type,
+      moved_count: rows.length,
+      total_kcal: Math.round(totalKcal),
+      message:
+        `Reclassifiquei ${rows.length} item(ns) — ${itemsList} (${Math.round(totalKcal)} kcal) — ` +
+        `de ${args.from_meal_type} pra ${args.to_meal_type} no dia ${targetDate}. ` +
+        `Kcal/macros não mudaram; só o rótulo da refeição.`,
+    }
+  },
+}
+
+// ----------------------------------------------------------------------------
 // Registry
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
@@ -2794,6 +3063,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   consultaReavaliacaoProtocolo,
   registraMetricaDiaria,
   marcaRefeicaoPulada,
+  reclassificaRefeicao,
   atualizaDataUser,
   encerraAtendimento,
   deleteUser,

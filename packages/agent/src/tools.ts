@@ -25,6 +25,7 @@ import { detectCorrectionIntent } from './correction-detector.js'
 import { classifyWeightGoal } from './weight-goal-classifier.js'
 import { classifyBfGoal } from './bf-goal-classifier.js'
 import { detectConsumedDate } from './consumed-date-detector.js'
+import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
 
 export interface ToolContext {
   supabase: ServiceClient
@@ -989,16 +990,16 @@ export const registraRefeicao: ToolDefinition = {
           .find((p) => p.type === 'hour')?.value ?? '12',
         10,
       )
-      const expected =
-        localHour >= 5 && localHour < 11
-          ? 'cafe'
-          : localHour >= 11 && localHour < 15
-            ? 'almoco'
-            : localHour >= 15 && localHour < 18
-              ? 'lanche'
-              : localHour >= 18 && localHour < 23
-                ? 'jantar'
-                : 'lanche'
+      // RC7 (audit 06-20): tenta janela PESSOAL do paciente (p10-p90 dos
+      // últimos 30d de meal_logs). Se houver >=5 amostras pro meal_type que
+      // cobre a hora, usa pessoal; senão fallback pra tabela global canônica.
+      // Caso real: Roberto come almoço 17-19h ET (fora da global 11-14h);
+      // pessoal aprende isso e evita autocorrect lanche→almoco silencioso.
+      const personalWindows = await getPersonalMealWindows(ctx.supabase, ctx.userId, tz)
+      const { expected, source: windowSource } = resolveMealTypeByHour(
+        localHour,
+        personalWindows,
+      )
       // Detecta se paciente mencionou meal_type explícito nas últimas msgs.
       // Se sim, NÃO auto-corrige (paciente sabe o que fala).
       const recentMsgs = (ctx.recentUserMessages ?? []).join(' ').toLowerCase()
@@ -1088,6 +1089,25 @@ export const registraRefeicao: ToolDefinition = {
         args.replace !== true &&
         !blockedByGapOpen
 
+      // RC7 telemetria: registra qual fonte resolveu o expected (pessoal ou
+      // global), independente de ter divergência. Permite medir adoção e
+      // confiar/ajustar MIN_SAMPLES_FOR_PERSONAL com base em prod.
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event:
+          windowSource === 'personal'
+            ? 'tool.personal_window_used'
+            : 'tool.global_window_used',
+        properties: {
+          claimed: args.meal_type,
+          expected,
+          local_hour: localHour,
+          timezone: tz,
+          personal_meal_types: Array.from(personalWindows.windows.keys()),
+          personal_total_logs: personalWindows.totalLogs,
+        },
+      })
+
       if (args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
@@ -1106,6 +1126,7 @@ export const registraRefeicao: ToolDefinition = {
             gap_open_for_claimed: gapOpenForClaimed,
             blocked_by_gap_open: blockedByGapOpen,
             gap_check_failed: gapCheckFailed,
+            window_source: windowSource,
           },
         })
         if (shouldAutoCorrect) {

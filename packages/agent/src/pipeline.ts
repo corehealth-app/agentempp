@@ -635,11 +635,21 @@ export async function processMessage(
               }
               const pend = recentPending as {
                 id: string
-                proposal: { items?: Array<{ name: string; quantity_g?: number }> } | null
+                proposal: {
+                  items?: Array<{ name: string; quantity_g?: number }>
+                  sourceContentType?: string
+                } | null
                 created_at: string
               } | null
               const pendItems = pend?.proposal?.items ?? []
-              if (pend && pendItems.length > newItemNames.size) {
+              // Review L1 (audit 06-24): só suprimir quando pending VEIO DE FOTO.
+              // O cenário-raiz (Luciana 23/06) é foto pizza + caption tardio. Em
+              // padrões texto+texto (paciente repete itens em mensagens
+              // separadas), suprimir gera false positive. Reduz superfície de
+              // suppression espúria, mantém proteção do caso real.
+              const pendSourceType = pend?.proposal?.sourceContentType ?? null
+              const isPhotoPending = pendSourceType === 'image'
+              if (pend && isPhotoPending && pendItems.length > newItemNames.size) {
                 const pendByName = new Map<string, { quantity_g?: number }>(
                   pendItems.map((it) => [
                     normalizeFoodName(it.name),
@@ -683,9 +693,7 @@ export async function processMessage(
                       new_items_count: newItemNames.size,
                       new_items: Array.from(newItemNames),
                       gap_ms: Date.now() - new Date(pend.created_at).getTime(),
-                      pend_source_content_type:
-                        (pend.proposal as { sourceContentType?: string } | null)
-                          ?.sourceContentType ?? null,
+                      pend_source_content_type: pendSourceType,
                     },
                   })
                   // Marca tool_call como suprimido pro LLM não retentar — mesma
@@ -710,6 +718,32 @@ export async function processMessage(
                         'Itens já estão no pending recente — aguarde paciente confirmar o botão.',
                     }),
                   })
+                  // Review M3 (audit 06-24): em vez de suprimir SILENTE
+                  // (paciente fica sem feedback achando que falhou), re-envia o
+                  // interactive do pending existente. Caso o paciente tenha
+                  // perdido o botão original na timeline, recebe de novo o
+                  // mesmo botão (mesma pendingId) com o card inteiro. Tap
+                  // posterior ainda funciona porque o pending continua status
+                  // 'pending'.
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const fullProposal = pend.proposal as any
+                  if (fullProposal && Array.isArray(fullProposal.items)) {
+                    try {
+                      const { body, buttons } = composePendingProposal(
+                        pend.id,
+                        fullProposal,
+                      )
+                      interactivePayload = { body, buttons, pendingId: pend.id }
+                    } catch (e) {
+                      // composePendingProposal pode falhar se proposal shape
+                      // mudar. Não-fatal: cai no comportamento antigo (silente).
+                      // eslint-disable-next-line no-console
+                      console.warn(
+                        '[pipeline] re-compose suppressed pending falhou (silente):',
+                        e,
+                      )
+                    }
+                  }
                   deterministicRegistration = true
                   finalText = ''
                   break

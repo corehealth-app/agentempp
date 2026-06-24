@@ -78,35 +78,50 @@ const PATTERNS: Array<{
   re: RegExp
   /** Index do grupo de captura que tem o numero. */
   group: number
+  /**
+   * true = regex JÁ ancora em keyword target ("meta|alvo|dia|por dia").
+   * Audit 06-24 review HIGH 1: nesses casos NÃO aplicar minPlausibleTarget,
+   * porque o LLM declarou explicitamente "meta de Xg" — claim baixo aqui é
+   * alucinação real, não confusão per-meal. Sem essa flag, "meta de 50g de
+   * proteína" com target=120 era silenciada (regressão de detecção).
+   */
+  targetAnchored?: boolean
 }> = [
   // "2.500 kcal", "2500 kcal", "meta de 2,500 kcal"
-  { field: 'calories_target', re: /(?:meta|alvo|target|goal)\s*(?:hoje|de|é)?\s*(?:é\s*)?\*{0,2}\s*([\d]{3,5}(?:[.,][\d]{3})?)\s*\*{0,2}\s*kcal/gi, group: 1 },
+  { field: 'calories_target', re: /(?:meta|alvo|target|goal)\s*(?:hoje|de|é)?\s*(?:é\s*)?\*{0,2}\s*([\d]{3,5}(?:[.,][\d]{3})?)\s*\*{0,2}\s*kcal/gi, group: 1, targetAnchored: true },
   // protein_target só dispara quando o número está claramente no contexto de
   // META DIÁRIA (não per-refeição). 3 padrões:
   //   A) "Proteína: 125 / 178g" — card pós-registro (segundo número = meta)
   //   B) "meta de 178g de proteína" — keyword target ANTES do número
   //   C) "178g de proteína (meta|dia|diária)" — keyword target DEPOIS do número
   // Antes dispara em "Total refeição: 447 kcal | 11g proteína" (per-meal) → false positive.
+  // A: card "X/Yg" — segundo número é meta. SEM keyword target — pode confundir
+  // com per-meal "consumido/restante". minPlausibleTarget aplica aqui.
   {
     field: 'protein_target',
     re: /prote[íi]na[:\s]*\*{0,2}\s*\d+(?:[.,]\d+)?\s*\*{0,2}\s*g?\s*\/\s*\*{0,2}\s*([\d]{2,4}(?:[.,]\d)?)\s*\*{0,2}\s*g/gi,
     group: 1,
   },
+  // B: keyword target ANTES do número
   {
     field: 'protein_target',
     re: /(?:meta|alvo|target|goal|objetiv[oa]|cota)[^\n]{0,40}?(\d{2,4}(?:[.,]\d)?)\s*g[^\n]{0,15}?prote[íi]na/gi,
     group: 1,
+    targetAnchored: true,
   },
+  // C: keyword target DEPOIS do número
   {
     field: 'protein_target',
     re: /(\d{2,4}(?:[.,]\d)?)\s*g\s*(?:de\s*)?prote[íi]na[^\n]{0,30}?(?:meta|alvo|dia|diár[ia]a|goal|target|por\s+dia)/gi,
     group: 1,
+    targetAnchored: true,
   },
   // D) "meta de proteína é Xg" (keyword + proteína ANTES do número)
   {
     field: 'protein_target',
     re: /(?:meta|alvo|target|goal|objetiv[oa]|cota)[^\n]{0,40}?prote[íi]na[^\n]{0,20}?(\d{2,4}(?:[.,]\d)?)\s*g\b/gi,
     group: 1,
+    targetAnchored: true,
   },
   // "IMC 25", "IMC de 25.3", "IMC: 25,3"
   { field: 'imc', re: /imc\s*[:=]?\s*(?:de\s*)?(\d{1,2}(?:[.,]\d)?)/gi, group: 1 },
@@ -133,9 +148,33 @@ const PATTERNS: Array<{
 ]
 
 function parseNum(s: string): number {
-  // "2.500" → 2500 (PT-BR), "2,500" → 2500
-  const cleaned = s.replace(/\./g, '').replace(',', '.')
-  return Number(cleaned)
+  // Audit 06-24 (Bug B): parser quebrava decimais — "100.1" virava 1001 porque
+  // `.replace(/\./g, '')` removia TODO ponto, ignorando contexto. Caso real:
+  // "Nova meta: 100.1g de proteína" extraía claimed=1001 vs target=100.1 →
+  // falso positivo 6× em 14d. Agora distingue separador de MILHAR (PT-BR,
+  // sempre 3 dígitos depois) vs DECIMAL (1-2 dígitos depois).
+  const trimmed = s.trim()
+  // PT-BR decimal: "100,1" / "1.943,5" — vírgula é SEMPRE decimal
+  if (/^\d{1,3}(?:\.\d{3})*,\d+$/.test(trimmed)) {
+    return Number(trimmed.replace(/\./g, '').replace(',', '.'))
+  }
+  if (/^\d+,\d+$/.test(trimmed)) {
+    return Number(trimmed.replace(',', '.'))
+  }
+  // EN decimal: "100.1" / "25.3" — ponto seguido de 1-2 dígitos é decimal
+  if (/^\d+\.\d{1,2}$/.test(trimmed)) {
+    return Number(trimmed)
+  }
+  // Milhar PT-BR: "2.500" / "7.700" / "1.943" — ponto seguido de 3 dígitos
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(trimmed)) {
+    return Number(trimmed.replace(/\./g, ''))
+  }
+  // Milhar EN com vírgula: "2,500" (raro mas suporta)
+  if (/^\d{1,3}(?:,\d{3})+$/.test(trimmed)) {
+    return Number(trimmed.replace(/,/g, ''))
+  }
+  // Inteiro puro
+  return Number(trimmed)
 }
 
 // Padroes que indicam que o numero eh RESTANTE/FALTANTE/atingido em item,
@@ -183,13 +222,33 @@ const RESTANTE_BEFORE_PATTERNS = [
   /\(\d+\s*g\)\s*[:|]\s*\d+\s*kcal\s*\|\s*$/i,
 ]
 
+// Audit 06-24 (Bug B): contexto explícito de PER-REFEIÇÃO antes do número.
+// Casos reais que viraram falso positivo:
+//  - "Almoço com 40g de proteína" (Luciana 23/06)
+//  - "Jantar com 21g de proteína" (Luciana 22/06)
+//  - "Jantar com 44,5g de proteína" (Luciana 19/06)
+// O número é per-meal, não target diário.
+// Review HIGH 2 (audit 06-24 review): `\b` em JS exige transição \w↔\W,
+// mas "é" (U+00E9), "ã" (U+00E3), "ç" (U+00E7) são \W. Logo `\bcaf[ée]\b`
+// FALHA em "café" (último char "é" é \W, \b não dispara). Trocado por
+// lookahead `(?=[\s.,:;!?)\-]|$)` que aceita qualquer separador comum +
+// fim de string. "Café com 30g" agora suprime corretamente.
+const WORD_END = '(?=[\\s.,:;!?)\\-]|$)'
+const PER_MEAL_BEFORE_PATTERNS = [
+  new RegExp(`\\b(almo[çc]o|jantar|lanche|caf[ée](?:\\s+da\\s+(?:manh[ãa]|tarde))?|ceia|refei[çc][ãa]o|brunch)${WORD_END}[^.\\n]{0,15}\\bcom\\s*$`, 'i'),
+  new RegExp(`\\bno\\s+(almo[çc]o|jantar|lanche|caf[ée](?:\\s+da\\s+(?:manh[ãa]|tarde))?|brunch)${WORD_END}[^.\\n]{0,15}$`, 'i'),
+  new RegExp(`\\bna\\s+(ceia|refei[çc][ãa]o)${WORD_END}[^.\\n]{0,15}$`, 'i'),
+  /\b(desta|dessa|da)\s+refei[çc][ãa]o\s*$/i,
+  /\b(do\s+almo[çc]o|do\s+jantar|do\s+lanche|do\s+caf[ée]|da\s+ceia)\s*$/i,
+]
+
 export function validateNumericClaims(
   text: string,
   ctx: NumericContext,
   thresholdPct = 0.1,
 ): MismatchFinding[] {
   const findings: MismatchFinding[] = []
-  for (const { field, re, group } of PATTERNS) {
+  for (const { field, re, group, targetAnchored } of PATTERNS) {
     const real = ctx[field]
     if (real == null) continue
     re.lastIndex = 0
@@ -212,6 +271,26 @@ export function validateNumericClaims(
         const numberAbsPos = match.index + (numberPosInMatch >= 0 ? numberPosInMatch : 0)
         const before = text.slice(Math.max(0, numberAbsPos - 40), numberAbsPos)
         if (RESTANTE_BEFORE_PATTERNS.some((p) => p.test(before))) continue
+        // Audit 06-24 (Bug B): skip se o número está num contexto explícito
+        // de PER-REFEIÇÃO ("Almoço com 40g", "Jantar com 21g", "no almoço",
+        // "da refeição"). Caso real: "Almoço com 40g de proteína" pegava
+        // claimed=40 vs target=178 (FALSO POSITIVO 4× em 14d).
+        if (PER_MEAL_BEFORE_PATTERNS.some((p) => p.test(before))) continue
+        // Audit 06-24 (Bug B): skip por implausibilidade — proteína de UMA
+        // refeição quase nunca passa de 50% da meta diária (refeição típica
+        // 25-40g, meta 120-200g). Threshold 0.5 evita matchar "almoço com
+        // 40g" vs meta 178g. Pra calorias, threshold mais frouxo (0.4) pra
+        // não vetar card legítimo que cita meta cheia.
+        //
+        // Review HIGH 1 (audit 06-24 review): SÓ aplicar quando regex NÃO
+        // ancora em keyword target. Quando regex B/C/D casam "meta de Xg de
+        // proteína", o LLM declarou explicitamente meta — claim baixo aqui
+        // é alucinação real, não confusão per-meal. Sem essa condicional,
+        // "meta de 50g" silenciaria mismatch real vs target=120.
+        if (!targetAnchored) {
+          const minPlausibleTarget = field === 'protein_target' ? real * 0.5 : real * 0.4
+          if (claimed > 0 && claimed < minPlausibleTarget) continue
+        }
       }
 
       const diff = Math.abs(claimed - real)

@@ -553,8 +553,25 @@ async function maybeEngageUser(
       // MAS já tem ≥1 bloco fechado, MENCIONA no Bom dia como marco de
       // constância (uma linha discreta). Antes o Haiku às vezes ignorava
       // (caso real: Roberto 3 blocos sem menção no engagement).
+      //
+      // Audit 06-24 (Bug D): NÃO injetar quando veredito de ontem é negativo
+      // (SUB-REGISTRO / DIA INCOMPLETO / EXCEDENTE / SEM DADOS). Antes esse
+      // DESTAQUE OBRIGATÓRIO contradizia a REGRA INVIOLÁVEL ("PROIBIDO dizer
+      // bloco completo") — Haiku obedecia o destaque explícito e disparava o
+      // hardening I1 4× em 7d (Luciana). Causa do conflito: 2 instruções
+      // contraditórias no mesmo prompt. Solução: em dia negativo, o Haiku
+      // pode mencionar streak/blocos cumulativos de FORMA LIVRE, sem ordem
+      // explícita pra "destacar".
+      const verdictIsNegativeForBlock =
+        yesterdayVerdict.startsWith('Ontem') &&
+        (yesterdayVerdict.includes('SUB-REGISTRO') ||
+          yesterdayVerdict.includes('DIA INCOMPLETO') ||
+          yesterdayVerdict.includes('SEM ATIVIDADE') ||
+          yesterdayVerdict.includes('EXCEDENTE') ||
+          yesterdayVerdict.includes('SEM DADOS') ||
+          yesterdayVerdict.includes('dados insuficientes'))
       const blocksAcumulados = (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0
-      if (blocksAcumulados >= 1) {
+      if (blocksAcumulados >= 1 && !verdictIsNegativeForBlock) {
         blockCompletedHighlight = `\n\nDESTAQUE OBRIGATÓRIO: o paciente já tem **${blocksAcumulados} bloco(s) completo(s) do 7700** acumulado(s) (~${blocksAcumulados} kg de gordura no modelo MPP — estimativa do método, NÃO inventar número de balança). Mencione esse marco no Bom dia como prova de constância — UMA linha curta, sem virar palestra. NÃO invente outro número (% gordura, kg medido). Se já mencionou em mensagens anteriores, varie a forma (não repete a mesma frase todo dia).`
       }
     }

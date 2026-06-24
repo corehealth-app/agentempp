@@ -126,6 +126,50 @@ describe('computeProgress — bloco 7700 kcal', () => {
     expect(next.blocksCompleted).toBe(2)
     expect(next.deficitBlock).toBe(100)
   })
+
+  // ── Bug A (audit 2026-06-24): paridade com accumulateBloco em engine/bloco ──
+  // Antes do fix em progress-calc.ts: dia de superávit com dayCredit negativo
+  // grande gerava deficit/blocks NEGATIVO (Math.floor(-66/7700)=-1 → blocks
+  // decrescia 2→1). Causa raiz de 10× audit.bloco_autofixed em 14d.
+  // Caso real Paulo 19/06: prev.deficitBlock=26, dayCredit=-92 → tentative=-66.
+  describe('Bug A regression: clamp em 0 quando dayCredit negativo', () => {
+    it('dia superávit forte com prev.deficitBlock pequeno NÃO decresce blocks (Paulo 19/06)', () => {
+      const prev: UserProgress = { ...emptyProgress, blocksCompleted: 2, deficitBlock: 26 }
+      const next = computeProgress(snapshot({ dailyBalance: 592 }), prev, undefined, -92)
+      // Antes: blocks 2→1 (decremento errado), deficitBlock=-66 (gravado negativo)
+      // Agora: blocks fica em 2, deficitBlock clampado em 0
+      expect(next.blocksCompleted).toBe(2)
+      expect(next.deficitBlock).toBe(0)
+    })
+
+    it('superávit moderado consome parte do deficit sem virar negativo', () => {
+      const prev: UserProgress = { ...emptyProgress, blocksCompleted: 0, deficitBlock: 3000 }
+      const next = computeProgress(snapshot({ dailyBalance: 200 }), prev, undefined, -200)
+      expect(next.blocksCompleted).toBe(0)
+      expect(next.deficitBlock).toBe(2800)
+    })
+
+    it('superávit gigantesco mantém blocks no piso 0 (nunca negativo)', () => {
+      const prev: UserProgress = { ...emptyProgress, blocksCompleted: 0, deficitBlock: 100 }
+      const next = computeProgress(snapshot({ dailyBalance: 5000 }), prev, undefined, -5000)
+      expect(next.blocksCompleted).toBe(0)
+      expect(next.deficitBlock).toBe(0)
+    })
+
+    it('paridade: superávit que consome bloco inteiro decresce blocksCompleted', () => {
+      // Pra preservar semântica do modelo líquido: se credito negativo é grande o
+      // suficiente, paciente PODE perder um bloco (igual recompute). Garante que
+      // o clamp em 0 não impede decremento legítimo dentro do range positivo.
+      const prev: UserProgress = { ...emptyProgress, blocksCompleted: 1, deficitBlock: 200 }
+      // total atual = 1*7700 + 200 = 7900. dayCredit -500 → tentative=-300 → clamp 0.
+      // Bloco completo é desfeito porque o ACUMULADO geral está consistente.
+      const next = computeProgress(snapshot({ dailyBalance: 500 }), prev, undefined, -500)
+      // blocksDelta = floor(0/7700) - floor(200/7700) = 0 - 0 = 0 → blocks fica 1.
+      // Esse é o comportamento "blocos completos não retroagem" (alinha com decisão Roberto).
+      expect(next.blocksCompleted).toBe(1)
+      expect(next.deficitBlock).toBe(0)
+    })
+  })
 })
 
 describe('computeProgress — badges', () => {

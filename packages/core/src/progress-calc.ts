@@ -85,9 +85,21 @@ export function computeProgress(
   // Bloco 7700: o crédito do dia já vem PRONTO do engine (creditDayToBloco),
   // chamado pelo daily-closer. computeProgress só ACUMULA — a regra de crédito
   // (designDeficit, sub-registro, exercício, etc.) vive em @mpp/core/engine/bloco.
-  const totalDeficit = prev.deficitBlock + dayCredit
-  const blocksDelta = Math.floor(totalDeficit / config.kcal_block)
-  const blocksCompleted = prev.blocksCompleted + blocksDelta
+  //
+  // Audit 06-24 (Bug A): PARIDADE com accumulateBloco em @mpp/core/engine/bloco.ts.
+  // ANTES: `totalDeficit = prev.deficitBlock + dayCredit` (sem clamp), `% em JS
+  // preserva sinal` — dia de superávit (dayCredit negativo) podia deixar
+  // deficitBlock negativo E blocksDelta=-1 (decrementava blocks_completed!).
+  // Causa raiz de 10× audit.bloco_autofixed em 14d (Paulo 19/06 blocks 2→1).
+  // AGORA: clampa o ACUMULADO TOTAL em 0 (igual recompute em accumulateBloco)
+  // pra impedir deficit/blocks negativos. blocksDelta é DIFF entre antes/depois
+  // pra preservar invariante incremental usada por dashboards/badges.
+  const tentativeTotal = prev.deficitBlock + dayCredit
+  const totalDeficit = Math.max(0, tentativeTotal)
+  const blocksDelta =
+    Math.floor(totalDeficit / config.kcal_block) -
+    Math.floor(prev.deficitBlock / config.kcal_block)
+  const blocksCompleted = Math.max(0, prev.blocksCompleted + blocksDelta)
   const deficitBlock = totalDeficit % config.kcal_block
 
   // Badges

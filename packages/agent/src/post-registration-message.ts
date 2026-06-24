@@ -116,6 +116,20 @@ export function isPureRegistrationTurn(
   )
   if (!allRegistration) return false
   if (/\?/.test(patientText ?? '')) return false
+  // Review HIGH 3 (audit 06-24 review): excluir entries do Layer 1 suppression.
+  // Quando pipeline.ts:701 marca `result.suppressed_as_duplicate=true`, a tool
+  // NÃO foi executada — paciente continua aguardando confirmação do pending
+  // anterior. Cair em composePostRegistrationMessage chamaria Haiku edu-comment
+  // desnecessariamente (custo + latência) e, pior, geraria texto "Refeição
+  // registrada ✅" que poderia contradizer o botão "Confirma?" do M3 se algum
+  // caller usar `result.text`.
+  if (
+    entries.some(
+      (e) => (e.result as { suppressed_as_duplicate?: boolean } | null)?.suppressed_as_duplicate === true,
+    )
+  ) {
+    return false
+  }
   return true
 }
 

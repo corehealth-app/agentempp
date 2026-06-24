@@ -60,6 +60,104 @@ export const bufferListenerFn = inngest.createFunction(
         return { dispatched: false, reason: 'buffer vazio' }
       }
 
+      // Layer 4 (Bug #2 Luciana 23/06, audit 06-24): vision-inflight gate.
+      // Cenário real: foto chegou no buffer 1, flushada → vision Sonnet rodou
+      // ~20s, criou pending com 8 itens. Caption "10g ketchup + 10g maionese"
+      // chegou 27s depois (>debounce 8s) no buffer 2 → segundo turno do LLM
+      // viu o card de 8 itens como "refeição já registrada" e chamou
+      // registra_refeicao só com 2 itens (subset). Layer 4 evita o split:
+      // antes de flushar buffer SEM imagem, checa se houve image-msg do mesmo
+      // user nos últimos 30s e se vision AINDA não emitiu vision.analyzed.
+      // Se vision em vôo → estende debounce em +20s pra caption entrar no
+      // MESMO ciclo da foto. Limite: só estende 1× por buffer (alreadyExtended
+      // detectado por gap entre latest msg e flush_after).
+      const VISION_INFLIGHT_WINDOW_MS = 30_000
+      const EXTENSION_MS = 20_000
+      const ANTI_LOOP_WINDOW_MS = 60_000
+      const hasImageInBuffer = msgs.some((m) => m.content_type === 'image')
+      if (!hasImageInBuffer) {
+        // Review H3+H4 (audit 06-24): anti-loop via contagem de extensões
+        // recentes em product_events. Antes usava heurística debounceWindowMs
+        // > 15s, mas a RPC buffer_append_msg sobrescreve flush_after a cada
+        // nova msg, apagando a marca de extensão e permitindo múltiplas
+        // estensões. Agora: se buffer.flush_delayed_vision_inflight foi
+        // emitido nos últimos 60s pro mesmo user, NÃO estende de novo (limite
+        // hard). Defesa em camadas vs loop infinito.
+        const { data: prevExt } = await supabase
+          .from('product_events')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('event', 'buffer.flush_delayed_vision_inflight')
+          .gte('occurred_at', new Date(now - ANTI_LOOP_WINDOW_MS).toISOString())
+          .limit(1)
+        const alreadyExtended = (prevExt ?? []).length > 0
+        if (!alreadyExtended) {
+          const { data: recentImages } = await supabase
+            .from('messages')
+            .select('id, created_at')
+            .eq('user_id', userId)
+            .eq('direction', 'in')
+            .eq('content_type', 'image')
+            .gte(
+              'created_at',
+              new Date(now - VISION_INFLIGHT_WINDOW_MS).toISOString(),
+            )
+            .order('created_at', { ascending: false })
+            .limit(1)
+          const recentImage = (recentImages ?? [])[0] as
+            | { id: string; created_at: string }
+            | undefined
+          if (recentImage) {
+            // Review H5 (audit 06-24): nomes de eventos vision do código real
+            // são 'vision.analyzed' (sucesso) e 'vision.download_failed'
+            // (falha). 'vision.completed' e 'vision.failed' NÃO existem —
+            // referências mortas no .in() antigo.
+            const { data: visionEvents } = await supabase
+              .from('product_events')
+              .select('id')
+              .eq('user_id', userId)
+              .in('event', ['vision.analyzed', 'vision.download_failed'])
+              .gte(
+                'occurred_at',
+                new Date(now - VISION_INFLIGHT_WINDOW_MS).toISOString(),
+              )
+              .limit(1)
+            const visionDone = (visionEvents ?? []).length > 0
+            if (!visionDone) {
+              const newFlushAt = new Date(now + EXTENSION_MS).toISOString()
+              await supabase
+                .from('message_buffer')
+                .update({ flush_after: newFlushAt })
+                .eq('user_id', userId)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await inngest.send({
+                name: 'buffer.flush',
+                data: {
+                  userId,
+                  count: msgs.length,
+                  fired_at: new Date(now + EXTENSION_MS).toISOString(),
+                } as any,
+                ts: now + EXTENSION_MS,
+              })
+              await supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'buffer.flush_delayed_vision_inflight',
+                properties: {
+                  recent_image_id: recentImage.id,
+                  extension_ms: EXTENSION_MS,
+                  buffer_size: msgs.length,
+                  image_age_ms: now - new Date(recentImage.created_at).getTime(),
+                },
+              })
+              return {
+                dispatched: false,
+                reason: `vision-inflight: estendido +${EXTENSION_MS}ms`,
+              }
+            }
+          }
+        }
+      }
+
       const { data: user } = await supabase
         .from('users')
         .select('wpp')

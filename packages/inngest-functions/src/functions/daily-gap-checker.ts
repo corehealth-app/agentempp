@@ -228,20 +228,32 @@ function buildReminderText(
   // sistema criou 4º jantar em vez de reconhecer que o lanche das 17:48 ERA
   // o almoço.
   //
-  // Review F5: NÃO agrupar por meal_type — agrupar perdia o horário dos
-  // logs subsequentes (ex: 2 cookies às 19:09 que viraram jantar após
-  // tortilha+frango às 18:56 sumiam do display). Lista individual mostra
-  // cada log com horário+meal_type+kcal pra paciente identificar.
-  type LogShow = { hour: string; mealType: string; kcal: number }
-  const logs: LogShow[] = []
+  // Audit 06-22/23 (Luciana + Roberto): F5 (lista individual) virou regressão
+  // pior. Refeições com 5-7 itens viraram "14:18 almoço (192), 14:18 almoço
+  // (236), 14:18 almoço (88)..." gigante. Cada item = 1 linha. Solução:
+  // agrupar por (meal_type, consumed_at) — itens registrados juntos (mesma
+  // timestamp) viram 1 linha; refeições em horários distintos viram linhas
+  // separadas (cobre caso original do Roberto E o caso multi-item agora).
+  type LogShow = { hour: string; mealType: string; kcal: number; itemCount: number }
+  const groupKey = (mt: string, isoTs: string) => `${mt}|${isoTs}`
+  const grouped: Map<string, LogShow> = new Map()
   for (const log of todayLogs) {
     if (!log.meal_type) continue
-    logs.push({
-      hour: formatLocalHourMinute(log.consumed_at, tz),
-      mealType: log.meal_type,
-      kcal: Number(log.kcal) || 0,
-    })
+    const key = groupKey(log.meal_type, log.consumed_at)
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.kcal += Number(log.kcal) || 0
+      existing.itemCount += 1
+    } else {
+      grouped.set(key, {
+        hour: formatLocalHourMinute(log.consumed_at, tz),
+        mealType: log.meal_type,
+        kcal: Number(log.kcal) || 0,
+        itemCount: 1,
+      })
+    }
   }
+  const logs: LogShow[] = Array.from(grouped.values())
 
   const firstGap = gap[0]
   if (logs.length === 0 || !firstGap) {
@@ -256,7 +268,11 @@ function buildReminderText(
   }
 
   const registradoLines = logs
-    .map((l) => `${l.hour} ${labels[l.mealType] ?? l.mealType} (${Math.round(l.kcal)} kcal)`)
+    .map((l) => {
+      const lbl = labels[l.mealType] ?? l.mealType
+      const itemsSuffix = l.itemCount > 1 ? `, ${l.itemCount} itens` : ''
+      return `${l.hour} ${lbl} (${Math.round(l.kcal)} kcal${itemsSuffix})`
+    })
     .join(', ')
 
   // Review F6: não usar como exemplo um log que JÁ é do mesmo meal_type do

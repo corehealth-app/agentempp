@@ -86,18 +86,35 @@ describe('audit 2026-06-20 — feedback Roberto 19/06', () => {
     function buildReminderText(
       name: string,
       gap: MealType[],
-      logs: Array<{ meal_type: string | null; kcal: number; hour: string }>,
+      logs: Array<{ meal_type: string | null; kcal: number; hour: string; ts?: string }>,
     ): string {
       const list = gap.map((mt) => labels[mt] ?? mt).join(' e ')
-      const shown = logs
-        .filter((l) => l.meal_type)
-        .map((l) => ({ hour: l.hour, mealType: l.meal_type as string, kcal: l.kcal }))
+      type Show = { hour: string; mealType: string; kcal: number; itemCount: number }
+      const grouped = new Map<string, Show>()
+      for (const l of logs) {
+        if (!l.meal_type) continue
+        // chave = meal_type + ts (default ts=hour pra teste; em prod é consumed_at iso)
+        const ts = l.ts ?? l.hour
+        const key = `${l.meal_type}|${ts}`
+        const existing = grouped.get(key)
+        if (existing) {
+          existing.kcal += l.kcal
+          existing.itemCount += 1
+        } else {
+          grouped.set(key, { hour: l.hour, mealType: l.meal_type, kcal: l.kcal, itemCount: 1 })
+        }
+      }
+      const shown: Show[] = Array.from(grouped.values())
       const firstGap = gap[0]
       if (shown.length === 0 || !firstGap) {
         return `Olá ${name}, antes de fechar o dia: você não registrou ${list} hoje. Se comeu, me descreve rapidão o que foi (ou manda foto) — dá tempo de registrar agora ou até amanhã cedo. Se realmente pulou, é só responder "pulei". Sem resposta até o fechamento, o dia fica como incompleto — e o bloco 7700 não credita.`
       }
       const registradoLines = shown
-        .map((l) => `${l.hour} ${labels[l.mealType] ?? l.mealType} (${Math.round(l.kcal)} kcal)`)
+        .map((l) => {
+          const lbl = labels[l.mealType] ?? l.mealType
+          const itemsSuffix = l.itemCount > 1 ? `, ${l.itemCount} itens` : ''
+          return `${l.hour} ${lbl} (${Math.round(l.kcal)} kcal${itemsSuffix})`
+        })
         .join(', ')
       const exampleLogs = shown.filter((l) => l.mealType !== firstGap)
       const exampleLog = exampleLogs[0]
@@ -110,21 +127,50 @@ describe('audit 2026-06-20 — feedback Roberto 19/06', () => {
       return `Olá ${name}, antes de fechar o dia: você não registrou ${list} hoje. Hoje você já registrou: ${registradoLines}. ${reclassifyHint}Se ainda vai comer agora ou amanhã cedo, me descreve. Se realmente pulou, é só responder "pulei". Sem resposta até o fechamento, o dia fica como incompleto — e o bloco 7700 não credita.`
     }
 
-    it('cenário real Roberto 19/06: gap=almoço + múltiplos jantares LISTADOS INDIVIDUALMENTE (review F5)', () => {
+    it('cenário Roberto 19/06: gap=almoço + 2 jantares em horários DIFERENTES → linhas separadas', () => {
       const text = buildReminderText('Roberto', ['almoco'], [
-        { meal_type: 'cafe', kcal: 808, hour: '13:42' },
-        { meal_type: 'lanche', kcal: 356, hour: '17:48' },
-        { meal_type: 'jantar', kcal: 552, hour: '18:56' },
-        { meal_type: 'jantar', kcal: 90, hour: '19:09' },
+        { meal_type: 'cafe', kcal: 808, hour: '13:42', ts: '2026-06-19T13:42:00' },
+        { meal_type: 'lanche', kcal: 356, hour: '17:48', ts: '2026-06-19T17:48:00' },
+        { meal_type: 'jantar', kcal: 552, hour: '18:56', ts: '2026-06-19T18:56:00' },
+        { meal_type: 'jantar', kcal: 90, hour: '19:09', ts: '2026-06-19T19:09:00' },
       ])
       expect(text).toContain('13:42 café da manhã (808 kcal)')
       expect(text).toContain('17:48 lanche (356 kcal)')
-      // F5: os DOIS jantares aparecem separados, não somados
+      // 2 jantares em timestamps DIFERENTES = 2 linhas separadas
       expect(text).toContain('18:56 jantar (552 kcal)')
       expect(text).toContain('19:09 jantar (90 kcal)')
       expect(text).toContain('Algum desses ERA seu almoço')
       expect(text).toContain('reclassifico sem dobrar')
       expect(text).toContain('aquele café da manhã das 13:42 era o almoço')
+    })
+
+    it('cenário Luciana 22/06 (Bug #1 fix 23/06): refeição com MÚLTIPLOS ITENS MESMO TS → 1 linha agrupada', () => {
+      // Realidade: 5 itens do MESMO almoço com mesma timestamp consumed_at.
+      // ANTES (regressão F5 06-20): listava 5 linhas "14:18 almoço (192), 14:18 almoço (236)...".
+      // AGORA: agrupa por (meal_type, ts) → 1 linha "14:18 almoço (572 kcal, 5 itens)".
+      const text = buildReminderText('Roberto', ['jantar'], [
+        { meal_type: 'cafe', kcal: 78, hour: '10:23', ts: '2026-06-22T10:23:00' },
+        { meal_type: 'cafe', kcal: 84, hour: '10:23', ts: '2026-06-22T10:23:00' },
+        { meal_type: 'almoco', kcal: 192, hour: '14:18', ts: '2026-06-22T14:18:00' },
+        { meal_type: 'almoco', kcal: 236, hour: '14:18', ts: '2026-06-22T14:18:00' },
+        { meal_type: 'almoco', kcal: 88, hour: '14:18', ts: '2026-06-22T14:18:00' },
+        { meal_type: 'almoco', kcal: 7, hour: '14:18', ts: '2026-06-22T14:18:00' },
+        { meal_type: 'almoco', kcal: 48, hour: '14:18', ts: '2026-06-22T14:18:00' },
+      ])
+      // 1 linha por refeição agrupada com kcal somado + contagem
+      expect(text).toContain('10:23 café da manhã (162 kcal, 2 itens)')
+      expect(text).toContain('14:18 almoço (571 kcal, 5 itens)')
+      // NÃO deve ter linhas duplicadas
+      expect((text.match(/10:23 café/g) ?? []).length).toBe(1)
+      expect((text.match(/14:18 almoço/g) ?? []).length).toBe(1)
+    })
+
+    it('singleton: 1 item só não mostra ", N itens" no sufixo', () => {
+      const text = buildReminderText('Roberto', ['jantar'], [
+        { meal_type: 'lanche', kcal: 70, hour: '17:32', ts: '2026-06-21T17:32:00' },
+      ])
+      expect(text).toContain('17:32 lanche (70 kcal)')
+      expect(text).not.toContain('17:32 lanche (70 kcal, 1 itens)')
     })
 
     it('sem registros → fallback simples (texto antigo)', () => {
@@ -171,6 +217,172 @@ describe('audit 2026-06-20 — feedback Roberto 19/06', () => {
       ])
       expect(text).toContain('17:30 refeição (150 kcal)')
       expect(text).not.toContain('17:30 outro')
+    })
+  })
+
+  // ── Bug #2 (Luciana 23/06): subset check evita pizza sumir ─────────────────
+  describe('Bug #2: pipeline.ts subset check antes do cancel cego', () => {
+    // Réplica das funções normalizeFoodName e isSubsetOfPending do
+    // pipeline.ts. Cenário REAL: foto pizza criou pending de 8 itens; 27s
+    // depois caption "10g ketchup + 10g maionese" disparou 2º turno que SEM o
+    // fix cancelava o pending de 8 itens E gravava só 2 (express path).
+    // Layer 1 do fix: detecta subset próprio (novos itens ⊆ pending E |novo|
+    // < |pending|) e SUPRIME o 2º registro silenciosamente — paciente ainda
+    // confirma o pending original de 8 itens via botão.
+    const normalizeFoodName = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+
+    function isProperSubset(
+      newItems: string[],
+      pendingItems: string[],
+    ): boolean {
+      const newSet = new Set(newItems.map(normalizeFoodName))
+      const pendSet = new Set(pendingItems.map(normalizeFoodName))
+      if (newSet.size === 0 || pendSet.size <= newSet.size) return false
+      for (const n of newSet) if (!pendSet.has(n)) return false
+      return true
+    }
+
+    it('cenário real Luciana 23/06: ketchup+maionese ⊆ pizza+frango+mussarela+tomate+orégano+ketchup+maionese (8 itens) → SUPRIME', () => {
+      const pending = [
+        'tortilha de trigo',
+        'molho de tomate',
+        'frango desfiado',
+        'queijo mussarela ralado',
+        'tomate fatiado',
+        'orégano',
+        'ketchup',
+        'maionese',
+      ]
+      const novoToolCall = ['ketchup', 'maionese']
+      expect(isProperSubset(novoToolCall, pending)).toBe(true)
+    })
+
+    it('subset com acentos normalizados: "Maionese" e "MAIONESE" matcham', () => {
+      expect(isProperSubset(['Maionese'], ['Pão', 'Café', 'MAIONESE'])).toBe(true)
+    })
+
+    it('igualdade NÃO conta como subset próprio (precisa pending ter MAIS itens)', () => {
+      // |novo| === |pending| — refeição idêntica, paciente re-confirmando.
+      // Não suprime — vai pro fluxo normal (cancel + execute).
+      expect(isProperSubset(['ketchup', 'maionese'], ['ketchup', 'maionese'])).toBe(false)
+    })
+
+    it('superset NÃO conta como subset (paciente adicionou itens novos)', () => {
+      // Paciente realmente adicionou itens novos — cancel + execute corretos.
+      expect(isProperSubset(['ketchup', 'maionese', 'sorvete'], ['ketchup', 'maionese'])).toBe(false)
+    })
+
+    it('overlap parcial NÃO conta como subset (refeição diferente)', () => {
+      // Pizza no pending; paciente manda hamburguer separado.
+      expect(isProperSubset(['hambúrguer', 'batata'], ['pizza', 'frango', 'ketchup'])).toBe(false)
+    })
+
+    it('vazio NÃO conta como subset (sem items, nada a suprimir)', () => {
+      expect(isProperSubset([], ['pizza', 'frango'])).toBe(false)
+    })
+
+    it('item único do tool call presente no pending (caption tardio só de 1 item) → SUPRIME', () => {
+      // Edge case: paciente só completou com 1 item. Ainda é continuação.
+      expect(isProperSubset(['maionese'], ['pizza', 'frango', 'maionese'])).toBe(true)
+    })
+
+    // ── Adversarial review H1+H2 (2026-06-24) ────────────────────────────
+    // H1: replace=true (correção destrutiva) NÃO deve suprimir.
+    // H2: quantity_g divergente (>20%) entre item novo e pending = correção
+    //     de gramatura, NÃO suprimir.
+    describe('H1+H2: bail-out de suppression em correções explícitas', () => {
+      // Réplica do código do pipeline.ts pra testar a lógica isolada.
+      function shouldSuppress(args: {
+        replace?: boolean
+        items: Array<{ food_name: string; quantity_g?: number }>
+        pendingItems: Array<{ name: string; quantity_g?: number }>
+      }): boolean {
+        if (args.replace === true) return false // H1
+        const newNames = new Set(args.items.map((i) => normalizeFoodName(i.food_name)))
+        const newByName = new Map(
+          args.items.map((i) => [normalizeFoodName(i.food_name), i.quantity_g]),
+        )
+        const pendNames = new Set(args.pendingItems.map((it) => normalizeFoodName(it.name)))
+        const pendByName = new Map(
+          args.pendingItems.map((it) => [normalizeFoodName(it.name), it.quantity_g]),
+        )
+        if (newNames.size === 0 || pendNames.size <= newNames.size) return false
+        for (const n of newNames) if (!pendNames.has(n)) return false
+        // H2: checa divergência de gramatura >20%
+        for (const [name, newQ] of newByName) {
+          const pendQ = pendByName.get(name)
+          if (typeof newQ === 'number' && typeof pendQ === 'number' && pendQ > 0) {
+            if (Math.abs(newQ - pendQ) / pendQ > 0.2) return false
+          }
+        }
+        return true
+      }
+
+      it('H1: replace=true com items subset → NÃO suprime (correção destrutiva)', () => {
+        expect(
+          shouldSuppress({
+            replace: true,
+            items: [{ food_name: 'pizza queijo', quantity_g: 200 }],
+            pendingItems: [
+              { name: 'pizza queijo', quantity_g: 150 },
+              { name: 'frango', quantity_g: 60 },
+              { name: 'tomate', quantity_g: 40 },
+              { name: 'orégano', quantity_g: 1 },
+            ],
+          }),
+        ).toBe(false)
+      })
+
+      it('H1: replace=false (default) com subset perfeito → suprime', () => {
+        expect(
+          shouldSuppress({
+            items: [{ food_name: 'ketchup', quantity_g: 10 }, { food_name: 'maionese', quantity_g: 10 }],
+            pendingItems: [
+              { name: 'tortilha', quantity_g: 45 },
+              { name: 'frango', quantity_g: 60 },
+              { name: 'ketchup', quantity_g: 10 },
+              { name: 'maionese', quantity_g: 10 },
+            ],
+          }),
+        ).toBe(true)
+      })
+
+      it('H2: arroz 200g novo vs arroz 50g no pending (gramatura 4x maior) → NÃO suprime', () => {
+        expect(
+          shouldSuppress({
+            items: [{ food_name: 'arroz', quantity_g: 200 }],
+            pendingItems: [
+              { name: 'arroz', quantity_g: 50 },
+              { name: 'feijão', quantity_g: 50 },
+            ],
+          }),
+        ).toBe(false)
+      })
+
+      it('H2: arroz 55g vs arroz 50g (10% diff) → suprime (dentro de tolerância 20%)', () => {
+        expect(
+          shouldSuppress({
+            items: [{ food_name: 'arroz', quantity_g: 55 }],
+            pendingItems: [
+              { name: 'arroz', quantity_g: 50 },
+              { name: 'feijão', quantity_g: 50 },
+            ],
+          }),
+        ).toBe(true)
+      })
+
+      it('H2: arroz sem quantity_g vs arroz com quantity_g no pending → suprime (sem dado pra comparar)', () => {
+        expect(
+          shouldSuppress({
+            items: [{ food_name: 'arroz' }],
+            pendingItems: [
+              { name: 'arroz', quantity_g: 50 },
+              { name: 'feijão', quantity_g: 50 },
+            ],
+          }),
+        ).toBe(true)
+      })
     })
   })
 })

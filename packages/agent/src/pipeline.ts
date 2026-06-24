@@ -578,12 +578,151 @@ export async function processMessage(
           // Antes só cancelava no caminho "criar novo pending", então express com
           // pending antigo aberto deixava órfão → paciente tocava Sim no antigo
           // → registrava em DOBRO (express + antigo). UPDATE é no-op se nada bate.
+          //
+          // FIX Bug #2 (Luciana 2026-06-23, audit 06-24): o cancel cego mata
+          // pending VIGENTE quando paciente manda foto + caption em buffers
+          // separados. Cenário real: foto pizza (21:33:03) virou pending de 8
+          // itens; caption "10g ketchup + 10g maionese" (21:33:30, gap 27s) virou
+          // turno separado, LLM interpretou como ADIÇÃO e chamou registra_refeicao
+          // com só esses 2 itens. Cancel mata pending de 8, express grava 2 → pizza
+          // suma. Layer 1: ANTES do cancel, checa se tool_call atual é SUBSET
+          // PRÓPRIO de pending recente (<5min). Se sim, suprime: não cancela, não
+          // executa tool. Paciente ainda pode tocar o botão do pending vigente.
+          let suppressedAsDuplicate = false
           if (buttonsEnabled) {
-            await deps.supabase
-              .from('pending_registrations')
-              .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-              .eq('user_id', userId)
-              .eq('status', 'pending')
+            // Review H1 HIGH: se LLM passou replace=true, é correção destrutiva
+            // explícita — NÃO suprimir (paciente quer substituir o pending).
+            // Antes: suppression ignorava replace=true e cancelaria a intenção
+            // de correção silenciosamente.
+            const isExplicitReplace = (validated as { replace?: boolean }).replace === true
+
+            const normalizeFoodName = (s: string) =>
+              s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+            const newItemsByName = new Map<string, { quantity_g?: number }>(
+              exprInput.items.map((i) => [
+                normalizeFoodName(i.food_name),
+                { quantity_g: i.quantity_g ?? undefined },
+              ]),
+            )
+            const newItemNames = new Set(newItemsByName.keys())
+            if (!isExplicitReplace && newItemNames.size > 0) {
+              // Review M1 + M2: filtra kind=meal pra evitar match espúrio em
+              // pendings de training/onboarding/etc; captura error pra
+              // diferenciar query-fail de "não tem pending recente".
+              const { data: recentPending, error: pendErr } = await deps.supabase
+                .from('pending_registrations')
+                .select('id, proposal, created_at')
+                .eq('user_id', userId)
+                .eq('status', 'pending')
+                .eq('proposal->>kind', 'meal')
+                .gte(
+                  'created_at',
+                  new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+                )
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+              if (pendErr) {
+                await deps.supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'pipeline.duplicate_check_query_failed',
+                  properties: {
+                    error_message: pendErr.message ?? String(pendErr),
+                    new_items_count: newItemNames.size,
+                  },
+                })
+                // Default seguro: cai no cancel cego (comportamento antigo).
+              }
+              const pend = recentPending as {
+                id: string
+                proposal: { items?: Array<{ name: string; quantity_g?: number }> } | null
+                created_at: string
+              } | null
+              const pendItems = pend?.proposal?.items ?? []
+              if (pend && pendItems.length > newItemNames.size) {
+                const pendByName = new Map<string, { quantity_g?: number }>(
+                  pendItems.map((it) => [
+                    normalizeFoodName(it.name),
+                    { quantity_g: it.quantity_g },
+                  ]),
+                )
+                const allInPending = Array.from(newItemNames).every((n) =>
+                  pendByName.has(n),
+                )
+                // Review H2 HIGH: se ALGUM item novo tem quantity_g divergente
+                // do mesmo item no pending (>20% diff em valor absoluto), tratar
+                // como CORREÇÃO de gramatura — não suprimir. Caso real previsto:
+                // "arroz foi 200g, esqueci de falar" depois de pending com arroz 50g.
+                let hasQuantityDivergence = false
+                if (allInPending) {
+                  for (const [name, newInfo] of newItemsByName) {
+                    const pendInfo = pendByName.get(name)
+                    const newQ = newInfo.quantity_g
+                    const pendQ = pendInfo?.quantity_g
+                    if (
+                      typeof newQ === 'number' &&
+                      typeof pendQ === 'number' &&
+                      pendQ > 0
+                    ) {
+                      const ratio = Math.abs(newQ - pendQ) / pendQ
+                      if (ratio > 0.2) {
+                        hasQuantityDivergence = true
+                        break
+                      }
+                    }
+                  }
+                }
+                if (allInPending && !hasQuantityDivergence) {
+                  suppressedAsDuplicate = true
+                  await deps.supabase.from('product_events').insert({
+                    user_id: userId,
+                    event: 'pipeline.duplicate_meal_suppressed',
+                    properties: {
+                      pendingId: pend.id,
+                      pending_items_count: pendItems.length,
+                      new_items_count: newItemNames.size,
+                      new_items: Array.from(newItemNames),
+                      gap_ms: Date.now() - new Date(pend.created_at).getTime(),
+                      pend_source_content_type:
+                        (pend.proposal as { sourceContentType?: string } | null)
+                          ?.sourceContentType ?? null,
+                    },
+                  })
+                  // Marca tool_call como suprimido pro LLM não retentar — mesma
+                  // estratégia do deferred_to_button abaixo (linhas ~686-697).
+                  toolCallsSummary.push({
+                    name: tc.name,
+                    arguments: validated,
+                    result: {
+                      success: true,
+                      suppressed_as_duplicate: true,
+                      pendingId: pend.id,
+                    },
+                  })
+                  messages.push({
+                    role: 'tool',
+                    tool_call_id: tc.id,
+                    content: JSON.stringify({
+                      success: true,
+                      suppressed_as_duplicate: true,
+                      pendingId: pend.id,
+                      message:
+                        'Itens já estão no pending recente — aguarde paciente confirmar o botão.',
+                    }),
+                  })
+                  deterministicRegistration = true
+                  finalText = ''
+                  break
+                }
+              }
+            }
+            if (!suppressedAsDuplicate) {
+              await deps.supabase
+                .from('pending_registrations')
+                .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
+                .eq('user_id', userId)
+                .eq('status', 'pending')
+            }
           }
 
           if (buttonsEnabled && !exprResult.eligible) {

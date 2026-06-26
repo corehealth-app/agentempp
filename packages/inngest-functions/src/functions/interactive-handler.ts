@@ -464,6 +464,97 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             // Se okItems.length === 0, segue com proposal.items original
             // (todos zerados) — paciente insistiu, registro best-effort.
           }
+          // Audit 06-25 Bug D Camada C (Luciana 25/06 lanche pão): tap-handler
+          // confirma card que SUBSTITUI proposta anterior do mesmo meal_type+
+          // date — antes apenas usava proposal.replace explícito, mas o pipeline
+          // raramente seta replace=true no pending. Resultado: tap inseria
+          // 270 kcal SOMANDO em cima dos 540 já gravados. Fix: inferir
+          // effectiveReplace quando há (a) meal_log do mesmo meal_type hoje
+          // E (b) pending anterior status='edited' nos últimos 30min (sinal
+          // que paciente já interagiu com proposta antes desse tap).
+          let effectiveReplace = proposal.replace === true
+          if (!effectiveReplace && proposal.kind === 'meal' && proposal.mealType) {
+            try {
+              const todayLocal = (() => {
+                try {
+                  return new Intl.DateTimeFormat('en-CA', {
+                    timeZone: userTimezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                  }).format(new Date())
+                } catch {
+                  return new Date().toISOString().slice(0, 10)
+                }
+              })()
+              const tzOff = (() => {
+                try {
+                  const fmt = new Intl.DateTimeFormat('en-US', {
+                    timeZone: userTimezone,
+                    timeZoneName: 'longOffset',
+                  }).format(new Date())
+                  const m = fmt.match(/GMT([+-]\d{1,2}):?(\d{2})?/)
+                  if (!m || !m[1]) return '+00:00'
+                  const h = m[1].padStart(3, '+0').replace('+0-', '-0')
+                  return `${h}:${m[2] ?? '00'}`
+                } catch {
+                  return '+00:00'
+                }
+              })()
+              const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+              type MT = (typeof validMealTypes)[number]
+              const propMealType: MT | null = validMealTypes.includes(proposal.mealType as MT)
+                ? (proposal.mealType as MT)
+                : null
+              if (!propMealType) {
+                throw new Error(`invalid meal_type: ${proposal.mealType}`)
+              }
+              const [sameDayRes, priorEditedRes] = await Promise.all([
+                supabase
+                  .from('meal_logs')
+                  .select('id')
+                  .eq('user_id', userId)
+                  .eq('meal_type', propMealType)
+                  .gte('consumed_at', `${todayLocal}T00:00:00${tzOff}`)
+                  .lt('consumed_at', `${todayLocal}T23:59:59.999${tzOff}`)
+                  .limit(1),
+                supabase
+                  .from('pending_registrations')
+                  .select('id')
+                  .eq('user_id', userId)
+                  .eq('status', 'edited')
+                  // Review HIGH 2 (audit 06-25): filtra por mealType MATCHING
+                  // pra evitar inferir replace quando paciente editou pending
+                  // de OUTRO meal_type. Caso adversarial: 2 lanches legítimos
+                  // no mesmo dia + edit de jantar pendente → antes inferia
+                  // replace e deletava o 1º lanche.
+                  .eq('proposal->>mealType', propMealType)
+                  .gte(
+                    'resolved_at',
+                    new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+                  )
+                  .neq('id', pendingId)
+                  .limit(1),
+              ])
+              const hasPriorMealOfSameType = (sameDayRes.data ?? []).length > 0
+              const hasPriorEdited = (priorEditedRes.data ?? []).length > 0
+              if (hasPriorMealOfSameType && hasPriorEdited) {
+                effectiveReplace = true
+                await supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'tap.replace_inferred_after_edit',
+                  properties: {
+                    pendingId,
+                    meal_type: proposal.mealType,
+                  },
+                })
+              }
+            } catch (e) {
+              // eslint-disable-next-line no-console
+              console.warn('[interactive-handler] replace inference failed (non-fatal):', e)
+            }
+          }
+
           // Bug Roberto 2026-05-29 21:37: tool retornava success=true mesmo
           // com 0 inserts (loop sem error check em tools.ts:1097 — corrigido).
           // Aqui também: try/catch que LOGA + RE-THROW pra Inngest retry +
@@ -482,7 +573,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   carbs_g: it.carbs_g,
                   fat_g: it.fat_g,
                 })),
-                replace: proposal.replace === true,
+                replace: effectiveReplace,
               } as never,
               toolCtx as never,
             )) as {

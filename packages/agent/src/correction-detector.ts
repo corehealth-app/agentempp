@@ -63,6 +63,29 @@ const CORRECTION_KEYWORDS_PT: RegExp[] = [
   /\bignor[ae]r?\s+(?:essas?|aqueles?|aquilo)\b/i,
   /\best[áa]\s+errado\b/i, // "está errado" — afirma erro
   /\best[áa]o?\s+errad[oa]s?\b/i, // "estão errados"
+  // Audit 06-25 Bug C (Luciana 25/06 pão francês "1 vs 2"): correção de
+  // QUANTIDADE sem palavra "não" explícita.
+  //
+  // Review HIGH 6+7+8 (audit 06-25): patterns restritos a contexto alimentar
+  // pra evitar falsos positivos em conversa histórica/treino/sono ("era 2
+  // dias", "foi 3 vezes", "tive 1 não 2 horas de sono"). Vírgula no Pattern
+  // 2 agora é OPCIONAL pra cobrir "comi 2 pães não 1" (PT-BR canônico
+  // raramente usa vírgula). Pattern 3 exige verbo prefixo ou unidade
+  // alimentar pra ancorar.
+  //
+  // Lista de substantivos alimentar comuns (ancora contexto):
+  //   pão/pães, fatia(s), unidade(s), colher(es), pedaço(s), copo(s),
+  //   xícara(s), porção/porções, gota(s), grama(s), g, ml, ovo(s),
+  //   pão francês, biscoito(s), bolacha(s).
+  //
+  // Pattern 1 (alimento): "era 2 ovos" / "foram 2 fatias" — exige unidade
+  //   alimentar imediatamente após o número.
+  // Pattern 2 (correção): "comi 2 pães não 1" / "tomei 2, não 1" — verbo
+  //   de consumo + número + opcional substantivo + opcional vírgula + não + número.
+  // Pattern 3 (forma curta com verbo): exige verbo prefixo OBRIGATÓRIO.
+  /\b(?:era|eram|foi|foram)\s+\d+\s+(?:p[ãa]o|p[ãa]es|fatia|fatias|unidade|unidades|colher|colheres|pedaço|pedaços|copo|copos|x[íi]cara|x[íi]caras|por[çc][ãa]o|por[çc][õo]es|gota|gotas|grama|gramas|ovo|ovos|biscoito|biscoitos|bolacha|bolachas|m[lL]|kcal)\b/i,
+  /\b(?:comi|tomei|bebi|peguei|usei|coloquei|fiz|tinha|tive)\s+\d+[\w\s]{0,30}?,?\s*n[ãa]o\s+\d+/i,
+  /\b(?:foi|era|eram|foram)\s+\d+\s+n[ãa]o\s+\d+\b/i,
 ]
 
 const CORRECTION_KEYWORDS_EN: RegExp[] = [

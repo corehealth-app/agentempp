@@ -484,6 +484,19 @@ async function maybeEngageUser(
       `Ontem (${yesterdayLocalDate}): dados insuficientes — não invente fechamento.`
   }
 
+  // Audit 06-25 Bug A: hoist verdictIsNegativeForBlock pra escopo de função.
+  // Antes estava enterrado dentro do else-branch de blockCompletedHighlight
+  // (~L565), inacessível pra outras decisões. Agora a regra inviolável + o
+  // gate da nova linha "Bloco N em construção" usam a mesma flag.
+  const verdictIsNegativeForBlock =
+    yesterdayVerdict.startsWith('Ontem') &&
+    (yesterdayVerdict.includes('SUB-REGISTRO') ||
+      yesterdayVerdict.includes('DIA INCOMPLETO') ||
+      yesterdayVerdict.includes('SEM ATIVIDADE') ||
+      yesterdayVerdict.includes('EXCEDENTE') ||
+      yesterdayVerdict.includes('SEM DADOS') ||
+      yesterdayVerdict.includes('dados insuficientes'))
+
   const targetKcal = targets.calories_target ?? '(não calculado — perfil incompleto)'
   const targetProtein = targets.protein_target ?? '(não calculado — perfil incompleto)'
 
@@ -562,14 +575,8 @@ async function maybeEngageUser(
       // contraditórias no mesmo prompt. Solução: em dia negativo, o Haiku
       // pode mencionar streak/blocos cumulativos de FORMA LIVRE, sem ordem
       // explícita pra "destacar".
-      const verdictIsNegativeForBlock =
-        yesterdayVerdict.startsWith('Ontem') &&
-        (yesterdayVerdict.includes('SUB-REGISTRO') ||
-          yesterdayVerdict.includes('DIA INCOMPLETO') ||
-          yesterdayVerdict.includes('SEM ATIVIDADE') ||
-          yesterdayVerdict.includes('EXCEDENTE') ||
-          yesterdayVerdict.includes('SEM DADOS') ||
-          yesterdayVerdict.includes('dados insuficientes'))
+      // Audit 06-25 Bug A: verdictIsNegativeForBlock agora é hoist no escopo
+      // de função (linha ~488) pra reuso.
       const blocksAcumulados = (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0
       if (blocksAcumulados >= 1 && !verdictIsNegativeForBlock) {
         blockCompletedHighlight = `\n\nDESTAQUE OBRIGATÓRIO: o paciente já tem **${blocksAcumulados} bloco(s) completo(s) do 7700** acumulado(s) (~${blocksAcumulados} kg de gordura no modelo MPP — estimativa do método, NÃO inventar número de balança). Mencione esse marco no Bom dia como prova de constância — UMA linha curta, sem virar palestra. NÃO invente outro número (% gordura, kg medido). Se já mencionou em mensagens anteriores, varie a forma (não repete a mesma frase todo dia).`
@@ -667,6 +674,35 @@ async function maybeEngageUser(
     ? `\n\n💡 SUGESTÃO de frase de continuidade do banco curado do Roberto (use TEXTUALMENTE OU ADAPTE se encaixar naturalmente; se não couber no fluxo, ignore): "${motivationalSuggestion}"`
     : ''
 
+  // Audit 06-25 Bug A: hoist progDeficitBlock pra escopo de função. Antes
+  // era declarado ~L760 (depois do userContext), só servia pra reconcileBlocoMention
+  // post-LLM. Agora também alimenta a linha "Bloco N em construção" no userContext.
+  const progDeficitBlock = (progress as { deficit_block?: number } | null)?.deficit_block
+
+  // Audit 06-25 Bug A (Roberto 25/06): linha determinística pro bloco PARCIAL
+  // em construção. Antes só passava "Blocos completos: N" (cumulativo). Roberto
+  // pediu mostrar "Bloco N+1: X / 7.700 kcal (Y%) em construção" pra ver
+  // progresso real do dia. Hoje o card pós-registro tem essa linha
+  // (balance-card.ts), mas Bom dia nunca leu o dado. Guards: só protocol=
+  // recomposicao + deficit_block > 100 (evita "Bloco 1: 12 / 7.700 (0%)"
+  // logo após fechar) + !verdictIsNegativeForBlock (não confunde LLM em dia
+  // ruim, mesma régua do destaque cumulativo).
+  let blocoEmConstrucaoLine = ''
+  if (slot === 'cafe_da_manha' || slot === 'meio_da_manha') {
+    const proto = (profileRow as { current_protocol?: string | null } | null)?.current_protocol
+    if (
+      proto === 'recomposicao' &&
+      progDeficitBlock != null &&
+      progDeficitBlock > 100 &&
+      !verdictIsNegativeForBlock
+    ) {
+      const blocoAtual = (progress?.blocks_completed ?? 0) + 1
+      const pct = Math.round((progDeficitBlock / 7700) * 100)
+      const fmtBR = (n: number) => n.toLocaleString('pt-BR')
+      blocoEmConstrucaoLine = `\nBloco ${blocoAtual} em construção: ${fmtBR(progDeficitBlock)} / 7.700 kcal (${pct}%) — DADO REAL, mencione com esse número exato se citar progresso parcial`
+    }
+  }
+
   // C: contexto rico pro LLM — hora local + REFEIÇÃO típica + DADOS REAIS do paciente
   const userContext = `
 ⚠️ IDIOMA DO PACIENTE: **${userLanguage}** (locale salvo). Responda nesse idioma. Não infira pelo timezone — paciente pode morar fora mas falar outra língua.
@@ -686,7 +722,7 @@ DADOS REAIS DO DIA — USE ESTES VALORES, NÃO INVENTE:
 Sequência atual: ${progress?.current_streak ?? 0} dias consecutivos
 XP: ${progress?.xp_total ?? 0} (nível ${progress?.level ?? 1})
 Última atividade: ${progress?.last_active_date ?? 'nunca'}
-Blocos completos: ${progress?.blocks_completed ?? 0}
+Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
 
 ⚠️ REGRA INVIOLÁVEL SOBRE ONTEM (bug I1 — Luciana 2026-06-14/15): se a linha "Ontem" acima disser SUB-REGISTRO, DIA INCOMPLETO, SEM ATIVIDADE, EXCEDENTE ou SEM DADOS, você está PROIBIDO de dizer "fechou bem", "saldo positivo", "bloco completo", "dentro da meta", "déficit" ou qualquer coisa que sugira sucesso no fechamento de ontem. SÓ celebre fechamento quando a linha disser FECHOU OK.
 
@@ -727,7 +763,8 @@ Blocos completos: ${progress?.blocks_completed ?? 0}
   // (realDailyDeficit, yesterdayLabel) — vem do user_progress.deficit_block, não
   // do LLM. reconcileBlocoMention substitui qualquer menção pelo valor canônico
   // (com % recalculado); se o texto não menciona bloco, fica inalterado.
-  const progDeficitBlock = (progress as { deficit_block?: number } | null)?.deficit_block
+  // Audit 06-25 Bug A: progDeficitBlock agora é hoist no escopo da função
+  // (linha ~680) pra alimentar a linha "Bloco N em construção" no userContext.
   if (progDeficitBlock != null) {
     const before = text
     text = reconcileBlocoMention(before, { deficitBlock: progDeficitBlock })

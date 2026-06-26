@@ -1149,9 +1149,77 @@ export const registraRefeicao: ToolDefinition = {
     // Agora: aceita verbal (correctionWord) OU objetiva (overlap >=50% em <15min).
     // Só downgrade quando NENHUMA evidência existe — aí é provável bug do LLM.
     if (args.replace === true && !implicitReplaceDetected) {
-      const recentMsgs = ctx.recentUserMessages ?? []
+      // Audit 06-25 Bug D Camada A (Luciana 25/06 lanche pão): tap-handler
+      // passa recentUserMessages=[] e LLM-pipeline com muito assistant
+      // intermediário também — array vazio. Sem backfill, `correctionWord`
+      // sempre undefined → downgrade silencioso → INSERT soma em vez de
+      // substituir (Luciana: 540 + 270 = 810 kcal lanche pão).
+      // Fix: quando vazio, buscar últimas 5 msgs IN do user em 30min direto
+      // do banco antes de aplicar blocker.
+      let recentMsgs = ctx.recentUserMessages ?? []
+      if (recentMsgs.length === 0) {
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+        const { data: msgs } = await ctx.supabase
+          .from('messages')
+          .select('content, created_at')
+          .eq('user_id', ctx.userId)
+          .eq('direction', 'in')
+          .gte('created_at', thirtyMinAgo)
+          .order('created_at', { ascending: false })
+          .limit(5)
+        recentMsgs = ((msgs ?? []) as Array<{ content: string | null }>)
+          .map((m) => m.content ?? '')
+          .filter(Boolean)
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.recent_msgs_backfilled',
+          properties: {
+            source: 'db_30min',
+            fetched_count: recentMsgs.length,
+            meal_type: args.meal_type,
+          },
+        })
+      }
       const correctionWord = detectCorrectionIntent(recentMsgs)
-      if (!correctionWord && !objectiveCorrectionEvidence) {
+
+      // Audit 06-25 Bug D Camada B: evidência alternativa CONTEXTO_CORRECAO_DE_PROPOSTA.
+      // Quando paciente edita pending recente (status='edited' em ≤30min) E há
+      // proposta `Confirma?` outbound recente, é correção legítima mesmo sem
+      // palavra verbal ou overlap. Caso real Luciana: editou pending pão,
+      // sistema propôs corrigido, ela confirmou — tudo pelo botão, sem texto
+      // explícito de correção.
+      let correctionByProposalContext = false
+      if (args.replace === true && !correctionWord && !objectiveCorrectionEvidence) {
+        // Review HIGH 1 (audit 06-25): filtra por kind=meal E mealType
+        // matching pra evitar pending de OUTRO meal_type ratificar replace
+        // do meal_type atual. Caso adversarial: paciente editou pending de
+        // café às 14h, 14:25 LLM bug emite replace=true em jantar → antes
+        // ratificava e DELETAVA jantares legítimos.
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: editedPendings } = await (ctx.supabase as any)
+          .from('pending_registrations')
+          .select('id, resolved_at')
+          .eq('user_id', ctx.userId)
+          .eq('status', 'edited')
+          .eq('proposal->>kind', 'meal')
+          .eq('proposal->>mealType', args.meal_type)
+          .gte('resolved_at', thirtyMinAgo)
+          .limit(1)
+        if ((editedPendings ?? []).length > 0) {
+          correctionByProposalContext = true
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.replace_ratified_by_proposal_context',
+            properties: {
+              meal_type: args.meal_type,
+              edited_pending_id: (editedPendings ?? [])[0]?.id ?? null,
+            },
+          })
+        }
+      }
+
+      if (!correctionWord && !objectiveCorrectionEvidence && !correctionByProposalContext) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.replace_blocked_no_correction',

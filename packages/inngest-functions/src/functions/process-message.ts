@@ -490,6 +490,65 @@ export const processMessageFn = inngest.createFunction(
                 message: insertErr.message,
               })
             }
+
+            // Audit 06-25 Bug B (Roberto 25/06): grava digest curto em
+            // messages.content do inbound da foto. Hoje content é NULL pra
+            // content_type=image SEM caption — quando paciente manda 2 fotos
+            // + texto, e LLM faz pergunta no meio, o turno seguinte filtra
+            // recentMessages por `.content` truthy (pipeline.ts:1810) e perde
+            // a memória das fotos.
+            //
+            // Review HIGH 3 (audit 06-25): fotos COM caption já têm
+            // content=caption (webhook-whatsapp:234). Filtro `.is(content,null)`
+            // antigo bloqueava digest pra essas — bug! Maioria das fotos têm
+            // caption ("aqui meu almoço"), então o fix antigo cobria minoria.
+            // Agora: SE content já existe E não tem sentinela [vision], faz
+            // append com prefixo `\n[vision] ...` pra preservar AMBOS caption
+            // e digest. Sentinela permite idempotência em retries.
+            try {
+              const mealImgs = vRes.images.filter((i) => i.type === 'meal')
+              if (providerMessageId && mealImgs.length > 0) {
+                const digests = mealImgs.map((img, idx) => {
+                  const names = img.items.slice(0, 8).map((it) => it.name).join(', ')
+                  const more = img.items.length > 8 ? ` +${img.items.length - 8}` : ''
+                  const ctx = img.meal_context ? ` — ${img.meal_context.slice(0, 60)}` : ''
+                  const prefix = mealImgs.length > 1 ? `Foto ${idx + 1}/${mealImgs.length}` : 'Foto'
+                  return `[vision] ${prefix}: ${img.items.length} itens: ${names}${more}${ctx}`
+                })
+                const digestText = digests.join('\n')
+                // Busca content atual pra decidir entre SET (null) ou APPEND.
+                const { data: existing } = await supabase
+                  .from('messages')
+                  .select('content')
+                  .eq('provider_message_id', providerMessageId)
+                  .eq('user_id', userId)
+                  .maybeSingle()
+                const cur = (existing as { content?: string | null } | null)?.content ?? null
+                // Idempotência: se sentinela já está no content, não duplica.
+                if (cur && cur.includes('[vision]')) {
+                  // já gravado — no-op
+                } else if (cur && cur.length > 0) {
+                  // foto com caption — APPEND digest preservando caption
+                  await supabase
+                    .from('messages')
+                    .update({ content: `${cur}\n${digestText}` })
+                    .eq('provider_message_id', providerMessageId)
+                    .eq('user_id', userId)
+                } else {
+                  // foto sem caption (content=null) — SET digest
+                  await supabase
+                    .from('messages')
+                    .update({ content: digestText })
+                    .eq('provider_message_id', providerMessageId)
+                    .eq('user_id', userId)
+                    .is('content', null)
+                }
+              }
+            } catch (digestErr) {
+              logger.warn('vision digest update failed (non-fatal)', {
+                error: digestErr instanceof Error ? digestErr.message : String(digestErr),
+              })
+            }
           } catch (logErr) {
             logger.warn('vision.analyzed event log failed', {
               error: logErr instanceof Error ? logErr.message : String(logErr),

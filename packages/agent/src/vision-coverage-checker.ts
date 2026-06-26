@@ -126,11 +126,31 @@ export function checkCoverage(
  * mais de N items detectados, emite product_event pra audit pegar.
  * NÃO gateia gravação — só observa por enquanto.
  */
+/**
+ * Threshold padrão de cobertura — vira warning se overlap < threshold E há
+ * ≥3 items vision pendentes. Audit 06-26 sprint pendentes: env var
+ * `VISION_COVERAGE_THRESHOLD` (0-1) permite calibrar entre deploys.
+ *
+ * Review LOW 06-26: leitura on-call (não module-load const) — em Vercel
+ * serverless cada cold start lê o env atual, mas warm instances podem
+ * cachear. Function call garante leitura por chamada. Em prática, mudar
+ * VISION_COVERAGE_THRESHOLD ainda exige redeploy no Vercel (env vars são
+ * snapshot do deploy), mas o código fica preparado pra ambientes com
+ * env mutável (Dev/CI).
+ */
+function getThreshold(): number {
+  const env = process.env.VISION_COVERAGE_THRESHOLD
+  if (!env) return 0.7
+  const n = Number.parseFloat(env)
+  if (Number.isNaN(n) || n < 0 || n > 1) return 0.7
+  return n
+}
+
 export async function reportVisionCoverageIfLow(
   supabase: SupabaseClient,
   userId: string,
   toolCallItems: Array<{ food_name: string }>,
-  threshold = 0.7,
+  threshold = getThreshold(),
 ): Promise<CoverageReport | null> {
   const visions = await loadRecentVisionAnalyzed(supabase, userId, 30)
   if (visions.length === 0) return null

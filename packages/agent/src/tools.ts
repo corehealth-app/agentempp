@@ -1159,17 +1159,26 @@ export const registraRefeicao: ToolDefinition = {
       let recentMsgs = ctx.recentUserMessages ?? []
       if (recentMsgs.length === 0) {
         const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+        // Audit 06-26 sprint pendentes: filtra content_type IN (text, audio)
+        // — exclui taps de botão (interactive) e fotos sem caption.
+        // Review MED 06-26: audios COM STT mantêm content_type='audio' mas
+        // têm content preenchido pelo STT (process-message.ts:280). Roberto
+        // dita correções por áudio frequentemente — sem incluir audio aqui,
+        // "Era apenas 1 pão" ditado NÃO entra no backfill → bug D regredia
+        // pra usuários audio-first. Filter c.length>0 + startsWith() remove
+        // ruído (foto sem caption tem content=null; audio sem STT vira null).
         const { data: msgs } = await ctx.supabase
           .from('messages')
           .select('content, created_at')
           .eq('user_id', ctx.userId)
           .eq('direction', 'in')
+          .in('content_type', ['text', 'audio'])
           .gte('created_at', thirtyMinAgo)
           .order('created_at', { ascending: false })
           .limit(5)
         recentMsgs = ((msgs ?? []) as Array<{ content: string | null }>)
           .map((m) => m.content ?? '')
-          .filter(Boolean)
+          .filter((c) => c.length > 0 && !c.startsWith('confirm_') && !c.startsWith('edit_'))
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.recent_msgs_backfilled',

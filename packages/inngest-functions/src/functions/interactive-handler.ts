@@ -25,6 +25,8 @@ import {
   composePostRegistrationMessage,
   embedEduComment,
   generateEducationalComment,
+  getLocalDateString,
+  getTzOffset,
   parseOnboardingButtonId,
   registraRefeicao,
   registraTreino,
@@ -475,32 +477,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           let effectiveReplace = proposal.replace === true
           if (!effectiveReplace && proposal.kind === 'meal' && proposal.mealType) {
             try {
-              const todayLocal = (() => {
-                try {
-                  return new Intl.DateTimeFormat('en-CA', {
-                    timeZone: userTimezone,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                  }).format(new Date())
-                } catch {
-                  return new Date().toISOString().slice(0, 10)
-                }
-              })()
-              const tzOff = (() => {
-                try {
-                  const fmt = new Intl.DateTimeFormat('en-US', {
-                    timeZone: userTimezone,
-                    timeZoneName: 'longOffset',
-                  }).format(new Date())
-                  const m = fmt.match(/GMT([+-]\d{1,2}):?(\d{2})?/)
-                  if (!m || !m[1]) return '+00:00'
-                  const h = m[1].padStart(3, '+0').replace('+0-', '-0')
-                  return `${h}:${m[2] ?? '00'}`
-                } catch {
-                  return '+00:00'
-                }
-              })()
+              // Audit 06-26 sprint pendentes: extraído pra helpers canônicos
+              // @mpp/agent timezone-utils — antes era parser inline duplicado
+              // que falhava em alguns formatos de longOffset (review HIGH MED).
+              const todayLocal = getLocalDateString(userTimezone)
+              const tzOff = getTzOffset(userTimezone)
               const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
               type MT = (typeof validMealTypes)[number]
               const propMealType: MT | null = validMealTypes.includes(proposal.mealType as MT)

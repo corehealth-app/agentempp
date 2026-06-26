@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getLocalDateString } from './timezone-utils.js'
+import { getLocalDateString, getTzOffset } from './timezone-utils.js'
 
 describe('getLocalDateString', () => {
   it('retorna data UTC quando tz=UTC', () => {
@@ -37,5 +37,41 @@ describe('getLocalDateString', () => {
   it('default sem when usa Date now', () => {
     const r = getLocalDateString('America/Sao_Paulo')
     expect(r).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+// Audit 06-26 sprint pendentes: refactor de interactive-handler depende do
+// formato canônico ±HH:MM pra .gte/.lt no PostgREST. Sem teste, regressão
+// silenciosa quebraria buffer_append_msg + queries time-range.
+describe('getTzOffset', () => {
+  it('UTC → +00:00', () => {
+    expect(getTzOffset('UTC')).toBe('+00:00')
+  })
+
+  it('America/Sao_Paulo (sem DST 2026) → -03:00', () => {
+    // Brasil aboliu DST em 2019. Sempre UTC-3.
+    expect(getTzOffset('America/Sao_Paulo', new Date('2026-01-15T12:00:00Z'))).toBe('-03:00')
+    expect(getTzOffset('America/Sao_Paulo', new Date('2026-07-15T12:00:00Z'))).toBe('-03:00')
+  })
+
+  it('DST-aware America/New_York: EST (jan) -05:00, EDT (jul) -04:00', () => {
+    expect(getTzOffset('America/New_York', new Date('2026-01-15T12:00:00Z'))).toBe('-05:00')
+    expect(getTzOffset('America/New_York', new Date('2026-07-15T12:00:00Z'))).toBe('-04:00')
+  })
+
+  it('Asia/Tokyo → +09:00 (sem DST)', () => {
+    expect(getTzOffset('Asia/Tokyo', new Date('2026-01-15T12:00:00Z'))).toBe('+09:00')
+  })
+
+  it('Asia/Kolkata → +05:30 (offset com minutos)', () => {
+    expect(getTzOffset('Asia/Kolkata', new Date('2026-06-15T12:00:00Z'))).toBe('+05:30')
+  })
+
+  it('formato canônico ±HH:MM compatível com PostgREST', () => {
+    const tzs = ['UTC', 'America/Sao_Paulo', 'America/New_York', 'Asia/Tokyo', 'Asia/Kolkata']
+    for (const tz of tzs) {
+      const off = getTzOffset(tz)
+      expect(off).toMatch(/^[+-]\d{2}:\d{2}$/)
+    }
   })
 })

@@ -13,7 +13,7 @@ import {
   evaluateGainVelocity,
   type SnapshotForAgg,
 } from '@mpp/core'
-import type { ServiceClient, TablesUpdate } from '@mpp/db'
+import type { TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
@@ -27,47 +27,12 @@ import { classifyBfGoal } from './bf-goal-classifier.js'
 import { detectConsumedDate } from './consumed-date-detector.js'
 import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
 
-export interface ToolContext {
-  supabase: ServiceClient
-  userId: string
-  userWpp: string
-  /** LLM disponível pra tools que precisam gerar conteúdo (gera_dieta,
-   * gera_treino). Injetado pelo pipeline. Opcional pra retrocompatibilidade. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-  llm?: any
-  /** ISO alpha-2 do país de residência (pra TACO/USDA, persona, idioma). */
-  userCountry?: string
-  /** Timezone IANA do paciente (default America/Sao_Paulo). Usado pra
-   * computar a data LOCAL ao buscar/inserir snapshot. Antes usava UTC
-   * → paciente em New_York perdia consumo registrado entre 20h-24h. */
-  userTimezone?: string
-  /** ID da mensagem que originou o turno (provider_message_id). Usado pra
-   * dedup de inserts em logs (meal_logs, workout_logs) — protege contra
-   * dupla contagem em retentativas do Inngest. */
-  providerMessageId?: string
-  /** Últimas N mensagens do PACIENTE (direção 'in') no turno atual.
-   * Usado pra validação semântica determinística — ex: detectar se
-   * `replace=true` em registra_refeicao é legítimo (paciente disse
-   * "corrige", "errei", etc) ou bug do LLM (foto nova classificada como
-   * correção). NÃO substitui prompt rule, é defesa em profundidade. */
-  recentUserMessages?: string[]
-  /** Quando true, `registra_refeicao` NÃO aplica autocorrect de meal_type
-   * pela hora local. Setado SÓ pelo caminho do tap de botão (interactive-
-   * handler `action='confirm'`), onde `proposal.mealType` veio de uma
-   * proposta explícita que o paciente clicou. Bug I2 (Luciana 2026-06-14
-   * 15:44 BRT, pending bfdad07b): pending criado às 13h com mealType='cafe',
-   * paciente clicou 2h47min depois (localHour=15) → autocorrect virava pra
-   * 'lanche' silenciosamente, divergindo do card "Café registrado". */
-  trustMealType?: boolean
-}
-
-export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
-  name: string
-  description: string
-  parameters: T
-  execute: (args: z.infer<T>, ctx: ToolContext) => Promise<Record<string, unknown>>
-}
+// Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
+// packages/agent/src/tools/types.ts pra permitir split incremental de tools
+// (registraRefeicao → arquivo dedicado na próxima sprint). Re-exportados aqui
+// pra preservar API pública dos 6 importadores externos.
+import type { ToolDefinition } from './tools/types.js'
+export type { ToolContext, ToolDefinition } from './tools/types.js'
 
 // ----------------------------------------------------------------------------
 // cadastra_dados_iniciais — popula user_profiles durante onboarding
@@ -588,7 +553,7 @@ export const registraRefeicao: ToolDefinition = {
       )
       .optional()
       .describe(
-        'Correções de IDENTIDADE de alimento que o paciente fez (ex: "batata" → "mandioca"). O sistema aprende e reaplica. NÃO use pra mudança de quantidade.',
+        'Correções de IDENTIDADE de alimento que o paciente fez (ex: "batata" → "mandioca"). O sistema aprende e reaplica. NÃO use pra mudança de quantidade. NÃO use pra apenas customizar MACROS de alimento corretamente identificado — `de` e `para` DEVEM SER DIFERENTES. Se `de === para`, o sistema descarta silenciosamente. Pra macros customizados sem mudança de identidade, passe o item normal e o sistema usa TACO.',
       ),
     consumed_date: z
       .string()
@@ -926,6 +891,48 @@ export const registraRefeicao: ToolDefinition = {
     // Resultado: blocker derrubava replace, refeição somava a cada correção.
     if (args.corrections && args.corrections.length > 0) {
       objectiveCorrectionEvidence = true
+      // Audit 06-26 sprint pendentes (Q5 corrections detector): telemetria
+      // por chamada — antes só havia eventos por-item (learned/confirmed/
+      // contradicted) dentro do loop UPSERT, que faziam continue silencioso
+      // quando de===para. Sem isso, ~22% das chamadas usavam corrections[]
+      // como canal de MACROS customizados (anti-pattern) invisivelmente.
+      // Categoriza intent: identity_change, noop_same_name, custom_macros, removal.
+      try {
+        const normalizeName = (s: string) =>
+          s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+        let identityChanges = 0
+        let noopSameName = 0
+        let withCustomMacros = 0
+        let removals = 0
+        for (const c of args.corrections) {
+          const from = normalizeName(c.de ?? '')
+          const to = normalizeName(c.para ?? '')
+          if (!to || to === 'nenhum') {
+            removals++
+          } else if (from === to) {
+            noopSameName++
+          } else {
+            identityChanges++
+          }
+          if (typeof c.kcal_per_100g === 'number') withCustomMacros++
+        }
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.corrections_applied',
+          properties: {
+            meal_type: args.meal_type,
+            total_corrections: args.corrections.length,
+            identity_changes: identityChanges,
+            noop_same_name: noopSameName,
+            with_custom_macros: withCustomMacros,
+            removals,
+            llm_passed_replace: args.replace === true,
+          },
+        })
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[tool.corrections_applied] insert failed (non-fatal):', e)
+      }
     }
 
     // Caso A: LLM mandou replace=false mas há evidência objetiva → auto-aplica

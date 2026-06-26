@@ -48,6 +48,8 @@ interface PendingRow {
   status: 'pending' | 'confirmed' | 'edited' | 'expired' | 'cancelled'
   expires_at: string
   proposal: Record<string, unknown>
+  created_at: string
+  resolved_at: string | null
 }
 
 export const interactiveButtonHandlerFn = inngest.createFunction(
@@ -167,12 +169,211 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
       // Pending já resolvido (tap duplo, ou já processado) → no-op idempotente
       if (row.status !== 'pending') {
-        await supabase.from('product_events').insert({
-          user_id: userId,
-          event: 'pending.duplicate_tap',
-          properties: { pendingId, action, currentStatus: row.status },
-        })
-        return { handled: true, action: 'noop', reason: `status=${row.status}` }
+        // Audit 06-26 Layer 3 pizza-race recovery: quando status=cancelled E
+        // tap recente (<120s) E há meal_log subset gravado pelo express path
+        // entre pending.created_at e resolved_at, RECUPERA: DELETE subset +
+        // INSERT proposal completa via fluxo normal. Caso Luciana 23/06 pizza
+        // (já mitigado por Layer 1 mas residual existe quando subset-check
+        // falha por normalização/sinônimo/plural).
+        const RECOVERY_WINDOW_MS = 120_000
+        const proposal = row.proposal as {
+          kind?: 'meal' | 'workout'
+          items?: Array<{ name?: string; food_name?: string; quantity_g?: number; kcal?: number }>
+          mealType?: string
+          totals?: { kcal?: number }
+          source_provider_message_id?: string
+        }
+        const resolvedAt = row.resolved_at
+        const recoveryEligible =
+          action === 'confirm' &&
+          row.status === 'cancelled' &&
+          proposal?.kind === 'meal' &&
+          Array.isArray(proposal.items) &&
+          proposal.items.length >= 2 &&
+          typeof resolvedAt === 'string' &&
+          Date.now() - new Date(resolvedAt).getTime() <= RECOVERY_WINDOW_MS
+        if (recoveryEligible && typeof resolvedAt === 'string') {
+          try {
+            const stripAccents = (s: string) =>
+              s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+            const proposalNamesSet = new Set(
+              (proposal.items ?? [])
+                .map((it) => stripAccents(it.name ?? it.food_name ?? ''))
+                .filter(Boolean),
+            )
+            const proposalKcalTotal = proposal.totals?.kcal ?? 0
+            const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+            type MT = (typeof validMealTypes)[number]
+            // Review MED 2 (audit 06-26 review): se proposal.mealType
+            // inválido/ausente, ABORTA recovery — não fallback p/ 'outro'
+            // (puxaria meal_logs de qualquer refeição "outro" no intervalo,
+            // arriscando deletar/reabrir item alheio). Skip silencioso é
+            // mais seguro que recovery agressivo num cenário ambíguo.
+            const mealTypeOk = validMealTypes.includes(proposal.mealType as MT)
+            if (!mealTypeOk) {
+              await supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'tap.recovery_skipped',
+                properties: {
+                  pendingId,
+                  reason: 'invalid_proposal_meal_type',
+                  raw_meal_type: String(proposal.mealType ?? ''),
+                },
+              })
+            }
+            const candMealType: MT | null = mealTypeOk ? (proposal.mealType as MT) : null
+            // Busca meal_logs do mesmo user+meal_type no intervalo
+            // [pending.created_at, pending.resolved_at + 5s].
+            const startIso = new Date(row.created_at).toISOString()
+            const endIso = new Date(new Date(resolvedAt).getTime() + 5000).toISOString()
+            // Se mealType inválido (MED 2), pula query → cands=[] → fresh=[]
+            // → recoveryCandidateOk=false → segue noop original (skip seguro).
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: candidates } = candMealType
+              ? await (supabase as any)
+                  .from('meal_logs')
+                  .select('id, food_name, kcal, created_at, raw_provider_message_id')
+                  .eq('user_id', userId)
+                  .eq('meal_type', candMealType)
+                  .gte('created_at', startIso)
+                  .lte('created_at', endIso)
+              : { data: [] }
+            const cands = (candidates ?? []) as Array<{
+              id: string
+              food_name: string
+              kcal: number | string
+              created_at: string
+              raw_provider_message_id: string | null
+            }>
+            // Guard pmid: ignora se mesmo pmid da foto-fonte (é o pending de outro caminho).
+            // (meal_logs não tem updated_at — guard de edição não aplicável aqui.)
+            const fresh = cands.filter((c) => {
+              if (
+                proposal.source_provider_message_id &&
+                c.raw_provider_message_id === proposal.source_provider_message_id
+              ) {
+                return false
+              }
+              return true
+            })
+            // Verifica subset: 80% dos nomes em fresh ∈ proposalNames
+            let subsetMatchCount = 0
+            for (const c of fresh) {
+              if (proposalNamesSet.has(stripAccents(c.food_name))) subsetMatchCount++
+            }
+            const subsetRatio = fresh.length > 0 ? subsetMatchCount / fresh.length : 0
+            const subsetKcalTotal = fresh.reduce((a, c) => a + (Number(c.kcal) || 0), 0)
+            const sanityKcalOk =
+              proposalKcalTotal > 0 ? subsetKcalTotal <= proposalKcalTotal * 0.6 : true
+            const recoveryCandidateOk =
+              fresh.length > 0 && subsetRatio >= 0.8 && sanityKcalOk
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.recovery_candidate_evaluated',
+              properties: {
+                pendingId,
+                subset_fresh_count: fresh.length,
+                subset_match_ratio: subsetRatio,
+                subset_kcal_total: subsetKcalTotal,
+                proposal_kcal_total: proposalKcalTotal,
+                sanity_kcal_ok: sanityKcalOk,
+                resolved_at_age_ms: Date.now() - new Date(resolvedAt).getTime(),
+                decision: recoveryCandidateOk ? 'run' : 'skip',
+              },
+            })
+            if (recoveryCandidateOk) {
+              // CAS: reabre o pending condicionalmente em status=cancelled.
+              const { data: reopened } = await supabase
+                .from('pending_registrations')
+                .update({ status: 'pending', resolved_at: null })
+                .eq('id', pendingId)
+                .eq('status', 'cancelled')
+                .select('id')
+                .maybeSingle()
+              if (reopened) {
+                // Review HIGH 1 (audit 06-26 review): subtrair do snapshot
+                // ANTES de deletar os meal_logs. Antes, o registraRefeicao
+                // .execute(replace=true) abaixo tentava subtrair via SELECT
+                // mas os rows já tinham sumido → 0 subtraído → INSERT proposal
+                // SOMA tudo → snapshot inflado (subset + proposal completa).
+                // Agora subtrai diretamente com valores agregados do `fresh`.
+                const subsetIds = fresh.map((c) => c.id)
+                // Busca macros completos pra subtraçao acurada.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const { data: subsetMacros } = await (supabase as any)
+                  .from('meal_logs')
+                  .select('kcal, protein_g, carbs_g, fat_g, consumed_at')
+                  .in('id', subsetIds)
+                const macrosRows = (subsetMacros ?? []) as Array<{
+                  kcal: number | string
+                  protein_g: number | string
+                  carbs_g: number | string
+                  fat_g: number | string
+                  consumed_at: string
+                }>
+                const totalK = macrosRows.reduce((a, r) => a + (Number(r.kcal) || 0), 0)
+                const totalP = macrosRows.reduce((a, r) => a + (Number(r.protein_g) || 0), 0)
+                const totalC = macrosRows.reduce((a, r) => a + (Number(r.carbs_g) || 0), 0)
+                const totalF = macrosRows.reduce((a, r) => a + (Number(r.fat_g) || 0), 0)
+                // effectiveDate vem do consumed_at do primeiro row (UTC date string).
+                // Snapshot consolida por data UTC; pacientes em outros TZs tem leve
+                // discrepância mas é o mesmo padrão usado pelo registraRefeicao.
+                const effectiveDate =
+                  macrosRows[0]?.consumed_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
+                if (totalK > 0) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  await (supabase as any).rpc('snapshot_add_meal', {
+                    p_user_id: userId,
+                    p_date: effectiveDate,
+                    p_kcal: -totalK,
+                    p_protein: -totalP,
+                    p_carbs: -totalC,
+                    p_fat: -totalF,
+                    p_calories_target: null,
+                    p_protein_target: null,
+                  })
+                }
+                await supabase
+                  .from('meal_logs')
+                  .delete()
+                  .in('id', subsetIds)
+                  .eq('user_id', userId)
+                await supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'pending.recovered_from_lossy_cancellation',
+                  properties: {
+                    pendingId,
+                    subset_meal_log_ids: subsetIds,
+                    subset_kcal_total: subsetKcalTotal,
+                    snapshot_subtracted_kcal: totalK,
+                    proposal_kcal_total: proposalKcalTotal,
+                    subset_match_ratio: subsetRatio,
+                    resolved_at_age_ms: Date.now() - new Date(resolvedAt).getTime(),
+                  },
+                })
+                // Marca row como pending pra fluxo CONFIRM normal abaixo.
+                row.status = 'pending'
+                row.resolved_at = null
+                // Força replace=true no proposal pra o execute abaixo
+                // deletar resíduos remanescentes e inserir proposal completa.
+                ;(row.proposal as { replace?: boolean }).replace = true
+              }
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn('[interactive-handler] recovery falhou (non-fatal):', e)
+          }
+        }
+
+        // Se não houve recovery, segue noop original.
+        if (row.status !== 'pending') {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pending.duplicate_tap',
+            properties: { pendingId, action, currentStatus: row.status },
+          })
+          return { handled: true, action: 'noop', reason: `status=${row.status}` }
+        }
       }
 
       // Expirado → marca expired + avisa

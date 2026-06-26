@@ -2137,6 +2137,22 @@ export type Database = {
           },
         ]
       }
+      vw_meal_state: {
+        Row: {
+          consumed_at: string | null
+          last_transition_at: string | null
+          meal_log_created_at: string | null
+          meal_log_id: string | null
+          meal_log_pmid: string | null
+          meal_type: Database["public"]["Enums"]["meal_type_enum"] | null
+          pending_created_at: string | null
+          pending_id: string | null
+          source_pmid: string | null
+          state: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       admin_role: { Args: never; Returns: string }
@@ -2607,3 +2623,4 @@ export const Constants = {
     },
   },
 } as const
+

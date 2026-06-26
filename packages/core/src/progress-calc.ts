@@ -94,7 +94,23 @@ export function computeProgress(
   // AGORA: clampa o ACUMULADO TOTAL em 0 (igual recompute em accumulateBloco)
   // pra impedir deficit/blocks negativos. blocksDelta é DIFF entre antes/depois
   // pra preservar invariante incremental usada por dashboards/badges.
-  const tentativeTotal = prev.deficitBlock + dayCredit
+  //
+  // Audit 06-26 sprint pendentes: Math.round no acumulado total é APROXIMAÇÃO
+  // de accumulateBloco em engine/bloco.ts:74 (não paridade exata — drift máx
+  // ~3 kcal em 30 dias, irrelevante p/ block boundary porque dayCredit em prod
+  // costuma ser inteiro). Round APENAS no total — dayCredit individual segue
+  // float pra não perder fração antes da soma.
+  //
+  // Audit 06-26 review HIGH 1: NaN/Infinity guard. creditDayToBloco em teoria
+  // sempre retorna finite, mas snapshot do DB pode ter NULL → arithmetic vira
+  // NaN → deficitBlock/blocksCompleted corrompidos silenciosamente em prod
+  // (não há type guard no caller). Fallback p/ 0 + telemetry stub.
+  const safeDayCredit = Number.isFinite(dayCredit) ? dayCredit : 0
+  if (!Number.isFinite(dayCredit)) {
+    // eslint-disable-next-line no-console
+    console.warn('[progress-calc] dayCredit não-finito recebido — clampando p/ 0:', dayCredit)
+  }
+  const tentativeTotal = Math.round(prev.deficitBlock + safeDayCredit)
   const totalDeficit = Math.max(0, tentativeTotal)
   const blocksDelta =
     Math.floor(totalDeficit / config.kcal_block) -

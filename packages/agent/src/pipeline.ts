@@ -60,6 +60,7 @@ import { runToolGuard } from './tools/tool-guards.js'
 import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
+import { loadVisionPending } from './vision-pending-loader.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
@@ -648,9 +649,15 @@ export async function processMessage(
               // padrões texto+texto (paciente repete itens em mensagens
               // separadas), suprimir gera false positive. Reduz superfície de
               // suppression espúria, mantém proteção do caso real.
+              //
+              // Audit 06-26 sprint pendentes Item 3: estende cobertura pra
+              // áudio também (cenário simétrico: paciente manda áudio listando
+              // 5 itens, STT processa, depois manda áudio curto "tinha
+              // batata também" — sem suppression, virava registro novo
+              // duplicando os 5 originais).
               const pendSourceType = pend?.proposal?.sourceContentType ?? null
-              const isPhotoPending = pendSourceType === 'image'
-              if (pend && isPhotoPending && pendItems.length > newItemNames.size) {
+              const isMediaPending = pendSourceType === 'image' || pendSourceType === 'audio'
+              if (pend && isMediaPending && pendItems.length > newItemNames.size) {
                 const pendByName = new Map<string, { quantity_g?: number }>(
                   pendItems.map((it) => [
                     normalizeFoodName(it.name),
@@ -2004,167 +2011,10 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
   }
 }
 
-/**
- * FIX 4 (Roberto 2026-06-15): carrega a última foto de refeição analisada
- * pelo vision que AINDA NÃO virou meal_log nem pending CORRESPONDENTE.
- * Quando presente, o pipeline injeta no system prompt como "FOTO PENDENTE
- * DE REGISTRO" e bloqueia chamadas de `marca_refeicao_pulada` (que ocorreriam
- * pelo LLM confundindo disambiguação com confirmação de skip).
- *
- * Janela: 4h (review HIGH H6 2026-06-16: 24h era longo demais, gerava
- * poluição do prompt por vários turnos quando o bug H1 deixava a foto
- * "pendente" mesmo quando outra refeição foi registrada).
- *
- * Critério de "consumido" (review HIGH H1): NÃO basta haver INSERT após o
- * vision — comparar items dos meal_logs/pending com items do vision.
- * Se há overlap de nome ≥ 50% (set-intersection normalizado), foto foi
- * registrada. Senão, considera pendente.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-async function loadVisionPending(supabase: any, userId: string): Promise<UserContext['visionPending']> {
-  // Audit 06-25 Bug B (Roberto 25/06 2 fotos + pergunta): antes lia só
-  // .limit(1) — quando paciente manda 2 fotos no mesmo turno (Promise.all
-  // gera 2 product_events com mesmo occurred_at), só o "último" entrava no
-  // contexto. Se LLM fizesse pergunta entre as fotos, a 2a sumia. Fix: pega
-  // top N visions recentes (4h), passa pelo gate "consumed" cada uma, e
-  // retorna a primeira ainda pendente (do mais recente pro mais antigo).
-  const sinceIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
-  const { data: recentVisions } = await supabase
-    .from('product_events')
-    .select('properties, occurred_at')
-    .eq('user_id', userId)
-    .eq('event', 'vision.analyzed')
-    .gte('occurred_at', sinceIso)
-    .order('occurred_at', { ascending: false })
-    .limit(10)
-  const visions = (recentVisions ?? []) as Array<{
-    properties: {
-      type?: string
-      provider_message_id?: string | null
-      meal_items?: Array<{ name: string; quantity_g_estimate: number; confidence: number }> | null
-      meal_context?: string | null
-    }
-    occurred_at: string
-  }>
-  if (visions.length === 0) return null
-
-  // Carrega meal_logs e pending ALL após o vision MAIS ANTIGO da janela —
-  // mesmo cutoff cobre todas as visions retornadas. Faz 2 queries (não N).
-  const oldestVisionIso = visions[visions.length - 1]!.occurred_at
-  const [mealsAfter, pendingsAfter] = await Promise.all([
-    supabase
-      .from('meal_logs')
-      .select('food_name, provider_message_id, created_at')
-      .eq('user_id', userId)
-      .gte('created_at', oldestVisionIso),
-    supabase
-      .from('pending_registrations')
-      .select('id, proposal, created_at')
-      .eq('user_id', userId)
-      .gte('created_at', oldestVisionIso),
-  ])
-  const mealRows = (mealsAfter.data ?? []) as Array<{
-    food_name: string
-    provider_message_id?: string | null
-    created_at: string
-  }>
-  const pendRows = (pendingsAfter.data ?? []) as Array<{
-    id: string
-    proposal?: { items?: Array<{ name?: string; food_name?: string }> } | null
-    created_at: string
-  }>
-
-  const stripAccents = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
-
-  // Review HIGH 4 (audit 06-25): agregar visions do mesmo PMID antes de
-  // iterar — caso Roberto 25/06: 2 visions com mesmo provider_message_id
-  // (batch Promise.all de 2 fotos no mesmo webhook turn). Iterar singular
-  // dropava uma das 2. Agora: agrupa por pmid, união dos meal_items, depois
-  // itera grupos do mais recente pro mais antigo.
-  type Bucket = {
-    pmid: string | null
-    items: Array<{ name: string; quantity_g_estimate: number; confidence: number }>
-    mealContext: string | null
-    occurredAt: string
-  }
-  const buckets = new Map<string, Bucket>()
-  for (const v of visions) {
-    if (v.properties.type !== 'meal') continue
-    const mealItems = v.properties.meal_items
-    if (!mealItems || mealItems.length === 0) continue
-    const pmid = v.properties.provider_message_id ?? null
-    const key = pmid ?? `_no_pmid_${v.occurred_at}`
-    const existing = buckets.get(key)
-    if (existing) {
-      // Dedup por nome normalizado pra evitar item duplicado entre fotos.
-      const existingNames = new Set(existing.items.map((it) => stripAccents(it.name)))
-      for (const it of mealItems) {
-        if (!existingNames.has(stripAccents(it.name))) {
-          existing.items.push(it)
-        }
-      }
-      if (!existing.mealContext && v.properties.meal_context) {
-        existing.mealContext = v.properties.meal_context
-      }
-      // occurredAt fica como o mais antigo (primeiro inserido — visions vem
-      // ordenado desc, primeiro inserido é o mais recente; mantemos o mais
-      // recente do batch).
-    } else {
-      buckets.set(key, {
-        pmid,
-        items: [...mealItems],
-        mealContext: v.properties.meal_context ?? null,
-        occurredAt: v.occurred_at,
-      })
-    }
-  }
-  // Ordena buckets do mais recente pro mais antigo (occurredAt desc).
-  const orderedBuckets = Array.from(buckets.values()).sort((a, b) =>
-    b.occurredAt.localeCompare(a.occurredAt),
-  )
-
-  for (const b of orderedBuckets) {
-    const visionNames = new Set(b.items.map((it) => stripAccents(it.name)))
-    const mealsAfterThis = mealRows.filter((r) => r.created_at >= b.occurredAt)
-    const pendsAfterThis = pendRows.filter((p) => p.created_at >= b.occurredAt)
-
-    // (a) match por pmid: se algum meal_log tem o pmid deste bucket, consumed.
-    if (b.pmid && mealsAfterThis.some((r) => r.provider_message_id === b.pmid)) {
-      continue
-    }
-    // (b) overlap: ≥50% dos items deste bucket em logs/pending → consumed.
-    const consumedNames = new Set<string>()
-    for (const r of mealsAfterThis) consumedNames.add(stripAccents(r.food_name))
-    for (const p of pendsAfterThis) {
-      for (const it of p.proposal?.items ?? []) {
-        const nm = it.name ?? it.food_name ?? ''
-        if (nm) consumedNames.add(stripAccents(nm))
-      }
-    }
-    if (consumedNames.size > 0) {
-      let overlap = 0
-      for (const n of visionNames) {
-        if (consumedNames.has(n)) overlap++
-      }
-      const overlapRatio = visionNames.size > 0 ? overlap / visionNames.size : 0
-      if (overlapRatio >= 0.5) continue
-    }
-
-    const ageMinutes = Math.max(
-      0,
-      Math.round((Date.now() - new Date(b.occurredAt).getTime()) / 60_000),
-    )
-    return {
-      items: b.items,
-      mealContext: b.mealContext,
-      occurredAt: b.occurredAt,
-      ageMinutes,
-    }
-  }
-  return null
-}
+// Audit 06-26 Item 6: loadVisionPending foi extraído para vision-pending-loader.ts
+// (deriveVisionPending pura + I/O thin wrapper + 8 testes ponta-a-ponta).
+// Implementação byte-a-byte preservada — re-export cobre o call site em
+// loadContext (linha ~2010).
 
 /**
  * FIX 2 (review HIGH SKIP-NO-HINT 2026-06-16): infere meal_type quando o

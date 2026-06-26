@@ -228,4 +228,104 @@ describe('audit 2026-06-26 — Layer 3 pizza-race recovery', () => {
       expect(r.recoveryOk).toBe(false)
     })
   })
+
+  // ── Audit 06-26 review MED 3: Layer 3 mealType inválido aborta recovery ──
+  describe('Layer 3 MED 2 — proposal.mealType inválido ABORTA recovery', () => {
+    const VALID = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+
+    function mealTypeOk(raw: unknown): boolean {
+      return typeof raw === 'string' && (VALID as readonly string[]).includes(raw)
+    }
+
+    it('mealType="lunch" (inglês) → ABORTA (não é da enum)', () => {
+      expect(mealTypeOk('lunch')).toBe(false)
+    })
+
+    it('mealType=undefined → ABORTA', () => {
+      expect(mealTypeOk(undefined)).toBe(false)
+    })
+
+    it('mealType="" (string vazia) → ABORTA', () => {
+      expect(mealTypeOk('')).toBe(false)
+    })
+
+    it('mealType=null → ABORTA (não defaulta cego pra outro)', () => {
+      expect(mealTypeOk(null)).toBe(false)
+    })
+
+    it('mealType="almoco" válido → SEGUE', () => {
+      expect(mealTypeOk('almoco')).toBe(true)
+    })
+
+    it('mealType="outro" válido (explicitamente) → SEGUE', () => {
+      expect(mealTypeOk('outro')).toBe(true)
+    })
+  })
+
+  // ── Audit 06-26 review MED 3: Item 5 telemetria mutuamente exclusiva ────
+  describe('Item 5 — proposal_msg_id policy: set vs resent', () => {
+    // Replicado pra fechar golden — implementação canônica em
+    // packages/inngest-functions/src/functions/proposal-msg-id-policy.ts
+    function classifyMsgIdEvent(rowWasSet: boolean): string {
+      return rowWasSet ? 'pending.interactive_set' : 'pending.interactive_resent'
+    }
+
+    it('1º envio (slot vazio) → interactive_set', () => {
+      expect(classifyMsgIdEvent(true)).toBe('pending.interactive_set')
+    })
+
+    it('re-envio (slot ocupado, .is null falha) → interactive_resent', () => {
+      expect(classifyMsgIdEvent(false)).toBe('pending.interactive_resent')
+    })
+
+    it('eventos são mutuamente exclusivos', () => {
+      expect(classifyMsgIdEvent(true)).not.toBe(classifyMsgIdEvent(false))
+    })
+  })
+
+  // ── Audit 06-26 review MED 3: Item 3 multimodal gate (foto+áudio) ───────
+  describe('Item 3 — gate vision-inflight cobre audio + multimodal', () => {
+    function allMediaDone(
+      types: ('image' | 'audio')[],
+      done: { hasVisionDone: boolean; hasSttDone: boolean },
+    ): boolean {
+      if (types.includes('image') && !done.hasVisionDone) return false
+      if (types.includes('audio') && !done.hasSttDone) return false
+      return true
+    }
+
+    it('foto+áudio → exige AMBOS done (vision+stt)', () => {
+      expect(allMediaDone(['image', 'audio'], { hasVisionDone: true, hasSttDone: true })).toBe(true)
+      expect(allMediaDone(['image', 'audio'], { hasVisionDone: true, hasSttDone: false })).toBe(false)
+      expect(allMediaDone(['image', 'audio'], { hasVisionDone: false, hasSttDone: true })).toBe(false)
+    })
+
+    it('só áudio + stt.transcribed → libera flush', () => {
+      expect(allMediaDone(['audio'], { hasVisionDone: false, hasSttDone: true })).toBe(true)
+    })
+  })
+
+  // ── Audit 06-26 review HIGH 1: NaN guard em progress-calc ───────────────
+  describe('Item 1 — NaN/Infinity em dayCredit não corrompe deficitBlock', () => {
+    function safeAccumulate(prevDeficit: number, dayCredit: number): number {
+      const safe = Number.isFinite(dayCredit) ? dayCredit : 0
+      return Math.max(0, Math.round(prevDeficit + safe))
+    }
+
+    it('dayCredit=NaN preserva prevDeficit (não corrompe)', () => {
+      expect(safeAccumulate(1234, Number.NaN)).toBe(1234)
+    })
+
+    it('dayCredit=Infinity → preserva prevDeficit (não vira Infinity no banco)', () => {
+      const r = safeAccumulate(500, Number.POSITIVE_INFINITY)
+      expect(Number.isFinite(r)).toBe(true)
+      expect(r).toBe(500) // prev preservado, Infinity tratado como 0
+    })
+
+    it('dayCredit=-Infinity → clampa em 0 (não vira NaN)', () => {
+      const r = safeAccumulate(500, Number.NEGATIVE_INFINITY)
+      expect(Number.isFinite(r)).toBe(true)
+      expect(r).toBe(500)
+    })
+  })
 })

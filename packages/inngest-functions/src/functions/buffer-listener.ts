@@ -1,5 +1,6 @@
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { allMediaDone, pickMediaDoneEvents } from './vision-inflight-policy.js'
 
 /**
  * Worker: consome buffer de mensagens vencido.
@@ -74,8 +75,17 @@ export const bufferListenerFn = inngest.createFunction(
       const VISION_INFLIGHT_WINDOW_MS = 30_000
       const EXTENSION_MS = 20_000
       const ANTI_LOOP_WINDOW_MS = 60_000
-      const hasImageInBuffer = msgs.some((m) => m.content_type === 'image')
-      if (!hasImageInBuffer) {
+      // Audit 06-26 sprint pendentes Item 3: estende vision-inflight gate
+      // pra incluir audio. Caso simétrico ao da foto: paciente manda áudio
+      // longo, STT em vôo (~10-30s), caption/refinamento curto chega antes
+      // do `stt.transcribed` → buffer flusha sem o áudio processado e
+      // dispara LLM com contexto truncado. Inclui audio + eventos STT
+      // (stt.transcribed = sucesso; stt.failed = falha — bate com nomes
+      // reais em process-message.ts:263).
+      const hasMediaInBuffer = msgs.some(
+        (m) => m.content_type === 'image' || m.content_type === 'audio',
+      )
+      if (!hasMediaInBuffer) {
         // Review H3+H4 (audit 06-24): anti-loop via contagem de extensões
         // recentes em product_events. Antes usava heurística debounceWindowMs
         // > 15s, mas a RPC buffer_append_msg sobrescreve flush_after a cada
@@ -92,37 +102,63 @@ export const bufferListenerFn = inngest.createFunction(
           .limit(1)
         const alreadyExtended = (prevExt ?? []).length > 0
         if (!alreadyExtended) {
-          const { data: recentImages } = await supabase
+          // Audit 06-26 MED 1: busca AS 2 mídias mais recentes (não só
+          // limit 1). Cenário multimodal: paciente manda foto + áudio juntos
+          // → antes pegava só a mais recente e processava só 1 dos 2 done
+          // events, deixando o outro escapar.
+          const { data: recentMedia } = await supabase
             .from('messages')
-            .select('id, created_at')
+            .select('id, created_at, content_type')
             .eq('user_id', userId)
             .eq('direction', 'in')
-            .eq('content_type', 'image')
+            .in('content_type', ['image', 'audio'])
             .gte(
               'created_at',
               new Date(now - VISION_INFLIGHT_WINDOW_MS).toISOString(),
             )
             .order('created_at', { ascending: false })
-            .limit(1)
-          const recentImage = (recentImages ?? [])[0] as
-            | { id: string; created_at: string }
-            | undefined
+            .limit(2)
+          const mediaRows = (recentMedia ?? []) as Array<{
+            id: string
+            created_at: string
+            content_type: string
+          }>
+          const recentImage = mediaRows[0]
           if (recentImage) {
             // Review H5 (audit 06-24): nomes de eventos vision do código real
             // são 'vision.analyzed' (sucesso) e 'vision.download_failed'
-            // (falha). 'vision.completed' e 'vision.failed' NÃO existem —
-            // referências mortas no .in() antigo.
+            // (falha). 'vision.completed' e 'vision.failed' NÃO existem.
+            //
+            // Audit 06-26 review HIGH 3 + MED 1: extraído pra
+            // vision-inflight-policy.ts (pickMediaDoneEvents + allMediaDone).
+            // Multimodal: se buffer tem foto + áudio, exige AMBOS done events
+            // pra flushar.
+            const distinctTypes = Array.from(
+              new Set(mediaRows.map((r) => r.content_type)),
+            ).filter((t): t is 'image' | 'audio' => t === 'image' || t === 'audio')
+            const allDoneEvents = Array.from(
+              new Set(distinctTypes.flatMap((t) => pickMediaDoneEvents(t))),
+            )
             const { data: visionEvents } = await supabase
               .from('product_events')
-              .select('id')
+              .select('id, event')
               .eq('user_id', userId)
-              .in('event', ['vision.analyzed', 'vision.download_failed'])
+              .in('event', allDoneEvents)
               .gte(
                 'occurred_at',
                 new Date(now - VISION_INFLIGHT_WINDOW_MS).toISOString(),
               )
-              .limit(1)
-            const visionDone = (visionEvents ?? []).length > 0
+            const eventRows = (visionEvents ?? []) as Array<{ event: string }>
+            const hasVisionDone = eventRows.some(
+              (e) => e.event === 'vision.analyzed' || e.event === 'vision.download_failed',
+            )
+            const hasSttDone = eventRows.some(
+              (e) => e.event === 'stt.transcribed' || e.event === 'stt.failed',
+            )
+            const visionDone = allMediaDone(distinctTypes, {
+              hasVisionDone,
+              hasSttDone,
+            })
             if (!visionDone) {
               const newFlushAt = new Date(now + EXTENSION_MS).toISOString()
               await supabase

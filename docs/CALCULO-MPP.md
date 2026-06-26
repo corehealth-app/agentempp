@@ -70,6 +70,14 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
 - `deficit_block = max(0, soma) % 7700`; `blocks_completed = floor(max(0, soma) / 7700)`.
 - **O cofrinho do paciente nunca fica negativo** (clamp em 0 no total). Se
   uma sequência de dias ruins zerar o cofrinho, recomeça do zero pro próximo.
+- **Inteiros**: o acumulado total é sempre `Math.round`ado antes do clamp em
+  `computeProgress` (audit 06-26) e dentro de `accumulateBloco`. Isso impede
+  drift FP em séries longas (~30 dias) — em prod `dayCredit` costuma ser
+  inteiro porque vem de `calories_consumed - calories_target - exercise`,
+  todos integers no banco, então o impacto real é ~0. Round é defesa.
+- **NaN/Infinity** em `dayCredit` (snapshot corrompido / divisão por zero
+  em `creditDayToBloco`) → `computeProgress` clampa em 0 + log warning
+  (audit 06-26 review HIGH 1). Evita propagar NaN pra `deficit_block`.
 - Código: `packages/core/src/engine/bloco.ts`. Chamado por `computeProgress`,
   `daily-closer.ts` e `bloco-recompute.ts`.
 - Recálculo do zero (auditoria/backfill): `lib/bloco-recompute.ts`.

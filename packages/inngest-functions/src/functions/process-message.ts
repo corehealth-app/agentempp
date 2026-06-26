@@ -10,6 +10,7 @@ import {
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
+import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
 
 /**
  * Worker principal: processa cada mensagem recebida.
@@ -724,11 +725,35 @@ export const processMessageFn = inngest.createFunction(
       })
       const { supabase } = createWorkerDeps()
       if (sendRes.providerMessageId) {
-        // anexa o id da msg out pra que o tap possa responder/quotar
-        await supabase
+        // Anexa o id da msg out pra auditoria + replies/quote-by-id.
+        //
+        // Audit 06-26 Item 5 (Opção B, zero DDL): preserva o proposal_msg_id
+        // ORIGINAL via `.is('proposal_msg_id', null)`. Re-envios (retry de
+        // fallback) NÃO sobrescrevem — tap continua funcionando via pendingId
+        // codificado no buttonId, mas preserve mantém o card original como
+        // âncora pra reply do paciente. Audit review HIGH 2 corrige
+        // semântica: o tap NÃO consulta proposal_msg_id (busca por pendingId
+        // do BUTTON_ID_PATTERN). Esse fix é defesa de auditoria, não de
+        // funcionalidade do tap.
+        const upd = await supabase
           .from('pending_registrations')
           .update({ proposal_msg_id: sendRes.providerMessageId })
           .eq('id', ix.pendingId)
+          .is('proposal_msg_id', null)
+          .select('id')
+        const rowWasSet = Array.isArray(upd.data) && upd.data.length > 0
+        const policy = classifyProposalMsgIdWrite({
+          rowWasSet,
+          newProviderMessageId: sendRes.providerMessageId,
+        })
+        await supabase.from('product_events').insert({
+          user_id: userId,
+          event: policy.event,
+          properties: {
+            ...policy.properties,
+            pendingId: ix.pendingId,
+          },
+        })
       }
       await supabase.from('messages').insert({
         user_id: userId,

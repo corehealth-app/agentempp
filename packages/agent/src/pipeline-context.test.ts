@@ -58,9 +58,9 @@ describe('buildPromptRecentMessages', () => {
       },
     ]
 
-    expect(
-      buildPromptRecentMessages(rows, ['wamid-current-1', 'wamid-current-2']),
-    ).toEqual([{ role: 'assistant', content: 'Ontem fechado.' }])
+    expect(buildPromptRecentMessages(rows, ['wamid-current-1', 'wamid-current-2'])).toEqual([
+      { role: 'assistant', content: 'Ontem fechado.' },
+    ])
   })
 
   it('remove taps crus de botões interativos do histórico natural', () => {
@@ -81,6 +81,24 @@ describe('buildPromptRecentMessages', () => {
 
     expect(buildPromptRecentMessages(rows, 'new-message')).toEqual([
       { role: 'user', content: '40 minutos de musculação' },
+    ])
+  })
+
+  it('preserva digest de foto corporal no historico de turnos futuros', () => {
+    const rows = [
+      {
+        direction: 'in',
+        content: '[vision-body] Foto: frente; BF ~20.5%, conf 80%',
+        content_type: 'image',
+        provider_message_id: 'body-photo-1',
+      },
+    ]
+
+    expect(buildPromptRecentMessages(rows, 'new-message')).toEqual([
+      {
+        role: 'user',
+        content: '[vision-body] Foto: frente; BF ~20.5%, conf 80%',
+      },
     ])
   })
 })

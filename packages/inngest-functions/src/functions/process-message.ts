@@ -1,4 +1,11 @@
-import { detectPendingResponse, splitRegistrationParts } from '@mpp/agent'
+import {
+  aggregateBodyBfEstimate,
+  bodyPhotoSignalFromEventProperties,
+  detectPendingResponse,
+  formatBodyPhotoDigest,
+  splitRegistrationParts,
+  type BodyPhotoSignal,
+} from '@mpp/agent'
 import {
   GeminiVision,
   GroqSTT,
@@ -329,7 +336,7 @@ export const processMessageFn = inngest.createFunction(
       if (vRes.ok && vRes.images.length > 0) {
         // Formata cada imagem segundo seu tipo
         const blocks: string[] = []
-        let bodyBf: { estimate: number; confidence: number } | null = null
+        const bodySignals: BodyPhotoSignal[] = []
         for (let i = 0; i < vRes.images.length; i++) {
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
@@ -354,12 +361,23 @@ export const processMessageFn = inngest.createFunction(
               `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
           } else if (img.type === 'body') {
+            const bodyProviderMessageId =
+              Array.isArray(providerMessageIds) && providerMessageIds.length === vRes.images.length
+                ? providerMessageIds[i] ?? providerMessageId
+                : providerMessageId
+            bodySignals.push({
+              view: img.view,
+              bfPercentEstimate: img.bf_percent_estimate,
+              confidence: img.bf_confidence,
+              occurredAt: new Date(timestamp).toISOString(),
+              providerMessageId: bodyProviderMessageId ?? null,
+              photoCount: vRes.images.length,
+              compositionNotes: img.composition_notes ?? null,
+              postureNotes: img.posture_notes ?? null,
+            })
             blocks.push(
               `${idx} [corporal · ${img.view}]:\n  BF% estimado: ${img.bf_percent_estimate ?? 'n/d'} (conf ${(img.bf_confidence * 100).toFixed(0)}%)\n  ${img.composition_notes}${img.posture_notes ? `\n  postura: ${img.posture_notes}` : ''}`,
             )
-            if (img.bf_percent_estimate != null) {
-              bodyBf = { estimate: img.bf_percent_estimate, confidence: img.bf_confidence }
-            }
           } else if (img.type === 'scale') {
             blocks.push(
               `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
@@ -438,6 +456,10 @@ export const processMessageFn = inngest.createFunction(
                 | null = null
               let mealContext: string | null = null
               let needsDisambiguation = false
+              let bodyView: string | null = null
+              let bodyBfPercentEstimate: number | null = null
+              let bodyCompositionNotes: string | null = null
+              let bodyPostureNotes: string | null = null
               if (img.type === 'meal') {
                 confidence = img.items.length > 0
                   ? img.items.reduce((acc, it) => acc + (it.confidence ?? 0), 0) / img.items.length
@@ -453,6 +475,10 @@ export const processMessageFn = inngest.createFunction(
                 )
               } else if (img.type === 'body') {
                 confidence = img.bf_confidence
+                bodyView = img.view
+                bodyBfPercentEstimate = img.bf_percent_estimate
+                bodyCompositionNotes = img.composition_notes ?? null
+                bodyPostureNotes = img.posture_notes ?? null
               } else if (
                 img.type === 'scale' ||
                 img.type === 'equipment' ||
@@ -479,6 +505,11 @@ export const processMessageFn = inngest.createFunction(
                   meal_items: mealItems,
                   meal_context: mealContext,
                   needs_disambiguation: needsDisambiguation,
+                  view: bodyView,
+                  bf_percent_estimate: bodyBfPercentEstimate,
+                  bf_confidence: img.type === 'body' ? img.bf_confidence : null,
+                  composition_notes: bodyCompositionNotes,
+                  posture_notes: bodyPostureNotes,
                 },
               }
             })
@@ -546,6 +577,32 @@ export const processMessageFn = inngest.createFunction(
                     .is('content', null)
                 }
               }
+              const bodyDigestText = formatBodyPhotoDigest(bodySignals)
+              if (providerMessageId && bodyDigestText.length > 0) {
+                const { data: existing } = await supabase
+                  .from('messages')
+                  .select('content')
+                  .eq('provider_message_id', providerMessageId)
+                  .eq('user_id', userId)
+                  .maybeSingle()
+                const cur = (existing as { content?: string | null } | null)?.content ?? null
+                if (cur && cur.includes('[vision-body]')) {
+                  // já gravado — no-op
+                } else if (cur && cur.length > 0) {
+                  await supabase
+                    .from('messages')
+                    .update({ content: `${cur}\n${bodyDigestText}` })
+                    .eq('provider_message_id', providerMessageId)
+                    .eq('user_id', userId)
+                } else {
+                  await supabase
+                    .from('messages')
+                    .update({ content: bodyDigestText })
+                    .eq('provider_message_id', providerMessageId)
+                    .eq('user_id', userId)
+                    .is('content', null)
+                }
+              }
             } catch (digestErr) {
               logger.warn('vision digest update failed (non-fatal)', {
                 error: digestErr instanceof Error ? digestErr.message : String(digestErr),
@@ -557,12 +614,30 @@ export const processMessageFn = inngest.createFunction(
             })
           }
         })
-        // Persiste a ESTIMATIVA de BF% da foto num campo separado (sub-projeto B).
+        // Persiste a ESTIMATIVA de BF% agregando as fotos corporais recentes.
         // NUNCA sobrescreve body_fat_percent (confirmado pelo paciente/Roberto).
-        if (bodyBf != null) {
-          const bf = bodyBf
+        if (bodySignals.some((signal) => signal.bfPercentEstimate != null)) {
           await step.run('persist-bf-estimate', async () => {
             const { supabase } = createWorkerDeps()
+            const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+            const { data: rows } = await supabase
+              .from('product_events')
+              .select('properties, occurred_at')
+              .eq('user_id', userId)
+              .eq('event', 'vision.analyzed')
+              .gte('occurred_at', since)
+              .order('occurred_at', { ascending: false })
+              .limit(30)
+            const recentSignals = ((rows ?? []) as Array<{
+              properties: unknown
+              occurred_at: string | null
+            }>)
+              .map((row) => bodyPhotoSignalFromEventProperties(row.properties, row.occurred_at))
+              .filter((signal): signal is BodyPhotoSignal => signal != null)
+            const bf = aggregateBodyBfEstimate(
+              recentSignals.length > 0 ? recentSignals : bodySignals,
+            )
+            if (!bf) return
             await supabase
               .from('user_profiles')
               .update({

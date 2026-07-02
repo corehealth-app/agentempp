@@ -61,6 +61,15 @@ import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
 import { loadVisionPending } from './vision-pending-loader.js'
+import {
+  bodyPhotoSignalFromEventProperties,
+  composeReevalBodyPhotoWaitMessage,
+  deriveBodyPhotoState,
+  formatBodyPhotoContext,
+  shouldWaitForBodyPhotosBeforeReeval,
+  type BodyPhotoSignal,
+  type BodyPhotoState,
+} from './reevaluation-body-photos.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
@@ -183,6 +192,11 @@ interface UserContext {
     occurredAt: string
     ageMinutes: number
   } | null
+  /** Estado factual das fotos corporais pedidas na reavaliacao recente.
+   * Usado para nao pedir novamente frente/lado/costas ja recebidas. */
+  bodyPhotoState: BodyPhotoState | null
+  /** True quando houve reevaluation.due nas ultimas 48h. */
+  reevaluationDueRecent: boolean
 }
 
 export async function processMessage(
@@ -205,6 +219,7 @@ export async function processMessage(
     deps.supabase,
     userId,
     input.providerMessageIds ?? input.providerMessageId,
+    input.text,
   )
 
   // 4. resolve stage
@@ -1392,6 +1407,24 @@ export async function processMessage(
           .maybeSingle(),
       ])
       if (revalDue && revalDue.length > 0) {
+        const bodyPhotoState = ctx.bodyPhotoState ?? deriveBodyPhotoState([], [input.text])
+        if (shouldWaitForBodyPhotosBeforeReeval(bodyPhotoState, true)) {
+          finalText = composeReevalBodyPhotoWaitMessage(bodyPhotoState)
+          messages.push({ role: 'assistant', content: finalText })
+          deterministicRegistration = true
+          await deps.supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pipeline.reeval_waiting_body_photos',
+            properties: {
+              stage,
+              tools: iterEntries.map((e) => e.name),
+              received_views: bodyPhotoState.receivedViews,
+              missing_views: bodyPhotoState.missingViews,
+              unknown_count: bodyPhotoState.unknownCount,
+            },
+          })
+          break
+        }
         const cadastra = iterEntries.find((e) => e.name === 'cadastra_dados_iniciais')
         const cr = (cadastra?.result ?? {}) as {
           calories_target_today?: number | null
@@ -1854,6 +1887,7 @@ async function loadContext(
   supabase: ServiceClient,
   userId: string,
   currentProviderMessageIds?: string | string[] | null,
+  currentText?: string | null,
 ): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
@@ -2013,6 +2047,41 @@ async function loadContext(
     last_active_date?: string | null
   } | null
 
+  const reevaluationSince = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+  const [{ data: bodyVisionRows }, { data: reevaluationDueRows }] = await Promise.all([
+    supabase
+      .from('product_events')
+      .select('properties, occurred_at')
+      .eq('user_id', userId)
+      .eq('event', 'vision.analyzed')
+      .gte('occurred_at', reevaluationSince)
+      .order('occurred_at', { ascending: false })
+      .limit(50),
+    supabase
+      .from('product_events')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('event', 'reevaluation.due')
+      .gte('occurred_at', reevaluationSince)
+      .limit(1),
+  ])
+  const bodySignals = ((bodyVisionRows ?? []) as Array<{
+    properties: unknown
+    occurred_at: string | null
+  }>)
+    .map((row) => bodyPhotoSignalFromEventProperties(row.properties, row.occurred_at))
+    .filter((signal): signal is BodyPhotoSignal => signal != null)
+  const reevaluationDueRecent =
+    Array.isArray(reevaluationDueRows) && reevaluationDueRows.length > 0
+  const bodyPhotoTexts = recentMessages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+  if (currentText) bodyPhotoTexts.push(currentText)
+  const bodyPhotoState =
+    reevaluationDueRecent || bodySignals.length > 0
+      ? deriveBodyPhotoState(bodySignals, bodyPhotoTexts)
+      : null
+
   return {
     userId,
     userName: userTyped?.name ?? null,
@@ -2037,6 +2106,8 @@ async function loadContext(
     })(),
     unitSystem,
     timezone: userTyped?.timezone ?? 'America/Sao_Paulo',
+    bodyPhotoState,
+    reevaluationDueRecent,
     dailyTargets,
     todaySnapshot: snapTyped
       ? {
@@ -2240,6 +2311,10 @@ function formatUserContext(
         `A resposta do paciente é pra COMPLETAR a foto, não pra confirmar pulo.\n` +
         `→ Só chame \`marca_refeicao_pulada\` se o paciente disser LITERALMENTE "pulei"/"não comi"/"joguei fora" NESTA mensagem específica E sobre OUTRA refeição (não a da foto).`,
     )
+  }
+
+  if (ctx.bodyPhotoState && (ctx.reevaluationDueRecent || ctx.bodyPhotoState.recentSignals.length > 0)) {
+    sections.push(formatBodyPhotoContext(ctx.bodyPhotoState))
   }
 
   // Reentrada warm: instrução pro LLM no topo

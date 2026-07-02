@@ -2196,10 +2196,6 @@ export type Database = {
         Args: { p_jobname: string; p_schedule: string }
         Returns: undefined
       }
-      daily_close_user: {
-        Args: { p_date?: string; p_user_id: string }
-        Returns: Json
-      }
       detect_country_from_wpp: { Args: { p_wpp: string }; Returns: string }
       dispatch_inngest_event: {
         Args: { p_data?: Json; p_delay_ms?: number; p_event_name: string }
@@ -2623,4 +2619,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -24,6 +24,40 @@ const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
 let cached: { config: HumanizerConfig; expiresAt: number } | null = null
 const TTL_MS = 60_000
 
+export function parseBooleanRuntimeValue(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (value === 1) return true
+    if (value === 0) return false
+    return fallback
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'on', 'enabled'].includes(normalized)) return true
+    if (['false', '0', 'no', 'off', 'disabled'].includes(normalized)) return false
+  }
+  return fallback
+}
+
+export async function loadBooleanConfig(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  svc: any,
+  key: string,
+  fallback: boolean,
+): Promise<boolean> {
+  const { data, error } = (await svc
+    .from('global_config')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()) as {
+    data: { value: unknown } | null
+    error: unknown
+  }
+
+  if (error || !data) return fallback
+  return parseBooleanRuntimeValue(data.value, fallback)
+}
+
 export async function loadHumanizerConfig(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   svc: any,

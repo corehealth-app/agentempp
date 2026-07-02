@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { SNAPSHOT_INTEGRITY_TOL_KCAL, snapshotIntegrityGap } from './daily-audit.js'
+import {
+  SNAPSHOT_INTEGRITY_TOL_KCAL,
+  decideBlocoAutofix,
+  snapshotIntegrityGap,
+} from './daily-audit.js'
 
 describe('snapshotIntegrityGap — integridade snapshot vs meal_logs por consumed_at', () => {
   it('bate exato → gap 0 (dentro da tolerância)', () => {
@@ -38,5 +42,31 @@ describe('snapshotIntegrityGap — integridade snapshot vs meal_logs por consume
     expect(snapshotIntegrityGap(undefined, 100)).toBe(100)
     // @ts-expect-error — testando entrada inválida proposital
     expect(snapshotIntegrityGap(100, null)).toBe(100)
+  })
+})
+
+describe('decideBlocoAutofix — auditoria read-only por padrão', () => {
+  it('não aplica correção quando a flag está desligada, mesmo com divergência', () => {
+    expect(decideBlocoAutofix(3, 8, false)).toEqual({
+      canApply: false,
+      circuitBroke: false,
+      disabled: true,
+    })
+  })
+
+  it('aplica quando a flag está ligada e a divergência cabe no limite', () => {
+    expect(decideBlocoAutofix(3, 8, true)).toEqual({
+      canApply: true,
+      circuitBroke: false,
+      disabled: false,
+    })
+  })
+
+  it('bloqueia por circuit breaker quando passa do limite', () => {
+    expect(decideBlocoAutofix(9, 8, true)).toEqual({
+      canApply: false,
+      circuitBroke: true,
+      disabled: false,
+    })
   })
 })

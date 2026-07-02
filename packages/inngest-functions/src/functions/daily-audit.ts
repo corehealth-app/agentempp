@@ -2,6 +2,7 @@ import { getTzOffset, looksLikeRegistrationRequest } from '@mpp/agent'
 import { inngest } from '../client.js'
 import { recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { loadBooleanConfig } from '../lib/runtime-config.js'
 
 /**
  * Gap de integridade de UM snapshot: |consumido_no_snapshot − soma_dos_logs|.
@@ -19,6 +20,22 @@ export function snapshotIntegrityGap(
 
 /** Tolerância de divergência snapshot vs meal_logs (kcal). */
 export const SNAPSHOT_INTEGRITY_TOL_KCAL = 50
+
+export interface BlocoAutofixDecision {
+  canApply: boolean
+  circuitBroke: boolean
+  disabled: boolean
+}
+
+export function decideBlocoAutofix(
+  divergeCount: number,
+  maxFix: number,
+  enabled: boolean,
+): BlocoAutofixDecision {
+  if (!enabled) return { canApply: false, circuitBroke: false, disabled: true }
+  if (divergeCount > maxFix) return { canApply: false, circuitBroke: true, disabled: false }
+  return { canApply: true, circuitBroke: false, disabled: false }
+}
 
 /**
  * Worker: auditoria automática diária do agente.
@@ -309,15 +326,17 @@ export const dailyAuditFn = inngest.createFunction(
       }
     })
 
-    // AUTO-CORREÇÃO (Eduardo 2026-05-20): além de auditar, reconcilia os blocos
-    // 7700 sozinho. recomputeUserBloco é fiel ao daily-closer (validado: Gleidson
-    // e Raphaela batem exato), idempotente e self-healing. TRAVA DE SEGURANÇA
-    // (circuit-breaker): se um run tentaria corrigir mais de MAX_BLOCO_FIX
-    // usuários de uma vez = sinal de bug de fórmula/dado → NÃO aplica e alerta,
-    // pra não propagar erro em escala a cada 8h.
+    // Auditoria de blocos 7700. Por padrão é read-only: detecta divergências
+    // sem alterar progresso. Auto-fix precisa ser ligado explicitamente via
+    // global_config `audit.bloco_autofix_enabled=true`.
     const autofix = await step.run('auto-reconcile-blocos', async () => {
       const BLOCO_DIFF_TOL = 50
       const MAX_BLOCO_FIX = 8
+      const autofixEnabled = await loadBooleanConfig(
+        supabase,
+        'audit.bloco_autofix_enabled',
+        false,
+      )
       const { data: progs } = await supabase
         .from('user_progress')
         .select('user_id, deficit_block, blocks_completed')
@@ -350,10 +369,8 @@ export const dailyAuditFn = inngest.createFunction(
         }
       }
       let applied = 0
-      let circuitBroke = false
-      if (diverge.length > MAX_BLOCO_FIX) {
-        circuitBroke = true
-      } else {
+      const decision = decideBlocoAutofix(diverge.length, MAX_BLOCO_FIX, autofixEnabled)
+      if (decision.canApply) {
         for (const b of diverge) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase as any)
@@ -381,7 +398,8 @@ export const dailyAuditFn = inngest.createFunction(
       return {
         divergeCount: diverge.length,
         applied,
-        circuitBroke,
+        circuitBroke: decision.circuitBroke,
+        disabled: decision.disabled,
         details: diverge.slice(0, 8).map((b) => `${b.old}→${b.neu}`),
       }
     })
@@ -391,6 +409,10 @@ export const dailyAuditFn = inngest.createFunction(
     if (autofix.circuitBroke)
       alerts.push(
         `🔴 ${autofix.divergeCount} blocos divergentes — auto-fix BLOQUEADO (circuit-breaker, revisar fórmula/dado)`,
+      )
+    else if (autofix.disabled && autofix.divergeCount > 0)
+      alerts.push(
+        `⚠️ ${autofix.divergeCount} bloco(s) divergente(s) — auto-fix desligado (read-only)`,
       )
     else if (autofix.applied > 0)
       alerts.push(`🔧 ${autofix.applied} bloco(s) auto-corrigido(s): ${autofix.details.join(', ')}`)
@@ -427,6 +449,10 @@ export const dailyAuditFn = inngest.createFunction(
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke
         ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`
+        : autofix.disabled
+          ? autofix.divergeCount > 0
+            ? `• ⚠️ desligada — ${autofix.divergeCount} divergente(s) detectado(s), 0 correções\n`
+            : `• ✅ desligada — todos em sincronia (0 correções)\n`
         : autofix.applied > 0
           ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
           : `• ✅ todos em sincronia (0 correções)\n`) +
@@ -456,6 +482,7 @@ export const dailyAuditFn = inngest.createFunction(
           bloco_autofixed: autofix.applied,
           bloco_diverge: autofix.divergeCount,
           bloco_circuit_broke: autofix.circuitBroke,
+          bloco_autofix_disabled: autofix.disabled,
         },
       })
     })

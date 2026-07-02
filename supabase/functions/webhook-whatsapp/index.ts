@@ -140,6 +140,8 @@ Deno.serve(async (req: Request) => {
         await supabase
           .from('messages')
           .update({ delivery_status: status.status })
+          .eq('provider', 'whatsapp_cloud')
+          .eq('direction', 'out')
           .eq('provider_message_id', status.id)
       }
 

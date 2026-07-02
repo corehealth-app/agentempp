@@ -241,6 +241,27 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(blocked?.properties.overlap_ratio).toBe(0)
   })
 
+  it('preserva user_kcal aprovado no pending ao gravar pela tool', async () => {
+    const { ctx, mealInserts, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: [],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        replace: false,
+        items: [{ food_name: 'goiaba', quantity_g: 150, user_kcal: 95 }],
+      } as never,
+      ctx,
+    )
+
+    expect(Number(mealInserts[0]?.kcal)).toBe(95)
+    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
+    expect(snapshotCall?.params.p_kcal).toBe(95)
+  })
+
   // BUG do PAULO 2026-05-13 18:43-19:15 (cross-meal-type):
   // Foto chegou 15:43 BRT → registrada como 'lanche'. Paulo corrigiu, LLM
   // mandou meal_type='almoco' + replace=true. Antes: detector filtrava só

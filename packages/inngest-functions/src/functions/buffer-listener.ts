@@ -2,6 +2,18 @@ import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 import { allMediaDone, pickMediaDoneEvents } from './vision-inflight-policy.js'
 
+export type BufferedInboundMessage = {
+  provider_message_id: string
+  content_type: string
+  text?: string | null
+  mediaUrl?: string | null
+  received_at: string
+}
+
+export function collectProviderMessageIds(msgs: BufferedInboundMessage[]): string[] {
+  return msgs.map((m) => m.provider_message_id).filter(Boolean)
+}
+
 /**
  * Worker: consome buffer de mensagens vencido.
  *
@@ -12,7 +24,8 @@ import { allMediaDone, pickMediaDoneEvents } from './vision-inflight-policy.js'
  *   1. Lê message_buffer do user
  *   2. Se vazio ou flush_after futuro → no-op (outra invocação já processou)
  *   3. Agrega texts em uma única mensagem
- *   4. Dispara process-message com texto agregado e providerMessageId da MAIS RECENTE
+ *   4. Dispara process-message com texto agregado, providerMessageId da MAIS RECENTE
+ *      e providerMessageIds de TODAS as mensagens do turno atual.
  *   5. Limpa buffer
  *
  * Concurrency=1 por userId — garante que só um flush roda por user.
@@ -47,14 +60,7 @@ export const bufferListenerFn = inngest.createFunction(
         return { dispatched: false, reason: 'ainda em debounce', remaining_ms: flushAt - now }
       }
 
-      const msgs =
-        (buf.messages as Array<{
-          provider_message_id: string
-          content_type: string
-          text?: string | null
-          mediaUrl?: string | null
-          received_at: string
-        }>) ?? []
+      const msgs = (buf.messages as BufferedInboundMessage[]) ?? []
 
       if (msgs.length === 0) {
         await supabase.from('message_buffer').delete().eq('user_id', userId)
@@ -210,6 +216,7 @@ export const bufferListenerFn = inngest.createFunction(
 
       // Msg mais recente é referência para typing/reactions
       const latest = msgs[msgs.length - 1]!
+      const providerMessageIds = collectProviderMessageIds(msgs)
 
       // Determina contentType: mídia tem prioridade
       const hasAudio = msgs.some((m) => m.content_type === 'audio')
@@ -228,6 +235,7 @@ export const bufferListenerFn = inngest.createFunction(
           userId,
           wpp: (user as { wpp: string }).wpp,
           providerMessageId: latest.provider_message_id,
+          providerMessageIds,
           contentType,
           text: aggregated || undefined,
           mediaUrl: mediaUrl ?? undefined,

@@ -384,31 +384,6 @@ async function closeUserDay(
     })
   }
 
-  // Opção C (Roberto 2026-05-31): se incomplete_no_response E paciente
-  // CONTINUOU INTERAGINDO após o gap reminder (registrou meal_log/workout_log
-  // depois do timestamp do reminder), credita normal — sinal de que não sumiu,
-  // só não confirmou o gap específico. Se sumiu (zero interação após reminder),
-  // mantém o comportamento conservador antigo (max(0, -dailyBalance)).
-  let interactedAfterReminder = false
-  if (finalDayStatus === 'incomplete_no_response' && existingTyped?.gap_reminder_sent_at) {
-    const since = existingTyped.gap_reminder_sent_at
-    const [{ data: mLogs }, { data: wLogs }] = await Promise.all([
-      supabase
-        .from('meal_logs')
-        .select('id')
-        .eq('user_id', userId)
-        .gt('created_at', since)
-        .limit(1),
-      supabase
-        .from('workout_logs')
-        .select('id')
-        .eq('user_id', userId)
-        .gt('created_at', since)
-        .limit(1),
-    ])
-    interactedAfterReminder = (mLogs?.length ?? 0) > 0 || (wLogs?.length ?? 0) > 0
-  }
-
   const dayCredit = creditDayToBloco({
     hasActivity,
     dayStatus: finalDayStatus,
@@ -416,7 +391,6 @@ async function closeUserDay(
     caloriesTarget: targets.calories_target,
     dailyBalance: snap.daily_balance ?? 0,
     designDeficit,
-    interactedAfterReminder,
   })
 
   const next = computeProgress(dailySnap, prev, calcConfig, dayCredit)

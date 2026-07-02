@@ -34,6 +34,7 @@ export const processMessageFn = inngest.createFunction(
       userId,
       wpp,
       providerMessageId,
+      providerMessageIds,
       contentType,
       text,
       mediaUrl,
@@ -612,6 +613,7 @@ export const processMessageFn = inngest.createFunction(
         return processMessage(deps, {
           from: wpp,
           providerMessageId,
+          providerMessageIds,
           contentType,
           text: enrichedText,
           mediaUrl,

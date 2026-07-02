@@ -22,13 +22,12 @@ describe('creditDayToBloco — regra de crédito por dia (fiel ao daily-closer)'
   it('sub-registro <50% incomplete: credita 0', () => {
     expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response', caloriesConsumed: 400, dailyBalance: -1443 })).toBe(0)
   })
-  it('incomplete >=50%: credita só o déficit observado (sem designDeficit)', () => {
-    expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response' })).toBe(343)
+  it('incomplete >=50%: credita 0 enquanto o gap segue aberto', () => {
+    expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response' })).toBe(0)
   })
-  // Opção C (Roberto 2026-05-31): incomplete + paciente continuou interagindo
-  // após reminder → credita normal (igual complete), pq não sumiu.
-  it('incomplete + interactedAfterReminder=true: credita igual complete (Luciana 30/05)', () => {
-    // Caso Luciana 30/05: cal=1527, target=1106, balance=+421, dd=500 → 500-421 = 79
+  it('incomplete com interação após reminder continua creditando 0', () => {
+    // Decisão Roberto 2026-07-01: se o gap continuou aberto no fechamento,
+    // qualquer valor parcial fica imprevisível; não entra no bloco.
     expect(
       creditDayToBloco({
         hasActivity: true,
@@ -37,21 +36,6 @@ describe('creditDayToBloco — regra de crédito por dia (fiel ao daily-closer)'
         caloriesTarget: 1106,
         dailyBalance: 421,
         designDeficit: 500,
-        interactedAfterReminder: true,
-      }),
-    ).toBe(79)
-  })
-  it('incomplete + interactedAfterReminder=false: mantém comportamento conservador antigo', () => {
-    // Mesmo input mas SEM interação após reminder → max(0, -421) = 0
-    expect(
-      creditDayToBloco({
-        hasActivity: true,
-        dayStatus: 'incomplete_no_response',
-        caloriesConsumed: 1527,
-        caloriesTarget: 1106,
-        dailyBalance: 421,
-        designDeficit: 500,
-        interactedAfterReminder: false,
       }),
     ).toBe(0)
   })

@@ -84,8 +84,9 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
 
 ### Quando um dia CREDITA o bloco (regras de integridade)
 - **Sem atividade** (0 refeição E 0 treino) → crédito **0** (`bloco7700.skipped_inactive_day`).
-- **Incomplete (não respondeu lembrete de gap)** → NÃO credita design_deficit;
-  credita só déficit observado se houver (`bloco7700.skipped_incomplete_day`).
+- **Incomplete (gap aberto no fechamento)** → crédito **0**. Decisão Roberto
+  2026-07-01: enquanto falta refeição esperada, qualquer valor parcial é
+  imprevisível (`bloco7700.skipped_incomplete_day`).
 - **Sub-registro (<50% da meta, exceto `user_skipped`)** → zera o `daily_balance`
   (o déficit observado é FAKE); dia *complete* credita só `design_deficit`,
   *incomplete* credita 0 (`bloco7700.skipped_subregistro`).

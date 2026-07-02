@@ -201,7 +201,11 @@ export async function processMessage(
   }
 
   // 3. load context
-  const ctx = await loadContext(deps.supabase, userId)
+  const ctx = await loadContext(
+    deps.supabase,
+    userId,
+    input.providerMessageIds ?? input.providerMessageId,
+  )
 
   // 4. resolve stage
   const stage = resolveStage(ctx.profile)
@@ -811,12 +815,20 @@ export async function processMessage(
               ctx.country ?? 'BR',
               userId,
             )
+            const userKcalByName = new Map(
+              itemsWithOverrides
+                .filter((it) => it.user_kcal != null)
+                .map((it) => [it.food_name, it.user_kcal as number]),
+            )
             const proposalItems = resolved.items.map((m) => ({
               name: m.food_name,
               quantity_g: m.quantity_g,
               display_qty: m.display_qty ?? null,
               display_unit: m.display_unit ?? null,
               kcal: m.kcal ?? 0,
+              ...(userKcalByName.has(m.food_name)
+                ? { user_kcal: userKcalByName.get(m.food_name)! }
+                : {}),
               protein_g: m.protein_g ?? 0,
               carbs_g: m.carbs_g ?? 0,
               fat_g: m.fat_g ?? 0,
@@ -1796,7 +1808,53 @@ async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string>
 const RECENT_MESSAGES_LIMIT = 50
 const REENTRY_THRESHOLD_HOURS = 24 * 7 // 7 dias
 
-async function loadContext(supabase: ServiceClient, userId: string): Promise<UserContext> {
+type RecentMessageRow = {
+  direction: string | null
+  content: string | null
+  content_type?: string | null
+  provider_message_id?: string | null
+}
+
+function normalizeCurrentProviderMessageIds(
+  currentProviderMessageIds: string | string[] | null | undefined,
+): Set<string> {
+  const ids = Array.isArray(currentProviderMessageIds)
+    ? currentProviderMessageIds
+    : currentProviderMessageIds
+      ? [currentProviderMessageIds]
+      : []
+  return new Set(ids.filter(Boolean))
+}
+
+function isRawInteractiveTap(m: RecentMessageRow): boolean {
+  if (m.direction !== 'in' || m.content_type !== 'interactive' || !m.content) return false
+  return /^(confirm|edit)_[0-9a-f-]{36}$/i.test(m.content.trim())
+}
+
+export function buildPromptRecentMessages(
+  rows: RecentMessageRow[],
+  currentProviderMessageIds: string | string[] | null | undefined,
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const currentIds = normalizeCurrentProviderMessageIds(currentProviderMessageIds)
+  return rows
+    .slice()
+    .reverse()
+    .filter((m) => m.content)
+    .filter((m) => !isRawInteractiveTap(m))
+    .filter(
+      (m) => !m.provider_message_id || !currentIds.has(m.provider_message_id),
+    )
+    .map((m) => ({
+      role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
+      content: m.content as string,
+    }))
+}
+
+async function loadContext(
+  supabase: ServiceClient,
+  userId: string,
+  currentProviderMessageIds?: string | string[] | null,
+): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
   const { data: user } = await (supabase as unknown as {
@@ -1819,7 +1877,7 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
     .single()
   const { data: msgs } = await supabase
     .from('messages')
-    .select('direction, content, content_type, created_at')
+    .select('direction, content, content_type, created_at, provider_message_id')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(RECENT_MESSAGES_LIMIT)
@@ -1829,14 +1887,10 @@ async function loadContext(supabase: ServiceClient, userId: string): Promise<Use
   // ~1412) abaixo passa a pegar a inbound MAIS ANTIGA da janela em vez da
   // mais recente — bug Paulo+Roberto 2026-05-30 (sourceContentType invertido:
   // text→image e image→text).
-  const recentMessages = (msgs ?? [])
-    .slice()
-    .reverse()
-    .filter((m) => m.content)
-    .map((m) => ({
-      role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
-      content: m.content as string,
-    }))
+  const recentMessages = buildPromptRecentMessages(
+    (msgs ?? []) as RecentMessageRow[],
+    currentProviderMessageIds,
+  )
 
   const userTyped = user as
     | {

@@ -1429,13 +1429,19 @@ export const registraRefeicao: ToolDefinition = {
       (ctx.recentUserMessages ?? []).slice(-1)[0] ?? ''
     const kcalOverrides = parseUserKcalOverrides(lastPatientText, args.items)
     let itemsForCalc: Array<{ food_name: string; quantity_g: number; user_kcal?: number }> =
-      args.items
+      args.items.map((it: { food_name: string; quantity_g: number; user_kcal?: number | null }) => ({
+        food_name: it.food_name,
+        quantity_g: it.quantity_g,
+        ...(it.user_kcal != null ? { user_kcal: Number(it.user_kcal) } : {}),
+      }))
     if (kcalOverrides.size > 0) {
-      itemsForCalc = args.items.map((it: { food_name: string; quantity_g: number }) => ({
+      itemsForCalc = args.items.map((it: { food_name: string; quantity_g: number; user_kcal?: number | null }) => ({
         food_name: it.food_name,
         quantity_g: it.quantity_g,
         ...(kcalOverrides.has(it.food_name)
           ? { user_kcal: kcalOverrides.get(it.food_name)! }
+          : it.user_kcal != null
+            ? { user_kcal: Number(it.user_kcal) }
           : {}),
       }))
       await ctx.supabase.from('product_events').insert({

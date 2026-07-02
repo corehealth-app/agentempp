@@ -41,6 +41,8 @@ export interface MealItem {
   display_qty?: number | null
   display_unit?: string | null
   kcal: number
+  /** Kcal explicitamente informado pelo paciente para este item. */
+  user_kcal?: number | null
   protein_g: number
   carbs_g: number
   fat_g: number

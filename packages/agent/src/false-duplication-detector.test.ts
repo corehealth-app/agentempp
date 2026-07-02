@@ -131,6 +131,15 @@ describe('detectFalseDuplicationClaim', () => {
     ).toBe(true)
   })
 
+  it('pega "Recebi as duas mensagens — foi uma sessão..." (Roberto 2026-07-01)', () => {
+    expect(
+      detectFalseDuplicationClaim(
+        'Recebi as duas mensagens — foi uma sessão de 40 minutos ou duas sessões separadas?',
+        '40 minutos de musculação',
+      ),
+    ).toBe(true)
+  })
+
   it('pega "veio igual nas duas vezes"', () => {
     expect(
       detectFalseDuplicationClaim(

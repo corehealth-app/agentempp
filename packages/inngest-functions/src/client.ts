@@ -14,6 +14,7 @@ type Events = {
       userId: string
       wpp: string
       providerMessageId: string
+      providerMessageIds?: string[]
       contentType: 'text' | 'audio' | 'image'
       text?: string
       mediaUrl?: string

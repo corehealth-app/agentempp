@@ -46,6 +46,9 @@ export function parseUserKcalOverrides(
   if (!patientText || items.length === 0) return out
   const normalize = (s: string) =>
     s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const negatesKcalClaim = (segmentNorm: string) =>
+    /\b(?:nao|n)\s+(?:tem|e|eh|sao|possui|bate|chega)\b/.test(segmentNorm) ||
+    /\berrad[oa]s?\b/.test(segmentNorm)
   // Regex: número (inteiro ou decimal com . ou ,) + kcal/cal/calorias/caloria.
   // Aceita "70 kcal", "70kcal", "70 calorias", "70cal", "70,5 kcal".
   // NÃO aceita "g/grama/gramas" pra não casar com peso — pega só energia.
@@ -96,9 +99,11 @@ export function parseUserKcalOverrides(
     let lastKcal: number | null = null
     let m: RegExpExecArray | null
     KCAL_RE.lastIndex = 0
-    while ((m = KCAL_RE.exec(seg)) !== null) {
-      const n = Number(m[1]!.replace(',', '.'))
-      if (Number.isFinite(n) && n >= 0) lastKcal = n
+    if (!negatesKcalClaim(segNorm)) {
+      while ((m = KCAL_RE.exec(seg)) !== null) {
+        const n = Number(m[1]!.replace(',', '.'))
+        if (Number.isFinite(n) && n >= 0) lastKcal = n
+      }
     }
     segInfos.push({ seg, segNorm, lastKcal, bestItem })
   }
@@ -363,6 +368,56 @@ export function estimateMacros(foodName: string): {
   }
   // Fallback genérico — prato preparado
   return { category: 'prato_genérico', kcal: 150, protein: 7, carbs: 18, fat: 5, fiber: 1 }
+}
+
+function normalizeFoodText(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+const SIMPLE_FRESH_FRUITS = new Set([
+  'abacaxi',
+  'banana',
+  'caqui',
+  'figo',
+  'goiaba',
+  'jabuticaba',
+  'kiwi',
+  'laranja',
+  'maca',
+  'mamao',
+  'manga',
+  'melao',
+  'melancia',
+  'morango',
+  'pera',
+  'pessego',
+  'tangerina',
+  'uva',
+])
+
+function isSimpleFreshFruitName(foodName: string): boolean {
+  return SIMPLE_FRESH_FRUITS.has(normalizeFoodText(foodName))
+}
+
+function isSweetDerivedFruitMismatch(
+  foodName: string,
+  matchedName: string | null | undefined,
+  matchCategory: string | null | undefined,
+): boolean {
+  if (!isSimpleFreshFruitName(foodName)) return false
+  const matched = normalizeFoodText(matchedName ?? '')
+  if (!matched || matched === normalizeFoodText(foodName)) return false
+  return (matchCategory ?? '').toLowerCase().includes('doce')
+}
+
+function isImplausibleFreshFruitHistory(
+  foodName: string,
+  kcalPer100g: number,
+  carbsPer100g: number,
+  fatPer100g: number,
+): boolean {
+  if (!isSimpleFreshFruitName(foodName)) return false
+  return kcalPer100g > 150 || carbsPer100g > 40 || fatPer100g > 8
 }
 
 export interface MealCalcResult {
@@ -702,11 +757,17 @@ export async function lookupUserHistory(
     })
   if (!sub || sub.quantity_g <= 0) return null
   const factor100 = 100 / Number(sub.quantity_g)
+  const kcalPer100g = +(Number(sub.kcal) * factor100).toFixed(2)
+  const carbsPer100g = +(Number(sub.carbs_g) * factor100).toFixed(2)
+  const fatPer100g = +(Number(sub.fat_g) * factor100).toFixed(2)
+  if (isImplausibleFreshFruitHistory(foodName, kcalPer100g, carbsPer100g, fatPer100g)) {
+    return null
+  }
   return {
-    kcal_per_100g: +(Number(sub.kcal) * factor100).toFixed(2),
+    kcal_per_100g: kcalPer100g,
     protein_g: +(Number(sub.protein_g) * factor100).toFixed(2),
-    carbs_g: +(Number(sub.carbs_g) * factor100).toFixed(2),
-    fat_g: +(Number(sub.fat_g) * factor100).toFixed(2),
+    carbs_g: carbsPer100g,
+    fat_g: fatPer100g,
     fiber_g: 0,
     matched_log_id: sub.id,
     matched_food_name: sub.food_name,
@@ -1112,6 +1173,11 @@ export async function calcMealMacros(
     const anchor = extractAnchor(it.food_name)
     const matchedNameLower = (m.name_pt ?? '').toLowerCase()
     const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
+    const fruitSweetMismatch = isSweetDerivedFruitMismatch(
+      it.food_name,
+      m.name_pt,
+      m.category,
+    )
 
     // Threshold dinâmico por tamanho da query:
     // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa
@@ -1124,7 +1190,13 @@ export async function calcMealMacros(
     const queryLen = it.food_name.trim().length
     const isShortQuery = queryWords <= 2 || queryLen <= 15
     const matchThreshold = isShortQuery ? 0.3 : 0.45
-    if (m.id != null && m.kcal_per_100g != null && m.similarity >= matchThreshold && anchorMatches) {
+    if (
+      m.id != null &&
+      m.kcal_per_100g != null &&
+      m.similarity >= matchThreshold &&
+      anchorMatches &&
+      !fruitSweetMismatch
+    ) {
       // Camada 2 do guard de bebida zero (Bug Luciana 2026-05-25): nome sem
       // keyword de bebida ("zero" + nome genérico) mas que casou um item de
       // categoria "bebidas" no food_db. Aqui usamos a CATEGORIA do match pra
@@ -1323,11 +1395,17 @@ export async function calcMealMacros(
         m.id != null &&
         m.kcal_per_100g != null &&
         m.similarity >= matchThreshold &&
-        !anchorMatches
+        (!anchorMatches || fruitSweetMismatch)
       ) {
-        auditWarnings.push(
-          `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — âncora "${anchor}" não aparece no nome.`,
-        )
+        if (fruitSweetMismatch) {
+          auditWarnings.push(
+            `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — fruta fresca simples não deve casar com doce derivado.`,
+          )
+        } else {
+          auditWarnings.push(
+            `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — âncora "${anchor}" não aparece no nome.`,
+          )
+        }
       }
       // ────────────────────────────────────────────────────────────────────
       // FALLBACK 1: reusa do histórico do paciente (Roberto pediu: "pode já
@@ -1382,48 +1460,54 @@ export async function calcMealMacros(
           const medProt100 = median(per100g.map((p) => p.protein_g))
           const medCarb100 = median(per100g.map((p) => p.carbs_g))
           const medFat100 = median(per100g.map((p) => p.fat_g))
-          const q = it.quantity_g
-          const reKcal = +((medKcal100 * q) / 100).toFixed(1)
-          const reProt = +((medProt100 * q) / 100).toFixed(2)
-          const reCarb = +((medCarb100 * q) / 100).toFixed(2)
-          const reFat = +((medFat100 * q) / 100).toFixed(2)
-          auditWarnings.push(
-            `"${it.food_name}" reusado de ${per100g.length} registros (mediana: ${medKcal100.toFixed(0)} kcal/100g → ${reKcal} kcal pra ${q}g).`,
-          )
-          // Loga pra auditoria (Roberto 2026-06-03): rastreabilidade de
-          // quando reuso de histórico foi usado em vez de TACO.
-          await supaTyped.from('product_events').insert({
-            user_id: userIdHint ?? null,
-            event: 'meal_calc.history_reused',
-            properties: {
+          if (isImplausibleFreshFruitHistory(it.food_name, medKcal100, medCarb100, medFat100)) {
+            auditWarnings.push(
+              `"${it.food_name}" ignorou histórico implausível para fruta fresca (${medKcal100.toFixed(0)} kcal/100g).`,
+            )
+          } else {
+            const q = it.quantity_g
+            const reKcal = +((medKcal100 * q) / 100).toFixed(1)
+            const reProt = +((medProt100 * q) / 100).toFixed(2)
+            const reCarb = +((medCarb100 * q) / 100).toFixed(2)
+            const reFat = +((medFat100 * q) / 100).toFixed(2)
+            auditWarnings.push(
+              `"${it.food_name}" reusado de ${per100g.length} registros (mediana: ${medKcal100.toFixed(0)} kcal/100g → ${reKcal} kcal pra ${q}g).`,
+            )
+            // Loga pra auditoria (Roberto 2026-06-03): rastreabilidade de
+            // quando reuso de histórico foi usado em vez de TACO.
+            await supaTyped.from('product_events').insert({
+              user_id: userIdHint ?? null,
+              event: 'meal_calc.history_reused',
+              properties: {
+                food_name: it.food_name,
+                source_log_count: per100g.length,
+                kcal_per_100g_median: +medKcal100.toFixed(1),
+                quantity_g: q,
+                kcal_result: reKcal,
+              },
+            })
+            const natRe = naturalUnit(it.food_name, it.quantity_g)
+            matched.push({
               food_name: it.food_name,
-              source_log_count: per100g.length,
-              kcal_per_100g_median: +medKcal100.toFixed(1),
-              quantity_g: q,
-              kcal_result: reKcal,
-            },
-          })
-          const natRe = naturalUnit(it.food_name, it.quantity_g)
-          matched.push({
-            food_name: it.food_name,
-            matched_taco_name: '[reuso histórico]',
-            matched_taco_id: null,
-            quantity_g: it.quantity_g,
-            kcal: reKcal,
-            protein_g: reProt,
-            carbs_g: reCarb,
-            fat_g: reFat,
-            fiber_g: 0,
-            similarity: 1.0,
-            source: 'taco',
-            display_qty: natRe.display_qty,
-            display_unit: natRe.display_unit,
-          })
-          totals.kcal += reKcal
-          totals.protein_g += reProt
-          totals.carbs_g += reCarb
-          totals.fat_g += reFat
-          continue
+              matched_taco_name: '[reuso histórico]',
+              matched_taco_id: null,
+              quantity_g: it.quantity_g,
+              kcal: reKcal,
+              protein_g: reProt,
+              carbs_g: reCarb,
+              fat_g: reFat,
+              fiber_g: 0,
+              similarity: 1.0,
+              source: 'taco',
+              display_qty: natRe.display_qty,
+              display_unit: natRe.display_unit,
+            })
+            totals.kcal += reKcal
+            totals.protein_g += reProt
+            totals.carbs_g += reCarb
+            totals.fat_g += reFat
+            continue
+          }
         }
       }
       // ────────────────────────────────────────────────────────────────────

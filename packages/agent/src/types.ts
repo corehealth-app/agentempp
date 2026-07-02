@@ -8,6 +8,8 @@ export interface AgentInput {
   from: string
   /** ID estável da mensagem no provider, para idempotência. */
   providerMessageId: string
+  /** IDs das mensagens do provider que compõem o turno atual agregado pelo buffer. */
+  providerMessageIds?: string[]
   /** Conteúdo principal. */
   text?: string
   /** Para mídia única (compatibilidade). */

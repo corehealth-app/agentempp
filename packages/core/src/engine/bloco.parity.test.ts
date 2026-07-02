@@ -46,10 +46,10 @@ describe('fechamento (closer): replay multi-dia cobrindo as 6 ramificações', (
       { hasActivity: true, dayStatus: 'incomplete_no_response', caloriesConsumed: 400, caloriesTarget: 1843, dailyBalance: -1443 }, // sub-reg incomplete → 0
       { hasActivity: false, dayStatus: 'complete', caloriesConsumed: 0, caloriesTarget: 1843, dailyBalance: -1843 }, // sem atividade → 0
       { hasActivity: true, dayStatus: 'user_skipped', caloriesConsumed: 2076, caloriesTarget: 1843, dailyBalance: -332 }, // 832
-      { hasActivity: true, dayStatus: 'incomplete_no_response', caloriesConsumed: 1300, caloriesTarget: 1843, dailyBalance: -343 }, // incomplete >=50% → 343
+      { hasActivity: true, dayStatus: 'incomplete_no_response', caloriesConsumed: 1300, caloriesTarget: 1843, dailyBalance: -343 }, // incomplete >=50% → 0
       { hasActivity: true, dayStatus: 'complete', caloriesConsumed: 2200, caloriesTarget: 1843, dailyBalance: 357 }, // excedente leve → 143
     ]
-    // 843 + 500 + 0 + 0 + 832 + 343 + 143 = 2661
-    expect(bloco(dias, 500)).toBe(2661)
+    // 843 + 500 + 0 + 0 + 832 + 0 + 143 = 2318
+    expect(bloco(dias, 500)).toBe(2318)
   })
 })

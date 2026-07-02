@@ -204,6 +204,133 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
   })
 })
 
+describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
+  it('rejeita match fuzzy goiaba → goiabada e cai em estimativa de fruta', async () => {
+    const mock = makeMock({
+      goiaba: {
+        id: 387,
+        name_pt: 'goiabada',
+        category: 'doces',
+        similarity: 0.6,
+        kcal_per_100g: 255,
+        protein_g: 0.4,
+        carbs_g: 65,
+        fat_g: 0.1,
+        fiber_g: 2.5,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'goiaba', quantity_g: 150 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.matched_taco_name).toMatch(/estimativa fruta/i)
+    expect(r.items[0]?.kcal).toBeLessThan(120)
+    expect(r.audit_warnings.join(' ')).toMatch(/doce derivado/i)
+  })
+
+  it('goiabada continua resolvendo como doce normalmente', async () => {
+    const mock = makeMock({
+      goiabada: {
+        id: 387,
+        name_pt: 'goiabada',
+        category: 'doces',
+        similarity: 1,
+        kcal_per_100g: 255,
+        protein_g: 0.4,
+        carbs_g: 65,
+        fat_g: 0.1,
+        fiber_g: 2.5,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'goiabada', quantity_g: 150 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.matched_taco_name).toBe('goiabada')
+    expect(r.items[0]?.kcal).toBeCloseTo(382.5, 1)
+  })
+
+  it('não reutiliza histórico pessoal implausível de fruta fresca quando há match canônico', async () => {
+    const mock = makeMock(
+      {
+        goiaba: {
+          id: 9001,
+          name_pt: 'goiaba',
+          category: 'frutas',
+          similarity: 1,
+          kcal_per_100g: 63.33,
+          protein_g: 0.6,
+          carbs_g: 10.73,
+          fat_g: 0.23,
+          fiber_g: 5.4,
+        },
+      },
+      [
+        {
+          id: 'old-wrong-goiaba',
+          food_name: 'goiaba',
+          quantity_g: 150,
+          kcal: 382.5,
+          protein_g: 0.6,
+          carbs_g: 97.5,
+          fat_g: 0.15,
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'goiaba', quantity_g: 150 }],
+      'BR',
+      'paulo',
+    )
+
+    expect(r.items[0]?.matched_taco_name).toBe('goiaba')
+    expect(r.items[0]?.kcal).toBeCloseTo(95, 0)
+  })
+
+  it('sem match canônico, também não cai no histórico antigo errado da goiaba', async () => {
+    const mock = makeMock(
+      {
+        goiaba: {
+          id: 387,
+          name_pt: 'goiabada',
+          category: 'doces',
+          similarity: 0.6,
+          kcal_per_100g: 255,
+          protein_g: 0.4,
+          carbs_g: 65,
+          fat_g: 0.1,
+          fiber_g: 2.5,
+        },
+      },
+      [
+        {
+          id: 'old-wrong-goiaba',
+          food_name: 'goiaba',
+          quantity_g: 150,
+          kcal: 382.5,
+          protein_g: 0.6,
+          carbs_g: 97.5,
+          fat_g: 0.15,
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'goiaba', quantity_g: 150 }],
+      'BR',
+      'paulo',
+    )
+
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.matched_taco_name).toMatch(/estimativa fruta/i)
+    expect(r.items[0]?.kcal).toBeLessThan(120)
+    expect(r.audit_warnings.join(' ')).toMatch(/histórico implausível/i)
+  })
+})
+
 describe('calcMealMacros — separação user_warnings vs audit_warnings', () => {
   it('alimento sem match (cai em category_estimate) gera SOMENTE audit_warning', async () => {
     const mock = makeMock({}) // nenhum match
@@ -1076,6 +1203,15 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
     // 2 orphans > 1 item → não aplica alinhamento. Mas como há 1 item,
     // o lastSeenItem default cobre (último kcal vence).
     expect(overrides.get('wrap')).toBe(80)
+  })
+
+  it('frase negada "goiaba não tem 383 kcal" não vira override de 383', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'Goiaba não tem 383kcal',
+      [{ food_name: 'goiaba' }],
+    )
+    expect(overrides.size).toBe(0)
   })
 })
 

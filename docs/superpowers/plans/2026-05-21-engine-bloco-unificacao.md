@@ -70,9 +70,9 @@ describe('creditDayToBloco — regra de crédito por dia (fiel ao daily-closer)'
     ).toBe(0)
   })
 
-  it('incomplete >=50%: credita só o déficit observado (sem designDeficit)', () => {
-    // max(0, -(-343)) = 343
-    expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response' })).toBe(343)
+  it('incomplete >=50%: credita 0 enquanto o gap segue aberto', () => {
+    // Superseded 2026-07-01: Roberto escolheu opção 1 — gap aberto não entra no bloco.
+    expect(creditDayToBloco({ ...base, dayStatus: 'incomplete_no_response' })).toBe(0)
   })
 
   it('user_skipped: credita normal (designDeficit + déficit), mesmo com consumo baixo', () => {
@@ -167,7 +167,7 @@ export function creditDayToBloco(d: DayCreditInput): number {
     // sub-registro: déficit observado é fake → zera; complete credita só design.
     return d.dayStatus === 'complete' || d.dayStatus == null ? d.designDeficit : 0
   }
-  if (d.dayStatus === 'incomplete_no_response') return Math.max(0, -d.dailyBalance)
+  if (d.dayStatus === 'incomplete_no_response') return 0
   return Math.max(0, d.designDeficit - d.dailyBalance)
 }
 

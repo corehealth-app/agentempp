@@ -750,6 +750,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   quantity_g: it.quantity_g,
                   display_qty: it.display_qty,
                   display_unit: it.display_unit,
+                  user_kcal: it.user_kcal ?? undefined,
                   kcal: it.kcal,
                   protein_g: it.protein_g,
                   carbs_g: it.carbs_g,

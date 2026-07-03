@@ -13,6 +13,10 @@
  *  - recomposicao → fome média (muita/moderada/baixa) → ajusta o déficit
  *  - ganho_massa  → treinos de musculação/semana → ajusta fator de atividade
  *  - manutencao   → dias de atividade física/semana
+ * Extensão operacional (Roberto 2026-07-03): mesmo em recomposição, confirmar
+ * frequência semanal de treino/atividade para não deixar `training_frequency`
+ * stale. A meta calórica de recomp não usa atividade, mas a proteína usa esse
+ * campo e o coach precisa manter o perfil factual atualizado.
  * "O que NÃO pedir": contagem de calorias, cálculos do usuário, detalhe
  * excessivo de treino — só sinais simples.
  */
@@ -44,10 +48,11 @@ export function reevaluationKickoff(
     typeof opts.currentTargetWeightKg === 'number' && opts.currentTargetWeightKg > 0
   const hasTargetBf =
     typeof opts.currentTargetBfPercent === 'number' && opts.currentTargetBfPercent > 0
-  const hasTargetImc =
-    typeof opts.currentTargetImc === 'number' && opts.currentTargetImc > 0
+  const hasTargetImc = typeof opts.currentTargetImc === 'number' && opts.currentTargetImc > 0
   const hasAnyTarget = hasTargetWeight || hasTargetBf || hasTargetImc
-  const totalPerguntas = hasAnyTarget ? 4 : 3
+  const asksTrainingFrequency = protocol === 'recomposicao'
+  const basePerguntas = asksTrainingFrequency ? 4 : 3
+  const totalPerguntas = hasAnyTarget ? basePerguntas + 1 : basePerguntas
   const abertura =
     `🎯 Hoje fecha *14 dias* de acompanhamento — hora da sua reavaliação! ` +
     `Vou coletar ${totalPerguntas} dados pra recalibrar tua meta com precisão. Me manda:`
@@ -64,11 +69,14 @@ export function reevaluationKickoff(
       q3 =
         '\n3) Quantos *dias de atividade física* por semana? (considere a musculação como referência)'
       break
-    case 'recomposicao':
     default:
       q3 = '\n3) Como tá tua *fome* na média desses dias — *muita, moderada ou baixa*?'
       break
   }
+
+  const q4TrainingFrequency = asksTrainingFrequency
+    ? '\n4) Quantas vezes por semana você está fazendo *atividade física/treino* hoje? Se continua igual, pode dizer "continua igual".'
+    : ''
 
   // Q4 opcional — confirma meta atual. Roberto 2026-06-03 (peso_kg) + audit
   // 06-18 (BF + IMC). Manual MPP §2.18 não menciona, é extensão pra reaproveitar
@@ -77,16 +85,17 @@ export function reevaluationKickoff(
   // — ordem importa só pra edge case raro de ambos definidos.
   // IMC é derivado (peso/altura²) — Q4 sugere migração pra peso/BF (a tool
   // define_meta_peso não aceita IMC, então é o caminho válido).
-  let q4 = ''
+  const targetQuestionNumber = asksTrainingFrequency ? 5 : 4
+  let qTarget = ''
   if (hasTargetWeight) {
-    q4 = `\n4) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
+    qTarget = `\n${targetQuestionNumber}) Sua *meta de peso* continua sendo *${opts.currentTargetWeightKg}kg* ou mudou? Se mudou, me diz o novo valor.`
   } else if (hasTargetBf) {
-    q4 = `\n4) Sua *meta de gordura corporal* continua sendo *${opts.currentTargetBfPercent}%* ou mudou? Se mudou, me diz o novo valor.`
+    qTarget = `\n${targetQuestionNumber}) Sua *meta de gordura corporal* continua sendo *${opts.currentTargetBfPercent}%* ou mudou? Se mudou, me diz o novo valor.`
   } else if (hasTargetImc) {
-    q4 =
-      `\n4) Sua *meta de IMC* continua sendo *${opts.currentTargetImc}* ou prefere mudar? ` +
+    qTarget =
+      `\n${targetQuestionNumber}) Sua *meta de IMC* continua sendo *${opts.currentTargetImc}* ou prefere mudar? ` +
       `Se quiser, dá pra acompanhar por *peso (kg)* ou *% de gordura* — costuma ser mais fácil de visualizar no dia a dia. Me diz como prefere seguir.`
   }
 
-  return abertura + q1 + q2 + q3 + q4
+  return abertura + q1 + q2 + q3 + q4TrainingFrequency + qTarget
 }

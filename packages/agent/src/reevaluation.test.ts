@@ -1,14 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { reevaluationKickoff } from './reevaluation.js'
 
 describe('reevaluationKickoff — script oficial do manual MPP (14 dias)', () => {
-  it('recomposição: peso + 3 fotos (frente/lado/costas) + FOME (muita/moderada/baixa)', () => {
+  it('recomposição: peso + fotos + fome + frequência de treino/atividade', () => {
     const t = reevaluationKickoff('recomposicao')
     expect(t).toMatch(/14 dias/i)
+    expect(t).toMatch(/Vou coletar 4 dados/i)
     expect(t).toMatch(/peso/i)
     expect(t).toMatch(/frente.*lado.*costas/i)
     expect(t).toMatch(/fome/i)
     expect(t).toMatch(/muita/i)
+    expect(t).toMatch(/atividade física\/treino/i)
+    expect(t).toMatch(/continua igual/i)
     // NÃO pede medidas/BF% nem contagem de calorias ("o que não pedir")
     expect(t).not.toMatch(/medidas|BF%|cont(e|a)\w* de calorias/i)
   })
@@ -32,29 +35,31 @@ describe('reevaluationKickoff — script oficial do manual MPP (14 dias)', () =>
     expect(t).toMatch(/14 dias/i)
   })
 
-  // Audit 06-18: Q4 estendida pra cobrir BF além de peso_kg. Bug raiz era
+  // Audit 06-18: pergunta de meta estendida pra cobrir BF além de peso_kg. Bug raiz era
   // que engagement-sender não passava nem peso (select sem goal_type), mas
   // o reevaluation.ts em si só cobria peso_kg. Testa ambos os ramos.
-  describe('Q4 opcional — meta de peso OU BF', () => {
-    it('sem meta definida → 3 perguntas (sem Q4)', () => {
+  describe('pergunta opcional — meta de peso, BF ou IMC', () => {
+    it('sem meta definida em recomposição → 4 perguntas, sem meta extra', () => {
       const t = reevaluationKickoff('recomposicao')
-      expect(t).toMatch(/Vou coletar 3 dados/i)
-      expect(t).not.toMatch(/4\)/)
+      expect(t).toMatch(/Vou coletar 4 dados/i)
+      expect(t).toMatch(/4\) Quantas vezes por semana/i)
+      expect(t).not.toMatch(/5\)/)
       expect(t).not.toMatch(/meta de peso/i)
       expect(t).not.toMatch(/meta de gordura/i)
     })
 
-    it('goal_type=peso_kg → 4 perguntas, Q4 cita peso atual', () => {
+    it('goal_type=peso_kg em recomposição → 5 perguntas, Q5 cita peso atual', () => {
       const t = reevaluationKickoff('recomposicao', { currentTargetWeightKg: 70 })
-      expect(t).toMatch(/Vou coletar 4 dados/i)
-      expect(t).toMatch(/4\) Sua \*meta de peso\* continua sendo \*70kg\*/i)
+      expect(t).toMatch(/Vou coletar 5 dados/i)
+      expect(t).toMatch(/4\) Quantas vezes por semana/i)
+      expect(t).toMatch(/5\) Sua \*meta de peso\* continua sendo \*70kg\*/i)
       expect(t).not.toMatch(/gordura corporal/i)
     })
 
-    it('goal_type=BF (caso Roberto 06-18) → 4 perguntas, Q4 cita BF%', () => {
+    it('goal_type=BF (caso Roberto 06-18) em recomposição → 5 perguntas, Q5 cita BF%', () => {
       const t = reevaluationKickoff('recomposicao', { currentTargetBfPercent: 20 })
-      expect(t).toMatch(/Vou coletar 4 dados/i)
-      expect(t).toMatch(/4\) Sua \*meta de gordura corporal\* continua sendo \*20%\*/i)
+      expect(t).toMatch(/Vou coletar 5 dados/i)
+      expect(t).toMatch(/5\) Sua \*meta de gordura corporal\* continua sendo \*20%\*/i)
       expect(t).not.toMatch(/meta de peso continua/i)
     })
 
@@ -72,14 +77,15 @@ describe('reevaluationKickoff — script oficial do manual MPP (14 dias)', () =>
         currentTargetWeightKg: 0,
         currentTargetBfPercent: -5,
       })
-      expect(t).not.toMatch(/4\)/)
+      expect(t).toMatch(/4\) Quantas vezes por semana/i)
+      expect(t).not.toMatch(/5\)/)
     })
 
     // Audit 06-18 extensão IMC: cobre os 5 pacientes em prod
-    it('goal_type=IMC (5 pacientes em prod) → 4 perguntas, Q4 cita IMC + sugere migração', () => {
+    it('goal_type=IMC (5 pacientes em prod) → 5 perguntas, Q5 cita IMC + sugere migração', () => {
       const t = reevaluationKickoff('recomposicao', { currentTargetImc: 23 })
-      expect(t).toMatch(/Vou coletar 4 dados/i)
-      expect(t).toMatch(/4\) Sua \*meta de IMC\* continua sendo \*23\*/i)
+      expect(t).toMatch(/Vou coletar 5 dados/i)
+      expect(t).toMatch(/5\) Sua \*meta de IMC\* continua sendo \*23\*/i)
       // Sugere migração pra peso ou BF (não força)
       expect(t).toMatch(/peso \(kg\)/i)
       expect(t).toMatch(/% de gordura/i)
@@ -103,9 +109,10 @@ describe('reevaluationKickoff — script oficial do manual MPP (14 dias)', () =>
       expect(t).not.toMatch(/meta de IMC/i)
     })
 
-    it('IMC zero/negativo → fallback pra 3 perguntas', () => {
+    it('IMC zero/negativo → fallback pra 4 perguntas de recomposição', () => {
       const t = reevaluationKickoff('recomposicao', { currentTargetImc: 0 })
-      expect(t).not.toMatch(/4\)/)
+      expect(t).toMatch(/4\) Quantas vezes por semana/i)
+      expect(t).not.toMatch(/5\)/)
       expect(t).not.toMatch(/meta de IMC/i)
     })
   })

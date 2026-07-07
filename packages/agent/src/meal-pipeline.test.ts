@@ -606,6 +606,35 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     expect(r.items[0]?.kcal).toBe(89) // banana, não whey
     expect(r.items[0]?.matched_taco_name).not.toContain('histórico')
   })
+
+  it('não reutiliza histórico com pele quando paciente informa "sem pele" — caso Roberto', async () => {
+    const mock = makeMock(
+      {},
+      [
+        {
+          id: 'log-sobrecoxa-com-pele',
+          food_name: 'sobrecoxa de frango assada',
+          quantity_g: 240,
+          kcal: 520.8,
+          protein_g: 64.8,
+          carbs_g: 0,
+          fat_g: 26.4,
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'sobrecoxa de frango assada sem pele', quantity_g: 240 }],
+      'BR',
+      'user-roberto',
+    )
+
+    expect(r.items[0]?.matched_taco_name).not.toContain('histórico')
+    expect(r.items[0]?.matched_taco_name).not.toBe('[reuso histórico]')
+    expect(r.items[0]?.kcal).toBeLessThan(520.8)
+    expect(r.items[0]?.fat_g).toBeLessThan(26.4)
+  })
 })
 
 describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14)', () => {

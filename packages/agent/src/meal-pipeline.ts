@@ -439,6 +439,24 @@ function isImplausibleFreshFruitHistory(
   return kcalPer100g > 150 || carbsPer100g > 40 || fatPer100g > 8
 }
 
+type SkinState = 'skinless' | 'skin_on' | 'unspecified'
+
+function inferSkinState(foodName: string): SkinState {
+  const n = normalizeFoodText(foodName)
+  if (/\bsem\s+(?:a\s+)?pele\b|\bpele\s+(?:retirada|removida)\b|\b(?:retirada|removida)\s+(?:a\s+)?pele\b/.test(n)) {
+    return 'skinless'
+  }
+  if (/\bcom\s+(?:a\s+)?pele\b/.test(n)) return 'skin_on'
+  return 'unspecified'
+}
+
+function hasSkinModifierConflict(currentFoodName: string, historicalFoodName: string): boolean {
+  const current = inferSkinState(currentFoodName)
+  const historical = inferSkinState(historicalFoodName)
+  if (current === 'unspecified' && historical === 'unspecified') return false
+  return current !== historical
+}
+
 export interface MealCalcResult {
   items: MealItemMatched[]
   totals: {
@@ -766,11 +784,12 @@ export async function lookupUserHistory(
     carbs_g: number
     fat_g: number
   }>
+  const compatibleRows = rows.filter((r) => !hasSkinModifierConflict(foodName, r.food_name))
   // Match exato (normalizado) primeiro; depois substring forte.
-  const exact = rows.find((r) => normalize(r.food_name) === target)
+  const exact = compatibleRows.find((r) => normalize(r.food_name) === target)
   const sub =
     exact ??
-    rows.find((r) => {
+    compatibleRows.find((r) => {
       const n = normalize(r.food_name)
       return n.length >= 4 && target.length >= 4 && (n.includes(target) || target.includes(n))
     })
@@ -1454,9 +1473,22 @@ export async function calcMealMacros(
         .order('created_at', { ascending: false })
         .limit(20)
       if (prior && prior.length > 0) {
+        const compatiblePrior = (prior as Array<{
+          food_name: string
+          quantity_g: number
+          kcal: number
+          protein_g: number
+          carbs_g: number
+          fat_g: number
+        }>).filter((p) => !hasSkinModifierConflict(it.food_name, p.food_name))
+        if (compatiblePrior.length !== prior.length) {
+          auditWarnings.push(
+            `"${it.food_name}" ignorou ${prior.length - compatiblePrior.length} registro(s) do histórico por diferença de pele/composição.`,
+          )
+        }
         // Normaliza tudo pra per-100g (kcal/100g, P/100g, C/100g, G/100g),
         // descarta linhas com quantity_g ≤ 0 (lixo).
-        const per100g = (prior as Array<{ quantity_g: number; kcal: number; protein_g: number; carbs_g: number; fat_g: number }>)
+        const per100g = compatiblePrior
           .filter((p) => Number(p.quantity_g) > 0)
           .map((p) => {
             const q = Number(p.quantity_g)

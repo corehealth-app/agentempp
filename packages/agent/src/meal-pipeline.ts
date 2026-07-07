@@ -140,6 +140,25 @@ export function parseUserKcalOverrides(
   return out
 }
 
+/**
+ * Variante em janela: aplica o parser em mensagens recentes em ordem
+ * cronológica. A última menção explícita vence, mas confirmações curtas
+ * posteriores ("sim", "isso") não apagam kcal já informada.
+ */
+export function parseUserKcalOverridesFromMessages(
+  patientTexts: Array<string | null | undefined>,
+  items: Array<{ food_name: string }>,
+): Map<string, number> {
+  const merged = new Map<string, number>()
+  for (const text of patientTexts) {
+    const overrides = parseUserKcalOverrides(text, items)
+    for (const [foodName, kcal] of overrides.entries()) {
+      merged.set(foodName, kcal)
+    }
+  }
+  return merged
+}
+
 export interface MealItemMatched {
   food_name: string
   matched_taco_name: string

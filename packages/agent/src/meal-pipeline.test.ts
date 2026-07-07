@@ -1213,6 +1213,25 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
     )
     expect(overrides.size).toBe(0)
   })
+
+  it('janela recente preserva kcal de mensagem anterior quando a última é confirmação curta', async () => {
+    const { parseUserKcalOverridesFromMessages } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverridesFromMessages(
+      ['Torta de legumes 80 calorias\nPão baguete 60 calorias', 'Sim isso'],
+      [{ food_name: 'torta de legumes' }, { food_name: 'pão baguete' }],
+    )
+    expect(overrides.get('torta de legumes')).toBe(80)
+    expect(overrides.get('pão baguete')).toBe(60)
+  })
+
+  it('janela recente deixa a mensagem mais nova vencer quando o paciente corrige kcal', async () => {
+    const { parseUserKcalOverridesFromMessages } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverridesFromMessages(
+      ['Torta de legumes 80 calorias', 'torta de legumes 95 kcal'],
+      [{ food_name: 'torta de legumes' }],
+    )
+    expect(overrides.get('torta de legumes')).toBe(95)
+  })
 })
 
 describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () => {

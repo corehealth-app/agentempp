@@ -30,6 +30,7 @@ import {
   parseOnboardingButtonId,
   registraRefeicao,
   registraTreino,
+  shouldInferReplaceAfterEdit,
   splitRegistrationParts,
   type EduCommentInput,
   type MealItem,
@@ -417,6 +418,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           kcalEst?: number | null
           raw_args?: Record<string, unknown>
           source_provider_message_id?: string
+          source_text?: string | null
           /** Roberto 2026-06-01: pending de correção. Quando true, o execute
            * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
            * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
@@ -440,7 +442,10 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           userCountry,
           userTimezone,
           providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
-          recentUserMessages: [],
+          recentUserMessages:
+            typeof proposal.source_text === 'string' && proposal.source_text.trim()
+              ? [proposal.source_text]
+              : [],
           // Bug I2 (Luciana 2026-06-14 15:44 BRT, pending bfdad07b): tap em
           // pending antigo gravava meal_type ERRADO. proposal.mealType='cafe'
           // (salvo às 13h) virava 'lanche' no DB (autocorrect por localHour=15),
@@ -676,7 +681,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           // E (b) pending anterior status='edited' nos últimos 30min (sinal
           // que paciente já interagiu com proposta antes desse tap).
           let effectiveReplace = proposal.replace === true
-          if (!effectiveReplace && proposal.kind === 'meal' && proposal.mealType) {
+          if (proposal.kind === 'meal' && proposal.mealType) {
             try {
               // Audit 06-26 sprint pendentes: extraído pra helpers canônicos
               // @mpp/agent timezone-utils — antes era parser inline duplicado
@@ -702,7 +707,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   .limit(1),
                 supabase
                   .from('pending_registrations')
-                  .select('id')
+                  .select('id, proposal')
                   .eq('user_id', userId)
                   .eq('status', 'edited')
                   // Review HIGH 2 (audit 06-25): filtra por mealType MATCHING
@@ -719,8 +724,28 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   .limit(1),
               ])
               const hasPriorMealOfSameType = (sameDayRes.data ?? []).length > 0
-              const hasPriorEdited = (priorEditedRes.data ?? []).length > 0
-              if (hasPriorMealOfSameType && hasPriorEdited) {
+              const priorEditedRows = (priorEditedRes.data ?? []) as Array<{
+                id?: string | null
+                proposal?: { items?: Array<{ name?: string; food_name?: string; quantity_g?: number }> } | null
+              }>
+              const hasPriorEdited = priorEditedRows.length > 0
+              const decision = shouldInferReplaceAfterEdit({
+                hasPriorMealOfSameType,
+                hasPriorEditedPending: hasPriorEdited,
+                recentUserMessages:
+                  typeof proposal.source_text === 'string' && proposal.source_text.trim()
+                    ? [proposal.source_text]
+                    : [],
+                newItems: (proposal.items ?? []).map((it) => ({
+                  food_name: it.name,
+                  quantity_g: it.quantity_g,
+                })),
+                editedPendingItems: (priorEditedRows[0]?.proposal?.items ?? []).map((it) => ({
+                  food_name: it.food_name ?? it.name,
+                  quantity_g: it.quantity_g,
+                })),
+              })
+              if (!effectiveReplace && decision.inferReplace) {
                 effectiveReplace = true
                 await supabase.from('product_events').insert({
                   user_id: userId,
@@ -728,6 +753,21 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   properties: {
                     pendingId,
                     meal_type: proposal.mealType,
+                    reason: decision.reason,
+                    overlap_ratio: decision.overlapRatio,
+                  },
+                })
+              } else if (effectiveReplace && hasPriorMealOfSameType && hasPriorEdited && !decision.inferReplace) {
+                effectiveReplace = false
+                await supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'tap.replace_blocked_weak_evidence',
+                  properties: {
+                    pendingId,
+                    meal_type: proposal.mealType,
+                    prior_edited_pending_id: priorEditedRows[0]?.id ?? null,
+                    reason: decision.reason,
+                    overlap_ratio: decision.overlapRatio,
                   },
                 })
               }

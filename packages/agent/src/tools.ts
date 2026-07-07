@@ -15,7 +15,7 @@ import {
 } from '@mpp/core'
 import type { TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
-import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
+import { calcMealMacros, parseUserKcalOverridesFromMessages } from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -26,6 +26,7 @@ import { classifyWeightGoal } from './weight-goal-classifier.js'
 import { classifyBfGoal } from './bf-goal-classifier.js'
 import { detectConsumedDate } from './consumed-date-detector.js'
 import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
+import { decideReplaceRequest } from './replace-decision.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -1196,16 +1197,10 @@ export const registraRefeicao: ToolDefinition = {
           },
         })
       }
-      const correctionWord = detectCorrectionIntent(recentMsgs)
-
-      // Audit 06-25 Bug D Camada B: evidência alternativa CONTEXTO_CORRECAO_DE_PROPOSTA.
-      // Quando paciente edita pending recente (status='edited' em ≤30min) E há
-      // proposta `Confirma?` outbound recente, é correção legítima mesmo sem
-      // palavra verbal ou overlap. Caso real Luciana: editou pending pão,
-      // sistema propôs corrigido, ela confirmou — tudo pelo botão, sem texto
-      // explícito de correção.
-      let correctionByProposalContext = false
-      if (args.replace === true && !correctionWord && !objectiveCorrectionEvidence) {
+      let editedPendingContext:
+        | Array<{ id?: string | null; resolved_at?: string | null }>
+        | null = null
+      if (!objectiveCorrectionEvidence) {
         // Review HIGH 1 (audit 06-25): filtra por kind=meal E mealType
         // matching pra evitar pending de OUTRO meal_type ratificar replace
         // do meal_type atual. Caso adversarial: paciente editou pending de
@@ -1222,20 +1217,61 @@ export const registraRefeicao: ToolDefinition = {
           .eq('proposal->>mealType', args.meal_type)
           .gte('resolved_at', thirtyMinAgo)
           .limit(1)
-        if ((editedPendings ?? []).length > 0) {
-          correctionByProposalContext = true
+        editedPendingContext = (editedPendings ?? []) as Array<{
+          id?: string | null
+          resolved_at?: string | null
+        }>
+      }
+
+      const replaceDecision = decideReplaceRequest({
+        requestedReplace: true,
+        recentUserMessages: recentMsgs,
+        overlapRatio: overlapMeta?.ratio ?? 0,
+        hasObjectiveCorrectionEvidence: objectiveCorrectionEvidence,
+        hasCorrectionsArray: Boolean(args.corrections?.length),
+      })
+
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.replace_decision',
+        properties: {
+          meal_type: args.meal_type,
+          allowed: replaceDecision.allowReplace,
+          reason: replaceDecision.reason,
+          overlap_ratio: replaceDecision.overlapRatio,
+          addition_trigger: replaceDecision.additionTrigger,
+          correction_word: replaceDecision.correctionWord,
+          edited_pending_context: (editedPendingContext ?? []).length > 0,
+          edited_pending_id: (editedPendingContext ?? [])[0]?.id ?? null,
+        },
+      })
+
+      if (!replaceDecision.allowReplace) {
+        if (replaceDecision.reason === 'blocked_addition_intent') {
           await ctx.supabase.from('product_events').insert({
             user_id: ctx.userId,
-            event: 'tool.replace_ratified_by_proposal_context',
+            event: 'tool.replace_blocked_addition_intent',
             properties: {
               meal_type: args.meal_type,
-              edited_pending_id: (editedPendings ?? [])[0]?.id ?? null,
+              overlap_ratio: overlapMeta?.ratio ?? 0,
+              recent_names: overlapMeta?.recent,
+              new_names: overlapMeta?.new,
+              addition_trigger: replaceDecision.additionTrigger,
             },
           })
         }
-      }
-
-      if (!correctionWord && !objectiveCorrectionEvidence && !correctionByProposalContext) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_blocked_weak_evidence',
+          properties: {
+            meal_type: mealTypeOriginal,
+            corrected_meal_type: args.meal_type,
+            reason: replaceDecision.reason,
+            edited_pending_context: (editedPendingContext ?? []).length > 0,
+            edited_pending_id: (editedPendingContext ?? [])[0]?.id ?? null,
+            overlap_ratio: overlapMeta?.ratio ?? 0,
+          },
+        })
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.replace_blocked_no_correction',
@@ -1249,7 +1285,7 @@ export const registraRefeicao: ToolDefinition = {
         })
         // Downgrade silencioso — segue como INSERT normal.
         args.replace = false
-      } else if (!correctionWord && objectiveCorrectionEvidence) {
+      } else if (replaceDecision.reason === 'objective_overlap') {
         // LLM acertou replace=true sem palavra-chave verbal — ratificado por overlap.
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
@@ -1421,13 +1457,12 @@ export const registraRefeicao: ToolDefinition = {
     }
 
     // ── KCAL OVERRIDE DO PACIENTE (Bug Luciana 2026-06-16) ─────────────────
-    // Parse "X cal/kcal/calorias" do texto do paciente (última msg) e anexa
+    // Parse "X cal/kcal/calorias" da janela recente do paciente e anexa
     // user_kcal nos items que casam. calcMealMacros honra na PRIORIDADE -3.
     // Defesa em profundidade: o pipeline.ts já faz isso pro caminho express,
     // aqui cobre o caminho NÃO-express (tap em pending, retry da LLM, etc).
-    const lastPatientText =
-      (ctx.recentUserMessages ?? []).slice(-1)[0] ?? ''
-    const kcalOverrides = parseUserKcalOverrides(lastPatientText, args.items)
+    const recentPatientTexts = ctx.recentUserMessages ?? []
+    const kcalOverrides = parseUserKcalOverridesFromMessages(recentPatientTexts, args.items)
     let itemsForCalc: Array<{ food_name: string; quantity_g: number; user_kcal?: number }> =
       args.items.map((it: { food_name: string; quantity_g: number; user_kcal?: number | null }) => ({
         food_name: it.food_name,
@@ -1452,7 +1487,7 @@ export const registraRefeicao: ToolDefinition = {
           provider_message_id: ctx.providerMessageId ?? null,
           overrides: Object.fromEntries(kcalOverrides),
           items_count: args.items.length,
-          patient_text: lastPatientText.slice(0, 200),
+          messages_count: recentPatientTexts.length,
         },
       })
     }

@@ -20,7 +20,16 @@ import type { ServiceClient } from '@mpp/db'
 //   true     | não    | sim     | kept (ratified_by_overlap) ← bug Paulo
 //   true     | não    | não     | downgrade (blocked_no_correction)
 
-type RecentLog = { food_name: string; quantity_g: number; meal_type?: string }
+type RecentLog = {
+  id?: string
+  food_name: string
+  quantity_g: number
+  meal_type?: string
+  kcal?: number
+  protein_g?: number
+  carbs_g?: number
+  fat_g?: number
+}
 
 interface MockOptions {
   /** Logs dentro da janela de 30min (consultados via .gte('created_at')) —
@@ -32,6 +41,7 @@ interface MockOptions {
   dayLogs?: RecentLog[]
   recentUserMessages?: string[]
   llmSentReplace?: boolean
+  editedPendings?: Array<{ id: string; resolved_at?: string | null; proposal?: Record<string, unknown> }>
 }
 
 interface CapturedEvent {
@@ -95,6 +105,14 @@ function makeContextAndSupabase(opts: MockOptions) {
             for (const ev of arr) events.push(ev)
             return chain(null)
           },
+        }
+      }
+      if (table === 'pending_registrations') {
+        return {
+          ...((chain(opts.editedPendings ?? []) as object)),
+          insert: () => chain([]),
+          update: () => chain([]),
+          delete: () => chain([]),
         }
       }
       // daily_snapshots → retorna snapshot mock (precisa pra path do replace)
@@ -241,6 +259,99 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(blocked?.properties.overlap_ratio).toBe(0)
   })
 
+  it('replace=true + pending editado recente + item diferente NÃO apaga jantar anterior — caso Roberto torta', async () => {
+    const { ctx, events, rpcCalls, mealInserts } = makeContextAndSupabase({
+      dayLogs: [
+        {
+          id: 'meal-bolo',
+          food_name: 'bolo salgado de frango',
+          quantity_g: 130,
+          meal_type: 'jantar',
+          kcal: 210,
+          protein_g: 18,
+          carbs_g: 20,
+          fat_g: 8,
+        },
+        {
+          id: 'meal-requeijao',
+          food_name: 'requeijão cremoso',
+          quantity_g: 40,
+          meal_type: 'jantar',
+          kcal: 107,
+          protein_g: 3,
+          carbs_g: 2,
+          fat_g: 10,
+        },
+      ],
+      recentLogs: [],
+      editedPendings: [
+        {
+          id: 'pending-foto-editado',
+          resolved_at: new Date().toISOString(),
+          proposal: {
+            kind: 'meal',
+            mealType: 'jantar',
+            items: [{ name: 'couve-flor grelhada', quantity_g: 150 }],
+          },
+        },
+      ],
+      recentUserMessages: ['Torta de frango'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: true,
+        items: [{ food_name: 'torta de frango', quantity_g: 150 }],
+      },
+      ctx,
+    )
+
+    expect(events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context')).toBeUndefined()
+    expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeDefined()
+    expect(events.find((e) => e.event === 'tool.replace_blocked_weak_evidence')).toBeDefined()
+    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+    expect(mealInserts.some((r) => r.food_name === 'torta de frango')).toBe(true)
+  })
+
+  it('replace=true + intenção de adição explícita força INSERT, mesmo se LLM pediu replace', async () => {
+    const { ctx, events, rpcCalls } = makeContextAndSupabase({
+      dayLogs: [
+        {
+          id: 'meal-torta-1',
+          food_name: 'torta de frango',
+          quantity_g: 150,
+          meal_type: 'jantar',
+          kcal: 435,
+        },
+      ],
+      recentLogs: [
+        {
+          id: 'meal-torta-1',
+          food_name: 'torta de frango',
+          quantity_g: 150,
+          meal_type: 'jantar',
+          kcal: 435,
+        },
+      ],
+      recentUserMessages: ['comi mais um pedaço de torta de frango'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: true,
+        items: [{ food_name: 'torta de frango', quantity_g: 150 }],
+      },
+      ctx,
+    )
+
+    expect(events.find((e) => e.event === 'tool.replace_blocked_addition_intent')).toBeDefined()
+    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+  })
+
   it('preserva user_kcal aprovado no pending ao gravar pela tool', async () => {
     const { ctx, mealInserts, rpcCalls } = makeContextAndSupabase({
       recentLogs: [],
@@ -260,6 +371,32 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(Number(mealInserts[0]?.kcal)).toBe(95)
     const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
     expect(snapshotCall?.params.p_kcal).toBe(95)
+  })
+
+  it('preserva kcal explícita de mensagem anterior quando confirmação curta diz "Sim isso" — caso Luciana', async () => {
+    const { ctx, mealInserts, rpcCalls, events } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: ['Torta de legumes 80 calorias\nPão baguete 60 calorias', 'Sim isso'],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        replace: false,
+        items: [
+          { food_name: 'torta de legumes', quantity_g: 100 },
+          { food_name: 'pão baguete', quantity_g: 50 },
+        ],
+      } as never,
+      ctx,
+    )
+
+    expect(Number(mealInserts.find((r) => r.food_name === 'torta de legumes')?.kcal)).toBe(80)
+    expect(Number(mealInserts.find((r) => r.food_name === 'pão baguete')?.kcal)).toBe(60)
+    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
+    expect(snapshotCall?.params.p_kcal).toBe(140)
+    expect(events.find((e) => e.event === 'pipeline.user_kcal_override')).toBeDefined()
   })
 
   // BUG do PAULO 2026-05-13 18:43-19:15 (cross-meal-type):

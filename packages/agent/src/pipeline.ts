@@ -54,7 +54,7 @@ import {
   isWorkoutExpressEligible,
   type ExpressInput,
 } from './express-mode-detector.js'
-import { calcMealMacros, parseUserKcalOverrides } from './meal-pipeline.js'
+import { calcMealMacros, parseUserKcalOverridesFromMessages } from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { runToolGuard } from './tools/tool-guards.js'
 import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
@@ -804,7 +804,13 @@ export async function processMessage(
             // do paciente. Quando o paciente cita kcal explícita no mesmo
             // trecho de um item, OVERRIDE o lookup TACO. Helper devolve Map
             // food_name → user_kcal; calcMealMacros honra na PRIORIDADE -3.
-            const kcalOverrides = parseUserKcalOverrides(input.text ?? '', args.items)
+            const kcalOverrideTexts = [
+              ...ctx.recentMessages
+                .filter((m) => m.role === 'user')
+                .map((m) => m.content),
+              input.text ?? '',
+            ]
+            const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
             const itemsWithOverrides = args.items.map((it) => ({
               food_name: it.food_name,
               quantity_g: it.quantity_g ?? 0,
@@ -815,12 +821,12 @@ export async function processMessage(
             if (kcalOverrides.size > 0) {
               await deps.supabase.from('product_events').insert({
                 user_id: userId,
-                event: 'pipeline.user_kcal_override',
+                event: 'pipeline.user_kcal_override_attached_to_pending',
                 properties: {
                   source: 'express_pending',
                   overrides: Object.fromEntries(kcalOverrides),
                   items_count: args.items.length,
-                  patient_text: (input.text ?? '').slice(0, 200),
+                  messages_count: kcalOverrideTexts.filter(Boolean).length,
                 },
               })
             }
@@ -868,6 +874,10 @@ export async function processMessage(
               // pro registra_refeicao.execute. Sem isso, correção que veio via
               // botão viraria INSERT em vez de SUBSTITUIR (dupla contagem).
               replace: args.replace === true,
+              replace_evidence: {
+                llm_requested_replace: args.replace === true,
+                pending_context_is_authorization: false,
+              },
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase

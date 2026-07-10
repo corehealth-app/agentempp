@@ -15,7 +15,11 @@ describe('rotina pessoal por registro, nao por item', () => {
 
     const registrations = collapseMealRowsToRegistrations(rows, 'America/New_York')
     expect(registrations).toHaveLength(1)
-    expect(registrations[0]).toMatchObject({ meal_type: 'jantar', hour: 20, local_date: '2026-07-09' })
+    expect(registrations[0]).toMatchObject({
+      meal_type: 'jantar',
+      hour: 20,
+      local_date: '2026-07-09',
+    })
   })
 
   it('descarta grupo parcialmente reclassificado com rotulos conflitantes', () => {

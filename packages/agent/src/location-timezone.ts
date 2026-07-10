@@ -135,10 +135,7 @@ export function isMultiTimezoneCountry(country: string): boolean {
 }
 
 /** null significa que o pais ainda nao tem whitelist deterministica. */
-export function isTimezoneCompatibleWithCountry(
-  country: string,
-  timezone: string,
-): boolean | null {
+export function isTimezoneCompatibleWithCountry(country: string, timezone: string): boolean | null {
   if (!isIanaTimezone(timezone)) return false
   const known = KNOWN_COUNTRY_TIMEZONES[country.toUpperCase()]
   return known ? known.has(timezone) : null
@@ -194,10 +191,9 @@ export interface TimezoneCountryUser {
 }
 
 export function findTimezoneCountryMismatches(users: TimezoneCountryUser[]) {
-  return users
-    .filter((user) => {
-      if (!user.country_confirmed || !user.country || !user.timezone) return false
-      return isTimezoneCompatibleWithCountry(user.country, user.timezone) === false
-    })
-    .map((user) => ({ id: user.id, country: user.country!, timezone: user.timezone! }))
+  return users.flatMap((user) => {
+    if (!user.country_confirmed || !user.country || !user.timezone) return []
+    if (isTimezoneCompatibleWithCountry(user.country, user.timezone) !== false) return []
+    return [{ id: user.id, country: user.country, timezone: user.timezone }]
+  })
 }

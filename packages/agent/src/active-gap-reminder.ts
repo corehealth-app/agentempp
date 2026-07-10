@@ -10,13 +10,7 @@ interface GapMessage {
   raw_payload?: unknown
 }
 
-const VALID_MEAL_TYPES = new Set<MealType>([
-  'cafe',
-  'almoco',
-  'lanche',
-  'jantar',
-  'ceia',
-])
+const VALID_MEAL_TYPES = new Set<MealType>(['cafe', 'almoco', 'lanche', 'jantar', 'ceia'])
 
 export function resolveActiveGapReminderMealTypes(
   snapshot: GapSnapshot | null,

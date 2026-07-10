@@ -52,6 +52,7 @@ export function selectMealRegistrationGroup(
 
   if (candidates.length === 0) return { status: 'not_found' }
   if (candidates.length > 1) return { status: 'ambiguous', groups: candidates }
-  const selected = candidates[0]!
+  const selected = candidates[0]
+  if (!selected) return { status: 'not_found' }
   return { status: 'selected', key: selected.key, rows: selected.rows }
 }

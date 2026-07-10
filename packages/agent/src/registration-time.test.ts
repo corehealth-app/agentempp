@@ -32,9 +32,7 @@ describe('resolveRegistrationTime', () => {
 
 describe('pending timing', () => {
   it('preserva a data de origem quando a confirmacao ocorrer depois da meia-noite', () => {
-    expect(
-      buildPendingTiming('America/New_York', new Date('2026-07-10T03:59:50.000Z')),
-    ).toEqual({
+    expect(buildPendingTiming('America/New_York', new Date('2026-07-10T03:59:50.000Z'))).toEqual({
       source_timestamp: '2026-07-10T03:59:50.000Z',
       source_timezone: 'America/New_York',
       source_local_date: '2026-07-09',

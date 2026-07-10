@@ -95,12 +95,15 @@ export function hourInTimezone(iso: string, tz: string): number {
 export function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
-  if (sorted.length === 1) return sorted[0]!
+  if (sorted.length === 1) return sorted[0] ?? 0
   const rank = (p / 100) * (sorted.length - 1)
   const lo = Math.floor(rank)
   const hi = Math.ceil(rank)
   const frac = rank - lo
-  return sorted[lo]! * (1 - frac) + sorted[hi]! * frac
+  const low = sorted[lo]
+  const high = sorted[hi]
+  if (low == null || high == null) return 0
+  return low * (1 - frac) + high * frac
 }
 
 /**
@@ -129,10 +132,7 @@ export function buildPersonalWindowsFromLogs(
 
     // Ceia tem wrap noturno — empurra horas <5 pra >24 antes de percentilar,
     // pra a sequência ficar monotônica (ex: [23, 0, 1, 2, 3] → [23, 24, 25, 26, 27]).
-    const normalized =
-      meal_type === 'ceia'
-        ? hours.map((h) => (h < 5 ? h + 24 : h))
-        : hours
+    const normalized = meal_type === 'ceia' ? hours.map((h) => (h < 5 ? h + 24 : h)) : hours
     const p10raw = percentile(normalized, 10)
     const p90raw = percentile(normalized, 90)
     if (p90raw - p10raw > MAX_PERSONAL_WINDOW_SPAN_HOURS) continue
@@ -176,7 +176,8 @@ export function collapseMealRowsToRegistrations(
       group.map((row) => row.meal_type).filter((value): value is string => !!value),
     )
     if (types.size !== 1) continue
-    const mealType = Array.from(types)[0]!
+    const mealType = Array.from(types)[0]
+    if (!mealType) continue
     if (!isMealType(mealType)) continue
     const consumedAt = group[0]?.consumed_at
     if (!consumedAt || !Number.isFinite(new Date(consumedAt).getTime())) continue
@@ -262,7 +263,8 @@ export function resolveMealTypeByHour(
   }
   if (matches.length > 0) {
     matches.sort((a, b) => spanOf(a) - spanOf(b) || a.meal_type.localeCompare(b.meal_type))
-    return { expected: matches[0]!.meal_type, source: 'personal' }
+    const first = matches[0]
+    if (first) return { expected: first.meal_type, source: 'personal' }
   }
   return { expected: globalWindowFor(localHour), source: 'global' }
 }

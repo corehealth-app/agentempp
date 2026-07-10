@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  MIN_SAMPLES_FOR_PERSONAL,
   buildPersonalWindowsFromLogs,
   hourInTimezone,
-  percentile,
-  resolveMealTypeByHour,
   type MealRegistrationSample,
   type MealType,
+  MIN_SAMPLES_FOR_PERSONAL,
   type PersonalMealWindows,
+  percentile,
+  resolveMealTypeByHour,
 } from './personal-meal-windows.js'
 
 function sample(meal_type: MealType, hour: number, day: number): MealRegistrationSample {
@@ -64,9 +64,9 @@ describe('buildPersonalWindowsFromLogs — Roberto janta 17-19h ET', () => {
     const windows = buildPersonalWindowsFromLogs(logs)
     const jantar = windows.get('jantar')
     expect(jantar).toBeDefined()
-    expect(jantar!.p10).toBe(17)
-    expect(jantar!.p90).toBe(19)
-    expect(jantar!.sample_count).toBe(6)
+    expect(jantar?.p10).toBe(17)
+    expect(jantar?.p90).toBe(19)
+    expect(jantar?.sample_count).toBe(6)
   })
 
   it('com <5 amostras NÃO gera janela (fallback global esperado)', () => {
@@ -112,8 +112,8 @@ describe('buildPersonalWindowsFromLogs — Roberto janta 17-19h ET', () => {
     // p10/p90 devem caír na faixa 23-2 (wrap), não 0-23.
     // Sequência normalizada: [23,24,25,26,23,24] → ordenada [23,23,24,24,25,26]
     // p10≈23, p90≈25.5 → arredondado e mod 24 → p10=23, p90=2
-    expect(ceia!.p10).toBe(23)
-    expect(ceia!.p90).toBe(2)
+    expect(ceia?.p10).toBe(23)
+    expect(ceia?.p90).toBe(2)
   })
 })
 
@@ -143,7 +143,16 @@ describe('resolveMealTypeByHour — Roberto ET (janta 17-19h)', () => {
   it('com janela pessoal jantar=17-19, 17h NÃO vira lanche, vira jantar', () => {
     const personal: PersonalMealWindows = {
       windows: new Map([
-        ['jantar' as MealType, { meal_type: 'jantar' as MealType, p10: 17, p90: 19, sample_count: 8, distinct_day_count: 8 }],
+        [
+          'jantar' as MealType,
+          {
+            meal_type: 'jantar' as MealType,
+            p10: 17,
+            p90: 19,
+            sample_count: 8,
+            distinct_day_count: 8,
+          },
+        ],
       ]),
       totalLogs: 30,
     }
@@ -163,7 +172,16 @@ describe('resolveMealTypeByHour — Roberto ET (janta 17-19h)', () => {
     // Paciente tem janela cafe 7-9, mas hora atual é 13 → cai pra global=almoco
     const personal: PersonalMealWindows = {
       windows: new Map([
-        ['cafe' as MealType, { meal_type: 'cafe' as MealType, p10: 7, p90: 9, sample_count: 10, distinct_day_count: 10 }],
+        [
+          'cafe' as MealType,
+          {
+            meal_type: 'cafe' as MealType,
+            p10: 7,
+            p90: 9,
+            sample_count: 10,
+            distinct_day_count: 10,
+          },
+        ],
       ]),
       totalLogs: 30,
     }
@@ -176,8 +194,26 @@ describe('resolveMealTypeByHour — Roberto ET (janta 17-19h)', () => {
     // span almoco = 2, span lanche = 2 → empate, alfabético → almoco
     const personal: PersonalMealWindows = {
       windows: new Map([
-        ['almoco' as MealType, { meal_type: 'almoco' as MealType, p10: 13, p90: 15, sample_count: 6, distinct_day_count: 6 }],
-        ['lanche' as MealType, { meal_type: 'lanche' as MealType, p10: 14, p90: 16, sample_count: 6, distinct_day_count: 6 }],
+        [
+          'almoco' as MealType,
+          {
+            meal_type: 'almoco' as MealType,
+            p10: 13,
+            p90: 15,
+            sample_count: 6,
+            distinct_day_count: 6,
+          },
+        ],
+        [
+          'lanche' as MealType,
+          {
+            meal_type: 'lanche' as MealType,
+            p10: 14,
+            p90: 16,
+            sample_count: 6,
+            distinct_day_count: 6,
+          },
+        ],
       ]),
       totalLogs: 30,
     }
@@ -189,8 +225,26 @@ describe('resolveMealTypeByHour — Roberto ET (janta 17-19h)', () => {
   it('span menor ganha: almoco 12-15 (span=3) vs lanche 14-15 (span=1), hora 14 → lanche', () => {
     const personal: PersonalMealWindows = {
       windows: new Map([
-        ['almoco' as MealType, { meal_type: 'almoco' as MealType, p10: 12, p90: 15, sample_count: 6, distinct_day_count: 6 }],
-        ['lanche' as MealType, { meal_type: 'lanche' as MealType, p10: 14, p90: 15, sample_count: 6, distinct_day_count: 6 }],
+        [
+          'almoco' as MealType,
+          {
+            meal_type: 'almoco' as MealType,
+            p10: 12,
+            p90: 15,
+            sample_count: 6,
+            distinct_day_count: 6,
+          },
+        ],
+        [
+          'lanche' as MealType,
+          {
+            meal_type: 'lanche' as MealType,
+            p10: 14,
+            p90: 15,
+            sample_count: 6,
+            distinct_day_count: 6,
+          },
+        ],
       ]),
       totalLogs: 30,
     }
@@ -201,7 +255,16 @@ describe('resolveMealTypeByHour — Roberto ET (janta 17-19h)', () => {
   it('ceia com wrap (p10=23, p90=2), hora 0 → ceia personal', () => {
     const personal: PersonalMealWindows = {
       windows: new Map([
-        ['ceia' as MealType, { meal_type: 'ceia' as MealType, p10: 23, p90: 2, sample_count: 6, distinct_day_count: 6 }],
+        [
+          'ceia' as MealType,
+          {
+            meal_type: 'ceia' as MealType,
+            p10: 23,
+            p90: 2,
+            sample_count: 6,
+            distinct_day_count: 6,
+          },
+        ],
       ]),
       totalLogs: 30,
     }

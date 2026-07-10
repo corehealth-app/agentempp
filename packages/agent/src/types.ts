@@ -12,6 +12,8 @@ export interface AgentInput {
   providerMessageIds?: string[]
   /** Conteúdo principal. */
   text?: string
+  /** Texto produzido pelo paciente sem enriquecimento de vision/system. */
+  patientText?: string
   /** Para mídia única (compatibilidade). */
   mediaUrl?: string
   mediaMimeType?: string

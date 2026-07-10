@@ -185,7 +185,7 @@ async function checkUserGap(
     agent_stage: 'engajamento',
     delivery_status: deliveryStatus,
     delivery_error: deliveryError ? { msg: deliveryError } : null,
-    raw_payload: { source: 'daily_gap_checker', gap: gapList },
+    raw_payload: { source: 'daily_gap_checker', date: today, gap: gapList },
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,6 +194,7 @@ async function checkUserGap(
     event: 'daily.gap_reminder_sent',
     properties: {
       gap: gapList,
+      date: today,
       pattern_active_days: gapInfo.pattern.activeDays,
       local_hour: localHour,
       delivery_status: deliveryStatus,

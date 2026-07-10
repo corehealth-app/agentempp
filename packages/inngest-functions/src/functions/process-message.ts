@@ -692,6 +692,7 @@ export const processMessageFn = inngest.createFunction(
           providerMessageIds,
           contentType,
           text: enrichedText,
+          patientText: contentType === 'image' ? text : enrichedText,
           mediaUrl,
           provider,
           timestamp: new Date(timestamp),

@@ -698,3 +698,37 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
     expect(add?.params.p_date).not.toBe('ontem')
   })
 })
+
+describe('registra_refeicao — classificacao automatica por horario local', () => {
+  it('caso Roberto: registro das 20:13 ET nao permanece como lanche', async () => {
+    const { ctx, mealInserts, events } = makeContextAndSupabase({
+      recentUserMessages: ['frango com arroz'],
+    })
+    const eventTimeCtx = {
+      ...ctx,
+      userTimezone: 'America/New_York',
+      referenceTimestamp: new Date('2026-07-10T00:13:00.000Z'),
+      currentUserText: 'frango com arroz',
+    }
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        items: [{ food_name: 'frango assado', quantity_g: 200 }],
+      },
+      eventTimeCtx,
+    )
+
+    expect(mealInserts[0]?.meal_type).toBe('jantar')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'tool.meal_type_autocorrected',
+        properties: expect.objectContaining({
+          claimed: 'lanche',
+          decided: 'jantar',
+          reason: 'expected_by_routine',
+        }),
+      }),
+    )
+  })
+})

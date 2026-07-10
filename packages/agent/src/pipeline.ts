@@ -161,6 +161,8 @@ interface UserContext {
     exercise_calories: number
     daily_balance: number
     deficit_accumulated: number
+    day_status: string | null
+    gap_reminder_sent_at: string | null
   } | null
   /** Gamificação. */
   userProgress: {
@@ -207,6 +209,7 @@ export async function processMessage(
   input: AgentInput,
 ): Promise<AgentOutput> {
   const start = Date.now()
+  const semanticPatientText = input.patientText ?? input.text ?? ''
 
   // 1. ensure user
   const userId = await ensureUser(deps.supabase, input.from)
@@ -422,7 +425,7 @@ export async function processMessage(
       const mealTypeHint = inferMealTypeHint(ctx)
       const fake = detectFakeWrite({
         content,
-        patientText: input.text ?? '',
+        patientText: semanticPatientText,
         registrationToolCalled,
         prescriptionToolCalled,
         skipToolCalled,
@@ -584,11 +587,11 @@ export async function processMessage(
       userTimezone: ctx.timezone,
       providerMessageId: input.providerMessageId,
       referenceTimestamp: input.timestamp,
-      currentUserText: input.text ?? '',
+      currentUserText: semanticPatientText,
       // O turno atual ja contem todo o burst agregado. Nao reutilizar texto
       // historico em guardas semanticas: uma mencao antiga de "jantar" ou
       // "corrige" nao pode autorizar a gravacao atual.
-      recentUserMessages: input.text?.trim() ? [input.text] : [],
+      recentUserMessages: semanticPatientText.trim() ? [semanticPatientText] : [],
     }
     for (const tc of result.toolCalls) {
       const tool = getToolByName(tc.name)
@@ -625,7 +628,7 @@ export async function processMessage(
                 : ctx.lastInboundContentType === 'audio'
                   ? 'audio'
                   : 'text',
-            patientText: input.text ?? '',
+            patientText: semanticPatientText,
             items:
               (validated as { items?: Array<{ food_name: string; quantity_g?: number }> })
                 .items ?? [],
@@ -849,7 +852,7 @@ export async function processMessage(
               ...ctx.recentMessages
                 .filter((m) => m.role === 'user')
                 .map((m) => m.content),
-              input.text ?? '',
+              semanticPatientText,
             ]
             const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
             const itemsWithOverrides = args.items.map((it) => ({
@@ -908,7 +911,7 @@ export async function processMessage(
               totals: proposalTotals,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
-              source_text: input.text ?? null,
+              source_text: semanticPatientText || null,
               express_eligible: false,
               express_reason: exprResult.reason,
               // Roberto 2026-06-01: salva replace pra handler do tap propagar
@@ -990,7 +993,7 @@ export async function processMessage(
                 : ctx.lastInboundContentType === 'audio'
                   ? 'audio'
                   : 'text',
-            patientText: input.text ?? '',
+            patientText: semanticPatientText,
             workoutType: wArgs.workout_type ?? null,
             durationMin: wArgs.duration_min ?? null,
           })
@@ -1015,7 +1018,7 @@ export async function processMessage(
               kcalEst: wArgs.estimated_kcal_from_image ?? null,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
-              source_text: input.text ?? null,
+              source_text: semanticPatientText || null,
               express_eligible: false,
               express_reason: exprRes.reason,
               // guarda os args completos pro handler chamar registraTreino depois
@@ -1668,7 +1671,7 @@ export async function processMessage(
     const mealTypeHint = inferMealTypeHint(ctx)
     const fakeFinal = detectFakeWrite({
       content: finalText,
-      patientText: input.text ?? '',
+      patientText: semanticPatientText,
       registrationToolCalled,
       prescriptionToolCalled,
       skipToolCalled,
@@ -1691,10 +1694,7 @@ export async function processMessage(
     // card, mas nenhuma tool de registro rodou no turno. Cruza intenção do
     // paciente × ação do agente. Log-only (evita falso-positivo afetar paciente);
     // a auditoria usa pra pegar correção silenciosamente não-persistida.
-    const patientMsgs = ctx.recentMessages
-      .filter((mm) => mm.role === 'user')
-      .slice(-3)
-      .map((mm) => mm.content)
+    const patientMsgs = semanticPatientText.trim() ? [semanticPatientText] : []
     const correctionWord = detectCorrectionIntent(patientMsgs)
     if (correctionWord && !registrationToolCalled && hasBalanceCard(finalText)) {
       await deps.supabase.from('product_events').insert({
@@ -2047,7 +2047,7 @@ async function loadContext(
   const { data: snapToday } = await supabase
     .from('daily_snapshots')
     .select(
-      'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated',
+      'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at',
     )
     .eq('user_id', userId)
     .eq('date', today)
@@ -2090,6 +2090,8 @@ async function loadContext(
     exercise_calories?: number | null
     daily_balance?: number | null
     deficit_accumulated?: number | null
+    day_status?: string | null
+    gap_reminder_sent_at?: string | null
   } | null
   const progressTyped = progress as {
     current_streak?: number | null
@@ -2173,6 +2175,8 @@ async function loadContext(
           exercise_calories: snapTyped.exercise_calories ?? 0,
           daily_balance: snapTyped.daily_balance ?? 0,
           deficit_accumulated: snapTyped.deficit_accumulated ?? 0,
+          day_status: snapTyped.day_status ?? null,
+          gap_reminder_sent_at: snapTyped.gap_reminder_sent_at ?? null,
         }
       : null,
     userProgress: progressTyped
@@ -2485,7 +2489,7 @@ function formatUserContext(
           ? 'lanche (lanche da tarde)'
           : localHour >= 18 && localHour < 23
             ? 'jantar'
-            : 'lanche (madrugada/ceia)'
+            : 'ceia'
   sections.push(
     `### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n` +
       `**${localStr}** (timezone: ${tz}, hora local = ${localHour}h)\n\n` +
@@ -2494,7 +2498,7 @@ function formatUserContext(
       `- 11h–14h59 → \`almoco\`\n` +
       `- 15h–17h59 → \`lanche\`\n` +
       `- 18h–22h59 → \`jantar\`\n` +
-      `- 23h–4h59 → \`lanche\` (ceia/madrugada)\n\n` +
+      `- 23h–4h59 → \`ceia\`\n\n` +
       `**Sugestão pra esta refeição: \`${suggestedMeal}\`**.\n\n` +
       `❌ NÃO use \`replace=true\` em foto NOVA recebida em momento diferente do dia. \`replace=true\` é APENAS quando o paciente disse explicitamente "corrige", "errei", "na verdade era X" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.`,
   )
@@ -2571,12 +2575,11 @@ function formatUserContext(
     // O cron daily-gap-checker marca 'pending_close' quando manda lembrete
     // sobre refeição esperada que não foi registrada. Daily-closer fecha
     // depois como 'incomplete_no_response' se paciente não responder.
-    const snapTyped = s as typeof s & { day_status?: string | null; gap_reminder_sent_at?: string | null }
-    if (snapTyped.day_status === 'pending_close') {
+    if (s.day_status === 'pending_close') {
       numericLines.push(
         `- ⚠️ DIA PENDENTE: enviamos lembrete sobre refeição não registrada. Se o paciente acabou de mandar/confirmar, registre normal. Se ele falou "pulei", chame marca_refeicao_pulada(meal_type) com a refeição pulada.`,
       )
-    } else if (snapTyped.day_status === 'incomplete_no_response') {
+    } else if (s.day_status === 'incomplete_no_response') {
       numericLines.push(
         `- ⚠️ DIA INCOMPLETO: paciente não respondeu ao lembrete de refeição faltante. Bloco 7700 NÃO foi creditado por esse dia. Pra creditar retroativo, paciente precisa registrar a refeição que faltou OU confirmar "pulei".`,
       )

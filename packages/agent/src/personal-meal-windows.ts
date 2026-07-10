@@ -18,7 +18,7 @@
  * típicas, simples por user_id + consumed_at >= 30d). Aceitável pro impacto.
  */
 import type { ServiceClient } from '@mpp/db'
-import { getLocalDateMinusDays } from './timezone-utils.js'
+import { getLocalDateMinusDays, getLocalDateString } from './timezone-utils.js'
 
 export type MealType = 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
 
@@ -27,6 +27,7 @@ export interface PersonalWindow {
   p10: number
   p90: number
   sample_count: number
+  distinct_day_count: number
 }
 
 export interface PersonalMealWindows {
@@ -34,6 +35,22 @@ export interface PersonalMealWindows {
   windows: Map<MealType, PersonalWindow>
   /** Quantos logs foram considerados (debug/telemetria). */
   totalLogs: number
+  /** Quantidade de linhas de alimento antes de colapsar registros. */
+  totalRows?: number
+}
+
+export interface MealRegistrationSample {
+  meal_type: MealType
+  hour: number
+  local_date: string
+  registration_key: string
+}
+
+export interface MealLogWindowRow {
+  meal_type: string | null
+  consumed_at: string | null
+  raw_provider_message_id?: string | null
+  food_name?: string | null
 }
 
 /** Janelas globais MPP canônicas (mesma tabela do system prompt + autocorrect). */
@@ -50,6 +67,9 @@ export const MIN_SAMPLES_FOR_PERSONAL = 5
 
 /** Janela de lookback em dias (típico ~150 logs/paciente). */
 export const LOOKBACK_DAYS = 30
+
+/** Amplitude maxima para considerar uma rotina pessoal confiavel. */
+export const MAX_PERSONAL_WINDOW_SPAN_HOURS = 6
 
 /**
  * Hora local (0-23) de um instante UTC, no timezone do paciente.
@@ -90,18 +110,22 @@ export function percentile(values: number[], p: number): number {
  * resultante volta pro espaço 0-23 se p90 ultrapassa 24.
  */
 export function buildPersonalWindowsFromLogs(
-  logs: Array<{ meal_type: MealType; hour: number }>,
+  logs: MealRegistrationSample[],
 ): Map<MealType, PersonalWindow> {
-  const grouped = new Map<MealType, number[]>()
+  const grouped = new Map<MealType, MealRegistrationSample[]>()
   for (const log of logs) {
     const arr = grouped.get(log.meal_type) ?? []
-    arr.push(log.hour)
+    arr.push(log)
     grouped.set(log.meal_type, arr)
   }
 
   const out = new Map<MealType, PersonalWindow>()
-  for (const [meal_type, hours] of grouped) {
-    if (hours.length < MIN_SAMPLES_FOR_PERSONAL) continue
+  for (const [meal_type, samples] of grouped) {
+    const distinctDays = new Set(samples.map((sample) => sample.local_date)).size
+    if (samples.length < MIN_SAMPLES_FOR_PERSONAL || distinctDays < MIN_SAMPLES_FOR_PERSONAL) {
+      continue
+    }
+    const hours = samples.map((sample) => sample.hour)
 
     // Ceia tem wrap noturno — empurra horas <5 pra >24 antes de percentilar,
     // pra a sequência ficar monotônica (ex: [23, 0, 1, 2, 3] → [23, 24, 25, 26, 27]).
@@ -111,6 +135,7 @@ export function buildPersonalWindowsFromLogs(
         : hours
     const p10raw = percentile(normalized, 10)
     const p90raw = percentile(normalized, 90)
+    if (p90raw - p10raw > MAX_PERSONAL_WINDOW_SPAN_HOURS) continue
     const p10 = ((Math.round(p10raw) % 24) + 24) % 24
     const p90 = ((Math.round(p90raw) % 24) + 24) % 24
     out.set(meal_type, {
@@ -118,9 +143,51 @@ export function buildPersonalWindowsFromLogs(
       p10,
       p90,
       sample_count: hours.length,
+      distinct_day_count: distinctDays,
     })
   }
   return out
+}
+
+/**
+ * meal_logs tem uma linha por alimento. Esta funcao transforma todas as linhas
+ * da mesma mensagem/instante em uma unica amostra de refeicao. Grupos com
+ * rotulos conflitantes sao descartados para nao aprender de reclassificacao
+ * parcial ou dado corrompido.
+ */
+export function collapseMealRowsToRegistrations(
+  rows: MealLogWindowRow[],
+  tz: string,
+): MealRegistrationSample[] {
+  const groups = new Map<string, MealLogWindowRow[]>()
+  for (const row of rows) {
+    if (!row.consumed_at) continue
+    const key = row.raw_provider_message_id
+      ? `provider:${row.raw_provider_message_id}`
+      : `time:${row.consumed_at}`
+    const group = groups.get(key) ?? []
+    group.push(row)
+    groups.set(key, group)
+  }
+
+  const registrations: MealRegistrationSample[] = []
+  for (const [registrationKey, group] of groups) {
+    const types = new Set(
+      group.map((row) => row.meal_type).filter((value): value is string => !!value),
+    )
+    if (types.size !== 1) continue
+    const mealType = Array.from(types)[0]!
+    if (!isMealType(mealType)) continue
+    const consumedAt = group[0]?.consumed_at
+    if (!consumedAt || !Number.isFinite(new Date(consumedAt).getTime())) continue
+    registrations.push({
+      meal_type: mealType,
+      hour: hourInTimezone(consumedAt, tz),
+      local_date: getLocalDateString(tz, new Date(consumedAt)),
+      registration_key: registrationKey,
+    })
+  }
+  return registrations
 }
 
 /**
@@ -134,17 +201,18 @@ export async function getPersonalMealWindows(
   supabase: ServiceClient,
   userId: string,
   tz: string,
+  referenceTimestamp: Date = new Date(),
 ): Promise<PersonalMealWindows> {
-  const cutoffDate = getLocalDateMinusDays(tz, LOOKBACK_DAYS)
+  const cutoffDate = getLocalDateMinusDays(tz, LOOKBACK_DAYS, referenceTimestamp)
   // Query SIMPLES: user_id + consumed_at >= cutoff (data local convertida em
   // limite frouxo — não precisa offset porque queremos margem). Limit alto
   // pra cobrir ~150 logs típicos sem cap.
-  let rows: Array<{ meal_type: string | null; consumed_at: string | null }> = []
+  let rows: MealLogWindowRow[] = []
   try {
     // biome-ignore lint/suspicious/noExplicitAny: ServiceClient sem types estritos aqui
     const { data, error } = await (supabase as any)
       .from('meal_logs')
-      .select('meal_type, consumed_at')
+      .select('meal_type, consumed_at, raw_provider_message_id, food_name')
       .eq('user_id', userId)
       .gte('consumed_at', `${cutoffDate}T00:00:00Z`)
       .not('meal_type', 'is', null)
@@ -153,21 +221,17 @@ export async function getPersonalMealWindows(
     if (error) {
       return { windows: new Map(), totalLogs: 0 }
     }
-    rows = (data ?? []) as Array<{ meal_type: string | null; consumed_at: string | null }>
+    rows = (data ?? []) as MealLogWindowRow[]
   } catch {
     return { windows: new Map(), totalLogs: 0 }
   }
 
-  const valid: Array<{ meal_type: MealType; hour: number }> = []
-  for (const r of rows) {
-    if (!r.meal_type || !r.consumed_at) continue
-    if (!isMealType(r.meal_type)) continue
-    valid.push({ meal_type: r.meal_type, hour: hourInTimezone(r.consumed_at, tz) })
-  }
+  const valid = collapseMealRowsToRegistrations(rows, tz)
 
   return {
     windows: buildPersonalWindowsFromLogs(valid),
     totalLogs: valid.length,
+    totalRows: rows.length,
   }
 }
 
@@ -226,7 +290,5 @@ function globalWindowFor(hour: number): MealType {
     return 'lanche'
   if (hour >= GLOBAL_WINDOWS.jantar.startHour && hour < GLOBAL_WINDOWS.jantar.endHour)
     return 'jantar'
-  // 23-4: ceia/madrugada — manda como lanche (mesma escolha do código atual
-  // em tools.ts L1001 — preserva backwards-compat).
-  return 'lanche'
+  return 'ceia'
 }

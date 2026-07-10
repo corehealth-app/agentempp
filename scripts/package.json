@@ -7,7 +7,8 @@
     "seed:notion": "tsx seed-from-notion.ts",
     "seed:taco-minimal": "tsx seed-taco-minimal.ts",
     "validate:prompts": "tsx validate-active-prompts.ts",
-    "bootstrap-admin": "tsx bootstrap-admin.ts"
+    "bootstrap-admin": "tsx bootstrap-admin.ts",
+    "repair:orlando-local-day": "tsx repair-orlando-local-day-2026-07-10.ts"
   },
   "dependencies": {
     "@mpp/db": "workspace:*",

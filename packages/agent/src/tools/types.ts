@@ -25,6 +25,11 @@ export interface ToolContext {
    * dedup de inserts em logs (meal_logs, workout_logs) — protege contra
    * dupla contagem em retentativas do Inngest. */
   providerMessageId?: string
+  /** Instante original da mensagem no provider. Data/hora de gravações deve
+   * derivar daqui, não do momento em que o worker terminou de processar. */
+  referenceTimestamp?: Date
+  /** Texto agregado do turno atual, sem mensagens históricas. */
+  currentUserText?: string
   /** Últimas N mensagens do PACIENTE (direção 'in') no turno atual.
    * Usado pra validação semântica determinística — ex: detectar se
    * `replace=true` em registra_refeicao é legítimo (paciente disse

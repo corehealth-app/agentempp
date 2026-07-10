@@ -42,6 +42,7 @@ export const processMessageFn = inngest.createFunction(
       wpp,
       providerMessageId,
       providerMessageIds,
+      providerTimestamps,
       contentType,
       text,
       mediaUrl,
@@ -166,7 +167,7 @@ export const processMessageFn = inngest.createFunction(
               buttonId: `${responseKind}_${pendingId}`,
               buttonTitle: responseKind === 'confirm' ? 'Sim, registrar' : 'Editar',
               providerMessageId,
-              tappedAt: new Date().toISOString(),
+              tappedAt: new Date(timestamp).toISOString(),
             },
           })
           await supabase.from('product_events').insert({
@@ -694,6 +695,9 @@ export const processMessageFn = inngest.createFunction(
           mediaUrl,
           provider,
           timestamp: new Date(timestamp),
+          timestamps: providerTimestamps
+            ?.map((value) => new Date(value))
+            .filter((value) => Number.isFinite(value.getTime())),
         })
       })
     } catch (err) {

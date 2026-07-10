@@ -26,6 +26,7 @@ import {
   replaceLooseBlockMentions,
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
+import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
 import {
   composePendingProposal,
   composePostRegistrationMessage,
@@ -147,6 +148,8 @@ interface UserContext {
   unitSystem: 'metric' | 'imperial' | null
   /** Timezone IANA do paciente (ex: America/Sao_Paulo). Default 'America/Sao_Paulo'. */
   timezone: string
+  /** Instante original da ultima mensagem do burst no provider. */
+  referenceTimestamp: Date
   /** Metas calóricas/proteína calculadas determinísticamente (anti-alucinação). */
   dailyTargets: { calories_target: number | null; protein_target: number | null }
   /** Snapshot do dia LOCAL do paciente — consumo + balanço atual. */
@@ -220,6 +223,7 @@ export async function processMessage(
     userId,
     input.providerMessageIds ?? input.providerMessageId,
     input.text,
+    input.timestamp,
   )
 
   // 4. resolve stage
@@ -229,6 +233,43 @@ export async function processMessage(
   const promptRow = await loadActivePrompt(deps.supabase, stage, ctx.locale)
   if (!promptRow) {
     throw new Error(`No active prompt found for stage ${stage}`)
+  }
+
+  // Um debounce pode, raramente, agrupar mensagens dos dois lados da meia-noite
+  // local. Nao existe uma unica data correta para o conjunto; perguntar e mais
+  // seguro do que registrar todas no dia da ultima mensagem.
+  if (burstCrossesLocalDate(ctx.timezone, input.timestamps ?? [input.timestamp])) {
+    await deps.supabase.from('product_events').insert({
+      user_id: userId,
+      event: 'pipeline.cross_local_midnight_blocked',
+      properties: {
+        timezone: ctx.timezone,
+        message_count: input.timestamps?.length ?? 1,
+        local_dates: Array.from(
+          new Set(
+            (input.timestamps ?? [input.timestamp]).map((timestamp) =>
+              getLocalDateString(ctx.timezone, timestamp),
+            ),
+          ),
+        ),
+      },
+    })
+    const text =
+      ctx.locale?.startsWith('en')
+        ? 'I received these messages across your local midnight. Which items were from yesterday and which were from today?'
+        : 'Recebi essas mensagens atravessando a meia-noite no seu horário local. Quais itens foram de ontem e quais foram de hoje?'
+    return {
+      text,
+      preferAudio: false,
+      singleMessage: true,
+      toolCalls: [],
+      stage,
+      modelUsed: promptRow.model,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+      latencyMs: Date.now() - start,
+    }
   }
 
   // 4b. Router de modelo (Fase 6 redução custo — 2026-06-04): troca Sonnet→Haiku
@@ -294,7 +335,7 @@ export async function processMessage(
   const stableSystem = promptRow.system_prompt
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
-  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig)}${repetitionGuard}`
+  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp)}${repetitionGuard}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
   // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
   // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda
@@ -542,12 +583,12 @@ export async function processMessage(
       userCountry: ctx.country ?? 'BR',
       userTimezone: ctx.timezone,
       providerMessageId: input.providerMessageId,
-      // Últimas 3 msgs do paciente — pra validação semântica em tools (ex:
-      // detectar se replace=true em registra_refeicao tem palavra de correção).
-      recentUserMessages: ctx.recentMessages
-        .filter((m) => m.role === 'user')
-        .slice(-3)
-        .map((m) => m.content),
+      referenceTimestamp: input.timestamp,
+      currentUserText: input.text ?? '',
+      // O turno atual ja contem todo o burst agregado. Nao reutilizar texto
+      // historico em guardas semanticas: uma mencao antiga de "jantar" ou
+      // "corrige" nao pode autorizar a gravacao atual.
+      recentUserMessages: input.text?.trim() ? [input.text] : [],
     }
     for (const tc of result.toolCalls) {
       const tool = getToolByName(tc.name)
@@ -878,6 +919,7 @@ export async function processMessage(
                 llm_requested_replace: args.replace === true,
                 pending_context_is_authorization: false,
               },
+              ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
@@ -978,6 +1020,7 @@ export async function processMessage(
               express_reason: exprRes.reason,
               // guarda os args completos pro handler chamar registraTreino depois
               raw_args: wArgs,
+              ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
@@ -1489,7 +1532,7 @@ export async function processMessage(
   // registrado a refeição no próprio turno — a prosa batia com o card, o stale não).
   let freshConsumed: number | null = ctx.todaySnapshot?.calories_consumed ?? null
   if (finalText && hasBalanceCard(finalText)) {
-    const todayStr = getLocalDateString(ctx.timezone)
+    const todayStr = getLocalDateString(ctx.timezone, input.timestamp)
     const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
       deps.supabase
         .from('daily_snapshots')
@@ -1664,7 +1707,7 @@ export async function processMessage(
 
   // Audit anti-alucinação: parseia números na resposta e compara com contexto.
   // Não bloqueia — só loga em product_events pra investigação posterior.
-  const m = computeMetrics(ctx.profile, new Date(), calcConfig)
+  const m = computeMetrics(ctx.profile, input.timestamp, calcConfig)
   await auditNumericClaims(
     deps.supabase,
     userId,
@@ -1898,6 +1941,7 @@ async function loadContext(
   userId: string,
   currentProviderMessageIds?: string | string[] | null,
   currentText?: string | null,
+  referenceTimestamp: Date = new Date(),
 ): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
@@ -1999,7 +2043,7 @@ async function loadContext(
   // Data LOCAL do paciente (não UTC). Sem isso, paciente em America/New_York
   // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
   const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
-  const today = getLocalDateString(userTz)
+  const today = getLocalDateString(userTz, referenceTimestamp)
   const { data: snapToday } = await supabase
     .from('daily_snapshots')
     .select(
@@ -2018,7 +2062,7 @@ async function loadContext(
 
   // Janela 14 dias — orçamento calórico + DAM (manutenção/ganho_massa).
   // Computa em-memória sobre daily_snapshots fechados.
-  const date14dAgo = getLocalDateMinusDays(userTz, 14)
+  const date14dAgo = getLocalDateMinusDays(userTz, 14, referenceTimestamp)
   const { data: last14dRows } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, calories_target, day_closed')
@@ -2116,6 +2160,7 @@ async function loadContext(
     })(),
     unitSystem,
     timezone: userTyped?.timezone ?? 'America/Sao_Paulo',
+    referenceTimestamp,
     bodyPhotoState,
     reevaluationDueRecent,
     dailyTargets,
@@ -2183,7 +2228,7 @@ function inferMealTypeHint(
   }
   // (2) hora local do paciente.
   try {
-    const hour = getLocalHour(ctx.timezone)
+    const hour = getLocalHour(ctx.timezone, ctx.referenceTimestamp)
     if (hour >= 6 && hour < 11) return 'cafe'
     if (hour >= 11 && hour < 15) return 'almoco'
     if (hour >= 15 && hour < 18) return 'lanche'
@@ -2295,8 +2340,9 @@ async function logModelRouted(
 function formatUserContext(
   ctx: UserContext,
   calcConfig?: import('@mpp/core').CalcConfig,
+  referenceTimestamp: Date = ctx.referenceTimestamp,
 ): string {
-  const m = computeMetrics(ctx.profile, new Date(), calcConfig)
+  const m = computeMetrics(ctx.profile, referenceTimestamp, calcConfig)
   const sections: string[] = []
 
   // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
@@ -2415,7 +2461,7 @@ function formatUserContext(
   // local foi registrada como meal_type=jantar com replace=true porque o
   // LLM achou que era correção do jantar de ontem.
   const tz = ctx.timezone
-  const now = new Date()
+  const now = referenceTimestamp
   const localTimeFmt = new Intl.DateTimeFormat('pt-BR', {
     timeZone: tz,
     year: 'numeric',

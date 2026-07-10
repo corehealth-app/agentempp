@@ -8,10 +8,15 @@ export type BufferedInboundMessage = {
   text?: string | null
   mediaUrl?: string | null
   received_at: string
+  server_received_at?: string | null
 }
 
 export function collectProviderMessageIds(msgs: BufferedInboundMessage[]): string[] {
   return msgs.map((m) => m.provider_message_id).filter(Boolean)
+}
+
+export function collectProviderTimestamps(msgs: BufferedInboundMessage[]): string[] {
+  return msgs.map((m) => m.received_at).filter(Boolean)
 }
 
 /**
@@ -217,6 +222,7 @@ export const bufferListenerFn = inngest.createFunction(
       // Msg mais recente é referência para typing/reactions
       const latest = msgs[msgs.length - 1]!
       const providerMessageIds = collectProviderMessageIds(msgs)
+      const providerTimestamps = collectProviderTimestamps(msgs)
 
       // Determina contentType: mídia tem prioridade
       const hasAudio = msgs.some((m) => m.content_type === 'audio')
@@ -236,6 +242,7 @@ export const bufferListenerFn = inngest.createFunction(
           wpp: (user as { wpp: string }).wpp,
           providerMessageId: latest.provider_message_id,
           providerMessageIds,
+          providerTimestamps,
           contentType,
           text: aggregated || undefined,
           mediaUrl: mediaUrl ?? undefined,

@@ -4,6 +4,7 @@
 // quando o user manda várias msgs rápidas em sequência.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { resolveProviderTimestamp } from '../_shared/provider-timestamp.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -147,6 +148,7 @@ Deno.serve(async (req: Request) => {
 
       // Incoming messages
       for (const msg of change.value?.messages ?? []) {
+        const messageTime = resolveProviderTimestamp(msg.timestamp)
         // Idempotência
         const { error: dupErr } = await supabase
           .from('processed_messages')
@@ -172,6 +174,17 @@ Deno.serve(async (req: Request) => {
           userId = (created as { id: string }).id
           await supabase.from('user_profiles').insert({ user_id: userId })
           await supabase.from('user_progress').insert({ user_id: userId })
+        }
+
+        if (messageTime.source === 'server_fallback') {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'message.provider_timestamp_fallback',
+            properties: {
+              reason: messageTime.fallbackReason,
+              content_type: msg.type ?? null,
+            },
+          })
         }
 
         // ============================================================
@@ -211,7 +224,7 @@ Deno.serve(async (req: Request) => {
               buttonId,
               buttonTitle,
               providerMessageId: msg.id,
-              tappedAt: new Date().toISOString(),
+              tappedAt: messageTime.timestamp,
             },
             0, // sem delay — tap é ação imediata
           )
@@ -250,7 +263,8 @@ Deno.serve(async (req: Request) => {
           content_type: contentType,
           text: msg.text?.body ?? msg.image?.caption ?? null,
           mediaUrl: msg.image?.id ?? msg.audio?.id,
-          received_at: new Date().toISOString(),
+          received_at: messageTime.timestamp,
+          server_received_at: messageTime.serverReceivedAt,
         }
 
         const { data: bufRes } = await supabase.rpc('buffer_append_msg', {

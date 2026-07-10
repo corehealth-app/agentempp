@@ -24,6 +24,8 @@ export interface AgentInput {
   provider: string
   /** Timestamp do provider. */
   timestamp: Date
+  /** Timestamps das mensagens agregadas, alinhados a providerMessageIds. */
+  timestamps?: Date[]
 }
 
 /**

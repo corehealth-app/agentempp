@@ -27,6 +27,7 @@ import { classifyBfGoal } from './bf-goal-classifier.js'
 import { detectConsumedDate } from './consumed-date-detector.js'
 import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
 import { decideReplaceRequest } from './replace-decision.js'
+import { resolveRegistrationTime } from './registration-time.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -565,7 +566,7 @@ export const registraRefeicao: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
-    const today = getLocalDateString(tz)
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     // Fix B (2026-05-25): a refeição pode ser de um DIA ANTERIOR ("isso foi de
     // ontem" — caso real do Paulo). Antes a tool SEMPRE usava o dia da GRAVAÇÃO
     // e nunca gravava consumed_at (caía no DEFAULT now()), então "registra o
@@ -585,7 +586,7 @@ export const registraRefeicao: ToolDefinition = {
       // separa msgs; "ontem" pode estar em N-2 e caption "almoço pronto"
       // em N-1). Concatena com separador pra preservar limites de palavra.
       const turnText = ctx.recentUserMessages.join(' \n ')
-      const detection = detectConsumedDate(turnText, tz)
+      const detection = detectConsumedDate(turnText, tz, referenceTimestamp)
       if (detection) {
         detectedConsumedDate = detection.consumed_date
         // Telemetria — pra medir frequência do detector
@@ -602,17 +603,14 @@ export const registraRefeicao: ToolDefinition = {
         })
       }
     }
-    const effectiveDate =
-      args.consumed_date && /^\d{4}-\d{2}-\d{2}$/.test(args.consumed_date)
-        ? args.consumed_date
-        : detectedConsumedDate ?? today
-    // consumed_at: hoje → agora; dia passado → meio-dia LOCAL daquele dia (cai
-    // na data certa em qualquer fuso, e o recompute por consumed_at do closer/
-    // auditoria fica fiel).
-    const consumedAtIso =
-      effectiveDate === today
-        ? new Date().toISOString()
-        : `${effectiveDate}T12:00:00${getTzOffset(tz)}`
+    const registrationTime = resolveRegistrationTime({
+      timezone: tz,
+      referenceTimestamp,
+      explicitDate: args.consumed_date,
+      detectedDate: detectedConsumedDate,
+    })
+    const effectiveDate = registrationTime.localDate
+    const consumedAtIso = registrationTime.occurredAtIso
 
     // Idempotência: se essa msg já gerou meal_logs, skipa snapshot increment.
     // Protege contra retry de Inngest e LLM emitindo a mesma tool 2x no turno.
@@ -994,7 +992,7 @@ export const registraRefeicao: ToolDefinition = {
       const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
       const localHour = Number.parseInt(
         new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', hour12: false })
-          .formatToParts(new Date())
+          .formatToParts(referenceTimestamp)
           .find((p) => p.type === 'hour')?.value ?? '12',
         10,
       )
@@ -1040,7 +1038,7 @@ export const registraRefeicao: ToolDefinition = {
       let gapOpenForClaimed = false
       let gapCheckFailed = false
       if (isClaimedEarlierThanExpected) {
-        const today = getLocalDateString(tz)
+        const today = getLocalDateString(tz, referenceTimestamp)
         // Audit 06-20 (review HIGH F1): janela consumed_at PRECISA ter offset
         // de timezone, senão Postgres interpreta literal sem offset como UTC e
         // a janela vira [date 00:00 UTC, date 23:59 UTC] em vez de janela local
@@ -1987,7 +1985,11 @@ export const registraTreino: ToolDefinition = {
       ),
   }),
   execute: async (args, ctx) => {
-    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
+    const today = getLocalDateString(
+      ctx.userTimezone ?? 'America/Sao_Paulo',
+      referenceTimestamp,
+    )
 
     // Idempotência granular: bloqueia retry/Inngest replay (mesma msg + mesmo
     // workout_type), mas PERMITE múltiplos workouts diferentes da mesma foto
@@ -2195,6 +2197,7 @@ export const registraTreino: ToolDefinition = {
         ? `${args.notes} [src=${kcalSource}]`
         : `[kcal_source=${kcalSource}, formula=${formulaKcal}, image=${args.estimated_kcal_from_image ?? 'n/a'}]`,
       raw_provider_message_id: ctx.providerMessageId ?? null,
+      performed_at: referenceTimestamp.toISOString(),
     })
 
     return {

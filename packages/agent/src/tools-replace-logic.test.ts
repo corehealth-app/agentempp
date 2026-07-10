@@ -658,6 +658,29 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
     expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
+  it('usa o horario original do provider para o dia local e consumed_at', async () => {
+    const { ctx, rpcCalls, mealInserts } = makeContextAndSupabase({})
+    ctx.userTimezone = 'America/New_York'
+    const eventTimeCtx = {
+      ...ctx,
+      referenceTimestamp: new Date('2026-07-10T03:19:45.000Z'),
+    }
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'ceia',
+        items: [{ food_name: 'leite integral', quantity_g: 200 }],
+      },
+      eventTimeCtx,
+    )
+
+    const add = rpcCalls.find(
+      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
+    )
+    expect(add?.params.p_date).toBe('2026-07-09')
+    expect(mealInserts[0]?.consumed_at).toBe('2026-07-10T03:19:45.000Z')
+  })
+
   it('consumed_date inválido (formato errado) → cai pra hoje (ignora)', async () => {
     const { ctx, rpcCalls } = makeContextAndSupabase({})
     await registraRefeicao.execute(

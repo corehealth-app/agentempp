@@ -68,6 +68,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       buttonId: string
       buttonTitle?: string
       providerMessageId?: string
+      tappedAt?: string
     }
     const { userId, wpp, buttonId, providerMessageId } = data
     if (!userId || !buttonId || !wpp) {
@@ -142,7 +143,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
       const { data: pending } = await supabase
         .from('pending_registrations')
-        .select('id, user_id, status, expires_at, proposal')
+        .select('id, user_id, status, expires_at, proposal, created_at, resolved_at')
         .eq('id', pendingId)
         .maybeSingle()
       const row = pending as PendingRow | null
@@ -419,6 +420,9 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           raw_args?: Record<string, unknown>
           source_provider_message_id?: string
           source_text?: string | null
+          source_timestamp?: string
+          source_timezone?: string
+          source_local_date?: string
           /** Roberto 2026-06-01: pending de correção. Quando true, o execute
            * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
            * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
@@ -434,6 +438,18 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         const userTimezone =
           (usr as { timezone?: string | null } | null)?.timezone ?? 'America/Sao_Paulo'
         const userCountry = (usr as { country?: string | null } | null)?.country ?? 'BR'
+        const parsedSourceTimestamp = proposal.source_timestamp
+          ? new Date(proposal.source_timestamp)
+          : null
+        const referenceTimestamp =
+          parsedSourceTimestamp && Number.isFinite(parsedSourceTimestamp.getTime())
+            ? parsedSourceTimestamp
+            : new Date(data.tappedAt ?? row.created_at ?? Date.now())
+        const sourceLocalDate =
+          typeof proposal.source_local_date === 'string' &&
+          /^\d{4}-\d{2}-\d{2}$/.test(proposal.source_local_date)
+            ? proposal.source_local_date
+            : getLocalDateString(userTimezone, referenceTimestamp)
 
         const toolCtx = {
           supabase,
@@ -442,6 +458,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           userCountry,
           userTimezone,
           providerMessageId: proposal.source_provider_message_id ?? providerMessageId,
+          referenceTimestamp,
+          currentUserText: proposal.source_text ?? '',
           recentUserMessages:
             typeof proposal.source_text === 'string' && proposal.source_text.trim()
               ? [proposal.source_text]
@@ -686,8 +704,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               // Audit 06-26 sprint pendentes: extraído pra helpers canônicos
               // @mpp/agent timezone-utils — antes era parser inline duplicado
               // que falhava em alguns formatos de longOffset (review HIGH MED).
-              const todayLocal = getLocalDateString(userTimezone)
-              const tzOff = getTzOffset(userTimezone)
+              const todayLocal = sourceLocalDate
+              const tzOff = getTzOffset(userTimezone, referenceTimestamp)
               const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
               type MT = (typeof validMealTypes)[number]
               const propMealType: MT | null = validMealTypes.includes(proposal.mealType as MT)
@@ -797,6 +815,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   fat_g: it.fat_g,
                 })),
                 replace: effectiveReplace,
+                consumed_date: sourceLocalDate,
               } as never,
               toolCtx as never,
             )) as {
@@ -834,11 +853,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         }
 
         // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)
-        const todayStr = new Date(
-          new Date().toLocaleString('en-US', { timeZone: userTimezone }),
-        )
-          .toISOString()
-          .slice(0, 10)
+        const todayStr = sourceLocalDate
         const [{ data: snap }, { data: prog }, { data: prof }] = await Promise.all([
           supabase
             .from('daily_snapshots')

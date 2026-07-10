@@ -20,7 +20,7 @@ import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
-import { countryToTimezone, getLocalDateString, getTzOffset } from './timezone-utils.js'
+import { getLocalDateString, getTzOffset } from './timezone-utils.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { classifyWeightGoal } from './weight-goal-classifier.js'
 import { classifyBfGoal } from './bf-goal-classifier.js'
@@ -31,6 +31,10 @@ import { resolveRegistrationTime } from './registration-time.js'
 import { decideMealType } from './meal-type-decision.js'
 import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
 import { selectMealRegistrationGroup } from './meal-registration-group.js'
+import {
+  isMultiTimezoneCountry,
+  resolveResidenceTimezone,
+} from './location-timezone.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -2297,6 +2301,7 @@ export const confirmaPaisResidencia: ToolDefinition = {
   description:
     'Grava país de RESIDÊNCIA + idioma + sistema de medidas preferidos. ⚠️ NÃO assuma idioma nem unidade pelo país (brasileiro nos EUA pode preferir PT/métrico; americano no Brasil pode preferir EN/imperial). ' +
     'USE APENAS depois que: (1) o paciente confirmar onde MORA explicitamente; (2) responder SE o idioma é o esperado ou outro (OBRIGATÓRIO se country != BR); (3) responder SE prefere métrico ou imperial (OBRIGATÓRIO se country é US/GB). ' +
+    'Para países com múltiplos fusos (US, BR, CA, AU, MX etc.), pergunte cidade e estado/região e passe também o timezone IANA correspondente. ' +
     'NÃO USE com base só no DDI do WhatsApp — esse é palpite, precisa confirmação verbal. Se o paciente pedir TROCAR de idioma no meio da conversa, chame essa tool de novo com o language atualizado pra persistir a preferência (mantenha country).',
   parameters: z.object({
     country: z
@@ -2321,12 +2326,66 @@ export const confirmaPaisResidencia: ToolDefinition = {
       .describe(
         'Timezone IANA específico (ex: America/New_York, Europe/Lisbon). Use APENAS se o paciente disse a CIDADE e ela tem timezone diferente do default do país (ex: paciente em Los Angeles → America/Los_Angeles em vez de New_York). Se não tiver certeza, omita — sistema deriva do país.',
       ),
+    city: z
+      .string()
+      .min(2)
+      .optional()
+      .describe('Cidade de residência confirmada pelo paciente. Obrigatória em países com múltiplos fusos.'),
+    region: z
+      .string()
+      .min(2)
+      .optional()
+      .describe('Estado/província/região confirmada pelo paciente, ex: FL, SP, Ontario.'),
   }),
   execute: async (args, ctx) => {
     const country = args.country.toUpperCase()
     if (!/^[A-Z]{2}$/.test(country)) {
       throw new Error(`Código país inválido: ${country}. Use ISO alpha-2 (BR, US, PT, etc.).`)
     }
+    const { data: existingUser, error: existingUserError } = await ctx.supabase
+      .from('users')
+      .select('country, country_confirmed, timezone, metadata, locale')
+      .eq('id', ctx.userId)
+      .maybeSingle()
+    if (existingUserError) throw new Error(existingUserError.message)
+    const existing = existingUser as {
+      country?: string | null
+      country_confirmed?: boolean | null
+      timezone?: string | null
+      metadata?: Record<string, unknown> | null
+      locale?: string | null
+    } | null
+    const existingMetadata = existing?.metadata ?? {}
+    const timezoneResolution = resolveResidenceTimezone({
+      country,
+      requestedTimezone: args.timezone,
+      existingCountry: existing?.country,
+      existingTimezone: existing?.timezone,
+      existingTimezoneConfirmed: existingMetadata.timezone_confirmed === true,
+      locationProvided: Boolean(args.city?.trim() && args.region?.trim()),
+    })
+    if (!timezoneResolution.ok) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'country.timezone_rejected',
+        properties: {
+          country,
+          reason: timezoneResolution.reason,
+          timezone: args.timezone ?? null,
+          location_provided: Boolean(args.city || args.region),
+        },
+      })
+      const locationMessage = isMultiTimezoneCountry(country)
+        ? 'Preciso da cidade e do estado/região de residência para definir o fuso corretamente.'
+        : 'O timezone informado não é válido ou não é compatível com o país confirmado.'
+      return {
+        success: false,
+        error: timezoneResolution.reason,
+        requires_location: timezoneResolution.reason === 'location_required',
+        message: locationMessage,
+      }
+    }
+
     const updates: Record<string, unknown> = {
       country,
       country_confirmed: true,
@@ -2341,17 +2400,18 @@ export const confirmaPaisResidencia: ToolDefinition = {
     // Default metric (BR/EU); imperial só pra US/GB confirmado pelo paciente.
     const unitSystem =
       args.unit_system ?? (['US', 'GB'].includes(country) ? null : 'metric')
-    if (unitSystem) {
-      updates.metadata = { unit_system: unitSystem }
+    const metadata = {
+      ...existingMetadata,
+      ...(unitSystem ? { unit_system: unitSystem } : {}),
+      ...(args.city ? { residence_city: args.city.trim() } : {}),
+      ...(args.region ? { residence_region: args.region.trim() } : {}),
+      timezone_confirmed:
+        timezoneResolution.source === 'explicit' ||
+        existingMetadata.timezone_confirmed === true,
+      timezone_source: timezoneResolution.source,
     }
-    // Timezone: explícito do LLM tem prioridade; senão deriva do país.
-    // Valida que é IANA válido tentando construir Intl.DateTimeFormat.
-    let tz = args.timezone ?? countryToTimezone(country)
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: tz })
-    } catch {
-      tz = countryToTimezone(country) // fallback se LLM passou tz inválido
-    }
+    updates.metadata = metadata
+    const tz = timezoneResolution.timezone
     updates.timezone = tz
     const { error } = await (ctx.supabase as unknown as {
       from: (t: string) => {
@@ -2367,7 +2427,13 @@ export const confirmaPaisResidencia: ToolDefinition = {
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'country.confirmed',
-      properties: { country, language: args.language ?? null, wpp: ctx.userWpp },
+      properties: {
+        country,
+        language: args.language ?? null,
+        timezone: tz,
+        timezone_source: timezoneResolution.source,
+        location_provided: Boolean(args.city && args.region),
+      },
     })
     return {
       success: true,

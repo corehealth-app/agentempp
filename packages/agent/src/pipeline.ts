@@ -27,6 +27,7 @@ import {
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
 import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
+import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
   composePendingProposal,
   composePostRegistrationMessage,
@@ -2431,6 +2432,11 @@ function formatUserContext(
     unitSystem === 'imperial' ? 'lb / inch (imperial)' : 'kg / cm (métrico)'
 
   if (ctx.countryConfirmed) {
+    const timezoneConfirmed = ctx.userMetadata?.timezone_confirmed === true
+    const locationInstruction =
+      isMultiTimezoneCountry(country) && !timezoneConfirmed
+        ? `\n\n⚠️ O país ${country} tem múltiplos fusos e o timezone ainda não foi confirmado pela localização. Pergunte cidade e estado/região de residência e chame \`confirma_pais_residencia\` com city, region e timezone IANA. Não altere o fuso sem essa resposta.`
+        : ''
     sections.push(
       `### Localização e preferências\n` +
         `País: **${country}** (confirmado). Idioma salvo: **${language}**. Unidades: **${unitsLabel}**. ` +
@@ -2445,7 +2451,8 @@ function formatUserContext(
           : '') +
         (country !== 'BR'
           ? `\n\n⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
-          : ''),
+          : '') +
+        locationInstruction,
     )
   } else {
     const guess = ctx.countryDetectedFromWpp
@@ -2455,7 +2462,8 @@ function formatUserContext(
       `### País de residência (NÃO confirmado)\n` +
         `Status: ${guess}. **Pergunte explicitamente** ao paciente onde ele mora ` +
         `(siga a rule "Confirmação de país de residência") e chame a tool ` +
-        `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder.`,
+        `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder. ` +
+        `Se o país tiver múltiplos fusos, pergunte também cidade e estado/região antes de gravar.`,
     )
   }
 

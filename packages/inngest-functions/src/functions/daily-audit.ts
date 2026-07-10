@@ -1,4 +1,8 @@
-import { getTzOffset, looksLikeRegistrationRequest } from '@mpp/agent'
+import {
+  findTimezoneCountryMismatches,
+  getTzOffset,
+  looksLikeRegistrationRequest,
+} from '@mpp/agent'
 import { inngest } from '../client.js'
 import { recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
@@ -302,6 +306,21 @@ export const dailyAuditFn = inngest.createFunction(
           .join(', ')
       }
 
+      // 13. Pais confirmado com timezone deterministicamente incompatível.
+      // Read-only: o auditor sinaliza; nunca altera localização sozinho.
+      const { data: locationUsers } = await supabase
+        .from('users')
+        .select('id, country, timezone, country_confirmed')
+        .eq('country_confirmed', true)
+      const timezoneMismatches = findTimezoneCountryMismatches(
+        (locationUsers ?? []) as Array<{
+          id: string
+          country: string | null
+          timezone: string | null
+          country_confirmed: boolean | null
+        }>,
+      )
+
       return {
         unansweredRegistrations: unansweredUserIds.size,
         unansweredNames,
@@ -323,6 +342,8 @@ export const dailyAuditFn = inngest.createFunction(
         snapshotDivergencias: divergencias,
         reevaluationPending,
         turnos: costs.length,
+        timezoneCountryMismatches: timezoneMismatches.length,
+        timezoneMismatchUserIds: timezoneMismatches.map((row) => row.id),
       }
     })
 
@@ -432,6 +453,10 @@ export const dailyAuditFn = inngest.createFunction(
       alerts.push(
         `🔴 ${metrics.unansweredRegistrations} pedido(s) de registro SEM resposta nem meal_log (agente mudo → refeição perdida): ${metrics.unansweredNames}`,
       )
+    if (metrics.timezoneCountryMismatches > 0)
+      alerts.push(
+        `🔴 ${metrics.timezoneCountryMismatches} paciente(s) com país confirmado e timezone incompatível`,
+      )
 
     const overallStatus = alerts.length === 0 ? '✅ Tudo OK' : '⚠️ Atenção'
 
@@ -446,6 +471,7 @@ export const dailyAuditFn = inngest.createFunction(
       `• Snapshot integrity: ${metrics.snapshotIntegrityOk ? 'OK' : `❌ ${metrics.snapshotDivergencias} diff`}\n` +
       `• Reavaliação pendente (+24h): ${metrics.reevaluationPending}\n` +
       `• Registro sem resposta: ${metrics.unansweredRegistrations}${metrics.unansweredRegistrations > 0 ? ` (${metrics.unansweredNames})` : ''}\n` +
+      `• País/timezone incompatível: ${metrics.timezoneCountryMismatches}\n` +
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke
         ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`

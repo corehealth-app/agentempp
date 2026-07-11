@@ -172,6 +172,7 @@ export interface MealItemMatched {
   similarity: number
   source:
     | 'taco'
+    | 'history'
     | 'llm_estimate'
     | 'no_match'
     /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
@@ -287,7 +288,7 @@ export function estimateMacros(foodName: string): {
 } {
   const n = foodName.toLowerCase()
   // Frutas (doces vs neutras)
-  if (/\buva\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(n)) {
+  if (/\buvas?\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(n)) {
     return { category: 'fruta', kcal: 55, protein: 0.8, carbs: 14, fat: 0.3, fiber: 1.5 }
   }
   // Vegetais folhosos
@@ -393,29 +394,76 @@ function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
-const SIMPLE_FRESH_FRUITS = new Set([
-  'abacaxi',
-  'banana',
-  'caqui',
-  'figo',
-  'goiaba',
-  'jabuticaba',
-  'kiwi',
-  'laranja',
-  'maca',
-  'mamao',
-  'manga',
-  'melao',
-  'melancia',
-  'morango',
-  'pera',
-  'pessego',
-  'tangerina',
-  'uva',
+const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
+  ['abacaxi', 'abacaxi'],
+  ['abacaxis', 'abacaxi'],
+  ['banana', 'banana'],
+  ['bananas', 'banana'],
+  ['caqui', 'caqui'],
+  ['caquis', 'caqui'],
+  ['figo', 'figo'],
+  ['figos', 'figo'],
+  ['goiaba', 'goiaba'],
+  ['goiabas', 'goiaba'],
+  ['jabuticaba', 'jabuticaba'],
+  ['jabuticabas', 'jabuticaba'],
+  ['kiwi', 'kiwi'],
+  ['kiwis', 'kiwi'],
+  ['laranja', 'laranja'],
+  ['laranjas', 'laranja'],
+  ['maca', 'maca'],
+  ['macas', 'maca'],
+  ['mamao', 'mamao'],
+  ['mamoes', 'mamao'],
+  ['manga', 'manga'],
+  ['mangas', 'manga'],
+  ['melao', 'melao'],
+  ['meloes', 'melao'],
+  ['melancia', 'melancia'],
+  ['melancias', 'melancia'],
+  ['morango', 'morango'],
+  ['morangos', 'morango'],
+  ['pera', 'pera'],
+  ['peras', 'pera'],
+  ['pessego', 'pessego'],
+  ['pessegos', 'pessego'],
+  ['tangerina', 'tangerina'],
+  ['tangerinas', 'tangerina'],
+  ['uva', 'uva'],
+  ['uvas', 'uva'],
 ])
 
+const SIMPLE_FRESH_FRUIT_MODIFIERS = new Set([
+  'branca', 'brancas', 'com', 'da', 'das', 'de', 'do', 'dos', 'fresca', 'frescas',
+  'fuji', 'gala', 'italiana', 'italianas', 'nanica', 'nanicas', 'prata', 'pratas',
+  'preta', 'pretas', 'roxa', 'roxas', 'semente', 'sementes', 'sem', 'unidade',
+  'unidades', 'verde', 'verdes', 'vermelha', 'vermelhas',
+])
+
+const DERIVED_FRUIT_PATTERN =
+  /\b(?:bolo|compota|desidratad[oa]s?|doce|geleia|goiabada|iogurte|passas?|polpa|sorvete|suco|torta)\b/
+
+function simpleFreshFruitKey(foodName: string): string | null {
+  const normalized = normalizeFoodText(foodName)
+  if (!normalized || DERIVED_FRUIT_PATTERN.test(normalized)) return null
+  const tokens = normalized.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+  const fruitKeys = tokens
+    .map((token) => SIMPLE_FRESH_FRUIT_ALIASES.get(token))
+    .filter((token): token is string => token != null)
+  if (fruitKeys.length !== 1) return null
+  if (
+    tokens.some(
+      (token) =>
+        !SIMPLE_FRESH_FRUIT_ALIASES.has(token) && !SIMPLE_FRESH_FRUIT_MODIFIERS.has(token),
+    )
+  ) {
+    return null
+  }
+  return fruitKeys[0] ?? null
+}
+
 function isSimpleFreshFruitName(foodName: string): boolean {
-  return SIMPLE_FRESH_FRUITS.has(normalizeFoodText(foodName))
+  return simpleFreshFruitKey(foodName) != null
 }
 
 function isSweetDerivedFruitMismatch(
@@ -425,8 +473,12 @@ function isSweetDerivedFruitMismatch(
 ): boolean {
   if (!isSimpleFreshFruitName(foodName)) return false
   const matched = normalizeFoodText(matchedName ?? '')
-  if (!matched || matched === normalizeFoodText(foodName)) return false
-  return (matchCategory ?? '').toLowerCase().includes('doce')
+  if (!matched) return false
+  const fruitKey = simpleFreshFruitKey(foodName)
+  if (fruitKey != null && simpleFreshFruitKey(matched) === fruitKey) return false
+  return (
+    (matchCategory ?? '').toLowerCase().includes('doce') || DERIVED_FRUIT_PATTERN.test(matched)
+  )
 }
 
 function isImplausibleFreshFruitHistory(
@@ -436,7 +488,7 @@ function isImplausibleFreshFruitHistory(
   fatPer100g: number,
 ): boolean {
   if (!isSimpleFreshFruitName(foodName)) return false
-  return kcalPer100g > 150 || carbsPer100g > 40 || fatPer100g > 8
+  return kcalPer100g >= 120 || carbsPer100g > 40 || fatPer100g > 8
 }
 
 type SkinState = 'skinless' | 'skin_on' | 'unspecified'
@@ -562,6 +614,8 @@ const PREPARATION_QUALIFIERS = new Set([
 ])
 
 export function extractAnchor(foodName: string): string | null {
+  const fruitKey = simpleFreshFruitKey(foodName)
+  if (fruitKey) return fruitKey
   const tokens = foodName
     .toLowerCase()
     .replace(/[^a-záéíóúâêôãõçü\s]/gi, ' ')
@@ -571,7 +625,13 @@ export function extractAnchor(foodName: string): string | null {
   // Empate: pega o primeiro (ordem de menção do paciente).
   if (tokens.length === 0) return null
   tokens.sort((a, b) => b.length - a.length)
-  return tokens[0] ?? null
+  return tokens[0] ? normalizeFoodText(tokens[0]) : null
+}
+
+const TRUSTED_HISTORY_SOURCES = ['taco', 'history'] as const
+
+function isTrustedHistorySource(source: string | null | undefined): boolean {
+  return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
 }
 
 /**
@@ -794,7 +854,7 @@ export async function lookupFoodCorrection(
  * os logs antigos), nos dias seguintes esse log vira fonte de verdade.
  *
  * Filtros importantes:
- *   - source='taco' (matches confiáveis, não estimativa por categoria nem zerados)
+ *   - source em taco/history (cadeia confiável, sem estimativa por categoria)
  *   - kcal > 0 (exclui logs sanity-rejected)
  *   - últimas 30d
  *   - case/acento-insensitive (normalize)
@@ -823,9 +883,9 @@ export async function lookupUserHistory(
   const supaTyped = supabase as any
   const { data } = await supaTyped
     .from('meal_logs')
-    .select('id, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g')
+    .select('id, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
     .eq('user_id', userId)
-    .eq('source', 'taco')
+    .in('source', [...TRUSTED_HISTORY_SOURCES])
     .gt('kcal', 0)
     .gte('created_at', lookback)
     .order('created_at', { ascending: false })
@@ -838,8 +898,12 @@ export async function lookupUserHistory(
     protein_g: number
     carbs_g: number
     fat_g: number
+    source: string | null
   }>
-  const compatibleRows = rows.filter((r) => !hasNutritionModifierConflict(foodName, r.food_name))
+  const compatibleRows = rows.filter(
+    (r) =>
+      isTrustedHistorySource(r.source) && !hasNutritionModifierConflict(foodName, r.food_name),
+  )
   // Match exato (normalizado) primeiro; depois substring forte.
   const exact = compatibleRows.find((r) => normalize(r.food_name) === target)
   const sub =
@@ -1064,7 +1128,7 @@ export async function calcMealMacros(
           fat_g: fat,
           fiber_g: 0,
           similarity: 1.0,
-          source: 'taco',
+          source: 'history',
           display_qty: nat.display_qty,
           display_unit: nat.display_unit,
         })
@@ -1264,7 +1328,7 @@ export async function calcMealMacros(
     // nome do match. Bloqueia bug "arroz refogado" → "espinafre refogado".
     // Se a âncora não aparece, força fallback pra estimativa por categoria.
     const anchor = extractAnchor(it.food_name)
-    const matchedNameLower = (m.name_pt ?? '').toLowerCase()
+    const matchedNameLower = normalizeFoodText(m.name_pt ?? '')
     const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(
       it.food_name,
@@ -1530,8 +1594,7 @@ export async function calcMealMacros(
         .eq('user_id', userIdHint ?? '_no_user_')
         .ilike('food_name', it.food_name)
         .gte('created_at', lookback)
-        .neq('source', 'no_match')
-        .neq('source', 'composite_rejected')
+        .in('source', [...TRUSTED_HISTORY_SOURCES])
         .order('created_at', { ascending: false })
         .limit(20)
       if (prior && prior.length > 0) {
@@ -1542,10 +1605,15 @@ export async function calcMealMacros(
           protein_g: number
           carbs_g: number
           fat_g: number
-        }>).filter((p) => !hasNutritionModifierConflict(it.food_name, p.food_name))
+          source: string | null
+        }>).filter(
+          (p) =>
+            isTrustedHistorySource(p.source) &&
+            !hasNutritionModifierConflict(it.food_name, p.food_name),
+        )
         if (compatiblePrior.length !== prior.length) {
           auditWarnings.push(
-            `"${it.food_name}" ignorou ${prior.length - compatiblePrior.length} registro(s) do histórico por diferença de pele/composição.`,
+            `"${it.food_name}" ignorou ${prior.length - compatiblePrior.length} registro(s) do histórico por fonte não confiável ou diferença de preparo/composição.`,
           )
         }
         // Normaliza tudo pra per-100g (kcal/100g, P/100g, C/100g, G/100g),
@@ -1611,7 +1679,7 @@ export async function calcMealMacros(
               fat_g: reFat,
               fiber_g: 0,
               similarity: 1.0,
-              source: 'taco',
+              source: 'history',
               display_qty: natRe.display_qty,
               display_unit: natRe.display_unit,
             })

@@ -38,6 +38,7 @@ type HistoryRow = {
   protein_g: number
   carbs_g: number
   fat_g: number
+  source?: string
 }
 
 type CorrectionRow = {
@@ -64,7 +65,7 @@ function makeMock(
       data: rows,
       error: null,
     }
-    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'or', 'order', 'limit']) {
+    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'in', 'or', 'order', 'limit']) {
       obj[m] = () => makeChain(rows)
     }
     obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
@@ -79,7 +80,9 @@ function makeMock(
       return { data: [], error: null }
     },
     from: (table: string) => {
-      if (table === 'meal_logs') return makeChain(historyRows)
+      if (table === 'meal_logs') {
+        return makeChain(historyRows.map((row) => ({ source: 'taco', ...row })))
+      }
       if (table === 'user_food_corrections') return makeChain(correctionRows)
       return makeChain([])
     },
@@ -504,7 +507,7 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       'BR',
       'user-roberto',
     )
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('history')
     expect(r.items[0]?.matched_taco_name).toContain('histórico')
     // 100 kcal/100g × 250g/100 = 250 kcal — NÃO 212.5 (achocolatado)
     expect(r.items[0]?.kcal).toBe(250)
@@ -533,7 +536,7 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       'BR',
       'user-x',
     )
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('history')
     expect(r.items[0]?.kcal).toBe(300) // 150 × 2
   })
 
@@ -639,6 +642,126 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     expect(r.items[0]?.matched_taco_name).not.toBe('[reuso histórico]')
     expect(r.items[0]?.kcal).toBeLessThan(520.8)
     expect(r.items[0]?.fat_g).toBeLessThan(26.4)
+  })
+
+  it('marca reuso confiável como history, sem fingir que veio direto da TACO', async () => {
+    const mock = makeMock(
+      {},
+      [
+        {
+          id: 'log-history-trusted',
+          food_name: 'leite com whey',
+          quantity_g: 200,
+          kcal: 190,
+          protein_g: 20,
+          carbs_g: 10,
+          fat_g: 6,
+          source: 'taco',
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'leite com whey', quantity_g: 200 }],
+      'BR',
+      'user-history',
+    )
+
+    expect(r.items[0]?.source).toBe('history')
+    expect(r.items[0]?.kcal).toBe(190)
+  })
+})
+
+describe('calcMealMacros — fruta plural e proveniência do histórico', () => {
+  const purpleGrapeMatch: MockRow = {
+    id: 501,
+    name_pt: 'uva roxa',
+    category: 'frutas',
+    similarity: 0.583,
+    kcal_per_100g: 69,
+    protein_g: 0.7,
+    carbs_g: 18.1,
+    fat_g: 0.2,
+    fiber_g: 0.9,
+  }
+
+  it('"uvas roxas" aceita o item canônico "uva roxa"', async () => {
+    const mock = makeMock({ 'uvas roxas': purpleGrapeMatch })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'uvas roxas', quantity_g: 70 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
+    expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
+  })
+
+  it('"uvas roxas" sem item na base usa fallback de fruta, não prato genérico', async () => {
+    const mock = makeMock({})
+
+    const r = await calcMealMacros(mock, [{ food_name: 'uvas roxas', quantity_g: 70 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.matched_taco_name).toContain('fruta')
+    expect(r.items[0]?.kcal).toBeCloseTo(38.5, 1)
+  })
+
+  it('ignora histórico genérico implausível mesmo quando uma linha antiga diz taco', async () => {
+    const mock = makeMock(
+      { 'uvas roxas': purpleGrapeMatch },
+      [
+        {
+          id: 'log-grape-laundered',
+          food_name: 'uvas roxas',
+          quantity_g: 70,
+          kcal: 105,
+          protein_g: 4.9,
+          carbs_g: 12.6,
+          fat_g: 3.5,
+          source: 'taco',
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'uvas roxas', quantity_g: 70 }],
+      'BR',
+      'user-grapes',
+    )
+
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
+    expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
+  })
+
+  it('não reutiliza linha cuja origem é llm_estimate', async () => {
+    const mock = makeMock(
+      { 'uvas roxas': purpleGrapeMatch },
+      [
+        {
+          id: 'log-grape-estimate',
+          food_name: 'uvas roxas',
+          quantity_g: 70,
+          kcal: 105,
+          protein_g: 4.9,
+          carbs_g: 12.6,
+          fat_g: 3.5,
+          source: 'llm_estimate',
+        },
+      ],
+    )
+
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'uvas roxas', quantity_g: 70 }],
+      'BR',
+      'user-grapes',
+    )
+
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
+    expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
   })
 })
 

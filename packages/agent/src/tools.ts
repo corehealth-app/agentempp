@@ -547,7 +547,7 @@ export const registraRefeicao: ToolDefinition = {
           quantity_g: z
             .number()
             .positive()
-            .max(10_000)
+            .max(9999)
             .describe('Quantidade em gramas (estime se não informado)'),
         }),
       )
@@ -1237,16 +1237,15 @@ export const registraRefeicao: ToolDefinition = {
     }
     // ========================================================================
 
-    // CORREÇÃO: paciente quer substituir refeição já registrada hoje.
-    // Deleta meal_logs do dia+meal_type e SUBTRAI seus macros do snapshot
-    // antes de inserir os novos. Sem isso, snapshot_add_meal duplica.
+    // CORREÇÃO: coleta o alvo e o resumo antes da RPC transacional. A remoção,
+    // inserção e recomposição do snapshot acontecem juntas mais abaixo.
     let replacedSummary: { count: number; kcal_removed: number; cross_from?: string } | null = null
-    if (args.replace === true && args.meal_type) {
-      // Lista de meal_types pra apagar: SEMPRE o atual + cross se detectado.
-      // Cross-meal-type: paciente corrigiu trocando o tipo (ex: lanche → almoco).
-      const mealTypesToDelete = crossMealTypeFrom
+    const mealTypesToReplace = args.meal_type
+      ? crossMealTypeFrom
         ? [args.meal_type, crossMealTypeFrom]
         : [args.meal_type]
+      : []
+    if (args.replace === true && args.meal_type) {
       // BUG HISTÓRICO (Roberto 09/05): query usava `created_at >= '${today}T00:00:00'`
       // sem timezone — Postgres interpretava como UTC, mas `today` era data LOCAL
       // (EDT). Pra paciente em UTC-4 entre 20h-24h local (= 00h-04h UTC do dia
@@ -1266,16 +1265,13 @@ export const registraRefeicao: ToolDefinition = {
       type RemoveRow = {
         id: string
         kcal: number | null
-        protein_g: number | null
-        carbs_g: number | null
-        fat_g: number | null
       }
       let allRemoved: RemoveRow[] = []
       if (snapId) {
-        for (const mt of mealTypesToDelete) {
+        for (const mt of mealTypesToReplace) {
           const { data: rows } = await ctx.supabase
             .from('meal_logs')
-            .select('id, kcal, protein_g, carbs_g, fat_g')
+            .select('id, kcal')
             .eq('user_id', ctx.userId)
             .eq('meal_type', mt)
             .eq('snapshot_id', snapId)
@@ -1283,52 +1279,10 @@ export const registraRefeicao: ToolDefinition = {
         }
       }
       if (allRemoved.length > 0) {
-        const removed = allRemoved.reduce(
-          (acc, l) => ({
-            kcal: acc.kcal + Number(l.kcal ?? 0),
-            prot: acc.prot + Number(l.protein_g ?? 0),
-            carb: acc.carb + Number(l.carbs_g ?? 0),
-            fat: acc.fat + Number(l.fat_g ?? 0),
-          }),
-          { kcal: 0, prot: 0, carb: 0, fat: 0 },
-        )
-        // Deleta os logs antigos de TODOS os meal_types alvo (atual + cross)
-        for (const mt of mealTypesToDelete) {
-          await ctx.supabase
-            .from('meal_logs')
-            .delete()
-            .eq('user_id', ctx.userId)
-            .eq('meal_type', mt)
-            .eq('snapshot_id', snapId!)
-        }
-        if (crossMealTypeFrom) {
-          await ctx.supabase.from('product_events').insert({
-            user_id: ctx.userId,
-            event: 'tool.replace_cross_meal_type',
-            properties: {
-              from_meal_type: crossMealTypeFrom,
-              to_meal_type: args.meal_type,
-              removed_count: allRemoved.length,
-              removed_kcal: Math.round(removed.kcal),
-            },
-          })
-        }
-        // Subtrai do snapshot via RPC (passa valores negativos)
-        await (ctx.supabase as unknown as {
-          rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
-        }).rpc('snapshot_add_meal', {
-          p_user_id: ctx.userId,
-          p_date: effectiveDate,
-          p_kcal: -removed.kcal,
-          p_protein: -removed.prot,
-          p_carbs: -removed.carb,
-          p_fat: -removed.fat,
-          p_calories_target: null,
-          p_protein_target: null,
-        })
+        const removedKcal = allRemoved.reduce((sum, log) => sum + Number(log.kcal ?? 0), 0)
         replacedSummary = {
           count: allRemoved.length,
-          kcal_removed: Math.round(removed.kcal),
+          kcal_removed: Math.round(removedKcal),
           ...(crossMealTypeFrom ? { cross_from: crossMealTypeFrom } : {}),
         }
       } else {
@@ -1564,8 +1518,27 @@ export const registraRefeicao: ToolDefinition = {
     // os itens que sobraram — senão o snapshot inflaria mesmo sem o meal_log
     // duplicado.
     let itemsToInsert = calc.items
-    let totalsToAdd = calc.totals
-    if (args.replace !== true && args.meal_type && calc.items.length > 0) {
+    const explicitAdditionTrigger = detectAdditionInRecentMessages(
+      (ctx.recentUserMessages ?? []).map((content) => ({ role: 'user' as const, content })),
+      4,
+    )
+    if (explicitAdditionTrigger && args.replace !== true) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.same_day_dedup_bypassed_addition',
+        properties: {
+          meal_type: args.meal_type ?? null,
+          addition_trigger: explicitAdditionTrigger,
+          provider_message_id: ctx.providerMessageId ?? null,
+        },
+      })
+    }
+    if (
+      args.replace !== true &&
+      !explicitAdditionTrigger &&
+      args.meal_type &&
+      calc.items.length > 0
+    ) {
       // Resolve o snapshot do dia local (mesma estratégia do path de replace:
       // por (user_id, date) em vez de range de created_at em UTC).
       const { data: snapToday } = await ctx.supabase
@@ -1615,17 +1588,6 @@ export const registraRefeicao: ToolDefinition = {
               },
             })
             itemsToInsert = survivors
-            // Recalcula os totais a somar no snapshot SÓ com os sobreviventes.
-            totalsToAdd = survivors.reduce(
-              (acc, it) => ({
-                kcal: acc.kcal + Number(it.kcal ?? 0),
-                protein_g: acc.protein_g + Number(it.protein_g ?? 0),
-                carbs_g: acc.carbs_g + Number(it.carbs_g ?? 0),
-                fat_g: acc.fat_g + Number(it.fat_g ?? 0),
-                fiber_g: acc.fiber_g + Number((it as { fiber_g?: number }).fiber_g ?? 0),
-              }),
-              { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
-            )
           }
         }
       }
@@ -1639,7 +1601,7 @@ export const registraRefeicao: ToolDefinition = {
     // por TODOS os itens — então o pastel dup adicionava 306 kcal duplicada ao
     // snapshot mesmo o meal_log sendo rejeitado. Drift: snap=1071, sum=764.
     // Fix: query (pmid, food_name) existentes, filtra os duplicados de
-    // itemsToInsert E subtrai do totalsToAdd ANTES do snapshot_add_meal.
+    // itemsToInsert antes da RPC transacional.
     if (ctx.providerMessageId && itemsToInsert.length > 0) {
       const { data: existingForPmid } = await ctx.supabase
         .from('meal_logs')
@@ -1661,18 +1623,6 @@ export const registraRefeicao: ToolDefinition = {
           return true
         })
         if (dupRemoved.length > 0) {
-          // Recalcula totalsToAdd só com sobreviventes pra snapshot_add_meal
-          // não receber kcal de itens que NÃO serão inseridos.
-          totalsToAdd = itemsToInsert.reduce(
-            (acc, it) => ({
-              kcal: acc.kcal + Number(it.kcal ?? 0),
-              protein_g: acc.protein_g + Number(it.protein_g ?? 0),
-              carbs_g: acc.carbs_g + Number(it.carbs_g ?? 0),
-              fat_g: acc.fat_g + Number(it.fat_g ?? 0),
-              fiber_g: acc.fiber_g + Number((it as { fiber_g?: number }).fiber_g ?? 0),
-            }),
-            { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
-          )
           await ctx.supabase.from('product_events').insert({
             user_id: ctx.userId,
             event: 'tool.meal_logs_skipped_dup_pmid',
@@ -1700,79 +1650,98 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
-    // RPC atomic: cria ou incrementa snapshot SEM race condition.
+    type AtomicMealResult = {
+      snapshot_id: string
+      inserted_count: number
+      inserted_food_names: string[]
+      replaced_count: number
+      calories_consumed: number
+      protein_g: number
+      carbs_g: number
+      fat_g: number
+      calories_target: number | null
+      protein_target: number | null
+      daily_balance: number
+    }
+    const atomicItems = itemsToInsert.map((item) => ({
+      food_name: item.food_name,
+      quantity_g: item.quantity_g,
+      kcal: item.kcal,
+      protein_g: item.protein_g,
+      carbs_g: item.carbs_g,
+      fat_g: item.fat_g,
+      source: item.source,
+      confidence: item.similarity,
+    }))
     const { data: updated, error: updErr } = await (ctx.supabase as unknown as {
       rpc: (
         n: string,
         p: Record<string, unknown>,
       ) => Promise<{
-        data: { id: string; calories_consumed: number; protein_g: number; calories_target: number | null; protein_target: number | null; daily_balance: number } | null
+        data: AtomicMealResult | null
         error: { message?: string } | null
       }>
-    }).rpc('snapshot_add_meal', {
+    }).rpc('register_meal_atomic', {
       p_user_id: ctx.userId,
       p_date: effectiveDate,
-      p_kcal: totalsToAdd.kcal,
-      p_protein: totalsToAdd.protein_g,
-      p_carbs: totalsToAdd.carbs_g,
-      p_fat: totalsToAdd.fat_g,
+      p_meal_type: args.meal_type ?? null,
+      p_items: atomicItems,
+      p_replace: args.replace === true,
+      p_replace_meal_types: args.replace === true ? mealTypesToReplace : null,
+      p_consumed_at: consumedAtIso,
+      p_provider_message_id: ctx.providerMessageId ?? null,
       p_calories_target: targets.calories_target,
       p_protein_target: targets.protein_target,
     })
-    if (updErr) throw new Error(updErr.message ?? 'snapshot_add_meal failed')
-    if (!updated) throw new Error('snapshot_add_meal returned null')
-    const snapshotId = updated.id
+    if (updErr) throw new Error(updErr.message ?? 'register_meal_atomic failed')
+    if (!updated) throw new Error('register_meal_atomic returned null')
 
-    // Insere cada item em meal_logs (apenas os sobreviventes da dedup).
-    // TODO: a UNIQUE composite (user_id, raw_provider_message_id, food_name)
-    // garante idempotência só por mensagem; o ideal seria um .upsert() com
-    // ON CONFLICT DO NOTHING, mas o supabase-js exige declarar onConflict com
-    // o nome exato da constraint — fica como follow-up pra não arriscar trocar
-    // semântica do insert puro sem validar a constraint em prod.
-    // Bug Roberto 2026-05-29 21:37: handler do tap rodou esta tool, snapshot foi
-    // criado, mas os 5 inserts deste loop falharam silenciosamente — a tool
-    // retornou `success:true` e o paciente recebeu "Café registrado ✅" sem
-    // nada gravado. Causa: ausência de error check no await do supabase-js
-    // (erro retorna em `{ data, error }`, não throw). Agora: throw em qualquer
-    // erro de insert + verificação pós-loop por count, garantindo que o
-    // success não mente. Inngest faz retry da step.run em throw — visibilidade.
-    const insertErrors: string[] = []
-    for (const item of itemsToInsert) {
-      const { error: insErr } = await ctx.supabase.from('meal_logs').insert({
-        user_id: ctx.userId,
-        snapshot_id: snapshotId,
-        meal_type: args.meal_type ?? null,
-        food_name: item.food_name,
-        quantity_g: item.quantity_g,
-        kcal: item.kcal,
-        protein_g: item.protein_g,
-        carbs_g: item.carbs_g,
-        fat_g: item.fat_g,
-        source: item.source,
-        confidence: item.similarity,
-        consumed_at: consumedAtIso,
-        raw_provider_message_id: ctx.providerMessageId ?? null,
-      })
-      if (insErr) {
-        insertErrors.push(`${item.food_name}: ${insErr.message ?? 'unknown'}`)
-      }
-    }
-    if (insertErrors.length > 0) {
+    if (crossMealTypeFrom && updated.replaced_count > 0) {
       await ctx.supabase.from('product_events').insert({
         user_id: ctx.userId,
-        event: 'tool.meal_logs_insert_failed',
+        event: 'tool.replace_cross_meal_type',
         properties: {
-          provider_message_id: ctx.providerMessageId ?? null,
-          meal_type: args.meal_type ?? null,
-          snapshot_id: snapshotId,
-          attempted: itemsToInsert.length,
-          errors: insertErrors,
+          from_meal_type: crossMealTypeFrom,
+          to_meal_type: args.meal_type,
+          removed_count: updated.replaced_count,
+          removed_kcal: replacedSummary?.kcal_removed ?? 0,
         },
       })
-      throw new Error(
-        `meal_logs insert failed (${insertErrors.length}/${itemsToInsert.length}): ${insertErrors.join('; ')}`,
-      )
     }
+
+    const insertedNames = new Set(updated.inserted_food_names ?? [])
+    const insertedItems = itemsToInsert.filter((item) => insertedNames.has(item.food_name))
+    if (updated.inserted_count === 0 && args.replace !== true) {
+      return {
+        success: true,
+        already_logged: true,
+        meal: { items: [], totals: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 } },
+        warnings: calc.user_warnings,
+        replaced: replacedSummary,
+      }
+    }
+    if (updated.inserted_count !== itemsToInsert.length) {
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.meal_atomic_partial_idempotency',
+        properties: {
+          provider_message_id: ctx.providerMessageId ?? null,
+          attempted: itemsToInsert.length,
+          inserted: updated.inserted_count,
+        },
+      })
+    }
+
+    const insertedTotals = insertedItems.reduce(
+      (acc, item) => ({
+        kcal: acc.kcal + Number(item.kcal ?? 0),
+        protein_g: acc.protein_g + Number(item.protein_g ?? 0),
+        carbs_g: acc.carbs_g + Number(item.carbs_g ?? 0),
+        fat_g: acc.fat_g + Number(item.fat_g ?? 0),
+        fiber_g: acc.fiber_g + Number(item.fiber_g ?? 0),
+      }),
+      { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
+    )
 
     return {
       success: true,
@@ -1780,7 +1749,7 @@ export const registraRefeicao: ToolDefinition = {
         // Reporta SÓ os itens que foram de fato inseridos (sobreviventes da
         // dedup contra o dia) — senão o card mostraria itens duplicados que
         // não entraram no snapshot.
-        items: itemsToInsert.map((i) => ({
+        items: insertedItems.map((i) => ({
           name: i.food_name,
           matched_to: i.matched_taco_name || null,
           quantity_g: i.quantity_g,
@@ -1794,7 +1763,7 @@ export const registraRefeicao: ToolDefinition = {
           fat_g: i.fat_g,
           source: i.source,
         })),
-        totals: totalsToAdd,
+        totals: insertedTotals,
       },
       day_totals: updated,
       warnings: calc.user_warnings,

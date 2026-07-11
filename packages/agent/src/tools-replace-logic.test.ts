@@ -141,6 +141,32 @@ function makeContextAndSupabase(opts: MockOptions) {
           data: { id: 'snap-mock', calories_consumed: 0, protein_g: 0, calories_target: null, protein_target: null, daily_balance: 0 },
           error: null,
         }
+      if (fn === 'register_meal_atomic') {
+        const items = (params?.p_items ?? []) as Array<Record<string, unknown>>
+        mealInserts.push(
+          ...items.map((item) => ({
+            ...item,
+            meal_type: params?.p_meal_type ?? null,
+            consumed_at: params?.p_consumed_at ?? null,
+          })),
+        )
+        return {
+          data: {
+            snapshot_id: 'snap-mock',
+            inserted_count: items.length,
+            inserted_food_names: items.map((item) => String(item.food_name)),
+            replaced_count: Number(params?.p_replace ? 1 : 0),
+            calories_consumed: items.reduce((sum, item) => sum + Number(item.kcal ?? 0), 0),
+            protein_g: items.reduce((sum, item) => sum + Number(item.protein_g ?? 0), 0),
+            carbs_g: items.reduce((sum, item) => sum + Number(item.carbs_g ?? 0), 0),
+            fat_g: items.reduce((sum, item) => sum + Number(item.fat_g ?? 0), 0),
+            calories_target: null,
+            protein_target: null,
+            daily_balance: 0,
+          },
+          error: null,
+        }
+      }
       return { data: null, error: null }
     },
   } as unknown as ServiceClient
@@ -311,7 +337,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context')).toBeUndefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeDefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_weak_evidence')).toBeDefined()
-    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+    expect(rpcCalls.find((c) => c.fn === 'register_meal_atomic')?.params.p_replace).toBe(false)
     expect(mealInserts.some((r) => r.food_name === 'torta de frango')).toBe(true)
   })
 
@@ -349,7 +375,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     )
 
     expect(events.find((e) => e.event === 'tool.replace_blocked_addition_intent')).toBeDefined()
-    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+    expect(rpcCalls.find((c) => c.fn === 'register_meal_atomic')?.params.p_replace).toBe(false)
   })
 
   it('preserva user_kcal aprovado no pending ao gravar pela tool', async () => {
@@ -369,8 +395,8 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     )
 
     expect(Number(mealInserts[0]?.kcal)).toBe(95)
-    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
-    expect(snapshotCall?.params.p_kcal).toBe(95)
+    const atomicCall = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
+    expect((atomicCall?.params.p_items as Array<{ kcal: number }>)[0]?.kcal).toBe(95)
   })
 
   it('preserva kcal explícita de mensagem anterior quando confirmação curta diz "Sim isso" — caso Luciana', async () => {
@@ -394,8 +420,13 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
 
     expect(Number(mealInserts.find((r) => r.food_name === 'torta de legumes')?.kcal)).toBe(80)
     expect(Number(mealInserts.find((r) => r.food_name === 'pão baguete')?.kcal)).toBe(60)
-    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
-    expect(snapshotCall?.params.p_kcal).toBe(140)
+    const atomicCall = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
+    expect(
+      (atomicCall?.params.p_items as Array<{ kcal: number }>).reduce(
+        (sum, item) => sum + item.kcal,
+        0,
+      ),
+    ).toBe(140)
     expect(events.find((e) => e.event === 'pipeline.user_kcal_override')).toBeDefined()
   })
 
@@ -654,6 +685,38 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
   })
 })
 
+describe('registra_refeicao — persistência transacional', () => {
+  it('envia itens e replace em uma única RPC atômica', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+      dayLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+      recentUserMessages: ['corrige o almoço, o frango era grelhado'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco',
+        replace: true,
+        items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+      },
+      ctx,
+    )
+
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(atomicCall).toBeDefined()
+    expect(atomicCall?.params).toMatchObject({
+      p_user_id: 'user-test',
+      p_meal_type: 'almoco',
+      p_replace: true,
+    })
+    expect(atomicCall?.params.p_items).toEqual([
+      expect.objectContaining({ food_name: 'frango grelhado', quantity_g: 120 }),
+    ])
+    expect(rpcCalls.some((call) => call.fn === 'snapshot_add_meal')).toBe(false)
+  })
+})
+
 describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de dia anterior)', () => {
   it('consumed_date de ontem → snapshot e consumed_at no DIA CERTO, não no dia da gravação', async () => {
     const { ctx, rpcCalls, mealInserts } = makeContextAndSupabase({})
@@ -665,10 +728,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       },
       ctx,
     )
-    // snapshot_add_meal (incremento, p_kcal>=0) deve ir pro dia 20, não pra hoje
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toBe('2026-05-20')
     // o meal_log gravado deve ter consumed_at caindo no dia 20
     expect(mealInserts.length).toBeGreaterThan(0)
@@ -681,9 +741,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       { meal_type: 'jantar', items: [{ food_name: 'arroz branco cozido', quantity_g: 100 }] },
       ctx,
     )
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).not.toBe('2026-05-20')
     expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
@@ -704,9 +762,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       eventTimeCtx,
     )
 
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toBe('2026-07-09')
     expect(mealInserts[0]?.consumed_at).toBe('2026-07-10T03:19:45.000Z')
   })
@@ -721,9 +777,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       },
       ctx,
     )
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(add?.params.p_date).not.toBe('ontem')
   })

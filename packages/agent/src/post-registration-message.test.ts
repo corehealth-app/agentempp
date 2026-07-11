@@ -436,6 +436,54 @@ describe('composePendingProposal — proposta + botões pro tap [Sim, registrar]
   })
 })
 
+describe('normalizePendingFoodCorrections — contrato do pending', () => {
+  it('preserva correção de identidade e macros válidos para o tap', async () => {
+    const module = (await import('./post-registration-message.js')) as unknown as {
+      normalizePendingFoodCorrections?: (value: unknown) => unknown
+    }
+
+    expect(module.normalizePendingFoodCorrections).toBeTypeOf('function')
+    expect(
+      module.normalizePendingFoodCorrections?.([
+        {
+          de: 'frango frito',
+          para: 'frango grelhado',
+          kcal_per_100g: 159,
+          protein_g: 32,
+          carbs_g: 0,
+          fat_g: 2.5,
+        },
+      ]),
+    ).toEqual([
+      {
+        de: 'frango frito',
+        para: 'frango grelhado',
+        kcal_per_100g: 159,
+        protein_g: 32,
+        carbs_g: 0,
+        fat_g: 2.5,
+      },
+    ])
+  })
+
+  it('descarta identidade igual e não propaga macros inválidos', async () => {
+    const { normalizePendingFoodCorrections } = await import('./post-registration-message.js')
+
+    expect(
+      normalizePendingFoodCorrections([
+        { de: 'frango', para: 'FRANGO', kcal_per_100g: 200 },
+        {
+          de: 'frango frito',
+          para: 'frango grelhado',
+          kcal_per_100g: -1,
+          protein_g: Number.POSITIVE_INFINITY,
+          carbs_g: '0',
+        },
+      ]),
+    ).toEqual([{ de: 'frango frito', para: 'frango grelhado' }])
+  })
+})
+
 describe('splitMealAndCard', () => {
   it('divide mensagem de registro completa em meal + card pelo marker 🔥 Consumido', () => {
     const msg = composePostRegistrationMessage({

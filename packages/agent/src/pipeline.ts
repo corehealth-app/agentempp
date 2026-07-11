@@ -37,6 +37,7 @@ import {
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
+  normalizePendingFoodCorrections,
   type RegistrationEntry,
 } from './post-registration-message.js'
 import {
@@ -840,6 +841,7 @@ export async function processMessage(
             const args = validated as {
               meal_type?: string | null
               replace?: boolean
+              corrections?: unknown
               items: Array<{
                 food_name: string
                 quantity_g?: number
@@ -923,6 +925,7 @@ export async function processMessage(
                     `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
                 )
               : []
+            const pendingCorrections = normalizePendingFoodCorrections(args.corrections)
             const proposal = {
               kind: 'meal' as const,
               mealType: args.meal_type ?? 'outro',
@@ -932,6 +935,7 @@ export async function processMessage(
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: semanticPatientText || null,
               ...(confirmationNotes.length > 0 ? { confirmationNotes } : {}),
+              ...(pendingCorrections.length > 0 ? { corrections: pendingCorrections } : {}),
               express_eligible: false,
               express_reason: exprResult.reason,
               // Roberto 2026-06-01: salva replace pra handler do tap propagar
@@ -962,6 +966,7 @@ export async function processMessage(
                   kind: 'meal',
                   meal_type: proposal.mealType,
                   items_count: proposalItems.length,
+                  corrections_count: pendingCorrections.length,
                   express_reason: exprResult.reason,
                 },
               })

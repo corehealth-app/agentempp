@@ -381,6 +381,42 @@ export interface PendingProposal {
   sourceContentType?: 'text' | 'image' | 'audio' | null
   /** Pontos que exigem confirmação explícita porque a origem não é conclusiva. */
   confirmationNotes?: string[]
+  corrections?: PendingFoodCorrection[]
+}
+
+export interface PendingFoodCorrection {
+  [key: string]: string | number | undefined
+  de: string
+  para: string
+  kcal_per_100g?: number
+  protein_g?: number
+  carbs_g?: number
+  fat_g?: number
+}
+
+export function normalizePendingFoodCorrections(value: unknown): PendingFoodCorrection[] {
+  if (!Array.isArray(value)) return []
+  const normalized: PendingFoodCorrection[] = []
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object') continue
+    const raw = candidate as Record<string, unknown>
+    const de = typeof raw.de === 'string' ? raw.de.trim() : ''
+    const para = typeof raw.para === 'string' ? raw.para.trim() : ''
+    if (!de || !para || de.toLocaleLowerCase() === para.toLocaleLowerCase()) continue
+    const correction: PendingFoodCorrection = { de, para }
+    for (const key of ['kcal_per_100g', 'protein_g', 'carbs_g', 'fat_g'] as const) {
+      const numberValue = raw[key]
+      if (
+        typeof numberValue === 'number' &&
+        Number.isFinite(numberValue) &&
+        numberValue >= 0
+      ) {
+        correction[key] = numberValue
+      }
+    }
+    normalized.push(correction)
+  }
+  return normalized
 }
 
 export interface PendingProposalMessage {

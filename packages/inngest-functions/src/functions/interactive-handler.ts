@@ -35,11 +35,13 @@ import {
   type EduCommentInput,
   type MealItem,
   type MealTotals,
+  type PendingFoodCorrection,
   type RegistrationEntry,
 } from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { buildConfirmedMealArgs } from './pending-meal-confirmation.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
 
@@ -423,6 +425,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           source_timestamp?: string
           source_timezone?: string
           source_local_date?: string
+          corrections?: PendingFoodCorrection[]
           /** Roberto 2026-06-01: pending de correção. Quando true, o execute
            * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
            * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
@@ -801,22 +804,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           // alerta no Telegram quando o tap falhar.
           try {
             mealToolResult = (await registraRefeicao.execute(
-              {
-                meal_type: proposal.mealType ?? 'outro',
-                items: proposal.items.map((it) => ({
-                  food_name: it.name,
-                  quantity_g: it.quantity_g,
-                  display_qty: it.display_qty,
-                  display_unit: it.display_unit,
-                  user_kcal: it.user_kcal ?? undefined,
-                  kcal: it.kcal,
-                  protein_g: it.protein_g,
-                  carbs_g: it.carbs_g,
-                  fat_g: it.fat_g,
-                })),
-                replace: effectiveReplace,
-                consumed_date: sourceLocalDate,
-              } as never,
+              buildConfirmedMealArgs(
+                {
+                  mealType: proposal.mealType,
+                  items: proposal.items,
+                  corrections: proposal.corrections,
+                },
+                effectiveReplace,
+                sourceLocalDate,
+              ) as never,
               toolCtx as never,
             )) as {
               success?: boolean

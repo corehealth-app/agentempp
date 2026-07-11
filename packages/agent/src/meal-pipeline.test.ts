@@ -10,7 +10,12 @@ import { describe, it, expect } from 'vitest'
 //      protein_mismatch) vão pra user_warnings.
 //   4. Match composite direto (alias completo, sim>=0.85) tem precedência sobre auto-split.
 
-import { calcMealMacros, estimateMacros, naturalUnit } from './meal-pipeline.js'
+import {
+  calcMealMacros,
+  estimateMacros,
+  naturalUnit,
+  requiresVisualPreparationConfirmation,
+} from './meal-pipeline.js'
 import type { ServiceClient } from '@mpp/db'
 
 type MockRow = {
@@ -1041,7 +1046,66 @@ describe('estimateMacros — empanados/fritos (Roberto 2026-06-05)', () => {
   })
 })
 
+describe('requiresVisualPreparationConfirmation — preparo inferido por foto', () => {
+  it('sinaliza proteína com preparo visualmente ambíguo', () => {
+    expect(requiresVisualPreparationConfirmation('frango frito')).toBe(true)
+    expect(requiresVisualPreparationConfirmation('frango grelhado')).toBe(true)
+    expect(requiresVisualPreparationConfirmation('sobrecoxa assada com pele')).toBe(true)
+  })
+
+  it('não sinaliza alimento sem preparo nem acompanhamento não proteico', () => {
+    expect(requiresVisualPreparationConfirmation('frango')).toBe(false)
+    expect(requiresVisualPreparationConfirmation('batata frita')).toBe(false)
+    expect(requiresVisualPreparationConfirmation('arroz branco cozido')).toBe(false)
+  })
+})
+
 describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Roberto 2026-06-05)', () => {
+  it('"frango frito" não aceita macros de "peito de frango" sem preparo — caso Roberto 2026-07-10', async () => {
+    const mock = makeMock({
+      'frango frito': {
+        id: 239,
+        name_pt: 'peito de frango',
+        category: 'carnes',
+        similarity: 0.5,
+        kcal_per_100g: 159,
+        protein_g: 32,
+        carbs_g: 0,
+        fat_g: 2.5,
+        fiber_g: 0,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'frango frito', quantity_g: 120 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('llm_estimate')
+    expect(r.items[0]?.kcal).toBeCloseTo(336, 1)
+    expect(r.items[0]?.fat_g).toBeCloseTo(19.2, 1)
+    expect(r.audit_warnings.join(' ')).toMatch(/preparo incompatível/i)
+  })
+
+  it('"frango grelhado" continua aceitando a entrada exata grelhada', async () => {
+    const mock = makeMock({
+      'frango grelhado': {
+        id: 240,
+        name_pt: 'frango grelhado',
+        category: 'carnes',
+        similarity: 1,
+        kcal_per_100g: 159,
+        protein_g: 32,
+        carbs_g: 0,
+        fat_g: 2.5,
+        fiber_g: 0,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'frango grelhado', quantity_g: 120 }], 'BR')
+
+    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.kcal).toBeCloseTo(190.8, 1)
+    expect(r.items[0]?.fat_g).toBeCloseTo(3, 1)
+  })
+
   it('"frango à milanesa" matchando entry com "milanesa" no nome MAS kcal=120/100g → REJEITA pelo sanity 4', async () => {
     // Anchor "milanesa" passa (aparece no nome do match), mas kcal absurdamente
     // baixo (120) pra categoria empanado_frango (piso 200) → rejeita e estima.

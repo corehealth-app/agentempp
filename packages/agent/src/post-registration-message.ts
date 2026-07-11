@@ -379,6 +379,8 @@ export interface PendingProposal {
    * texto da abertura: foto → "Vi isso na sua foto"; áudio → "Entendi do áudio";
    * texto default → "Entendi isso pro seu ...". */
   sourceContentType?: 'text' | 'image' | 'audio' | null
+  /** Pontos que exigem confirmação explícita porque a origem não é conclusiva. */
+  confirmationNotes?: string[]
 }
 
 export interface PendingProposalMessage {
@@ -426,6 +428,10 @@ export function composePendingProposal(
     lines.push(
       `Total: ${fmt(t.kcal)} kcal | ${gram(t.protein_g)}g proteína | ${gram(t.carbs_g)}g carboidrato | ${gram(t.fat_g)}g gordura`,
     )
+  }
+  for (const note of (proposal.confirmationNotes ?? []).slice(0, 2)) {
+    lines.push('')
+    lines.push(`Atenção: ${note}`)
   }
   lines.push('')
   lines.push('Confirma?')

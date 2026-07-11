@@ -441,6 +441,16 @@ function isImplausibleFreshFruitHistory(
 
 type SkinState = 'skinless' | 'skin_on' | 'unspecified'
 
+type PreparationState =
+  | 'fried'
+  | 'air_fried'
+  | 'grilled'
+  | 'roasted'
+  | 'cooked'
+  | 'sauteed'
+  | 'raw'
+  | 'unspecified'
+
 function inferSkinState(foodName: string): SkinState {
   const n = normalizeFoodText(foodName)
   if (/\bsem\s+(?:a\s+)?pele\b|\bpele\s+(?:retirada|removida)\b|\b(?:retirada|removida)\s+(?:a\s+)?pele\b/.test(n)) {
@@ -455,6 +465,51 @@ function hasSkinModifierConflict(currentFoodName: string, historicalFoodName: st
   const historical = inferSkinState(historicalFoodName)
   if (current === 'unspecified' && historical === 'unspecified') return false
   return current !== historical
+}
+
+function inferPreparationState(foodName: string): PreparationState {
+  const n = normalizeFoodText(foodName)
+  if (/\bair\s*fryer\b|\bairfryer\b|\bfritadeira\s+sem\s+oleo\b/.test(n)) {
+    return 'air_fried'
+  }
+  if (
+    /\bfrit[oa]s?\b|\bempanad[oa]s?\b|\bmilanesa\b|\bparmegiana\b|\bparmigiana\b|\bpassarinho\b|\bnuggets?\b|\bschnitzel\b|\bcordon\s+bleu\b/.test(
+      n,
+    )
+  ) {
+    return 'fried'
+  }
+  if (/\bgrelhad[oa]s?\b|\bchapa\b/.test(n)) return 'grilled'
+  if (/\bassad[oa]s?\b|\bforno\b/.test(n)) return 'roasted'
+  if (/\bcozid[oa]s?\b|\bfervid[oa]s?\b|\bpoche\b/.test(n)) return 'cooked'
+  if (/\brefogad[oa]s?\b|\bsaltead[oa]s?\b/.test(n)) return 'sauteed'
+  if (/\bcru[as]?\b|\bin\s+natura\b/.test(n)) return 'raw'
+  return 'unspecified'
+}
+
+function hasPreparationModifierConflict(currentFoodName: string, matchedFoodName: string): boolean {
+  const current = inferPreparationState(currentFoodName)
+  if (current === 'unspecified') return false
+  return current !== inferPreparationState(matchedFoodName)
+}
+
+function hasNutritionModifierConflict(currentFoodName: string, matchedFoodName: string): boolean {
+  return (
+    hasSkinModifierConflict(currentFoodName, matchedFoodName) ||
+    hasPreparationModifierConflict(currentFoodName, matchedFoodName)
+  )
+}
+
+const PROTEIN_FOOD_PATTERN =
+  /\b(frango|sobrecoxa|coxa|asa|peito|carne|bife|porco|lombo|bisteca|peixe|atum|salmao|tilapia|peru|cordeiro|costela|ovo|hamburguer)\b/
+
+export function requiresVisualPreparationConfirmation(foodName: string): boolean {
+  const normalized = normalizeFoodText(foodName)
+  if (!PROTEIN_FOOD_PATTERN.test(normalized)) return false
+  return (
+    inferPreparationState(foodName) !== 'unspecified' ||
+    inferSkinState(foodName) !== 'unspecified'
+  )
 }
 
 export interface MealCalcResult {
@@ -784,7 +839,7 @@ export async function lookupUserHistory(
     carbs_g: number
     fat_g: number
   }>
-  const compatibleRows = rows.filter((r) => !hasSkinModifierConflict(foodName, r.food_name))
+  const compatibleRows = rows.filter((r) => !hasNutritionModifierConflict(foodName, r.food_name))
   // Match exato (normalizado) primeiro; depois substring forte.
   const exact = compatibleRows.find((r) => normalize(r.food_name) === target)
   const sub =
@@ -1216,6 +1271,8 @@ export async function calcMealMacros(
       m.name_pt,
       m.category,
     )
+    const preparationMismatch =
+      m.name_pt != null && hasPreparationModifierConflict(it.food_name, m.name_pt)
 
     // Threshold dinâmico por tamanho da query:
     // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa
@@ -1233,7 +1290,8 @@ export async function calcMealMacros(
       m.kcal_per_100g != null &&
       m.similarity >= matchThreshold &&
       anchorMatches &&
-      !fruitSweetMismatch
+      !fruitSweetMismatch &&
+      !preparationMismatch
     ) {
       // Camada 2 do guard de bebida zero (Bug Luciana 2026-05-25): nome sem
       // keyword de bebida ("zero" + nome genérico) mas que casou um item de
@@ -1433,9 +1491,13 @@ export async function calcMealMacros(
         m.id != null &&
         m.kcal_per_100g != null &&
         m.similarity >= matchThreshold &&
-        (!anchorMatches || fruitSweetMismatch)
+        (!anchorMatches || fruitSweetMismatch || preparationMismatch)
       ) {
-        if (fruitSweetMismatch) {
+        if (preparationMismatch) {
+          auditWarnings.push(
+            `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — preparo incompatível.`,
+          )
+        } else if (fruitSweetMismatch) {
           auditWarnings.push(
             `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — fruta fresca simples não deve casar com doce derivado.`,
           )
@@ -1480,7 +1542,7 @@ export async function calcMealMacros(
           protein_g: number
           carbs_g: number
           fat_g: number
-        }>).filter((p) => !hasSkinModifierConflict(it.food_name, p.food_name))
+        }>).filter((p) => !hasNutritionModifierConflict(it.food_name, p.food_name))
         if (compatiblePrior.length !== prior.length) {
           auditWarnings.push(
             `"${it.food_name}" ignorou ${prior.length - compatiblePrior.length} registro(s) do histórico por diferença de pele/composição.`,

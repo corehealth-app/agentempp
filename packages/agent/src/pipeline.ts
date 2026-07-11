@@ -56,7 +56,11 @@ import {
   isWorkoutExpressEligible,
   type ExpressInput,
 } from './express-mode-detector.js'
-import { calcMealMacros, parseUserKcalOverridesFromMessages } from './meal-pipeline.js'
+import {
+  calcMealMacros,
+  parseUserKcalOverridesFromMessages,
+  requiresVisualPreparationConfirmation,
+} from './meal-pipeline.js'
 import { detectFakeWrite } from './fake-write-detector.js'
 import { runToolGuard } from './tools/tool-guards.js'
 import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
@@ -905,6 +909,19 @@ export async function processMessage(
               carbs_g: resolved.totals.carbs_g,
               fat_g: resolved.totals.fat_g,
             }
+            const ambiguousPreparationNames = [
+              ...new Set(
+                proposalItems
+                  .map((item) => item.name)
+                  .filter(requiresVisualPreparationConfirmation),
+              ),
+            ]
+            const confirmationNotes = ctx.lastInboundContentType === 'image'
+              ? ambiguousPreparationNames.slice(0, 2).map(
+                  (name) =>
+                    `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
+                )
+              : []
             const proposal = {
               kind: 'meal' as const,
               mealType: args.meal_type ?? 'outro',
@@ -913,6 +930,7 @@ export async function processMessage(
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: semanticPatientText || null,
+              ...(confirmationNotes.length > 0 ? { confirmationNotes } : {}),
               express_eligible: false,
               express_reason: exprResult.reason,
               // Roberto 2026-06-01: salva replace pra handler do tap propagar

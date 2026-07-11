@@ -374,6 +374,20 @@ describe('composePendingProposal — proposta + botões pro tap [Sim, registrar]
     expect(out.body).not.toContain('Entendi isso pro seu')
   })
 
+  it('foto com preparo ambíguo destaca a confirmação antes do tap', () => {
+    const out = composePendingProposal(pendingId, {
+      kind: 'meal',
+      mealType: 'almoco',
+      items: [item({ name: 'frango frito', display_qty: 120, kcal: 336 })],
+      totals: { kcal: 336, protein_g: 27.6, carbs_g: 13.2, fat_g: 19.2 },
+      sourceContentType: 'image',
+      confirmationNotes: ['Confirme o preparo de frango frito: a foto pode confundir frito e grelhado.'],
+    })
+
+    expect(out.body).toContain('Atenção: Confirme o preparo de frango frito')
+    expect(out.body.indexOf('Atenção:')).toBeLessThan(out.body.indexOf('Confirma?'))
+  })
+
   it('áudio: abertura é "Entendi isso do áudio (Almoço):"', () => {
     const out = composePendingProposal(pendingId, {
       kind: 'meal',

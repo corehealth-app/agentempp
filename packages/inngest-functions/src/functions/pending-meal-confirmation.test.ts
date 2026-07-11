@@ -41,5 +41,11 @@ describe('buildConfirmedMealArgs', () => {
         fat_g: 2.5,
       },
     ])
+    expect(args.items[0]?.approved_nutrition).toEqual({
+      kcal: 191,
+      protein_g: 38.4,
+      carbs_g: 0,
+      fat_g: 3,
+    })
   })
 })

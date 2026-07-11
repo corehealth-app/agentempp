@@ -38,8 +38,10 @@ import {
   isPureStatusQueryTurn,
   isReevalToolTurn,
   normalizePendingFoodCorrections,
+  type MealItem,
   type RegistrationEntry,
 } from './post-registration-message.js'
+import { reconcilePendingMealEdit } from './pending-meal-edit.js'
 import {
   makeOnboardingButtonId,
   parseOnboardingButtonTag,
@@ -78,7 +80,7 @@ import {
   type BodyPhotoState,
 } from './reevaluation-body-photos.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
-import type { ServiceClient } from '@mpp/db'
+import type { Json, ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import { ALL_TOOLS, getToolByName } from './tools.js'
@@ -847,6 +849,28 @@ export async function processMessage(
                 quantity_g?: number
               }>
             }
+            const editedLookback = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+            const { data: editedPendingRow, error: editedPendingError } = await deps.supabase
+              .from('pending_registrations')
+              .select('id, proposal, resolved_at')
+              .eq('user_id', userId)
+              .eq('status', 'edited')
+              .eq('proposal->>kind', 'meal')
+              .gte('resolved_at', editedLookback)
+              .order('resolved_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (editedPendingError) {
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.edited_pending_lookup_failed',
+                properties: { error: editedPendingError.message },
+              })
+            }
+            const editedPending = editedPendingRow as {
+              id: string
+              proposal?: { items?: MealItem[] }
+            } | null
             // FIX (Roberto 2026-05-28): a LLM passa só {food_name, quantity_g}.
             // kcal/macros vêm da resolução TACO via calcMealMacros — o mesmo
             // que registra_refeicao usa internamente. Sem isso o pending vinha
@@ -893,7 +917,7 @@ export async function processMessage(
                 .filter((it) => it.user_kcal != null)
                 .map((it) => [it.food_name, it.user_kcal as number]),
             )
-            const proposalItems = resolved.items.map((m) => ({
+            let proposalItems: MealItem[] = resolved.items.map((m) => ({
               name: m.food_name,
               quantity_g: m.quantity_g,
               display_qty: m.display_qty ?? null,
@@ -906,11 +930,45 @@ export async function processMessage(
               carbs_g: m.carbs_g ?? 0,
               fat_g: m.fat_g ?? 0,
             }))
-            const proposalTotals = {
+            let proposalTotals = {
               kcal: resolved.totals.kcal,
               protein_g: resolved.totals.protein_g,
               carbs_g: resolved.totals.carbs_g,
               fat_g: resolved.totals.fat_g,
+            }
+            let quantityEditAdjustments: ReturnType<
+              typeof reconcilePendingMealEdit
+            >['adjustments'] = []
+            let quantityEditAdjustmentPayload: Array<Record<string, string | number>> = []
+            const previousItems = editedPending?.proposal?.items ?? []
+            if (previousItems.length > 0) {
+              const reconciled = reconcilePendingMealEdit({
+                previousItems,
+                resolvedItems: proposalItems,
+                currentExplicitKcalFoods: new Set(kcalOverrides.keys()),
+              })
+              proposalItems = reconciled.items
+              proposalTotals = reconciled.totals
+              quantityEditAdjustments = reconciled.adjustments
+              quantityEditAdjustmentPayload = quantityEditAdjustments.map((adjustment) => ({
+                food_name: adjustment.food_name,
+                previous_quantity_g: adjustment.previous_quantity_g,
+                quantity_g: adjustment.quantity_g,
+                previous_kcal: adjustment.previous_kcal,
+                kcal: adjustment.kcal,
+                reason: adjustment.reason,
+              }))
+              if (quantityEditAdjustments.length > 0) {
+                await deps.supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'pipeline.pending_quantity_nutrition_scaled',
+                  properties: {
+                    edited_pending_id: editedPending?.id ?? null,
+                    meal_type: args.meal_type ?? 'outro',
+                    adjustments: quantityEditAdjustmentPayload,
+                  },
+                })
+              }
             }
             const ambiguousPreparationNames = [
               ...new Set(
@@ -934,6 +992,10 @@ export async function processMessage(
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: semanticPatientText || null,
+              ...(editedPending?.id ? { edited_from_pending_id: editedPending.id } : {}),
+              ...(quantityEditAdjustments.length > 0
+                ? { quantity_edit_adjustments: quantityEditAdjustmentPayload }
+                : {}),
               ...(confirmationNotes.length > 0 ? { confirmationNotes } : {}),
               ...(pendingCorrections.length > 0 ? { corrections: pendingCorrections } : {}),
               express_eligible: false,
@@ -951,7 +1013,7 @@ export async function processMessage(
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
             const { data: pendRow } = await deps.supabase
               .from('pending_registrations')
-              .insert({ user_id: userId, proposal, expires_at: expiresAt })
+              .insert({ user_id: userId, proposal: proposal as unknown as Json, expires_at: expiresAt })
               .select('id')
               .single()
             const pendingId = (pendRow as { id: string } | null)?.id

@@ -515,6 +515,73 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     expect(r.audit_warnings.some((w) => /hist[óo]rico/i.test(w))).toBe(true)
   })
 
+  it('item canônico exato vence histórico exato contaminado', async () => {
+    const mock = makeMock(
+      {
+        'arroz branco cozido': {
+          id: 1,
+          name_pt: 'arroz branco cozido',
+          category: 'cereais',
+          similarity: 1,
+          kcal_per_100g: 128,
+          protein_g: 2.5,
+          carbs_g: 28,
+          fat_g: 0.2,
+          fiber_g: 1.6,
+        },
+      },
+      [
+        {
+          id: 'log-arroz-contaminado',
+          food_name: 'arroz branco cozido',
+          quantity_g: 150,
+          kcal: 70,
+          protein_g: 1,
+          carbs_g: 15,
+          fat_g: 0.1,
+          source: 'user_kcal',
+        },
+      ],
+    )
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'arroz branco cozido', quantity_g: 150 }],
+      'BR',
+      'user-with-bad-history',
+    )
+
+    expect(result.items[0]?.source).toBe('taco')
+    expect(result.items[0]?.kcal).toBe(192)
+  })
+
+  it('não reutiliza leite líquido para leite em pó', async () => {
+    const mock = makeMock(
+      {},
+      [
+        {
+          id: 'log-leite-liquido',
+          food_name: 'leite integral',
+          quantity_g: 200,
+          kcal: 122,
+          protein_g: 6.4,
+          carbs_g: 9.4,
+          fat_g: 6.6,
+        },
+      ],
+    )
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'leite em pó integral', quantity_g: 10 }],
+      'BR',
+      'user-milk',
+    )
+
+    expect(result.items[0]?.source).not.toBe('history')
+    expect(result.items[0]?.display_unit).toBe('g')
+  })
+
   it('histórico match case/acento-insensitive', async () => {
     const mock = makeMock(
       {},
@@ -946,6 +1013,23 @@ describe('naturalUnit — pó vs líquido (Roberto 2026-05-15)', () => {
 
   it('regressão: "leite com whey" continua ml', () => {
     expect(naturalUnit('leite com whey', 200).display_unit).toBe('ml')
+  })
+
+  it('"chocolate ao leite" é sólido apesar da palavra leite', () => {
+    expect(naturalUnit('chocolate ao leite', 12).display_unit).toBe('g')
+  })
+
+  it('"chocolate quente" continua líquido', () => {
+    expect(naturalUnit('chocolate quente', 200).display_unit).toBe('ml')
+  })
+})
+
+describe('estimateMacros — alimento completo vence token incidental', () => {
+  it('chocolate ao leite usa categoria de doce, não laticínio', () => {
+    const result = estimateMacros('chocolate ao leite')
+
+    expect(result.category).toBe('doce')
+    expect(result.kcal).toBeGreaterThan(200)
   })
 })
 
@@ -1534,5 +1618,62 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
     )
     expect(r.items[0]?.kcal).toBe(140) // lookup default
     expect(r.items[0]?.matched_taco_name).toBe('wrap integral')
+  })
+
+  it('nutrição aprovada no pending é persistida sem novo recálculo', async () => {
+    const mock = makeMock(
+      {
+        'frango ao molho cremoso': {
+          id: 808,
+          name_pt: 'frango ao molho cremoso',
+          category: 'pratos',
+          similarity: 1,
+          kcal_per_100g: 300,
+          protein_g: 10,
+          carbs_g: 20,
+          fat_g: 20,
+          fiber_g: 0,
+        },
+      },
+      [
+        {
+          id: 'history-wrong',
+          food_name: 'frango ao molho cremoso',
+          quantity_g: 180,
+          kcal: 70,
+          protein_g: 5,
+          carbs_g: 2,
+          fat_g: 3,
+          source: 'user_kcal',
+        },
+      ],
+    )
+
+    const result = await calcMealMacros(
+      mock,
+      [
+        {
+          food_name: 'frango ao molho cremoso',
+          quantity_g: 150,
+          approved_nutrition: {
+            kcal: 247.5,
+            protein_g: 24.75,
+            carbs_g: 7.5,
+            fat_g: 13.5,
+          },
+        } as never,
+      ],
+      'BR',
+      'user-confirming-pending',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      source: 'pending_approved',
+      kcal: 247.5,
+      protein_g: 24.75,
+      carbs_g: 7.5,
+      fat_g: 13.5,
+    })
+    expect(result.totals.kcal).toBe(247.5)
   })
 })

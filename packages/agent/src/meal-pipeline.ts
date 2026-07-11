@@ -12,6 +12,17 @@ export interface MealItemInput {
   food_name: string
   quantity_g: number
   /**
+   * Nutrition already resolved and displayed in a server-created pending.
+   * This field is intentionally absent from the public tool schema: only the
+   * deterministic confirmation handler may provide it.
+   */
+  approved_nutrition?: {
+    kcal: number
+    protein_g: number
+    carbs_g: number
+    fat_g: number
+  }
+  /**
    * Kcal informado EXPLICITAMENTE pelo paciente no texto ("rap 10 : 70 calorias").
    * Quando presente e ≥ 0, OVERRIDE o kcal do TACO/histórico/estimativa.
    * Os macros P/C/F são re-escalonados proporcionalmente à kcal original (mantém
@@ -203,6 +214,7 @@ export interface MealItemMatched {
     | 'taco'
     | 'history'
     | 'user_kcal'
+    | 'pending_approved'
     | 'llm_estimate'
     | 'no_match'
     /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
@@ -254,6 +266,15 @@ export function naturalUnit(
     /em\s+p[óo]|sol[úu]vel|instant[âa]ne[oa]|em\s+flocos|em\s+folhas|granulad[oa]/i.test(
       lower,
     )
+  ) {
+    return { display_qty: qtyG, display_unit: 'g' }
+  }
+  // Chocolate em barra/bombom é sólido. A palavra "leite" em "chocolate ao
+  // leite" não o transforma em bebida; apenas preparos explicitamente líquidos
+  // seguem para ml.
+  if (
+    /chocolate/.test(lower) &&
+    !/chocolate\s+quente|leite\s+com\s+chocolate|bebida|shake|smoothie|achocolatad/.test(lower)
   ) {
     return { display_qty: qtyG, display_unit: 'g' }
   }
@@ -368,6 +389,14 @@ export function estimateMacros(foodName: string): {
   // Frango / aves
   if (/frango|coxa|asa|sobrecoxa|peito\s+de\s+frango|peru/.test(n)) {
     return { category: 'frango', kcal: 165, protein: 28, carbs: 0, fat: 5, fiber: 0 }
+  }
+  // Chocolate sólido precisa ser classificado antes de laticínios. Em
+  // "chocolate ao leite", leite descreve a variedade do doce, não a forma.
+  if (
+    /chocolate/.test(n) &&
+    !/chocolate\s+quente|leite\s+com\s+chocolate|bebida|shake|smoothie|achocolatad/.test(n)
+  ) {
+    return { category: 'doce', kcal: 260, protein: 3, carbs: 45, fat: 8, fiber: 1 }
   }
   // Laticínios líquidos / leites
   if (/iogurte|kefir|coalhada|leite/.test(n)) {
@@ -533,6 +562,9 @@ type PreparationState =
   | 'raw'
   | 'unspecified'
 
+type PhysicalFormState = 'powdered' | 'liquid' | 'unspecified'
+type MilkFatState = 'skim' | 'semi_skim' | 'whole' | 'unspecified'
+
 function inferSkinState(foodName: string): SkinState {
   const n = normalizeFoodText(foodName)
   if (/\bsem\s+(?:a\s+)?pele\b|\bpele\s+(?:retirada|removida)\b|\b(?:retirada|removida)\s+(?:a\s+)?pele\b/.test(n)) {
@@ -575,10 +607,44 @@ function hasPreparationModifierConflict(currentFoodName: string, matchedFoodName
   return current !== inferPreparationState(matchedFoodName)
 }
 
+function inferPhysicalFormState(foodName: string): PhysicalFormState {
+  const n = normalizeFoodText(foodName)
+  if (/\bem\s+po\b|\bpowder(?:ed)?\b|\bsoluvel\b|\binstantaneo\b/.test(n)) {
+    return 'powdered'
+  }
+  if (/\bleite\b|\bsuco\b|\bcafe\b|\bbebida\b|\bshake\b|\bsmoothie\b/.test(n)) {
+    return 'liquid'
+  }
+  return 'unspecified'
+}
+
+function inferMilkFatState(foodName: string): MilkFatState {
+  const n = normalizeFoodText(foodName)
+  if (/\bsemi\s*desnatad[oa]s?\b|\bsemi\s*skim(?:med)?\b/.test(n)) return 'semi_skim'
+  if (/\bdesnatad[oa]s?\b|\bskim(?:med)?\b/.test(n)) return 'skim'
+  if (/\bintegral\b|\bwhole\b/.test(n)) return 'whole'
+  return 'unspecified'
+}
+
+function hasPhysicalFormConflict(currentFoodName: string, matchedFoodName: string): boolean {
+  const current = inferPhysicalFormState(currentFoodName)
+  const matched = inferPhysicalFormState(matchedFoodName)
+  return current !== 'unspecified' && matched !== 'unspecified' && current !== matched
+}
+
+function hasMilkFatConflict(currentFoodName: string, matchedFoodName: string): boolean {
+  const current = inferMilkFatState(currentFoodName)
+  const matched = inferMilkFatState(matchedFoodName)
+  if (current === 'unspecified' && matched === 'unspecified') return false
+  return current !== matched
+}
+
 function hasNutritionModifierConflict(currentFoodName: string, matchedFoodName: string): boolean {
   return (
     hasSkinModifierConflict(currentFoodName, matchedFoodName) ||
-    hasPreparationModifierConflict(currentFoodName, matchedFoodName)
+    hasPreparationModifierConflict(currentFoodName, matchedFoodName) ||
+    hasPhysicalFormConflict(currentFoodName, matchedFoodName) ||
+    hasMilkFatConflict(currentFoodName, matchedFoodName)
   )
 }
 
@@ -658,7 +724,7 @@ export function extractAnchor(foodName: string): string | null {
   return tokens[0] ? normalizeFoodText(tokens[0]) : null
 }
 
-const TRUSTED_HISTORY_SOURCES = ['taco', 'history', 'user_kcal'] as const
+const TRUSTED_HISTORY_SOURCES = ['taco', 'history', 'user_kcal', 'pending_approved'] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
   return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
@@ -975,6 +1041,44 @@ export async function calcMealMacros(
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
 
   for (let it of items) {
+    // ── PRIORIDADE -4: PROPOSTA JÁ APROVADA PELO PACIENTE ──────────────────
+    // O pending é a fronteira de aprovação. Reconsultar TACO/histórico no tap
+    // pode gravar números diferentes dos que acabaram de ser mostrados.
+    const approved = it.approved_nutrition
+    if (
+      approved &&
+      it.quantity_g > 0 &&
+      [approved.kcal, approved.protein_g, approved.carbs_g, approved.fat_g].every(
+        (value) => Number.isFinite(value) && value >= 0,
+      )
+    ) {
+      const nat = naturalUnit(it.food_name, it.quantity_g)
+      const kcal = +approved.kcal.toFixed(1)
+      const protein = +approved.protein_g.toFixed(2)
+      const carbs = +approved.carbs_g.toFixed(2)
+      const fat = +approved.fat_g.toFixed(2)
+      matched.push({
+        food_name: it.food_name,
+        matched_taco_name: '[pending aprovado]',
+        matched_taco_id: null,
+        quantity_g: it.quantity_g,
+        kcal,
+        protein_g: protein,
+        carbs_g: carbs,
+        fat_g: fat,
+        fiber_g: 0,
+        similarity: 1,
+        source: 'pending_approved',
+        display_qty: nat.display_qty,
+        display_unit: nat.display_unit,
+      })
+      totals.kcal += kcal
+      totals.protein_g += protein
+      totals.carbs_g += carbs
+      totals.fat_g += fat
+      auditWarnings.push(`"${it.food_name}" persistiu a nutrição aprovada no pending.`)
+      continue
+    }
     // ── PRIORIDADE -3: KCAL EXPLÍCITO DO PACIENTE (Bug Luciana 2026-06-16) ──
     // Quando o paciente disse "rap 10 : 70 calorias", o número de kcal é fonte
     // de verdade — override total do TACO/histórico/estimativa. P/C/F vêm da
@@ -1134,11 +1238,21 @@ export async function calcMealMacros(
       }
     }
 
+    // Um item canônico EXATO é mais confiável que um valor herdado do
+    // histórico. Isso impede que um override antigo contaminado (por exemplo,
+    // arroz de 70 kcal) seja reciclado indefinidamente. Matches apenas fuzzy
+    // ainda podem se beneficiar do histórico pessoal compatível.
+    const prefetchedMatch = await matchFood(supabase, it.food_name, country)
+    const hasExactCanonicalMatch =
+      prefetchedMatch.id != null &&
+      prefetchedMatch.kcal_per_100g != null &&
+      normalizeFoodText(prefetchedMatch.name_pt ?? '') === normalizeFoodText(it.food_name)
+
     // ── PRIORIDADE 0: HISTÓRICO DO PACIENTE (Roberto 2026-05-13) ────────────
     // Antes do trigram, checa se o paciente já registrou esse alimento antes.
     // Se sim, usa esses macros — evita "leite com whey" virar achocolatado
     // toda vez. Após correção via replace=true, o log atualizado vira a memória.
-    if (userIdHint) {
+    if (userIdHint && !hasExactCanonicalMatch) {
       const hist = await lookupUserHistory(supabase, userIdHint, it.food_name)
       if (hist) {
         const f = it.quantity_g / 100
@@ -1186,7 +1300,7 @@ export async function calcMealMacros(
       / com | e | \+ |\bcom\s+|^com\s+/i.test(` ${it.food_name} `) &&
       it.food_name.split(/\s+/).length >= 3
     if (isComposite) {
-      const directMatch = await matchFood(supabase, it.food_name, country)
+      const directMatch = prefetchedMatch
       if (
         directMatch.id != null &&
         directMatch.kcal_per_100g != null &&
@@ -1351,7 +1465,7 @@ export async function calcMealMacros(
       // Se chegou aqui, directMatch é bom — cai pro fluxo de match direto abaixo
     }
 
-    const m = await matchFood(supabase, it.food_name, country)
+    const m = prefetchedMatch
     const factor = it.quantity_g / 100
 
     // Anchor check: o ingrediente principal da query precisa aparecer no

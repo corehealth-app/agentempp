@@ -15,7 +15,11 @@ import {
 } from '@mpp/core'
 import type { TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
-import { calcMealMacros, parseUserKcalOverridesFromMessages } from './meal-pipeline.js'
+import {
+  calcMealMacros,
+  parseUserKcalOverridesFromMessages,
+  type MealItemInput,
+} from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -1390,14 +1394,26 @@ export const registraRefeicao: ToolDefinition = {
     // aqui cobre o caminho NÃO-express (tap em pending, retry da LLM, etc).
     const recentPatientTexts = ctx.recentUserMessages ?? []
     const kcalOverrides = parseUserKcalOverridesFromMessages(recentPatientTexts, args.items)
-    let itemsForCalc: Array<{ food_name: string; quantity_g: number; user_kcal?: number }> =
-      args.items.map((it: { food_name: string; quantity_g: number; user_kcal?: number | null }) => ({
+    type ToolMealItem = {
+      food_name: string
+      quantity_g: number
+      user_kcal?: number | null
+      approved_nutrition?: {
+        kcal: number
+        protein_g: number
+        carbs_g: number
+        fat_g: number
+      }
+    }
+    let itemsForCalc: MealItemInput[] =
+      args.items.map((it: ToolMealItem) => ({
         food_name: it.food_name,
         quantity_g: it.quantity_g,
         ...(it.user_kcal != null ? { user_kcal: Number(it.user_kcal) } : {}),
+        ...(it.approved_nutrition ? { approved_nutrition: it.approved_nutrition } : {}),
       }))
     if (kcalOverrides.size > 0) {
-      itemsForCalc = args.items.map((it: { food_name: string; quantity_g: number; user_kcal?: number | null }) => ({
+      itemsForCalc = args.items.map((it: ToolMealItem) => ({
         food_name: it.food_name,
         quantity_g: it.quantity_g,
         ...(kcalOverrides.has(it.food_name)
@@ -1405,6 +1421,7 @@ export const registraRefeicao: ToolDefinition = {
           : it.user_kcal != null
             ? { user_kcal: Number(it.user_kcal) }
           : {}),
+        ...(it.approved_nutrition ? { approved_nutrition: it.approved_nutrition } : {}),
       }))
       await ctx.supabase.from('product_events').insert({
         user_id: ctx.userId,

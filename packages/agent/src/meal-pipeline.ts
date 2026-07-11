@@ -140,23 +140,52 @@ export function parseUserKcalOverrides(
   return out
 }
 
+const EXPLICIT_KCAL_PATTERN = /\d+(?:[.,]\d+)?\s*(?:k?cal(?:orias?)?)\b/i
+const SHORT_CONFIRMATION_PATTERN =
+  /^(?:sim(?:\s+isso)?|isso(?:\s+mesmo)?|e\s+isso|corret[oa]|confirmo?|pode|ok|certo|exato)[.!?\s]*$/i
+
+function mentionsCurrentFood(text: string, items: Array<{ food_name: string }>): boolean {
+  const normalizedText = normalizeFoodText(text)
+  const textTokens = new Set(normalizedText.split(/\s+/).filter(Boolean))
+  return items.some((item) => {
+    const normalizedFood = normalizeFoodText(item.food_name)
+    if (normalizedFood && normalizedText.includes(normalizedFood)) return true
+    return normalizedFood
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !/^(?:com|para|sem)$/.test(token))
+      .some((token) => textTokens.has(token))
+  })
+}
+
 /**
- * Variante em janela: aplica o parser em mensagens recentes em ordem
- * cronológica. A última menção explícita vence, mas confirmações curtas
- * posteriores ("sim", "isso") não apagam kcal já informada.
+ * Variante contextual: kcal explícita vale no turno atual. A mensagem anterior
+ * só é consultada quando a atual é uma confirmação curta e menciona um dos
+ * itens atuais. Isso preserva "80 kcal" + "sim isso" sem herdar números de
+ * refeições antigas que ainda estejam no histórico da conversa.
  */
 export function parseUserKcalOverridesFromMessages(
   patientTexts: Array<string | null | undefined>,
   items: Array<{ food_name: string }>,
 ): Map<string, number> {
-  const merged = new Map<string, number>()
-  for (const text of patientTexts) {
-    const overrides = parseUserKcalOverrides(text, items)
-    for (const [foodName, kcal] of overrides.entries()) {
-      merged.set(foodName, kcal)
-    }
+  const texts = patientTexts
+    .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
+    .map((text) => text.trim())
+  const currentText = texts.at(-1)
+  if (!currentText) return new Map()
+
+  const currentOverrides = parseUserKcalOverrides(currentText, items)
+  if (currentOverrides.size > 0) return currentOverrides
+  if (!SHORT_CONFIRMATION_PATTERN.test(normalizeFoodText(currentText))) return new Map()
+
+  const previousText = texts.at(-2)
+  if (
+    !previousText ||
+    !EXPLICIT_KCAL_PATTERN.test(previousText) ||
+    !mentionsCurrentFood(previousText, items)
+  ) {
+    return new Map()
   }
-  return merged
+  return parseUserKcalOverrides(previousText, items)
 }
 
 export interface MealItemMatched {
@@ -173,6 +202,7 @@ export interface MealItemMatched {
   source:
     | 'taco'
     | 'history'
+    | 'user_kcal'
     | 'llm_estimate'
     | 'no_match'
     /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
@@ -628,7 +658,7 @@ export function extractAnchor(foodName: string): string | null {
   return tokens[0] ? normalizeFoodText(tokens[0]) : null
 }
 
-const TRUSTED_HISTORY_SOURCES = ['taco', 'history'] as const
+const TRUSTED_HISTORY_SOURCES = ['taco', 'history', 'user_kcal'] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
   return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
@@ -981,7 +1011,7 @@ export async function calcMealMacros(
         fat_g: scaledFat,
         fiber_g: scaledFib,
         similarity: 1.0,
-        source: 'taco',
+        source: 'user_kcal',
         display_qty: natU.display_qty,
         display_unit: natU.display_unit,
       })

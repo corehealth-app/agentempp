@@ -1383,8 +1383,9 @@ export const registraRefeicao: ToolDefinition = {
     }
 
     // ── KCAL OVERRIDE DO PACIENTE (Bug Luciana 2026-06-16) ─────────────────
-    // Parse "X cal/kcal/calorias" da janela recente do paciente e anexa
-    // user_kcal nos items que casam. calcMealMacros honra na PRIORIDADE -3.
+    // Parse "X cal/kcal/calorias" do turno atual; a mensagem anterior só entra
+    // quando a atual é uma confirmação curta e menciona os itens atuais.
+    // calcMealMacros honra o valor na PRIORIDADE -3.
     // Defesa em profundidade: o pipeline.ts já faz isso pro caminho express,
     // aqui cobre o caminho NÃO-express (tap em pending, retry da LLM, etc).
     const recentPatientTexts = ctx.recentUserMessages ?? []
@@ -1414,6 +1415,7 @@ export const registraRefeicao: ToolDefinition = {
           overrides: Object.fromEntries(kcalOverrides),
           items_count: args.items.length,
           messages_count: recentPatientTexts.length,
+          selection_scope: 'current_or_immediate_confirmation',
         },
       })
     }

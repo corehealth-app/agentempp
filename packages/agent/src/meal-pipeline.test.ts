@@ -1448,6 +1448,26 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
     )
     expect(overrides.get('torta de legumes')).toBe(95)
   })
+
+  it('não herda kcal de refeição antiga quando o turno atual descreve outros itens', async () => {
+    const { parseUserKcalOverridesFromMessages } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverridesFromMessages(
+      ['1 rap10 de 70 kcal', 'Arroz branco 100g e uvas roxas 70g'],
+      [{ food_name: 'arroz branco' }, { food_name: 'uvas roxas' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('não herda kcal antiga só porque o item reaparece em uma nova descrição', async () => {
+    const { parseUserKcalOverridesFromMessages } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverridesFromMessages(
+      ['arroz branco 70 kcal', 'Hoje comi arroz branco 100g e feijão 100g'],
+      [{ food_name: 'arroz branco' }, { food_name: 'feijão' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
 })
 
 describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () => {
@@ -1471,7 +1491,7 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
       'BR',
     )
     expect(r.items[0]?.kcal).toBe(70) // override exato
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('user_kcal')
     expect(r.items[0]?.matched_taco_name).toMatch(/kcal informado pelo paciente/)
     expect(r.totals.kcal).toBe(70)
     // P/C/F re-escalonados (não zerados)

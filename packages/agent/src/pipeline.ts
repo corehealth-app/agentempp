@@ -850,9 +850,9 @@ export async function processMessage(
             // que registra_refeicao usa internamente. Sem isso o pending vinha
             // com 0 kcal (Roberto viu na tela: "0 kcal" em todos os itens).
             // Bug Luciana 2026-06-16: parser de "X cal/kcal/calorias" no texto
-            // do paciente. Quando o paciente cita kcal explícita no mesmo
-            // trecho de um item, OVERRIDE o lookup TACO. Helper devolve Map
-            // food_name → user_kcal; calcMealMacros honra na PRIORIDADE -3.
+            // do paciente. O helper restringe o contexto ao turno atual ou à
+            // mensagem imediatamente anterior quando a atual é confirmação
+            // curta. Isso evita herdar kcal de uma refeição antiga.
             const kcalOverrideTexts = [
               ...ctx.recentMessages
                 .filter((m) => m.role === 'user')
@@ -876,6 +876,7 @@ export async function processMessage(
                   overrides: Object.fromEntries(kcalOverrides),
                   items_count: args.items.length,
                   messages_count: kcalOverrideTexts.filter(Boolean).length,
+                  selection_scope: 'current_or_immediate_confirmation',
                 },
               })
             }

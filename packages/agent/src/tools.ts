@@ -539,12 +539,20 @@ export const registraRefeicao: ToolDefinition = {
         z.object({
           food_name: z
             .string()
+            .trim()
+            .min(1)
             .describe(
               'Nome EXATO do alimento como o paciente disse, em português (ex: "ovo mexido", "pão francês"). NÃO altere preparo nem traduza.',
             ),
-          quantity_g: z.number().describe('Quantidade em gramas (estime se não informado)'),
+          quantity_g: z
+            .number()
+            .positive()
+            .max(10_000)
+            .describe('Quantidade em gramas (estime se não informado)'),
         }),
       )
+      .min(1)
+      .max(30)
       .describe('Lista de itens consumidos AGORA (não padrão alimentar)'),
     corrections: z
       .array(
@@ -1348,27 +1356,63 @@ export const registraRefeicao: ToolDefinition = {
     // de 555. Luciana 2026-05-11 teve cenoura/tomate/alface/arroz QUADRUPLICADOS
     // num único almoço (2.199 kcal no almoço).
     //
-    // Defesa: agrega itens com (food_name normalizado + sem qty) iguais somando
-    // quantity_g. Se quantity_g idêntica → provável duplicação acidental do LLM,
-    // merge SOMA. Se quantidades diferentes → também SOMA (paciente comeu 2x do
-    // mesmo item em quantidades distintas — semanticamente correto).
+    // Defesa: cópias idênticas (mesmo nome + mesma quantidade) são uma repetição
+    // estrutural da LLM e ficam uma vez só. Quantidades distintas do mesmo item
+    // continuam sendo agregadas, mas cada variante idêntica entra uma única vez.
     {
       const normName = (s: string) =>
         s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
-      const mergedMap = new Map<string, { food_name: string; quantity_g: number; original_count: number }>()
-      for (const it of args.items) {
+      type DedupItem = {
+        food_name: string
+        quantity_g: number
+        user_kcal?: number | null
+        approved_nutrition?: {
+          kcal: number
+          protein_g: number
+          carbs_g: number
+          fat_g: number
+        }
+      }
+      type DedupGroup = {
+        item: DedupItem
+        original_count: number
+        quantities: Map<string, DedupItem>
+      }
+      const mergedMap = new Map<string, DedupGroup>()
+      for (const it of args.items as DedupItem[]) {
         const key = normName(it.food_name)
         const existing = mergedMap.get(key)
+        const quantityKey = Number(it.quantity_g).toFixed(3)
         if (existing) {
-          existing.quantity_g += it.quantity_g
           existing.original_count += 1
+          if (!existing.quantities.has(quantityKey)) existing.quantities.set(quantityKey, it)
         } else {
-          mergedMap.set(key, { food_name: it.food_name, quantity_g: it.quantity_g, original_count: 1 })
+          mergedMap.set(key, {
+            item: it,
+            original_count: 1,
+            quantities: new Map([[quantityKey, it]]),
+          })
         }
       }
       const dupCount = Array.from(mergedMap.values()).filter((m) => m.original_count > 1).length
       if (dupCount > 0) {
-        const merged = Array.from(mergedMap.values())
+        const merged = Array.from(mergedMap.values()).map((group) => {
+          const uniqueItems = [...group.quantities.values()]
+          const quantity_g = uniqueItems.reduce((sum, item) => sum + item.quantity_g, 0)
+          const distinctUserKcal = uniqueItems
+            .map((item) => item.user_kcal)
+            .filter((value): value is number => value != null)
+          return {
+            ...group.item,
+            quantity_g,
+            ...(distinctUserKcal.length > 1
+              ? { user_kcal: distinctUserKcal.reduce((sum, value) => sum + value, 0) }
+              : {}),
+            original_count: group.original_count,
+            strategy:
+              uniqueItems.length === 1 ? 'collapsed_identical' : 'summed_distinct_quantities',
+          }
+        })
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.items_deduped',
@@ -1379,10 +1423,15 @@ export const registraRefeicao: ToolDefinition = {
             merged_count: merged.length,
             duplicates: merged
               .filter((m) => m.original_count > 1)
-              .map((m) => ({ food_name: m.food_name, repeated: m.original_count, summed_g: m.quantity_g })),
+              .map((m) => ({
+                food_name: m.food_name,
+                repeated: m.original_count,
+                result_g: m.quantity_g,
+                strategy: m.strategy,
+              })),
           },
         })
-        args.items = merged.map(({ food_name, quantity_g }) => ({ food_name, quantity_g }))
+        args.items = merged.map(({ original_count: _count, strategy: _strategy, ...item }) => item)
       }
     }
 

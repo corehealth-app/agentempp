@@ -511,9 +511,10 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
   // LLM duplicou: items=[burrito,burrito,coca,coca] → 1.110 kcal em vez de 555.
   // Luciana 2026-05-11 14:09: 4x cenoura/tomate/alface/arroz num único almoço
   // (snapshot calorias_consumed=3424 vs real ~1156). Fix: dedup intra-array
-  // antes do calcMealMacros — itens com mesmo food_name normalizado mergeam
-  // somando quantity_g.
-  it('items duplicados no mesmo call são MERGED somando quantity_g — bug da AMANDA/LUCIANA', async () => {
+  // antes do calcMealMacros — cópias idênticas devem ser colapsadas, não
+  // somadas. Somar 300+300 preservava justamente a duplicação que o guard
+  // deveria remover.
+  it('items idênticos no mesmo call mantêm uma única porção — bug da AMANDA/LUCIANA', async () => {
     const { ctx, events } = makeContextAndSupabase({
       recentLogs: [],
       recentUserMessages: ['Burrito de filé\n1 coca 250ml'],
@@ -536,10 +537,39 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(deduped).toBeDefined()
     expect(deduped?.properties.original_count).toBe(4)
     expect(deduped?.properties.merged_count).toBe(2)
-    const dups = deduped?.properties.duplicates as Array<{ food_name: string; repeated: number; summed_g: number }>
+    const dups = deduped?.properties.duplicates as Array<{
+      food_name: string
+      repeated: number
+      result_g: number
+      strategy: string
+    }>
     expect(dups).toHaveLength(2)
     expect(dups[0]?.repeated).toBe(2)
-    expect(dups[0]?.summed_g).toBe(600) // 300 + 300 somados (paciente comeu 2 burritos é semanticamente o mesmo que 1 de 600g)
+    expect(dups[0]?.result_g).toBe(300)
+    expect(dups[0]?.strategy).toBe('collapsed_identical')
+  })
+
+  it('quantidade inválida é rejeitada antes de tocar o banco', () => {
+    const schema = registraRefeicao.parameters
+
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: 0 }],
+      }).success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: -10 }],
+      }).success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: 10_001 }],
+      }).success,
+    ).toBe(false)
   })
 
   // BUG do PAULO 2026-05-24 (4ª camada — re-inserção fantasma contra o dia):

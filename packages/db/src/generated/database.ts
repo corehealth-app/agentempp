@@ -1342,33 +1342,48 @@ export type Database = {
       subscription_events: {
         Row: {
           amount_cents: number | null
+          attempt_count: number
           created_at: string
           currency: string
           event_type: string
           id: string
+          last_error: string | null
           payload: Json | null
+          processed_at: string | null
+          processing_started_at: string | null
+          processing_status: string
           provider_event_id: string | null
           subscription_id: string | null
           user_id: string | null
         }
         Insert: {
           amount_cents?: number | null
+          attempt_count?: number
           created_at?: string
           currency?: string
           event_type: string
           id?: string
+          last_error?: string | null
           payload?: Json | null
+          processed_at?: string | null
+          processing_started_at?: string | null
+          processing_status?: string
           provider_event_id?: string | null
           subscription_id?: string | null
           user_id?: string | null
         }
         Update: {
           amount_cents?: number | null
+          attempt_count?: number
           created_at?: string
           currency?: string
           event_type?: string
           id?: string
+          last_error?: string | null
           payload?: Json | null
+          processed_at?: string | null
+          processing_started_at?: string | null
+          processing_status?: string
           provider_event_id?: string | null
           subscription_id?: string | null
           user_id?: string | null
@@ -2263,6 +2278,15 @@ export type Database = {
         Args: { p_debounce_ms?: number; p_msg_entry: Json; p_user_id: string }
         Returns: Json
       }
+      claim_subscription_event: {
+        Args: {
+          p_event_type: string
+          p_now?: string
+          p_payload: Json
+          p_provider_event_id: string
+        }
+        Returns: Json
+      }
       calc_workout_kcal: {
         Args: {
           p_duration_min: number
@@ -2298,6 +2322,16 @@ export type Database = {
         }[]
       }
       f_unaccent: { Args: { "": string }; Returns: string }
+      finish_subscription_event: {
+        Args: {
+          p_context?: Json
+          p_error?: string
+          p_now?: string
+          p_provider_event_id: string
+          p_success: boolean
+        }
+        Returns: Json
+      }
       get_global_config: { Args: { p_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       match_food_phrases: {

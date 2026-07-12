@@ -2016,59 +2016,42 @@ export const registraTreino: ToolDefinition = {
       }
     }
 
-    // 3ª camada: CORREÇÃO de treino (Roberto 2026-05-27). Paulo registrou caminhada
-    // 60min, corrigiu pra 30min → o sistema SOMOU (60+30=90min/247kcal) em vez de
-    // SUBSTITUIR. Dedup só pega tipo+duração igual. Espelha o `replace` do
-    // registra_refeicao: se a mensagem do paciente tem intenção de correção E já
-    // existe treino do MESMO TIPO nas últimas 2h, deletamos o antigo, abatemos
-    // o kcal do snapshot, e seguimos pro insert normal (que soma o novo).
+    // 3ª camada: CORREÇÃO de treino (Roberto 2026-05-27). A intenção e os
+    // registros antigos são coletados aqui, mas a substituição só acontece mais
+    // abaixo, dentro da mesma transação que insere o treino novo e recalcula os
+    // snapshots afetados.
+    let replaceRecent = false
+    let replaceSince: string | null = null
+    let replacementAudit: {
+      correctionWord: string
+      oldRows: Array<{
+        id: string
+        estimated_kcal: number | null
+        duration_min: number | null
+      }>
+    } | null = null
     if (args.duration_min != null) {
       const correctionWord = detectCorrectionIntent(ctx.recentUserMessages ?? [])
       if (correctionWord) {
         const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
-        const { data: oldOnes } = await ctx.supabase
+        const { data: oldOnes, error: oldOnesError } = await ctx.supabase
           .from('workout_logs')
           .select('id, estimated_kcal, duration_min')
           .eq('user_id', ctx.userId)
           .eq('workout_type', args.workout_type)
           .gte('created_at', twoHoursAgo)
+        if (oldOnesError) {
+          throw new Error(oldOnesError.message ?? 'recent workout lookup failed')
+        }
         const oldRows = (oldOnes ?? []) as Array<{
           id: string
           estimated_kcal: number | null
           duration_min: number | null
         }>
         if (oldRows.length > 0) {
-          const oldKcalSum = oldRows.reduce((s, w) => s + (w.estimated_kcal ?? 0), 0)
-          await ctx.supabase
-            .from('workout_logs')
-            .delete()
-            .in('id', oldRows.map((r) => r.id))
-          // Abate o kcal antigo do snapshot (negativo) — o insert normal abaixo
-          // soma o novo kcal. Net: troca o antigo pelo novo.
-          if (oldKcalSum > 0) {
-            await (ctx.supabase as unknown as {
-              rpc: (
-                n: string,
-                p: Record<string, unknown>,
-              ) => Promise<{ error: { message?: string } | null }>
-            }).rpc('snapshot_add_workout', {
-              p_user_id: ctx.userId,
-              p_date: today,
-              p_exercise_kcal: -oldKcalSum,
-            })
-          }
-          await ctx.supabase.from('product_events').insert({
-            user_id: ctx.userId,
-            event: 'tool.workout_replaced',
-            properties: {
-              workout_type: args.workout_type,
-              correction_word: correctionWord,
-              old_count: oldRows.length,
-              old_kcal_sum: oldKcalSum,
-              old_durations: oldRows.map((r) => r.duration_min),
-              new_duration_min: args.duration_min,
-            },
-          })
+          replaceRecent = true
+          replaceSince = twoHoursAgo
+          replacementAudit = { correctionWord, oldRows }
         }
       }
     }
@@ -2132,41 +2115,66 @@ export const registraTreino: ToolDefinition = {
       })
     }
 
-    // Atomic: snapshot + targets + workout kcal
+    const workoutNotes = args.notes
+      ? `${args.notes} [src=${kcalSource}]`
+      : `[kcal_source=${kcalSource}, formula=${formulaKcal}, image=${args.estimated_kcal_from_image ?? 'n/a'}]`
+
+    // Atomic: optional replacement + workout log + all affected snapshots.
     const { data: snap, error: snapErr } = await (ctx.supabase as unknown as {
       rpc: (
         n: string,
         p: Record<string, unknown>,
       ) => Promise<{
-        data: { id: string; exercise_calories: number; training_done: boolean } | null
+        data: {
+          snapshot_id: string
+          inserted: boolean
+          replaced_count: number
+          exercise_calories: number
+          training_done: boolean
+        } | null
         error: { message?: string } | null
       }>
-    }).rpc('snapshot_add_workout', {
+    }).rpc('register_workout_atomic', {
       p_user_id: ctx.userId,
       p_date: today,
-      p_exercise_kcal: finalKcal,
+      p_workout_type: args.workout_type,
+      p_duration_min: args.duration_min,
+      p_estimated_kcal: finalKcal,
+      p_intensity: args.intensity ?? null,
+      p_notes: workoutNotes,
+      p_performed_at: referenceTimestamp.toISOString(),
+      p_provider_message_id: ctx.providerMessageId ?? null,
       p_calories_target: tgt.calories_target,
       p_protein_target: tgt.protein_target,
+      p_replace_recent: replaceRecent,
+      p_replace_since: replaceSince,
     })
-    if (snapErr) throw new Error(snapErr.message ?? 'snapshot_add_workout failed')
-    if (!snap) throw new Error('snapshot_add_workout returned null')
+    if (snapErr) throw new Error(snapErr.message ?? 'register_workout_atomic failed')
+    if (!snap) throw new Error('register_workout_atomic returned null')
 
-    await ctx.supabase.from('workout_logs').insert({
-      user_id: ctx.userId,
-      snapshot_id: snap.id,
-      workout_type: args.workout_type,
-      duration_min: args.duration_min,
-      intensity: args.intensity,
-      estimated_kcal: finalKcal,
-      notes: args.notes
-        ? `${args.notes} [src=${kcalSource}]`
-        : `[kcal_source=${kcalSource}, formula=${formulaKcal}, image=${args.estimated_kcal_from_image ?? 'n/a'}]`,
-      raw_provider_message_id: ctx.providerMessageId ?? null,
-      performed_at: referenceTimestamp.toISOString(),
-    })
+    if (replacementAudit && snap.replaced_count > 0) {
+      const oldKcalSum = replacementAudit.oldRows.reduce(
+        (sum, workout) => sum + (workout.estimated_kcal ?? 0),
+        0,
+      )
+      await ctx.supabase.from('product_events').insert({
+        user_id: ctx.userId,
+        event: 'tool.workout_replaced',
+        properties: {
+          workout_type: args.workout_type,
+          correction_word: replacementAudit.correctionWord,
+          old_count: replacementAudit.oldRows.length,
+          old_kcal_sum: oldKcalSum,
+          old_durations: replacementAudit.oldRows.map((row) => row.duration_min),
+          new_duration_min: args.duration_min,
+          replaced_count: snap.replaced_count,
+        },
+      })
+    }
 
     return {
       success: true,
+      deduped: !snap.inserted,
       kcal_burned: finalKcal,
       kcal_source: kcalSource,
       formula_kcal: formulaKcal,

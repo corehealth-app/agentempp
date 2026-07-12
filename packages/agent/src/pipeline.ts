@@ -65,6 +65,7 @@ import {
 } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import { routeModel } from './model-router.js'
+import { loadRouterFlag } from './router-flag.js'
 import {
   isMealExpressEligible,
   isWorkoutExpressEligible,
@@ -2290,32 +2291,6 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
       parameters: zodToJsonSchema(t.parameters),
     },
   }))
-}
-
-// ─── Router de modelo (Fase 6 — 2026-06-04) ──────────────────────────────────
-
-let routerFlagCache: { value: boolean; expiresAt: number } | null = null
-const ROUTER_FLAG_TTL_MS = 60_000
-
-async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
-  const now = Date.now()
-  if (routerFlagCache && routerFlagCache.expiresAt > now) return routerFlagCache.value
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-  const { data } = await (supabase as any)
-    .from('global_config')
-    .select('value')
-    .eq('key', 'router.haiku_enabled')
-    .maybeSingle()
-  // Default TRUE — Haiku routing fica ligado. Pra desligar: UPDATE global_config
-  // SET value='false' WHERE key='router.haiku_enabled'.
-  const value =
-    data && (data as { value: unknown }).value !== undefined
-      ? (data as { value: unknown }).value !== false &&
-        (data as { value: unknown }).value !== 'false'
-      : true
-  routerFlagCache = { value, expiresAt: now + ROUTER_FLAG_TTL_MS }
-  return value
 }
 
 export async function hasOpenPending(

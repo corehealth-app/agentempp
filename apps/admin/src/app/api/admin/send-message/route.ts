@@ -1,6 +1,6 @@
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
-import { createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -16,15 +16,17 @@ export const runtime = 'nodejs'
  * Body: { user_id: string, text: string }
  */
 export async function POST(req: Request) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    return NextResponse.json({ error: 'service role key not configured' }, { status: 503 })
+  }
   const auth = req.headers.get('authorization') ?? ''
-  const expected = `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''}`
-  if (!expected || auth !== expected) {
+  const expected = `Bearer ${serviceRoleKey}`
+  if (auth !== expected) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const body = (await req.json().catch(() => null)) as
-    | { user_id?: string; text?: string }
-    | null
+  const body = (await req.json().catch(() => null)) as { user_id?: string; text?: string } | null
   const userId = body?.user_id
   const text = body?.text?.trim()
   if (!userId || !text) {
@@ -32,11 +34,14 @@ export async function POST(req: Request) {
   }
 
   const svc = createServiceClient()
-  const { data: user } = await svc
+  const { data: user, error: userError } = await svc
     .from('users')
     .select('id, wpp, name')
     .eq('id', userId)
     .maybeSingle()
+  if (userError) {
+    return NextResponse.json({ error: 'user lookup failed' }, { status: 500 })
+  }
   if (!user?.wpp) {
     return NextResponse.json({ error: 'user not found or no wpp' }, { status: 404 })
   }
@@ -49,42 +54,64 @@ export async function POST(req: Request) {
     META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
   })
 
-  let deliveryStatus: 'sent' | 'failed' = 'sent'
+  let deliveryStatus: 'queued' | 'sent' | 'failed' = 'failed'
   let deliveryError: string | undefined
+  let providerMessageId: string | null = null
+  let deliveredContent = text
   try {
     const results = await sendHumanized(messaging, user.wpp, text, {
       showTyping: false,
       minDelay: 300,
       maxDelay: 800,
       charsPerSecond: 60,
+      singleMessage: true,
     })
-    if (results.some((r) => r.status !== 'sent')) {
-      deliveryStatus = 'failed'
-      deliveryError = results.find((r) => r.error)?.error
-    }
+    const delivery = results[0]
+    if (!delivery) throw new Error('provider returned no delivery result')
+    deliveryStatus = delivery.status
+    deliveryError = delivery.error
+    providerMessageId = delivery.providerMessageId
+    deliveredContent = delivery.content
   } catch (e) {
     deliveryStatus = 'failed'
     deliveryError = e instanceof Error ? e.message : String(e)
   }
 
-  await svc.from('messages').insert({
+  const { error: persistenceError } = await svc.from('messages').insert({
     user_id: userId,
     direction: 'out',
     role: 'assistant',
     content_type: 'text',
-    content: text,
+    content: deliveredContent,
     provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+    provider_message_id: providerMessageId,
     agent_stage: 'admin_manual',
     delivery_status: deliveryStatus,
     delivery_error: deliveryError ? { msg: deliveryError } : null,
     raw_payload: { source: 'admin_api' },
   })
+  if (persistenceError) {
+    return NextResponse.json(
+      {
+        success: false,
+        delivered: deliveryStatus !== 'failed',
+        delivery_status: deliveryStatus,
+        provider_message_id: providerMessageId,
+        error: 'message history persistence failed',
+      },
+      { status: 500 },
+    )
+  }
 
-  return NextResponse.json({
-    success: deliveryStatus === 'sent',
-    user_id: userId,
-    wpp: user.wpp,
-    delivery_status: deliveryStatus,
-    error: deliveryError ?? null,
-  })
+  return NextResponse.json(
+    {
+      success: deliveryStatus !== 'failed',
+      user_id: userId,
+      wpp: user.wpp,
+      provider_message_id: providerMessageId,
+      delivery_status: deliveryStatus,
+      error: deliveryError ?? null,
+    },
+    { status: deliveryStatus === 'failed' ? 502 : 200 },
+  )
 }

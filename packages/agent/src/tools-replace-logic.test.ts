@@ -48,6 +48,10 @@ interface MockOptions {
     recentCorrection?: string
     sameDay?: string
   }
+  foodCorrectionErrors?: {
+    lookup?: string
+    write?: string
+  }
 }
 
 interface CapturedEvent {
@@ -59,6 +63,7 @@ function makeContextAndSupabase(opts: MockOptions) {
   const events: CapturedEvent[] = []
   const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
   const mealInserts: Array<Record<string, unknown>> = []
+  const foodCorrectionWrites: Array<Record<string, unknown>> = []
   let finalReplace: boolean | undefined = opts.llmSentReplace
 
   // Helper que retorna chain "Supabase-like" que ignora qualquer método
@@ -70,6 +75,37 @@ function makeContextAndSupabase(opts: MockOptions) {
     }
     obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
       Promise.resolve(cb({ data: rows, error: null }))
+    return obj
+  }
+
+  const resultChain = (rows: unknown, errorMessage?: string): unknown => {
+    const obj: Record<string, unknown> = {
+      data: errorMessage ? null : rows,
+      error: errorMessage ? { message: errorMessage } : null,
+    }
+    for (const m of [
+      'select',
+      'eq',
+      'or',
+      'neq',
+      'gte',
+      'order',
+      'limit',
+      'single',
+      'maybeSingle',
+    ]) {
+      obj[m] = () => resultChain(rows, errorMessage)
+    }
+    obj.then = (
+      cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
+    ) =>
+      Promise.resolve(
+        cb(
+          errorMessage
+            ? { data: null, error: { message: errorMessage } }
+            : { data: rows, error: null },
+        ),
+      )
     return obj
   }
 
@@ -148,6 +184,19 @@ function makeContextAndSupabase(opts: MockOptions) {
           },
         }
       }
+      if (table === 'user_food_corrections') {
+        return {
+          ...((resultChain([], opts.foodCorrectionErrors?.lookup) as object)),
+          insert: (row: Record<string, unknown>) => {
+            foodCorrectionWrites.push(row)
+            return resultChain([], opts.foodCorrectionErrors?.write)
+          },
+          update: (row: Record<string, unknown>) => {
+            foodCorrectionWrites.push(row)
+            return resultChain([], opts.foodCorrectionErrors?.write)
+          },
+        }
+      }
       if (table === 'pending_registrations') {
         return {
           ...((chain(opts.editedPendings ?? []) as object)),
@@ -217,6 +266,7 @@ function makeContextAndSupabase(opts: MockOptions) {
     events,
     rpcCalls,
     mealInserts,
+    foodCorrectionWrites,
     ctx: {
       supabase,
       userId: 'user-test',
@@ -915,5 +965,49 @@ describe('registra_refeicao — falha fechada em leituras que protegem calorias'
       ),
     ).rejects.toThrow('same-day dedup unavailable')
     expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+})
+
+describe('registra_refeicao — aprendizado de correções não corrompe o fluxo principal', () => {
+  const correctionArgs = {
+    meal_type: 'almoco' as const,
+    items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+    corrections: [{ de: 'frango frito', para: 'frango grelhado' }],
+  }
+
+  it('não cria memória nem evento de sucesso quando a leitura da memória falha', async () => {
+    const { ctx, events, foodCorrectionWrites, rpcCalls } = makeContextAndSupabase({
+      foodCorrectionErrors: { lookup: 'food correction lookup unavailable' },
+    })
+
+    await registraRefeicao.execute(correctionArgs, ctx)
+
+    expect(foodCorrectionWrites).toHaveLength(0)
+    expect(events.some((entry) => entry.event === 'food_correction.learned')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'food_correction.learning_failed',
+        properties: expect.objectContaining({ stage: 'lookup' }),
+      }),
+    )
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(true)
+  })
+
+  it('não emite evento de sucesso quando a gravação da memória falha', async () => {
+    const { ctx, events, foodCorrectionWrites, rpcCalls } = makeContextAndSupabase({
+      foodCorrectionErrors: { write: 'food correction write unavailable' },
+    })
+
+    await registraRefeicao.execute(correctionArgs, ctx)
+
+    expect(foodCorrectionWrites).toHaveLength(1)
+    expect(events.some((entry) => entry.event === 'food_correction.learned')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'food_correction.learning_failed',
+        properties: expect.objectContaining({ stage: 'insert' }),
+      }),
+    )
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(true)
   })
 })

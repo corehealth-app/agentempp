@@ -689,86 +689,117 @@ export const registraRefeicao: ToolDefinition = {
         const correctedTo = normalizeName(corr.para)
         if (!said || !correctedTo || said === correctedTo) continue
 
-        const { data: existingRows } = await supaCorr
-          .from('user_food_corrections')
-          .select('id, corrected_to, confirmed_count, contradicted_count, status')
-          .eq('user_id', ctx.userId)
-          .eq('said_name', said)
-          .limit(1)
-        const existing = (existingRows ?? [])[0] as
-          | {
-              id: string
-              corrected_to: string
-              confirmed_count: number
-              contradicted_count: number
-              status: string
+        let learningStage = 'lookup'
+        try {
+          const { data: existingRows, error: existingRowsError } = await supaCorr
+            .from('user_food_corrections')
+            .select('id, corrected_to, confirmed_count, contradicted_count, status')
+            .eq('user_id', ctx.userId)
+            .eq('said_name', said)
+            .limit(1)
+          if (existingRowsError) {
+            throw new Error(existingRowsError.message ?? 'food correction lookup failed')
+          }
+          const existing = (existingRows ?? [])[0] as
+            | {
+                id: string
+                corrected_to: string
+                confirmed_count: number
+                contradicted_count: number
+                status: string
+              }
+            | undefined
+
+          const customMacros = {
+            custom_kcal_per_100g: corr.kcal_per_100g ?? null,
+            custom_protein_g: corr.protein_g ?? null,
+            custom_carbs_g: corr.carbs_g ?? null,
+            custom_fat_g: corr.fat_g ?? null,
+          }
+
+          if (!existing) {
+            // 1ª correção desse nome → entra como learning
+            learningStage = 'insert'
+            const { error: insertCorrectionError } = await supaCorr
+              .from('user_food_corrections')
+              .insert({
+                user_id: ctx.userId,
+                said_name: said,
+                corrected_to: correctedTo,
+                ...customMacros,
+                confirmed_count: 1,
+                status: 'learning',
+              })
+            if (insertCorrectionError) {
+              throw new Error(insertCorrectionError.message ?? 'food correction insert failed')
             }
-          | undefined
-
-        const customMacros = {
-          custom_kcal_per_100g: corr.kcal_per_100g ?? null,
-          custom_protein_g: corr.protein_g ?? null,
-          custom_carbs_g: corr.carbs_g ?? null,
-          custom_fat_g: corr.fat_g ?? null,
-        }
-
-        if (!existing) {
-          // 1ª correção desse nome → entra como learning
-          await supaCorr.from('user_food_corrections').insert({
-            user_id: ctx.userId,
-            said_name: said,
-            corrected_to: correctedTo,
-            ...customMacros,
-            confirmed_count: 1,
-            status: 'learning',
-          })
-          await ctx.supabase.from('product_events').insert({
-            user_id: ctx.userId,
-            event: 'food_correction.learned',
-            properties: { said_name: said, corrected_to: correctedTo, has_custom_macros: corr.kcal_per_100g != null },
-          })
-        } else if (normalizeName(existing.corrected_to) === correctedTo) {
-          // Mesma correção de novo → confirma. 2ª confirmação ativa.
-          const newCount = existing.confirmed_count + 1
-          await supaCorr
-            .from('user_food_corrections')
-            .update({
-              confirmed_count: newCount,
-              status: newCount >= 2 ? 'active' : existing.status,
-              last_seen: new Date().toISOString(),
-              ...(corr.kcal_per_100g != null ? customMacros : {}),
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'food_correction.learned',
+              properties: { said_name: said, corrected_to: correctedTo, has_custom_macros: corr.kcal_per_100g != null },
             })
-            .eq('id', existing.id)
-          await ctx.supabase.from('product_events').insert({
-            user_id: ctx.userId,
-            event: 'food_correction.confirmed',
-            properties: { said_name: said, corrected_to: correctedTo, confirmed_count: newCount, now_active: newCount >= 2 },
-          })
-        } else {
-          // Correção CONTRADIZ a entrada (mesmo said_name, corrected_to diferente).
-          // Conta contradição; se contradições >= confirmações, aposenta a entrada
-          // antiga e recomeça com a nova correção.
-          const newContradicted = existing.contradicted_count + 1
-          const retire = newContradicted >= existing.confirmed_count
-          await supaCorr
-            .from('user_food_corrections')
-            .update({
-              corrected_to: retire ? correctedTo : existing.corrected_to,
-              contradicted_count: retire ? 0 : newContradicted,
-              confirmed_count: retire ? 1 : existing.confirmed_count,
-              status: retire ? 'learning' : existing.status,
-              last_seen: new Date().toISOString(),
-              ...(retire ? customMacros : {}),
+          } else if (normalizeName(existing.corrected_to) === correctedTo) {
+            // Mesma correção de novo → confirma. 2ª confirmação ativa.
+            const newCount = existing.confirmed_count + 1
+            learningStage = 'update_confirmation'
+            const { error: updateCorrectionError } = await supaCorr
+              .from('user_food_corrections')
+              .update({
+                confirmed_count: newCount,
+                status: newCount >= 2 ? 'active' : existing.status,
+                last_seen: new Date().toISOString(),
+                ...(corr.kcal_per_100g != null ? customMacros : {}),
+              })
+              .eq('id', existing.id)
+            if (updateCorrectionError) {
+              throw new Error(updateCorrectionError.message ?? 'food correction update failed')
+            }
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'food_correction.confirmed',
+              properties: { said_name: said, corrected_to: correctedTo, confirmed_count: newCount, now_active: newCount >= 2 },
             })
-            .eq('id', existing.id)
+          } else {
+            // Correção CONTRADIZ a entrada (mesmo said_name, corrected_to diferente).
+            // Conta contradição; se contradições >= confirmações, aposenta a entrada
+            // antiga e recomeça com a nova correção.
+            const newContradicted = existing.contradicted_count + 1
+            const retire = newContradicted >= existing.confirmed_count
+            learningStage = 'update_contradiction'
+            const { error: contradictCorrectionError } = await supaCorr
+              .from('user_food_corrections')
+              .update({
+                corrected_to: retire ? correctedTo : existing.corrected_to,
+                contradicted_count: retire ? 0 : newContradicted,
+                confirmed_count: retire ? 1 : existing.confirmed_count,
+                status: retire ? 'learning' : existing.status,
+                last_seen: new Date().toISOString(),
+                ...(retire ? customMacros : {}),
+              })
+              .eq('id', existing.id)
+            if (contradictCorrectionError) {
+              throw new Error(
+                contradictCorrectionError.message ?? 'food correction contradiction update failed',
+              )
+            }
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'food_correction.contradicted',
+              properties: {
+                said_name: said,
+                old_corrected_to: existing.corrected_to,
+                new_corrected_to: correctedTo,
+                retired_and_relearned: retire,
+              },
+            })
+          }
+        } catch {
           await ctx.supabase.from('product_events').insert({
             user_id: ctx.userId,
-            event: 'food_correction.contradicted',
+            event: 'food_correction.learning_failed',
             properties: {
-              said_name: said,
-              old_corrected_to: existing.corrected_to,
-              new_corrected_to: correctedTo,
-              retired_and_relearned: retire,
+              stage: learningStage,
+              has_custom_macros: corr.kcal_per_100g != null,
             },
           })
         }

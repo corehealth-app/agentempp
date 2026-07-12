@@ -3282,7 +3282,11 @@ export const geraTreino: ToolDefinition = {
     if (!plan) {
       return { success: false, error: 'Falha ao gerar plano de treino. Tente novamente.' }
     }
-    const saved = await saveTrainingPlan(ctx.supabase, plan)
+    const saved = await saveTrainingPlan(
+      ctx.supabase,
+      plan,
+      ctx.providerMessageId ?? null,
+    )
     if (!saved.id) {
       // Cron de entrega faz inner join com training_plans active=true.
       // Sem ID salvo, paciente nunca recebe o treino diário. Não registra

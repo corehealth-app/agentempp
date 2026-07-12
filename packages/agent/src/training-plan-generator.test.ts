@@ -4,6 +4,7 @@ import type { OpenRouterLLM } from '@mpp/providers'
 import {
   getTodayTraining,
   generateTrainingPlan,
+  saveTrainingPlan,
   type TrainingDay,
   type TrainingGeneratorInput,
 } from './training-plan-generator.js'
@@ -56,6 +57,7 @@ const VALID_TRAIN_LLM_OUTPUT = JSON.stringify({
 
 function makeMockSupabase(returns: {
   data: { id: string; weekly_schedule: unknown } | null
+  error?: { message: string } | null
 }): ServiceClient {
   const chain = {
     select: () => chain,
@@ -129,6 +131,17 @@ describe('getTodayTraining', () => {
     const supa = makeMockSupabase({ data: null })
     const result = await getTodayTraining(supa, 'user-1', 'seg')
     expect(result).toBeNull()
+  })
+
+  it('propaga erro ao consultar o plano ativo', async () => {
+    const supa = makeMockSupabase({
+      data: null,
+      error: { message: 'training plan query failed' },
+    })
+
+    await expect(getTodayTraining(supa, 'user-1', 'seg')).rejects.toThrow(
+      'training plan query failed',
+    )
   })
 
   it('retorna null quando weekly_schedule não é array (corrupto)', async () => {
@@ -255,5 +268,73 @@ describe('generateTrainingPlan — pipeline com mock LLM', () => {
     )
     const result = await generateTrainingPlan(llm, mockSupa, VALID_TRAIN_INPUT)
     expect(result?.progression_rule).toMatch(/Adicione 1 rep/)
+  })
+})
+
+describe('saveTrainingPlan — persistência atômica', () => {
+  it('usa uma única RPC e envia a chave idempotente da mensagem', async () => {
+    const calls: Array<{ name: string; params: Record<string, unknown> }> = []
+    const supabase = {
+      rpc: async (name: string, params: Record<string, unknown>) => {
+        calls.push({ name, params })
+        return { data: { plan_id: 'plan-1', inserted: true }, error: null }
+      },
+      from: () => {
+        throw new Error('saveTrainingPlan must not issue separate table writes')
+      },
+    }
+
+    const saved = await saveTrainingPlan(
+      supabase as never,
+      {
+        user_id: 'user-1',
+        generated_at: '2026-07-12T12:00:00.000Z',
+        plan_type: 'split',
+        days_per_week: 3,
+        equipment_summary: 'halteres, barra fixa',
+        weekly_schedule: [SAMPLE_DAY],
+        progression_rule: 'Adicione uma repetição por treino.',
+      },
+      'provider-message-1',
+    )
+
+    expect(saved).toEqual({ id: 'plan-1' })
+    expect(calls).toEqual([
+      {
+        name: 'save_training_plan_atomic',
+        params: expect.objectContaining({
+          p_user_id: 'user-1',
+          p_request_key: 'provider-message-1',
+          p_days_per_week: 3,
+        }),
+      },
+    ])
+  })
+
+  it('não chama o banco quando generated_at é inválido', async () => {
+    let rpcCalled = false
+    const supabase = {
+      rpc: async () => {
+        rpcCalled = true
+        return { data: null, error: null }
+      },
+    }
+
+    const saved = await saveTrainingPlan(
+      supabase as never,
+      {
+        user_id: 'user-1',
+        generated_at: 'invalid-date',
+        plan_type: 'split',
+        days_per_week: 3,
+        equipment_summary: 'halteres',
+        weekly_schedule: [SAMPLE_DAY],
+        progression_rule: 'Adicione uma repetição por treino.',
+      },
+      'provider-message-2',
+    )
+
+    expect(saved).toEqual({ id: null })
+    expect(rpcCalled).toBe(false)
   })
 })

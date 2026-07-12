@@ -1,5 +1,6 @@
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 
 /**
  * Worker: detecta "pipeline parado".
@@ -30,7 +31,7 @@ export const pipelineHealthFn = inngest.createFunction(
 
       // Busca incoming msgs entre 10min e 2h atrás (janela razoável).
       // 2h limit evita re-detectar incidente antigo já resolvido manualmente.
-      const { data: recentIn } = await supabase
+      const { data: recentIn, error: recentInError } = await supabase
         .from('messages')
         .select('id, user_id, created_at')
         .eq('direction', 'in')
@@ -38,6 +39,7 @@ export const pipelineHealthFn = inngest.createFunction(
         .lte('created_at', tenMinAgo)
         .order('created_at', { ascending: false })
         .limit(50)
+      throwIfQueryFailed(recentInError, 'pipeline health inbound lookup failed')
       const incoming = (recentIn ?? []) as Array<{
         id: string
         user_id: string
@@ -56,7 +58,7 @@ export const pipelineHealthFn = inngest.createFunction(
       }
       const stuck: Array<{ user_id: string; last_in: string }> = []
       for (const [userId, lastIn] of byUser.entries()) {
-        const { data: lastOut } = await supabase
+        const { data: lastOut, error: lastOutError } = await supabase
           .from('messages')
           .select('id, created_at')
           .eq('user_id', userId)
@@ -64,6 +66,7 @@ export const pipelineHealthFn = inngest.createFunction(
           .gt('created_at', lastIn)
           .order('created_at', { ascending: false })
           .limit(1)
+        throwIfQueryFailed(lastOutError, 'pipeline health outbound lookup failed')
         if (!lastOut || (lastOut as unknown[]).length === 0) {
           stuck.push({ user_id: userId, last_in: lastIn })
         }
@@ -84,8 +87,7 @@ export const pipelineHealthFn = inngest.createFunction(
 
       // Auto-sync Inngest. Caso típico: deploy manual perdeu registro.
       // Usa a URL pública do app (configurada em INNGEST_SYNC_URL ou default).
-      const syncUrl =
-        process.env.INNGEST_SYNC_URL ?? 'https://agentempp.vercel.app/api/inngest'
+      const syncUrl = process.env.INNGEST_SYNC_URL ?? 'https://agentempp.vercel.app/api/inngest'
       let syncResult = 'skipped'
       try {
         const resp = await fetch(syncUrl, { method: 'PUT' })

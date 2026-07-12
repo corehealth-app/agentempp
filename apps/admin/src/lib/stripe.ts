@@ -10,13 +10,14 @@ let cached: Stripe | null = null
 
 async function loadCredential(service: string, keyName: string): Promise<string | null> {
   const svc = createServiceClient()
-  const { data } = await svc
+  const { data, error } = await svc
     .from('service_credentials')
     .select('value')
     .eq('service', service)
     .eq('key_name', keyName)
     .eq('is_active', true)
     .maybeSingle()
+  if (error) throw new Error(`Falha ao carregar credencial ${service}.${keyName}: ${error.message}`)
   return (data as { value: string } | null)?.value ?? null
 }
 
@@ -175,12 +176,13 @@ export async function setupStripeProducts(): Promise<
         limit: 1,
       })
 
-      if (existing.data.length > 0) {
+      const existingPrice = existing.data[0]
+      if (existingPrice) {
         results.push({
           lookup_key: variant.lookup_key,
           currency: variant.currency,
           product_id: productId,
-          price_id: existing.data[0]!.id,
+          price_id: existingPrice.id,
           created: false,
         })
         continue
@@ -252,9 +254,7 @@ export async function createCheckoutSession(opts: {
   })
   const price = prices.data[0]
   if (!price)
-    throw new Error(
-      `Preço com lookup_key=${resolvedLookup} não existe. Rode setup-products.`,
-    )
+    throw new Error(`Preço com lookup_key=${resolvedLookup} não existe. Rode setup-products.`)
 
   const localeByCountry: Record<string, string> = {
     BR: 'pt-BR',
@@ -287,7 +287,6 @@ export async function createCheckoutSession(opts: {
     customer_email: opts.user_email ?? undefined,
     success_url: opts.success_url,
     cancel_url: opts.cancel_url,
-    // biome-ignore lint/suspicious/noExplicitAny: Stripe.Locale string union too restrictive
     locale: locale as never,
     metadata: {
       user_id: opts.user_id,

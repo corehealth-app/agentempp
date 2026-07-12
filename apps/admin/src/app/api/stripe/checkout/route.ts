@@ -4,8 +4,8 @@
  * Retorna: { url } pra redirecionar ao Stripe Checkout.
  */
 import { NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { createCheckoutSession } from '@/lib/stripe'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -16,11 +16,14 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  const { data: admin } = await supabase
+  const { data: admin, error: adminError } = await supabase
     .from('admin_users')
     .select('id')
     .eq('id', user.id)
     .maybeSingle()
+  if (adminError) {
+    return NextResponse.json({ error: 'admin lookup failed' }, { status: 500 })
+  }
   if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   let body: { user_id?: string; lookup_key?: string } = {}
@@ -30,35 +33,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
   if (!body.user_id || !body.lookup_key) {
-    return NextResponse.json(
-      { error: 'campos user_id e lookup_key obrigatórios' },
-      { status: 400 },
-    )
+    return NextResponse.json({ error: 'campos user_id e lookup_key obrigatórios' }, { status: 400 })
   }
 
   const svc = createServiceClient()
-  const { data: target } = await (svc as unknown as {
-    from: (t: string) => {
-      select: (s: string) => {
-        eq: (col: string, val: string) => {
-          maybeSingle: () => Promise<{ data: unknown }>
-        }
-      }
-    }
-  })
+  const { data: target, error: targetError } = await svc
     .from('users')
     .select('id, wpp, email, name, country')
     .eq('id', body.user_id)
     .maybeSingle()
-  const targetUser = target as
-    | {
-        id: string
-        wpp: string
-        email: string | null
-        name: string | null
-        country: string | null
-      }
-    | null
+  if (targetError) {
+    return NextResponse.json({ error: 'user lookup failed' }, { status: 500 })
+  }
+  const targetUser = target
   if (!targetUser) {
     return NextResponse.json({ error: 'user not found' }, { status: 404 })
   }

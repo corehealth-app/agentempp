@@ -4,8 +4,8 @@
  * Apenas admin autenticado.
  */
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { setupStripeProducts } from '@/lib/stripe'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -16,11 +16,14 @@ export async function POST() {
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  const { data: admin } = await supabase
+  const { data: admin, error: adminError } = await supabase
     .from('admin_users')
     .select('id')
     .eq('id', user.id)
     .maybeSingle()
+  if (adminError) {
+    return NextResponse.json({ error: 'admin lookup failed' }, { status: 500 })
+  }
   if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   try {

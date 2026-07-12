@@ -21,6 +21,13 @@ type Events = {
       mediaUrl?: string
       /** Quando há múltiplas mídias agregadas pelo buffer (ex: 3 fotos corporais). */
       mediaUrls?: string[]
+      /** Preserva tipo, provider ID e timestamp de cada mídia em bursts mistos. */
+      mediaItems?: Array<{
+        url: string
+        contentType: 'audio' | 'image'
+        providerMessageId: string
+        timestamp: string
+      }>
       provider: string
       timestamp: string
     }

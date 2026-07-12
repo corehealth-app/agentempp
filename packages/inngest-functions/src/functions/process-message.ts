@@ -24,6 +24,10 @@ import {
   type OutboundDelivery,
 } from './outbound-message-rows.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
+import {
+  combinePatientNarrative,
+  normalizeInboundMediaItems,
+} from './media-burst.js'
 
 /**
  * Worker principal: processa cada mensagem recebida.
@@ -53,12 +57,26 @@ export const processMessageFn = inngest.createFunction(
       text,
       mediaUrl,
       mediaUrls,
+      mediaItems,
       provider,
       timestamp,
     } = event.data
 
-    // Suporta múltiplas mídias: prioriza mediaUrls[]; cai pro mediaUrl singular
-    const allMediaUrls = mediaUrls && mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : []
+    const normalizedMediaItems = normalizeInboundMediaItems({
+      mediaItems,
+      contentType,
+      mediaUrl,
+      mediaUrls,
+      providerMessageId,
+      timestamp,
+    })
+    const audioMediaItems = normalizedMediaItems.filter(
+      (item) => item.contentType === 'audio',
+    )
+    const imageMediaItems = normalizedMediaItems.filter(
+      (item) => item.contentType === 'image',
+    )
+    const allMediaUrls = normalizedMediaItems.map((item) => item.url)
 
     logger.info('Processing', {
       userId,
@@ -234,7 +252,7 @@ export const processMessageFn = inngest.createFunction(
     // === Step 1: ack ===
     await step.run('ack', async () => {
       await messaging.showTypingFor(providerMessageId).catch(() => {})
-      if (contentType === 'audio' || contentType === 'image') {
+      if (normalizedMediaItems.length > 0) {
         await messaging.react(wpp, providerMessageId, '👀').catch(() => {})
       }
       return { acked: true }
@@ -266,77 +284,129 @@ export const processMessageFn = inngest.createFunction(
 
     // === Step 2: media prep — STT ou Vision ===
     let enrichedText: string | undefined = text
-    let mediaSummary: { kind: 'audio' | 'image'; latency_ms: number } | null = null
+    let patientNarrative: string | undefined = text
+    let mediaSummary: { kind: 'audio' | 'image' | 'mixed'; latency_ms: number } | null = null
 
-    if (contentType === 'audio' && allMediaUrls.length > 0) {
+    if (audioMediaItems.length > 0) {
       const sttRes = await step.run('stt-transcribe', async () => {
         if (!process.env.GROQ_API_KEY) {
-          return { ok: false as const, reason: 'GROQ_API_KEY ausente', text: null, latency_ms: 0 }
-        }
-        try {
-          const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
-          // Áudio: transcreve só o primeiro (cada áudio = um turno semântico)
-          const blob = await messaging.downloadMedia(allMediaUrls[0]!)
-          const r = await stt.transcribe({ audio: blob, language: 'pt' })
-          return { ok: true as const, text: r.text, latency_ms: r.latencyMs }
-        } catch (e) {
           return {
-            ok: false as const,
-            reason: e instanceof Error ? e.message : String(e),
-            text: null,
+            items: audioMediaItems.map((media) => ({
+              ok: false as const,
+              media,
+              reason: 'GROQ_API_KEY ausente',
+              text: null,
+              latency_ms: 0,
+            })),
             latency_ms: 0,
           }
         }
+        const startedAt = Date.now()
+        const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
+        const items = await Promise.all(
+          audioMediaItems.map(async (media) => {
+            try {
+              const blob = await messaging.downloadMedia(media.url)
+              const r = await stt.transcribe({ audio: blob, language: 'pt' })
+              return {
+                ok: true as const,
+                media,
+                text: r.text,
+                reason: null,
+                latency_ms: r.latencyMs,
+              }
+            } catch (error) {
+              return {
+                ok: false as const,
+                media,
+                text: null,
+                reason: error instanceof Error ? error.message : String(error),
+                latency_ms: 0,
+              }
+            }
+          }),
+        )
+        return { items, latency_ms: Date.now() - startedAt }
       })
-      if (sttRes.ok) {
-        enrichedText = sttRes.text || text
-        mediaSummary = { kind: 'audio', latency_ms: sttRes.latency_ms }
-        logger.info('STT done', { length: sttRes.text?.length, latency: sttRes.latency_ms })
-      } else {
-        logger.warn('STT skipped', { reason: sttRes.reason })
+
+      const successfulTranscripts = sttRes.items.filter(
+        (item): item is Extract<(typeof sttRes.items)[number], { ok: true }> => item.ok,
+      )
+      patientNarrative = combinePatientNarrative([
+        text,
+        ...successfulTranscripts.map((item) => item.text),
+      ])
+      enrichedText =
+        patientNarrative ??
+        `[${audioMediaItems.length} áudio(s) recebido(s), mas a transcrição falhou. Peça ao paciente para reenviar ou escrever o conteúdo. NÃO INVENTE.]`
+      mediaSummary = {
+        kind: imageMediaItems.length > 0 ? 'mixed' : 'audio',
+        latency_ms: sttRes.latency_ms,
       }
-      // Observabilidade: loga STT (sucesso ou falha). Sem isso, audio quebrado
-      // só vira visível quando paciente reclama (caso Paulo 05-13).
-      try {
+      logger.info('STT batch done', {
+        total: sttRes.items.length,
+        successful: successfulTranscripts.length,
+        latency: sttRes.latency_ms,
+      })
+
+      await step.run('persist-stt-results', async () => {
         const { supabase } = createWorkerDeps()
-        await supabase.from('product_events').insert({
+        for (const item of successfulTranscripts) {
+          const { error: transcriptError } = await supabase
+            .from('messages')
+            .update({ content: item.text })
+            .eq('user_id', userId)
+            .eq('provider', 'whatsapp_cloud')
+            .eq('provider_message_id', item.media.providerMessageId)
+            .eq('direction', 'in')
+          if (transcriptError) {
+            throw new Error(transcriptError.message ?? 'STT transcript persistence failed')
+          }
+        }
+
+        const eventRows = sttRes.items.map((item) => ({
           user_id: userId,
-          event: sttRes.ok ? 'stt.transcribed' : 'stt.failed',
+          event: item.ok ? 'stt.transcribed' : 'stt.failed',
           properties: {
-            provider_message_id: providerMessageId,
-            success: sttRes.ok,
-            latency_ms: sttRes.latency_ms,
-            text_length: sttRes.ok ? (sttRes.text?.length ?? 0) : 0,
-            text_preview: sttRes.ok ? (sttRes.text ?? '').slice(0, 120) : null,
-            reason: !sttRes.ok ? sttRes.reason : null,
+            provider_message_id: item.media.providerMessageId,
+            success: item.ok,
+            latency_ms: item.latency_ms,
+            text_length: item.ok ? item.text.length : 0,
+            text_preview: item.ok ? item.text.slice(0, 120) : null,
+            reason: item.ok ? null : item.reason,
             provider: 'groq-whisper',
             language: 'pt',
           },
-        })
-        // Persiste transcrição em messages.content pra rastreabilidade.
-        // Antes ficava só no contexto LLM e sumia — banco mostrava content vazio.
-        if (sttRes.ok && sttRes.text && providerMessageId) {
-          await supabase
-            .from('messages')
-            .update({ content: sttRes.text })
-            .eq('provider_message_id', providerMessageId)
-            .eq('direction', 'in')
+        }))
+        const { error: eventError } = await supabase.from('product_events').insert(eventRows)
+        if (eventError) {
+          logger.warn('STT event persistence failed', {
+            code: eventError.code,
+            message: eventError.message,
+          })
         }
-      } catch (logErr) {
-        logger.warn('STT event log failed', {
-          error: logErr instanceof Error ? logErr.message : String(logErr),
-        })
-      }
+        return { persisted: sttRes.items.length }
+      })
     }
 
-    if (contentType === 'image' && allMediaUrls.length > 0) {
+    if (imageMediaItems.length > 0) {
       const visionCfg = await step.run('vision-config', async () => {
         const { supabase } = createWorkerDeps()
         return loadVisionConfig(supabase)
       })
       const vRes = await step.run('vision-analyze', async () => {
         if (!process.env.OPENROUTER_API_KEY) {
-          return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente', images: [] }
+          return {
+            ok: false as const,
+            reason: 'OPENROUTER_API_KEY ausente',
+            images: [],
+            imageMedia: [],
+            failures: imageMediaItems.map((media) => ({
+              media,
+              reason: 'OPENROUTER_API_KEY ausente',
+            })),
+            latency_ms: 0,
+          }
         }
         try {
           const vision = new GeminiVision({
@@ -347,24 +417,79 @@ export const processMessageFn = inngest.createFunction(
             prompts: visionCfg.prompts,
           })
           const start = Date.now()
-          // Processa TODAS as imagens em paralelo
-          const analyses = await Promise.all(
-            allMediaUrls.map(async (url) => {
-              const blob = await messaging.downloadMedia(url)
-              const buf = Buffer.from(await blob.arrayBuffer())
-              const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
-              return vision.analyzeImage(dataUri, { userMessage: text ?? undefined })
+          // Uma imagem ruim não invalida as demais do mesmo burst.
+          const results = await Promise.all(
+            imageMediaItems.map(async (media) => {
+              try {
+                const blob = await messaging.downloadMedia(media.url)
+                const buf = Buffer.from(await blob.arrayBuffer())
+                const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
+                const image = await vision.analyzeImage(dataUri, {
+                  userMessage: patientNarrative,
+                })
+                return { ok: true as const, media, image }
+              } catch (error) {
+                return {
+                  ok: false as const,
+                  media,
+                  reason: error instanceof Error ? error.message : String(error),
+                }
+              }
             }),
           )
-          return { ok: true as const, images: analyses, latency_ms: Date.now() - start }
+          const successful = results.filter(
+            (result): result is Extract<(typeof results)[number], { ok: true }> => result.ok,
+          )
+          const failures = results
+            .filter(
+              (result): result is Extract<(typeof results)[number], { ok: false }> => !result.ok,
+            )
+            .map(({ media, reason }) => ({ media, reason }))
+          return {
+            ok: successful.length > 0,
+            reason: failures[0]?.reason ?? null,
+            images: successful.map((result) => result.image),
+            imageMedia: successful.map((result) => result.media),
+            failures,
+            latency_ms: Date.now() - start,
+          }
         } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e)
           return {
             ok: false as const,
-            reason: e instanceof Error ? e.message : String(e),
+            reason,
             images: [],
+            imageMedia: [],
+            failures: imageMediaItems.map((media) => ({ media, reason })),
+            latency_ms: 0,
           }
         }
       })
+
+      if (vRes.failures.length > 0) {
+        await step.run('log-vision-download-failed', async () => {
+          const { supabase } = createWorkerDeps()
+          const rows = vRes.failures.map((failure) => ({
+            user_id: userId,
+            event: 'vision.download_failed',
+            properties: {
+              provider_message_id: failure.media.providerMessageId,
+              reason: failure.reason.slice(0, 500),
+              photo_count: imageMediaItems.length,
+              had_caption: !!patientNarrative,
+            },
+          }))
+          const { error } = await supabase.from('product_events').insert(rows)
+          if (error) {
+            logger.warn('vision.download_failed insert error', {
+              code: error.code,
+              message: error.message,
+            })
+          }
+          return { logged: rows.length }
+        })
+      }
+
       if (vRes.ok && vRes.images.length > 0) {
         // Formata cada imagem segundo seu tipo
         const blocks: string[] = []
@@ -393,16 +518,13 @@ export const processMessageFn = inngest.createFunction(
               `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
           } else if (img.type === 'body') {
-            const bodyProviderMessageId =
-              Array.isArray(providerMessageIds) && providerMessageIds.length === vRes.images.length
-                ? providerMessageIds[i] ?? providerMessageId
-                : providerMessageId
+            const bodyMedia = vRes.imageMedia[i]
             bodySignals.push({
               view: img.view,
               bfPercentEstimate: img.bf_percent_estimate,
               confidence: img.bf_confidence,
-              occurredAt: new Date(timestamp).toISOString(),
-              providerMessageId: bodyProviderMessageId ?? null,
+              occurredAt: new Date(bodyMedia?.timestamp ?? timestamp).toISOString(),
+              providerMessageId: bodyMedia?.providerMessageId ?? providerMessageId,
               photoCount: vRes.images.length,
               compositionNotes: img.composition_notes ?? null,
               postureNotes: img.posture_notes ?? null,
@@ -456,11 +578,19 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(`${idx} [outra]:\n  ${img.description}`)
           }
         }
+        const partialFailureNotice =
+          vRes.failures.length > 0
+            ? `\n\n[${vRes.failures.length} de ${imageMediaItems.length} foto(s) não puderam ser analisadas. Considere apenas as análises acima e peça somente a mídia faltante se ela for necessária.]`
+            : ''
         enrichedText =
-          `[${vRes.images.length} foto(s) recebida(s) — análise visual automática abaixo]\n\n` +
+          `[${vRes.images.length}/${imageMediaItems.length} foto(s) analisada(s) — análise visual automática abaixo]\n\n` +
           blocks.join('\n\n') +
-          (text ? `\n\nLegenda do usuário: "${text}"` : '')
-        mediaSummary = { kind: 'image', latency_ms: vRes.latency_ms }
+          (patientNarrative ? `\n\nRelato do usuário: "${patientNarrative}"` : '') +
+          partialFailureNotice
+        mediaSummary = {
+          kind: audioMediaItems.length > 0 ? 'mixed' : 'image',
+          latency_ms: (mediaSummary?.latency_ms ?? 0) + vRes.latency_ms,
+        }
         logger.info('Vision done', {
           count: vRes.images.length,
           types: vRes.images.map((i) => i.type),
@@ -474,7 +604,7 @@ export const processMessageFn = inngest.createFunction(
         await step.run('log-vision-analyzed', async () => {
           try {
             const { supabase } = createWorkerDeps()
-            const rows = vRes.images.map((img) => {
+            const rows = vRes.images.map((img, imageIndex) => {
               let confidence: number | null = null
               // FIX 4 (Roberto 2026-06-15): expor meal_items + meal_context
               // no properties pra pipeline.ts conseguir detectar "foto pendente
@@ -526,13 +656,14 @@ export const processMessageFn = inngest.createFunction(
                 user_id: userId,
                 event: 'vision.analyzed',
                 properties: {
-                  provider_message_id: providerMessageId,
+                  provider_message_id:
+                    vRes.imageMedia[imageIndex]?.providerMessageId ?? providerMessageId,
                   type: img.type,
                   latency_ms: vRes.latency_ms,
                   confidence,
                   model,
                   photo_count: vRes.images.length,
-                  had_caption: !!text,
+                  had_caption: !!patientNarrative,
                   // FIX 4 — telemetria rica pro gate funcionar
                   meal_items: mealItems,
                   meal_context: mealContext,
@@ -682,32 +813,15 @@ export const processMessageFn = inngest.createFunction(
         }
       } else {
         logger.warn('Vision skipped', { reason: vRes.ok ? 'sem imagens' : vRes.reason })
-        // Observabilidade (Roberto 2026-05-27 08:47): a falha de visão NUNCA
-        // virava evento — só logger.warn do Inngest, inacessível sem `vercel
-        // logs` ao vivo. Confirmado: 0 logs de falha de download em 10 dias.
-        // Agora grava product_events com o motivo exato (token/timeout/CDN/5xx)
-        // pra auditoria saber a causa e medir frequência.
-        if (!vRes.ok) {
-          await step.run('log-vision-download-failed', async () => {
-            const { supabase } = createWorkerDeps()
-            await supabase.from('product_events').insert({
-              user_id: userId,
-              event: 'vision.download_failed',
-              properties: {
-                provider_message_id: providerMessageId,
-                reason: String(vRes.reason ?? '').slice(0, 500),
-                photo_count: allMediaUrls.length,
-                had_caption: !!text,
-              },
-            })
-          })
+        mediaSummary = {
+          kind: audioMediaItems.length > 0 ? 'mixed' : 'image',
+          latency_ms: (mediaSummary?.latency_ms ?? 0) + vRes.latency_ms,
         }
-        if (text) {
-          // Se não conseguiu ler mas tem caption, usa só a caption
-          enrichedText = text
+        const failureNotice = `[${imageMediaItems.length} foto(s) recebida(s), mas nenhuma pôde ser analisada. Peça ao usuário para reenviar apenas as fotos ou descrever o conteúdo. NÃO INVENTE.]`
+        if (patientNarrative) {
+          enrichedText = `${patientNarrative}\n\n${failureNotice}`
         } else {
-          // Sem texto e sem vision: avisa o LLM explicitamente que recebeu foto mas não conseguiu ler
-          enrichedText = `[${allMediaUrls.length} foto(s) recebida(s) — falhou ao baixar/analisar. Peça ao usuário pra reenviar ou descrever por texto. NÃO INVENTE o conteúdo.]`
+          enrichedText = failureNotice
         }
       }
     }
@@ -723,7 +837,7 @@ export const processMessageFn = inngest.createFunction(
           providerMessageIds,
           contentType,
           text: enrichedText,
-          patientText: contentType === 'image' ? text : enrichedText,
+          patientText: patientNarrative,
           mediaUrl,
           provider,
           timestamp: new Date(timestamp),
@@ -747,7 +861,7 @@ export const processMessageFn = inngest.createFunction(
           properties: {
             provider_message_id: providerMessageId,
             content_type: contentType,
-            has_media: !!mediaUrl,
+            has_media: normalizedMediaItems.length > 0,
             error_message: errMsg.slice(0, 500),
             error_stack: errStack,
             text_preview: (enrichedText ?? text ?? '').slice(0, 200),
@@ -1107,7 +1221,7 @@ export const processMessageFn = inngest.createFunction(
       if (result.toolCalls.length > 0) {
         const allOk = result.toolCalls.every((t) => !t.error)
         await messaging.react(wpp, providerMessageId, allOk ? '✅' : '⚠️').catch(() => {})
-      } else if (contentType === 'audio' || contentType === 'image') {
+      } else if (normalizedMediaItems.length > 0) {
         await messaging.react(wpp, providerMessageId, '').catch(() => {})
       }
       return { ok: true }

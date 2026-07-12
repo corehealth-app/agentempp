@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 import { throwIfQueryFailed } from '../lib/query-error.js'
+import type { InboundMediaItem } from './media-burst.js'
 import { allMediaDone, pickMediaDoneEvents } from './vision-inflight-policy.js'
 
 export type BufferedInboundMessage = {
@@ -59,6 +60,22 @@ export function buildBufferedDispatchPayload(msgs: BufferedInboundMessage[]) {
   const mediaUrls = msgs
     .filter((m) => m.mediaUrl && m.content_type === contentType)
     .map((m) => m.mediaUrl as string)
+  const mediaItems = msgs.flatMap((message): InboundMediaItem[] => {
+    if (
+      !message.mediaUrl ||
+      (message.content_type !== 'audio' && message.content_type !== 'image')
+    ) {
+      return []
+    }
+    return [
+      {
+        url: message.mediaUrl,
+        contentType: message.content_type,
+        providerMessageId: message.provider_message_id,
+        timestamp: message.received_at,
+      },
+    ]
+  })
 
   return {
     aggregated,
@@ -67,6 +84,7 @@ export function buildBufferedDispatchPayload(msgs: BufferedInboundMessage[]) {
     providerTimestamps,
     contentType,
     mediaUrls,
+    mediaItems,
   }
 }
 
@@ -142,6 +160,7 @@ export const bufferListenerFn = inngest.createFunction(
             text: payload.aggregated || undefined,
             mediaUrl: payload.mediaUrls[0] ?? undefined,
             mediaUrls: payload.mediaUrls.length > 0 ? payload.mediaUrls : undefined,
+            mediaItems: payload.mediaItems.length > 0 ? payload.mediaItems : undefined,
             provider: 'whatsapp_cloud',
             timestamp: payload.latest.received_at,
           },

@@ -81,4 +81,36 @@ describe('buffer-listener providerMessageIds', () => {
     expect(payload.mediaUrls).toEqual(['media-1', 'media-2'])
     expect(payload.latest.provider_message_id).toBe('wamid-image-2')
   })
+
+  it('preserva foto e áudio no mesmo burst com tipo e id próprios', () => {
+    const payload = buildBufferedDispatchPayload([
+      {
+        provider_message_id: 'wamid-mixed-image',
+        content_type: 'image',
+        mediaUrl: 'image-media',
+        received_at: '2026-07-12T12:00:00.000Z',
+      },
+      {
+        provider_message_id: 'wamid-mixed-audio',
+        content_type: 'audio',
+        mediaUrl: 'audio-media',
+        received_at: '2026-07-12T12:00:02.000Z',
+      },
+    ])
+
+    expect(payload.mediaItems).toEqual([
+      {
+        url: 'image-media',
+        contentType: 'image',
+        providerMessageId: 'wamid-mixed-image',
+        timestamp: '2026-07-12T12:00:00.000Z',
+      },
+      {
+        url: 'audio-media',
+        contentType: 'audio',
+        providerMessageId: 'wamid-mixed-audio',
+        timestamp: '2026-07-12T12:00:02.000Z',
+      },
+    ])
+  })
 })

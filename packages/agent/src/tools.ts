@@ -90,6 +90,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
     onboarding_completed: z.boolean().optional(),
   }),
   execute: async (args, ctx) => {
+    const operationTimestamp = ctx.referenceTimestamp ?? new Date()
     const updates: Record<string, unknown> = {}
     // Helper: aceita só números > 0 (LLM costuma mandar 0 como placeholder)
     const numPositive = (v: unknown): boolean => typeof v === 'number' && v > 0
@@ -113,7 +114,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
         // Idade em anos: deriva birth_date = ano_atual − idade, dia 1/janeiro
         const age = parseInt(raw, 10)
         if (age >= 12 && age <= 120) {
-          updates.birth_date = `${new Date().getUTCFullYear() - age}-01-01`
+          updates.birth_date = `${operationTimestamp.getUTCFullYear() - age}-01-01`
         }
       }
     }
@@ -136,16 +137,19 @@ export const cadastraDadosIniciais: ToolDefinition = {
       // VALOR mudou — LLM tem mania de re-chamar cadastra com mesmo BF
       // (eco de coleta, re-confirmação), e cada re-chamada resetaria o
       // timestamp silenciosamente. Buscar valor atual e comparar:
-      const { data: curProf } = await ctx.supabase
+      const { data: curProf, error: currentProfileError } = await ctx.supabase
         .from('user_profiles')
         .select('body_fat_percent')
         .eq('user_id', ctx.userId)
         .maybeSingle()
+      if (currentProfileError) {
+        throw new Error(currentProfileError.message ?? 'current body fat lookup failed')
+      }
       const prevBf = (curProf as { body_fat_percent: number | null } | null)?.body_fat_percent
       const bfChanged = prevBf == null || Number(prevBf) !== Number(args.body_fat_percent)
       if (bfChanged) {
         // biome-ignore lint/suspicious/noExplicitAny: tipos gerados (gitignored) podem estar dessincronizados em prod até próximo gen
-        ;(updates as any).body_fat_measured_at = new Date().toISOString()
+        ;(updates as any).body_fat_measured_at = operationTimestamp.toISOString()
       }
       // Se BF não mudou, body_fat_measured_at fica como estava — preserva
       // age accurate da medição original.
@@ -184,7 +188,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
       updates.onboarding_step = args.onboarding_step
     if (typeof args.onboarding_completed === 'boolean')
       updates.onboarding_completed = args.onboarding_completed
-    updates.updated_at = new Date().toISOString()
+    updates.updated_at = operationTimestamp.toISOString()
 
     const { error: upErr } = await ctx.supabase
       .from('user_profiles')
@@ -192,15 +196,20 @@ export const cadastraDadosIniciais: ToolDefinition = {
     if (upErr) throw upErr
 
     if (args.name) {
-      await ctx.supabase.from('users').update({ name: args.name }).eq('id', ctx.userId)
+      const { error: nameError } = await ctx.supabase
+        .from('users')
+        .update({ name: args.name })
+        .eq('id', ctx.userId)
+      if (nameError) throw new Error(nameError.message ?? 'user name update failed')
     }
 
     // Lê métricas calculadas via view
-    const { data: metrics } = await ctx.supabase
+    const { data: metrics, error: metricsError } = await ctx.supabase
       .from('v_user_metrics')
       .select('*')
       .eq('user_id', ctx.userId)
       .maybeSingle()
+    if (metricsError) throw new Error(metricsError.message ?? 'metrics view lookup failed')
 
     // Calcula meta canônica AGORA (com profile recém-atualizado) pra evitar
     // que o LLM estime na cabeça. Pode ser null se ainda faltam dados.
@@ -245,22 +254,24 @@ export const defineProtocolo: ToolDefinition = {
     goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),
   execute: async (args, ctx) => {
+    const operationTimestamp = ctx.referenceTimestamp ?? new Date()
     const updatePayload: TablesUpdate<'user_profiles'> = {
       current_protocol: args.protocol,
       deficit_level: args.deficit_level ?? null,
       goal_type: args.goal_type ?? null,
       goal_value: args.goal_value ?? null,
-      updated_at: new Date().toISOString(),
+      updated_at: operationTimestamp.toISOString(),
     }
     // Sub-projeto C (wiring): ao entrar em ganho/manutenção, captura o BASELINE
     // do ciclo (peso/BF/treino de início) pra computar velocidade e tetos de
     // segurança na reavaliação (dia 14). Recomposição NÃO captura — intocado.
     if (args.protocol === 'ganho_massa' || args.protocol === 'manutencao') {
-      const { data: cur } = await ctx.supabase
+      const { data: cur, error: baselineError } = await ctx.supabase
         .from('user_profiles')
         .select('weight_kg, body_fat_percent, training_frequency')
         .eq('user_id', ctx.userId)
         .maybeSingle()
+      if (baselineError) throw new Error(baselineError.message ?? 'cycle baseline lookup failed')
       const c = cur as {
         weight_kg: number | null
         body_fat_percent: number | null
@@ -269,7 +280,7 @@ export const defineProtocolo: ToolDefinition = {
       updatePayload.cycle_start_weight_kg = c?.weight_kg ?? null
       updatePayload.cycle_start_bf_percent = c?.body_fat_percent ?? null
       updatePayload.cycle_start_training_freq = c?.training_frequency ?? null
-      updatePayload.cycle_start_at = new Date().toISOString()
+      updatePayload.cycle_start_at = operationTimestamp.toISOString()
     }
     const { error } = await ctx.supabase
       .from('user_profiles')
@@ -352,7 +363,7 @@ export const defineMetaPeso: ToolDefinition = {
     // body_fat_measured_at pra detectar BF stale com precisão).
     // Audit 06-18: body_fat_measured_at dedicado (era proxy via updated_at,
     // que mudava por qualquer UPDATE no profile e mascarava BF antigo).
-    const { data: prof } = await ctx.supabase
+    const { data: prof, error: profileError } = await ctx.supabase
       .from('user_profiles')
       // biome-ignore lint/suspicious/noExplicitAny: select string — tipos gerados (gitignored) podem estar dessincronizados em prod até próximo gen
       .select(
@@ -360,6 +371,7 @@ export const defineMetaPeso: ToolDefinition = {
       )
       .eq('user_id', ctx.userId)
       .maybeSingle()
+    if (profileError) throw new Error(profileError.message ?? 'goal profile lookup failed')
     const p = prof as {
       weight_kg: number | null
       height_cm: number | null
@@ -403,7 +415,8 @@ export const defineMetaPeso: ToolDefinition = {
       let bfAtualAgeDays: number | null = null
       if (p.body_fat_measured_at) {
         const ageDays = Math.floor(
-          (Date.now() - new Date(p.body_fat_measured_at).getTime()) /
+          ((ctx.referenceTimestamp ?? new Date()).getTime() -
+            new Date(p.body_fat_measured_at).getTime()) /
             (24 * 60 * 60 * 1000),
         )
         bfAtualAgeDays = ageDays
@@ -420,7 +433,7 @@ export const defineMetaPeso: ToolDefinition = {
       const updateRow = {
         goal_type: 'BF' as const,
         goal_value: args.target_bf_percent,
-        updated_at: new Date().toISOString(),
+        updated_at: (ctx.referenceTimestamp ?? new Date()).toISOString(),
       }
       const { error } = await ctx.supabase
         .from('user_profiles')
@@ -471,7 +484,7 @@ export const defineMetaPeso: ToolDefinition = {
     const updateRow = {
       goal_type: 'peso_kg' as const,
       goal_value: targetWeightKg,
-      updated_at: new Date().toISOString(),
+      updated_at: (ctx.referenceTimestamp ?? new Date()).toISOString(),
     }
     const { error } = await ctx.supabase
       .from('user_profiles')
@@ -2297,7 +2310,11 @@ export const deleteUser: ToolDefinition = {
     if (args.confirmacao !== 'confirmo') {
       throw new Error('Confirmação inválida')
     }
-    await ctx.supabase.from('users').update({ status: 'deleted' }).eq('id', ctx.userId)
+    const { error: statusError } = await ctx.supabase
+      .from('users')
+      .update({ status: 'deleted' })
+      .eq('id', ctx.userId)
+    if (statusError) throw new Error(statusError.message ?? 'user delete status update failed')
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'user.delete_requested',
@@ -2994,23 +3011,31 @@ export const geraDieta: ToolDefinition = {
     const sp = ctx.supabase as any
 
     // 1. Carrega perfil do paciente
-    const { data: u } = await sp
-      .from('users')
-      .select('name, country, locale')
-      .eq('id', ctx.userId)
-      .maybeSingle()
-    const { data: p } = await sp
-      .from('user_profiles')
-      .select('sex, birth_date, weight_kg, height_cm, activity_level, current_protocol')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
+    const [userResult, profileResult, progressResult] = await Promise.all([
+      sp.from('users').select('name, country, locale').eq('id', ctx.userId).maybeSingle(),
+      sp
+        .from('user_profiles')
+        .select('sex, birth_date, weight_kg, height_cm, activity_level, current_protocol')
+        .eq('user_id', ctx.userId)
+        .maybeSingle(),
+      sp
+        .from('user_progress')
+        .select('current_bf_percent')
+        .eq('user_id', ctx.userId)
+        .maybeSingle(),
+    ])
+    const profileReadError = userResult.error ?? profileResult.error ?? progressResult.error
+    if (profileReadError) {
+      throw new Error(profileReadError.message ?? 'diet profile lookup failed')
+    }
+    const u = userResult.data
+    const p = profileResult.data
+    const up = progressResult.data
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     const ageFromBirth = (bd: string | null | undefined): number | null =>
-      bd ? Math.floor((Date.now() - new Date(bd).getTime()) / 31557600000) : null
-    const { data: up } = await sp
-      .from('user_progress')
-      .select('current_bf_percent')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
+      bd
+        ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000)
+        : null
 
     // 2. Carrega targets calóricos/proteicos
     const cfg = await loadCalcConfig(ctx.supabase)
@@ -3018,11 +3043,12 @@ export const geraDieta: ToolDefinition = {
 
     // 3. Carrega histórico de alimentos (últimos 30d, top 30 mais frequentes)
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-    const { data: histLogs } = await sp
+    const { data: histLogs, error: historyError } = await sp
       .from('meal_logs')
       .select('food_name')
       .eq('user_id', ctx.userId)
       .gte('created_at', since)
+    if (historyError) throw new Error(historyError.message ?? 'diet history lookup failed')
     const freqMap = new Map<string, number>()
     for (const r of (histLogs ?? []) as Array<{ food_name: string }>) {
       const k = r.food_name.toLowerCase().trim()
@@ -3036,12 +3062,13 @@ export const geraDieta: ToolDefinition = {
     // Rate-limit: max 2 gerações nas últimas 2h. Evita loop/abuso (cada
     // chamada custa ~$0.05 de LLM).
     const cooldownSince = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
-    const { data: recent } = await sp
+    const { data: recent, error: cooldownError } = await sp
       .from('product_events')
       .select('id')
       .eq('user_id', ctx.userId)
       .eq('event', 'diet.generated')
       .gte('occurred_at', cooldownSince)
+    if (cooldownError) throw new Error(cooldownError.message ?? 'diet cooldown lookup failed')
     if ((recent ?? []).length >= 2) {
       return {
         success: false,
@@ -3179,33 +3206,44 @@ export const geraTreino: ToolDefinition = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const sp = ctx.supabase as any
-    const { data: u } = await sp
-      .from('users')
-      .select('name')
-      .eq('id', ctx.userId)
-      .maybeSingle()
-    const { data: p } = await sp
-      .from('user_profiles')
-      .select('sex, birth_date, weight_kg, height_cm, current_protocol')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
+    const [userResult, profileResult, progressResult] = await Promise.all([
+      sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
+      sp
+        .from('user_profiles')
+        .select('sex, birth_date, weight_kg, height_cm, current_protocol')
+        .eq('user_id', ctx.userId)
+        .maybeSingle(),
+      sp
+        .from('user_progress')
+        .select('current_bf_percent')
+        .eq('user_id', ctx.userId)
+        .maybeSingle(),
+    ])
+    const trainingProfileError = userResult.error ?? profileResult.error ?? progressResult.error
+    if (trainingProfileError) {
+      throw new Error(trainingProfileError.message ?? 'training profile lookup failed')
+    }
+    const u = userResult.data
+    const p = profileResult.data
+    const up = progressResult.data
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     const ageFromBirthT = (bd: string | null | undefined): number | null =>
-      bd ? Math.floor((Date.now() - new Date(bd).getTime()) / 31557600000) : null
-    const { data: up } = await sp
-      .from('user_progress')
-      .select('current_bf_percent')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
+      bd
+        ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000)
+        : null
 
     // Rate-limit: max 1 geração de plano nas últimas 24h. Treino é
     // esporádico — paciente NÃO precisa regenerar 5x/dia.
     const cooldownSinceT = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-    const { data: recentT } = await sp
+    const { data: recentT, error: cooldownError } = await sp
       .from('product_events')
       .select('id')
       .eq('user_id', ctx.userId)
       .eq('event', 'training.plan_generated')
       .gte('occurred_at', cooldownSinceT)
+    if (cooldownError) {
+      throw new Error(cooldownError.message ?? 'training cooldown lookup failed')
+    }
     if ((recentT ?? []).length >= 1) {
       return {
         success: false,

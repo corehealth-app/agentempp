@@ -39,7 +39,9 @@ export interface ConsumedDateDetection {
 // Patterns FORTES — ancoram em refeição/ingestão explícita.
 const YESTERDAY_STRONG_PATTERNS = [
   /\bontem\s+(?:de|à|a)\s+(?:noite|tarde|manhã|manha)\b/i,
-  /\b(?:isso\s+|essa\s+|esse\s+)?foi\s+ontem\b/i,
+  /\b(?:isso|essa|esse)\s+foi\s+ontem\b/i,
+  /^foi\s+ontem\b/i,
+  /^ontem[.!?]*$/i,
   /\b(?:jantar|almoço|almoco|café|cafe|lanche|ceia)\s+de\s+ontem\b/i,
   /\bcomi\s+(?:isso\s+)?ontem\b/i,
   /\bontem\s+à\s+noite\b/i,
@@ -61,8 +63,7 @@ const YESTERDAY_CATCHALL = /\bontem\b/i
 // refeição inexistente em ontem. Pre-check rejeita esses casos.
 // NOTA: "esqueci" sozinho é ambíguo ("esqueci de MANDAR o almoço" é
 // logística, não skip). Tratamos separadamente abaixo.
-const NEGATION_LEXEMES =
-  /\b(n[ãa]o|nem|sem|pulei|pulou|pulamos|jejuei|jejum)\b/i
+const NEGATION_LEXEMES = /\b(n[ãa]o|nem|sem|pulei|pulou|pulamos|jejuei|jejum)\b/i
 // "Esqueci de COMER/JANTAR/etc" = skip real. "Esqueci de MANDAR/AVISAR/
 // REGISTRAR" = logística (paciente comeu mas não reportou).
 const FORGOT_TO_EAT =
@@ -117,16 +118,25 @@ export function detectConsumedDate(
   now: Date = new Date(),
 ): ConsumedDateDetection | null {
   if (!patientText) return null
+  // recentUserMessages são unidos com uma quebra de linha. Cada segmento
+  // precisa manter seu próprio contexto: "caminhada de ontem" não pode
+  // emprestar "almoço" da mensagem seguinte e mudar a data da refeição.
+  const messageSegments = patientText
+    .split(/\r?\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
 
   // Anteontem primeiro (mais específico). Pre-check de negação se matchar.
   for (const pat of DAY_BEFORE_YESTERDAY_PATTERNS) {
-    const m = patientText.match(pat)
-    if (m && m.index != null) {
-      if (hasNegationContext(patientText, m.index)) continue
-      return {
-        consumed_date: getLocalDateMinusDays(timezone, 2, now),
-        days_ago: 2,
-        matched_phrase: m[0],
+    for (const segment of messageSegments) {
+      const m = segment.match(pat)
+      if (m && m.index != null) {
+        if (hasNegationContext(segment, m.index)) continue
+        return {
+          consumed_date: getLocalDateMinusDays(timezone, 2, now),
+          days_ago: 2,
+          matched_phrase: m[0],
+        }
       }
     }
   }
@@ -136,13 +146,15 @@ export function detectConsumedDate(
   // refeição/ingestão; ainda assim aplica pre-check de negação
   // (review CDD-2: "almoço de ontem não rolou" não deve disparar).
   for (const pat of YESTERDAY_STRONG_PATTERNS) {
-    const m = patientText.match(pat)
-    if (m && m.index != null) {
-      if (hasNegationContext(patientText, m.index)) continue
-      return {
-        consumed_date: getLocalDateMinusDays(timezone, 1, now),
-        days_ago: 1,
-        matched_phrase: m[0],
+    for (const segment of messageSegments) {
+      const m = segment.match(pat)
+      if (m && m.index != null) {
+        if (hasNegationContext(segment, m.index)) continue
+        return {
+          consumed_date: getLocalDateMinusDays(timezone, 1, now),
+          days_ago: 1,
+          matched_phrase: m[0],
+        }
       }
     }
   }
@@ -150,13 +162,15 @@ export function detectConsumedDate(
   // Catch-all "ontem" — só ativa se há contexto alimentar próximo E sem
   // negação na janela. Pega "comi feijão ontem" mas NÃO "ontem treinei
   // pesado" ou "Bom dia, hoje vai ser melhor que ontem".
-  const catchAll = patientText.match(YESTERDAY_CATCHALL)
-  if (catchAll && catchAll.index != null) {
-    if (!hasNegationContext(patientText, catchAll.index) && hasFoodContext(patientText, catchAll.index)) {
-      return {
-        consumed_date: getLocalDateMinusDays(timezone, 1, now),
-        days_ago: 1,
-        matched_phrase: catchAll[0],
+  for (const segment of messageSegments) {
+    const catchAll = segment.match(YESTERDAY_CATCHALL)
+    if (catchAll && catchAll.index != null) {
+      if (!hasNegationContext(segment, catchAll.index) && hasFoodContext(segment, catchAll.index)) {
+        return {
+          consumed_date: getLocalDateMinusDays(timezone, 1, now),
+          days_ago: 1,
+          matched_phrase: catchAll[0],
+        }
       }
     }
   }

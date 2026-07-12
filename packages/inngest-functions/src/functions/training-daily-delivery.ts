@@ -20,29 +20,14 @@
  *     `training_reminders.tester_user_ids`) — controla rollout sem deploy.
  *   - Skip se já recebeu treino nas últimas 22h (event `training.daily_delivered`).
  */
+import { getTodayTraining } from '@mpp/agent'
+import { createMessagingProvider } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
-import { getTodayTraining } from '@mpp/agent'
-
-const DAY_LABELS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const
-
-function dayLabel(date: Date, timezone: string): string {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    weekday: 'short',
-  })
-  const en = fmt.format(date).toLowerCase()
-  const map: Record<string, (typeof DAY_LABELS)[number]> = {
-    sun: 'dom',
-    mon: 'seg',
-    tue: 'ter',
-    wed: 'qua',
-    thu: 'qui',
-    fri: 'sex',
-    sat: 'sab',
-  }
-  return map[en] ?? 'seg'
-}
+import { classifyGapReminderDelivery } from './daily-gap-delivery.js'
+import { buildOutboundMessageRows } from './outbound-message-rows.js'
+import { persistOutboundMessage } from './outbound-message-persistence.js'
+import { resolveTrainingDeliveryClock } from './training-delivery-time.js'
 
 interface TrainingDay {
   day: string
@@ -85,42 +70,30 @@ function formatTraining(day: TrainingDay): string {
  */
 const DEFAULT_DELIVERY_HOUR = 7
 
-function getLocalHour(now: Date, timezone: string): number | null {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: '2-digit',
-      hour12: false,
-    }).formatToParts(now)
-    const h = parts.find((p) => p.type === 'hour')?.value
-    if (!h) return null
-    const n = parseInt(h, 10)
-    return Number.isFinite(n) ? n : null
-  } catch {
-    return null
-  }
-}
-
 export const trainingDailyDeliveryFn = inngest.createFunction(
-  { id: 'training-daily-delivery', retries: 1 },
+  { id: 'training-daily-delivery', retries: 1, concurrency: { limit: 1 } },
   // Roda a cada hora cheia em UTC. Pra cada paciente, calcula a hora local
   // do TZ dele e só envia se bate com training_delivery_hour (default 7).
   // Vale pra qualquer fuso — paciente em Lisboa recebe 7h Lisboa, em
   // Tóquio recebe 7h Tóquio.
   { cron: '0 * * * *' },
-  async ({ step, logger }) => {
+  async ({ event, step, logger }) => {
     const deps = createWorkerDeps()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sp = deps.supabase as any
+    const sp = deps.supabase
+    const eventTimestamp = new Date(event.ts ?? Date.now())
+    const referenceTimestamp = Number.isFinite(eventTimestamp.getTime())
+      ? eventTimestamp
+      : new Date()
 
     // Lista de testers UUIDs vem do global_config (não hardcoded). Permite
     // expandir/contrair rollout sem deploy.
     const testerUserIds = await step.run('load-testers', async () => {
-      const { data } = await sp
+      const { data, error } = await sp
         .from('global_config')
         .select('value')
         .eq('key', 'training_reminders.tester_user_ids')
         .maybeSingle()
+      if (error) throw new Error(error.message ?? 'training testers lookup failed')
       const v = (data as { value?: string[] } | null)?.value
       return Array.isArray(v) ? v : []
     })
@@ -134,24 +107,17 @@ export const trainingDailyDeliveryFn = inngest.createFunction(
         .eq('status', 'active')
         .eq('training_plans.active', true)
       if (error) {
-        logger.error({ error }, 'training-daily: list candidates failed')
-        return []
+        throw new Error(error.message ?? 'training candidates lookup failed')
       }
-      return (data ?? []) as Array<{
+      const rows = (data ?? []) as Array<{
         id: string
         wpp: string
         name: string
         timezone: string | null
         metadata: Record<string, unknown> | null
       }>
+      return Array.from(new Map(rows.map((row) => [row.id, row])).values())
     })
-
-    const token = process.env.WHATSAPP_CLOUD_TOKEN
-    const phoneId = process.env.WHATSAPP_CLOUD_PHONE_ID
-    if (!token || !phoneId) {
-      logger.warn({}, 'training-daily: WPP creds missing')
-      return { sent: 0, candidates: candidates.length, reason: 'wpp_creds_missing' }
-    }
 
     let sent = 0
     for (const cand of candidates) {
@@ -171,108 +137,134 @@ export const trainingDailyDeliveryFn = inngest.createFunction(
       // Só dispara quando a hora local do paciente == hora alvo. Cron roda
       // a cada hora, então pra qualquer fuso a janela é 1h. Default 7h.
       const tz = cand.timezone ?? 'America/Sao_Paulo'
-      const localHour = getLocalHour(new Date(), tz)
+      const clock = resolveTrainingDeliveryClock(referenceTimestamp, tz)
+      if (!clock) {
+        logger.warn({ user_id: cand.id, timezone: tz }, 'training-daily: invalid timezone')
+        continue
+      }
       const targetHour =
         typeof meta?.training_delivery_hour === 'number' &&
         meta.training_delivery_hour >= 0 &&
         meta.training_delivery_hour <= 23
           ? meta.training_delivery_hour
           : DEFAULT_DELIVERY_HOUR
-      if (localHour !== targetHour) continue
+      if (clock.localHour !== targetHour) continue
 
-      await step.run(`deliver-${cand.id}`, async () => {
-        // Dedup intra-dia: janela de 22h (defensivo — o dedup primário é o
-        // filtro localHour===targetHour que só matches 1×/dia por paciente).
-        // Coluna correta é `occurred_at` (não created_at).
-        const sinceIso = new Date(Date.now() - 22 * 3600 * 1000).toISOString()
-        const { data: already } = await sp
+      const prepared = await step.run(`training-prepare-${cand.id}`, async () => {
+        const { data: already, error: alreadyError } = await sp
           .from('product_events')
           .select('id')
           .eq('user_id', cand.id)
-          .in('event', ['training.daily_dispatching', 'training.daily_delivered'])
-          .gte('occurred_at', sinceIso)
+          .eq('event', 'training.daily_delivered')
+          .filter('properties->>local_date', 'eq', clock.localDate)
+          .filter('properties->>ok', 'eq', 'true')
           .limit(1)
-        if ((already ?? []).length > 0) return
-
-        let todayLabelStr: string
-        try {
-          todayLabelStr = dayLabel(new Date(), tz)
-        } catch {
-          // Timezone inválido em users.timezone — loga e segue com SP
-          await sp.from('product_events').insert({
-            user_id: cand.id,
-            event: 'training.daily.timezone_invalid',
-            properties: { timezone: tz },
-          })
-          todayLabelStr = dayLabel(new Date(), 'America/Sao_Paulo')
+        if (alreadyError) {
+          throw new Error(alreadyError.message ?? 'training delivery dedupe lookup failed')
         }
-        const todayPlan = await getTodayTraining(deps.supabase, cand.id, todayLabelStr)
-        if (!todayPlan) return
+        if ((already ?? []).length > 0) return null
 
-        // Idempotência: registra "em dispatch" ANTES do fetch. Se step
-        // crashar entre fetch e o delivered event, o retry vê esse marker
-        // e pula — evita re-envio. Custo: 1 event extra por entrega.
-        await sp.from('product_events').insert({
-          user_id: cand.id,
-          event: 'training.daily_dispatching',
-          properties: {
-            plan_id: todayPlan.plan_id,
-            day_label: todayLabelStr,
-          },
-        })
-
-        const text = formatTraining(todayPlan.day as TrainingDay)
-        let providerMessageId: string | null = null
-
-        try {
-          const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messaging_product: 'whatsapp',
-              to: cand.wpp,
-              type: 'text',
-              text: { body: text },
-            }),
-          })
-          const ok = res.ok
-          if (ok) {
-            const j = (await res.json().catch(() => null)) as {
-              messages?: Array<{ id?: string }>
-            } | null
-            providerMessageId = j?.messages?.[0]?.id ?? null
-          }
-
-          await sp.from('product_events').insert({
-            user_id: cand.id,
-            event: 'training.daily_delivered',
-            properties: {
-              plan_id: todayPlan.plan_id,
-              day_label: todayLabelStr,
-              focus: todayPlan.day.focus,
-              exercises_count: todayPlan.day.exercises.length,
-              ok,
-            },
-          })
-          if (ok) {
-            // role é NOT NULL em messages — sempre 'assistant' pra outbound do agente.
-            await sp.from('messages').insert({
-              user_id: cand.id,
-              direction: 'out',
-              role: 'assistant',
-              content_type: 'text',
-              content: text,
-              provider: 'whatsapp_cloud',
-              provider_message_id: providerMessageId,
-              agent_stage: 'training-daily',
-              delivery_status: 'delivered',
-            })
-            sent++
-          }
-        } catch (err) {
-          logger.error({ user_id: cand.id, err }, 'training-daily: send failed')
+        const todayPlan = await getTodayTraining(
+          deps.supabase,
+          cand.id,
+          clock.dayLabel,
+        )
+        if (!todayPlan) return null
+        return {
+          planId: todayPlan.plan_id,
+          day: todayPlan.day as TrainingDay,
+          text: formatTraining(todayPlan.day as TrainingDay),
+          dedupeKey: `training:${cand.id}:${clock.localDate}:${todayPlan.plan_id}`,
         }
       })
+      if (!prepared) continue
+
+      const delivery = await step.run(`training-send-${cand.id}`, async () => {
+        const messaging = createMessagingProvider({
+          MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+          META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
+          META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN,
+          META_APP_SECRET: process.env.META_APP_SECRET,
+          META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
+        })
+        try {
+          const result = await messaging.sendText(cand.wpp, prepared.text)
+          return classifyGapReminderDelivery([result], new Date().toISOString())
+        } catch (error) {
+          return {
+            sent: false as const,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        }
+      })
+      if (!delivery.sent) {
+        logger.warn(
+          { user_id: cand.id, error: delivery.error },
+          'training-daily: send failed',
+        )
+        continue
+      }
+
+      await step.run(`training-persist-${cand.id}`, async () => {
+        const provider = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
+        const [row] = buildOutboundMessageRows({
+          userId: cand.id,
+          provider,
+          contentType: 'text',
+          stage: 'training-daily',
+          modelUsed: null,
+          promptTokens: null,
+          completionTokens: null,
+          costUsd: null,
+          latencyMs: null,
+          metadata: {
+            source: 'training_daily_delivery',
+            dedupe_key: prepared.dedupeKey,
+            local_date: clock.localDate,
+            plan_id: prepared.planId,
+          },
+          deliveries: [
+            {
+              content: prepared.text,
+              providerMessageId: delivery.providerMessageId,
+              status: 'sent',
+            },
+          ],
+        })
+        if (!row) throw new Error('training outbound row missing')
+        await persistOutboundMessage(deps.supabase, row)
+
+        const { data: existingEvent, error: existingEventError } = await sp
+          .from('product_events')
+          .select('id')
+          .eq('event', 'training.daily_delivered')
+          .filter('properties->>dedupe_key', 'eq', prepared.dedupeKey)
+          .limit(1)
+        if (existingEventError) {
+          throw new Error(existingEventError.message ?? 'training event lookup failed')
+        }
+        if ((existingEvent ?? []).length === 0) {
+          const { error: eventError } = await sp.from('product_events').insert({
+            user_id: cand.id,
+            event: 'training.daily_delivered',
+            occurred_at: delivery.sentAt,
+            properties: {
+              dedupe_key: prepared.dedupeKey,
+              plan_id: prepared.planId,
+              day_label: clock.dayLabel,
+              local_date: clock.localDate,
+              focus: prepared.day.focus,
+              exercises_count: prepared.day.exercises.length,
+              ok: true,
+            },
+          })
+          if (eventError) {
+            throw new Error(eventError.message ?? 'training event persistence failed')
+          }
+        }
+        return { persisted: true }
+      })
+      sent++
     }
 
     return { sent, candidates: candidates.length }

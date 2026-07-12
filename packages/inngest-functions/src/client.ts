@@ -32,7 +32,7 @@ type Events = {
     data: { slot: string; fired_at: string }
   }
   'buffer.flush': {
-    data: { count: number; fired_at: string }
+    data: { userId: string; count: number; fired_at: string }
   }
   'wa.quality.check': {
     data: { fired_at: string }

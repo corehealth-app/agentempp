@@ -765,24 +765,59 @@ export type Database = {
         Row: {
           buffered_at: string
           flush_after: string
+          media_extension_count: number
           messages: Json
           user_id: string
         }
         Insert: {
           buffered_at?: string
           flush_after: string
+          media_extension_count?: number
           messages?: Json
           user_id: string
         }
         Update: {
           buffered_at?: string
           flush_after?: string
+          media_extension_count?: number
           messages?: Json
           user_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "message_buffer_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_dispatch_outbox: {
+        Row: {
+          created_at: string
+          id: string
+          messages: Json
+          source_flush_after: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          messages: Json
+          source_flush_after: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          messages?: Json
+          source_flush_after?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_dispatch_outbox_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "users"

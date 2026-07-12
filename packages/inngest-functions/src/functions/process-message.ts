@@ -18,14 +18,15 @@ import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
 import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
+import { loadUserProcessingState } from '../lib/user-processing-state.js'
+import { combinePatientNarrative, normalizeInboundMediaItems } from './media-burst.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
 import {
   buildOutboundMessageRows,
-  requireOutboundDelivery,
   type OutboundDelivery,
+  requireOutboundDelivery,
 } from './outbound-message-rows.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
-import { combinePatientNarrative, normalizeInboundMediaItems } from './media-burst.js'
 import { buildVisionEventDedupeKey } from './vision-event-key.js'
 
 /**
@@ -86,6 +87,23 @@ export const processMessageFn = inngest.createFunction(
       META_APP_SECRET: process.env.META_APP_SECRET,
       META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
     })
+
+    const userState = await step.run('check-user-processing-state-v2', async () => {
+      const { supabase } = createWorkerDeps()
+      return await loadUserProcessingState(supabase, userId)
+    })
+    if (userState.kind === 'deleted' || userState.kind === 'blocked') {
+      logger.info('User sem processamento ativo, ignorando msg', {
+        userId,
+        state: userState.kind,
+      })
+      return { ok: true, ignored: true, reason: userState.kind }
+    }
+    if (userState.kind === 'paused') {
+      logger.info('User pausado, ignorando msg', { userId, until: userState.until })
+      await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
+      return { ok: true, paused: true, until: userState.until }
+    }
 
     // === FASE B/D — DEC-3: paciente digita "sim"/"editar" em vez de tocar ===
     // Antes de qualquer outro processamento, se for texto curto que casa com
@@ -255,34 +273,6 @@ export const processMessageFn = inngest.createFunction(
       }
       return { acked: true }
     })
-
-    // === Step 1.5: pausa? ===
-    // Se o user está com paused_until > now, NÃO processa — só reage com 💤
-    const pauseCheck = await step.run(
-      'check-pause',
-      async (): Promise<{ paused: boolean; until: string | null }> => {
-        const { supabase } = createWorkerDeps()
-        const { data: u, error: userPauseError } = await supabase
-          .from('users')
-          .select('status, metadata')
-          .eq('id', userId)
-          .maybeSingle()
-        throwIfQueryFailed(userPauseError, 'paused user lookup failed')
-        if (!u) throw new Error('paused user not found')
-        const meta = (u as { metadata: Record<string, unknown> | null }).metadata
-        const pausedUntil = meta?.paused_until as string | undefined
-        if (pausedUntil && new Date(pausedUntil) > new Date()) {
-          return { paused: true, until: pausedUntil }
-        }
-        return { paused: false, until: null }
-      },
-    )
-
-    if (pauseCheck.paused) {
-      logger.info('User pausado, ignorando msg', { userId, until: pauseCheck.until })
-      await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
-      return { ok: true, paused: true, until: pauseCheck.until }
-    }
 
     // === Step 2: media prep — STT ou Vision ===
     let enrichedText: string | undefined = text

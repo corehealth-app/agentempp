@@ -42,6 +42,7 @@ import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
 import { throwIfQueryFailed } from '../lib/query-error.js'
+import { loadUserProcessingState } from '../lib/user-processing-state.js'
 import { reopenLossyCancellationPending } from './lossy-cancellation-recovery.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
 import { buildOutboundMessageRows } from './outbound-message-rows.js'
@@ -97,6 +98,17 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
     return await step.run('handle-tap', async () => {
       const { supabase } = createWorkerDeps()
+      const userState = await loadUserProcessingState(supabase, userId)
+      if (userState.kind !== 'active') {
+        logger.info('Tap ignorado para user sem processamento ativo', {
+          userId,
+          state: userState.kind,
+        })
+        if (userState.kind === 'paused' && providerMessageId) {
+          await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
+        }
+        return { handled: false, reason: userState.kind }
+      }
       const providerName = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
       const persistDeliveries = async (
         deliveries: Array<{

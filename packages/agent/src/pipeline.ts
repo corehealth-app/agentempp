@@ -1958,26 +1958,23 @@ function buildBlockedResponse(_input: AgentInput, reason: string): AgentOutput {
   }
 }
 
-async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string> {
-  const { data: existing } = await supabase
-    .from('users')
-    .select('id')
-    .eq('wpp', wpp)
-    .maybeSingle()
-  if (existing) return existing.id
+export async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string> {
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: string,
+        params: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message?: string } | null }>
+    }
+  ).rpc('ensure_user_initialized', { p_wpp: wpp })
 
-  const { data: created, error } = await supabase
-    .from('users')
-    .insert({ wpp, status: 'active' })
-    .select('id')
-    .single()
-  if (error) throw error
-
-  // cria profile + progress vazios
-  await supabase.from('user_profiles').insert({ user_id: created.id })
-  await supabase.from('user_progress').insert({ user_id: created.id })
-
-  return created.id
+  if (error) {
+    throw new Error(error.message ?? 'ensure_user_initialized failed')
+  }
+  if (typeof data !== 'string' || data.length === 0) {
+    throw new Error('ensure_user_initialized returned no user id')
+  }
+  return data
 }
 
 const RECENT_MESSAGES_LIMIT = 50

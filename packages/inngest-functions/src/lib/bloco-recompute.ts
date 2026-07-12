@@ -1,11 +1,32 @@
 import type { ServiceClient } from '@mpp/db'
 import { creditDayToBloco, accumulateBloco } from '@mpp/core'
+import { throwIfQueryFailed } from './query-error.js'
 
 export interface BlocoRecompute {
   userId: string
   daysClosed: number
   correctDeficitBlock: number
   correctBlocksCompleted: number
+}
+
+export async function applyUserBlocoCorrection(
+  supabase: ServiceClient,
+  userId: string,
+  deficitBlock: number,
+  blocksCompleted: number,
+): Promise<void> {
+  const { data: updated, error } = await supabase
+    .from('user_progress')
+    .update({
+      deficit_block: deficitBlock,
+      blocks_completed: blocksCompleted,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .select('user_id')
+    .maybeSingle()
+  throwIfQueryFailed(error, 'bloco progress update failed')
+  if (!updated) throw new Error('bloco progress row not found')
 }
 
 interface SnapRow {
@@ -41,16 +62,21 @@ export async function recomputeUserBloco(
   supabase: ServiceClient,
   userId: string,
 ): Promise<BlocoRecompute> {
-  const { data: prof } = await supabase
+  const { data: prof, error: profileError } = await supabase
     .from('user_profiles')
     .select('current_protocol, deficit_level')
     .eq('user_id', userId)
     .maybeSingle()
-  const profTyped = prof as { current_protocol?: string | null; deficit_level?: number | null } | null
+  throwIfQueryFailed(profileError, 'bloco profile lookup failed')
+  if (!prof) throw new Error('bloco profile not found')
+  const profTyped = prof as {
+    current_protocol?: string | null
+    deficit_level?: number | null
+  } | null
   const designDeficit =
     profTyped?.current_protocol === 'recomposicao' ? (profTyped?.deficit_level ?? 500) : 0
 
-  const { data: snaps } = await supabase
+  const { data: snaps, error: snapshotsError } = await supabase
     .from('daily_snapshots')
     .select(
       'id, calories_consumed, calories_target, exercise_calories, daily_balance, day_status, training_done',
@@ -58,16 +84,18 @@ export async function recomputeUserBloco(
     .eq('user_id', userId)
     .eq('day_closed', true)
     .order('date', { ascending: true })
+  throwIfQueryFailed(snapshotsError, 'closed snapshots lookup failed')
   const rows = (snaps ?? []) as unknown as SnapRow[]
 
   // Contagem de meal_logs por snapshot (proxy de atividade — validado).
   const ids = rows.map((r) => r.id)
   const mealCounts: Record<string, number> = {}
   if (ids.length > 0) {
-    const { data: logs } = await supabase
+    const { data: logs, error: logsError } = await supabase
       .from('meal_logs')
       .select('snapshot_id')
       .in('snapshot_id', ids)
+    throwIfQueryFailed(logsError, 'bloco meal logs lookup failed')
     for (const l of (logs ?? []) as Array<{ snapshot_id: string | null }>) {
       if (l.snapshot_id) mealCounts[l.snapshot_id] = (mealCounts[l.snapshot_id] ?? 0) + 1
     }

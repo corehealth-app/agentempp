@@ -4,7 +4,8 @@ import {
   looksLikeRegistrationRequest,
 } from '@mpp/agent'
 import { inngest } from '../client.js'
-import { recomputeUserBloco } from '../lib/bloco-recompute.js'
+import { applyUserBlocoCorrection, recomputeUserBloco } from '../lib/bloco-recompute.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 import { createWorkerDeps } from '../lib/env.js'
 import { loadBooleanConfig } from '../lib/runtime-config.js'
 
@@ -198,10 +199,7 @@ export const dailyAuditFn = inngest.createFunction(
       const userIds = [...new Set(snaps.map((s) => s.user_id))]
       const tzByUser = new Map<string, string>()
       if (userIds.length > 0) {
-        const { data: us } = await supabase
-          .from('users')
-          .select('id, timezone')
-          .in('id', userIds)
+        const { data: us } = await supabase.from('users').select('id, timezone').in('id', userIds)
         for (const u of (us ?? []) as Array<{ id: string; timezone: string | null }>) {
           tzByUser.set(u.id, u.timezone ?? 'America/Sao_Paulo')
         }
@@ -353,14 +351,11 @@ export const dailyAuditFn = inngest.createFunction(
     const autofix = await step.run('auto-reconcile-blocos', async () => {
       const BLOCO_DIFF_TOL = 50
       const MAX_BLOCO_FIX = 8
-      const autofixEnabled = await loadBooleanConfig(
-        supabase,
-        'audit.bloco_autofix_enabled',
-        false,
-      )
-      const { data: progs } = await supabase
+      const autofixEnabled = await loadBooleanConfig(supabase, 'audit.bloco_autofix_enabled', false)
+      const { data: progs, error: progressRowsError } = await supabase
         .from('user_progress')
         .select('user_id, deficit_block, blocks_completed')
+      throwIfQueryFailed(progressRowsError, 'audit bloco progress lookup failed')
       const diverge: Array<{
         uid: string
         old: number
@@ -393,15 +388,7 @@ export const dailyAuditFn = inngest.createFunction(
       const decision = decideBlocoAutofix(diverge.length, MAX_BLOCO_FIX, autofixEnabled)
       if (decision.canApply) {
         for (const b of diverge) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any)
-            .from('user_progress')
-            .update({
-              deficit_block: b.neu,
-              blocks_completed: b.newB,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('user_id', b.uid)
+          await applyUserBlocoCorrection(supabase, b.uid, b.neu, b.newB)
           await supabase.from('product_events').insert({
             user_id: b.uid,
             event: 'audit.bloco_autofixed',
@@ -441,8 +428,10 @@ export const dailyAuditFn = inngest.createFunction(
     if (metrics.numericMismatch > 3) alerts.push(`⚠️ ${metrics.numericMismatch} numeric mismatch`)
     if (metrics.sentimentMismatch > 0)
       alerts.push(`⚠️ ${metrics.sentimentMismatch} sentiment mismatch`)
-    if (metrics.compositeRejected > 2) alerts.push(`⚠️ ${metrics.compositeRejected} composite rejected`)
-    if (!metrics.snapshotIntegrityOk) alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
+    if (metrics.compositeRejected > 2)
+      alerts.push(`⚠️ ${metrics.compositeRejected} composite rejected`)
+    if (!metrics.snapshotIntegrityOk)
+      alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
     if (metrics.balance != null && metrics.balance < 20)
       alerts.push(`🔴 saldo OpenRouter $${metrics.balance.toFixed(2)} < $20`)
     if (metrics.reevaluationPending > 0)
@@ -479,9 +468,9 @@ export const dailyAuditFn = inngest.createFunction(
           ? autofix.divergeCount > 0
             ? `• ⚠️ desligada — ${autofix.divergeCount} divergente(s) detectado(s), 0 correções\n`
             : `• ✅ desligada — todos em sincronia (0 correções)\n`
-        : autofix.applied > 0
-          ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
-          : `• ✅ todos em sincronia (0 correções)\n`) +
+          : autofix.applied > 0
+            ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
+            : `• ✅ todos em sincronia (0 correções)\n`) +
       `\n*Defesas ativas*\n` +
       `• Card canônico substituiu: ${metrics.cardReplaced}\n` +
       `• Bloco solto substituído: ${metrics.looseBlocoReplaced}\n` +

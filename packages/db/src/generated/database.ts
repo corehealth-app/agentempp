@@ -443,6 +443,56 @@ export type Database = {
           },
         ]
       }
+      daily_gap_reminder_attempts: {
+        Row: {
+          attempt_id: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id?: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          claim_key?: string
+          claimed_at?: string
+          date?: string
+          gap?: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_gap_reminder_attempts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       engagement_phrases: {
         Row: {
           active: boolean

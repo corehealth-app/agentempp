@@ -94,4 +94,35 @@ describe('profile write safety', () => {
     )
     expect(events).toHaveLength(0)
   })
+
+  it('delete_user registra quando a janela segura para purge começou', async () => {
+    const userUpdates: Array<Record<string, unknown>> = []
+    const context = {
+      userId: 'user-1',
+      userWpp: '15555550100',
+      supabase: {
+        from(table: string) {
+          if (table === 'users') {
+            return {
+              update: (values: Record<string, unknown>) => {
+                userUpdates.push(values)
+                return { eq: async () => ({ error: null }) }
+              },
+            }
+          }
+          if (table === 'product_events') {
+            return { insert: async () => ({ error: null }) }
+          }
+          throw new Error(`unexpected table: ${table}`)
+        },
+      },
+    }
+
+    await expect(
+      deleteUser.execute({ confirmacao: 'confirmo' }, context as never),
+    ).resolves.toMatchObject({ success: true })
+    const userUpdate = userUpdates[0]
+    expect(userUpdate).toMatchObject({ status: 'deleted' })
+    expect(new Date(String(userUpdate?.updated_at)).toISOString()).toBe(userUpdate?.updated_at)
+  })
 })

@@ -2354,7 +2354,7 @@ export const encerraAtendimento: ToolDefinition = {
 export const deleteUser: ToolDefinition = {
   name: 'delete_user',
   description:
-    'Apaga TODOS os dados do usuário (LGPD). Use APENAS quando o usuário pedir explicitamente "apagar minha conta", "deletar meus dados" ou "reset_chat". Cascata em CASCADE remove perfil, progresso, mensagens, snapshots.',
+    'Agenda a exclusão completa dos dados do usuário (LGPD). Use APENAS quando o usuário pedir explicitamente "apagar minha conta" ou "deletar meus dados". A conta é desativada imediatamente e o purge físico ocorre depois da janela segura de entrega da confirmação. NÃO use para apenas reiniciar a conversa.',
   parameters: z.object({
     confirmacao: z.literal('confirmo').describe('Deve ser exatamente "confirmo"'),
   }),
@@ -2362,17 +2362,22 @@ export const deleteUser: ToolDefinition = {
     if (args.confirmacao !== 'confirmo') {
       throw new Error('Confirmação inválida')
     }
+    const requestedAt = new Date().toISOString()
     const { error: statusError } = await ctx.supabase
       .from('users')
-      .update({ status: 'deleted' })
+      .update({ status: 'deleted', updated_at: requestedAt })
       .eq('id', ctx.userId)
     if (statusError) throw new Error(statusError.message ?? 'user delete status update failed')
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'user.delete_requested',
-      properties: { wpp: ctx.userWpp, requested_at: new Date().toISOString() },
+      properties: { requested_at: requestedAt },
     })
-    return { success: true, message: 'Dados marcados para exclusão. Job batch fará purge físico.' }
+    return {
+      success: true,
+      message:
+        'Solicitação registrada. A conta foi desativada e os dados serão removidos automaticamente após o envio desta confirmação.',
+    }
   },
 }
 

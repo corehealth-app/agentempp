@@ -17,6 +17,12 @@ import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential } from '../lib/env.js'
 import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadHumanizerConfig } from '../lib/runtime-config.js'
+import {
+  classifyAudioEngagementDelivery,
+  classifyTextEngagementDelivery,
+  type EngagementDeliveryResult,
+  shouldSendEngagementAsAudio,
+} from './engagement-delivery.js'
 
 /**
  * Worker: envia mensagens proativas de engajamento.
@@ -35,6 +41,9 @@ export const engagementSenderFn = inngest.createFunction(
   { event: 'engagement.tick' },
   async ({ event, step, logger }) => {
     const { slot } = event.data
+    const claimKey =
+      event.id ??
+      `engagement:${slot}:${String((event.data as { fired_at?: string }).fired_at ?? 'tick')}`
     logger.info('Engagement tick', { slot })
 
     const users = await step.run('list-eligible', async () => {
@@ -65,13 +74,33 @@ export const engagementSenderFn = inngest.createFunction(
       try {
         const timezone = user.timezone
         if (!timezone) throw new Error('engagement user timezone missing')
-        const result = await step.run(`engage-${user.id}`, async () =>
-          maybeEngageUser(user.id, user.wpp, timezone, slot),
+        const prepared = await step.run(`engage-prepare-${user.id}`, async () =>
+          prepareEngagement(user.id, user.wpp, timezone, slot, claimKey),
         )
-        if (result.sent) sent++
-        else skipped++
+        if (prepared.status !== 'claimed') {
+          skipped++
+          continue
+        }
+
+        const delivery = await step.run(`engage-send-${user.id}-${prepared.attemptId}`, async () =>
+          deliverPreparedEngagement(prepared),
+        )
+        if (!delivery.sent) {
+          await step.run(`engage-fail-${user.id}-${prepared.attemptId}`, async () =>
+            failEngagementDelivery(prepared.attemptId, claimKey, delivery.error),
+          )
+          logger.warn('engagement delivery failed', { userId: user.id, error: delivery.error })
+          skipped++
+          continue
+        }
+
+        await step.run(`engage-finalize-${user.id}-${prepared.attemptId}`, async () =>
+          finalizeEngagementDelivery(prepared, delivery, claimKey),
+        )
+        sent++
       } catch (e) {
         logger.error('engagement failed', { userId: user.id, error: String(e) })
+        throw e
       }
     }
 
@@ -79,12 +108,35 @@ export const engagementSenderFn = inngest.createFunction(
   },
 )
 
-async function maybeEngageUser(
+type PreparedEngagement =
+  | { status: 'skipped'; reason: string }
+  | {
+      status: 'claimed'
+      attemptId: string
+      userId: string
+      wpp: string
+      userTimezone: string
+      localDate: string
+      slot: string
+      text: string
+      model: string | null
+      promptTokens: number | null
+      completionTokens: number | null
+      costUsd: number | null
+      latencyMs: number | null
+      reevaluationDue: boolean
+      reevaluationContext: Record<string, unknown>
+      phraseId: string | null
+      phraseUsed: boolean
+    }
+
+async function prepareEngagement(
   userId: string,
   wpp: string,
   userTimezone: string,
   cronSlotLabel: string,
-): Promise<{ sent: boolean; reason?: string }> {
+  claimKey: string,
+): Promise<PreparedEngagement> {
   const { supabase, llm } = createWorkerDeps()
 
   // Hora local do user — fonte da verdade pra slot e contexto LLM
@@ -116,7 +168,7 @@ async function maybeEngageUser(
       reason: 'slot silencioso (madrugada/noite) — não envia',
       slot_silent: true,
     })
-    return { sent: false, reason: 'slot silencioso' }
+    return { status: 'skipped', reason: 'slot silencioso' }
   }
 
   // Pausa ativa? respeita
@@ -150,11 +202,11 @@ async function maybeEngageUser(
   const userLanguage = userTyped?.locale ?? countryToLanguage[userCountry] ?? 'pt-BR'
   const pausedUntil = meta?.paused_until as string | undefined
   if (userTyped?.status !== 'active') {
-    return { sent: false, reason: 'paciente não está ativo' }
+    return { status: 'skipped', reason: 'paciente não está ativo' }
   }
   if (pausedUntil && new Date(pausedUntil) > new Date()) {
     await logEvent('engagement.skipped', { reason: 'paused', paused_until: pausedUntil })
-    return { sent: false, reason: 'paciente pausado' }
+    return { status: 'skipped', reason: 'paciente pausado' }
   }
 
   // Janela ativa do paciente (wake_time → bedtime do user_profiles).
@@ -178,7 +230,7 @@ async function maybeEngageUser(
       window_start: window.start,
       window_end: window.end,
     })
-    return { sent: false, reason: 'fora da janela ativa' }
+    return { status: 'skipped', reason: 'fora da janela ativa' }
   }
 
   // A1: já enviou engajamento hoje? Se sim, pula. (NÃO conta conversa do user.)
@@ -203,7 +255,7 @@ async function maybeEngageUser(
       reason: 'engajamento já enviado hoje',
       engagements_today: engagementsToday,
     })
-    return { sent: false, reason: 'engajamento já enviado hoje' }
+    return { status: 'skipped', reason: 'engajamento já enviado hoje' }
   }
 
   // Se paciente já registrou refeição correspondente ao slot atual, pula.
@@ -240,7 +292,7 @@ async function maybeEngageUser(
         expected_meal_type: expectedMealType,
         pattern_active_days: pattern.activeDays,
       })
-      return { sent: false, reason: `${expectedMealType} fora do padrão` }
+      return { status: 'skipped', reason: `${expectedMealType} fora do padrão` }
     }
 
     // Se paciente já registrou esse meal_type hoje, pula (não cobra de novo).
@@ -268,7 +320,7 @@ async function maybeEngageUser(
           slot,
           expected_meal_type: expectedMealType,
         })
-        return { sent: false, reason: `${expectedMealType} já registrado hoje` }
+        return { status: 'skipped', reason: `${expectedMealType} já registrado hoje` }
       }
     }
   }
@@ -513,7 +565,7 @@ async function maybeEngageUser(
   const targetProtein = targets.protein_target ?? '(não calculado — perfil incompleto)'
 
   // REAVALIAÇÃO 14 DIAS (Roberto 2026-05-20): se o daily-closer marcou
-  // `reevaluation.due` (não resolvida nas últimas 36h) E é o slot matinal,
+  // `reevaluation.due` ainda não consumida E é o slot matinal,
   // injeta instrução pro LLM pedir o peso atualizado. Quando paciente responde
   // com peso, cadastra_dados_iniciais recalcula meta/protocolo automaticamente.
   // REAVALIAÇÃO 14 DIAS: o daily-closer marca `reevaluation.due`. ANTES a gente
@@ -524,29 +576,38 @@ async function maybeEngageUser(
   // Causa: a query antiga só checava "tem reevaluation.due nas últimas 36h",
   // sem confirmar se já foi consumida. Como o evento .due fica disparado por
   // dias, toda manhã dentro da janela disparava reavaliação de novo. Fix: só
-  // dispara se o .due mais recente ainda não tem .prompt_appended posterior.
+  // dispara se o .due mais recente ainda não tem prompt enviado posterior.
   let reevaluationDue = false
+  let reevaluationContext: Record<string, unknown> = {}
   if (slot === 'cafe_da_manha') {
     const { data: dueEvents, error: dueEventsError } = await supabase
       .from('product_events')
-      .select('occurred_at')
+      .select('occurred_at, properties')
       .eq('user_id', userId)
       .eq('event', 'reevaluation.due')
-      .gte('occurred_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString())
       .order('occurred_at', { ascending: false })
       .limit(1)
     throwIfQueryFailed(dueEventsError, 'reevaluation due lookup failed')
-    const lastDueAt = ((dueEvents ?? []) as Array<{ occurred_at: string }>)[0]?.occurred_at
-    if (lastDueAt) {
+    const lastDue = (
+      (dueEvents ?? []) as Array<{
+        occurred_at: string
+        properties: Record<string, unknown> | null
+      }>
+    )[0]
+    if (lastDue?.occurred_at) {
       const { data: appendedEvents, error: appendedEventsError } = await supabase
         .from('product_events')
         .select('id')
         .eq('user_id', userId)
-        .eq('event', 'reevaluation.prompt_appended')
-        .gte('occurred_at', lastDueAt)
+        .in('event', ['reevaluation.prompt_sent', 'reevaluation.prompt_appended'])
+        .gte('occurred_at', lastDue.occurred_at)
         .limit(1)
       throwIfQueryFailed(appendedEventsError, 'reevaluation prompt lookup failed')
       reevaluationDue = !appendedEvents || appendedEvents.length === 0
+      reevaluationContext = {
+        due_event_at: lastDue.occurred_at,
+        due_date: lastDue.properties?.due_date ?? null,
+      }
     }
   }
 
@@ -655,7 +716,7 @@ async function maybeEngageUser(
       // Sorteio determinístico (review medium): retries inngest re-executam
       // step.run em throw, Math.random pegaria frase diferente. Hash por
       // (userId + slot + date) — mesma frase no retry, rotação por dia.
-      const dayKey = new Date().toISOString().slice(0, 10)
+      const dayKey = todayLocal
       const seedStr = `${userId}|${slot}|${dayKey}`
       let seed = 0
       for (let i = 0; i < seedStr.length; i++)
@@ -664,27 +725,6 @@ async function maybeEngageUser(
       if (picked) {
         motivationalSuggestion = picked.phrase
         pickedPhraseId = picked.id
-        // Incrementa picked_count + atualiza last_used_at imediatamente.
-        // used_count fica pra depois (substring match no texto final do LLM).
-        const { error: phrasePickError } = await sp
-          .from('engagement_phrases')
-          .update({
-            picked_count: picked.picked_count + 1,
-            last_used_at: new Date().toISOString(),
-          })
-          .eq('id', picked.id)
-        throwIfQueryFailed(phrasePickError, 'engagement phrase pick persistence failed')
-        // Cooldown user×phrase (engagement)
-        const { error: phraseCooldownError } = await sp.from('user_phrase_cooldown').upsert(
-          {
-            user_id: userId,
-            phrase_table: 'engagement',
-            phrase_id: picked.id,
-            last_seen_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,phrase_table,phrase_id' },
-        )
-        throwIfQueryFailed(phraseCooldownError, 'engagement phrase cooldown persistence failed')
       }
     }
   } catch (err) {
@@ -774,7 +814,7 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
   let text = (result.content ?? '').trim()
   if (!text) {
     await logEvent('engagement.skipped', { reason: 'LLM vazio' })
-    return { sent: false, reason: 'LLM vazio' }
+    return { status: 'skipped', reason: 'LLM vazio' }
   }
 
   // ANTI-ALUCINAÇÃO no engagement (Roberto 2026-05-20 / 2026-05-25): o "Bom dia"
@@ -936,17 +976,94 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
         currentTargetBfPercent,
         currentTargetImc,
       })
-    await logEvent('reevaluation.prompt_appended', {
+    reevaluationContext = {
+      ...reevaluationContext,
       slot,
       protocol: proto ?? null,
       goal_type: profTyped?.goal_type ?? null,
       has_target_weight: currentTargetWeightKg != null,
       has_target_bf: currentTargetBfPercent != null,
       has_target_imc: currentTargetImc != null,
-    })
+    }
   }
 
-  // ENVIA pelo WhatsApp via messaging provider
+  const phraseUsed = (() => {
+    if (!pickedPhraseId || !motivationalSuggestion) return false
+    const needle = motivationalSuggestion.slice(0, 30).toLowerCase()
+    return needle.length >= 15 && text.toLowerCase().includes(needle)
+  })()
+
+  const claim = await claimEngagementDelivery(userId, todayLocal, slot, claimKey)
+  if (claim.status !== 'claimed') {
+    await logEvent('engagement.skipped', { reason: `delivery claim: ${claim.status}` })
+    return { status: 'skipped', reason: `delivery claim: ${claim.status}` }
+  }
+
+  return {
+    status: 'claimed',
+    attemptId: claim.attemptId,
+    userId,
+    wpp,
+    userTimezone,
+    localDate: todayLocal,
+    slot,
+    text,
+    model: result.model ?? null,
+    promptTokens: result.promptTokens ?? null,
+    completionTokens: result.completionTokens ?? null,
+    costUsd: result.costUsd ?? null,
+    latencyMs: result.latencyMs ?? null,
+    reevaluationDue,
+    reevaluationContext,
+    phraseId: pickedPhraseId,
+    phraseUsed,
+  }
+}
+
+type ClaimedEngagement = Extract<PreparedEngagement, { status: 'claimed' }>
+
+type EngagementClaim =
+  | { status: 'claimed'; attemptId: string }
+  | { status: 'busy' | 'already_sent' }
+
+async function claimEngagementDelivery(
+  userId: string,
+  localDate: string,
+  slot: string,
+  claimKey: string,
+): Promise<EngagementClaim> {
+  const { supabase } = createWorkerDeps()
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: 'claim_engagement_delivery',
+        params: Record<string, unknown>,
+      ) => Promise<{
+        data: { status?: string; attempt_id?: string } | null
+        error: { message?: string } | null
+      }>
+    }
+  ).rpc('claim_engagement_delivery', {
+    p_user_id: userId,
+    p_local_date: localDate,
+    p_slot: slot,
+    p_claim_key: claimKey,
+    p_now: new Date().toISOString(),
+  })
+  if (error) throw new Error(error.message ?? 'engagement delivery claim failed')
+  if (data?.status === 'claimed' && data.attempt_id) {
+    return { status: 'claimed', attemptId: data.attempt_id }
+  }
+  if (data?.status === 'busy' || data?.status === 'already_sent') {
+    return { status: data.status }
+  }
+  throw new Error(`invalid engagement delivery claim result: ${data?.status ?? 'missing'}`)
+}
+
+async function deliverPreparedEngagement(
+  prepared: ClaimedEngagement,
+): Promise<EngagementDeliveryResult> {
+  const { supabase, llm } = createWorkerDeps()
   const messaging = createMessagingProvider({
     MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
     META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
@@ -954,159 +1071,186 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
     META_APP_SECRET: process.env.META_APP_SECRET,
     META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
   })
-
-  // Humanizer params editáveis via /settings/global → humanizer.*
   const humanizer = await loadHumanizerConfig(supabase)
-
-  // Áudio motivacional: probabilidade configurável (default 25%). Roberto pediu
-  // (2026-05-15) que nem todo engajamento seja texto — "de vez em quando" áudio
-  // dá um tom mais humano nas mensagens motivacionais.
-  // Configurável em global_config.engagement.audio_probability (0.0 a 1.0).
-  const { data: audioProbRow } = await supabase
+  const { data: audioProbRow, error: audioProbabilityError } = await supabase
     .from('global_config')
     .select('value')
     .eq('key', 'engagement.audio_probability')
     .maybeSingle()
-  const audioProbabilityRaw = (audioProbRow as { value?: unknown } | null)?.value ?? 0.25
-  const audioProbability =
-    typeof audioProbabilityRaw === 'number'
-      ? audioProbabilityRaw
-      : Number(audioProbabilityRaw) || 0.25
-  const elevenlabsKey = await loadCredential(
-    supabase,
-    'ELEVENLABS_API_KEY',
-    'elevenlabs',
-    'api_key',
-  )
-  const elevenlabsVoice = await loadCredential(
-    supabase,
-    'ELEVENLABS_VOICE_ID',
-    'elevenlabs',
-    'voice_id',
-  )
-  const canSendAudio = !!elevenlabsKey && !!elevenlabsVoice
-  const sendAsAudio = canSendAudio && Math.random() < audioProbability
+  throwIfQueryFailed(audioProbabilityError, 'engagement audio probability lookup failed')
+  const rawProbability = (audioProbRow as { value?: unknown } | null)?.value ?? 0.25
+  const parsedProbability = Number(rawProbability)
+  const audioProbability = Number.isFinite(parsedProbability)
+    ? Math.min(1, Math.max(0, parsedProbability))
+    : 0.25
 
-  let deliveryStatus: 'sent' | 'failed' = 'sent'
-  let deliveryError: string | undefined
-  let contentType: 'text' | 'audio' = 'text'
-  let ttsMediaId: string | undefined
-
-  // Detecta se LLM aproveitou a sugestão curada — ANTES do branch
-  // audio/texto (review low: detector estava só no else=texto, ~25% das
-  // execuções com audio_probability default subestimavam used_count).
-  if (pickedPhraseId && motivationalSuggestion && text) {
-    const needle = motivationalSuggestion.slice(0, 30).toLowerCase()
-    const usedInText = needle.length >= 15 && text.toLowerCase().includes(needle)
-    if (usedInText) {
+  if (shouldSendEngagementAsAudio(prepared.userId, prepared.localDate, audioProbability)) {
+    const elevenlabsKey = await loadCredential(
+      supabase,
+      'ELEVENLABS_API_KEY',
+      'elevenlabs',
+      'api_key',
+    )
+    const elevenlabsVoice = await loadCredential(
+      supabase,
+      'ELEVENLABS_VOICE_ID',
+      'elevenlabs',
+      'voice_id',
+    )
+    if (elevenlabsKey && elevenlabsVoice) {
+      let audioProviderCallStarted = false
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sp = supabase as any
-        const { data: cur } = await sp
-          .from('engagement_phrases')
-          .select('used_count')
-          .eq('id', pickedPhraseId)
-          .maybeSingle()
-        await sp
-          .from('engagement_phrases')
-          .update({ used_count: (cur?.used_count ?? 0) + 1 })
-          .eq('id', pickedPhraseId)
-      } catch {
-        // ignora
+        const cartesiaKey = await loadCredential(
+          supabase,
+          'CARTESIA_API_KEY',
+          'cartesia',
+          'api_key',
+        )
+        const cartesiaVoice = await loadCredential(
+          supabase,
+          'CARTESIA_VOICE_ID',
+          'cartesia',
+          'voice_id',
+        )
+        const tts = new TTSRouter({
+          elevenlabs: { apiKey: elevenlabsKey, voiceId: elevenlabsVoice },
+          cartesia:
+            cartesiaKey && cartesiaVoice
+              ? { apiKey: cartesiaKey, voiceId: cartesiaVoice }
+              : undefined,
+        })
+        const speechText = await rewriteForTTS(llm, prepared.text).catch(() => prepared.text)
+        const { result: ttsResult, provider: ttsProvider } = await tts.synthesize(
+          speechText,
+          'standard',
+        )
+        const blob = new Blob([new Uint8Array(ttsResult.audio)], {
+          type: ttsResult.mimeType,
+        })
+        const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
+        audioProviderCallStarted = true
+        const sendResult = await messaging.sendAudio(prepared.wpp, mediaId)
+        const audioDelivery = classifyAudioEngagementDelivery(
+          sendResult,
+          prepared.text,
+          mediaId,
+          new Date().toISOString(),
+        )
+        if (audioDelivery.sent) {
+          await supabase.from('product_events').insert({
+            user_id: prepared.userId,
+            event: 'tts.generated',
+            properties: {
+              context: 'engagement',
+              slot: prepared.slot,
+              tts_provider: ttsProvider,
+              tts_latency_ms: ttsResult.durationMs,
+              chars: speechText.length,
+              media_id: mediaId,
+            },
+          })
+        }
+        return audioDelivery
+      } catch (error) {
+        await supabase.from('product_events').insert({
+          user_id: prepared.userId,
+          event: 'tts.failed',
+          properties: {
+            context: 'engagement',
+            slot: prepared.slot,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+        if (audioProviderCallStarted) {
+          return {
+            sent: false,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        }
       }
     }
   }
 
   try {
-    if (sendAsAudio) {
-      contentType = 'audio'
-      // TTS via ElevenLabs (com fallback pra Cartesia se configurado)
-      const cartesiaKey = await loadCredential(supabase, 'CARTESIA_API_KEY', 'cartesia', 'api_key')
-      const cartesiaVoice = await loadCredential(
-        supabase,
-        'CARTESIA_VOICE_ID',
-        'cartesia',
-        'voice_id',
-      )
-      const tts = new TTSRouter({
-        elevenlabs: { apiKey: elevenlabsKey!, voiceId: elevenlabsVoice! },
-        cartesia:
-          cartesiaKey && cartesiaVoice
-            ? { apiKey: cartesiaKey, voiceId: cartesiaVoice }
-            : undefined,
-      })
-      const { llm } = createWorkerDeps()
-      const speechText = await rewriteForTTS(llm, text).catch(() => text)
-      const { result: ttsResult, provider: ttsProvider } = await tts.synthesize(
-        speechText,
-        'standard',
-      )
-      const blob = new Blob([new Uint8Array(ttsResult.audio)], { type: ttsResult.mimeType })
-      const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
-      ttsMediaId = mediaId
-      const sendResult = await messaging.sendAudio(wpp, mediaId)
-      if (sendResult.status !== 'sent') {
-        deliveryStatus = 'failed'
-        deliveryError = sendResult.error
-      }
-      // Loga evento TTS
-      await supabase.from('product_events').insert({
-        user_id: userId,
-        event: deliveryStatus === 'sent' ? 'tts.generated' : 'tts.failed',
-        properties: {
-          context: 'engagement',
-          slot,
-          tts_provider: ttsProvider,
-          tts_latency_ms: ttsResult.durationMs,
-          chars: speechText.length,
-          media_id: mediaId,
-        },
-      })
-    } else {
-      const sendResults = await sendHumanized(messaging, wpp, text, {
-        showTyping: false,
-        minDelay: humanizer.min_delay_ms,
-        maxDelay: humanizer.max_delay_ms,
-        charsPerSecond: humanizer.chars_per_second,
-      })
-      if (sendResults.some((r) => r.status !== 'sent')) {
-        deliveryStatus = 'failed'
-        deliveryError = sendResults.find((r) => r.error)?.error
-      }
+    const results = await sendHumanized(messaging, prepared.wpp, prepared.text, {
+      showTyping: false,
+      minDelay: humanizer.min_delay_ms,
+      maxDelay: humanizer.max_delay_ms,
+      charsPerSecond: humanizer.chars_per_second,
+      singleMessage: true,
+    })
+    return classifyTextEngagementDelivery(results, new Date().toISOString())
+  } catch (error) {
+    return {
+      sent: false,
+      error: error instanceof Error ? error.message : String(error),
     }
-  } catch (e) {
-    deliveryStatus = 'failed'
-    deliveryError = e instanceof Error ? e.message : String(e)
   }
+}
 
-  // Persiste OUT (com delivery_status real)
-  await supabase.from('messages').insert({
-    user_id: userId,
-    direction: 'out',
-    role: 'assistant',
-    content_type: contentType,
-    content: text,
-    media_url: ttsMediaId ?? null,
-    provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-    agent_stage: 'engajamento',
-    model_used: result.model,
-    prompt_tokens: result.promptTokens,
-    completion_tokens: result.completionTokens,
-    cost_usd: result.costUsd,
-    latency_ms: result.latencyMs,
-    delivery_status: deliveryStatus,
-    delivery_error: deliveryError ? { msg: deliveryError } : null,
-    raw_payload: { engagement_slot: slot },
+async function finalizeEngagementDelivery(
+  prepared: ClaimedEngagement,
+  delivery: Extract<EngagementDeliveryResult, { sent: true }>,
+  claimKey: string,
+): Promise<Record<string, unknown>> {
+  const { supabase } = createWorkerDeps()
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: 'finalize_engagement_delivery',
+        params: Record<string, unknown>,
+      ) => Promise<{
+        data: Record<string, unknown> | null
+        error: { message?: string } | null
+      }>
+    }
+  ).rpc('finalize_engagement_delivery', {
+    p_attempt_id: prepared.attemptId,
+    p_claim_key: claimKey,
+    p_provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+    p_deliveries: delivery.deliveries.map((item) => ({
+      provider_message_id: item.providerMessageId,
+      content: item.content,
+      content_type: item.contentType,
+      media_url: item.mediaUrl,
+    })),
+    p_sent_at: delivery.sentAt,
+    p_model: prepared.model,
+    p_prompt_tokens: prepared.promptTokens,
+    p_completion_tokens: prepared.completionTokens,
+    p_cost_usd: prepared.costUsd,
+    p_latency_ms: prepared.latencyMs,
+    p_reevaluation_due: prepared.reevaluationDue,
+    p_reevaluation_context: prepared.reevaluationContext,
+    p_phrase_id: prepared.phraseId,
+    p_phrase_used: prepared.phraseUsed,
   })
+  if (error) throw new Error(error.message ?? 'engagement delivery finalization failed')
+  if (!data) throw new Error('engagement delivery finalization returned no result')
+  return data
+}
 
-  await logEvent(deliveryStatus === 'sent' ? 'engagement.sent' : 'engagement.failed', {
-    chars: text.length,
-    cost_usd: result.costUsd,
-    model: result.model,
-    error: deliveryError,
+async function failEngagementDelivery(
+  attemptId: string,
+  claimKey: string,
+  deliveryError: string,
+): Promise<boolean> {
+  const { supabase } = createWorkerDeps()
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: 'fail_engagement_delivery',
+        params: Record<string, unknown>,
+      ) => Promise<{ data: boolean | null; error: { message?: string } | null }>
+    }
+  ).rpc('fail_engagement_delivery', {
+    p_attempt_id: attemptId,
+    p_claim_key: claimKey,
+    p_error: deliveryError,
+    p_now: new Date().toISOString(),
   })
-
-  return { sent: deliveryStatus === 'sent', reason: deliveryError }
+  if (error) throw new Error(error.message ?? 'engagement delivery failure write failed')
+  return data === true
 }
 
 /**

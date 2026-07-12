@@ -1781,19 +1781,33 @@ export const consultaProgresso: ToolDefinition = {
     'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, blocos completos, conquistas, registro de hoje). Use quando ele perguntar como está indo.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
-    const { data: progress } = await ctx.supabase
-      .from('user_progress')
-      .select('*')
-      .eq('user_id', ctx.userId)
-      .maybeSingle()
-
-    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo')
-    const { data: snap } = await ctx.supabase
-      .from('daily_snapshots')
-      .select('*')
-      .eq('user_id', ctx.userId)
-      .eq('date', today)
-      .maybeSingle()
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
+    const today = getLocalDateString(
+      ctx.userTimezone ?? 'America/Sao_Paulo',
+      referenceTimestamp,
+    )
+    const [progressResult, snapshotResult] = await Promise.all([
+      ctx.supabase
+        .from('user_progress')
+        .select('*')
+        .eq('user_id', ctx.userId)
+        .maybeSingle(),
+      ctx.supabase
+        .from('daily_snapshots')
+        .select('*')
+        .eq('user_id', ctx.userId)
+        .eq('date', today)
+        .maybeSingle(),
+    ])
+    if (progressResult.error || snapshotResult.error) {
+      throw new Error(
+        progressResult.error?.message ??
+          snapshotResult.error?.message ??
+          'progress lookup failed',
+      )
+    }
+    const progress = progressResult.data
+    const snap = snapshotResult.data
 
     // Traduz as chaves pra português ANTES de devolver pro LLM. Sem isso o LLM
     // vê "current_streak"/"level" no JSON e replica "streak"/"level" na resposta
@@ -1835,11 +1849,12 @@ export const consultaMetricas: ToolDefinition = {
     'Esta tool é o ESCAPE HATCH pra evitar alucinação quando o LLM ficaria tentado a calcular na cabeça.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
-    const { data: profile } = await ctx.supabase
+    const { data: profile, error: profileError } = await ctx.supabase
       .from('user_profiles')
       .select('*')
       .eq('user_id', ctx.userId)
       .maybeSingle()
+    if (profileError) throw new Error(profileError.message ?? 'metrics profile lookup failed')
     if (!profile) return { error: 'profile_not_found' }
 
     const config = await loadCalcConfig(ctx.supabase)
@@ -1878,7 +1893,7 @@ export const consultaMetricas: ToolDefinition = {
           profileTyped.goal_value != null ? Number(profileTyped.goal_value) : null,
         deficitLevel: profileTyped.deficit_level,
       },
-      new Date(),
+      ctx.referenceTimestamp ?? new Date(),
       config,
     )
 
@@ -1965,13 +1980,16 @@ export const registraTreino: ToolDefinition = {
     // exercícios → LLM fez 2 calls (musculação + bike) → bike foi deduped
     // (mesmo pmid) e ficou sem registrar; só musculação ficou no snapshot.
     if (ctx.providerMessageId) {
-      const { data: existing } = await ctx.supabase
+      const { data: existing, error: existingError } = await ctx.supabase
         .from('workout_logs')
         .select('id, snapshot_id, workout_type, estimated_kcal')
         .eq('user_id', ctx.userId)
         .eq('raw_provider_message_id', ctx.providerMessageId)
         .eq('workout_type', args.workout_type)
         .limit(2)
+      if (existingError) {
+        throw new Error(existingError.message ?? 'workout idempotency lookup failed')
+      }
       if (existing && existing.length > 0) {
         return {
           success: true,
@@ -1989,7 +2007,7 @@ export const registraTreino: ToolDefinition = {
     // legítimo de manhã+noite.)
     if (args.duration_min != null) {
       const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
-      const { data: recentSame } = await ctx.supabase
+      const { data: recentSame, error: recentSameError } = await ctx.supabase
         .from('workout_logs')
         .select('id')
         .eq('user_id', ctx.userId)
@@ -1997,6 +2015,9 @@ export const registraTreino: ToolDefinition = {
         .eq('duration_min', args.duration_min)
         .gte('created_at', sixHoursAgo)
         .limit(1)
+      if (recentSameError) {
+        throw new Error(recentSameError.message ?? 'recent workout lookup failed')
+      }
       if (recentSame && recentSame.length > 0) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
@@ -2061,11 +2082,12 @@ export const registraTreino: ToolDefinition = {
     const tgt = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
 
     // Pega peso atual pra calcular kcal (escala linear ref 70kg)
-    const { data: prof } = await ctx.supabase
+    const { data: prof, error: profileError } = await ctx.supabase
       .from('user_profiles')
       .select('weight_kg')
       .eq('user_id', ctx.userId)
       .maybeSingle()
+    if (profileError) throw new Error(profileError.message ?? 'workout profile lookup failed')
     const weightKg = (prof as { weight_kg: number | null } | null)?.weight_kg ?? 70
 
     // Cálculo determinístico via SQL function (ADR-007). Sempre roda — mesmo
@@ -2769,13 +2791,16 @@ export const consultaReavaliacaoProtocolo: ToolDefinition = {
       .describe('Treinos de musculação/semana atuais (usado na manutenção)'),
   }),
   execute: async (args, ctx) => {
-    const { data: p } = await ctx.supabase
+    const { data: p, error: profileError } = await ctx.supabase
       .from('user_profiles')
       .select(
         'sex, height_cm, current_protocol, training_frequency, cycle_start_weight_kg, cycle_start_bf_percent, cycle_start_training_freq, cycle_start_at',
       )
       .eq('user_id', ctx.userId)
       .maybeSingle()
+    if (profileError) {
+      throw new Error(profileError.message ?? 'reevaluation profile lookup failed')
+    }
     const prof = p as {
       sex: 'masculino' | 'feminino' | null
       height_cm: number | null
@@ -2801,7 +2826,11 @@ export const consultaReavaliacaoProtocolo: ToolDefinition = {
       }
       const days = Math.max(
         1,
-        Math.round((Date.now() - new Date(prof.cycle_start_at).getTime()) / 86_400_000),
+        Math.round(
+          ((ctx.referenceTimestamp ?? new Date()).getTime() -
+            new Date(prof.cycle_start_at).getTime()) /
+            86_400_000,
+        ),
       )
       const velocity = evaluateGainVelocity(prof.cycle_start_weight_kg, args.current_weight_kg, days)
       let safety: ReturnType<typeof evaluateGainSafety> | null = null
@@ -2844,30 +2873,44 @@ export const registraMetricaDiaria: ToolDefinition = {
     '⚠️ NÃO infira nem pergunte proativamente — registre apenas o que ele relatar espontaneamente. Não é meta ' +
     'obrigatória nem entra no card de balanço.',
   parameters: z.object({
-    water_ml: z.number().optional().describe('Água consumida hoje em ml (ex: 2000 = 2L)'),
-    sleep_hours: z.number().optional().describe('Horas de sono da última noite (ex: 7.5)'),
-    steps: z.number().int().optional().describe('Passos do dia'),
+    water_ml: z
+      .number()
+      .min(0)
+      .max(20_000)
+      .optional()
+      .describe('Água consumida hoje em ml (ex: 2000 = 2L)'),
+    sleep_hours: z
+      .number()
+      .min(0)
+      .max(24)
+      .optional()
+      .describe('Horas de sono da última noite (ex: 7.5)'),
+    steps: z.number().int().min(0).max(200_000).optional().describe('Passos do dia'),
   }),
   execute: async (args, ctx) => {
     if (args.water_ml == null && args.sleep_hours == null && args.steps == null) {
       return { error: 'nenhuma métrica informada' }
     }
     const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
-    const today = getLocalDateString(tz)
+    const today = getLocalDateString(tz, ctx.referenceTimestamp ?? new Date())
     const patch: Record<string, number> = {}
     if (args.water_ml != null) patch.water_consumed_ml = Math.round(args.water_ml)
     if (args.sleep_hours != null) patch.sleep_hours = args.sleep_hours
     if (args.steps != null) patch.steps = Math.round(args.steps)
     // upsert: cria o snapshot de hoje se não existir (colunas NOT NULL têm default);
     // se existir, atualiza só as métricas informadas (preserva consumo/proteína/etc).
-    await ctx.supabase
+    const { error: snapshotError } = await ctx.supabase
       .from('daily_snapshots')
       .upsert({ user_id: ctx.userId, date: today, ...patch }, { onConflict: 'user_id,date' })
-    await ctx.supabase.from('product_events').insert({
+    if (snapshotError) throw new Error(snapshotError.message ?? 'metric snapshot write failed')
+    const { error: eventError } = await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'metric.captured',
       properties: { date: today, ...patch },
     })
+    if (eventError) {
+      console.warn('[registra_metrica_diaria] telemetry insert failed', eventError.message)
+    }
     return { success: true, date: today, ...patch }
   },
 }
@@ -2887,12 +2930,12 @@ export const consultaResumoPeriodo: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
-    const today = getLocalDateString(tz)
+    const today = getLocalDateString(tz, ctx.referenceTimestamp ?? new Date())
     const n = args.periodo === 'semana' ? 7 : 30
     const start = new Date(`${today}T00:00:00Z`)
     start.setUTCDate(start.getUTCDate() - (n - 1))
     const startStr = start.toISOString().slice(0, 10)
-    const { data } = await ctx.supabase
+    const { data, error } = await ctx.supabase
       .from('daily_snapshots')
       .select('calories_consumed, protein_g, daily_balance, day_status')
       .eq('user_id', ctx.userId)
@@ -2900,6 +2943,7 @@ export const consultaResumoPeriodo: ToolDefinition = {
       .gte('date', startStr)
       .lte('date', today)
       .order('date', { ascending: true })
+    if (error) throw new Error(error.message ?? 'period summary lookup failed')
     const summary = computePeriodSummary((data ?? []) as unknown as SnapshotForAgg[])
     return { periodo: args.periodo, from: startStr, to: today, ...summary }
   },

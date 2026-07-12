@@ -23,6 +23,7 @@
  */
 
 import type { GuardContext, GuardResult } from './tool-guards.js'
+import { throwIfQueryFailed } from '../db-query-error.js'
 
 interface RegistraRefeicaoArgs {
   meal_type?: string
@@ -80,13 +81,14 @@ export async function validateRegistraRefeicao(
     const normalizedNames = items.map((it) => normalize(it.food_name))
     // biome-ignore lint/suspicious/noExplicitAny: supabase ServiceClient
     const sp = ctx.supabase as any
-    const { data: recent } = await sp
+    const { data: recent, error: recentError } = await sp
       .from('meal_logs')
       .select('food_name, meal_type, created_at')
       .eq('user_id', ctx.userId)
       .eq('meal_type', a.meal_type)
       .gte('created_at', fiveMinAgo)
       .limit(20)
+    throwIfQueryFailed(recentError, 'recent meal guard lookup failed')
     const recentRows =
       (recent as Array<{ food_name: string; meal_type: string }> | null) ?? []
     if (recentRows.length > 0) {

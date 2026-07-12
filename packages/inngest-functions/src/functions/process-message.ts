@@ -26,6 +26,7 @@ import {
   type OutboundDelivery,
   requireOutboundDelivery,
 } from './outbound-message-rows.js'
+import { sendPipelineErrorFallback } from './pipeline-error-fallback.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
 import { buildVisionEventDedupeKey } from './vision-event-key.js'
 
@@ -866,28 +867,35 @@ export const processMessageFn = inngest.createFunction(
       // que era inacessível sem `vercel logs` ao vivo). Caso real 2026-05-13:
       // Roberto mandou foto, pipeline falhou silenciosamente, demoramos 30min
       // pra confirmar a causa porque não havia evento no banco.
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const errStack = err instanceof Error ? err.stack?.slice(0, 1500) : undefined
       try {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        const errStack = err instanceof Error ? err.stack?.slice(0, 1500) : undefined
-        const { supabase } = createWorkerDeps()
-        await supabase.from('product_events').insert({
-          user_id: userId,
-          event: 'pipeline.error',
-          properties: {
-            provider_message_id: providerMessageId,
-            content_type: contentType,
-            has_media: normalizedMediaItems.length > 0,
-            error_message: errMsg.slice(0, 500),
-            error_stack: errStack,
-            text_preview: (enrichedText ?? text ?? '').slice(0, 200),
-          },
+        await step.run('log-pipeline-error', async () => {
+          const { supabase } = createWorkerDeps()
+          const { error } = await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pipeline.error',
+            properties: {
+              provider_message_id: providerMessageId,
+              content_type: contentType,
+              has_media: normalizedMediaItems.length > 0,
+              error_message: errMsg.slice(0, 500),
+              error_stack: errStack,
+              text_preview: (enrichedText ?? text ?? '').slice(0, 200),
+            },
+          })
+          throwIfQueryFailed(error, 'pipeline error event insert failed')
+          return { logged: true }
         })
       } catch (logErr) {
         logger.error('Failed to log pipeline.error event', {
           error: logErr instanceof Error ? logErr.message : String(logErr),
         })
       }
-      await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
+      await step.run('react-pipeline-error', async () => {
+        await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
+        return { reacted: true }
+      })
 
       // Roberto+Paulo 2026-05-31 22h BRT: pipeline.error 402 (OpenRouter sem
       // saldo). O fallback existia mas tinha `.catch(() => {})` silencioso —
@@ -895,39 +903,74 @@ export const processMessageFn = inngest.createFunction(
       // intermitente etc), paciente ficava sem resposta NENHUMA e a gente nem
       // sabia. Agora: detecta tipo de erro p/ msg mais útil + retry sem
       // replyTo se falhar + LOGA o resultado.
-      const errMsgLower = (err instanceof Error ? err.message : String(err)).toLowerCase()
+      const errMsgLower = errMsg.toLowerCase()
       const is402 = errMsgLower.includes('402') || errMsgLower.includes('credits')
       const fallbackText = is402
         ? 'Tive uma falha técnica de instante e não consegui processar agora. Já fui notificado aqui. Pode reenviar em uns minutos? 🙏'
         : 'Tive um problema agora. Tenta de novo em alguns segundos? 🙏'
 
-      let fallbackSent = false
+      let fallbackDelivery: OutboundDelivery | null = null
       let fallbackError: string | null = null
       try {
-        await messaging.sendText(wpp, fallbackText, { replyTo: providerMessageId })
-        fallbackSent = true
-      } catch (e1) {
-        // 1ª tentativa falhou — replyTo pode ter rejeitado. Retry sem replyTo.
+        fallbackDelivery = await step.run('send-pipeline-error-fallback', async () =>
+          sendPipelineErrorFallback(messaging, wpp, fallbackText, providerMessageId),
+        )
+      } catch (fallbackErr) {
+        fallbackError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+      }
+      if (fallbackDelivery) {
         try {
-          await messaging.sendText(wpp, fallbackText)
-          fallbackSent = true
-        } catch (e2) {
-          fallbackError = e2 instanceof Error ? e2.message : String(e2)
+          const delivery = fallbackDelivery
+          await step.run('persist-pipeline-error-fallback', async () => {
+            const { supabase } = createWorkerDeps()
+            const [row] = buildOutboundMessageRows({
+              userId,
+              provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+              contentType: 'text',
+              stage: null,
+              modelUsed: null,
+              promptTokens: null,
+              completionTokens: null,
+              costUsd: null,
+              latencyMs: null,
+              metadata: { response_part: 'pipeline_error_fallback' },
+              deliveries: [delivery],
+            })
+            if (!row) throw new Error('pipeline fallback outbound row missing')
+            await persistOutboundMessage(supabase, row)
+            return { persisted: true }
+          })
+        } catch (persistenceError) {
+          logger.error('Failed to persist pipeline fallback', {
+            error:
+              persistenceError instanceof Error
+                ? persistenceError.message
+                : String(persistenceError),
+          })
         }
       }
       try {
-        const { supabase: supA } = createWorkerDeps()
-        await supA.from('product_events').insert({
-          user_id: userId,
-          event: fallbackSent ? 'pipeline.error.fallback_sent' : 'pipeline.error.fallback_failed',
-          properties: {
-            provider_message_id: providerMessageId,
-            is_402: is402,
-            fallback_error: fallbackError,
-          },
+        await step.run('log-pipeline-error-fallback', async () => {
+          const { supabase } = createWorkerDeps()
+          const { error } = await supabase.from('product_events').insert({
+            user_id: userId,
+            event: fallbackDelivery
+              ? 'pipeline.error.fallback_sent'
+              : 'pipeline.error.fallback_failed',
+            properties: {
+              provider_message_id: providerMessageId,
+              fallback_provider_message_id: fallbackDelivery?.providerMessageId ?? null,
+              is_402: is402,
+              fallback_error: fallbackError,
+            },
+          })
+          throwIfQueryFailed(error, 'pipeline fallback event insert failed')
+          return { logged: true }
         })
-      } catch {
-        /* logging opcional, não bloqueia */
+      } catch (logErr) {
+        logger.warn('Failed to log pipeline fallback event', {
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        })
       }
       throw err
     }

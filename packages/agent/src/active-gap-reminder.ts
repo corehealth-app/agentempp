@@ -43,46 +43,45 @@ export async function loadActiveGapReminderMealTypes(
   userId: string,
   localDate: string,
   referenceTimestamp: Date,
-): Promise<{ mealTypes: MealType[]; lookupFailed: boolean }> {
-  try {
-    const { data: snapshot, error: snapshotError } = await supabase
-      .from('daily_snapshots')
-      .select('day_status, gap_reminder_sent_at')
-      .eq('user_id', userId)
-      .eq('date', localDate)
-      .maybeSingle()
-    if (snapshotError) return { mealTypes: [], lookupFailed: true }
+): Promise<{ mealTypes: MealType[] }> {
+  const { data: snapshot, error: snapshotError } = await supabase
+    .from('daily_snapshots')
+    .select('day_status, gap_reminder_sent_at')
+    .eq('user_id', userId)
+    .eq('date', localDate)
+    .maybeSingle()
+  if (snapshotError) {
+    throw new Error(snapshotError.message ?? 'active gap reminder snapshot lookup failed')
+  }
 
-    const typedSnapshot = snapshot as GapSnapshot | null
-    if (
-      typedSnapshot?.day_status !== 'pending_close' ||
-      !typedSnapshot.gap_reminder_sent_at ||
-      new Date(typedSnapshot.gap_reminder_sent_at) > referenceTimestamp
-    ) {
-      return { mealTypes: [], lookupFailed: false }
-    }
+  const typedSnapshot = snapshot as GapSnapshot | null
+  if (
+    typedSnapshot?.day_status !== 'pending_close' ||
+    !typedSnapshot.gap_reminder_sent_at ||
+    new Date(typedSnapshot.gap_reminder_sent_at) > referenceTimestamp
+  ) {
+    return { mealTypes: [] }
+  }
 
-    // biome-ignore lint/suspicious/noExplicitAny: raw_payload ainda nao consta nos tipos gerados
-    const { data: messages, error: messagesError } = await (supabase as any)
-      .from('messages')
-      .select('raw_payload, created_at')
-      .eq('user_id', userId)
-      .eq('direction', 'out')
-      .eq('raw_payload->>source', 'daily_gap_checker')
-      .gte('created_at', typedSnapshot.gap_reminder_sent_at)
-      .order('created_at', { ascending: false })
-      .limit(3)
-    if (messagesError) return { mealTypes: [], lookupFailed: true }
+  // biome-ignore lint/suspicious/noExplicitAny: raw_payload ainda nao consta nos tipos gerados
+  const { data: messages, error: messagesError } = await (supabase as any)
+    .from('messages')
+    .select('raw_payload, created_at')
+    .eq('user_id', userId)
+    .eq('direction', 'out')
+    .eq('raw_payload->>source', 'daily_gap_checker')
+    .gte('created_at', typedSnapshot.gap_reminder_sent_at)
+    .order('created_at', { ascending: false })
+    .limit(3)
+  if (messagesError) {
+    throw new Error(messagesError.message ?? 'active gap reminder message lookup failed')
+  }
 
-    return {
-      mealTypes: resolveActiveGapReminderMealTypes(
-        typedSnapshot,
-        (messages ?? []) as GapMessage[],
-        referenceTimestamp,
-      ),
-      lookupFailed: false,
-    }
-  } catch {
-    return { mealTypes: [], lookupFailed: true }
+  return {
+    mealTypes: resolveActiveGapReminderMealTypes(
+      typedSnapshot,
+      (messages ?? []) as GapMessage[],
+      referenceTimestamp,
+    ),
   }
 }

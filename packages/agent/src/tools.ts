@@ -1074,13 +1074,6 @@ export const registraRefeicao: ToolDefinition = {
         effectiveDate,
         referenceTimestamp,
       )
-      if (activeReminder.lookupFailed) {
-        await ctx.supabase.from('product_events').insert({
-          user_id: ctx.userId,
-          event: 'tool.active_gap_reminder_lookup_failed',
-          properties: { date: effectiveDate, timezone: tz },
-        })
-      }
       const decision = decideMealType({
         claimed: args.meal_type,
         expected,
@@ -1126,7 +1119,6 @@ export const registraRefeicao: ToolDefinition = {
             trusted_tap: ctx.trustMealType === true,
             replace: args.replace ?? false,
             active_reminder_meal_types: activeReminder.mealTypes,
-            reminder_lookup_failed: activeReminder.lookupFailed,
             window_source: windowSource,
           },
         })

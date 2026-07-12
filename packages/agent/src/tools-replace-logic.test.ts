@@ -128,7 +128,7 @@ function makeContextAndSupabase(opts: MockOptions) {
           snapshot: boolean
         }): unknown => {
           const obj: Record<string, unknown> = {}
-          for (const m of ['select', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+          for (const m of ['select', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'not', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
             obj[m] = () => mealChain(state)
           }
           obj.eq = (column: string) =>

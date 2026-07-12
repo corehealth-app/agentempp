@@ -195,8 +195,9 @@ export function collapseMealRowsToRegistrations(
  * Lê meal_logs dos últimos 30d e devolve janelas pessoais por meal_type.
  * Filtra meal_types canônicos e logs com consumed_at não-null.
  *
- * Se a query falhar, retorna windows vazio (todos os meal_types caem em
- * fallback global). Nunca lança — segue defesa em camadas.
+ * O fallback global só vale quando a consulta funciona mas não há amostras
+ * suficientes. Erro de leitura é propagado para não classificar por uma fonte
+ * diferente sem saber se existe uma rotina pessoal válida.
  */
 export async function getPersonalMealWindows(
   supabase: ServiceClient,
@@ -208,24 +209,17 @@ export async function getPersonalMealWindows(
   // Query SIMPLES: user_id + consumed_at >= cutoff (data local convertida em
   // limite frouxo — não precisa offset porque queremos margem). Limit alto
   // pra cobrir ~150 logs típicos sem cap.
-  let rows: MealLogWindowRow[] = []
-  try {
-    // biome-ignore lint/suspicious/noExplicitAny: ServiceClient sem types estritos aqui
-    const { data, error } = await (supabase as any)
-      .from('meal_logs')
-      .select('meal_type, consumed_at, raw_provider_message_id, food_name')
-      .eq('user_id', userId)
-      .gte('consumed_at', `${cutoffDate}T00:00:00Z`)
-      .not('meal_type', 'is', null)
-      .not('consumed_at', 'is', null)
-      .limit(500)
-    if (error) {
-      return { windows: new Map(), totalLogs: 0 }
-    }
-    rows = (data ?? []) as MealLogWindowRow[]
-  } catch {
-    return { windows: new Map(), totalLogs: 0 }
-  }
+  // biome-ignore lint/suspicious/noExplicitAny: ServiceClient sem types estritos aqui
+  const { data, error } = await (supabase as any)
+    .from('meal_logs')
+    .select('meal_type, consumed_at, raw_provider_message_id, food_name')
+    .eq('user_id', userId)
+    .gte('consumed_at', `${cutoffDate}T00:00:00Z`)
+    .not('meal_type', 'is', null)
+    .not('consumed_at', 'is', null)
+    .limit(500)
+  if (error) throw new Error(error.message ?? 'personal meal window lookup failed')
+  const rows = (data ?? []) as MealLogWindowRow[]
 
   const valid = collapseMealRowsToRegistrations(rows, tz)
 

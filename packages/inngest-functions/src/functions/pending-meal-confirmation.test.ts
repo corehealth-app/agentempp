@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildConfirmedMealArgs, shouldBlockEffectiveReplace } from './pending-meal-confirmation.js'
+import {
+  buildConfirmedMealArgs,
+  buildConfirmedMealRegistrationEntry,
+  shouldBlockEffectiveReplace,
+} from './pending-meal-confirmation.js'
 
 describe('buildConfirmedMealArgs', () => {
   it('propaga correções e macros aprovados no pending para registra_refeicao', () => {
@@ -73,5 +77,28 @@ describe('shouldBlockEffectiveReplace', () => {
         replaceEvidence: 'lossy_cancellation_recovery',
       }),
     ).toBe(false)
+  })
+})
+
+describe('buildConfirmedMealRegistrationEntry', () => {
+  it('preserva o sinal de deduplicação em retry da confirmação', () => {
+    expect(
+      buildConfirmedMealRegistrationEntry(
+        {
+          mealType: 'almoco',
+          items: [],
+          totals: { kcal: 435, protein_g: 39, carbs_g: 0, fat_g: 28.5 },
+        },
+        {
+          already_logged: true,
+          meal: { items: [], totals: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 } },
+        },
+      ),
+    ).toMatchObject({
+      tool: 'registra_refeicao',
+      mealType: 'almoco',
+      alreadyLogged: true,
+      items: [],
+    })
   })
 })

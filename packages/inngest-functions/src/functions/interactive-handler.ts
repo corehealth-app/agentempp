@@ -41,13 +41,16 @@ import {
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 import { reopenLossyCancellationPending } from './lossy-cancellation-recovery.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
 import { buildOutboundMessageRows } from './outbound-message-rows.js'
 import {
   buildConfirmedMealArgs,
+  buildConfirmedMealRegistrationEntry,
   shouldBlockEffectiveReplace,
 } from './pending-meal-confirmation.js'
+import { transitionPendingStatus } from './pending-status-transition.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
 
@@ -121,7 +124,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         for (const row of rows) await persistOutboundMessage(supabase, row)
       }
       const wasPartDelivered = async (responsePart: string) => {
-        const { data: existing } = await supabase
+        const { data: existing, error: deliveryLookupError } = await supabase
           .from('messages')
           .select('id')
           .eq('user_id', userId)
@@ -130,6 +133,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           .filter('raw_payload->>response_part', 'eq', responsePart)
           .neq('delivery_status', 'failed')
           .limit(1)
+        throwIfQueryFailed(deliveryLookupError, 'interactive delivery lookup failed')
         return (existing ?? []).length > 0
       }
       const sendTextTracked = async (content: string, responsePart: string) => {
@@ -175,7 +179,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         try {
           await cadastraDadosIniciais.execute(
             { [onbBtn.field]: onbBtn.value } as never,
-            { supabase, userId, userWpp: wpp, userCountry: 'BR', userTimezone: 'America/Sao_Paulo', providerMessageId, recentUserMessages: [] } as never,
+            {
+              supabase,
+              userId,
+              userWpp: wpp,
+              userCountry: 'BR',
+              userTimezone: 'America/Sao_Paulo',
+              providerMessageId,
+              recentUserMessages: [],
+            } as never,
           )
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -222,11 +234,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       const action = match[1] as 'confirm' | 'edit'
       const pendingId = match[2]!
 
-      const { data: pending } = await supabase
+      const { data: pending, error: pendingLookupError } = await supabase
         .from('pending_registrations')
         .select('id, user_id, status, expires_at, proposal, created_at, resolved_at')
         .eq('id', pendingId)
         .maybeSingle()
+      throwIfQueryFailed(pendingLookupError, 'interactive pending lookup failed')
       const row = pending as PendingRow | null
 
       // Pending não existe → talvez tap em msg antiga / dado limpo
@@ -277,7 +290,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         if (recoveryEligible && typeof resolvedAt === 'string') {
           try {
             const stripAccents = (s: string) =>
-              s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+              s
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/\p{Diacritic}/gu, '')
+                .trim()
             const proposalNamesSet = new Set(
               (proposal.items ?? [])
                 .map((it) => stripAccents(it.name ?? it.food_name ?? ''))
@@ -310,16 +327,19 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             const endIso = new Date(new Date(resolvedAt).getTime() + 5000).toISOString()
             // Se mealType inválido (MED 2), pula query → cands=[] → fresh=[]
             // → recoveryCandidateOk=false → segue noop original (skip seguro).
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: candidates } = candMealType
-              ? await (supabase as any)
-                  .from('meal_logs')
-                  .select('id, food_name, kcal, created_at, raw_provider_message_id')
-                  .eq('user_id', userId)
-                  .eq('meal_type', candMealType)
-                  .gte('created_at', startIso)
-                  .lte('created_at', endIso)
-              : { data: [] }
+            let candidates: unknown[] = []
+            if (candMealType) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { data: candidateRows, error: candidatesError } = await (supabase as any)
+                .from('meal_logs')
+                .select('id, food_name, kcal, created_at, raw_provider_message_id')
+                .eq('user_id', userId)
+                .eq('meal_type', candMealType)
+                .gte('created_at', startIso)
+                .lte('created_at', endIso)
+              throwIfQueryFailed(candidatesError, 'lossy cancellation candidates lookup failed')
+              candidates = candidateRows ?? []
+            }
             const cands = (candidates ?? []) as Array<{
               id: string
               food_name: string
@@ -347,8 +367,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             const subsetKcalTotal = fresh.reduce((a, c) => a + (Number(c.kcal) || 0), 0)
             const sanityKcalOk =
               proposalKcalTotal > 0 ? subsetKcalTotal <= proposalKcalTotal * 0.6 : true
-            const recoveryCandidateOk =
-              fresh.length > 0 && subsetRatio >= 0.8 && sanityKcalOk
+            const recoveryCandidateOk = fresh.length > 0 && subsetRatio >= 0.8 && sanityKcalOk
             await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.recovery_candidate_evaluated',
@@ -392,8 +411,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               }
             }
           } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn('[interactive-handler] recovery falhou (non-fatal):', e)
+            logger.error('cancelled pending recovery failed', {
+              pendingId,
+              userId,
+              error: e instanceof Error ? e.message : String(e),
+            })
+            throw e
           }
         }
 
@@ -414,10 +437,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           'Esse registro expirou (demorou mais de 1 dia). Me manda de novo o que comeu?',
           'pending_expired',
         )
-        await supabase
-          .from('pending_registrations')
-          .update({ status: 'expired', resolved_at: new Date().toISOString() })
-          .eq('id', pendingId)
+        await transitionPendingStatus(supabase, {
+          pendingId,
+          from: 'pending',
+          to: 'expired',
+          resolvedAt: new Date().toISOString(),
+        })
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.expired_on_tap',
@@ -427,15 +452,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       }
 
       // ── CONFIRM (Fase B) ──
-      // Marca status, GRAVA de verdade chamando registra_refeicao com items da
-      // proposta (bypassando o LLM — items já foram resolvidos no turno original),
-      // e responde com o card determinístico igual à Fase 1.
+      // GRAVA de verdade chamando registra_refeicao com items da proposta
+      // (bypassando o LLM — items já foram resolvidos no turno original),
+      // responde com o card e só então marca confirmed. Assim, retry de qualquer
+      // etapa ainda encontra o pending aberto e as tools idempotentes retomam.
       if (action === 'confirm') {
-        await supabase
-          .from('pending_registrations')
-          .update({ status: 'confirmed', resolved_at: new Date().toISOString() })
-          .eq('id', pendingId)
-
         const proposal = row.proposal as {
           kind?: 'meal' | 'workout'
           mealType?: string
@@ -459,11 +480,13 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         }
 
         // Carrega user pra timezone (pra computar a data local no tool)
-        const { data: usr } = await supabase
+        const { data: usr, error: userLookupError } = await supabase
           .from('users')
           .select('timezone, country')
           .eq('id', userId)
           .maybeSingle()
+        throwIfQueryFailed(userLookupError, 'interactive user lookup failed')
+        if (!usr) throw new Error('interactive user not found')
         const userTimezone =
           (usr as { timezone?: string | null } | null)?.timezone ?? 'America/Sao_Paulo'
         const userCountry = (usr as { country?: string | null } | null)?.country ?? 'BR'
@@ -499,23 +522,22 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           // enquanto o card mostrava "Café registrado". Quando há mealType
           // explícito no proposal — paciente VIU e CLICOU pra confirmar —
           // ele é canônico: desliga autocorrect na tool. workout não usa.
-          trustMealType:
-            proposal.kind !== 'workout' && typeof proposal.mealType === 'string',
+          trustMealType: proposal.kind !== 'workout' && typeof proposal.mealType === 'string',
         }
 
         // Chama a tool de gravar diretamente (bypassando LLM) com os dados
         // resolvidos no pending. Branch por kind: meal usa registraRefeicao;
         // workout usa registraTreino. Resultado vai pro mesmo card determinístico.
-        let mealToolResult:
-          | {
-              success?: boolean
-              already_logged?: boolean
-              meal?: { items?: MealItem[]; totals?: MealTotals }
-            }
-          | null = null
-        let workoutToolResult:
-          | { success?: boolean; kcal_burned?: number; deduped?: boolean }
-          | null = null
+        let mealToolResult: {
+          success?: boolean
+          already_logged?: boolean
+          meal?: { items?: MealItem[]; totals?: MealTotals }
+        } | null = null
+        let workoutToolResult: {
+          success?: boolean
+          kcal_burned?: number
+          deduped?: boolean
+        } | null = null
 
         if (proposal.kind === 'workout') {
           const raw = proposal.raw_args ?? {}
@@ -546,27 +568,13 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 error: msg,
               },
             })
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
             logger.error('registraTreino.execute throw no tap', { pendingId, userId, error: msg })
             throw err
           }
         } else {
           // meal (default)
           if (!proposal.items || proposal.items.length === 0) {
-            try {
-              await sendTextTracked('✅ Registrado.', 'confirmation_empty')
-            } catch (error) {
-              await supabase
-                .from('pending_registrations')
-                .update({ status: 'pending', resolved_at: null })
-                .eq('id', pendingId)
-                .eq('status', 'confirmed')
-              throw error
-            }
+            await sendTextTracked('✅ Registrado.', 'confirmation_empty')
             return { handled: true, action: 'confirmed_empty', pendingId }
           }
           // ── BUG I4 (Roberto 2026-06-14 17:05 BRT — macarronada 350g) ──
@@ -596,8 +604,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           // Bebidas zero/diet/light — qualifier + keyword de bebida. Pega
           // Coca/Guaraná/Pepsi/Sprite/Fanta/Schweppes/Powerade/Gatorade/Red
           // Bull/H2O/isotônico/etc sem precisar listar cada marca.
-          const ZERO_CAL_DRINK_QUALIFIER_RE =
-            /\b(zero|diet|light|sem\s+acucar|sem\s+adocante)\b/
+          const ZERO_CAL_DRINK_QUALIFIER_RE = /\b(zero|diet|light|sem\s+acucar|sem\s+adocante)\b/
           const DRINK_KEYWORD_RE =
             /\b(refri\w*|refrigerante|coca|coca-cola|guarana|pepsi|sprite|fanta|schweppes|powerade|gatorade|red\s*bull|skol|brahma|antarctica|sukita|tonica|isotonico|energetico|soda|h2o|monster|burn|aguardente)\b/
           const isLegitZeroCal = (name: string): boolean => {
@@ -621,7 +628,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           let isRetryAfterBlock = false
           if (suspiciousItems.length > 0) {
             const since4hIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
-            const { data: prevBlock } = await supabase
+            const { data: prevBlock, error: previousBlockError } = await supabase
               .from('product_events')
               .select('id')
               .eq('user_id', userId)
@@ -629,16 +636,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               .gte('occurred_at', since4hIso)
               .filter('properties->>pendingId', 'eq', pendingId)
               .limit(1)
+            throwIfQueryFailed(previousBlockError, 'zero kcal retry lookup failed')
             isRetryAfterBlock = ((prevBlock ?? []) as Array<{ id: string }>).length > 0
           }
           if (suspiciousItems.length > 0 && !isRetryAfterBlock) {
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
-
-            await supabase.from('product_events').insert({
+            const { error: blockedEventError } = await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.blocked_zero_kcal',
               properties: {
@@ -651,10 +653,10 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 })),
                 ok_items_count: proposal.items.length - suspiciousItems.length,
                 total_items: proposal.items.length,
-                note:
-                  'item sólido com >30g e 0 kcal indica composite_rejected/no_match no parser — não grava com zeros (bug I4 Roberto 2026-06-14)',
+                note: 'item sólido com >30g e 0 kcal indica composite_rejected/no_match no parser — não grava com zeros (bug I4 Roberto 2026-06-14)',
               },
             })
+            throwIfQueryFailed(blockedEventError, 'zero kcal block persistence failed')
 
             const namesList = suspiciousItems
               .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
@@ -692,20 +694,9 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               // Reescreve proposal.items pra só conter os OK — flui pro
               // path normal do registraRefeicao abaixo.
               proposal.items = okItems
-              const skipNames = suspiciousItems
-                .map((it) => `"${it.name}"`)
-                .join(', ')
+              const skipNames = suspiciousItems.map((it) => `"${it.name}"`).join(', ')
               const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
-              try {
-                await sendTextTracked(warnText, 'zero_kcal_retry_warning')
-              } catch (error) {
-                await supabase
-                  .from('pending_registrations')
-                  .update({ status: 'pending', resolved_at: null })
-                  .eq('id', pendingId)
-                  .eq('status', 'confirmed')
-                throw error
-              }
+              await sendTextTracked(warnText, 'zero_kcal_retry_warning')
             }
             // Se okItems.length === 0, segue com proposal.items original
             // (todos zerados) — paciente insistiu, registro best-effort.
@@ -726,7 +717,14 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               // que falhava em alguns formatos de longOffset (review HIGH MED).
               const todayLocal = sourceLocalDate
               const tzOff = getTzOffset(userTimezone, referenceTimestamp)
-              const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+              const validMealTypes = [
+                'cafe',
+                'almoco',
+                'lanche',
+                'jantar',
+                'ceia',
+                'outro',
+              ] as const
               type MT = (typeof validMealTypes)[number]
               const propMealType: MT | null = validMealTypes.includes(proposal.mealType as MT)
                 ? (proposal.mealType as MT)
@@ -754,17 +752,18 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   // no mesmo dia + edit de jantar pendente → antes inferia
                   // replace e deletava o 1º lanche.
                   .eq('proposal->>mealType', propMealType)
-                  .gte(
-                    'resolved_at',
-                    new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-                  )
+                  .gte('resolved_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
                   .neq('id', pendingId)
                   .limit(1),
               ])
+              throwIfQueryFailed(sameDayRes.error, 'same-day meal lookup failed')
+              throwIfQueryFailed(priorEditedRes.error, 'edited pending lookup failed')
               const hasPriorMealOfSameType = (sameDayRes.data ?? []).length > 0
               const priorEditedRows = (priorEditedRes.data ?? []) as Array<{
                 id?: string | null
-                proposal?: { items?: Array<{ name?: string; food_name?: string; quantity_g?: number }> } | null
+                proposal?: {
+                  items?: Array<{ name?: string; food_name?: string; quantity_g?: number }>
+                } | null
               }>
               const hasPriorEdited = priorEditedRows.length > 0
               const decision = shouldInferReplaceAfterEdit({
@@ -818,8 +817,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 })
               }
             } catch (e) {
-              // eslint-disable-next-line no-console
-              console.warn('[interactive-handler] replace inference failed (non-fatal):', e)
+              logger.error('replace inference failed', {
+                pendingId,
+                userId,
+                error: e instanceof Error ? e.message : String(e),
+              })
+              throw e
             }
           }
 
@@ -858,12 +861,6 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 error: msg,
               },
             })
-            // Desfaz o confirmed pra paciente conseguir tentar de novo
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
             logger.error('registraRefeicao.execute throw no tap', {
               pendingId,
               userId,
@@ -875,7 +872,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
         // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)
         const todayStr = sourceLocalDate
-        const [{ data: snap }, { data: prog }, { data: prof }] = await Promise.all([
+        const [snapshotResult, progressResult, profileResult] = await Promise.all([
           supabase
             .from('daily_snapshots')
             .select(
@@ -895,6 +892,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             .eq('user_id', userId)
             .maybeSingle(),
         ])
+        throwIfQueryFailed(snapshotResult.error, 'confirmation snapshot lookup failed')
+        throwIfQueryFailed(progressResult.error, 'confirmation progress lookup failed')
+        throwIfQueryFailed(profileResult.error, 'confirmation profile lookup failed')
+        const snap = snapshotResult.data
+        const prog = progressResult.data
+        const prof = profileResult.data
+        if (!snap) throw new Error('confirmation snapshot not found')
+        if (!prog) throw new Error('confirmation progress not found')
+        if (!prof) throw new Error('confirmation profile not found')
         const s = (snap ?? {}) as {
           calories_consumed?: number
           calories_target?: number | null
@@ -903,7 +909,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           exercise_calories?: number
         }
         const p = (prog ?? {}) as { deficit_block?: number }
-        const proto = (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
+        const proto =
+          (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
 
         // Constrói a entry de registro pra alimentar composePostRegistrationMessage
         const registrations: RegistrationEntry[] =
@@ -918,14 +925,14 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 },
               ]
             : [
-                {
-                  tool: 'registra_refeicao',
-                  mealType: proposal.mealType ?? 'outro',
-                  items: mealToolResult?.meal?.items ?? proposal.items ?? [],
-                  totals:
-                    mealToolResult?.meal?.totals ??
-                    proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-                },
+                buildConfirmedMealRegistrationEntry(
+                  {
+                    mealType: proposal.mealType,
+                    items: proposal.items,
+                    totals: proposal.totals,
+                  },
+                  mealToolResult,
+                ),
               ]
         const textBase = composePostRegistrationMessage({
           registrations,
@@ -936,8 +943,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             proteinTarget: s.protein_target ?? null,
             exerciseCalories: s.exercise_calories ?? 0,
             deficitBlock: p.deficit_block ?? 0,
-            protocol:
-              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+            protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
           },
         })
 
@@ -956,8 +962,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // o que falhava em dedup parcial. Agora só already_logged é
         // suficiente. Defesa em camadas com o guard interno de
         // generateEducationalComment.
-        const skipEdu =
-          proposal.kind !== 'workout' && mealToolResult?.already_logged === true
+        const skipEdu = proposal.kind !== 'workout' && mealToolResult?.already_logged === true
         if (skipEdu) {
           await supabase.from('product_events').insert({
             user_id: userId,
@@ -973,51 +978,48 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         const eduComment = skipEdu
           ? ''
           : await generateEducationalComment(
-          llm,
-          {
-            kind:
-              proposal.kind === 'workout'
-                ? 'treino'
-                : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
-            // Adapter (P0 audit 2026-06-13): tool retorna items com chave
-            // `name`, EduCommentInput espera `food_name`. Fallback proposal.items
-            // quando a tool deduplica tudo (mesmo padrão de L401).
-            items:
-              proposal.kind !== 'workout'
-                ? adaptToolItemsToEduInput(
-                    (mealToolResult?.meal?.items as Parameters<
-                      typeof adaptToolItemsToEduInput
-                    >[0]) ??
-                      (proposal.items as Parameters<typeof adaptToolItemsToEduInput>[0]),
-                  )
-                : undefined,
-            totals:
-              proposal.kind !== 'workout'
-                ? (mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined
-                : undefined,
-            workout:
-              proposal.kind === 'workout'
-                ? {
-                    type: proposal.workoutType ?? 'treino',
-                    durationMin: proposal.durationMin,
-                    kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
-                  }
-                : undefined,
-            protocol:
-              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
-          },
-          {
-            // ATIVA curated-phrase path (review CRITICAL).
-            supabase: deps2Supabase,
-            userId,
-            state: {
-              protocol:
-                (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
-            },
-            // Cascade semântica pra resolver foods compostos.
-            embeddings: deps2Embeddings,
-          },
-        )
+              llm,
+              {
+                kind:
+                  proposal.kind === 'workout'
+                    ? 'treino'
+                    : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
+                // Adapter (P0 audit 2026-06-13): tool retorna items com chave
+                // `name`, EduCommentInput espera `food_name`. Fallback proposal.items
+                // quando a tool deduplica tudo (mesmo padrão de L401).
+                items:
+                  proposal.kind !== 'workout'
+                    ? adaptToolItemsToEduInput(
+                        (mealToolResult?.meal?.items as Parameters<
+                          typeof adaptToolItemsToEduInput
+                        >[0]) ?? (proposal.items as Parameters<typeof adaptToolItemsToEduInput>[0]),
+                      )
+                    : undefined,
+                totals:
+                  proposal.kind !== 'workout'
+                    ? ((mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined)
+                    : undefined,
+                workout:
+                  proposal.kind === 'workout'
+                    ? {
+                        type: proposal.workoutType ?? 'treino',
+                        durationMin: proposal.durationMin,
+                        kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
+                      }
+                    : undefined,
+                protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+              },
+              {
+                // ATIVA curated-phrase path (review CRITICAL).
+                supabase: deps2Supabase,
+                userId,
+                state: {
+                  protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+                },
+                // Cascade semântica pra resolver foods compostos.
+                embeddings: deps2Embeddings,
+              },
+            )
 
         // embedEduComment é função pura testável (invariante: eduComment
         // não-vazio ⇒ marker presente). Antes era código duplicado entre
@@ -1031,7 +1033,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // (almoço 8 itens + 4 linhas de comentário = 1.4kb numa msg). Se
         // não houver comentário (Haiku falhou), splitRegistrationParts
         // devolve comment=null e envia 2 bolhas (tabela | card).
-        const { meal: mealPart, comment: commentPart, card: cardPart } = splitRegistrationParts(text)
+        const {
+          meal: mealPart,
+          comment: commentPart,
+          card: cardPart,
+        } = splitRegistrationParts(text)
         try {
           await sendHumanizedTracked(
             mealPart,
@@ -1080,13 +1086,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               error: error instanceof Error ? error.message : String(error),
             },
           })
-          await supabase
-            .from('pending_registrations')
-            .update({ status: 'pending', resolved_at: null })
-            .eq('id', pendingId)
-            .eq('status', 'confirmed')
           throw error
         }
+
+        await transitionPendingStatus(supabase, {
+          pendingId,
+          from: 'pending',
+          to: 'confirmed',
+          resolvedAt: new Date().toISOString(),
+        })
 
         await supabase.from('product_events').insert({
           user_id: userId,
@@ -1112,27 +1120,20 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       }
 
       // ── EDIT ──
-      // Marca status, pede correção. Próxima msg do paciente cai no fluxo normal
-      // do LLM (que vai re-analisar e propor de novo, criando novo pending).
-      await supabase
-        .from('pending_registrations')
-        .update({ status: 'edited', resolved_at: new Date().toISOString() })
-        .eq('id', pendingId)
+      // Pede correção e só então marca status. Próxima msg do paciente cai no
+      // fluxo normal do LLM (que vai re-analisar e criar novo pending).
+      await sendTextTracked('Beleza, me corrige aí o que tá errado.', 'edit_prompt')
+      await transitionPendingStatus(supabase, {
+        pendingId,
+        from: 'pending',
+        to: 'edited',
+        resolvedAt: new Date().toISOString(),
+      })
       await supabase.from('product_events').insert({
         user_id: userId,
         event: 'pending.edited',
         properties: { pendingId, kind: (row.proposal as { kind?: string }).kind ?? 'unknown' },
       })
-      try {
-        await sendTextTracked('Beleza, me corrige aí o que tá errado.', 'edit_prompt')
-      } catch (error) {
-        await supabase
-          .from('pending_registrations')
-          .update({ status: 'pending', resolved_at: null })
-          .eq('id', pendingId)
-          .eq('status', 'edited')
-        throw error
-      }
       return { handled: true, action: 'edited', pendingId }
     })
   },

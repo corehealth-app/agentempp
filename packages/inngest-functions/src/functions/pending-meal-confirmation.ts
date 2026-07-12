@@ -1,7 +1,9 @@
 import {
   type MealItem,
+  type MealTotals,
   normalizePendingFoodCorrections,
   type PendingFoodCorrection,
+  type RegistrationEntry,
 } from '@mpp/agent'
 
 export interface ConfirmedMealProposal {
@@ -32,6 +34,17 @@ export interface ConfirmedMealArgs {
   replace: boolean
   consumed_date: string
   corrections?: PendingFoodCorrection[]
+}
+
+interface ConfirmedMealRegistrationProposal {
+  mealType?: string
+  items?: MealItem[]
+  totals?: MealTotals
+}
+
+interface ConfirmedMealResult {
+  already_logged?: boolean
+  meal?: { items?: MealItem[]; totals?: MealTotals }
 }
 
 interface EffectiveReplaceGuardInput {
@@ -80,5 +93,19 @@ export function buildConfirmedMealArgs(
     replace: effectiveReplace,
     consumed_date: sourceLocalDate,
     ...(corrections.length > 0 ? { corrections } : {}),
+  }
+}
+
+export function buildConfirmedMealRegistrationEntry(
+  proposal: ConfirmedMealRegistrationProposal,
+  result: ConfirmedMealResult | null,
+): RegistrationEntry {
+  return {
+    tool: 'registra_refeicao',
+    mealType: proposal.mealType ?? 'outro',
+    items: result?.meal?.items ?? proposal.items ?? [],
+    totals: result?.meal?.totals ??
+      proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    alreadyLogged: result?.already_logged === true,
   }
 }

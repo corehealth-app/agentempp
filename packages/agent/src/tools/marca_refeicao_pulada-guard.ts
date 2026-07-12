@@ -19,6 +19,7 @@
  * em camadas — se o pipeline path mudar, guard pega.
  */
 
+import { getLocalDateString } from '../timezone-utils.js'
 import type { GuardContext, GuardResult } from './tool-guards.js'
 
 interface MarcaPuladaArgs {
@@ -78,27 +79,56 @@ export async function validateMarcaRefeicaoPulada(
     }
   }
 
-  // S2 + S3: checagens contra meal_logs/daily_snapshots do dia
+  // S2 + S3: checagens pela data local da mensagem original. Consultar
+  // consumed_at a partir de 00:00 UTC falha para pacientes fora de UTC.
   if (mealType) {
-    const todayStart = new Date()
-    todayStart.setUTCHours(0, 0, 0, 0)
-    const todayIso = todayStart.toISOString()
+    const timezone = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
+    const localDate = getLocalDateString(timezone, referenceTimestamp)
 
     // biome-ignore lint/suspicious/noExplicitAny: supabase ServiceClient
     const sp = ctx.supabase as any
 
-    // S3: já há meal_logs do mesmo meal_type hoje?
-    const { count: mealLogsCount } = await sp
-      .from('meal_logs')
+    const { count: skipCount, error: skipError } = await sp
+      .from('product_events')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', ctx.userId)
-      .eq('meal_type', mealType)
-      .gte('consumed_at', todayIso)
+      .eq('event', 'meal.user_skipped')
+      .filter('properties->>local_date', 'eq', localDate)
+      .filter('properties->>meal_type', 'eq', mealType)
+    if (skipError) throw new Error(skipError.message ?? 'skip lookup failed')
+    if ((skipCount ?? 0) > 0) {
+      return {
+        ok: false,
+        reason: 'duplicate_skip',
+        details: { meal_type: mealType, local_date: localDate },
+        retry_hint: `${mealType} já foi marcado como pulado em ${localDate}. Não chame a tool novamente.`,
+      }
+    }
+
+    const { data: snapshot, error: snapshotError } = await sp
+      .from('daily_snapshots')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('date', localDate)
+      .maybeSingle()
+    if (snapshotError) throw new Error(snapshotError.message ?? 'snapshot lookup failed')
+
+    // S3: já há meal_logs do mesmo meal_type no snapshot local?
+    const { count: mealLogsCount, error: mealLogsError } = snapshot
+      ? await sp
+          .from('meal_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', ctx.userId)
+          .eq('snapshot_id', snapshot.id)
+          .eq('meal_type', mealType)
+      : { count: 0, error: null }
+    if (mealLogsError) throw new Error(mealLogsError.message ?? 'meal logs lookup failed')
     if ((mealLogsCount ?? 0) > 0) {
       return {
         ok: false,
         reason: 'skip_after_registration',
-        details: { meal_type: mealType, existing_meals: mealLogsCount },
+        details: { meal_type: mealType, local_date: localDate, existing_meals: mealLogsCount },
         retry_hint: `O paciente JÁ registrou ${mealType} hoje (${mealLogsCount} item(ns) em meal_logs). Não dá pra pular uma refeição que já foi registrada. Se foi engano e ele quer apagar, use corrige_refeicao com replace=true e items=[].`,
       }
     }

@@ -48,12 +48,56 @@ export function getTzOffset(tz: string, when: Date = new Date()): string {
   const parts = fmt.formatToParts(when)
   const raw = parts.find((p) => p.type === 'timeZoneName')?.value ?? ''
   const m = raw.match(/(?:GMT|UTC)?([+\-−][0-9]{1,2}:?[0-9]{0,2})/)
-  if (!m) return '+00:00'
-  return m[1]!
+  const matchedOffset = m?.[1]
+  if (!matchedOffset) return '+00:00'
+  return matchedOffset
     .replace('−', '-')
     .replace(/^([+-])(\d):/, '$10$2:') // +5:00 → +05:00
     .replace(/^([+-]\d{2})$/, '$1:00') // -04 → -04:00
     .replace(/^([+-]\d{4})$/, (_, s) => `${s.slice(0, 3)}:${s.slice(3)}`) // -0400 → -04:00
+}
+
+function addIsoDateDays(date: string, days: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid ISO date: ${date}`)
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  if (!Number.isFinite(parsed.getTime())) throw new Error(`invalid ISO date: ${date}`)
+  parsed.setUTCDate(parsed.getUTCDate() + days)
+  return parsed.toISOString().slice(0, 10)
+}
+
+function offsetToMinutes(offset: string): number {
+  const match = offset.match(/^([+-])(\d{2}):(\d{2})$/)
+  if (!match) throw new Error(`invalid timezone offset: ${offset}`)
+  const minutes = Number(match[2]) * 60 + Number(match[3])
+  return match[1] === '-' ? -minutes : minutes
+}
+
+function localMidnightUtc(tz: string, date: string): Date {
+  const naiveUtcMs = new Date(`${date}T00:00:00.000Z`).getTime()
+  if (!Number.isFinite(naiveUtcMs)) throw new Error(`invalid ISO date: ${date}`)
+
+  let candidateMs = naiveUtcMs
+  // Re-evaluate the offset at the converted instant. Two passes cover zones
+  // whose UTC date differs from their local date and DST transition days.
+  for (let pass = 0; pass < 3; pass++) {
+    const offsetMinutes = offsetToMinutes(getTzOffset(tz, new Date(candidateMs)))
+    const nextMs = naiveUtcMs - offsetMinutes * 60_000
+    if (nextMs === candidateMs) break
+    candidateMs = nextMs
+  }
+  return new Date(candidateMs)
+}
+
+/** Inclusive UTC start and exclusive UTC end for one IANA local calendar day. */
+export function getLocalDayUtcBounds(
+  tz: string,
+  date: string,
+): { startIso: string; endExclusiveIso: string } {
+  const nextDate = addIsoDateDays(date, 1)
+  return {
+    startIso: localMidnightUtc(tz, date).toISOString(),
+    endExclusiveIso: localMidnightUtc(tz, nextDate).toISOString(),
+  }
 }
 
 /**

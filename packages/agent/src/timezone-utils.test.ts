@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { getLocalDateString, getTzOffset } from './timezone-utils.js'
+import { describe, expect, it } from 'vitest'
+import { getLocalDateString, getLocalDayUtcBounds, getTzOffset } from './timezone-utils.js'
 
 describe('getLocalDateString', () => {
   it('retorna data UTC quando tz=UTC', () => {
@@ -23,9 +23,7 @@ describe('getLocalDateString', () => {
 
   it('Asia/Tokyo: UTC ainda hoje, local já amanhã (UTC+9)', () => {
     // 2026-05-07T22:00Z UTC = 2026-05-08T07:00 em Tóquio
-    expect(getLocalDateString('Asia/Tokyo', new Date('2026-05-07T22:00:00Z'))).toBe(
-      '2026-05-08',
-    )
+    expect(getLocalDateString('Asia/Tokyo', new Date('2026-05-07T22:00:00Z'))).toBe('2026-05-08')
   })
 
   it('formato YYYY-MM-DD compatível com SQL date', () => {
@@ -73,5 +71,36 @@ describe('getTzOffset', () => {
       const off = getTzOffset(tz)
       expect(off).toMatch(/^[+-]\d{2}:\d{2}$/)
     }
+  })
+})
+
+describe('getLocalDayUtcBounds', () => {
+  it('converte um dia de Orlando no verão para limites UTC exclusivos', () => {
+    expect(getLocalDayUtcBounds('America/New_York', '2026-07-10')).toEqual({
+      startIso: '2026-07-10T04:00:00.000Z',
+      endExclusiveIso: '2026-07-11T04:00:00.000Z',
+    })
+  })
+
+  it('respeita o dia de 23 horas na entrada do horário de verão', () => {
+    const bounds = getLocalDayUtcBounds('America/New_York', '2026-03-08')
+    expect(bounds).toEqual({
+      startIso: '2026-03-08T05:00:00.000Z',
+      endExclusiveIso: '2026-03-09T04:00:00.000Z',
+    })
+    expect(new Date(bounds.endExclusiveIso).getTime() - new Date(bounds.startIso).getTime()).toBe(
+      23 * 60 * 60 * 1000,
+    )
+  })
+
+  it('respeita o dia de 25 horas na saída do horário de verão', () => {
+    const bounds = getLocalDayUtcBounds('America/New_York', '2026-11-01')
+    expect(bounds).toEqual({
+      startIso: '2026-11-01T04:00:00.000Z',
+      endExclusiveIso: '2026-11-02T05:00:00.000Z',
+    })
+    expect(new Date(bounds.endExclusiveIso).getTime() - new Date(bounds.startIso).getTime()).toBe(
+      25 * 60 * 60 * 1000,
+    )
   })
 })

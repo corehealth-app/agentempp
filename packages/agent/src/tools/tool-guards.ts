@@ -22,6 +22,8 @@ import { validateMarcaRefeicaoPulada } from './marca_refeicao_pulada-guard.js'
 export interface GuardContext {
   supabase: ServiceClient
   userId: string
+  userTimezone?: string
+  referenceTimestamp?: Date
   /** Quando true, paciente VIU o pending e CLICOU pra confirmar — guards
    *  podem ser mais permissivos (paciente já validou visualmente). */
   trustedTap?: boolean

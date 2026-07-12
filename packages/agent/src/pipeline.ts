@@ -1253,6 +1253,8 @@ export async function processMessage(
         const guardResult = await runToolGuard(tc.name, validated as Record<string, unknown>, {
           supabase: deps.supabase,
           userId,
+          userTimezone: toolCtx.userTimezone,
+          referenceTimestamp: toolCtx.referenceTimestamp,
           trustedTap: false,
           visionPending: ctx.visionPending,
         })

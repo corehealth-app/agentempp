@@ -2724,17 +2724,24 @@ export const marcaRefeicaoPulada: ToolDefinition = {
       .describe('Motivo opcional informado pelo paciente (ex: "jejum intermitente", "sem fome", "trabalho")'),
   }),
   execute: async (args, ctx) => {
-    await ctx.supabase.from('product_events').insert({
+    const timezone = ctx.userTimezone ?? 'America/Sao_Paulo'
+    const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
+    const localDate = getLocalDateString(timezone, referenceTimestamp)
+    const { error } = await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
       event: 'meal.user_skipped',
       properties: {
         meal_type: args.meal_type,
         reason: args.reason ?? null,
         provider_message_id: ctx.providerMessageId ?? null,
+        local_date: localDate,
+        source_timestamp: referenceTimestamp.toISOString(),
       },
     })
+    if (error) throw new Error(error.message ?? 'meal skip write failed')
     return {
       success: true,
+      date: localDate,
       meal_type: args.meal_type,
       message: `Refeição "${args.meal_type}" marcada como pulada hoje. O dia segue válido pro bloco 7700 (assumimos que foi intencional).`,
     }

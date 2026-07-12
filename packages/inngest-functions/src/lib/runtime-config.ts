@@ -5,6 +5,7 @@
  * Pra adicionar nova chave: adicione em DEFAULT_*, ajuste a função
  * loader pra ler do global_config (chave começando com prefix).
  */
+import { throwIfQueryFailed } from './query-error.js'
 
 export interface HumanizerConfig {
   min_delay_ms: number
@@ -121,51 +122,73 @@ const DEFAULT_VISION_CONFIG = {
 
 let visionCached: { config: VisionRuntimeConfig; expiresAt: number } | null = null
 
+export function resetRuntimeConfigCaches(): void {
+  cached = null
+  visionCached = null
+}
+
 export async function loadVisionConfig(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   svc: any,
 ): Promise<VisionRuntimeConfig> {
   const now = Date.now()
   if (visionCached && visionCached.expiresAt > now) return visionCached.config
+  const lastKnownGood = visionCached?.config ?? null
 
-  const merged: VisionRuntimeConfig = {
-    model: DEFAULT_VISION_CONFIG.model,
-    nutrition_label_model: DEFAULT_VISION_CONFIG.nutrition_label_model,
-    meal_confidence_threshold: DEFAULT_VISION_CONFIG.meal_confidence_threshold,
-    prompts: {},
-  }
+  try {
+    const merged: VisionRuntimeConfig = {
+      model: DEFAULT_VISION_CONFIG.model,
+      nutrition_label_model: DEFAULT_VISION_CONFIG.nutrition_label_model,
+      meal_confidence_threshold: DEFAULT_VISION_CONFIG.meal_confidence_threshold,
+      prompts: {},
+    }
 
-  const { data: gcRows } = (await svc
-    .from('global_config')
-    .select('key, value')
-    .like('key', 'vision.%')) as { data: Array<{ key: string; value: unknown }> | null }
-  for (const row of gcRows ?? []) {
-    if (row.key === 'vision.model' && typeof row.value === 'string') {
-      merged.model = row.value
-    } else if (row.key === 'vision.nutrition_label_model' && typeof row.value === 'string') {
-      merged.nutrition_label_model = row.value
-    } else if (row.key === 'vision.meal.confidence_threshold') {
-      const n = Number(row.value)
-      if (Number.isFinite(n) && n >= 0 && n <= 1) {
-        merged.meal_confidence_threshold = n
+    const { data: gcRows, error: globalConfigError } = (await svc
+      .from('global_config')
+      .select('key, value')
+      .like('key', 'vision.%')) as {
+      data: Array<{ key: string; value: unknown }> | null
+      error: unknown
+    }
+    throwIfQueryFailed(globalConfigError, 'vision config lookup failed')
+    for (const row of gcRows ?? []) {
+      if (row.key === 'vision.model' && typeof row.value === 'string') {
+        merged.model = row.value
+      } else if (row.key === 'vision.nutrition_label_model' && typeof row.value === 'string') {
+        merged.nutrition_label_model = row.value
+      } else if (row.key === 'vision.meal.confidence_threshold') {
+        const n = Number(row.value)
+        if (Number.isFinite(n) && n >= 0 && n <= 1) {
+          merged.meal_confidence_threshold = n
+        }
       }
     }
-  }
 
-  const { data: ruleRows } = (await svc
-    .from('agent_rules')
-    .select('slug, content')
-    .like('slug', 'vision-%')
-    .eq('status', 'active')) as {
-    data: Array<{ slug: string; content: string }> | null
-  }
-  for (const row of ruleRows ?? []) {
-    const key = row.slug.replace(/^vision-/, '') as keyof VisionRuntimeConfig['prompts']
-    if (['meal', 'body', 'scale', 'nutrition_label', 'equipment', 'other', 'classifier'].includes(key) && row.content) {
-      merged.prompts[key] = row.content
+    const { data: ruleRows, error: rulesError } = (await svc
+      .from('agent_rules')
+      .select('slug, content')
+      .like('slug', 'vision-%')
+      .eq('status', 'active')) as {
+      data: Array<{ slug: string; content: string }> | null
+      error: unknown
     }
-  }
+    throwIfQueryFailed(rulesError, 'vision rules lookup failed')
+    for (const row of ruleRows ?? []) {
+      const key = row.slug.replace(/^vision-/, '') as keyof VisionRuntimeConfig['prompts']
+      if (
+        ['meal', 'body', 'scale', 'nutrition_label', 'equipment', 'other', 'classifier'].includes(
+          key,
+        ) &&
+        row.content
+      ) {
+        merged.prompts[key] = row.content
+      }
+    }
 
-  visionCached = { config: merged, expiresAt: now + TTL_MS }
-  return merged
+    visionCached = { config: merged, expiresAt: now + TTL_MS }
+    return merged
+  } catch (error) {
+    if (lastKnownGood) return lastKnownGood
+    throw error
+  }
 }

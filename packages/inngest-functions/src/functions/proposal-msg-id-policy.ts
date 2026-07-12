@@ -5,7 +5,8 @@
  * Audit 06-26 review HIGH 2: extraído como predicate puro pra ganhar teste
  * unitário (Opção B em process-message.ts:730 não era testável diretamente).
  *
- * Regra: o primeiro envio interactive da pending SETA proposal_msg_id.
+ * Regra: o primeiro envio interactive da pending SETA proposal_msg_id com o
+ * UUID de messages.id. O providerMessageId fica apenas na telemetria.
  * Re-envios (cron suppression-reentry / retry / fallback) NÃO sobrescrevem —
  * paciente preserva o msg_id ORIGINAL p/ replies/quote-by-id e telemetria
  * separa os 2 eventos (interactive_set vs interactive_resent).
@@ -19,7 +20,9 @@ export type ProposalMsgIdEvent = 'pending.interactive_set' | 'pending.interactiv
 export type ProposalMsgIdPolicyInput = {
   /** Resultado do UPDATE com .is('proposal_msg_id', null) — true se 1 row foi setada (slot estava vazio). */
   rowWasSet: boolean
-  /** ID novo que foi tentado set. */
+  /** UUID da linha correspondente em public.messages. */
+  messageId: string
+  /** ID do provider associado à linha, usado somente na telemetria. */
   newProviderMessageId: string
 }
 
@@ -28,6 +31,7 @@ export type ProposalMsgIdPolicyOutput = {
   /** Propriedades do product_event a emitir. */
   properties: {
     providerMessageId: string
+    messageId: string
     /** Mesma chave `wasSet` exposta no evento pra inspeção rápida. */
     wasSet: boolean
   }
@@ -44,6 +48,7 @@ export function classifyProposalMsgIdWrite(
     event: input.rowWasSet ? 'pending.interactive_set' : 'pending.interactive_resent',
     properties: {
       providerMessageId: input.newProviderMessageId,
+      messageId: input.messageId,
       wasSet: input.rowWasSet,
     },
   }

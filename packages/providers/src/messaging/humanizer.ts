@@ -25,6 +25,11 @@ export interface HumanizeOpts {
   singleMessage?: boolean
 }
 
+export interface HumanizedSendResult extends SendResult {
+  /** Exact chunk sent for this provider result. */
+  content: string
+}
+
 const DEFAULT_OPTS: Required<HumanizeOpts> = {
   minDelay: 800,
   maxDelay: 4000,
@@ -95,11 +100,11 @@ export async function sendHumanized(
   to: string,
   text: string,
   opts?: HumanizeOpts & SendOpts & SendHumanizedExtra,
-): Promise<SendResult[]> {
+): Promise<HumanizedSendResult[]> {
   const config = { ...DEFAULT_OPTS, ...opts }
   // singleMessage: card determinístico vai inteiro, sem split (\n\n nem frase).
   const chunks = config.singleMessage ? [text.trim()] : chunkMessage(text)
-  const results: SendResult[] = []
+  const results: HumanizedSendResult[] = []
 
   // Typing indicator real só é possível 1× (Cloud API). Mostra antes do 1º chunk.
   if (config.showTyping && opts?.inReplyTo && provider.showTypingFor) {
@@ -116,7 +121,7 @@ export async function sendHumanized(
     const sendOpts: SendOpts | undefined =
       i === 0 && opts?.replyTo ? { replyTo: opts.replyTo } : undefined
     const result = await provider.sendText(to, chunk, sendOpts)
-    results.push(result)
+    results.push({ ...result, content: chunk })
 
     if (i < chunks.length - 1) {
       await sleep(300)

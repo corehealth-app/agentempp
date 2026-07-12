@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { chunkMessage, sendHumanized } from './humanizer.js'
 import type { MessagingProvider } from './types.js'
 
@@ -6,7 +6,9 @@ describe('chunkMessage — não quebra em "." de número', () => {
   it('mensagem longa com decimais/milhar não estilhaça no ponto', () => {
     const long =
       'Você mandou muito bem hoje, ritmo de quem assume o processo. ' +
-      'O prato tinha 3.8g de proteína, 42.1g de carboidrato e 0.3g de gordura por porção, '.repeat(8) +
+      'O prato tinha 3.8g de proteína, 42.1g de carboidrato e 0.3g de gordura por porção, '.repeat(
+        8,
+      ) +
       'e o total do dia fechou em 1.041 kcal.'
     const chunks = chunkMessage(long)
     // Nenhum chunk pode terminar num decimal partido ("3." / "42.")
@@ -69,5 +71,16 @@ describe('sendHumanized — singleMessage (card de registro)', () => {
       showTyping: false,
     })
     expect(sent.length).toBeGreaterThan(1)
+  })
+
+  it('retorna o conteúdo correspondente a cada resultado do provider', async () => {
+    const { provider } = mockProvider()
+    const results = await sendHumanized(provider, '5511999999999', 'Primeira\n\nSegunda', {
+      minDelay: 0,
+      maxDelay: 0,
+      showTyping: false,
+    })
+
+    expect(results.map((result) => result.content)).toEqual(['Primeira', 'Segunda'])
   })
 })

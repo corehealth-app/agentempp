@@ -1,22 +1,24 @@
 import {
   aggregateBodyBfEstimate,
+  type BodyPhotoSignal,
   bodyPhotoSignalFromEventProperties,
   detectPendingResponse,
   formatBodyPhotoDigest,
   splitRegistrationParts,
-  type BodyPhotoSignal,
 } from '@mpp/agent'
 import {
+  createMessagingProvider,
   GeminiVision,
   GroqSTT,
-  TTSRouter,
-  createMessagingProvider,
   rewriteForTTS,
   sendHumanized,
+  TTSRouter,
 } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
+import { persistOutboundMessage } from './outbound-message-persistence.js'
+import { buildOutboundMessageRows, type OutboundDelivery } from './outbound-message-rows.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
 
 /**
@@ -682,7 +684,7 @@ export const processMessageFn = inngest.createFunction(
     }
 
     // === Step 3: pipeline ===
-    let result
+    let result: Awaited<ReturnType<typeof processMessage>>
     try {
       result = await step.run('agent-pipeline', async () => {
         const deps = createWorkerDeps()
@@ -796,63 +798,63 @@ export const processMessageFn = inngest.createFunction(
             throw new Error('messaging provider sem sendInteractiveList')
           }
           const items = ix.buttons.map((b) => ({ id: b.id, title: b.title }))
-          return messaging.sendInteractiveList(wpp, ix.body, ix.list.buttonText, items, {
+          const delivery = await messaging.sendInteractiveList(wpp, ix.body, ix.list.buttonText, items, {
             replyTo: providerMessageId,
           })
+          if (delivery.status === 'failed') {
+            throw new Error(delivery.error ?? 'interactive list delivery failed')
+          }
+          return delivery
         }
         if (!messaging.sendInteractive) {
           throw new Error('messaging provider sem sendInteractive')
         }
-        return messaging.sendInteractive(wpp, ix.body, ix.buttons, { replyTo: providerMessageId })
+        const delivery = await messaging.sendInteractive(wpp, ix.body, ix.buttons, {
+          replyTo: providerMessageId,
+        })
+        if (delivery.status === 'failed') {
+          throw new Error(delivery.error ?? 'interactive delivery failed')
+        }
+        return delivery
       })
       const { supabase } = createWorkerDeps()
-      if (sendRes.providerMessageId) {
-        // Anexa o id da msg out pra auditoria + replies/quote-by-id.
-        //
-        // Audit 06-26 Item 5 (Opção B, zero DDL): preserva o proposal_msg_id
-        // ORIGINAL via `.is('proposal_msg_id', null)`. Re-envios (retry de
-        // fallback) NÃO sobrescrevem — tap continua funcionando via pendingId
-        // codificado no buttonId, mas preserve mantém o card original como
-        // âncora pra reply do paciente. Audit review HIGH 2 corrige
-        // semântica: o tap NÃO consulta proposal_msg_id (busca por pendingId
-        // do BUTTON_ID_PATTERN). Esse fix é defesa de auditoria, não de
-        // funcionalidade do tap.
-        const upd = await supabase
-          .from('pending_registrations')
-          .update({ proposal_msg_id: sendRes.providerMessageId })
-          .eq('id', ix.pendingId)
-          .is('proposal_msg_id', null)
-          .select('id')
-        const rowWasSet = Array.isArray(upd.data) && upd.data.length > 0
-        const policy = classifyProposalMsgIdWrite({
-          rowWasSet,
-          newProviderMessageId: sendRes.providerMessageId,
+      const messageId = await step.run('persist-interactive-out', async () => {
+        const [row] = buildOutboundMessageRows({
+          userId,
+          provider: 'whatsapp_cloud',
+          contentType: 'interactive',
+          stage: result.stage,
+          modelUsed: result.modelUsed,
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          costUsd: result.costUsd,
+          latencyMs: result.latencyMs,
+          deliveries: [{
+            content: ix.body,
+            providerMessageId: sendRes.providerMessageId,
+            status: sendRes.status,
+            error: sendRes.error,
+          }],
         })
-        await supabase.from('product_events').insert({
-          user_id: userId,
-          event: policy.event,
-          properties: {
-            ...policy.properties,
-            pendingId: ix.pendingId,
-          },
-        })
-      }
-      await supabase.from('messages').insert({
+        if (!row) throw new Error('interactive delivery row missing')
+        return persistOutboundMessage(supabase, row)
+      })
+      const upd = await supabase
+        .from('pending_registrations')
+        .update({ proposal_msg_id: messageId })
+        .eq('id', ix.pendingId)
+        .is('proposal_msg_id', null)
+        .select('id')
+      if (upd.error) throw new Error(upd.error.message)
+      const policy = classifyProposalMsgIdWrite({
+        rowWasSet: Array.isArray(upd.data) && upd.data.length > 0,
+        messageId,
+        newProviderMessageId: sendRes.providerMessageId ?? '',
+      })
+      await supabase.from('product_events').insert({
         user_id: userId,
-        direction: 'out',
-        role: 'assistant',
-        content_type: 'interactive',
-        content: ix.body,
-        provider: 'whatsapp_cloud',
-        provider_message_id: sendRes.providerMessageId ?? null,
-        agent_stage: result.stage,
-        model_used: result.modelUsed,
-        prompt_tokens: result.promptTokens,
-        completion_tokens: result.completionTokens,
-        cost_usd: result.costUsd,
-        latency_ms: result.latencyMs,
-        delivery_status: sendRes.status,
-        delivery_error: sendRes.error ? { error: sendRes.error } : null,
+        event: policy.event,
+        properties: { ...policy.properties, pendingId: ix.pendingId },
       })
       return {
         ok: true,
@@ -889,8 +891,8 @@ export const processMessageFn = inngest.createFunction(
     let sentCount = 0
     let failedCount = 0
     let sendMode: 'text' | 'audio' = 'text'
-    let deliveryError: string | undefined
     let ttsMediaId: string | undefined
+    let outboundDeliveries: OutboundDelivery[] = []
 
     if (wantsAudio) {
       sendMode = 'audio'
@@ -922,17 +924,29 @@ export const processMessageFn = inngest.createFunction(
         const blob = new Blob([new Uint8Array(ttsResult.audio)], { type: ttsResult.mimeType })
         const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
         const sendResult = await messaging.sendAudio(wpp, mediaId)
+        if (sendResult.status === 'failed') {
+          throw new Error(sendResult.error ?? 'audio delivery failed')
+        }
         return {
           status: sendResult.status,
+          provider_message_id: sendResult.providerMessageId,
+          error: sendResult.error,
           chars: speechText.length,
           tts_provider: ttsProvider,
           tts_latency_ms: ttsResult.durationMs,
           media_id: mediaId,
         }
       })
-      if (audioRes.status === 'sent') sentCount = 1
-      else failedCount = 1
+      sentCount = 1
       ttsMediaId = audioRes.media_id
+      outboundDeliveries = [
+        {
+          content: result.text,
+          providerMessageId: audioRes.provider_message_id,
+          status: audioRes.status,
+          error: audioRes.error,
+        },
+      ]
       logger.info('Audio sent', audioRes)
       // Observabilidade TTS — antes era invisível, só visível no /audit por
       // contagem de OUT com content_type=audio sem detalhe de provider/latência.
@@ -968,77 +982,96 @@ export const processMessageFn = inngest.createFunction(
       // cai no envio único.
       const splitForRegistration = result.singleMessage === true
       const parts = splitForRegistration ? splitRegistrationParts(result.text) : null
-      const sendResults = await step.run('send-to-user', async () => {
-        if (parts && (parts.card || parts.comment)) {
-          const baseOpts = {
-            showTyping: true,
-            minDelay: humanizer.min_delay_ms,
-            maxDelay: humanizer.response_max_delay_ms,
-            charsPerSecond: humanizer.chars_per_second,
-            singleMessage: true,
-          }
-          const r1 = await sendHumanized(messaging, wpp, parts.meal, {
-            ...baseOpts,
-            inReplyTo: providerMessageId,
-            replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-          })
-          const all = [...r1]
-          if (parts.comment) {
-            await new Promise((res) => setTimeout(res, 1500))
-            const r2 = await sendHumanized(messaging, wpp, parts.comment, baseOpts)
-            all.push(...r2)
-          }
-          if (parts.card) {
-            await new Promise((res) => setTimeout(res, 1500))
-            const r3 = await sendHumanized(messaging, wpp, parts.card, baseOpts)
-            all.push(...r3)
-          }
-          return all
-        }
-        return sendHumanized(messaging, wpp, result.text, {
+      const assertSuccessful = <T extends { status: string; error?: string }>(deliveries: T[]) => {
+        const failed = deliveries.find((delivery) => delivery.status === 'failed')
+        if (failed) throw new Error(failed.error ?? 'message delivery failed')
+        return deliveries
+      }
+      let sendResults: Awaited<ReturnType<typeof sendHumanized>> = []
+      if (parts && (parts.card || parts.comment)) {
+        const baseOpts = {
           showTyping: true,
           minDelay: humanizer.min_delay_ms,
           maxDelay: humanizer.response_max_delay_ms,
           charsPerSecond: humanizer.chars_per_second,
-          inReplyTo: providerMessageId,
-          replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-          singleMessage: result.singleMessage === true,
-        })
-      })
-      sentCount = sendResults.filter((r) => r.status === 'sent').length
-      failedCount = sendResults.filter((r) => r.status !== 'sent').length
-      deliveryError = sendResults.find((r) => r.error)?.error
+          singleMessage: true,
+        }
+        const mealResults = await step.run('send-registration-meal', async () =>
+          assertSuccessful(
+            await sendHumanized(messaging, wpp, parts.meal, {
+              ...baseOpts,
+              inReplyTo: providerMessageId,
+              replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+            }),
+          ),
+        )
+        sendResults.push(...mealResults)
+        if (parts.comment) {
+          const comment = parts.comment
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          const commentResults = await step.run('send-registration-comment', async () =>
+            assertSuccessful(await sendHumanized(messaging, wpp, comment, baseOpts)),
+          )
+          sendResults.push(...commentResults)
+        }
+        if (parts.card) {
+          const card = parts.card
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          const cardResults = await step.run('send-registration-card', async () =>
+            assertSuccessful(await sendHumanized(messaging, wpp, card, baseOpts)),
+          )
+          sendResults.push(...cardResults)
+        }
+      } else {
+        sendResults = await step.run('send-to-user', async () =>
+          assertSuccessful(
+            await sendHumanized(messaging, wpp, result.text, {
+              showTyping: true,
+              minDelay: humanizer.min_delay_ms,
+              maxDelay: humanizer.response_max_delay_ms,
+              charsPerSecond: humanizer.chars_per_second,
+              inReplyTo: providerMessageId,
+              replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+              singleMessage: result.singleMessage === true,
+            }),
+          ),
+        )
+      }
+      sentCount = sendResults.filter((delivery) => delivery.status !== 'failed').length
+      failedCount = sendResults.filter((delivery) => delivery.status === 'failed').length
+      outboundDeliveries = sendResults.map((delivery) => ({
+        content: delivery.content,
+        providerMessageId: delivery.providerMessageId,
+        status: delivery.status,
+        error: delivery.error,
+      }))
     }
 
-    // Persiste a OUT no banco COM delivery_status real.
-    // Antes a persistência acontecia em pipeline.ts SEM delivery_status
-    // (sempre null), agora roda aqui depois do envio com status sent/failed.
-    {
-      const deliveryStatus: 'sent' | 'failed' = failedCount > 0 ? 'failed' : 'sent'
-      await step.run('persist-out', async () => {
-        const { error: insErr } = await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'out',
-          role: 'assistant',
-          content_type: sendMode === 'audio' ? 'audio' : 'text',
-          content: result.text,
-          // Persiste o media_id do áudio TTS pra rastreabilidade.
-          // Antes ficava null em mensagens content_type=audio.
-          media_url: ttsMediaId ?? null,
-          provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-          agent_stage: result.stage,
-          model_used: result.modelUsed,
-          prompt_tokens: result.promptTokens,
-          completion_tokens: result.completionTokens,
-          cost_usd: result.costUsd,
-          latency_ms: result.latencyMs,
-          delivery_status: deliveryStatus,
-          delivery_error: deliveryError ? { msg: deliveryError } : null,
-        })
-        if (insErr) logger.error('persist OUT failed', { error: insErr })
-        return { ok: true }
-      })
+    if (outboundDeliveries.length === 0) {
+      throw new Error('delivery completed without outbound results')
     }
+    await step.run('persist-out', async () => {
+      const providerName = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
+      const rows = buildOutboundMessageRows({
+        userId,
+        provider: providerName,
+        contentType: sendMode === 'audio' ? 'audio' : 'text',
+        stage: result.stage,
+        modelUsed: result.modelUsed,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        costUsd: result.costUsd,
+        latencyMs: result.latencyMs,
+        deliveries: outboundDeliveries,
+      })
+      for (const row of rows) {
+        await persistOutboundMessage(supabase, {
+          ...row,
+          media_url: sendMode === 'audio' ? (ttsMediaId ?? null) : null,
+        })
+      }
+      return { persisted: rows.length }
+    })
 
     // === Step 5: reação final ===
     await step.run('final-reaction', async () => {

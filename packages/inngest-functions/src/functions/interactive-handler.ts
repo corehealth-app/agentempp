@@ -23,24 +23,26 @@ import {
   adaptToolItemsToEduInput,
   cadastraDadosIniciais,
   composePostRegistrationMessage,
+  type EduCommentInput,
   embedEduComment,
   generateEducationalComment,
   getLocalDateString,
   getTzOffset,
+  type MealItem,
+  type MealTotals,
+  type PendingFoodCorrection,
   parseOnboardingButtonId,
+  type RegistrationEntry,
   registraRefeicao,
   registraTreino,
   shouldInferReplaceAfterEdit,
   splitRegistrationParts,
-  type EduCommentInput,
-  type MealItem,
-  type MealTotals,
-  type PendingFoodCorrection,
-  type RegistrationEntry,
 } from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { persistOutboundMessage } from './outbound-message-persistence.js'
+import { buildOutboundMessageRows } from './outbound-message-rows.js'
 import { buildConfirmedMealArgs } from './pending-meal-confirmation.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
@@ -87,6 +89,79 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
     return await step.run('handle-tap', async () => {
       const { supabase } = createWorkerDeps()
+      const providerName = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
+      const persistDeliveries = async (
+        deliveries: Array<{
+          content: string
+          providerMessageId: string | null
+          status: 'queued' | 'sent' | 'failed'
+          error?: string
+        }>,
+        responsePart: string,
+      ) => {
+        const failed = deliveries.find((delivery) => delivery.status === 'failed')
+        if (failed) throw new Error(failed.error ?? 'interactive response delivery failed')
+        const rows = buildOutboundMessageRows({
+          userId,
+          provider: providerName,
+          contentType: 'text',
+          stage: 'recomposicao',
+          modelUsed: null,
+          promptTokens: null,
+          completionTokens: null,
+          costUsd: null,
+          latencyMs: null,
+          metadata: { pending_id: buttonId, response_part: responsePart },
+          deliveries,
+        })
+        for (const row of rows) await persistOutboundMessage(supabase, row)
+      }
+      const wasPartDelivered = async (responsePart: string) => {
+        const { data: existing } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('direction', 'out')
+          .filter('raw_payload->>pending_id', 'eq', buttonId)
+          .filter('raw_payload->>response_part', 'eq', responsePart)
+          .neq('delivery_status', 'failed')
+          .limit(1)
+        return (existing ?? []).length > 0
+      }
+      const sendTextTracked = async (content: string, responsePart: string) => {
+        if (await wasPartDelivered(responsePart)) return
+        const delivery = await messaging.sendText(wpp, content, {
+          replyTo: providerMessageId,
+        })
+        await persistDeliveries(
+          [
+            {
+              content,
+              providerMessageId: delivery.providerMessageId,
+              status: delivery.status,
+              error: delivery.error,
+            },
+          ],
+          responsePart,
+        )
+      }
+      const sendHumanizedTracked = async (
+        content: string,
+        options: Parameters<typeof sendHumanized>[3],
+        responsePart: string,
+      ) => {
+        if (await wasPartDelivered(responsePart)) return
+        const results = await sendHumanized(messaging, wpp, content, options)
+        await persistDeliveries(
+          results.map((delivery) => ({
+            content: delivery.content,
+            providerMessageId: delivery.providerMessageId,
+            status: delivery.status,
+            error: delivery.error,
+          })),
+          responsePart,
+        )
+      }
 
       // Roberto 2026-06-01: botão de onboarding (`btn_<field>_<value>`)
       // dispara cadastra_dados_iniciais direto. Padrão diferente do
@@ -152,11 +227,10 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
       // Pending não existe → talvez tap em msg antiga / dado limpo
       if (!row) {
-        await messaging
-          .sendText(wpp, 'Esse registro não foi encontrado. Me manda de novo?', {
-            replyTo: providerMessageId,
-          })
-          .catch(() => {})
+        await sendTextTracked(
+          'Esse registro não foi encontrado. Me manda de novo?',
+          'pending_not_found',
+        )
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.not_found',
@@ -382,17 +456,14 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
       // Expirado → marca expired + avisa
       if (new Date(row.expires_at).getTime() <= Date.now()) {
+        await sendTextTracked(
+          'Esse registro expirou (demorou mais de 1 dia). Me manda de novo o que comeu?',
+          'pending_expired',
+        )
         await supabase
           .from('pending_registrations')
           .update({ status: 'expired', resolved_at: new Date().toISOString() })
           .eq('id', pendingId)
-        await messaging
-          .sendText(
-            wpp,
-            'Esse registro expirou (demorou mais de 1 dia). Me manda de novo o que comeu?',
-            { replyTo: providerMessageId },
-          )
-          .catch(() => {})
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.expired_on_tap',
@@ -531,9 +602,16 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         } else {
           // meal (default)
           if (!proposal.items || proposal.items.length === 0) {
-            await messaging
-              .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
-              .catch(() => {})
+            try {
+              await sendTextTracked('✅ Registrado.', 'confirmation_empty')
+            } catch (error) {
+              await supabase
+                .from('pending_registrations')
+                .update({ status: 'pending', resolved_at: null })
+                .eq('id', pendingId)
+                .eq('status', 'confirmed')
+              throw error
+            }
             return { handled: true, action: 'confirmed_empty', pendingId }
           }
           // ── BUG I4 (Roberto 2026-06-14 17:05 BRT — macarronada 350g) ──
@@ -630,20 +708,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               suspiciousItems.length === 1
                 ? `Não consegui calcular ${namesList} direito (deu 0 kcal). Me diz o que tinha de mais perto, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só me responder "registra mesmo assim".`
                 : `Não consegui calcular esses itens direito: ${namesList}. Me diz o que tinha de mais perto em cada um, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só responder "registra mesmo assim".`
-            await messaging
-              .sendText(wpp, askText, { replyTo: providerMessageId })
-              .catch(() => {})
-
-            await supabase.from('messages').insert({
-              user_id: userId,
-              direction: 'out',
-              role: 'assistant',
-              content_type: 'text',
-              content: askText,
-              provider: 'whatsapp_cloud',
-              agent_stage: 'recomposicao',
-              delivery_status: 'sent',
-            })
+            await sendTextTracked(askText, 'zero_kcal_block')
 
             return {
               handled: true,
@@ -676,19 +741,16 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 .map((it) => `"${it.name}"`)
                 .join(', ')
               const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
-              await messaging
-                .sendText(wpp, warnText, { replyTo: providerMessageId })
-                .catch(() => {})
-              await supabase.from('messages').insert({
-                user_id: userId,
-                direction: 'out',
-                role: 'assistant',
-                content_type: 'text',
-                content: warnText,
-                provider: 'whatsapp_cloud',
-                agent_stage: 'recomposicao',
-                delivery_status: 'sent',
-              })
+              try {
+                await sendTextTracked(warnText, 'zero_kcal_retry_warning')
+              } catch (error) {
+                await supabase
+                  .from('pending_registrations')
+                  .update({ status: 'pending', resolved_at: null })
+                  .eq('id', pendingId)
+                  .eq('status', 'confirmed')
+                throw error
+              }
             }
             // Se okItems.length === 0, segue com proposal.items original
             // (todos zerados) — paciente insistiu, registro best-effort.
@@ -1007,43 +1069,61 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // não houver comentário (Haiku falhou), splitRegistrationParts
         // devolve comment=null e envia 2 bolhas (tabela | card).
         const { meal: mealPart, comment: commentPart, card: cardPart } = splitRegistrationParts(text)
-        await sendHumanized(messaging, wpp, mealPart, {
-          singleMessage: true,
-          minDelay: 0,
-          maxDelay: 0,
-          showTyping: false,
-          inReplyTo: providerMessageId,
-        }).catch(() => {})
-        if (commentPart) {
-          await new Promise((res) => setTimeout(res, 1500))
-          await sendHumanized(messaging, wpp, commentPart, {
-            singleMessage: true,
-            minDelay: 0,
-            maxDelay: 0,
-            showTyping: false,
-          }).catch(() => {})
+        try {
+          await sendHumanizedTracked(
+            mealPart,
+            {
+              singleMessage: true,
+              minDelay: 0,
+              maxDelay: 0,
+              showTyping: false,
+              inReplyTo: providerMessageId,
+            },
+            'confirmation_meal',
+          )
+          if (commentPart) {
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            await sendHumanizedTracked(
+              commentPart,
+              {
+                singleMessage: true,
+                minDelay: 0,
+                maxDelay: 0,
+                showTyping: false,
+              },
+              'confirmation_comment',
+            )
+          }
+          if (cardPart) {
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            await sendHumanizedTracked(
+              cardPart,
+              {
+                singleMessage: true,
+                minDelay: 0,
+                maxDelay: 0,
+                showTyping: false,
+              },
+              'confirmation_card',
+            )
+          }
+        } catch (error) {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'interactive.handler.delivery_failed',
+            properties: {
+              pendingId,
+              kind: proposal.kind ?? 'meal',
+              error: error instanceof Error ? error.message : String(error),
+            },
+          })
+          await supabase
+            .from('pending_registrations')
+            .update({ status: 'pending', resolved_at: null })
+            .eq('id', pendingId)
+            .eq('status', 'confirmed')
+          throw error
         }
-        if (cardPart) {
-          await new Promise((res) => setTimeout(res, 1500))
-          await sendHumanized(messaging, wpp, cardPart, {
-            singleMessage: true,
-            minDelay: 0,
-            maxDelay: 0,
-            showTyping: false,
-          }).catch(() => {})
-        }
-
-        // Persiste a msg out
-        await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'out',
-          role: 'assistant',
-          content_type: 'text',
-          content: text,
-          provider: 'whatsapp_cloud',
-          agent_stage: 'recomposicao',
-          delivery_status: 'sent',
-        })
 
         await supabase.from('product_events').insert({
           user_id: userId,
@@ -1080,11 +1160,16 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         event: 'pending.edited',
         properties: { pendingId, kind: (row.proposal as { kind?: string }).kind ?? 'unknown' },
       })
-      await messaging
-        .sendText(wpp, 'Beleza, me corrige aí o que tá errado.', {
-          replyTo: providerMessageId,
-        })
-        .catch(() => {})
+      try {
+        await sendTextTracked('Beleza, me corrige aí o que tá errado.', 'edit_prompt')
+      } catch (error) {
+        await supabase
+          .from('pending_registrations')
+          .update({ status: 'pending', resolved_at: null })
+          .eq('id', pendingId)
+          .eq('status', 'edited')
+        throw error
+      }
       return { handled: true, action: 'edited', pendingId }
     })
   },

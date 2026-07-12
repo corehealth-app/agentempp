@@ -44,6 +44,12 @@ import {
 } from './post-registration-message.js'
 import { reconcilePendingMealEdit } from './pending-meal-edit.js'
 import {
+  cancelOpenPendingRegistrations,
+  createPendingRegistration,
+  loadRecentEditedMealPending,
+  loadRecentPendingMeal,
+} from './pending-registration-store.js'
+import {
   makeOnboardingButtonId,
   parseOnboardingButtonTag,
   parseOnboardingListTag,
@@ -680,33 +686,9 @@ export async function processMessage(
             )
             const newItemNames = new Set(newItemsByName.keys())
             if (!isExplicitReplace && newItemNames.size > 0) {
-              // Review M1 + M2: filtra kind=meal pra evitar match espúrio em
-              // pendings de training/onboarding/etc; captura error pra
-              // diferenciar query-fail de "não tem pending recente".
-              const { data: recentPending, error: pendErr } = await deps.supabase
-                .from('pending_registrations')
-                .select('id, proposal, created_at')
-                .eq('user_id', userId)
-                .eq('status', 'pending')
-                .eq('proposal->>kind', 'meal')
-                .gte(
-                  'created_at',
-                  new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-                )
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-              if (pendErr) {
-                await deps.supabase.from('product_events').insert({
-                  user_id: userId,
-                  event: 'pipeline.duplicate_check_query_failed',
-                  properties: {
-                    error_message: pendErr.message ?? String(pendErr),
-                    new_items_count: newItemNames.size,
-                  },
-                })
-                // Default seguro: cai no cancel cego (comportamento antigo).
-              }
+              // Filtra kind=meal e falha fechado: sem essa leitura não é seguro
+              // cancelar a proposta anterior nem decidir que o novo burst é distinto.
+              const recentPending = await loadRecentPendingMeal(deps.supabase, userId)
               const pend = recentPending as {
                 id: string
                 proposal: {
@@ -830,12 +812,8 @@ export async function processMessage(
                 }
               }
             }
-            if (!suppressedAsDuplicate) {
-              await deps.supabase
-                .from('pending_registrations')
-                .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-                .eq('user_id', userId)
-                .eq('status', 'pending')
+            if (!suppressedAsDuplicate && exprResult.eligible) {
+              await cancelOpenPendingRegistrations(deps.supabase, userId)
             }
           }
 
@@ -850,24 +828,11 @@ export async function processMessage(
                 quantity_g?: number
               }>
             }
-            const editedLookback = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-            const { data: editedPendingRow, error: editedPendingError } = await deps.supabase
-              .from('pending_registrations')
-              .select('id, proposal, resolved_at')
-              .eq('user_id', userId)
-              .eq('status', 'edited')
-              .eq('proposal->>kind', 'meal')
-              .gte('resolved_at', editedLookback)
-              .order('resolved_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-            if (editedPendingError) {
-              await deps.supabase.from('product_events').insert({
-                user_id: userId,
-                event: 'pipeline.edited_pending_lookup_failed',
-                properties: { error: editedPendingError.message },
-              })
-            }
+            const editedPendingRow = await loadRecentEditedMealPending(
+              deps.supabase,
+              userId,
+              args.meal_type ?? 'outro',
+            )
             const editedPending = editedPendingRow as {
               id: string
               proposal?: { items?: MealItem[] }
@@ -1012,12 +977,12 @@ export async function processMessage(
               ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            const { data: pendRow } = await deps.supabase
-              .from('pending_registrations')
-              .insert({ user_id: userId, proposal: proposal as unknown as Json, expires_at: expiresAt })
-              .select('id')
-              .single()
-            const pendingId = (pendRow as { id: string } | null)?.id
+            const pendingId = await createPendingRegistration(deps.supabase, {
+              userId,
+              proposal: proposal as unknown as Json,
+              expiresAt,
+              requestKey: input.providerMessageId ?? null,
+            })
             if (pendingId) {
               const { body, buttons } = composePendingProposal(pendingId, proposal)
               interactivePayload = { body, buttons, pendingId }
@@ -1049,7 +1014,6 @@ export async function processMessage(
               finalText = '' // o envio é via sendInteractive no caller
               break // sai do for-tool loop
             }
-            // Se INSERT falhou, cai pro execute normal (failsafe).
           } else if (exprResult.eligible) {
             await deps.supabase.from('product_events').insert({
               user_id: userId,
@@ -1090,12 +1054,8 @@ export async function processMessage(
 
           // FIX (mesmo do registra_refeicao acima): cancela pending em aberto
           // SEMPRE — express ou não — pra evitar duplicação caso tape Sim no antigo.
-          if (buttonsEnabled) {
-            await deps.supabase
-              .from('pending_registrations')
-              .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-              .eq('user_id', userId)
-              .eq('status', 'pending')
+          if (buttonsEnabled && exprRes.eligible) {
+            await cancelOpenPendingRegistrations(deps.supabase, userId)
           }
 
           if (buttonsEnabled && !exprRes.eligible) {
@@ -1114,12 +1074,12 @@ export async function processMessage(
               ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            const { data: pendRow } = await deps.supabase
-              .from('pending_registrations')
-              .insert({ user_id: userId, proposal, expires_at: expiresAt })
-              .select('id')
-              .single()
-            const pendingId = (pendRow as { id: string } | null)?.id
+            const pendingId = await createPendingRegistration(deps.supabase, {
+              userId,
+              proposal: proposal as unknown as Json,
+              expiresAt,
+              requestKey: input.providerMessageId ?? null,
+            })
             if (pendingId) {
               const { body, buttons } = composePendingProposal(pendingId, proposal)
               interactivePayload = { body, buttons, pendingId }

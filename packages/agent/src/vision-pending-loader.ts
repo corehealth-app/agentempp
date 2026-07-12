@@ -14,6 +14,8 @@
  *  - "Consumido" = (a) match por pmid OU (b) overlap nome ≥ 50% normalizado.
  */
 
+import { throwIfQueryFailed } from './db-query-error.js'
+
 export type VisionPendingItem = {
   name: string
   quantity_g_estimate: number
@@ -166,7 +168,7 @@ export async function loadVisionPending(
   userId: string,
 ): Promise<VisionPendingResult> {
   const sinceIso = new Date(Date.now() - WINDOW_MS).toISOString()
-  const { data: recentVisions } = await supabase
+  const { data: recentVisions, error: recentVisionsError } = await supabase
     .from('product_events')
     .select('properties, occurred_at')
     .eq('user_id', userId)
@@ -174,6 +176,7 @@ export async function loadVisionPending(
     .gte('occurred_at', sinceIso)
     .order('occurred_at', { ascending: false })
     .limit(MAX_VISIONS)
+  throwIfQueryFailed(recentVisionsError, 'vision lookup failed')
   const visions = (recentVisions ?? []) as VisionRow[]
   if (visions.length === 0) return null
 
@@ -190,6 +193,8 @@ export async function loadVisionPending(
       .eq('user_id', userId)
       .gte('created_at', oldestVisionIso),
   ])
+  throwIfQueryFailed(mealsAfter.error, 'meal lookup failed')
+  throwIfQueryFailed(pendingsAfter.error, 'pending lookup failed')
   const mealRows = (mealsAfter.data ?? []) as MealRow[]
   const pendRows = (pendingsAfter.data ?? []) as PendRow[]
 

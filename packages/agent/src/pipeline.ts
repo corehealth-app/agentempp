@@ -12,6 +12,7 @@
 import { computeMetrics, eatingBalance, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
+import { throwIfQueryFailed } from './db-query-error.js'
 import {
   auditNumericClaims,
   detectDeficitRealMismatch,
@@ -1903,7 +1904,7 @@ function jsonify(value: unknown): import('@mpp/db').Json {
  *
  * Bloqueia se status = 'past_due', 'canceled', 'expired'.
  */
-async function checkSubscription(
+export async function checkSubscription(
   supabase: ServiceClient,
   userId: string,
 ): Promise<{ canAccess: boolean; reason?: string; status?: string }> {
@@ -1917,13 +1918,14 @@ async function checkSubscription(
     return { canAccess: true }
   }
 
-  const { data: sub } = await supabase
+  const { data: sub, error: subscriptionError } = await supabase
     .from('subscriptions')
     .select('status, current_period_end, trial_ends_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+  throwIfQueryFailed(subscriptionError, 'subscription lookup failed')
 
   if (!sub) {
     // Sem registro — primeiro acesso. Permite (worker cria trial depois).
@@ -2022,7 +2024,7 @@ export function buildPromptRecentMessages(
     }))
 }
 
-async function loadContext(
+export async function loadContext(
   supabase: ServiceClient,
   userId: string,
   currentProviderMessageIds?: string | string[] | null,
@@ -2031,10 +2033,12 @@ async function loadContext(
 ): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
-  const { data: user } = await (supabase as unknown as {
+  const { data: user, error: userError } = await (supabase as unknown as {
     from: (t: string) => {
       select: (s: string) => {
-        eq: (col: string, val: string) => { single: () => Promise<{ data: unknown }> }
+        eq: (col: string, val: string) => {
+          single: () => Promise<{ data: unknown; error: unknown }>
+        }
       }
     }
   })
@@ -2044,17 +2048,24 @@ async function loadContext(
     )
     .eq('id', userId)
     .single()
-  const { data: profile } = await supabase
+  throwIfQueryFailed(userError, 'user context lookup failed')
+  if (!user) throw new Error('user context missing')
+
+  const { data: profile, error: profileError } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('user_id', userId)
     .single()
-  const { data: msgs } = await supabase
+  throwIfQueryFailed(profileError, 'user profile lookup failed')
+  if (!profile) throw new Error('user profile missing')
+
+  const { data: msgs, error: messagesError } = await supabase
     .from('messages')
     .select('direction, content, content_type, created_at, provider_message_id')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(RECENT_MESSAGES_LIMIT)
+  throwIfQueryFailed(messagesError, 'recent messages lookup failed')
 
   // .slice() ANTES do .reverse() — reverse() muta in-place. Sem o slice, a
   // ordem do `msgs` original fica ASC, e o `lastInboundContentType` (linha
@@ -2130,7 +2141,7 @@ async function loadContext(
   // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
   const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
   const today = getLocalDateString(userTz, referenceTimestamp)
-  const { data: snapToday } = await supabase
+  const { data: snapToday, error: snapshotError } = await supabase
     .from('daily_snapshots')
     .select(
       'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at',
@@ -2138,23 +2149,28 @@ async function loadContext(
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle()
-  const { data: progress } = await supabase
+  throwIfQueryFailed(snapshotError, 'daily snapshot lookup failed')
+
+  const { data: progress, error: progressError } = await supabase
     .from('user_progress')
     .select(
       'current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date',
     )
     .eq('user_id', userId)
     .maybeSingle()
+  throwIfQueryFailed(progressError, 'user progress lookup failed')
+  if (!progress) throw new Error('user progress missing')
 
   // Janela 14 dias — orçamento calórico + DAM (manutenção/ganho_massa).
   // Computa em-memória sobre daily_snapshots fechados.
   const date14dAgo = getLocalDateMinusDays(userTz, 14, referenceTimestamp)
-  const { data: last14dRows } = await supabase
+  const { data: last14dRows, error: last14dError } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, calories_target, day_closed')
     .eq('user_id', userId)
     .gte('date', date14dAgo)
     .eq('day_closed', true)
+  throwIfQueryFailed(last14dError, 'daily history lookup failed')
   const last14dTyped = (last14dRows ?? []) as Array<{
     calories_consumed: number | null
     calories_target: number | null
@@ -2190,7 +2206,10 @@ async function loadContext(
   } | null
 
   const reevaluationSince = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-  const [{ data: bodyVisionRows }, { data: reevaluationDueRows }] = await Promise.all([
+  const [
+    { data: bodyVisionRows, error: bodyVisionError },
+    { data: reevaluationDueRows, error: reevaluationDueError },
+  ] = await Promise.all([
     supabase
       .from('product_events')
       .select('properties, occurred_at')
@@ -2207,6 +2226,8 @@ async function loadContext(
       .gte('occurred_at', reevaluationSince)
       .limit(1),
   ])
+  throwIfQueryFailed(bodyVisionError, 'body vision history lookup failed')
+  throwIfQueryFailed(reevaluationDueError, 'reevaluation status lookup failed')
   const bodySignals = ((bodyVisionRows ?? []) as Array<{
     properties: unknown
     occurred_at: string | null
@@ -2401,15 +2422,19 @@ async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
   return value
 }
 
-async function hasOpenPending(supabase: ServiceClient, userId: string): Promise<boolean> {
+export async function hasOpenPending(
+  supabase: ServiceClient,
+  userId: string,
+): Promise<boolean> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-  const { data } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('pending_registrations')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .limit(1)
+  throwIfQueryFailed(error, 'pending lookup failed')
   return Array.isArray(data) && data.length > 0
 }
 

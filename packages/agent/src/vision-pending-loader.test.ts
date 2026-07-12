@@ -6,7 +6,7 @@
  * 50%, dedup intra-bucket, retorno do mais recente pendente) ficam travados.
  */
 import { describe, expect, it } from 'vitest'
-import { deriveVisionPending } from './vision-pending-loader.js'
+import { deriveVisionPending, loadVisionPending } from './vision-pending-loader.js'
 
 const NOW = new Date('2026-06-26T18:00:00.000Z').getTime()
 
@@ -181,5 +181,52 @@ describe('deriveVisionPending', () => {
       NOW,
     )
     expect(result).toBeNull() // 100% overlap após normalize
+  })
+})
+
+function queryChain(result: { data: unknown; error: unknown }) {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    gte: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    // biome-ignore lint/suspicious/noThenProperty: Supabase query builders are intentionally thenable.
+    then: <TResult1 = { data: unknown; error: unknown }>(
+      onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+    ) => Promise.resolve(result).then(onfulfilled),
+  }
+  return chain
+}
+
+describe('loadVisionPending — falhas de banco', () => {
+  const visionRow = vision(
+    'pmid-db-error',
+    [{ name: 'frango' }],
+    '2026-06-26T17:55:00.000Z',
+  )
+
+  it('propaga erro ao carregar eventos de vision', async () => {
+    const supabase = {
+      from: () => queryChain({ data: null, error: { message: 'vision lookup failed' } }),
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).rejects.toThrow(
+      'vision lookup failed',
+    )
+  })
+
+  it('propaga erro ao verificar se a foto já virou refeição', async () => {
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'product_events') return queryChain({ data: [visionRow], error: null })
+        if (table === 'meal_logs') {
+          return queryChain({ data: null, error: { message: 'meal lookup failed' } })
+        }
+        return queryChain({ data: [], error: null })
+      },
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).rejects.toThrow('meal lookup failed')
   })
 })

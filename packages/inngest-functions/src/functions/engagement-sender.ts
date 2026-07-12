@@ -12,14 +12,10 @@ import {
   reevaluationKickoff,
 } from '@mpp/agent'
 import { realDailyDeficit } from '@mpp/core'
-import {
-  createMessagingProvider,
-  sendHumanized,
-  TTSRouter,
-  rewriteForTTS,
-} from '@mpp/providers'
+import { createMessagingProvider, sendHumanized, TTSRouter, rewriteForTTS } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential } from '../lib/env.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadHumanizerConfig } from '../lib/runtime-config.js'
 
 /**
@@ -43,19 +39,21 @@ export const engagementSenderFn = inngest.createFunction(
 
     const users = await step.run('list-eligible', async () => {
       const { supabase } = createWorkerDeps()
-      const { data } = await supabase
+      const { data, error: usersError } = await supabase
         .from('users')
         .select('id, wpp, name, timezone')
         .eq('status', 'active')
+      throwIfQueryFailed(usersError, 'engagement users lookup failed')
       // Filtra só quem TEM perfil + onboarding completo + protocolo definido
       const ids = (data ?? []).map((u) => u.id)
       if (ids.length === 0) return []
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from('user_profiles')
         .select('user_id, current_protocol, onboarding_completed')
         .in('user_id', ids)
         .eq('onboarding_completed', true)
         .not('current_protocol', 'is', null)
+      throwIfQueryFailed(profilesError, 'engagement profiles lookup failed')
       const eligibleIds = new Set((profiles ?? []).map((p) => p.user_id))
       return (data ?? []).filter((u) => eligibleIds.has(u.id))
     })
@@ -65,8 +63,10 @@ export const engagementSenderFn = inngest.createFunction(
 
     for (const user of users) {
       try {
+        const timezone = user.timezone
+        if (!timezone) throw new Error('engagement user timezone missing')
         const result = await step.run(`engage-${user.id}`, async () =>
-          maybeEngageUser(user.id, user.wpp, user.timezone ?? 'America/Sao_Paulo', slot),
+          maybeEngageUser(user.id, user.wpp, timezone, slot),
         )
         if (result.sent) sent++
         else skipped++
@@ -91,7 +91,11 @@ async function maybeEngageUser(
   const localHour = getLocalHour(userTimezone)
   // Carrega config (cache 60s), deriva slot+hint da hora local
   const engagementConfig = await loadEngagementConfig(supabase)
-  const { slot, meal_hint: mealHint, silent: slotSilent } = resolveSlot(localHour, engagementConfig.slots)
+  const {
+    slot,
+    meal_hint: mealHint,
+    silent: slotSilent,
+  } = resolveSlot(localHour, engagementConfig.slots)
 
   async function logEvent(event: string, properties: Record<string, unknown>) {
     await supabase.from('product_events').insert({
@@ -116,11 +120,13 @@ async function maybeEngageUser(
   }
 
   // Pausa ativa? respeita
-  const { data: u } = await supabase
+  const { data: u, error: userError } = await supabase
     .from('users')
     .select('metadata, status, name, locale, country')
     .eq('id', userId)
     .maybeSingle()
+  throwIfQueryFailed(userError, 'engagement user lookup failed')
+  if (!u) throw new Error('engagement user not found')
   const meta = (u as { metadata: Record<string, unknown> | null } | null)?.metadata
   const userTyped = u as {
     metadata: Record<string, unknown> | null
@@ -143,6 +149,9 @@ async function maybeEngageUser(
   }
   const userLanguage = userTyped?.locale ?? countryToLanguage[userCountry] ?? 'pt-BR'
   const pausedUntil = meta?.paused_until as string | undefined
+  if (userTyped?.status !== 'active') {
+    return { sent: false, reason: 'paciente não está ativo' }
+  }
   if (pausedUntil && new Date(pausedUntil) > new Date()) {
     await logEvent('engagement.skipped', { reason: 'paused', paused_until: pausedUntil })
     return { sent: false, reason: 'paciente pausado' }
@@ -150,14 +159,16 @@ async function maybeEngageUser(
 
   // Janela ativa do paciente (wake_time → bedtime do user_profiles).
   // Offsets + fallbacks editáveis via /settings/global → engagement.*
-  const { data: profileTime } = await supabase
+  const { data: profileRow, error: profileError } = await supabase
     .from('user_profiles')
-    .select('wake_time, bedtime')
+    .select('wake_time, bedtime, current_protocol, deficit_level, goal_type, goal_value')
     .eq('user_id', userId)
     .maybeSingle()
+  throwIfQueryFailed(profileError, 'engagement profile lookup failed')
+  if (!profileRow) throw new Error('engagement profile not found')
   const window = activeWindow(
-    (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.wake_time,
-    (profileTime as { wake_time: string | null; bedtime: string | null } | null)?.bedtime,
+    (profileRow as { wake_time: string | null; bedtime: string | null }).wake_time,
+    (profileRow as { wake_time: string | null; bedtime: string | null }).bedtime,
     engagementConfig,
   )
   if (!isWithinActiveWindow(localHour, window)) {
@@ -179,12 +190,13 @@ async function maybeEngageUser(
   // (07h, 10h, 14h, 17h). Custo colateral: ~$1.75/dia de Haiku desperdiçado.
   const todayLocal = getLocalDate(userTimezone)
   const startOfDay = `${todayLocal}T00:00:00${tzOffset(userTimezone)}`
-  const { count: engagementsToday } = await supabase
+  const { count: engagementsToday, error: engagementCountError } = await supabase
     .from('product_events')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('event', 'engagement.sent')
     .gte('occurred_at', startOfDay)
+  throwIfQueryFailed(engagementCountError, 'daily engagement count failed')
 
   if ((engagementsToday ?? 0) > 0) {
     await logEvent('engagement.skipped', {
@@ -233,21 +245,23 @@ async function maybeEngageUser(
 
     // Se paciente já registrou esse meal_type hoje, pula (não cobra de novo).
     const todayLocalEarly = getLocalDate(userTimezone)
-    const { data: snapEarly } = await supabase
+    const { data: snapEarly, error: earlySnapshotError } = await supabase
       .from('daily_snapshots')
       .select('id')
       .eq('user_id', userId)
       .eq('date', todayLocalEarly)
       .maybeSingle()
+    throwIfQueryFailed(earlySnapshotError, 'engagement current snapshot lookup failed')
     const snapIdEarly = (snapEarly as { id: string } | null)?.id ?? null
     if (snapIdEarly) {
-      const { data: mealsForSlot } = await supabase
+      const { data: mealsForSlot, error: slotMealsError } = await supabase
         .from('meal_logs')
         .select('id')
         .eq('user_id', userId)
         .eq('snapshot_id', snapIdEarly)
         .eq('meal_type', expectedMealType as 'cafe' | 'almoco' | 'lanche' | 'jantar')
         .limit(1)
+      throwIfQueryFailed(slotMealsError, 'engagement slot meals lookup failed')
       if (mealsForSlot && mealsForSlot.length > 0) {
         await logEvent('engagement.skipped', {
           reason: 'meal_type do slot já registrado hoje',
@@ -260,14 +274,15 @@ async function maybeEngageUser(
   }
 
   // Carrega config do agente engajamento
-  const { data: prompt } = await supabase
+  const { data: prompt, error: promptError } = await supabase
     .from('v_active_prompts')
     .select('*')
     .eq('stage', 'engajamento')
     .single()
+  throwIfQueryFailed(promptError, 'engagement prompt lookup failed')
 
   if (!prompt || !prompt.model || prompt.temperature == null) {
-    return { sent: false, reason: 'sem prompt engajamento' }
+    throw new Error('engagement prompt is incomplete')
   }
 
   // ECONOMIA DE TOKEN #1: filtra as regras do prompt pelo idioma do paciente
@@ -279,23 +294,26 @@ async function maybeEngageUser(
     ''
 
   // Estado do user
-  const { data: progress } = await supabase
+  const { data: progress, error: progressError } = await supabase
     .from('user_progress')
     .select('*')
     .eq('user_id', userId)
     .maybeSingle()
+  throwIfQueryFailed(progressError, 'engagement progress lookup failed')
+  if (!progress) throw new Error('engagement progress not found')
 
   // Metas calóricas + balanço de hoje (snapshot do dia local).
   // Sem isso o LLM ALUCINA valores plausíveis ("2.500 kcal, 160g").
   const todayLocalDate = getLocalDate(userTimezone)
   const calcCfg = await loadCalcConfig(supabase)
   const targets = await loadDailyTargets(supabase, userId, calcCfg)
-  const { data: snapToday } = await supabase
+  const { data: snapToday, error: todaySnapshotError } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance')
     .eq('user_id', userId)
     .eq('date', todayLocalDate)
     .maybeSingle()
+  throwIfQueryFailed(todaySnapshotError, 'engagement today snapshot lookup failed')
   const consumedKcal = (snapToday as { calories_consumed?: number } | null)?.calories_consumed ?? 0
   const consumedProtein = (snapToday as { protein_g?: number } | null)?.protein_g ?? 0
   const exerciseKcal = (snapToday as { exercise_calories?: number } | null)?.exercise_calories ?? 0
@@ -308,12 +326,13 @@ async function maybeEngageUser(
   // (-03:00) nunca disparou, mas é regressão latente. getLocalDateMinusDays
   // usa Intl.DateTimeFormat (timezone-aware) e bate em qualquer offset.
   const yesterdayLocalDate = getLocalDateMinusDays(userTimezone, 1)
-  const { data: snapYesterday } = await supabase
+  const { data: snapYesterday, error: yesterdaySnapshotError } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, calories_target, daily_balance, exercise_calories, day_status')
     .eq('user_id', userId)
     .eq('date', yesterdayLocalDate)
     .maybeSingle()
+  throwIfQueryFailed(yesterdaySnapshotError, 'engagement yesterday snapshot lookup failed')
   const yesterdayBalance = (snapYesterday as { daily_balance?: number } | null)?.daily_balance
   // GUARD dia incompleto (Erika 2026-05-27): a Erika não registrou nada ontem
   // (consumido=0, day_status='pending_close'), mas daily_balance=0 → realDef=500
@@ -336,11 +355,6 @@ async function maybeEngageUser(
   // Déficit programado (embutido na meta) — pra calcular o déficit REAL de ontem.
   // Bug raiz audit 06-18: select NÃO incluía goal_type/goal_value, então a Q4
   // da reavaliação NUNCA disparava (nem pra peso_kg, nem pra BF). Agora inclui.
-  const { data: profileRow } = await supabase
-    .from('user_profiles')
-    .select('current_protocol, deficit_level, goal_type, goal_value')
-    .eq('user_id', userId)
-    .maybeSingle()
   const designDeficit =
     (profileRow as { current_protocol?: string | null } | null)?.current_protocol === 'recomposicao'
       ? ((profileRow as { deficit_level?: number | null } | null)?.deficit_level ?? 500)
@@ -355,7 +369,7 @@ async function maybeEngageUser(
   // montamos um VEREDITO objetivo que o LLM SÓ pode reportar (regra
   // inviolável no prompt — ver linha do "REGRA INVIOLÁVEL SOBRE ONTEM").
   const since36hIso = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
-  const { data: evRawRow } = await supabase
+  const { data: evRawRow, error: verdictEventsError } = await supabase
     .from('product_events')
     .select('event, properties, occurred_at')
     .eq('user_id', userId)
@@ -367,6 +381,7 @@ async function maybeEngageUser(
     ])
     .gte('occurred_at', since36hIso)
     .order('occurred_at', { ascending: false })
+  throwIfQueryFailed(verdictEventsError, 'engagement verdict events lookup failed')
   const yEvents =
     (evRawRow as Array<{
       event: string
@@ -385,8 +400,7 @@ async function maybeEngageUser(
   const skIna = yEventByName('bloco7700.skipped_inactive_day')
   const blkOk = yEventByName('bloco7700.block_completed')
   const anySkipped = !!(skSub || skInc || skIna)
-  const isIncompleteStatus =
-    yStatus === 'incomplete_no_response' || yStatus === 'pending_close'
+  const isIncompleteStatus = yStatus === 'incomplete_no_response' || yStatus === 'pending_close'
   const isInactive = yConsumed <= 0
   // Audit 06-18 (bug Paulo): EXCEDENTE é definido pelo balanço de COMIDA
   // (consumed − target), não pelo NET (com exercício). Exercício acelera
@@ -402,8 +416,7 @@ async function maybeEngageUser(
   // (ex: 897), não o 397; e creditar o exercício quando houve.
   let yesterdayLabel: string | null = null
   let yesterdayRealDef: number | null = null
-  const yesterdayClosedOk =
-    !anySkipped && yStatus === 'complete' && yConsumed > 0 && !isOverTarget
+  const yesterdayClosedOk = !anySkipped && yStatus === 'complete' && yConsumed > 0 && !isOverTarget
   if (yesterdayBalance != null && yesterdayClosedOk) {
     const realDef = Math.round(realDailyDeficit(designDeficit, yesterdayBalance))
     yesterdayRealDef = realDef
@@ -480,8 +493,7 @@ async function maybeEngageUser(
       `Ontem (${yesterdayLocalDate}): FECHOU OK — ${yesterdayLabel}` +
       (blkOk ? '. BLOCO 7700 FECHADO ontem (marco grande do método).' : '.')
   } else {
-    yesterdayVerdict =
-      `Ontem (${yesterdayLocalDate}): dados insuficientes — não invente fechamento.`
+    yesterdayVerdict = `Ontem (${yesterdayLocalDate}): dados insuficientes — não invente fechamento.`
   }
 
   // Audit 06-25 Bug A: hoist verdictIsNegativeForBlock pra escopo de função.
@@ -515,7 +527,7 @@ async function maybeEngageUser(
   // dispara se o .due mais recente ainda não tem .prompt_appended posterior.
   let reevaluationDue = false
   if (slot === 'cafe_da_manha') {
-    const { data: dueEvents } = await supabase
+    const { data: dueEvents, error: dueEventsError } = await supabase
       .from('product_events')
       .select('occurred_at')
       .eq('user_id', userId)
@@ -523,15 +535,17 @@ async function maybeEngageUser(
       .gte('occurred_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString())
       .order('occurred_at', { ascending: false })
       .limit(1)
+    throwIfQueryFailed(dueEventsError, 'reevaluation due lookup failed')
     const lastDueAt = ((dueEvents ?? []) as Array<{ occurred_at: string }>)[0]?.occurred_at
     if (lastDueAt) {
-      const { data: appendedEvents } = await supabase
+      const { data: appendedEvents, error: appendedEventsError } = await supabase
         .from('product_events')
         .select('id')
         .eq('user_id', userId)
         .eq('event', 'reevaluation.prompt_appended')
         .gte('occurred_at', lastDueAt)
         .limit(1)
+      throwIfQueryFailed(appendedEventsError, 'reevaluation prompt lookup failed')
       reevaluationDue = !appendedEvents || appendedEvents.length === 0
     }
   }
@@ -546,7 +560,7 @@ async function maybeEngageUser(
   let blockCompletedHighlight = ''
   if (slot === 'cafe_da_manha' || slot === 'meio_da_manha') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: blockEvents } = await (supabase as any)
+    const { data: blockEvents, error: blockEventsError } = await (supabase as any)
       .from('product_events')
       .select('properties')
       .eq('user_id', userId)
@@ -554,6 +568,7 @@ async function maybeEngageUser(
       .gte('occurred_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('occurred_at', { ascending: false })
       .limit(1)
+    throwIfQueryFailed(blockEventsError, 'engagement block event lookup failed')
     const be = (blockEvents?.[0]?.properties ?? null) as {
       new_count?: number
       previous_count?: number
@@ -577,7 +592,8 @@ async function maybeEngageUser(
       // explícita pra "destacar".
       // Audit 06-25 Bug A: verdictIsNegativeForBlock agora é hoist no escopo
       // de função (linha ~488) pra reuso.
-      const blocksAcumulados = (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0
+      const blocksAcumulados =
+        (progress as { blocks_completed?: number } | null)?.blocks_completed ?? 0
       if (blocksAcumulados >= 1 && !verdictIsNegativeForBlock) {
         blockCompletedHighlight = `\n\nDESTAQUE OBRIGATÓRIO: o paciente já tem **${blocksAcumulados} bloco(s) completo(s) do 7700** acumulado(s) (~${blocksAcumulados} kg de gordura no modelo MPP — estimativa do método, NÃO inventar número de balança). Mencione esse marco no Bom dia como prova de constância — UMA linha curta, sem virar palestra. NÃO invente outro número (% gordura, kg medido). Se já mencionou em mensagens anteriores, varie a forma (não repete a mesma frase todo dia).`
       }
@@ -608,7 +624,7 @@ async function maybeEngageUser(
     }
     // Tiebreak por id quando last_used_at empata (jitter inicial já atenua,
     // mas o tiebreak protege rotação após gerações futuras).
-    const { data: phrases } = await sp
+    const { data: phrases, error: phrasesError } = await sp
       .from('engagement_phrases')
       .select('id, phrase, picked_count')
       .eq('active', true)
@@ -617,18 +633,20 @@ async function maybeEngageUser(
       .order('last_used_at', { ascending: true, nullsFirst: true })
       .order('id', { ascending: true })
       .limit(20)
+    throwIfQueryFailed(phrasesError, 'engagement phrases lookup failed')
     let pool = (phrases ?? []) as Array<{ id: string; phrase: string; picked_count: number }>
     // Cooldown user×phrase (7 dias) — review high #3 do audit.
     if (pool.length > 0) {
       const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
       const phraseIds = pool.map((p) => p.id)
-      const { data: recent } = await sp
+      const { data: recent, error: recentPhrasesError } = await sp
         .from('user_phrase_cooldown')
         .select('phrase_id')
         .eq('user_id', userId)
         .eq('phrase_table', 'engagement')
         .gte('last_seen_at', cooldownSince)
         .in('phrase_id', phraseIds)
+      throwIfQueryFailed(recentPhrasesError, 'engagement phrase cooldown lookup failed')
       const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
       const notRecent = pool.filter((p) => !seenIds.has(p.id))
       if (notRecent.length > 0) pool = notRecent
@@ -640,22 +658,24 @@ async function maybeEngageUser(
       const dayKey = new Date().toISOString().slice(0, 10)
       const seedStr = `${userId}|${slot}|${dayKey}`
       let seed = 0
-      for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
+      for (let i = 0; i < seedStr.length; i++)
+        seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
       const picked = pool[Math.abs(seed) % Math.min(pool.length, 5)]
       if (picked) {
         motivationalSuggestion = picked.phrase
         pickedPhraseId = picked.id
         // Incrementa picked_count + atualiza last_used_at imediatamente.
         // used_count fica pra depois (substring match no texto final do LLM).
-        await sp
+        const { error: phrasePickError } = await sp
           .from('engagement_phrases')
           .update({
             picked_count: picked.picked_count + 1,
             last_used_at: new Date().toISOString(),
           })
           .eq('id', picked.id)
+        throwIfQueryFailed(phrasePickError, 'engagement phrase pick persistence failed')
         // Cooldown user×phrase (engagement)
-        await sp.from('user_phrase_cooldown').upsert(
+        const { error: phraseCooldownError } = await sp.from('user_phrase_cooldown').upsert(
           {
             user_id: userId,
             phrase_table: 'engagement',
@@ -664,9 +684,12 @@ async function maybeEngageUser(
           },
           { onConflict: 'user_id,phrase_table,phrase_id' },
         )
+        throwIfQueryFailed(phraseCooldownError, 'engagement phrase cooldown persistence failed')
       }
     }
   } catch (err) {
+    motivationalSuggestion = ''
+    pickedPhraseId = null
     // eslint-disable-next-line no-console
     console.warn('[engagement] falha ao buscar frase curada (segue sem):', err)
   }
@@ -833,20 +856,19 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
       // Audit 06-20: branch composto INCOMPLETO + EXCEDENTE precisa ser checado
       // ANTES dos puros (DIA INCOMPLETO / EXCEDENTE), porque o veredito composto
       // contém ambas as substrings e cairia no primeiro match (DIA INCOMPLETO).
-      const fallback =
-        yesterdayVerdict.includes('SUB-REGISTRO')
-          ? 'Bom dia! Ontem ficou só com registro parcial — o que importa é retomar hoje sem cobrar. Manda o que comer, vamos juntos.'
-          : yesterdayVerdict.includes('DIA INCOMPLETO + EXCEDENTE') && typeof yEating === 'number'
-            ? `Bom dia! Ontem o dia ficou em aberto e o consumo passou +${yEating} kcal da meta. Sem drama — hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.`
-            : yesterdayVerdict.includes('DIA INCOMPLETO')
-              ? 'Bom dia! Ontem o dia ficou em aberto — sem drama, hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.'
-              : yesterdayVerdict.includes('SEM ATIVIDADE')
-                ? 'Bom dia! Ontem foi um dia parado por aqui — acontece. Hoje a gente recomeça: manda o primeiro registro quando comer.'
-                : yesterdayVerdict.includes('EXCEDENTE') && typeof yEating === 'number'
-                  ? `Bom dia! Ontem o consumo passou +${yEating} kcal da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.`
-                  : yesterdayVerdict.includes('EXCEDENTE')
-                    ? 'Bom dia! Ontem o consumo passou um pouco da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.'
-                    : 'Bom dia! Sobre ontem não tenho dados certos pra comentar. Hoje recomeçamos do zero — manda o primeiro registro quando comer.'
+      const fallback = yesterdayVerdict.includes('SUB-REGISTRO')
+        ? 'Bom dia! Ontem ficou só com registro parcial — o que importa é retomar hoje sem cobrar. Manda o que comer, vamos juntos.'
+        : yesterdayVerdict.includes('DIA INCOMPLETO + EXCEDENTE') && typeof yEating === 'number'
+          ? `Bom dia! Ontem o dia ficou em aberto e o consumo passou +${yEating} kcal da meta. Sem drama — hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.`
+          : yesterdayVerdict.includes('DIA INCOMPLETO')
+            ? 'Bom dia! Ontem o dia ficou em aberto — sem drama, hoje a gente retoma o ritmo. Manda o primeiro registro quando comer.'
+            : yesterdayVerdict.includes('SEM ATIVIDADE')
+              ? 'Bom dia! Ontem foi um dia parado por aqui — acontece. Hoje a gente recomeça: manda o primeiro registro quando comer.'
+              : yesterdayVerdict.includes('EXCEDENTE') && typeof yEating === 'number'
+                ? `Bom dia! Ontem o consumo passou +${yEating} kcal da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.`
+                : yesterdayVerdict.includes('EXCEDENTE')
+                  ? 'Bom dia! Ontem o consumo passou um pouco da meta — sem julgar, faz parte. Hoje a gente retoma; manda os registros e seguimos.'
+                  : 'Bom dia! Sobre ontem não tenho dados certos pra comentar. Hoje recomeçamos do zero — manda o primeiro registro quando comer.'
       await logEvent('engagement.hallucinated_closure', {
         verdict: yesterdayVerdict.slice(0, 200),
         original_preview: text.slice(0, 300),
@@ -869,8 +891,12 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
     // também. Em prod 4 pacientes têm goal_type=BF (todos com 20%), 5 com IMC,
     // 0 com peso_kg — então a Q4 NUNCA disparava na prática. Reusa
     // define_meta_peso (agora aceita target_bf_percent XOR target_weight_kg).
-    const proto = (profileRow as { current_protocol?: string | null } | null)
-      ?.current_protocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null | undefined
+    const proto = (profileRow as { current_protocol?: string | null } | null)?.current_protocol as
+      | 'recomposicao'
+      | 'ganho_massa'
+      | 'manutencao'
+      | null
+      | undefined
     const profTyped = profileRow as {
       goal_type?: string | null
       goal_value?: number | string | null
@@ -941,14 +967,23 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
     .select('value')
     .eq('key', 'engagement.audio_probability')
     .maybeSingle()
-  const audioProbabilityRaw =
-    (audioProbRow as { value?: unknown } | null)?.value ?? 0.25
+  const audioProbabilityRaw = (audioProbRow as { value?: unknown } | null)?.value ?? 0.25
   const audioProbability =
     typeof audioProbabilityRaw === 'number'
       ? audioProbabilityRaw
       : Number(audioProbabilityRaw) || 0.25
-  const elevenlabsKey = await loadCredential(supabase, 'ELEVENLABS_API_KEY', 'elevenlabs', 'api_key')
-  const elevenlabsVoice = await loadCredential(supabase, 'ELEVENLABS_VOICE_ID', 'elevenlabs', 'voice_id')
+  const elevenlabsKey = await loadCredential(
+    supabase,
+    'ELEVENLABS_API_KEY',
+    'elevenlabs',
+    'api_key',
+  )
+  const elevenlabsVoice = await loadCredential(
+    supabase,
+    'ELEVENLABS_VOICE_ID',
+    'elevenlabs',
+    'voice_id',
+  )
   const canSendAudio = !!elevenlabsKey && !!elevenlabsVoice
   const sendAsAudio = canSendAudio && Math.random() < audioProbability
 
@@ -987,7 +1022,12 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
       contentType = 'audio'
       // TTS via ElevenLabs (com fallback pra Cartesia se configurado)
       const cartesiaKey = await loadCredential(supabase, 'CARTESIA_API_KEY', 'cartesia', 'api_key')
-      const cartesiaVoice = await loadCredential(supabase, 'CARTESIA_VOICE_ID', 'cartesia', 'voice_id')
+      const cartesiaVoice = await loadCredential(
+        supabase,
+        'CARTESIA_VOICE_ID',
+        'cartesia',
+        'voice_id',
+      )
       const tts = new TTSRouter({
         elevenlabs: { apiKey: elevenlabsKey!, voiceId: elevenlabsVoice! },
         cartesia:
@@ -997,7 +1037,10 @@ Blocos completos: ${progress?.blocks_completed ?? 0}${blocoEmConstrucaoLine}
       })
       const { llm } = createWorkerDeps()
       const speechText = await rewriteForTTS(llm, text).catch(() => text)
-      const { result: ttsResult, provider: ttsProvider } = await tts.synthesize(speechText, 'standard')
+      const { result: ttsResult, provider: ttsProvider } = await tts.synthesize(
+        speechText,
+        'standard',
+      )
       const blob = new Blob([new Uint8Array(ttsResult.audio)], { type: ttsResult.mimeType })
       const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
       ttsMediaId = mediaId
@@ -1105,10 +1148,22 @@ interface EngagementConfig {
 
 const DEFAULT_SLOTS: SlotDef[] = [
   { until_hour: 6, slot: 'madrugada', meal_hint: 'madrugada — não envia', silent: true },
-  { until_hour: 9, slot: 'cafe_da_manha', meal_hint: 'café da manhã (jejum, primeira refeição do dia)' },
-  { until_hour: 11, slot: 'meio_da_manha', meal_hint: 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)' },
+  {
+    until_hour: 9,
+    slot: 'cafe_da_manha',
+    meal_hint: 'café da manhã (jejum, primeira refeição do dia)',
+  },
+  {
+    until_hour: 11,
+    slot: 'meio_da_manha',
+    meal_hint: 'meio da manhã (lanche entre café e almoço, ou check-in pré-almoço)',
+  },
   { until_hour: 14, slot: 'almoco', meal_hint: 'almoço (refeição principal do meio-dia)' },
-  { until_hour: 16, slot: 'pos_almoco', meal_hint: 'pós-almoço (digestão, balanço parcial do dia)' },
+  {
+    until_hour: 16,
+    slot: 'pos_almoco',
+    meal_hint: 'pós-almoço (digestão, balanço parcial do dia)',
+  },
   { until_hour: 19, slot: 'lanche_tarde', meal_hint: 'lanche da tarde (entre almoço e jantar)' },
   { until_hour: 22, slot: 'jantar', meal_hint: 'jantar (última refeição do dia)' },
   { until_hour: 24, slot: 'noite', meal_hint: 'noite — não envia', silent: true },
@@ -1165,7 +1220,10 @@ async function loadEngagementConfig(
   const { data, error } = (await svc
     .from('global_config')
     .select('key, value')
-    .like('key', 'engagement.%')) as { data: Array<{ key: string; value: unknown }> | null; error: unknown }
+    .like('key', 'engagement.%')) as {
+    data: Array<{ key: string; value: unknown }> | null
+    error: unknown
+  }
 
   if (error || !data || data.length === 0) {
     cachedEngagementConfig = {
@@ -1206,11 +1264,15 @@ async function loadEngagementConfig(
  * Percorre slots (ordenados por until_hour ASC) e retorna o 1º cuja
  * until_hour > hour. Fallback pro último.
  */
-function resolveSlot(hour: number, slots: SlotDef[]): { slot: string; meal_hint: string; silent: boolean } {
+function resolveSlot(
+  hour: number,
+  slots: SlotDef[],
+): { slot: string; meal_hint: string; silent: boolean } {
   // Ordena defensivamente — se admin mexer e desordenar, ainda funciona
   const sorted = [...slots].sort((a, b) => a.until_hour - b.until_hour)
   for (const s of sorted) {
-    if (hour < s.until_hour) return { slot: s.slot, meal_hint: s.meal_hint, silent: s.silent ?? false }
+    if (hour < s.until_hour)
+      return { slot: s.slot, meal_hint: s.meal_hint, silent: s.silent ?? false }
   }
   const last = sorted[sorted.length - 1]
   return last

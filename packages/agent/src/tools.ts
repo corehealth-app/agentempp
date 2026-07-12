@@ -647,12 +647,15 @@ export const registraRefeicao: ToolDefinition = {
     // Idempotência: se essa msg já gerou meal_logs, skipa snapshot increment.
     // Protege contra retry de Inngest e LLM emitindo a mesma tool 2x no turno.
     if (ctx.providerMessageId) {
-      const { data: existing } = await ctx.supabase
+      const { data: existing, error: existingError } = await ctx.supabase
         .from('meal_logs')
         .select('id, snapshot_id, food_name, kcal')
         .eq('user_id', ctx.userId)
         .eq('raw_provider_message_id', ctx.providerMessageId)
         .limit(20)
+      if (existingError) {
+        throw new Error(existingError.message ?? 'meal idempotency lookup failed')
+      }
       if (existing && existing.length > 0) {
         return {
           success: true,
@@ -844,12 +847,15 @@ export const registraRefeicao: ToolDefinition = {
       // 17min após a foto → fora dos 15min → detector pulou → blocker derrubou
       // replace → consumido duplicou. 30min cobre correção mais reflexiva.
       const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-      const { data: recentLogs } = await ctx.supabase
+      const { data: recentLogs, error: recentLogsError } = await ctx.supabase
         .from('meal_logs')
         .select('food_name, quantity_g, meal_type')
         .eq('user_id', ctx.userId)
         .gte('created_at', thirtyMinAgo)
         .limit(30)
+      if (recentLogsError) {
+        throw new Error(recentLogsError.message ?? 'recent meal correction lookup failed')
+      }
       const recent = (recentLogs ?? []) as Array<{
         food_name: string
         quantity_g: number
@@ -1126,7 +1132,7 @@ export const registraRefeicao: ToolDefinition = {
         // "Era apenas 1 pão" ditado NÃO entra no backfill → bug D regredia
         // pra usuários audio-first. Filter c.length>0 + startsWith() remove
         // ruído (foto sem caption tem content=null; audio sem STT vira null).
-        const { data: msgs } = await ctx.supabase
+        const { data: msgs, error: msgsError } = await ctx.supabase
           .from('messages')
           .select('content, created_at')
           .eq('user_id', ctx.userId)
@@ -1135,6 +1141,9 @@ export const registraRefeicao: ToolDefinition = {
           .gte('created_at', thirtyMinAgo)
           .order('created_at', { ascending: false })
           .limit(5)
+        if (msgsError) {
+          throw new Error(msgsError.message ?? 'recent correction messages lookup failed')
+        }
         recentMsgs = ((msgs ?? []) as Array<{ content: string | null }>)
           .map((m) => m.content ?? '')
           .filter((c) => c.length > 0 && !c.startsWith('confirm_') && !c.startsWith('edit_'))
@@ -1159,7 +1168,7 @@ export const registraRefeicao: ToolDefinition = {
         // ratificava e DELETAVA jantares legítimos.
         const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: editedPendings } = await (ctx.supabase as any)
+        const { data: editedPendings, error: editedPendingsError } = await (ctx.supabase as any)
           .from('pending_registrations')
           .select('id, resolved_at')
           .eq('user_id', ctx.userId)
@@ -1168,6 +1177,11 @@ export const registraRefeicao: ToolDefinition = {
           .eq('proposal->>mealType', args.meal_type)
           .gte('resolved_at', thirtyMinAgo)
           .limit(1)
+        if (editedPendingsError) {
+          throw new Error(
+            editedPendingsError.message ?? 'edited pending correction lookup failed',
+          )
+        }
         editedPendingContext = (editedPendings ?? []) as Array<{
           id?: string | null
           resolved_at?: string | null
@@ -1268,12 +1282,15 @@ export const registraRefeicao: ToolDefinition = {
       //
       // Fix: filtra pelo SNAPSHOT do dia local (snapshot_id linkado à data local
       // via snapshot_add_meal), em vez de range de created_at em UTC.
-      const { data: snapToday } = await ctx.supabase
+      const { data: snapToday, error: snapTodayError } = await ctx.supabase
         .from('daily_snapshots')
         .select('id')
         .eq('user_id', ctx.userId)
         .eq('date', effectiveDate)
         .maybeSingle()
+      if (snapTodayError) {
+        throw new Error(snapTodayError.message ?? 'replacement snapshot lookup failed')
+      }
       const snapId = (snapToday as { id: string } | null)?.id ?? null
       type RemoveRow = {
         id: string
@@ -1282,12 +1299,15 @@ export const registraRefeicao: ToolDefinition = {
       let allRemoved: RemoveRow[] = []
       if (snapId) {
         for (const mt of mealTypesToReplace) {
-          const { data: rows } = await ctx.supabase
+          const { data: rows, error: rowsError } = await ctx.supabase
             .from('meal_logs')
             .select('id, kcal')
             .eq('user_id', ctx.userId)
             .eq('meal_type', mt)
             .eq('snapshot_id', snapId)
+          if (rowsError) {
+            throw new Error(rowsError.message ?? 'replacement target lookup failed')
+          }
           if (rows) allRemoved = allRemoved.concat(rows as RemoveRow[])
         }
       }
@@ -1554,20 +1574,26 @@ export const registraRefeicao: ToolDefinition = {
     ) {
       // Resolve o snapshot do dia local (mesma estratégia do path de replace:
       // por (user_id, date) em vez de range de created_at em UTC).
-      const { data: snapToday } = await ctx.supabase
+      const { data: snapToday, error: snapTodayError } = await ctx.supabase
         .from('daily_snapshots')
         .select('id')
         .eq('user_id', ctx.userId)
         .eq('date', effectiveDate)
         .maybeSingle()
+      if (snapTodayError) {
+        throw new Error(snapTodayError.message ?? 'same-day snapshot lookup failed')
+      }
       const existingSnapId = (snapToday as { id: string } | null)?.id ?? null
       if (existingSnapId) {
-        const { data: sameMealRows } = await ctx.supabase
+        const { data: sameMealRows, error: sameMealRowsError } = await ctx.supabase
           .from('meal_logs')
           .select('food_name, quantity_g')
           .eq('user_id', ctx.userId)
           .eq('snapshot_id', existingSnapId)
           .eq('meal_type', args.meal_type)
+        if (sameMealRowsError) {
+          throw new Error(sameMealRowsError.message ?? 'same-day meal dedup lookup failed')
+        }
         const existing = (sameMealRows ?? []) as Array<{
           food_name: string
           quantity_g: number
@@ -1616,11 +1642,14 @@ export const registraRefeicao: ToolDefinition = {
     // Fix: query (pmid, food_name) existentes, filtra os duplicados de
     // itemsToInsert antes da RPC transacional.
     if (ctx.providerMessageId && itemsToInsert.length > 0) {
-      const { data: existingForPmid } = await ctx.supabase
+      const { data: existingForPmid, error: existingForPmidError } = await ctx.supabase
         .from('meal_logs')
         .select('food_name')
         .eq('user_id', ctx.userId)
         .eq('raw_provider_message_id', ctx.providerMessageId)
+      if (existingForPmidError) {
+        throw new Error(existingForPmidError.message ?? 'provider meal dedup lookup failed')
+      }
       const existingNames = new Set(
         ((existingForPmid ?? []) as Array<{ food_name: string }>).map((r) =>
           r.food_name.toLowerCase().trim(),

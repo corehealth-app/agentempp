@@ -42,6 +42,12 @@ interface MockOptions {
   recentUserMessages?: string[]
   llmSentReplace?: boolean
   editedPendings?: Array<{ id: string; resolved_at?: string | null; proposal?: Record<string, unknown> }>
+  providerMessageId?: string
+  mealQueryErrors?: {
+    idempotency?: string
+    recentCorrection?: string
+    sameDay?: string
+  }
 }
 
 interface CapturedEvent {
@@ -78,19 +84,54 @@ function makeContextAndSupabase(opts: MockOptions) {
         // Roteia por presença de .gte(): com gte → recentLogs (janela), sem gte → dayLogs (dia).
         const dayLogs = opts.dayLogs ?? opts.recentLogs ?? []
         const recentLogs = opts.recentLogs ?? []
-        // Chain stateful que lembra se .gte() foi chamado pra decidir o dataset no await.
-        const mealChain = (usedGte: boolean): unknown => {
+        // Chain stateful que lembra os filtros usados para devolver o dataset
+        // ou a falha correspondente à etapa que está sendo exercitada.
+        const mealChain = (state: {
+          usedGte: boolean
+          rawProviderMessage: boolean
+          snapshot: boolean
+        }): unknown => {
           const obj: Record<string, unknown> = {}
-          for (const m of ['select', 'eq', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
-            obj[m] = () => mealChain(usedGte)
+          for (const m of ['select', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+            obj[m] = () => mealChain(state)
           }
-          obj.gte = () => mealChain(true)
-          obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
-            Promise.resolve(cb({ data: usedGte ? recentLogs : dayLogs, error: null }))
+          obj.eq = (column: string) =>
+            mealChain({
+              ...state,
+              rawProviderMessage:
+                state.rawProviderMessage || column === 'raw_provider_message_id',
+              snapshot: state.snapshot || column === 'snapshot_id',
+            })
+          obj.gte = () => mealChain({ ...state, usedGte: true })
+          obj.then = (
+            cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
+          ) => {
+            const errorMessage = state.rawProviderMessage
+              ? opts.mealQueryErrors?.idempotency
+              : state.usedGte
+                ? opts.mealQueryErrors?.recentCorrection
+                : state.snapshot
+                  ? opts.mealQueryErrors?.sameDay
+                  : undefined
+            return Promise.resolve(
+              cb(
+                errorMessage
+                  ? { data: null, error: { message: errorMessage } }
+                  : {
+                      data: state.usedGte ? recentLogs : dayLogs,
+                      error: null,
+                    },
+              ),
+            )
+          }
           return obj
         }
         return {
-          ...((mealChain(false) as object)),
+          ...((mealChain({
+            usedGte: false,
+            rawProviderMessage: false,
+            snapshot: false,
+          }) as object)),
           insert: (row: Record<string, unknown> | Record<string, unknown>[]) => {
             for (const r of Array.isArray(row) ? row : [row]) mealInserts.push(r)
             return chain([])
@@ -183,6 +224,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       userCountry: 'BR',
       userTimezone: 'America/Sao_Paulo',
       recentUserMessages: opts.recentUserMessages ?? [],
+      providerMessageId: opts.providerMessageId,
     },
     getFinalReplace: () => finalReplace,
   }
@@ -814,5 +856,64 @@ describe('registra_refeicao — classificacao automatica por horario local', () 
         }),
       }),
     )
+  })
+})
+
+describe('registra_refeicao — falha fechada em leituras que protegem calorias', () => {
+  it('não registra quando a consulta de idempotência falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      providerMessageId: 'provider-message-test',
+      mealQueryErrors: { idempotency: 'idempotency unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'almoco',
+          items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('idempotency unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+
+  it('não transforma correção em adição quando a busca de evidência recente falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentUserMessages: ['corrige o almoço, o frango era grelhado'],
+      llmSentReplace: true,
+      mealQueryErrors: { recentCorrection: 'recent correction unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'almoco',
+          replace: true,
+          items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('recent correction unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+
+  it('não insere novamente quando a leitura de deduplicação do dia falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      dayLogs: [{ food_name: 'chocolate', quantity_g: 10, meal_type: 'lanche' }],
+      mealQueryErrors: { sameDay: 'same-day dedup unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'lanche',
+          replace: false,
+          items: [{ food_name: 'chocolate', quantity_g: 10 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('same-day dedup unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
   })
 })

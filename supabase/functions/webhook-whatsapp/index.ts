@@ -6,9 +6,51 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { resolveProviderTimestamp } from '../_shared/provider-timestamp.ts'
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+function requireEnv(name: string): string {
+  const value = Deno.env.get(name)
+  if (!value) throw new Error(`${name} is not configured`)
+  return value
+}
+
+type InteractiveReply = { id?: string; title?: string }
+type WhatsAppInboundMessage = {
+  id?: string
+  from?: string
+  timestamp?: unknown
+  type?: string
+  text?: { body?: string }
+  image?: { id?: string; caption?: string }
+  audio?: { id?: string }
+  interactive?: {
+    type?: string
+    button_reply?: InteractiveReply
+    list_reply?: InteractiveReply
+  }
+  [key: string]: unknown
+}
+type WhatsAppWebhookPayload = {
+  entry?: Array<{
+    changes?: Array<{
+      field?: string
+      value?: {
+        statuses?: Array<{ id?: string; status?: string }>
+        messages?: WhatsAppInboundMessage[]
+      }
+    }>
+  }>
+}
+
+const SUPABASE_URL = requireEnv('SUPABASE_URL')
+const SUPABASE_SERVICE_ROLE_KEY = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
 const INNGEST_EVENT_KEY = Deno.env.get('INNGEST_EVENT_KEY')
+
+function createEdgeSupabaseClient() {
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
+
+type EdgeSupabaseClient = ReturnType<typeof createEdgeSupabaseClient>
 
 // Buffer debounce — editável via /settings/global → buffer.debounce_ms.
 // Cache 60s, fallback 8000ms.
@@ -17,7 +59,7 @@ let cachedBufferDebounce: { value: number; expiresAt: number } | null = null
 const BUFFER_CACHE_TTL_MS = 60_000
 
 async function getBufferDebounceMs(
-  supabase: ReturnType<typeof createClient>,
+  supabase: EdgeSupabaseClient,
 ): Promise<number> {
   const now = Date.now()
   if (cachedBufferDebounce && cachedBufferDebounce.expiresAt > now) {
@@ -36,17 +78,18 @@ async function getBufferDebounceMs(
 }
 
 async function getCredential(
-  supabase: ReturnType<typeof createClient>,
+  supabase: EdgeSupabaseClient,
   service: string,
   keyName: string,
 ): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('service_credentials')
     .select('value')
     .eq('service', service)
     .eq('key_name', keyName)
     .eq('is_active', true)
     .maybeSingle()
+  if (error) throw new Error('service credential lookup failed')
   return (data as { value: string } | null)?.value ?? null
 }
 
@@ -79,29 +122,28 @@ async function sendInngestEvent(
   eventName: string,
   data: Record<string, unknown>,
   delayMs?: number,
+  eventId?: string,
 ): Promise<void> {
-  if (!INNGEST_EVENT_KEY) return
-  try {
-    const body: Record<string, unknown> = { name: eventName, data }
-    if (delayMs && delayMs > 0) {
-      body.ts = Date.now() + delayMs
-    }
-    const r = await fetch(`https://inn.gs/e/${INNGEST_EVENT_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!r.ok) console.error('Inngest dispatch failed', r.status, await r.text())
-  } catch (e) {
-    console.error('Inngest dispatch exception', e)
+  if (!INNGEST_EVENT_KEY) throw new Error('INNGEST_EVENT_KEY is not configured')
+  const body: Record<string, unknown> = { name: eventName, data }
+  if (eventId) body.id = eventId
+  if (delayMs && delayMs > 0) {
+    body.ts = Date.now() + delayMs
+  }
+  const r = await fetch(`https://inn.gs/e/${INNGEST_EVENT_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const responseText = (await r.text()).slice(0, 500)
+    throw new Error(`Inngest dispatch failed (${r.status}): ${responseText}`)
   }
 }
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
+  const supabase = createEdgeSupabaseClient()
 
   // ===== GET: verify challenge =====
   if (req.method === 'GET') {
@@ -125,9 +167,13 @@ Deno.serve(async (req: Request) => {
   const ok = await verifyMetaSignature(appSecret, sig, rawBody)
   if (!ok) return new Response('forbidden', { status: 403 })
 
-  let payload: any
+  let payload: WhatsAppWebhookPayload
   try {
-    payload = JSON.parse(rawBody)
+    const parsed: unknown = JSON.parse(rawBody)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return new Response('bad json', { status: 400 })
+    }
+    payload = parsed as WhatsAppWebhookPayload
   } catch {
     return new Response('bad json', { status: 400 })
   }
@@ -138,54 +184,20 @@ Deno.serve(async (req: Request) => {
 
       // Status updates (sent/delivered/read/failed)
       for (const status of change.value?.statuses ?? []) {
-        await supabase
+        if (!status.id || !status.status) continue
+        const { error: statusError } = await supabase
           .from('messages')
           .update({ delivery_status: status.status })
           .eq('provider', 'whatsapp_cloud')
           .eq('direction', 'out')
           .eq('provider_message_id', status.id)
+        if (statusError) throw new Error('message delivery status update failed')
       }
 
       // Incoming messages
       for (const msg of change.value?.messages ?? []) {
+        if (!msg.id || !msg.from) throw new Error('invalid inbound message identity')
         const messageTime = resolveProviderTimestamp(msg.timestamp)
-        // Idempotência
-        const { error: dupErr } = await supabase
-          .from('processed_messages')
-          .insert({ provider_message_id: msg.id })
-        if (dupErr?.code === '23505') continue
-
-        // ensure user
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('wpp', msg.from)
-          .maybeSingle()
-
-        let userId: string
-        if (existingUser) {
-          userId = (existingUser as { id: string }).id
-        } else {
-          const { data: created } = await supabase
-            .from('users')
-            .insert({ wpp: msg.from, status: 'active' })
-            .select('id')
-            .single()
-          userId = (created as { id: string }).id
-          await supabase.from('user_profiles').insert({ user_id: userId })
-          await supabase.from('user_progress').insert({ user_id: userId })
-        }
-
-        if (messageTime.source === 'server_fallback') {
-          await supabase.from('product_events').insert({
-            user_id: userId,
-            event: 'message.provider_timestamp_fallback',
-            properties: {
-              reason: messageTime.fallbackReason,
-              content_type: msg.type ?? null,
-            },
-          })
-        }
 
         // ============================================================
         //  INTERACTIVE BUTTON TAP (Roberto 2026-05-28 — Fase A botões #4)
@@ -203,19 +215,68 @@ Deno.serve(async (req: Request) => {
             : msg.type === 'interactive' && msg.interactive?.type === 'list_reply'
               ? msg.interactive?.list_reply
               : null
-        if (interactiveReply?.id) {
-          const buttonId = interactiveReply.id as string
-          const buttonTitle = (interactiveReply.title as string) ?? ''
-          await supabase.from('messages').insert({
+        const interactiveId =
+          typeof interactiveReply?.id === 'string' && interactiveReply.id.length > 0
+            ? interactiveReply.id
+            : null
+        const isInteractive = interactiveId !== null
+        const contentType = isInteractive
+          ? 'interactive'
+          : msg.type === 'text'
+            ? 'text'
+            : msg.type === 'audio'
+              ? 'audio'
+              : msg.type === 'image'
+                ? 'image'
+                : 'text'
+        const content = isInteractive
+          ? interactiveId
+          : (msg.text?.body ?? msg.image?.caption ?? null)
+        const shouldBuffer = !isInteractive
+        const debounceMs = shouldBuffer
+          ? await getBufferDebounceMs(supabase)
+          : DEFAULT_BUFFER_DEBOUNCE_MS
+
+        const { data: ingestRaw, error: ingestError } = await supabase.rpc(
+          'ingest_whatsapp_inbound',
+          {
+            p_provider_message_id: msg.id,
+            p_wpp: msg.from,
+            p_content_type: contentType,
+            p_content: content,
+            p_media_url: msg.image?.id ?? msg.audio?.id ?? null,
+            p_raw_payload: msg,
+            p_received_at: messageTime.timestamp,
+            p_server_received_at: messageTime.serverReceivedAt,
+            p_debounce_ms: debounceMs,
+            p_buffer: shouldBuffer,
+          },
+        )
+        if (ingestError) throw new Error(`inbound ingest failed: ${ingestError.message}`)
+
+        const ingest = ingestRaw as {
+          duplicate?: boolean
+          user_id?: string
+          buffer_count?: number
+        } | null
+        const userId = ingest?.user_id
+        if (!userId) throw new Error('inbound ingest returned no user id')
+
+        if (!ingest?.duplicate && messageTime.source === 'server_fallback') {
+          await supabase.from('product_events').insert({
             user_id: userId,
-            direction: 'in',
-            role: 'user',
-            content_type: 'interactive',
-            content: buttonId, // facilita query por id; o título fica no raw_payload
-            provider: 'whatsapp_cloud',
-            provider_message_id: msg.id,
-            raw_payload: msg,
+            event: 'message.provider_timestamp_fallback',
+            properties: {
+              reason: messageTime.fallbackReason,
+              content_type: msg.type ?? null,
+            },
           })
+        }
+
+        if (isInteractive) {
+          const buttonId = interactiveId
+          const buttonTitle =
+            typeof interactiveReply?.title === 'string' ? interactiveReply.title : ''
           await sendInngestEvent(
             'interactive.button.tapped',
             {
@@ -227,52 +288,11 @@ Deno.serve(async (req: Request) => {
               tappedAt: messageTime.timestamp,
             },
             0, // sem delay — tap é ação imediata
+            `wa:${msg.id}`,
           )
           continue
         }
-
-        const contentType =
-          msg.type === 'text'
-            ? 'text'
-            : msg.type === 'audio'
-              ? 'audio'
-              : msg.type === 'image'
-                ? 'image'
-                : 'text'
-
-        // persiste msg in
-        await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'in',
-          role: 'user',
-          content_type: contentType,
-          content: msg.text?.body ?? msg.image?.caption ?? null,
-          provider: 'whatsapp_cloud',
-          provider_message_id: msg.id,
-          raw_payload: msg,
-        })
-
-        // ============================================================
-        //  EMPILHAMENTO ATOMIC: RPC buffer_append_msg evita race condition
-        //  Antes: read-then-write (3 fotos paralelas → última sobrescreve as 2)
-        //  Agora: SQL INSERT...ON CONFLICT DO UPDATE com jsonb || (concat atomic)
-        // ============================================================
-        const debounceMs = await getBufferDebounceMs(supabase)
-        const newMsgEntry = {
-          provider_message_id: msg.id,
-          content_type: contentType,
-          text: msg.text?.body ?? msg.image?.caption ?? null,
-          mediaUrl: msg.image?.id ?? msg.audio?.id,
-          received_at: messageTime.timestamp,
-          server_received_at: messageTime.serverReceivedAt,
-        }
-
-        const { data: bufRes } = await supabase.rpc('buffer_append_msg', {
-          p_user_id: userId,
-          p_msg_entry: newMsgEntry,
-          p_debounce_ms: debounceMs,
-        })
-        const aggregatedCount = (bufRes as { count?: number } | null)?.count ?? 1
+        const aggregatedCount = Number(ingest?.buffer_count ?? 1)
 
         // Dispara evento com delay — Inngest aciona buffer-flush após debounce.
         // Cada msg dispara um evento, mas o worker é idempotente:
@@ -286,6 +306,7 @@ Deno.serve(async (req: Request) => {
           'buffer.flush',
           { userId, count: aggregatedCount, fired_at: new Date().toISOString() },
           debounceMs + 1500,
+          `wa:${msg.id}`,
         )
       }
     }

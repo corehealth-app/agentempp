@@ -50,6 +50,10 @@ import {
   loadRecentPendingMeal,
 } from './pending-registration-store.js'
 import {
+  loadDeterministicDailyState,
+  loadReevaluationGate,
+} from './pipeline-state-store.js'
+import {
   makeOnboardingButtonId,
   parseOnboardingButtonTag,
   parseOnboardingListTag,
@@ -1304,23 +1308,10 @@ export async function processMessage(
     const iterEntries = toolCallsSummary.slice(-result.toolCalls.length)
     if (isPureRegistrationTurn(iterEntries, input.text)) {
       const todayStr = getLocalDateString(ctx.timezone)
-      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
-        deps.supabase
-          .from('daily_snapshots')
-          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-          .eq('user_id', userId)
-          .eq('date', todayStr)
-          .maybeSingle(),
-        deps.supabase.from('user_progress').select('deficit_block').eq('user_id', userId).maybeSingle(),
-      ])
+      const { snapshot: snapDet, progress: progDet } =
+        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
       if (snapDet) {
-        const s = snapDet as {
-          calories_consumed: number
-          calories_target: number | null
-          protein_g: number
-          protein_target: number | null
-          exercise_calories: number
-        }
+        const s = snapDet
         const registrations: RegistrationEntry[] = iterEntries.map((e) => {
           if (e.name === 'registra_treino') {
             const a = (e.arguments ?? {}) as { workout_type?: string; duration_min?: number }
@@ -1354,7 +1345,7 @@ export async function processMessage(
             proteinG: Number(s.protein_g),
             proteinTarget: s.protein_target,
             exerciseCalories: s.exercise_calories,
-            deficitBlock: (progDet as { deficit_block: number } | null)?.deficit_block ?? 0,
+            deficitBlock: progDet.deficit_block,
             protocol:
               (ctx.profile.currentProtocol as
                 | 'recomposicao'
@@ -1431,34 +1422,11 @@ export async function processMessage(
       // Gatilho conservador (só consulta_progresso + intenção de status pura);
       // qualquer coaching junto cai no fluxo normal (LLM responde).
       const todayStr = getLocalDateString(ctx.timezone)
-      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
-        deps.supabase
-          .from('daily_snapshots')
-          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-          .eq('user_id', userId)
-          .eq('date', todayStr)
-          .maybeSingle(),
-        deps.supabase
-          .from('user_progress')
-          .select('deficit_block, current_streak, level, xp_total, blocks_completed')
-          .eq('user_id', userId)
-          .maybeSingle(),
-      ])
+      const { snapshot: snapDet, progress: progDet } =
+        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
       if (snapDet) {
-        const s = snapDet as {
-          calories_consumed: number
-          calories_target: number | null
-          protein_g: number
-          protein_target: number | null
-          exercise_calories: number
-        }
-        const p = (progDet ?? {}) as {
-          deficit_block?: number
-          current_streak?: number
-          level?: number
-          xp_total?: number
-          blocks_completed?: number
-        }
+        const s = snapDet
+        const p = progDet
         finalText = composeStatusMessage(
           {
             caloriesConsumed: s.calories_consumed,
@@ -1466,7 +1434,7 @@ export async function processMessage(
             proteinG: Number(s.protein_g),
             proteinTarget: s.protein_target,
             exerciseCalories: s.exercise_calories,
-            deficitBlock: p.deficit_block ?? 0,
+            deficitBlock: p.deficit_block,
             protocol:
               (ctx.profile.currentProtocol as
                 | 'recomposicao'
@@ -1476,10 +1444,10 @@ export async function processMessage(
             last14d: ctx.last14d,
           },
           {
-            currentStreak: p.current_streak ?? 0,
-            level: p.level ?? 1,
-            xpTotal: p.xp_total ?? 0,
-            blocksCompleted: p.blocks_completed ?? 0,
+            currentStreak: p.current_streak,
+            level: p.level,
+            xpTotal: p.xp_total,
+            blocksCompleted: p.blocks_completed,
           },
         )
         messages.push({ role: 'assistant', content: finalText })
@@ -1497,22 +1465,8 @@ export async function processMessage(
       // que valem os próximos 14 dias), sem a IA re-redigir. Gatilho ESTREITO:
       // exige reevaluation.due recente (últimas 48h) — nunca dispara no onboarding
       // nem em update casual. Se não for reavaliação real → fluxo normal (LLM).
-      const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-      const [{ data: revalDue }, { data: profRow }] = await Promise.all([
-        deps.supabase
-          .from('product_events')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('event', 'reevaluation.due')
-          .gte('occurred_at', since)
-          .limit(1),
-        deps.supabase
-          .from('user_profiles')
-          .select('current_protocol')
-          .eq('user_id', userId)
-          .maybeSingle(),
-      ])
-      if (revalDue && revalDue.length > 0) {
+      const reevaluationGate = await loadReevaluationGate(deps.supabase, userId)
+      if (reevaluationGate.due) {
         const bodyPhotoState = ctx.bodyPhotoState ?? deriveBodyPhotoState([], [input.text])
         if (shouldWaitForBodyPhotosBeforeReeval(bodyPhotoState, true)) {
           finalText = composeReevalBodyPhotoWaitMessage(bodyPhotoState)
@@ -1540,7 +1494,7 @@ export async function processMessage(
           caloriesTarget: cr.calories_target_today ?? null,
           proteinTarget: cr.protein_target_today_g ?? null,
           protocol:
-            (profRow as { current_protocol?: string | null } | null)?.current_protocol ??
+            reevaluationGate.currentProtocol ??
             ctx.profile.currentProtocol ??
             null,
         })
@@ -1586,36 +1540,18 @@ export async function processMessage(
   let freshConsumed: number | null = ctx.todaySnapshot?.calories_consumed ?? null
   if (finalText && hasBalanceCard(finalText)) {
     const todayStr = getLocalDateString(ctx.timezone, input.timestamp)
-    const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
-      deps.supabase
-        .from('daily_snapshots')
-        .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-        .eq('user_id', userId)
-        .eq('date', todayStr)
-        .maybeSingle(),
-      deps.supabase
-        .from('user_progress')
-        .select('deficit_block')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ])
+    const { snapshot: snapFresh, progress: progFresh } =
+      await loadDeterministicDailyState(deps.supabase, userId, todayStr)
     if (snapFresh) {
-      const snapTyped = snapFresh as {
-        calories_consumed: number
-        calories_target: number | null
-        protein_g: number
-        protein_target: number | null
-        exercise_calories: number
-      }
+      const snapTyped = snapFresh
       freshConsumed = snapTyped.calories_consumed
-      const progTyped = progFresh as { deficit_block: number } | null
       const canonicalCard = renderBalanceCard({
         caloriesConsumed: snapTyped.calories_consumed,
         caloriesTarget: snapTyped.calories_target,
         proteinG: Number(snapTyped.protein_g),
         proteinTarget: snapTyped.protein_target,
         exerciseCalories: snapTyped.exercise_calories,
-        deficitBlock: progTyped?.deficit_block ?? 0,
+        deficitBlock: progFresh.deficit_block,
         protocol:
           (ctx.profile.currentProtocol as
             | 'recomposicao'

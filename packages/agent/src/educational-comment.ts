@@ -281,6 +281,11 @@ export async function generateEducationalComment(
         await emitEdu(opts, 'edu_comment.curated_hit', {
           kind: input.kind,
           anchor: curated.food_canonical_name,
+          phrase_id: curated.phrase_id,
+          candidate_count: curated.candidate_count ?? 0,
+          compatible_count: curated.compatible_count ?? 0,
+          cooldown_count: curated.cooldown_count ?? 0,
+          selected_after_cooldown: curated.selected_after_cooldown ?? false,
           reason: curated.reason,
         })
         return curated.phrase
@@ -297,6 +302,14 @@ export async function generateEducationalComment(
             kcal: i.kcal,
           })),
           severity: 'critical',
+        })
+      } else if (curated.reason === 'cooldown_lookup_failed') {
+        await emitEdu(opts, 'edu_comment.cooldown_error', {
+          kind: input.kind,
+          anchor: curated.food_canonical_name,
+          reason: curated.reason,
+          candidate_count: curated.candidate_count ?? 0,
+          compatible_count: curated.compatible_count ?? 0,
         })
       } else {
         // curated_miss legítimo (planilha incompleta) — fire-and-forget,

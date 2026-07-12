@@ -7,24 +7,36 @@ import {
   selectCuratedPhrase,
 } from './curated-phrase-selector.js'
 
-function mockSupabase(rows: Array<{
-  id: string
-  phrase: string
-  tags: Record<string, unknown> | null
-  usage_count: number
-  last_used_at: string | null
-}>): ServiceClient {
+function mockSupabase(
+  rows: Array<{
+    id: string
+    phrase: string
+    tags: Record<string, unknown> | null
+    usage_count: number
+    last_used_at: string | null
+  }>,
+  options: {
+    cooldownPhraseIds?: string[]
+    cooldownError?: string
+    phraseLookupError?: string
+  } = {},
+): ServiceClient {
   // Mock thenable chain pra .from('user_phrase_cooldown')...{select,eq,...}
   const cooldownChain = {
     select: () => cooldownChain,
     eq: () => cooldownChain,
     gte: () => cooldownChain,
-    in: async () => ({ data: [] }), // nenhuma frase em cooldown
-    upsert: async () => ({ data: null }), // upsert no-op
+    in: async () => ({
+      data: options.cooldownError
+        ? null
+        : (options.cooldownPhraseIds ?? []).map((phrase_id) => ({ phrase_id })),
+      error: options.cooldownError ? { message: options.cooldownError } : null,
+    }),
+    upsert: async () => ({ data: null, error: null }), // upsert no-op
   }
   const updateChain = {
     update: () => updateChain,
-    eq: async () => ({ data: null }),
+    eq: async () => ({ data: null, error: null }),
   }
   const selectChain = {
     select: () => selectChain,
@@ -32,7 +44,10 @@ function mockSupabase(rows: Array<{
     ilike: () => selectChain,
     in: () => selectChain,
     order: () => selectChain,
-    limit: async () => ({ data: rows }),
+    limit: async () => ({
+      data: options.phraseLookupError ? null : rows,
+      error: options.phraseLookupError ? { message: options.phraseLookupError } : null,
+    }),
   }
   return {
     from: (t: string) => {
@@ -433,5 +448,145 @@ describe('selectCuratedPhrase — filtro temporal integrado', () => {
       // sem mealKind
     })
     expect(r.phrase).toBe('Whey de manhã é hábito…')
+  })
+})
+
+describe('selectCuratedPhrase — cooldown forte e ordenação', () => {
+  const wheyItems = [
+    {
+      food_name: 'leite com whey',
+      kcal: 228,
+      protein_g: 24,
+      carbs_g: 12,
+      fat_g: 7.2,
+    },
+  ]
+
+  it('caso Roberto: frase recente nunca vence uma alternativa elegível', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'whey-recent',
+          phrase: 'Whey de manhã é o tipo de hábito que separa quem leva o processo a sério.',
+          tags: null,
+          usage_count: 1,
+          last_used_at: '2026-07-12T10:00:00.000Z',
+        },
+        {
+          id: 'whey-recomp',
+          phrase: '{alimento} ajuda a sustentar proteína no processo de recomposição.',
+          tags: { recomp: true },
+          usage_count: 4,
+          last_used_at: '2026-07-10T10:00:00.000Z',
+        },
+      ],
+      { cooldownPhraseIds: ['whey-recent'] },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-test',
+      items: wheyItems,
+      mealKind: 'cafe',
+      state: { protocol: 'recomposicao' },
+    })
+
+    expect(result.phrase_id).toBe('whey-recomp')
+    expect(result.selected_after_cooldown).toBe(true)
+    expect(result.cooldown_count).toBe(1)
+  })
+
+  it('quando todas estão recentes, repete apenas com reason explícito', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'only-whey',
+          phrase: '{alimento} mantém a refeição rica em proteína.',
+          tags: null,
+          usage_count: 2,
+          last_used_at: '2026-07-12T10:00:00.000Z',
+        },
+      ],
+      { cooldownPhraseIds: ['only-whey'] },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-test',
+      items: wheyItems,
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase_id).toBe('only-whey')
+    expect(result.reason).toBe('selected_all_recent')
+    expect(result.selected_after_cooldown).toBe(false)
+  })
+
+  it('falha do lookup de cooldown devolve null para o caller usar Haiku', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'whey-1',
+          phrase: '{alimento} mantém a refeição rica em proteína.',
+          tags: null,
+          usage_count: 0,
+          last_used_at: null,
+        },
+      ],
+      { cooldownError: 'cooldown unavailable' },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-test',
+      items: wheyItems,
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase).toBeNull()
+    expect(result.reason).toBe('cooldown_lookup_failed')
+  })
+
+  it('não confunde erro da tabela de frases com ausência de cobertura', async () => {
+    const supa = mockSupabase([], { phraseLookupError: 'phrase table unavailable' })
+
+    await expect(
+      selectCuratedPhrase(supa, {
+        userId: 'roberto-test',
+        items: wheyItems,
+        mealKind: 'cafe',
+      }),
+    ).rejects.toThrow('phrase table unavailable')
+  })
+
+  it('prioriza uso mais antigo e menor usage_count antes do desempate', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'newer',
+        phrase: 'Frase mais nova.',
+        tags: null,
+        usage_count: 0,
+        last_used_at: '2026-07-11T10:00:00.000Z',
+      },
+      {
+        id: 'old-more-used',
+        phrase: 'Frase antiga mais usada.',
+        tags: null,
+        usage_count: 5,
+        last_used_at: null,
+      },
+      {
+        id: 'old-less-used',
+        phrase: 'Frase antiga menos usada.',
+        tags: null,
+        usage_count: 1,
+        last_used_at: null,
+      },
+    ])
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-test',
+      items: wheyItems,
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase_id).toBe('old-less-used')
   })
 })

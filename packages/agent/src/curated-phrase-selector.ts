@@ -57,6 +57,10 @@ export interface PhraseSelectorResult {
   phrase_id: string | null
   /** Motivo da seleção/falha. */
   reason: string
+  candidate_count?: number
+  compatible_count?: number
+  cooldown_count?: number
+  selected_after_cooldown?: boolean
 }
 
 /**
@@ -300,7 +304,7 @@ export async function selectCuratedPhrase(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
-  let { data: rows } = await sp
+  let { data: rows, error: phraseLookupError } = await sp
     .from('food_education_phrases')
     .select('id, phrase, tags, usage_count, last_used_at')
     .eq('active', true)
@@ -308,6 +312,9 @@ export async function selectCuratedPhrase(
     .in('food_canonical_name', lookupVariants)
     .order('last_used_at', { ascending: true, nullsFirst: true })
     .limit(50)
+  if (phraseLookupError) {
+    throw new Error(phraseLookupError.message ?? 'curated phrase lookup failed')
+  }
 
   // Cascade 2: se .eq() vazio, busca semântica via RPC.
   let matchedViaEmbedding = false
@@ -321,12 +328,15 @@ export async function selectCuratedPhrase(
       //  - 0.80 = sweet spot: pega variações de nome ('X picado',
       //    'Y em flocos', 'Z zero açúcar') sem pegar substituições
       //    semânticas que confundem polaridade ('grelhado' vs 'frito').
-      const { data: vecRows } = await sp.rpc('match_food_phrases', {
+      const { data: vecRows, error: embeddingLookupError } = await sp.rpc('match_food_phrases', {
         query_embedding: queryVec,
         match_threshold: 0.8,
         match_count: 50,
         match_language: language,
       })
+      if (embeddingLookupError) {
+        throw new Error(embeddingLookupError.message ?? 'curated phrase embedding lookup failed')
+      }
       if (vecRows && vecRows.length > 0) {
         rows = vecRows
         matchedViaEmbedding = true
@@ -353,6 +363,10 @@ export async function selectCuratedPhrase(
       food_canonical_name: canonicalName,
       phrase_id: null,
       reason: 'no_phrases_for_food',
+      candidate_count: 0,
+      compatible_count: 0,
+      cooldown_count: 0,
+      selected_after_cooldown: false,
     }
   }
 
@@ -379,10 +393,19 @@ export async function selectCuratedPhrase(
         food_canonical_name: canonicalName,
         phrase_id: null,
         reason: 'no_temporally_compatible_phrase',
+        candidate_count: candidates.length,
+        compatible_count: 0,
+        cooldown_count: 0,
+        selected_after_cooldown: false,
       }
     }
     pool = compatible
   }
+
+  const compatibleCount = pool.length
+  let cooldownCount = 0
+  let selectedAfterCooldown = false
+  let selectedAllRecent = false
 
   // Cooldown por (user, phrase): filtra frases que esse user viu nas
   // últimas 7 dias. Resolve repetição literal pra mesmo paciente em
@@ -390,53 +413,82 @@ export async function selectCuratedPhrase(
   if (input.userId) {
     const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
     const phraseIds = pool.map((c) => c.id)
-    const { data: recent } = await sp
+    const { data: recent, error: cooldownError } = await sp
       .from('user_phrase_cooldown')
       .select('phrase_id')
       .eq('user_id', input.userId)
       .eq('phrase_table', 'food')
       .gte('last_seen_at', cooldownSince)
       .in('phrase_id', phraseIds)
+    if (cooldownError) {
+      return {
+        phrase: null,
+        food_canonical_name: canonicalName,
+        phrase_id: null,
+        reason: 'cooldown_lookup_failed',
+        candidate_count: candidates.length,
+        compatible_count: compatibleCount,
+        cooldown_count: 0,
+        selected_after_cooldown: false,
+      }
+    }
     const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
+    cooldownCount = pool.filter((candidate) => seenIds.has(candidate.id)).length
     const notRecent = pool.filter((c) => !seenIds.has(c.id))
-    // Se TODAS foram vistas <7d, usa pool original (melhor repetir do que
-    // mandar fallback Haiku — paciente pode até notar a repetição mas o
-    // tom continua certo).
-    if (notRecent.length > 0) pool = notRecent
+    if (notRecent.length > 0) {
+      selectedAfterCooldown = cooldownCount > 0
+      pool = notRecent
+    } else if (cooldownCount > 0) {
+      selectedAllRecent = true
+    }
   }
 
-  // Sorteio determinístico entre top-3 — retries inngest cachean step.run
-  // por SAÍDA, mas qualquer throw após selectCuratedPhrase força re-execução.
-  // Math.random pegaria frase diferente no retry, criando órfãos no cooldown
-  // (review medium). Hash baseado em (userId + canonicalName + date) garante
-  // mesma frase no retry. Date em YYYY-MM-DD pra rotação diária natural.
+  // Prioriza a frase nunca usada/mais antiga e, dentro desse grupo, a menor
+  // usage_count. O hash só desempata candidatas realmente equivalentes.
+  const usageTimestamp = (candidate: (typeof pool)[number]) => {
+    if (!candidate.last_used_at) return Number.NEGATIVE_INFINITY
+    const parsed = Date.parse(candidate.last_used_at)
+    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+  }
+  const oldestTimestamp = Math.min(...pool.map(usageTimestamp))
+  const oldestPool = pool.filter((candidate) => usageTimestamp(candidate) === oldestTimestamp)
+  const lowestUsage = Math.min(...oldestPool.map((candidate) => candidate.usage_count ?? 0))
+  const finalists = oldestPool.filter((candidate) => (candidate.usage_count ?? 0) === lowestUsage)
+
   const today = new Date().toISOString().slice(0, 10)
   const seedStr = `${input.userId ?? 'anon'}|${canonicalName}|${today}`
   let seed = 0
   for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
-  const idx = Math.abs(seed) % Math.min(pool.length, 3)
-  const picked = pool[idx]
+  const idx = Math.abs(seed) % finalists.length
+  const picked = finalists[idx]
   if (!picked) {
     return {
       phrase: null,
       food_canonical_name: canonicalName,
       phrase_id: null,
       reason: 'no_match_after_filter',
+      candidate_count: candidates.length,
+      compatible_count: compatibleCount,
+      cooldown_count: cooldownCount,
+      selected_after_cooldown: selectedAfterCooldown,
     }
   }
 
   // Marca como usada (incrementa usage_count + atualiza last_used_at)
-  await sp
+  const { error: usageUpdateError } = await sp
     .from('food_education_phrases')
     .update({
       usage_count: picked.usage_count + 1,
       last_used_at: new Date().toISOString(),
     })
     .eq('id', picked.id)
+  if (usageUpdateError) {
+    throw new Error(usageUpdateError.message ?? 'curated phrase usage update failed')
+  }
 
   // Upsert cooldown pra esse user×phrase. Idempotente via ON CONFLICT.
   if (input.userId) {
-    await sp.from('user_phrase_cooldown').upsert(
+    const { error: cooldownUpsertError } = await sp.from('user_phrase_cooldown').upsert(
       {
         user_id: input.userId,
         phrase_table: 'food',
@@ -445,6 +497,9 @@ export async function selectCuratedPhrase(
       },
       { onConflict: 'user_id,phrase_table,phrase_id' },
     )
+    if (cooldownUpsertError) {
+      throw new Error(cooldownUpsertError.message ?? 'curated phrase cooldown update failed')
+    }
   }
 
   // Substitui placeholder {alimento} pelo nome do anchor. Quando o
@@ -469,14 +524,20 @@ export async function selectCuratedPhrase(
 
   // reason inclui o caminho do match pra audit: 'selected' (exact) ou
   // 'selected_embedding:0.84' (cascade semântica)
-  const reasonStr = matchedViaEmbedding
-    ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
-    : 'selected'
+  const reasonStr = selectedAllRecent
+    ? 'selected_all_recent'
+    : matchedViaEmbedding
+      ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
+      : 'selected'
 
   return {
     phrase: finalPhrase,
     food_canonical_name: canonicalName,
     phrase_id: picked.id,
     reason: reasonStr,
+    candidate_count: candidates.length,
+    compatible_count: compatibleCount,
+    cooldown_count: cooldownCount,
+    selected_after_cooldown: selectedAfterCooldown,
   }
 }

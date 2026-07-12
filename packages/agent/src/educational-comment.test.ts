@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { hasPhantomFoodMention } from './educational-comment.js'
+import {
+  generateEducationalComment,
+  hasPhantomFoodMention,
+} from './educational-comment.js'
 
 describe('hasPhantomFoodMention', () => {
   const cafe = [
@@ -52,5 +55,127 @@ describe('hasPhantomFoodMention', () => {
     // O caller (generateEducationalComment) só chama se items.length > 0.
     const comment = 'reduz a manteiga'
     expect(hasPhantomFoodMention(comment, [])).toBe(true)
+  })
+})
+
+function makeEducationalSupabase(cooldownError?: string) {
+  const events: Array<{ event: string; properties: Record<string, unknown> }> = []
+  const phraseRows = [
+    {
+      id: 'phrase-whey-1',
+      phrase: '{alimento} ajuda a sustentar uma refeição rica em proteína.',
+      tags: null,
+      usage_count: 0,
+      last_used_at: null,
+    },
+  ]
+
+  const chain = (data: unknown, error: { message: string } | null = null): unknown => {
+    const value: Record<string, unknown> = {}
+    for (const method of ['select', 'eq', 'in', 'gte', 'order', 'limit']) {
+      value[method] = () => chain(data, error)
+    }
+    // biome-ignore lint/suspicious/noThenProperty: Supabase query builders are awaitable thenables.
+    value.then = (
+      resolve: (result: { data: unknown; error: { message: string } | null }) => unknown,
+    ) => Promise.resolve(resolve({ data: error ? null : data, error }))
+    return value
+  }
+
+  const supabase = {
+    from: (table: string) => {
+      if (table === 'food_education_phrases') {
+        return {
+          ...((chain(phraseRows) as object)),
+          update: () => chain(null),
+        }
+      }
+      if (table === 'user_phrase_cooldown') {
+        return {
+          ...((chain([], cooldownError ? { message: cooldownError } : null) as object)),
+          upsert: async () => ({ data: null, error: null }),
+        }
+      }
+      if (table === 'product_events') {
+        return {
+          insert: async (row: { event: string; properties: Record<string, unknown> }) => {
+            events.push(row)
+            return { data: null, error: null }
+          },
+        }
+      }
+      return chain([])
+    },
+  }
+
+  return { supabase, events }
+}
+
+describe('generateEducationalComment — telemetria de cooldown', () => {
+  const input = {
+    kind: 'cafe' as const,
+    items: [
+      {
+        food_name: 'leite com whey',
+        quantity_g: 240,
+        kcal: 228,
+        protein_g: 24,
+        carbs_g: 12,
+        fat_g: 7.2,
+      },
+    ],
+    totals: { kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 },
+  }
+
+  it('inclui id e contagens no evento de frase curada', async () => {
+    const { supabase, events } = makeEducationalSupabase()
+    let llmCalls = 0
+    const llm = {
+      complete: async () => {
+        llmCalls += 1
+        return { content: 'Comentário do Haiku.' }
+      },
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+      state: { protocol: 'recomposicao' },
+    })
+
+    expect(result).toContain('Leite com whey')
+    expect(llmCalls).toBe(0)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.curated_hit',
+        properties: expect.objectContaining({
+          phrase_id: 'phrase-whey-1',
+          candidate_count: 1,
+          compatible_count: 1,
+          cooldown_count: 0,
+          selected_after_cooldown: false,
+        }),
+      }),
+    )
+  })
+
+  it('emite cooldown_error e usa Haiku quando a consulta falha', async () => {
+    const { supabase, events } = makeEducationalSupabase('cooldown unavailable')
+    const llm = {
+      complete: async () => ({ content: 'Comentário alternativo do Haiku.' }),
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(result).toBe('Comentário alternativo do Haiku.')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.cooldown_error',
+        properties: expect.objectContaining({ reason: 'cooldown_lookup_failed' }),
+      }),
+    )
   })
 })

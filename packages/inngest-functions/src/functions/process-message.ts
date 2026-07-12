@@ -19,6 +19,7 @@ import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
 import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
 import { loadUserProcessingState } from '../lib/user-processing-state.js'
+import { sendHumanizedDurably } from './durable-humanized-send.js'
 import { combinePatientNarrative, normalizeInboundMediaItems } from './media-burst.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
 import {
@@ -1194,7 +1195,7 @@ export const processMessageFn = inngest.createFunction(
         if (failed) throw new Error(failed.error ?? 'message delivery failed')
         return deliveries
       }
-      let sendResults: Awaited<ReturnType<typeof sendHumanized>> = []
+      let sendResults: OutboundDelivery[] = []
       if (parts && (parts.card || parts.comment)) {
         const baseOpts = {
           showTyping: true,
@@ -1230,19 +1231,22 @@ export const processMessageFn = inngest.createFunction(
           sendResults.push(...cardResults)
         }
       } else {
-        sendResults = await step.run('send-to-user', async () =>
-          assertSuccessful(
-            await sendHumanized(messaging, wpp, result.text, {
-              showTyping: true,
-              minDelay: humanizer.min_delay_ms,
-              maxDelay: humanizer.response_max_delay_ms,
-              charsPerSecond: humanizer.chars_per_second,
-              inReplyTo: providerMessageId,
-              replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-              singleMessage: result.singleMessage === true,
-            }),
-          ),
-        )
+        sendResults = await sendHumanizedDurably({
+          provider: messaging,
+          to: wpp,
+          text: result.text,
+          stepPrefix: 'send-to-user',
+          runStep: (id, operation) => step.run(id, operation),
+          opts: {
+            showTyping: true,
+            minDelay: humanizer.min_delay_ms,
+            maxDelay: humanizer.response_max_delay_ms,
+            charsPerSecond: humanizer.chars_per_second,
+            inReplyTo: providerMessageId,
+            replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+            singleMessage: result.singleMessage === true,
+          },
+        })
       }
       sentCount = sendResults.filter((delivery) => delivery.status !== 'failed').length
       failedCount = sendResults.filter((delivery) => delivery.status === 'failed').length

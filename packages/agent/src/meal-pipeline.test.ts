@@ -52,28 +52,46 @@ type CorrectionRow = {
   confirmed_count: number
 }
 
+type MockFailures = {
+  search?: string
+  correction?: string
+  history?: string
+}
+
 function makeMock(
   matches: Record<string, MockRow | null>,
   historyRows: HistoryRow[] = [],
   correctionRows: CorrectionRow[] = [],
+  failures: MockFailures = {},
 ): ServiceClient {
   // Proxy chainable que aceita qualquer .eq/.ilike/.gte/.gt/.neq/.order/.limit
   // e no final retorna { data, error }. Suporta queries de lookupUserHistory,
   // lookupFoodCorrection e o fallback antigo.
-  const makeChain = (rows: unknown): unknown => {
+  const makeChain = (rows: unknown, errorMessage?: string): unknown => {
     const obj: Record<string, unknown> = {
-      data: rows,
-      error: null,
+      data: errorMessage ? null : rows,
+      error: errorMessage ? { message: errorMessage } : null,
     }
     for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'in', 'or', 'order', 'limit']) {
-      obj[m] = () => makeChain(rows)
+      obj[m] = () => makeChain(rows, errorMessage)
     }
-    obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
-      Promise.resolve(cb({ data: rows, error: null }))
+    obj.then = (
+      cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
+    ) =>
+      Promise.resolve(
+        cb(
+          errorMessage
+            ? { data: null, error: { message: errorMessage } }
+            : { data: rows, error: null },
+        ),
+      )
     return obj
   }
   return {
     rpc: async (_fn: string, params: { search_term: string }) => {
+      if (failures.search) {
+        return { data: null, error: { message: failures.search } }
+      }
       const term = params.search_term.toLowerCase().trim()
       const hit = matches[term]
       if (hit) return { data: [hit], error: null }
@@ -81,9 +99,14 @@ function makeMock(
     },
     from: (table: string) => {
       if (table === 'meal_logs') {
-        return makeChain(historyRows.map((row) => ({ source: 'taco', ...row })))
+        return makeChain(
+          historyRows.map((row) => ({ source: 'taco', ...row })),
+          failures.history,
+        )
       }
-      if (table === 'user_food_corrections') return makeChain(correctionRows)
+      if (table === 'user_food_corrections') {
+        return makeChain(correctionRows, failures.correction)
+      }
       return makeChain([])
     },
   } as unknown as ServiceClient
@@ -107,6 +130,42 @@ describe('calcMealMacros — composite handling', () => {
     expect(r.totals.kcal).toBeGreaterThan(0)
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBeCloseTo(190, 0)
+  })
+})
+
+describe('calcMealMacros — indisponibilidade de fontes nutricionais', () => {
+  const item = [{ food_name: 'frango ao molho cremoso', quantity_g: 150 }]
+
+  it('não transforma erro da busca canônica em estimativa por categoria', async () => {
+    const mock = makeMock({}, [], [], { search: 'food search unavailable' })
+
+    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow(
+      'food search unavailable',
+    )
+  })
+
+  it('não ignora erro ao consultar correções ativas do paciente', async () => {
+    const mock = makeMock({}, [], [], { correction: 'correction lookup unavailable' })
+
+    await expect(calcMealMacros(mock, item, 'BR', 'user-test')).rejects.toThrow(
+      'correction lookup unavailable',
+    )
+  })
+
+  it('não ignora erro no histórico pessoal antes do fallback', async () => {
+    const mock = makeMock({}, [], [], { history: 'personal history unavailable' })
+
+    await expect(calcMealMacros(mock, item, 'BR', 'user-test')).rejects.toThrow(
+      'personal history unavailable',
+    )
+  })
+
+  it('não ignora erro no histórico de mediana usado pelo fallback final', async () => {
+    const mock = makeMock({}, [], [], { history: 'median history unavailable' })
+
+    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow(
+      'median history unavailable',
+    )
   })
 })
 

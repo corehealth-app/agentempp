@@ -754,6 +754,18 @@ export function isZeroCalDrink(foodName: string, matchCategory?: string | null):
   return DRINK_KEYWORD.test(n) || cat === 'bebidas' || cat === 'bebida'
 }
 
+function nutritionSourceError(error: unknown, fallback: string): Error {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return new Error(error.message)
+  }
+  return new Error(fallback)
+}
+
 /**
  * Match fuzzy via pg_trgm.
  * Threshold de 0.3 (ajustável). Acima disso confiamos no match.
@@ -811,7 +823,8 @@ async function matchFood(
     fiber_g: number | string | null
   }
   const rows = (data ?? []) as Row[]
-  if (error || rows.length === 0) return empty
+  if (error) throw nutritionSourceError(error, 'canonical food search failed')
+  if (rows.length === 0) return empty
 
   // Tie-break determinístico: similarity DESC, id ASC. Empate de similarity
   // (até 0.001 de diferença, abaixo do ruído de cast real→float) → menor id,
@@ -898,7 +911,7 @@ export async function lookupFoodCorrection(
   // em vez de 5g P. Usar .or() pra cobrir os 2 casos: LLM passou nome original
   // OU passou nome já corrigido. Ordena por last_seen DESC pra pegar o mais
   // recente em caso de múltiplas correções convergentes.
-  const { data } = await supaTyped
+  const { data, error } = await supaTyped
     .from('user_food_corrections')
     .select(
       'said_name, corrected_to, custom_kcal_per_100g, custom_protein_g, custom_carbs_g, custom_fat_g, status, confirmed_count',
@@ -909,6 +922,7 @@ export async function lookupFoodCorrection(
     .gte('last_seen', lookback)
     .order('last_seen', { ascending: false })
     .limit(1)
+  if (error) throw nutritionSourceError(error, 'food correction lookup failed')
   const row = (data ?? [])[0] as
     | {
         said_name: string
@@ -977,7 +991,7 @@ export async function lookupUserHistory(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
-  const { data } = await supaTyped
+  const { data, error } = await supaTyped
     .from('meal_logs')
     .select('id, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
     .eq('user_id', userId)
@@ -986,6 +1000,7 @@ export async function lookupUserHistory(
     .gte('created_at', lookback)
     .order('created_at', { ascending: false })
     .limit(50)
+  if (error) throw nutritionSourceError(error, 'personal food history lookup failed')
   const rows = (data ?? []) as Array<{
     id: string
     food_name: string
@@ -1732,7 +1747,7 @@ export async function calcMealMacros(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaTyped = supabase as any
-      const { data: prior } = await supaTyped
+      const { data: prior, error: priorError } = await supaTyped
         .from('meal_logs')
         .select('food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id')
         .eq('user_id', userIdHint ?? '_no_user_')
@@ -1741,6 +1756,9 @@ export async function calcMealMacros(
         .in('source', [...TRUSTED_HISTORY_SOURCES])
         .order('created_at', { ascending: false })
         .limit(20)
+      if (priorError) {
+        throw nutritionSourceError(priorError, 'median food history lookup failed')
+      }
       if (prior && prior.length > 0) {
         const compatiblePrior = (prior as Array<{
           food_name: string

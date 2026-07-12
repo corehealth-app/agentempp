@@ -185,8 +185,31 @@ function makeContextAndSupabase(opts: MockOptions) {
         }
       }
       if (table === 'user_food_corrections') {
+        const correctionLookupChain = (usedOr: boolean): unknown => {
+          const obj: Record<string, unknown> = {}
+          for (const method of ['select', 'eq', 'neq', 'gte', 'order', 'limit']) {
+            obj[method] = () => correctionLookupChain(usedOr)
+          }
+          obj.or = () => correctionLookupChain(true)
+          obj.then = (
+            cb: (value: {
+              data: unknown
+              error: { message: string } | null
+            }) => unknown,
+          ) => {
+            const errorMessage = usedOr ? undefined : opts.foodCorrectionErrors?.lookup
+            return Promise.resolve(
+              cb(
+                errorMessage
+                  ? { data: null, error: { message: errorMessage } }
+                  : { data: [], error: null },
+              ),
+            )
+          }
+          return obj
+        }
         return {
-          ...((resultChain([], opts.foodCorrectionErrors?.lookup) as object)),
+          ...((correctionLookupChain(false) as object)),
           insert: (row: Record<string, unknown>) => {
             foodCorrectionWrites.push(row)
             return resultChain([], opts.foodCorrectionErrors?.write)

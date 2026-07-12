@@ -2369,6 +2369,10 @@ export type Database = {
       }
       pending_approvals_expire_old: { Args: never; Returns: number }
       refresh_mv_kpis_daily: { Args: never; Returns: undefined }
+      reset_user_conversation_atomic: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       resolve_system_prompt: {
         Args: { p_language?: string; p_stage: string }
         Returns: string

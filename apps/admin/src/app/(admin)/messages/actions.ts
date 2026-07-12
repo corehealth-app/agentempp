@@ -138,10 +138,9 @@ export async function flagMessageAction(
 }
 
 /**
- * Reseta a conversa de um paciente: apaga messages, message_buffer,
- * tools_audit, meal_logs, workout_logs, daily_snapshots, user_progress,
- * subscription_events. **Mantém** users + user_profiles + subscriptions
- * (zera onboarding pra refazer do zero).
+ * Reseta em uma transação todo o estado conversacional, nutricional e de
+ * treino. Mantém identidade, subscriptions, subscription_events e audit_log;
+ * zera integralmente perfil/progresso para refazer o onboarding do zero.
  *
  * Útil pra testar fluxo de onboarding sem precisar criar paciente novo.
  */
@@ -149,114 +148,19 @@ export async function resetUserConversationAction(userId: string) {
   const ctx = await requireAdmin()
   if ('error' in ctx) return { error: ctx.error }
 
-  const { data: u } = await ctx.svc
+  const { data: u, error: userError } = await ctx.svc
     .from('users')
     .select('id, name, wpp')
     .eq('id', userId)
     .maybeSingle()
+  if (userError) return { error: userError.message }
   if (!u) return { error: 'user não encontrado' }
 
-  // Tabelas filhas que vamos limpar (mantém user + profile + subscriptions ativas).
-  // OBS: message_embeddings NÃO está aqui porque tem FK ON DELETE CASCADE pra
-  // messages — sai automaticamente quando messages é deletada. Tinha FK errada
-  // antes (filtrava por user_id que não existe, falhava silenciosamente).
-  const tables = [
-    'messages', // CASCADE → message_embeddings limpos
-    'message_buffer',
-    'tools_audit',
-    'meal_logs',
-    'workout_logs',
-    'daily_snapshots', // CASCADE → meal_logs/workout_logs com snapshot_id
-    'reevaluations',
-    'product_events', // limpa events do paciente (não os events do admin)
-  ]
-  const errors: string[] = []
-  for (const t of tables) {
-    const { error } = await (ctx.svc as unknown as {
-      from: (t: string) => {
-        delete: () => {
-          eq: (col: string, val: string) => Promise<{ error: { message?: string } | null }>
-        }
-      }
-    })
-      .from(t)
-      .delete()
-      .eq('user_id', userId)
-    if (error) {
-      // Loga mas continua — algumas tabelas podem ter constraint específica.
-      errors.push(`${t}: ${error.message ?? 'unknown'}`)
-    }
-  }
-  if (errors.length > 0) {
-    console.warn('[reset] alguns deletes falharam:', errors)
-  }
-
-  // Reseta user_profiles (mantém row mas zera campos)
-  await ctx.svc
-    .from('user_profiles')
-    .update({
-      sex: null,
-      birth_date: null,
-      height_cm: null,
-      weight_kg: null,
-      body_fat_percent: null,
-      activity_level: null,
-      training_frequency: null,
-      water_intake: null,
-      hunger_level: null,
-      wake_time: null,
-      bedtime: null,
-      current_protocol: null,
-      goal_type: null,
-      goal_value: null,
-      deficit_level: null,
-      onboarding_completed: false,
-      onboarding_step: 0,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('user_id', userId)
-
-  // Reseta user_progress
-  await ctx.svc
-    .from('user_progress')
-    .update({
-      xp_total: 0,
-      level: 1,
-      current_streak: 0,
-      longest_streak: 0,
-      blocks_completed: 0,
-      deficit_block: 0,
-      current_weight: null,
-      current_bf_percent: null,
-      badges_earned: [],
-      last_active_date: null,
-      next_reevaluation: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('user_id', userId)
-
-  // Reseta users: limpa name + summary + tags + admin_notes + country_confirmed,
-  // mantém wpp + status. country fica como detect (pra agente perguntar de novo).
-  await (ctx.svc as unknown as {
-    from: (t: string) => {
-      update: (u: Record<string, unknown>) => {
-        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
-      }
-    }
-  })
-    .from('users')
-    .update({
-      name: null,
-      summary: null,
-      summary_updated_at: null,
-      tags: [],
-      admin_notes: null,
-      country_confirmed: false,
-      last_active_at: null,
-      metadata: {},
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId)
+  const { data: resetResult, error: resetError } = await ctx.svc.rpc(
+    'reset_user_conversation_atomic',
+    { p_user_id: userId },
+  )
+  if (resetError) return { error: resetError.message }
 
   await ctx.svc.from('audit_log').insert({
     actor_id: ctx.user.id,
@@ -276,7 +180,7 @@ export async function resetUserConversationAction(userId: string) {
   revalidatePath('/messages')
   revalidatePath('/users')
   revalidatePath(`/users/${userId}`)
-  return { ok: true, wpp: u.wpp }
+  return { ok: true, wpp: u.wpp, reset: resetResult }
 }
 
 /**

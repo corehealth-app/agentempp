@@ -82,6 +82,8 @@ import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
 import { loadVisionPending } from './vision-pending-loader.js'
+import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
+import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
 import {
   bodyPhotoSignalFromEventProperties,
   composeReevalBodyPhotoWaitMessage,
@@ -630,6 +632,24 @@ export async function processMessage(
       try {
         const validated = tool.parameters.parse(parsed)
 
+        if (
+          shouldBlockUntrustedNutritionLabelRegistration({
+            toolName: tc.name,
+            nutritionLabelDetected: input.visionNutritionLabelDetected === true,
+            trustedLabelCount: input.visionNutritionLabels?.length ?? 0,
+          })
+        ) {
+          const error =
+            'Rótulo incompleto ou com baixa confiança. Não registre nem estime ainda; peça kcal, proteína, carboidrato e gordura por porção.'
+          toolCallsSummary.push({ name: tc.name, arguments: validated, error })
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ success: false, error, retry_tool: false }),
+          })
+          continue
+        }
+
         // ── FASE B BOTÕES (Roberto 2026-05-28, opção #4) ──────────────────────
         // Quando o paciente está no opt-in (users.metadata.buttons_enabled) E o
         // LLM chamou SÓ registra_refeicao (sem mistura com outras tools) E o
@@ -857,13 +877,16 @@ export async function processMessage(
               semanticPatientText,
             ]
             const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
-            const itemsWithOverrides = args.items.map((it) => ({
-              food_name: it.food_name,
-              quantity_g: it.quantity_g ?? 0,
-              ...(kcalOverrides.has(it.food_name)
-                ? { user_kcal: kcalOverrides.get(it.food_name)! }
-                : {}),
-            }))
+            const itemsWithOverrides = attachTrustedVisionNutrition(
+              args.items.map((it) => ({
+                food_name: it.food_name,
+                quantity_g: it.quantity_g ?? 0,
+                ...(kcalOverrides.has(it.food_name)
+                  ? { user_kcal: kcalOverrides.get(it.food_name)! }
+                  : {}),
+              })),
+              input.visionNutritionLabels ?? [],
+            )
             if (kcalOverrides.size > 0) {
               await deps.supabase.from('product_events').insert({
                 user_id: userId,

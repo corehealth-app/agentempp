@@ -1,5 +1,15 @@
 import type { AgentStage } from '@mpp/core'
 
+export interface TrustedVisionNutritionLabel {
+  productName: string | null
+  per100g: {
+    kcal: number
+    protein_g: number
+    carbs_g: number
+    fat_g: number
+  }
+}
+
 /**
  * Entrada normalizada para o agente.
  */
@@ -14,6 +24,11 @@ export interface AgentInput {
   text?: string
   /** Texto produzido pelo paciente sem enriquecimento de vision/system. */
   patientText?: string
+  /** Valores completos extraídos do rótulo atual, validados pelo worker.
+   * Só podem alimentar uma proposta pendente; nunca autorizam gravação direta. */
+  visionNutritionLabels?: TrustedVisionNutritionLabel[]
+  /** Houve rótulo no turno, mesmo se os valores não puderam ser validados. */
+  visionNutritionLabelDetected?: boolean
   /** Para mídia única (compatibilidade). */
   mediaUrl?: string
   mediaMimeType?: string

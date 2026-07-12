@@ -1,6 +1,6 @@
 import {
-  normalizePendingFoodCorrections,
   type MealItem,
+  normalizePendingFoodCorrections,
   type PendingFoodCorrection,
 } from '@mpp/agent'
 
@@ -32,6 +32,24 @@ export interface ConfirmedMealArgs {
   replace: boolean
   consumed_date: string
   corrections?: PendingFoodCorrection[]
+}
+
+interface EffectiveReplaceGuardInput {
+  effectiveReplace: boolean
+  hasPriorMealOfSameType: boolean
+  hasPriorEditedPending: boolean
+  inferredReplace: boolean
+  replaceEvidence?: string | null
+}
+
+export function shouldBlockEffectiveReplace(input: EffectiveReplaceGuardInput): boolean {
+  if (!input.effectiveReplace) return false
+  if (!input.hasPriorMealOfSameType || !input.hasPriorEditedPending) return false
+  if (input.inferredReplace) return false
+
+  // This evidence is created only after the cancelled->pending CAS succeeds.
+  // The old rows must remain until register_meal_atomic replaces them.
+  return input.replaceEvidence !== 'lossy_cancellation_recovery'
 }
 
 export function buildConfirmedMealArgs(

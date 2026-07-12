@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildConfirmedMealArgs } from './pending-meal-confirmation.js'
+import { buildConfirmedMealArgs, shouldBlockEffectiveReplace } from './pending-meal-confirmation.js'
 
 describe('buildConfirmedMealArgs', () => {
   it('propaga correções e macros aprovados no pending para registra_refeicao', () => {
@@ -47,5 +47,31 @@ describe('buildConfirmedMealArgs', () => {
       carbs_g: 0,
       fat_g: 3,
     })
+  })
+})
+
+describe('shouldBlockEffectiveReplace', () => {
+  it('bloqueia replace fraco vindo de uma edição comum', () => {
+    expect(
+      shouldBlockEffectiveReplace({
+        effectiveReplace: true,
+        hasPriorMealOfSameType: true,
+        hasPriorEditedPending: true,
+        inferredReplace: false,
+        replaceEvidence: null,
+      }),
+    ).toBe(true)
+  })
+
+  it('preserva replace necessário para concluir recuperação atômica', () => {
+    expect(
+      shouldBlockEffectiveReplace({
+        effectiveReplace: true,
+        hasPriorMealOfSameType: true,
+        hasPriorEditedPending: true,
+        inferredReplace: false,
+        replaceEvidence: 'lossy_cancellation_recovery',
+      }),
+    ).toBe(false)
   })
 })

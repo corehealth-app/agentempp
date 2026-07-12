@@ -41,9 +41,13 @@ import {
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { reopenLossyCancellationPending } from './lossy-cancellation-recovery.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
 import { buildOutboundMessageRows } from './outbound-message-rows.js'
-import { buildConfirmedMealArgs } from './pending-meal-confirmation.js'
+import {
+  buildConfirmedMealArgs,
+  shouldBlockEffectiveReplace,
+} from './pending-meal-confirmation.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
 
@@ -249,8 +253,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       if (row.status !== 'pending') {
         // Audit 06-26 Layer 3 pizza-race recovery: quando status=cancelled E
         // tap recente (<120s) E há meal_log subset gravado pelo express path
-        // entre pending.created_at e resolved_at, RECUPERA: DELETE subset +
-        // INSERT proposal completa via fluxo normal. Caso Luciana 23/06 pizza
+        // entre pending.created_at e resolved_at, RECUPERA: reabre o pending e
+        // deixa a troca para register_meal_atomic. Caso Luciana 23/06 pizza
         // (já mitigado por Layer 1 mas residual existe quando subset-check
         // falha por normalização/sinônimo/plural).
         const RECOVERY_WINDOW_MS = 120_000
@@ -360,81 +364,31 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               },
             })
             if (recoveryCandidateOk) {
-              // CAS: reabre o pending condicionalmente em status=cancelled.
-              const { data: reopened } = await supabase
-                .from('pending_registrations')
-                .update({ status: 'pending', resolved_at: null })
-                .eq('id', pendingId)
-                .eq('status', 'cancelled')
-                .select('id')
-                .maybeSingle()
+              const subsetIds = fresh.map((candidate) => candidate.id)
+              // Não toca em meal_logs/snapshot aqui. Se qualquer etapa seguinte
+              // falhar, os dados anteriores continuam íntegros; a confirmação
+              // executa substituição + recálculo na RPC transacional.
+              const reopened = await reopenLossyCancellationPending(supabase, {
+                userId,
+                pendingId,
+                subsetMealLogIds: subsetIds,
+                subsetKcalTotal,
+                proposalKcalTotal,
+                subsetMatchRatio: subsetRatio,
+                resolvedAtAgeMs: Date.now() - new Date(resolvedAt).getTime(),
+              })
               if (reopened) {
-                // Review HIGH 1 (audit 06-26 review): subtrair do snapshot
-                // ANTES de deletar os meal_logs. Antes, o registraRefeicao
-                // .execute(replace=true) abaixo tentava subtrair via SELECT
-                // mas os rows já tinham sumido → 0 subtraído → INSERT proposal
-                // SOMA tudo → snapshot inflado (subset + proposal completa).
-                // Agora subtrai diretamente com valores agregados do `fresh`.
-                const subsetIds = fresh.map((c) => c.id)
-                // Busca macros completos pra subtraçao acurada.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const { data: subsetMacros } = await (supabase as any)
-                  .from('meal_logs')
-                  .select('kcal, protein_g, carbs_g, fat_g, consumed_at')
-                  .in('id', subsetIds)
-                const macrosRows = (subsetMacros ?? []) as Array<{
-                  kcal: number | string
-                  protein_g: number | string
-                  carbs_g: number | string
-                  fat_g: number | string
-                  consumed_at: string
-                }>
-                const totalK = macrosRows.reduce((a, r) => a + (Number(r.kcal) || 0), 0)
-                const totalP = macrosRows.reduce((a, r) => a + (Number(r.protein_g) || 0), 0)
-                const totalC = macrosRows.reduce((a, r) => a + (Number(r.carbs_g) || 0), 0)
-                const totalF = macrosRows.reduce((a, r) => a + (Number(r.fat_g) || 0), 0)
-                // effectiveDate vem do consumed_at do primeiro row (UTC date string).
-                // Snapshot consolida por data UTC; pacientes em outros TZs tem leve
-                // discrepância mas é o mesmo padrão usado pelo registraRefeicao.
-                const effectiveDate =
-                  macrosRows[0]?.consumed_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
-                if (totalK > 0) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  await (supabase as any).rpc('snapshot_add_meal', {
-                    p_user_id: userId,
-                    p_date: effectiveDate,
-                    p_kcal: -totalK,
-                    p_protein: -totalP,
-                    p_carbs: -totalC,
-                    p_fat: -totalF,
-                    p_calories_target: null,
-                    p_protein_target: null,
-                  })
-                }
-                await supabase
-                  .from('meal_logs')
-                  .delete()
-                  .in('id', subsetIds)
-                  .eq('user_id', userId)
-                await supabase.from('product_events').insert({
-                  user_id: userId,
-                  event: 'pending.recovered_from_lossy_cancellation',
-                  properties: {
-                    pendingId,
-                    subset_meal_log_ids: subsetIds,
-                    subset_kcal_total: subsetKcalTotal,
-                    snapshot_subtracted_kcal: totalK,
-                    proposal_kcal_total: proposalKcalTotal,
-                    subset_match_ratio: subsetRatio,
-                    resolved_at_age_ms: Date.now() - new Date(resolvedAt).getTime(),
-                  },
-                })
                 // Marca row como pending pra fluxo CONFIRM normal abaixo.
                 row.status = 'pending'
                 row.resolved_at = null
                 // Força replace=true no proposal pra o execute abaixo
                 // deletar resíduos remanescentes e inserir proposal completa.
-                ;(row.proposal as { replace?: boolean }).replace = true
+                const recoveredProposal = row.proposal as {
+                  replace?: boolean
+                  replace_evidence?: string
+                }
+                recoveredProposal.replace = true
+                recoveredProposal.replace_evidence = 'lossy_cancellation_recovery'
               }
             }
           } catch (e) {
@@ -501,6 +455,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
            * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
            * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
           replace?: boolean
+          replace_evidence?: string
         }
 
         // Carrega user pra timezone (pra computar a data local no tool)
@@ -840,7 +795,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                     overlap_ratio: decision.overlapRatio,
                   },
                 })
-              } else if (effectiveReplace && hasPriorMealOfSameType && hasPriorEdited && !decision.inferReplace) {
+              } else if (
+                shouldBlockEffectiveReplace({
+                  effectiveReplace,
+                  hasPriorMealOfSameType,
+                  hasPriorEditedPending: hasPriorEdited,
+                  inferredReplace: decision.inferReplace,
+                  replaceEvidence: proposal.replace_evidence,
+                })
+              ) {
                 effectiveReplace = false
                 await supabase.from('product_events').insert({
                   user_id: userId,

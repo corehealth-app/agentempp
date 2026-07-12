@@ -50,6 +50,7 @@ import {
   buildConfirmedMealRegistrationEntry,
   shouldBlockEffectiveReplace,
 } from './pending-meal-confirmation.js'
+import { decidePendingMealItems } from './pending-meal-item-policy.js'
 import { transitionPendingStatus } from './pending-status-transition.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
@@ -573,60 +574,34 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           }
         } else {
           // meal (default)
-          if (!proposal.items || proposal.items.length === 0) {
-            await sendTextTracked('✅ Registrado.', 'confirmation_empty')
-            return { handled: true, action: 'confirmed_empty', pendingId }
+          const proposedItems = proposal.items ?? []
+          let itemDecision = decidePendingMealItems(proposedItems, false)
+          if (itemDecision.action === 'reject_empty') {
+            await sendTextTracked(
+              'Não consegui recuperar os itens desse registro, então não gravei nada. Me manda a refeição de novo que eu recalculo certinho.',
+              'confirmation_invalid_empty',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pending.invalid_empty_proposal',
+              properties: { pendingId, meal_type: proposal.mealType ?? null },
+            })
+            return { handled: true, action: 'rejected_empty', pendingId }
           }
-          // ── BUG I4 (Roberto 2026-06-14 17:05 BRT — macarronada 350g) ──
-          // Itens "zerados" por composite_rejected/no_match no meal-pipeline
-          // chegam aqui com kcal=0 mas quantity_g cheio (sólido), e o tap
-          // inseria meal_log com 0 kcal — paciente sub-declarava sem rastro.
-          // Regra: sólidos com >30g e 0 kcal SÃO erro de parsing (água/chá/
-          // refri-zero/gelo/condimento podem ter 0 kcal legítimo e são
-          // tratados pelo whitelist de nome).
-          //
-          // Estratégia (review adversarial 2026-06-15):
-          //   1ª tentativa: bloquear all-or-nothing, pedir correção textual.
-          //   2ª tentativa (paciente reta'pa): degradar pra best-effort —
-          //   registra só os itens OK, ignora os suspeitos e avisa.
-          //
-          // Normalização NFD remove diacríticos ANTES da regex — `\b` em JS
-          // sem flag `u` trata 'á/ã/ç' como NON-WORD; sem isso o whitelist
-          // ficava DEAD pra qualquer alimento PT-BR acentuado (review CRITICAL).
-          const stripAccents = (s: string): string =>
-            s
-              .normalize('NFD')
-              .replace(/\p{Diacritic}/gu, '')
-              .toLowerCase()
-          // Whitelist de zero-cal legítimos. Tudo já normalizado pra ASCII.
-          const ZERO_CAL_NAME_RE =
-            /\b(agua|gelo|gelos|cha|chas|cafe\s+preto|cafe\s+sem\s+acucar|cafe\s+sem|mostarda|vinagre|limao|shoyu|molho\s+shoyu|sal|pimenta|gengibre|alho|acafrao|canela|oregano|salsinha|cebolinha|coentro|manjericao|hortela|aji-no-moto|caldo\s+knorr|caldo\s+de\s+galinha|caldo\s+de\s+legumes)\b/
-          // Bebidas zero/diet/light — qualifier + keyword de bebida. Pega
-          // Coca/Guaraná/Pepsi/Sprite/Fanta/Schweppes/Powerade/Gatorade/Red
-          // Bull/H2O/isotônico/etc sem precisar listar cada marca.
-          const ZERO_CAL_DRINK_QUALIFIER_RE = /\b(zero|diet|light|sem\s+acucar|sem\s+adocante)\b/
-          const DRINK_KEYWORD_RE =
-            /\b(refri\w*|refrigerante|coca|coca-cola|guarana|pepsi|sprite|fanta|schweppes|powerade|gatorade|red\s*bull|skol|brahma|antarctica|sukita|tonica|isotonico|energetico|soda|h2o|monster|burn|aguardente)\b/
-          const isLegitZeroCal = (name: string): boolean => {
-            const n = stripAccents(name)
-            if (ZERO_CAL_NAME_RE.test(n)) return true
-            if (ZERO_CAL_DRINK_QUALIFIER_RE.test(n) && DRINK_KEYWORD_RE.test(n)) return true
-            return false
-          }
-          const suspiciousItems = proposal.items.filter((it) => {
-            const kcal = Number(it.kcal ?? 0)
-            const qty = Number(it.quantity_g ?? 0)
-            if (kcal > 0) return false
-            if (qty <= 30) return false
-            const nm = String(it.name ?? '')
-            if (isLegitZeroCal(nm)) return false
-            return true
-          })
+
+          // Itens não reconhecidos com 0 kcal nunca são gravados como se o
+          // cálculo fosse válido. Zeros legítimos são classificados no helper.
           // Verifica se já bloqueamos esse pending nas últimas 4h —
           // sinal de retry. Evita loop infinito de block quando paciente
           // insiste em re-confirmar via texto curto.
           let isRetryAfterBlock = false
-          if (suspiciousItems.length > 0) {
+          if (itemDecision.suspiciousItems.length > 0) {
             const since4hIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
             const { data: prevBlock, error: previousBlockError } = await supabase
               .from('product_events')
@@ -638,8 +613,22 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               .limit(1)
             throwIfQueryFailed(previousBlockError, 'zero kcal retry lookup failed')
             isRetryAfterBlock = ((prevBlock ?? []) as Array<{ id: string }>).length > 0
+            itemDecision = decidePendingMealItems(proposedItems, isRetryAfterBlock)
           }
-          if (suspiciousItems.length > 0 && !isRetryAfterBlock) {
+          if (itemDecision.action === 'block') {
+            const namesList = itemDecision.suspiciousItems
+              .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
+              .join(', ')
+            const invalidText =
+              itemDecision.suspiciousItems.length === 1
+                ? `Não consegui calcular ${namesList} direito (deu 0 kcal).`
+                : `Não consegui calcular estes itens direito: ${namesList}.`
+            const askText =
+              itemDecision.validItems.length > 0
+                ? `${invalidText} Me diga os valores ou responda "registra mesmo assim" para eu registrar somente os outros itens calculados.`
+                : `${invalidText} Me diga o alimento mais próximo ou uma estimativa de kcal e proteína; sem isso eu não consigo registrar com segurança.`
+            await sendTextTracked(askText, 'zero_kcal_block')
+
             const { error: blockedEventError } = await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.blocked_zero_kcal',
@@ -647,59 +636,60 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 pendingId,
                 meal_type: proposal.mealType ?? null,
                 provider_message_id: providerMessageId ?? null,
-                suspicious_items: suspiciousItems.map((it) => ({
+                suspicious_items: itemDecision.suspiciousItems.map((it) => ({
                   name: it.name,
                   quantity_g: it.quantity_g,
                 })),
-                ok_items_count: proposal.items.length - suspiciousItems.length,
-                total_items: proposal.items.length,
-                note: 'item sólido com >30g e 0 kcal indica composite_rejected/no_match no parser — não grava com zeros (bug I4 Roberto 2026-06-14)',
+                ok_items_count: itemDecision.validItems.length,
+                total_items: proposedItems.length,
+                note: 'item não reconhecido com 0 kcal não pode ser tratado como cálculo válido',
               },
             })
             throwIfQueryFailed(blockedEventError, 'zero kcal block persistence failed')
-
-            const namesList = suspiciousItems
-              .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
-              .join(', ')
-            const askText =
-              suspiciousItems.length === 1
-                ? `Não consegui calcular ${namesList} direito (deu 0 kcal). Me diz o que tinha de mais perto, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só me responder "registra mesmo assim".`
-                : `Não consegui calcular esses itens direito: ${namesList}. Me diz o que tinha de mais perto em cada um, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só responder "registra mesmo assim".`
-            await sendTextTracked(askText, 'zero_kcal_block')
 
             return {
               handled: true,
               action: 'blocked_zero_kcal',
               pendingId,
-              suspicious_count: suspiciousItems.length,
+              suspicious_count: itemDecision.suspiciousItems.length,
             }
           }
-          // RETRY após block — best-effort: grava só os itens OK e avisa
-          // que os suspeitos foram ignorados. Se TODOS são suspeitos,
-          // confirma como veio (paciente insistiu, melhor 0 kcal
-          // visível que silêncio).
-          if (suspiciousItems.length > 0 && isRetryAfterBlock) {
-            const okItems = proposal.items.filter((it) => !suspiciousItems.includes(it))
+          if (itemDecision.action === 'reject_all') {
+            await sendTextTracked(
+              'Ainda não tenho um valor válido para registrar essa refeição e não vou salvar como 0 kcal. Me manda os itens de novo com quantidade ou uma estimativa de calorias.',
+              'zero_kcal_rejected_all',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.rejected_all_zero_kcal',
+              properties: {
+                pendingId,
+                suspicious_count: itemDecision.suspiciousItems.length,
+              },
+            })
+            return { handled: true, action: 'rejected_all_zero_kcal', pendingId }
+          }
+          proposal.items = itemDecision.validItems
+          if (itemDecision.action === 'register_valid_only') {
             await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.blocked_zero_kcal_retry',
               properties: {
                 pendingId,
-                ok_items_count: okItems.length,
-                suspicious_count: suspiciousItems.length,
-                action: okItems.length > 0 ? 'register_ok_drop_suspicious' : 'register_as_is',
+                ok_items_count: itemDecision.validItems.length,
+                suspicious_count: itemDecision.suspiciousItems.length,
+                action: 'register_ok_drop_suspicious',
               },
             })
-            if (okItems.length > 0) {
-              // Reescreve proposal.items pra só conter os OK — flui pro
-              // path normal do registraRefeicao abaixo.
-              proposal.items = okItems
-              const skipNames = suspiciousItems.map((it) => `"${it.name}"`).join(', ')
-              const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
-              await sendTextTracked(warnText, 'zero_kcal_retry_warning')
-            }
-            // Se okItems.length === 0, segue com proposal.items original
-            // (todos zerados) — paciente insistiu, registro best-effort.
+            const skipNames = itemDecision.suspiciousItems.map((it) => `"${it.name}"`).join(', ')
+            const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
+            await sendTextTracked(warnText, 'zero_kcal_retry_warning')
           }
           // Audit 06-25 Bug D Camada C (Luciana 25/06 lanche pão): tap-handler
           // confirma card que SUBSTITUI proposta anterior do mesmo meal_type+

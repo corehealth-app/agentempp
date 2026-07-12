@@ -36,6 +36,7 @@ import { decideMealType } from './meal-type-decision.js'
 import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
 import { selectMealRegistrationGroup } from './meal-registration-group.js'
 import {
+  isIanaTimezone,
   isMultiTimezoneCountry,
   resolveResidenceTimezone,
 } from './location-timezone.js'
@@ -2280,34 +2281,58 @@ export const atualizaDataUser: ToolDefinition = {
   description:
     'Atualiza dados básicos do usuário: nome (preferido), timezone (IANA, ex: America/Sao_Paulo) e cidade.',
   parameters: z.object({
-    name: z.string().optional(),
-    timezone: z.string().optional(),
-    city: z.string().optional(),
+    name: z.string().trim().min(1).optional(),
+    timezone: z.string().trim().refine(isIanaTimezone, 'Timezone IANA inválido').optional(),
+    city: z.string().trim().min(1).optional(),
   }),
   execute: async (args, ctx) => {
+    const name = args.name?.trim()
+    const timezone = args.timezone?.trim()
+    const city = args.city?.trim()
+    if (!name && !timezone && !city) {
+      return { success: false, error: 'no_updates', updated: [] }
+    }
+    if (timezone && !isIanaTimezone(timezone)) {
+      throw new Error(`Timezone inválido: ${timezone}`)
+    }
+
     const updates: {
       name?: string
       timezone?: string
       metadata?: import('@mpp/db').Json
       updated_at: string
     } = { updated_at: new Date().toISOString() }
-    if (args.name) updates.name = args.name
-    if (args.timezone) updates.timezone = args.timezone
-    if (Object.keys(updates).length > 1) {
-      const { error } = await ctx.supabase.from('users').update(updates).eq('id', ctx.userId)
-      if (error) throw error
+    const updatedFields: string[] = []
+    if (name) {
+      updates.name = name
+      updatedFields.push('name')
     }
-    if (args.city) {
+    if (timezone) {
+      updates.timezone = timezone
+      updatedFields.push('timezone')
+    }
+    if (Object.keys(updates).length > 1) {
+      const { data, error } = await ctx.supabase
+        .from('users')
+        .update(updates)
+        .eq('id', ctx.userId)
+        .select('id')
+        .maybeSingle()
+      if (error) throw error
+      if (!data) throw new Error('user not found')
+    }
+    if (city) {
       // Atomic merge — não usar read-then-write (race com pause, escalation, etc)
       const { error: rpcErr } = await (ctx.supabase as unknown as {
         rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>
       }).rpc('user_metadata_merge', {
         p_user_id: ctx.userId,
-        p_patch: { city: args.city },
+        p_patch: { city },
       })
       if (rpcErr) throw new Error(rpcErr.message ?? 'user_metadata_merge failed')
+      updatedFields.push('city')
     }
-    return { success: true, updated: [...Object.keys(updates), ...(args.city ? ['city'] : [])] }
+    return { success: true, updated: updatedFields }
   },
 }
 

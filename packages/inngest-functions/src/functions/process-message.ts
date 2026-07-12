@@ -18,7 +18,11 @@ import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
 import { persistOutboundMessage } from './outbound-message-persistence.js'
-import { buildOutboundMessageRows, type OutboundDelivery } from './outbound-message-rows.js'
+import {
+  buildOutboundMessageRows,
+  requireOutboundDelivery,
+  type OutboundDelivery,
+} from './outbound-message-rows.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
 
 /**
@@ -135,28 +139,15 @@ export const processMessageFn = inngest.createFunction(
               },
             })
             if (stale) {
-              // Manda msg determinística: paciente confirmou tarde demais.
               const mealHint = stale.proposal?.mealType
                 ? ` (era ${stale.proposal.mealType})`
                 : ''
               const askText = `Recebi seu "${text.trim()}", mas a proposta${mealHint} ficou esperando muito tempo e eu não posso registrar com certeza. Pode me mandar de novo o que você comeu? Ou clicar no botão da proposta velha (se ainda estiver no chat).`
-              await messaging
-                .sendText(wpp, askText, { replyTo: providerMessageId })
-                .catch(() => {})
-              await supabase.from('messages').insert({
-                user_id: userId,
-                direction: 'out',
-                role: 'assistant',
-                content_type: 'text',
-                content: askText,
-                provider: 'whatsapp_cloud',
-                agent_stage: 'recomposicao',
-                delivery_status: 'sent',
-              })
               return {
                 dispatched: false,
                 reason: 'stale_pending_too_old',
                 stale_pending_id: stale.id,
+                response_text: askText,
               }
             }
             return { dispatched: false, reason: 'no_recent_pending' }
@@ -191,6 +182,44 @@ export const processMessageFn = inngest.createFunction(
         // pedindo o paciente reenviar — NÃO cai pro LLM (evita LLM
         // improvisar "Sim, e aí?" sem contexto).
         if ((handled as { reason?: string })?.reason === 'stale_pending_too_old') {
+          const staleResult = handled as {
+            stale_pending_id?: string
+            response_text?: string
+          }
+          const responseText = staleResult.response_text
+          if (!responseText) {
+            throw new Error('stale pending response text missing')
+          }
+          const delivery = await step.run('send-stale-pending-response', async () =>
+            requireOutboundDelivery(
+              responseText,
+              await messaging.sendText(wpp, responseText, {
+                replyTo: providerMessageId,
+              }),
+            ),
+          )
+          await step.run('persist-stale-pending-response', async () => {
+            const { supabase } = createWorkerDeps()
+            const [row] = buildOutboundMessageRows({
+              userId,
+              provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+              contentType: 'text',
+              stage: 'recomposicao',
+              modelUsed: null,
+              promptTokens: null,
+              completionTokens: null,
+              costUsd: null,
+              latencyMs: null,
+              metadata: {
+                response_part: 'stale_pending_response',
+                pending_id: staleResult.stale_pending_id ?? 'unknown',
+              },
+              deliveries: [delivery],
+            })
+            if (!row) throw new Error('stale pending outbound row missing')
+            await persistOutboundMessage(supabase, row)
+            return { persisted: true }
+          })
           return {
             ok: true,
             sent: 1,

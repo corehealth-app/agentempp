@@ -7,6 +7,25 @@ export interface OutboundDelivery {
   error?: string
 }
 
+export function requireOutboundDelivery(
+  content: string,
+  result: {
+    providerMessageId: string | null
+    status: OutboundDelivery['status']
+    error?: string
+  },
+): OutboundDelivery {
+  if (result.status === 'failed') {
+    throw new Error(result.error ?? 'message delivery failed')
+  }
+  return {
+    content,
+    providerMessageId: result.providerMessageId,
+    status: result.status,
+    error: result.error,
+  }
+}
+
 export function buildOutboundMessageRows(input: {
   userId: string
   provider: string

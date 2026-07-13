@@ -65,6 +65,7 @@ function makeEducationalSupabase(cooldownError?: string) {
       id: 'phrase-whey-1',
       phrase: '{alimento} ajuda a sustentar uma refeição rica em proteína.',
       tags: null,
+      allowed_meal_types: null,
       usage_count: 0,
       last_used_at: null,
     },
@@ -105,6 +106,21 @@ function makeEducationalSupabase(cooldownError?: string) {
         }
       }
       return chain([])
+    },
+    rpc: async (name: string) => {
+      if (name !== 'claim_food_education_phrase') return { data: [], error: null }
+      if (cooldownError) return { data: null, error: { message: cooldownError } }
+      return {
+        data: [
+          {
+            phrase_id: phraseRows[0]?.id,
+            cooldown_count: 0,
+            selected_after_cooldown: false,
+            exhausted: false,
+          },
+        ],
+        error: null,
+      }
     },
   }
 
@@ -175,6 +191,40 @@ describe('generateEducationalComment — telemetria de cooldown', () => {
       expect.objectContaining({
         event: 'edu_comment.cooldown_error',
         properties: expect.objectContaining({ reason: 'cooldown_lookup_failed' }),
+      }),
+    )
+  })
+
+  it('registra tokens, custo, modelo e latência quando usa Haiku', async () => {
+    const { supabase, events } = makeEducationalSupabase('force curated fallback')
+    const llm = {
+      complete: async () => ({
+        content: 'Comentário alternativo do Haiku.',
+        promptTokens: 321,
+        completionTokens: 45,
+        totalTokens: 366,
+        costUsd: 0.00042,
+        model: 'anthropic/claude-haiku-4.5:provider',
+        latencyMs: 876,
+      }),
+    }
+
+    await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.haiku_success',
+        properties: expect.objectContaining({
+          prompt_tokens: 321,
+          completion_tokens: 45,
+          total_tokens: 366,
+          cost_usd: 0.00042,
+          model: 'anthropic/claude-haiku-4.5:provider',
+          latency_ms: 876,
+        }),
       }),
     )
   })

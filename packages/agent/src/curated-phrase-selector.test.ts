@@ -12,6 +12,7 @@ function mockSupabase(
     id: string
     phrase: string
     tags: Record<string, unknown> | null
+    allowed_meal_types?: string[] | null
     usage_count: number
     last_used_at: string | null
   }>,
@@ -21,23 +22,12 @@ function mockSupabase(
     phraseLookupError?: string
   } = {},
 ): ServiceClient {
-  // Mock thenable chain pra .from('user_phrase_cooldown')...{select,eq,...}
-  const cooldownChain = {
-    select: () => cooldownChain,
-    eq: () => cooldownChain,
-    gte: () => cooldownChain,
-    in: async () => ({
-      data: options.cooldownError
-        ? null
-        : (options.cooldownPhraseIds ?? []).map((phrase_id) => ({ phrase_id })),
-      error: options.cooldownError ? { message: options.cooldownError } : null,
-    }),
-    upsert: async () => ({ data: null, error: null }), // upsert no-op
+  const seenAt = new Map<string, number>()
+  for (const phraseId of options.cooldownPhraseIds ?? []) {
+    const row = rows.find((candidate) => candidate.id === phraseId)
+    seenAt.set(phraseId, row?.last_used_at ? Date.parse(row.last_used_at) : Date.now())
   }
-  const updateChain = {
-    update: () => updateChain,
-    eq: async () => ({ data: null, error: null }),
-  }
+  let claimSequence = 0
   const selectChain = {
     select: () => selectChain,
     eq: () => selectChain,
@@ -51,9 +41,70 @@ function mockSupabase(
   }
   return {
     from: (t: string) => {
-      if (t === 'food_education_phrases') return { ...selectChain, ...updateChain }
-      if (t === 'user_phrase_cooldown') return cooldownChain
-      return updateChain
+      if (t === 'food_education_phrases') return selectChain
+      return selectChain
+    },
+    rpc: async (name: string, params: Record<string, unknown>) => {
+      if (name !== 'claim_food_education_phrase') return { data: [], error: null }
+      if (options.cooldownError) {
+        return { data: null, error: { message: options.cooldownError } }
+      }
+
+      const ids = params.phrase_ids as string[]
+      const candidates = rows.filter((candidate) => ids.includes(candidate.id))
+      const cooldownSince = Date.now() - 7 * 24 * 3600 * 1000
+      const recent = candidates.filter((candidate) => (seenAt.get(candidate.id) ?? 0) >= cooldownSince)
+      const unseenOrExpired = candidates.filter(
+        (candidate) => (seenAt.get(candidate.id) ?? 0) < cooldownSince,
+      )
+      const byLeastRecent = (
+        left: (typeof candidates)[number],
+        right: (typeof candidates)[number],
+      ) => {
+        const leftSeen = seenAt.get(left.id)
+        const rightSeen = seenAt.get(right.id)
+        if (leftSeen == null && rightSeen != null) return -1
+        if (leftSeen != null && rightSeen == null) return 1
+        if (leftSeen != null && rightSeen != null && leftSeen !== rightSeen) {
+          return leftSeen - rightSeen
+        }
+        const leftGlobal = left.last_used_at ? Date.parse(left.last_used_at) : Number.NEGATIVE_INFINITY
+        const rightGlobal = right.last_used_at
+          ? Date.parse(right.last_used_at)
+          : Number.NEGATIVE_INFINITY
+        if (leftGlobal !== rightGlobal) return leftGlobal - rightGlobal
+        if (left.usage_count !== right.usage_count) return left.usage_count - right.usage_count
+        return left.id.localeCompare(right.id)
+      }
+
+      let exhausted = false
+      let pool = unseenOrExpired
+      if (pool.length === 0) {
+        exhausted = true
+        const latest = [...recent].sort(
+          (left, right) => (seenAt.get(right.id) ?? 0) - (seenAt.get(left.id) ?? 0),
+        )[0]
+        pool = recent.length > 1 ? recent.filter((candidate) => candidate.id !== latest?.id) : recent
+      }
+      const picked = [...pool].sort(byLeastRecent)[0]
+      if (!picked) return { data: [], error: null }
+
+      claimSequence += 1
+      const claimedAt = Date.now() + claimSequence
+      seenAt.set(picked.id, claimedAt)
+      picked.usage_count += 1
+      picked.last_used_at = new Date(claimedAt).toISOString()
+      return {
+        data: [
+          {
+            phrase_id: picked.id,
+            cooldown_count: recent.length,
+            selected_after_cooldown: !exhausted && recent.length > 0,
+            exhausted,
+          },
+        ],
+        error: null,
+      }
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
@@ -336,6 +387,14 @@ describe('isTemporallyCompatible — Nível 1 defensivo (bug I3 2026-06-14)', ()
     expect(r.ok).toBe(false)
   })
 
+  it('"Café com whey logo cedo… até o almoço" é ACEITA no café', () => {
+    const r = isTemporallyCompatible(
+      'Café com whey logo cedo ajuda a organizar a fome até o almoço.',
+      'cafe',
+    )
+    expect(r.ok).toBe(true)
+  })
+
   it('"Whey de manhã…" ACEITA em cafe', () => {
     expect(
       isTemporallyCompatible('Whey de manhã é o tipo de hábito…', 'cafe').ok,
@@ -387,6 +446,26 @@ describe('isTemporallyCompatible — Nível 1 defensivo (bug I3 2026-06-14)', ()
 })
 
 describe('selectCuratedPhrase — filtro temporal integrado', () => {
+  it('respeita allowed_meal_types mesmo quando o texto é neutro', async () => {
+    const supa = mockSupabase([
+      {
+        id: 'p-cafe-only',
+        phrase: '{alimento} ajuda a compor uma refeição prática.',
+        tags: null,
+        allowed_meal_types: ['cafe'],
+        usage_count: 0,
+        last_used_at: null,
+      },
+    ])
+    const r = await selectCuratedPhrase(supa, {
+      userId: 'u-1',
+      items: [{ food_name: 'whey protein', kcal: 120, protein_g: 24, carbs_g: 3, fat_g: 2 }],
+      mealKind: 'jantar',
+    })
+    expect(r.phrase).toBeNull()
+    expect(r.reason).toBe('no_temporally_compatible_phrase')
+  })
+
   it('reason=no_temporally_compatible_phrase quando todas frases são incompatíveis', async () => {
     const supa = mockSupabase([
       {
@@ -495,18 +574,25 @@ describe('selectCuratedPhrase — cooldown forte e ordenação', () => {
     expect(result.cooldown_count).toBe(1)
   })
 
-  it('quando todas estão recentes, repete apenas com reason explícito', async () => {
+  it('quando todas estão recentes, escolhe a menos recente e não repete a última', async () => {
     const supa = mockSupabase(
       [
         {
-          id: 'only-whey',
-          phrase: '{alimento} mantém a refeição rica em proteína.',
+          id: 'whey-older',
+          phrase: '{alimento} ajuda a distribuir proteína ao longo do dia.',
           tags: null,
           usage_count: 2,
+          last_used_at: '2026-07-11T10:00:00.000Z',
+        },
+        {
+          id: 'whey-last',
+          phrase: '{alimento} deixa a refeição mais prática.',
+          tags: null,
+          usage_count: 3,
           last_used_at: '2026-07-12T10:00:00.000Z',
         },
       ],
-      { cooldownPhraseIds: ['only-whey'] },
+      { cooldownPhraseIds: ['whey-older', 'whey-last'] },
     )
 
     const result = await selectCuratedPhrase(supa, {
@@ -515,9 +601,36 @@ describe('selectCuratedPhrase — cooldown forte e ordenação', () => {
       mealKind: 'cafe',
     })
 
-    expect(result.phrase_id).toBe('only-whey')
-    expect(result.reason).toBe('selected_all_recent')
+    expect(result.phrase_id).toBe('whey-older')
+    expect(result.reason).toBe('selected_least_recent_after_exhaustion')
     expect(result.selected_after_cooldown).toBe(false)
+  })
+
+  it('entrega oito frases distintas antes de repetir a menos recente', async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      id: `whey-${index + 1}`,
+      phrase: `Variação ${index + 1} para {alimento}.`,
+      tags: null,
+      usage_count: 0,
+      last_used_at: null,
+    }))
+    const supa = mockSupabase(rows)
+    const picked: string[] = []
+    for (let index = 0; index < 9; index += 1) {
+      const result = await selectCuratedPhrase(supa, {
+        userId: 'roberto-test',
+        items: wheyItems,
+        mealKind: 'cafe',
+      })
+      picked.push(result.phrase_id ?? '')
+      if (index === 8) {
+        expect(result.reason).toBe('selected_least_recent_after_exhaustion')
+      }
+    }
+
+    expect(new Set(picked.slice(0, 8)).size).toBe(8)
+    expect(picked[8]).toBe(picked[0])
+    expect(picked[8]).not.toBe(picked[7])
   })
 
   it('falha do lookup de cooldown devolve null para o caller usar Haiku', async () => {

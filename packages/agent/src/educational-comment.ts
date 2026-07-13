@@ -361,17 +361,26 @@ export async function generateEducationalComment(
     if (timer) clearTimeout(timer)
     if (result === null) {
       await emitEdu(opts, 'edu_comment.haiku_timeout', {
+        model,
         timeoutMs,
-        elapsedMs: Date.now() - startedAt,
+        latency_ms: Date.now() - startedAt,
       })
       return ''
+    }
+    const usageTelemetry = {
+      model: result.model ?? model,
+      prompt_tokens: result.promptTokens ?? 0,
+      completion_tokens: result.completionTokens ?? 0,
+      total_tokens: result.totalTokens ?? 0,
+      cost_usd: result.costUsd ?? null,
+      latency_ms: result.latencyMs ?? Date.now() - startedAt,
     }
     const content = (result.content ?? '').trim()
     const cleaned = content.replace(/^\s*```[\s\S]*?```\s*/g, '').trim()
     if (!cleaned) {
       await emitEdu(opts, 'edu_comment.haiku_empty', {
         rawLen: content.length,
-        elapsedMs: Date.now() - startedAt,
+        ...usageTelemetry,
       })
       return ''
     }
@@ -383,19 +392,21 @@ export async function generateEducationalComment(
       await emitEdu(opts, 'edu_comment.phantom_drop', {
         commentPreview: cleaned.slice(0, 160),
         itemNames: input.items.map((i) => i.food_name),
+        ...usageTelemetry,
       })
       return ''
     }
     await emitEdu(opts, 'edu_comment.haiku_success', {
       length: cleaned.length,
-      elapsedMs: Date.now() - startedAt,
+      ...usageTelemetry,
     })
     return cleaned
   } catch (err) {
     if (timer) clearTimeout(timer)
     await emitEdu(opts, 'edu_comment.haiku_error', {
       error: String(err instanceof Error ? err.message : err).slice(0, 200),
-      elapsedMs: Date.now() - startedAt,
+      model,
+      latency_ms: Date.now() - startedAt,
     })
     return ''
   }

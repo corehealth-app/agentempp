@@ -610,6 +610,7 @@ export type Database = {
       food_education_phrases: {
         Row: {
           active: boolean
+          allowed_meal_types: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id: string | null
           created_at: string
           curated_by: string | null
@@ -625,6 +626,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -640,6 +642,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -2344,6 +2347,21 @@ export type Database = {
       }
       get_global_config: { Args: { p_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      claim_food_education_phrase: {
+        Args: {
+          cooldown_days?: number
+          phrase_ids: string[]
+          user_id: string
+        }
+        Returns: {
+          cooldown_count: number
+          exhausted: boolean
+          last_used_at: string
+          phrase_id: string
+          selected_after_cooldown: boolean
+          usage_count: number
+        }[]
+      }
       match_food_phrases: {
         Args: {
           match_count: number
@@ -2352,6 +2370,7 @@ export type Database = {
           query_embedding: string
         }
         Returns: {
+          allowed_meal_types: Database["public"]["Enums"]["meal_type_enum"][]
           id: string
           last_used_at: string
           phrase: string

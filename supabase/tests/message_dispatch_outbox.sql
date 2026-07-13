@@ -79,7 +79,7 @@ BEGIN
 
   v_second := public.claim_due_message_dispatch(
     v_user_id,
-    timestamptz '2026-07-13 00:00:00+00'
+    clock_timestamp() + interval '1 minute'
   );
 
   IF v_second->>'status' <> 'claimed'

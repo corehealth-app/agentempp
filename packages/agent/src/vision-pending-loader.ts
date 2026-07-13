@@ -48,7 +48,7 @@ type VisionRow = {
 
 type MealRow = {
   food_name: string
-  provider_message_id?: string | null
+  raw_provider_message_id?: string | null
   created_at: string
 }
 
@@ -128,7 +128,7 @@ export function deriveVisionPending(
     const pendsAfterThis = pendRows.filter((p) => p.created_at >= b.occurredAt)
 
     // (a) match por pmid
-    if (b.pmid && mealsAfterThis.some((r) => r.provider_message_id === b.pmid)) {
+    if (b.pmid && mealsAfterThis.some((r) => r.raw_provider_message_id === b.pmid)) {
       continue
     }
     // (b) overlap nome ≥ 50%
@@ -184,7 +184,7 @@ export async function loadVisionPending(
   const [mealsAfter, pendingsAfter] = await Promise.all([
     supabase
       .from('meal_logs')
-      .select('food_name, provider_message_id, created_at')
+      .select('food_name, raw_provider_message_id, created_at')
       .eq('user_id', userId)
       .gte('created_at', oldestVisionIso),
     supabase

@@ -32,7 +32,7 @@ const vision = (
 
 const meal = (food: string, pmid: string | null, createdAt: string) => ({
   food_name: food,
-  provider_message_id: pmid,
+  raw_provider_message_id: pmid,
   created_at: createdAt,
 })
 
@@ -184,9 +184,15 @@ describe('deriveVisionPending', () => {
   })
 })
 
-function queryChain(result: { data: unknown; error: unknown }) {
+function queryChain(
+  result: { data: unknown; error: unknown },
+  onSelect?: (columns: string) => void,
+) {
   const chain = {
-    select: () => chain,
+    select: (columns: string) => {
+      onSelect?.(columns)
+      return chain
+    },
     eq: () => chain,
     gte: () => chain,
     order: () => chain,
@@ -228,5 +234,35 @@ describe('loadVisionPending — falhas de banco', () => {
     }
 
     await expect(loadVisionPending(supabase, 'user-1')).rejects.toThrow('meal lookup failed')
+  })
+
+  it('consulta o id bruto correto e reconhece vision já consumida pelo meal_log', async () => {
+    let mealLogSelect: string | null = null
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'product_events') return queryChain({ data: [visionRow], error: null })
+        if (table === 'meal_logs') {
+          return queryChain(
+            {
+              data: [
+                {
+                  food_name: 'frango',
+                  raw_provider_message_id: 'pmid-db-error',
+                  created_at: '2026-06-26T17:56:00.000Z',
+                },
+              ],
+              error: null,
+            },
+            (columns) => {
+              mealLogSelect = columns
+            },
+          )
+        }
+        return queryChain({ data: [], error: null })
+      },
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).resolves.toBeNull()
+    expect(mealLogSelect).toBe('food_name, raw_provider_message_id, created_at')
   })
 })

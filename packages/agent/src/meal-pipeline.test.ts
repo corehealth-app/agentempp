@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 // Anti-regression coverage pro meal-pipeline. Cobre os bugs que custaram caro
 // pra debugar e que NÃO podem voltar:
@@ -10,13 +10,14 @@ import { describe, it, expect } from 'vitest'
 //      protein_mismatch) vão pra user_warnings.
 //   4. Match composite direto (alias completo, sim>=0.85) tem precedência sobre auto-split.
 
+import type { ServiceClient } from '@mpp/db'
 import {
   calcMealMacros,
   estimateMacros,
+  lookupUserHistory,
   naturalUnit,
   requiresVisualPreparationConfirmation,
 } from './meal-pipeline.js'
-import type { ServiceClient } from '@mpp/db'
 
 type MockRow = {
   id: number
@@ -72,12 +73,22 @@ function makeMock(
       data: errorMessage ? null : rows,
       error: errorMessage ? { message: errorMessage } : null,
     }
-    for (const m of ['select', 'eq', 'ilike', 'gte', 'gt', 'lt', 'neq', 'in', 'or', 'order', 'limit']) {
+    for (const m of [
+      'select',
+      'eq',
+      'ilike',
+      'gte',
+      'gt',
+      'lt',
+      'neq',
+      'in',
+      'or',
+      'order',
+      'limit',
+    ]) {
       obj[m] = () => makeChain(rows, errorMessage)
     }
-    obj.then = (
-      cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
-    ) =>
+    obj.then = (cb: (v: { data: unknown; error: { message: string } | null }) => unknown) =>
       Promise.resolve(
         cb(
           errorMessage
@@ -106,6 +117,9 @@ function makeMock(
       }
       if (table === 'user_food_corrections') {
         return makeChain(correctionRows, failures.correction)
+      }
+      if (table === 'product_events') {
+        return { insert: () => makeChain([]) }
       }
       return makeChain([])
     },
@@ -139,9 +153,7 @@ describe('calcMealMacros — indisponibilidade de fontes nutricionais', () => {
   it('não transforma erro da busca canônica em estimativa por categoria', async () => {
     const mock = makeMock({}, [], [], { search: 'food search unavailable' })
 
-    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow(
-      'food search unavailable',
-    )
+    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow('food search unavailable')
   })
 
   it('não ignora erro ao consultar correções ativas do paciente', async () => {
@@ -163,9 +175,7 @@ describe('calcMealMacros — indisponibilidade de fontes nutricionais', () => {
   it('não ignora erro no histórico de mediana usado pelo fallback final', async () => {
     const mock = makeMock({}, [], [], { history: 'median history unavailable' })
 
-    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow(
-      'median history unavailable',
-    )
+    await expect(calcMealMacros(mock, item, 'BR')).rejects.toThrow('median history unavailable')
   })
 })
 
@@ -204,11 +214,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
         fiber_g: 0,
       },
     })
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'queijo parmesão', quantity_g: 20 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'queijo parmesão', quantity_g: 20 }], 'BR')
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBeGreaterThan(50)
     expect(r.user_warnings).toHaveLength(0)
@@ -228,11 +234,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
         fiber_g: 8,
       },
     })
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'castanha do pará', quantity_g: 25 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'castanha do pará', quantity_g: 25 }], 'BR')
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBeGreaterThan(100)
     expect(r.user_warnings).toHaveLength(0)
@@ -257,11 +259,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
         fiber_g: 0,
       },
     })
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'iogurte natural', quantity_g: 100 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'iogurte natural', quantity_g: 100 }], 'BR')
     expect(r.items[0]?.source).toBe('llm_estimate')
     // Não zera — estima como laticineo (~65 kcal/100g)
     expect(r.items[0]?.kcal).toBeGreaterThan(40)
@@ -345,12 +343,7 @@ describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
       ],
     )
 
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'goiaba', quantity_g: 150 }],
-      'BR',
-      'paulo',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'goiaba', quantity_g: 150 }], 'BR', 'paulo')
 
     expect(r.items[0]?.matched_taco_name).toBe('goiaba')
     expect(r.items[0]?.kcal).toBeCloseTo(95, 0)
@@ -384,12 +377,7 @@ describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
       ],
     )
 
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'goiaba', quantity_g: 150 }],
-      'BR',
-      'paulo',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'goiaba', quantity_g: 150 }], 'BR', 'paulo')
 
     expect(r.items[0]?.source).toBe('llm_estimate')
     expect(r.items[0]?.matched_taco_name).toMatch(/estimativa fruta/i)
@@ -433,11 +421,7 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
   it('composite rejeitado (auto-split falhou) — aviso vai pra user_warnings (acionável)', async () => {
     // "xpto com quux" → split em "xpto" e "quux", ambos sem match → rejeita
     const mock = makeMock({})
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'xpto com quux', quantity_g: 100 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'xpto com quux', quantity_g: 100 }], 'BR')
     expect(r.items[0]?.source).toBe('composite_rejected')
     expect(r.items[0]?.kcal).toBe(0)
     expect(r.user_warnings.length).toBeGreaterThan(0)
@@ -470,11 +454,7 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
         fiber_g: 0,
       },
     })
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'leite e whey', quantity_g: 250 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'leite e whey', quantity_g: 250 }], 'BR')
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBeGreaterThan(0)
     expect(r.user_warnings).toHaveLength(0)
@@ -614,21 +594,52 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     expect(result.items[0]?.kcal).toBe(192)
   })
 
+  it('nome genérico não herda silenciosamente um subtipo do histórico', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'log-sorvete-iogurte',
+        food_name: 'sorvete de iogurte',
+        quantity_g: 170,
+        kcal: 110.5,
+        protein_g: 6.8,
+        carbs_g: 8.5,
+        fat_g: 5.1,
+        source: 'taco',
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'sorvete')).resolves.toBeNull()
+  })
+
+  it('nome composto não herda uma preparação mais calórica só por substring', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'log-frango-cremoso',
+        food_name: 'frango ao molho cremoso',
+        quantity_g: 150,
+        kcal: 330,
+        protein_g: 24,
+        carbs_g: 8,
+        fat_g: 22,
+        source: 'taco',
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'frango ao molho')).resolves.toBeNull()
+  })
+
   it('não reutiliza leite líquido para leite em pó', async () => {
-    const mock = makeMock(
-      {},
-      [
-        {
-          id: 'log-leite-liquido',
-          food_name: 'leite integral',
-          quantity_g: 200,
-          kcal: 122,
-          protein_g: 6.4,
-          carbs_g: 9.4,
-          fat_g: 6.6,
-        },
-      ],
-    )
+    const mock = makeMock({}, [
+      {
+        id: 'log-leite-liquido',
+        food_name: 'leite integral',
+        quantity_g: 200,
+        kcal: 122,
+        protein_g: 6.4,
+        carbs_g: 9.4,
+        fat_g: 6.6,
+      },
+    ])
 
     const result = await calcMealMacros(
       mock,
@@ -642,20 +653,17 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
   })
 
   it('histórico match case/acento-insensitive', async () => {
-    const mock = makeMock(
-      {},
-      [
-        {
-          id: 'log-2',
-          food_name: 'Pão Francês',
-          quantity_g: 50,
-          kcal: 150,
-          protein_g: 4,
-          carbs_g: 29,
-          fat_g: 1.5,
-        },
-      ],
-    )
+    const mock = makeMock({}, [
+      {
+        id: 'log-2',
+        food_name: 'Pão Francês',
+        quantity_g: 50,
+        kcal: 150,
+        protein_g: 4,
+        carbs_g: 29,
+        fat_g: 1.5,
+      },
+    ])
     const r = await calcMealMacros(
       mock,
       [{ food_name: 'pao frances', quantity_g: 100 }],
@@ -742,20 +750,17 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
   })
 
   it('não reutiliza histórico com pele quando paciente informa "sem pele" — caso Roberto', async () => {
-    const mock = makeMock(
-      {},
-      [
-        {
-          id: 'log-sobrecoxa-com-pele',
-          food_name: 'sobrecoxa de frango assada',
-          quantity_g: 240,
-          kcal: 520.8,
-          protein_g: 64.8,
-          carbs_g: 0,
-          fat_g: 26.4,
-        },
-      ],
-    )
+    const mock = makeMock({}, [
+      {
+        id: 'log-sobrecoxa-com-pele',
+        food_name: 'sobrecoxa de frango assada',
+        quantity_g: 240,
+        kcal: 520.8,
+        protein_g: 64.8,
+        carbs_g: 0,
+        fat_g: 26.4,
+      },
+    ])
 
     const r = await calcMealMacros(
       mock,
@@ -771,21 +776,18 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
   })
 
   it('marca reuso confiável como history, sem fingir que veio direto da TACO', async () => {
-    const mock = makeMock(
-      {},
-      [
-        {
-          id: 'log-history-trusted',
-          food_name: 'leite com whey',
-          quantity_g: 200,
-          kcal: 190,
-          protein_g: 20,
-          carbs_g: 10,
-          fat_g: 6,
-          source: 'taco',
-        },
-      ],
-    )
+    const mock = makeMock({}, [
+      {
+        id: 'log-history-trusted',
+        food_name: 'leite com whey',
+        quantity_g: 200,
+        kcal: 190,
+        protein_g: 20,
+        carbs_g: 10,
+        fat_g: 6,
+        source: 'taco',
+      },
+    ])
 
     const r = await calcMealMacros(
       mock,
@@ -833,21 +835,18 @@ describe('calcMealMacros — fruta plural e proveniência do histórico', () => 
   })
 
   it('ignora histórico genérico implausível mesmo quando uma linha antiga diz taco', async () => {
-    const mock = makeMock(
-      { 'uvas roxas': purpleGrapeMatch },
-      [
-        {
-          id: 'log-grape-laundered',
-          food_name: 'uvas roxas',
-          quantity_g: 70,
-          kcal: 105,
-          protein_g: 4.9,
-          carbs_g: 12.6,
-          fat_g: 3.5,
-          source: 'taco',
-        },
-      ],
-    )
+    const mock = makeMock({ 'uvas roxas': purpleGrapeMatch }, [
+      {
+        id: 'log-grape-laundered',
+        food_name: 'uvas roxas',
+        quantity_g: 70,
+        kcal: 105,
+        protein_g: 4.9,
+        carbs_g: 12.6,
+        fat_g: 3.5,
+        source: 'taco',
+      },
+    ])
 
     const r = await calcMealMacros(
       mock,
@@ -862,21 +861,18 @@ describe('calcMealMacros — fruta plural e proveniência do histórico', () => 
   })
 
   it('não reutiliza linha cuja origem é llm_estimate', async () => {
-    const mock = makeMock(
-      { 'uvas roxas': purpleGrapeMatch },
-      [
-        {
-          id: 'log-grape-estimate',
-          food_name: 'uvas roxas',
-          quantity_g: 70,
-          kcal: 105,
-          protein_g: 4.9,
-          carbs_g: 12.6,
-          fat_g: 3.5,
-          source: 'llm_estimate',
-        },
-      ],
-    )
+    const mock = makeMock({ 'uvas roxas': purpleGrapeMatch }, [
+      {
+        id: 'log-grape-estimate',
+        food_name: 'uvas roxas',
+        quantity_g: 70,
+        kcal: 105,
+        protein_g: 4.9,
+        carbs_g: 12.6,
+        fat_g: 3.5,
+        source: 'llm_estimate',
+      },
+    ])
 
     const r = await calcMealMacros(
       mock,
@@ -900,16 +896,28 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         batata: {
-          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+          id: 1,
+          name_pt: 'batata inglesa',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 86,
+          protein_g: 2,
+          carbs_g: 20,
+          fat_g: 0,
+          fiber_g: 1,
         },
       },
       [],
       [
         {
-          said_name: 'batata', corrected_to: 'mandioca',
-          custom_kcal_per_100g: 150, custom_protein_g: 1.5, custom_carbs_g: 36, custom_fat_g: 0.3,
-          status: 'active', confirmed_count: 2,
+          said_name: 'batata',
+          corrected_to: 'mandioca',
+          custom_kcal_per_100g: 150,
+          custom_protein_g: 1.5,
+          custom_carbs_g: 36,
+          custom_fat_g: 0.3,
+          status: 'active',
+          confirmed_count: 2,
         },
       ],
     )
@@ -926,14 +934,19 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         mandioca: {
-          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+          id: 2,
+          name_pt: 'mandioca cozida',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 125,
+          protein_g: 1,
+          carbs_g: 30,
+          fat_g: 0.3,
+          fiber_g: 1.6,
         },
       },
       [],
-      [
-        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 3 },
-      ],
+      [{ said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 3 }],
     )
     const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
     expect(r.items[0]?.food_name).toBe('mandioca')
@@ -948,18 +961,30 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         batata: {
-          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+          id: 1,
+          name_pt: 'batata inglesa',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 86,
+          protein_g: 2,
+          carbs_g: 20,
+          fat_g: 0,
+          fiber_g: 1,
         },
         mandioca: {
-          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+          id: 2,
+          name_pt: 'mandioca cozida',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 125,
+          protein_g: 1,
+          carbs_g: 30,
+          fat_g: 0.3,
+          fiber_g: 1.6,
         },
       },
       [],
-      [
-        { said_name: 'batata', corrected_to: 'mandioca', status: 'learning', confirmed_count: 1 },
-      ],
+      [{ said_name: 'batata', corrected_to: 'mandioca', status: 'learning', confirmed_count: 1 }],
     )
     const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
     // learning NÃO aplica → segue como batata
@@ -975,16 +1000,26 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         batata: {
-          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+          id: 1,
+          name_pt: 'batata inglesa',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 86,
+          protein_g: 2,
+          carbs_g: 20,
+          fat_g: 0,
+          fiber_g: 1,
         },
       },
       [],
-      [
-        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 5 },
-      ],
+      [{ said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 5 }],
     )
-    const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', undefined)
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'batata', quantity_g: 100 }],
+      'BR',
+      undefined,
+    )
     // sem userId → usa o trigram normal, ignora correção
     expect(r.items[0]?.food_name).toBe('batata')
     expect(r.items[0]?.kcal).toBe(86)
@@ -996,16 +1031,29 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         mandioca: {
-          id: 2, name_pt: 'mandioca cozida', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 125, protein_g: 1, carbs_g: 30, fat_g: 0.3, fiber_g: 1.6,
+          id: 2,
+          name_pt: 'mandioca cozida',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 125,
+          protein_g: 1,
+          carbs_g: 30,
+          fat_g: 0.3,
+          fiber_g: 1.6,
         },
       },
       [
-        { id: 'h1', food_name: 'batata', quantity_g: 100, kcal: 86, protein_g: 2, carbs_g: 20, fat_g: 0 },
+        {
+          id: 'h1',
+          food_name: 'batata',
+          quantity_g: 100,
+          kcal: 86,
+          protein_g: 2,
+          carbs_g: 20,
+          fat_g: 0,
+        },
       ],
-      [
-        { said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 2 },
-      ],
+      [{ said_name: 'batata', corrected_to: 'mandioca', status: 'active', confirmed_count: 2 }],
     )
     const r = await calcMealMacros(mock, [{ food_name: 'batata', quantity_g: 100 }], 'BR', 'user-1')
     expect(r.items[0]?.food_name).toBe('mandioca') // correção venceu o histórico
@@ -1018,8 +1066,15 @@ describe('calcMealMacros — mapa de correções do paciente (Roberto 2026-05-14
     const mock = makeMock(
       {
         batata: {
-          id: 1, name_pt: 'batata inglesa', category: 'tuberculos',
-          similarity: 1, kcal_per_100g: 86, protein_g: 2, carbs_g: 20, fat_g: 0, fiber_g: 1,
+          id: 1,
+          name_pt: 'batata inglesa',
+          category: 'tuberculos',
+          similarity: 1,
+          kcal_per_100g: 86,
+          protein_g: 2,
+          carbs_g: 20,
+          fat_g: 0,
+          fiber_g: 1,
         },
       },
       [],
@@ -1235,7 +1290,11 @@ describe('calcMealMacros — bebida zero/diet/light (Bug Luciana 2026-05-25)', (
         fiber_g: 0,
       },
     })
-    const r = await calcMealMacros(mock, [{ food_name: 'leite zero lactose', quantity_g: 200 }], 'BR')
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'leite zero lactose', quantity_g: 200 }],
+      'BR',
+    )
     expect(r.items[0]?.kcal).toBeGreaterThan(50)
   })
 })
@@ -1388,7 +1447,11 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
         fiber_g: 0,
       },
     })
-    const r = await calcMealMacros(mock, [{ food_name: 'frango à milanesa', quantity_g: 160 }], 'BR')
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'frango à milanesa', quantity_g: 160 }],
+      'BR',
+    )
     expect(r.items[0]?.source).toBe('llm_estimate')
     expect(r.items[0]?.kcal).toBeCloseTo(448, 0) // 280 × 1.6
     expect(r.audit_warnings.some((w) => /piso 200/.test(w))).toBe(true)
@@ -1408,7 +1471,11 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
         fiber_g: 0.5,
       },
     })
-    const r = await calcMealMacros(mock, [{ food_name: 'bife à parmegiana', quantity_g: 200 }], 'BR')
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'bife à parmegiana', quantity_g: 200 }],
+      'BR',
+    )
     expect(r.items[0]?.source).toBe('llm_estimate')
     expect(r.items[0]?.kcal).toBeCloseTo(600, 0) // empanado_carne 300 × 2
   })
@@ -1427,7 +1494,11 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
         fiber_g: 0.5,
       },
     })
-    const r = await calcMealMacros(mock, [{ food_name: 'frango à milanesa', quantity_g: 160 }], 'BR')
+    const r = await calcMealMacros(
+      mock,
+      [{ food_name: 'frango à milanesa', quantity_g: 160 }],
+      'BR',
+    )
     expect(r.items[0]?.source).toBe('taco')
     expect(r.items[0]?.kcal).toBeCloseTo(448, 0)
   })
@@ -1478,56 +1549,44 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
 describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
   it('"rap 10 : 70 calorias" → associa 70 kcal ao item wrap', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      'rap 10 : 70 calorias',
-      [{ food_name: 'wrap' }],
-    )
+    const overrides = parseUserKcalOverrides('rap 10 : 70 calorias', [{ food_name: 'wrap' }])
     expect(overrides.get('wrap')).toBe(70)
   })
 
   it('"100g arroz, 70 kcal" → arroz recebe 70 kcal', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      '100g arroz, 70 kcal',
-      [{ food_name: 'arroz' }],
-    )
+    const overrides = parseUserKcalOverrides('100g arroz, 70 kcal', [{ food_name: 'arroz' }])
     expect(overrides.get('arroz')).toBe(70)
   })
 
   it('"1 wrap" → SEM kcal explícita, retorna Map vazio', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      '1 wrap',
-      [{ food_name: 'wrap' }],
-    )
+    const overrides = parseUserKcalOverrides('1 wrap', [{ food_name: 'wrap' }])
     expect(overrides.size).toBe(0)
   })
 
   it('"wrap 30g 70 kcal, suco 200ml 80 cal" → ambos itens recebem kcal certo', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      'wrap 30g 70 kcal, suco 200ml 80 cal',
-      [{ food_name: 'wrap' }, { food_name: 'suco' }],
-    )
+    const overrides = parseUserKcalOverrides('wrap 30g 70 kcal, suco 200ml 80 cal', [
+      { food_name: 'wrap' },
+      { food_name: 'suco' },
+    ])
     expect(overrides.get('wrap')).toBe(70)
     expect(overrides.get('suco')).toBe(80)
   })
 
   it('texto sem números de kcal mas com gramas → Map vazio (não confunde g com kcal)', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      '100g de arroz e 80g de feijão',
-      [{ food_name: 'arroz' }, { food_name: 'feijão' }],
-    )
+    const overrides = parseUserKcalOverrides('100g de arroz e 80g de feijão', [
+      { food_name: 'arroz' },
+      { food_name: 'feijão' },
+    ])
     expect(overrides.size).toBe(0)
   })
 
   it('decimal com vírgula "70,5 kcal" funciona', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      'wrap : 70,5 kcal',
-      [{ food_name: 'wrap' }],
-    )
+    const overrides = parseUserKcalOverrides('wrap : 70,5 kcal', [{ food_name: 'wrap' }])
     expect(overrides.get('wrap')).toBe(70.5)
   })
 
@@ -1564,12 +1623,92 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
     expect(overrides.get('wrap')).toBe(80)
   })
 
-  it('frase negada "goiaba não tem 383 kcal" não vira override de 383', async () => {
+  it('não interpreta itens nem Total de card nutricional como correção do paciente', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
     const overrides = parseUserKcalOverrides(
-      'Goiaba não tem 383kcal',
-      [{ food_name: 'goiaba' }],
+      `• pão francês (1 pão) — 150 kcal
+• ovo frito (1 unidade) — 94 kcal
+• queijo mussarela (30g) — 84 kcal
+• leite com whey (240 ml) — 228 kcal
+• geleia (15g) — 38 kcal
+
+Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`,
+      [
+        { food_name: 'pão francês' },
+        { food_name: 'ovo frito' },
+        { food_name: 'queijo mussarela' },
+        { food_name: 'leite com whey' },
+        { food_name: 'geleia' },
+      ],
     )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('não interpreta card de um item seguido de agregados diários como override', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      `geleia (15g) — 38 kcal
+🔥 Consumido: 593 / 1.935 kcal
+🎯 Restam: 1.342 kcal`,
+      [{ food_name: 'geleia' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('não interpreta card condensado como override', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'geleia (15g) — 38 kcal | Total: 593 kcal | Restam: 1.342 kcal',
+      [{ food_name: 'geleia' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('não interpreta o formato real do card com ponto médio e dois-pontos', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      `· pão francês (1 pão): 150 kcal | 4.4g proteína | 27.8g carboidrato | 2.2g gordura
+· geleia de morango (15g): 38 kcal | 0.1g proteína | 9.3g carboidrato | 0g gordura
+*Total: 188 kcal | 4.5g proteína | 37.1g carboidrato | 2.2g gordura*`,
+      [{ food_name: 'pão francês' }, { food_name: 'geleia de morango' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('preserva correção explícita escrita fora de um card nutricional', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      `• pão francês (1 pão) — 150 kcal
+• ovo frito (1 unidade) — 94 kcal
+• geleia (15g) — 38 kcal
+Total: 282 kcal | 18g proteína | 40g carboidrato | 8g gordura
+
+Na verdade, a geleia tinha 42 kcal.`,
+      [{ food_name: 'pão francês' }, { food_name: 'ovo frito' }, { food_name: 'geleia' }],
+    )
+
+    expect(Object.fromEntries(overrides)).toEqual({ geleia: 42 })
+  })
+
+  it('rejeita conjunto completo de kcal quando a soma contradiz o Total explícito', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      `• arroz (100g) — 130 kcal
+• feijão (100g) — 80 kcal
+Total: 500 kcal`,
+      [{ food_name: 'arroz' }, { food_name: 'feijão' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
+  it('frase negada "goiaba não tem 383 kcal" não vira override de 383', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides('Goiaba não tem 383kcal', [{ food_name: 'goiaba' }])
     expect(overrides.size).toBe(0)
   })
 
@@ -1643,6 +1782,68 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
     expect(r.audit_warnings.some((w) => /kcal informado pelo paciente/i.test(w))).toBe(true)
   })
 
+  it('usa o perfil de macros canônico ao aplicar kcal explícita', async () => {
+    const mock = makeMock({
+      geleia: {
+        id: 383,
+        name_pt: 'geleia',
+        category: 'doces',
+        similarity: 1,
+        kcal_per_100g: 250,
+        protein_g: 0.4,
+        carbs_g: 63,
+        fat_g: 0.1,
+        fiber_g: 1,
+      },
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'geleia', quantity_g: 15, user_kcal: 38 }],
+      'BR',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      kcal: 38,
+      source: 'user_kcal',
+      protein_g: 0.06,
+      carbs_g: 9.58,
+      fat_g: 0.02,
+    })
+    expect(result.items[0]?.matched_taco_name).toContain('geleia')
+  })
+
+  it('rejeita kcal fisicamente impossível e volta à fonte canônica', async () => {
+    const mock = makeMock({
+      geleia: {
+        id: 383,
+        name_pt: 'geleia',
+        category: 'doces',
+        similarity: 1,
+        kcal_per_100g: 250,
+        protein_g: 0.4,
+        carbs_g: 63,
+        fat_g: 0.1,
+        fiber_g: 1,
+      },
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'geleia', quantity_g: 15, user_kcal: 593 }],
+      'BR',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      kcal: 37.5,
+      source: 'taco',
+      carbs_g: 9.45,
+    })
+    expect(result.audit_warnings.some((warning) => /densidade.*impossível/i.test(warning))).toBe(
+      true,
+    )
+  })
+
   it('user_kcal=0 (paciente disse "0 kcal") → grava 0, P/C/F=0', async () => {
     const mock = makeMock({})
     const r = await calcMealMacros(
@@ -1670,11 +1871,7 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
         fiber_g: 2,
       },
     })
-    const r = await calcMealMacros(
-      mock,
-      [{ food_name: 'wrap', quantity_g: 50 }],
-      'BR',
-    )
+    const r = await calcMealMacros(mock, [{ food_name: 'wrap', quantity_g: 50 }], 'BR')
     expect(r.items[0]?.kcal).toBe(140) // lookup default
     expect(r.items[0]?.matched_taco_name).toBe('wrap integral')
   })
@@ -1734,5 +1931,43 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
       fat_g: 13.5,
     })
     expect(result.totals.kcal).toBe(247.5)
+  })
+
+  it('pending aprovado com densidade fisicamente impossível não chega ao registro', async () => {
+    const mock = makeMock({
+      geleia: {
+        id: 383,
+        name_pt: 'geleia',
+        category: 'doces',
+        similarity: 1,
+        kcal_per_100g: 250,
+        protein_g: 0.4,
+        carbs_g: 63,
+        fat_g: 0.1,
+        fiber_g: 1,
+      },
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [
+        {
+          food_name: 'geleia',
+          quantity_g: 15,
+          user_kcal: 593,
+          approved_nutrition: {
+            kcal: 593,
+            protein_g: 6.8,
+            carbs_g: 102.6,
+            fat_g: 18.3,
+          },
+        },
+      ],
+      'BR',
+      'user-with-corrupt-pending',
+    )
+
+    expect(result.items[0]).toMatchObject({ kcal: 37.5, source: 'taco' })
+    expect(result.audit_warnings.join(' ')).toMatch(/pending.*densidade.*impossível/i)
   })
 })

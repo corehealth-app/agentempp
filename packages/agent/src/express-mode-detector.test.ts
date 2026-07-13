@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { isMealExpressEligible, isWorkoutExpressEligible } from './express-mode-detector.js'
 
 // Roberto 2026-05-28 — Fase B botões #4. Default conservador: na dúvida, vai pra
@@ -89,6 +89,53 @@ describe('isMealExpressEligible — modo EXPRESS (grava direto sem botão)', () 
       ],
     })
     expect(r.eligible).toBe(true)
+  })
+
+  it('resumo nutricional estruturado nunca grava direto — caso Roberto geleia', () => {
+    const r = isMealExpressEligible({
+      contentType: 'text',
+      patientText: `• pão francês (1 pão) — 150 kcal
+• ovo frito (1 unidade) — 94 kcal
+• queijo mussarela (30g) — 84 kcal
+• leite com whey (240 ml) — 228 kcal
+• geleia (15g) — 38 kcal
+Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`,
+      items: [
+        { food_name: 'pão francês', quantity_g: 50 },
+        { food_name: 'ovo frito', quantity_g: 50 },
+        { food_name: 'queijo mussarela', quantity_g: 30 },
+        { food_name: 'leite com whey', quantity_g: 240 },
+        { food_name: 'geleia', quantity_g: 15 },
+      ],
+    })
+
+    expect(r.eligible).toBe(false)
+    expect(r.reason).toBe('structured_nutrition_summary')
+  })
+
+  it('números de kcal sem quantidade explícita não tornam a refeição express', () => {
+    const r = isMealExpressEligible({
+      contentType: 'text',
+      patientText: 'arroz 130 kcal e frango 200 kcal',
+      items: items2,
+    })
+
+    expect(r.eligible).toBe(false)
+    expect(r.reason).toBe('qty_count_mismatch')
+    expect(r.qty_markers_found).toBe(0)
+  })
+
+  it('gramas de macros não contam como porção explícita', () => {
+    const r = isMealExpressEligible({
+      contentType: 'text',
+      patientText:
+        'arroz 130 kcal | 3g proteína | 28g carboidrato e frango 200 kcal | 30g de proteína | 8g gordura',
+      items: items2,
+    })
+
+    expect(r.eligible).toBe(false)
+    expect(r.reason).toBe('qty_count_mismatch')
+    expect(r.qty_markers_found).toBe(0)
   })
 
   it('items vazios → NÃO express', () => {

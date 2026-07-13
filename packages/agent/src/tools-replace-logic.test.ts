@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { registraRefeicao } from './tools.js'
 import type { ServiceClient } from '@mpp/db'
+import { describe, expect, it } from 'vitest'
+import { registraRefeicao } from './tools.js'
 
 // Tests focados na decisão de replace=true/false (defesa em profundidade).
 //
@@ -41,7 +41,11 @@ interface MockOptions {
   dayLogs?: RecentLog[]
   recentUserMessages?: string[]
   llmSentReplace?: boolean
-  editedPendings?: Array<{ id: string; resolved_at?: string | null; proposal?: Record<string, unknown> }>
+  editedPendings?: Array<{
+    id: string
+    resolved_at?: string | null
+    proposal?: Record<string, unknown>
+  }>
   providerMessageId?: string
   mealQueryErrors?: {
     idempotency?: string
@@ -64,13 +68,31 @@ function makeContextAndSupabase(opts: MockOptions) {
   const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
   const mealInserts: Array<Record<string, unknown>> = []
   const foodCorrectionWrites: Array<Record<string, unknown>> = []
-  let finalReplace: boolean | undefined = opts.llmSentReplace
+  const finalReplace: boolean | undefined = opts.llmSentReplace
 
   // Helper que retorna chain "Supabase-like" que ignora qualquer método
   // e termina com data fornecida. Suporta await (thenable).
   const chain = (rows: unknown): unknown => {
     const obj: Record<string, unknown> = { data: rows, error: null }
-    for (const m of ['select', 'eq', 'ilike', 'like', 'gte', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+    for (const m of [
+      'select',
+      'eq',
+      'ilike',
+      'like',
+      'gte',
+      'gt',
+      'lt',
+      'lte',
+      'neq',
+      'in',
+      'is',
+      'or',
+      'order',
+      'limit',
+      'range',
+      'maybeSingle',
+      'single',
+    ]) {
       obj[m] = () => chain(rows)
     }
     obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
@@ -96,9 +118,7 @@ function makeContextAndSupabase(opts: MockOptions) {
     ]) {
       obj[m] = () => resultChain(rows, errorMessage)
     }
-    obj.then = (
-      cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
-    ) =>
+    obj.then = (cb: (v: { data: unknown; error: { message: string } | null }) => unknown) =>
       Promise.resolve(
         cb(
           errorMessage
@@ -128,20 +148,34 @@ function makeContextAndSupabase(opts: MockOptions) {
           snapshot: boolean
         }): unknown => {
           const obj: Record<string, unknown> = {}
-          for (const m of ['select', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'not', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+          for (const m of [
+            'select',
+            'ilike',
+            'like',
+            'gt',
+            'lt',
+            'lte',
+            'neq',
+            'in',
+            'is',
+            'not',
+            'or',
+            'order',
+            'limit',
+            'range',
+            'maybeSingle',
+            'single',
+          ]) {
             obj[m] = () => mealChain(state)
           }
           obj.eq = (column: string) =>
             mealChain({
               ...state,
-              rawProviderMessage:
-                state.rawProviderMessage || column === 'raw_provider_message_id',
+              rawProviderMessage: state.rawProviderMessage || column === 'raw_provider_message_id',
               snapshot: state.snapshot || column === 'snapshot_id',
             })
           obj.gte = () => mealChain({ ...state, usedGte: true })
-          obj.then = (
-            cb: (v: { data: unknown; error: { message: string } | null }) => unknown,
-          ) => {
+          obj.then = (cb: (v: { data: unknown; error: { message: string } | null }) => unknown) => {
             const errorMessage = state.rawProviderMessage
               ? opts.mealQueryErrors?.idempotency
               : state.usedGte
@@ -163,11 +197,11 @@ function makeContextAndSupabase(opts: MockOptions) {
           return obj
         }
         return {
-          ...((mealChain({
+          ...(mealChain({
             usedGte: false,
             rawProviderMessage: false,
             snapshot: false,
-          }) as object)),
+          }) as object),
           insert: (row: Record<string, unknown> | Record<string, unknown>[]) => {
             for (const r of Array.isArray(row) ? row : [row]) mealInserts.push(r)
             return chain([])
@@ -192,10 +226,7 @@ function makeContextAndSupabase(opts: MockOptions) {
           }
           obj.or = () => correctionLookupChain(true)
           obj.then = (
-            cb: (value: {
-              data: unknown
-              error: { message: string } | null
-            }) => unknown,
+            cb: (value: { data: unknown; error: { message: string } | null }) => unknown,
           ) => {
             const errorMessage = usedOr ? undefined : opts.foodCorrectionErrors?.lookup
             return Promise.resolve(
@@ -209,7 +240,7 @@ function makeContextAndSupabase(opts: MockOptions) {
           return obj
         }
         return {
-          ...((correctionLookupChain(false) as object)),
+          ...(correctionLookupChain(false) as object),
           insert: (row: Record<string, unknown>) => {
             foodCorrectionWrites.push(row)
             return resultChain([], opts.foodCorrectionErrors?.write)
@@ -222,7 +253,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       }
       if (table === 'pending_registrations') {
         return {
-          ...((chain(opts.editedPendings ?? []) as object)),
+          ...(chain(opts.editedPendings ?? []) as object),
           insert: () => chain([]),
           update: () => chain([]),
           delete: () => chain([]),
@@ -231,7 +262,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       // daily_snapshots → retorna snapshot mock (precisa pra path do replace)
       if (table === 'daily_snapshots') {
         return {
-          ...((chain({ id: 'snap-mock' }) as object)),
+          ...(chain({ id: 'snap-mock' }) as object),
           insert: () => chain({ id: 'snap-mock' }),
           update: () => chain({ id: 'snap-mock' }),
           upsert: () => chain({ id: 'snap-mock' }),
@@ -239,7 +270,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       }
       // outros — stub vazio
       return {
-        ...((chain([]) as object)),
+        ...(chain([]) as object),
         insert: () => chain([]),
         update: () => chain([]),
         delete: () => chain([]),
@@ -251,7 +282,14 @@ function makeContextAndSupabase(opts: MockOptions) {
       if (fn === 'search_food_trgm') return { data: [], error: null }
       if (fn === 'snapshot_add_meal')
         return {
-          data: { id: 'snap-mock', calories_consumed: 0, protein_g: 0, calories_target: null, protein_target: null, daily_balance: 0 },
+          data: {
+            id: 'snap-mock',
+            calories_consumed: 0,
+            protein_g: 0,
+            calories_target: null,
+            protein_target: null,
+            daily_balance: 0,
+          },
           error: null,
         }
       if (fn === 'register_meal_atomic') {
@@ -449,7 +487,9 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
       ctx,
     )
 
-    expect(events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context')).toBeUndefined()
+    expect(
+      events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context'),
+    ).toBeUndefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeDefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_weak_evidence')).toBeDefined()
     expect(rpcCalls.find((c) => c.fn === 'register_meal_atomic')?.params.p_replace).toBe(false)
@@ -545,6 +585,42 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(events.find((e) => e.event === 'pipeline.user_kcal_override')).toBeDefined()
   })
 
+  it('não transforma o Total de um resumo nutricional em kcal do último item — caso Roberto', async () => {
+    const summary = `• pão francês (1 pão) — 150 kcal
+• ovo frito (1 unidade) — 94 kcal
+• queijo mussarela (30g) — 84 kcal
+• leite com whey (240 ml) — 228 kcal
+• geleia (15g) — 38 kcal
+Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`
+    const { ctx, mealInserts, rpcCalls, events } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: [summary],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: false,
+        items: [
+          { food_name: 'pão francês', quantity_g: 50 },
+          { food_name: 'ovo frito', quantity_g: 50 },
+          { food_name: 'queijo mussarela', quantity_g: 30 },
+          { food_name: 'leite com whey', quantity_g: 240 },
+          { food_name: 'geleia', quantity_g: 15 },
+        ],
+      } as never,
+      ctx,
+    )
+
+    expect(Number(mealInserts.find((row) => row.food_name === 'geleia')?.kcal)).toBe(39)
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(atomicCall).toBeDefined()
+    const savedItems = (atomicCall?.params.p_items as Array<{ kcal: number }> | undefined) ?? []
+    expect(savedItems.reduce((sum, item) => sum + item.kcal, 0)).not.toBe(593)
+    expect(events.find((event) => event.event === 'pipeline.user_kcal_override')).toBeUndefined()
+  })
+
   // BUG do PAULO 2026-05-13 18:43-19:15 (cross-meal-type):
   // Foto chegou 15:43 BRT → registrada como 'lanche'. Paulo corrigiu, LLM
   // mandou meal_type='almoco' + replace=true. Antes: detector filtrava só
@@ -595,8 +671,8 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     const { ctx, events } = makeContextAndSupabase({
       recentLogs: [
         { food_name: 'biscoito', quantity_g: 30, meal_type: 'lanche' }, // sem overlap
-        { food_name: 'arroz', quantity_g: 100, meal_type: 'almoco' },   // overlap
-        { food_name: 'feijão', quantity_g: 80, meal_type: 'almoco' },   // overlap
+        { food_name: 'arroz', quantity_g: 100, meal_type: 'almoco' }, // overlap
+        { food_name: 'feijão', quantity_g: 80, meal_type: 'almoco' }, // overlap
       ],
       recentUserMessages: ['era 150g de arroz, não 100'],
       llmSentReplace: true,
@@ -757,9 +833,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
 
   it('mesmo item em QUANTIDADE diferente → insere normal (não bloqueia) — não-regressão', async () => {
     const { ctx, events } = makeContextAndSupabase({
-      dayLogs: [
-        { food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' },
-      ],
+      dayLogs: [{ food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' }],
       recentLogs: [],
       // menciona "café" pra fixar meal_type (suprime autocorrect por hora).
       recentUserMessages: ['tomei mais um whey no café agora'],

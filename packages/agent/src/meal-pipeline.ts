@@ -7,6 +7,8 @@
  * ADR-006: cálculos saem da TACO, não do LLM.
  */
 import type { ServiceClient } from '@mpp/db'
+import { classifyNutritionContext, isAggregateNutritionText } from './nutrition-context.js'
+import { hasImpossibleKcalDensity } from './nutrition-invariants.js'
 
 export interface MealItemInput {
   food_name: string
@@ -35,6 +37,34 @@ export interface MealItemInput {
   user_kcal?: number
 }
 
+const KCAL_VALUE_RE = /(\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)\s*(?:k?cal(?:orias?)?)\b/gi
+
+function parseLocalizedNutritionNumber(raw: string): number {
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(raw)) return Number(raw.replace(/\./g, ''))
+  return Number(raw.replace(',', '.'))
+}
+
+function stripLeadingFormatting(text: string): string {
+  return normalizeFoodText(text).replace(/^[^a-z0-9]+/, '')
+}
+
+function isAggregateNutritionLine(line: string): boolean {
+  return isAggregateNutritionText(line)
+}
+
+function parseExplicitMealTotal(patientText: string): number | null {
+  for (const line of patientText.split(/\r?\n/)) {
+    const normalized = stripLeadingFormatting(line)
+    if (!/^total(?:\s+da\s+refeicao)?\s*:/i.test(normalized)) continue
+    KCAL_VALUE_RE.lastIndex = 0
+    const raw = KCAL_VALUE_RE.exec(line)?.[1]
+    if (!raw) return null
+    const value = parseLocalizedNutritionNumber(raw)
+    return Number.isFinite(value) && value >= 0 ? value : null
+  }
+  return null
+}
+
 /**
  * Parse de "X cal/kcal/calorias" no texto do paciente, associando a um item.
  *
@@ -55,22 +85,37 @@ export function parseUserKcalOverrides(
 ): Map<string, number> {
   const out = new Map<string, number>()
   if (!patientText || items.length === 0) return out
-  const normalize = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const nutritionContext = classifyNutritionContext(patientText)
+  const assertionText = nutritionContext.patientAssertions
+  if (!assertionText) return out
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
   const negatesKcalClaim = (segmentNorm: string) =>
     /\b(?:nao|n)\s+(?:tem|e|eh|sao|possui|bate|chega)\b/.test(segmentNorm) ||
     /\berrad[oa]s?\b/.test(segmentNorm)
   // Regex: número (inteiro ou decimal com . ou ,) + kcal/cal/calorias/caloria.
   // Aceita "70 kcal", "70kcal", "70 calorias", "70cal", "70,5 kcal".
   // NÃO aceita "g/grama/gramas" pra não casar com peso — pega só energia.
-  const KCAL_RE = /(\d+(?:[.,]\d+)?)\s*(?:k?cal(?:orias?)?)\b/gi
+  const KCAL_RE = KCAL_VALUE_RE
   // Trechos: split por ',', ':', ';', '|', '\n', '+', " e " (com espaços).
   // ATENÇÃO ao decimal "70,5" — vírgula entre dígitos NÃO é separador.
   // Lookbehind/ahead: split em [,:;|\n+] SÓ quando não está entre dígitos.
   // ` e ` (com espaços ao redor) é separador linguístico.
-  const segments = patientText.split(/(?<!\d)[,:;|\n+](?!\d)|(?<!\d),(?!\d)|(?:\s+e\s+)/i)
   // Normaliza nomes dos itens uma vez
   const normItems = items.map((it) => ({ raw: it.food_name, norm: normalize(it.food_name) }))
+  // Totais e linhas do card são agregados da refeição/dia, não kcal de um
+  // alimento. Removê-los antes do split também evita que "Total:" vire dois
+  // segmentos e o número seja herdado pelo último item visto.
+  const itemOnlyText = assertionText
+    .split(/\r?\n/)
+    .filter((line) => !isAggregateNutritionLine(line))
+    .join('\n')
+  // Primeiro separa blocos de card (`|`, quebra de linha, `+`) para que seja
+  // possível descartar `Total:`/`Restam:` inteiros antes de tratar `:` como
+  // separador de um item legítimo (`wrap: 70 kcal`).
+  const segments = itemOnlyText
+    .split(/(?<!\d)[|\n+](?!\d)/)
+    .filter((part) => !isAggregateNutritionLine(part))
+    .flatMap((part) => part.split(/(?<!\d)[:,;](?!\d)|(?<!\d),(?!\d)|(?:\s+e\s+)/i))
   // Default lastSeenItem: se só há UM item na refeição, ele é o alvo presumido
   // de qualquer kcal mencionada no texto (cobre caso "rap 10 : 70 cal" onde o
   // paciente escreveu "rap" mas LLM normalizou pra "wrap" no food_name).
@@ -88,6 +133,7 @@ export function parseUserKcalOverrides(
   for (const segRaw of segments) {
     const seg = segRaw.trim()
     if (!seg) continue
+    if (isAggregateNutritionLine(seg)) continue
     const segNorm = normalize(seg)
     let bestItem: string | null = null
     let bestPos = -1
@@ -108,11 +154,14 @@ export function parseUserKcalOverrides(
       }
     }
     let lastKcal: number | null = null
-    let m: RegExpExecArray | null
     KCAL_RE.lastIndex = 0
     if (!negatesKcalClaim(segNorm)) {
-      while ((m = KCAL_RE.exec(seg)) !== null) {
-        const n = Number(m[1]!.replace(',', '.'))
+      while (true) {
+        const match = KCAL_RE.exec(seg)
+        if (!match) break
+        const raw = match[1]
+        if (!raw) continue
+        const n = parseLocalizedNutritionNumber(raw)
         if (Number.isFinite(n) && n >= 0) lastKcal = n
       }
     }
@@ -146,6 +195,13 @@ export function parseUserKcalOverrides(
         out.set(item.food_name, seg.lastKcal)
       }
     }
+  }
+
+  const explicitTotal = parseExplicitMealTotal(assertionText)
+  if (explicitTotal != null && items.length > 1 && out.size === items.length) {
+    const itemSum = [...out.values()].reduce((sum, value) => sum + value, 0)
+    const tolerance = Math.max(2, explicitTotal * 0.02)
+    if (Math.abs(itemSum - explicitTotal) > tolerance) return new Map()
   }
 
   return out
@@ -262,11 +318,7 @@ export function naturalUnit(
   // OBS: regex usa substring sem \b porque JS \b não trata acentos (é, ó) como
   // word chars — \bp[óo]\b NÃO match "pó" no fim de string. Substring é seguro
   // aqui pois esses termos são únicos em nomes de alimentos.
-  if (
-    /em\s+p[óo]|sol[úu]vel|instant[âa]ne[oa]|em\s+flocos|em\s+folhas|granulad[oa]/i.test(
-      lower,
-    )
-  ) {
+  if (/em\s+p[óo]|sol[úu]vel|instant[âa]ne[oa]|em\s+flocos|em\s+folhas|granulad[oa]/i.test(lower)) {
     return { display_qty: qtyG, display_unit: 'g' }
   }
   // Chocolate em barra/bombom é sólido. A palavra "leite" em "chocolate ao
@@ -299,7 +351,7 @@ export function naturalUnit(
   }
   // Fatias (queijo, presunto, mortadela, peito de peru): se "fatiado" ou "fatia(s)" no nome
   if (/fatiad|\bfatia/.test(lower) && qtyG >= 15 && qtyG % 15 === 0) {
-    const units = qtyG / 15  // ~15g por fatia média
+    const units = qtyG / 15 // ~15g por fatia média
     return { display_qty: units, display_unit: units === 1 ? 'fatia' : 'fatias' }
   }
   // Banana média ≈ 100g; maçã ≈ 150g — só converte se múltiplo limpo
@@ -339,7 +391,11 @@ export function estimateMacros(foodName: string): {
 } {
   const n = foodName.toLowerCase()
   // Frutas (doces vs neutras)
-  if (/\buvas?\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(n)) {
+  if (
+    /\buvas?\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(
+      n,
+    )
+  ) {
     return { category: 'fruta', kcal: 55, protein: 0.8, carbs: 14, fat: 0.3, fiber: 1.5 }
   }
   // Vegetais folhosos
@@ -347,7 +403,11 @@ export function estimateMacros(foodName: string): {
     return { category: 'vegetal_folhoso', kcal: 18, protein: 1.5, carbs: 3, fat: 0.3, fiber: 1.8 }
   }
   // Vegetais cozidos / em geral
-  if (/br[óo]colis|couve-flor|abobrinha|berinjela|pepino|tomate|cenoura|beterraba|chuchu|vagem|ervilha|milho|aspargo|palmito/.test(n)) {
+  if (
+    /br[óo]colis|couve-flor|abobrinha|berinjela|pepino|tomate|cenoura|beterraba|chuchu|vagem|ervilha|milho|aspargo|palmito/.test(
+      n,
+    )
+  ) {
     return { category: 'vegetal', kcal: 35, protein: 2, carbs: 7, fat: 0.3, fiber: 2 }
   }
   // Empanados / fritos calóricos (Roberto 2026-06-05): tem que vir ANTES de
@@ -359,7 +419,9 @@ export function estimateMacros(foodName: string): {
   // boundary que tolera acento. "passarinho" pode vir como "à passarinho" ou
   // "a passarinho".
   if (
-    /(?:^|\s)(milanesa|empanad[oa]s?|parmegiana|parmigiana|schnitzel|nuggets?|escalope|cordon\s*bleu)(?:\s|$|,|\.)/.test(n) ||
+    /(?:^|\s)(milanesa|empanad[oa]s?|parmegiana|parmigiana|schnitzel|nuggets?|escalope|cordon\s*bleu)(?:\s|$|,|\.)/.test(
+      n,
+    ) ||
     /(?:^|\s)[àa]\s+passarinho(?:\s|$)/.test(n) ||
     /\b(frito|fritos?)\b.*(frango|peixe|carne|bife|peru|cordeiro|porco|costela)/.test(n) ||
     /(frango|peixe|carne|bife|peru|cordeiro|porco|costela).*\b(frito|fritos?)\b/.test(n)
@@ -375,15 +437,25 @@ export function estimateMacros(foodName: string): {
     return { category: 'empanado_frango', kcal: 280, protein: 23, carbs: 11, fat: 16, fiber: 0.5 }
   }
   // Embutidos / frios processados
-  if (/salame|presunto|mortadela|peito\s+de\s+peru|peru|peito\s+de\s+frango\s+defumado|salsicha|kani|kani\s+kama|sushi/.test(n)) {
+  if (
+    /salame|presunto|mortadela|peito\s+de\s+peru|peru|peito\s+de\s+frango\s+defumado|salsicha|kani|kani\s+kama|sushi/.test(
+      n,
+    )
+  ) {
     return { category: 'embutido', kcal: 180, protein: 18, carbs: 2, fat: 11, fiber: 0 }
   }
   // Peixe
-  if (/peixe|atum|salmão|tilápia|merluza|sardinha|bacalhau|camarão|sush|robalo|namorado|cação/.test(n)) {
+  if (
+    /peixe|atum|salmão|tilápia|merluza|sardinha|bacalhau|camarão|sush|robalo|namorado|cação/.test(n)
+  ) {
     return { category: 'peixe', kcal: 130, protein: 22, carbs: 0, fat: 4, fiber: 0 }
   }
   // Carne vermelha
-  if (/carne|bife|picanha|alcatra|file mignon|filé mignon|costela|patinho|coxão|maminha|fraldinha|cordeiro/.test(n)) {
+  if (
+    /carne|bife|picanha|alcatra|file mignon|filé mignon|costela|patinho|coxão|maminha|fraldinha|cordeiro/.test(
+      n,
+    )
+  ) {
     return { category: 'carne', kcal: 200, protein: 26, carbs: 0, fat: 11, fiber: 0 }
   }
   // Frango / aves
@@ -403,7 +475,11 @@ export function estimateMacros(foodName: string): {
     return { category: 'laticineo', kcal: 65, protein: 4, carbs: 5, fat: 3, fiber: 0 }
   }
   // Queijos
-  if (/queijo|cream\s+cheese|requeij[ãa]o|ricota|cottage|burrata|mussarela|provolone|parmes[ãa]o|gorgonzola/.test(n)) {
+  if (
+    /queijo|cream\s+cheese|requeij[ãa]o|ricota|cottage|burrata|mussarela|provolone|parmes[ãa]o|gorgonzola/.test(
+      n,
+    )
+  ) {
     return { category: 'queijo', kcal: 290, protein: 20, carbs: 3, fat: 22, fiber: 0 }
   }
   // Massas / carbos
@@ -441,7 +517,9 @@ export function estimateMacros(foodName: string): {
   if (
     /[áa]gua|ch[áa]\b|caf[ée]\s+preto|adoçant/.test(n) ||
     (/\b(zero|diet|light|sem a[çc][uú]car|sem calorias?)\b/.test(n) &&
-      /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|t[ôo]nica|energ[ée]tico)\b/.test(n))
+      /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|t[ôo]nica|energ[ée]tico)\b/.test(
+        n,
+      ))
   ) {
     return { category: 'bebida_zero', kcal: 1, protein: 0, carbs: 0, fat: 0, fiber: 0 }
   }
@@ -493,10 +571,37 @@ const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
 ])
 
 const SIMPLE_FRESH_FRUIT_MODIFIERS = new Set([
-  'branca', 'brancas', 'com', 'da', 'das', 'de', 'do', 'dos', 'fresca', 'frescas',
-  'fuji', 'gala', 'italiana', 'italianas', 'nanica', 'nanicas', 'prata', 'pratas',
-  'preta', 'pretas', 'roxa', 'roxas', 'semente', 'sementes', 'sem', 'unidade',
-  'unidades', 'verde', 'verdes', 'vermelha', 'vermelhas',
+  'branca',
+  'brancas',
+  'com',
+  'da',
+  'das',
+  'de',
+  'do',
+  'dos',
+  'fresca',
+  'frescas',
+  'fuji',
+  'gala',
+  'italiana',
+  'italianas',
+  'nanica',
+  'nanicas',
+  'prata',
+  'pratas',
+  'preta',
+  'pretas',
+  'roxa',
+  'roxas',
+  'semente',
+  'sementes',
+  'sem',
+  'unidade',
+  'unidades',
+  'verde',
+  'verdes',
+  'vermelha',
+  'vermelhas',
 ])
 
 const DERIVED_FRUIT_PATTERN =
@@ -505,15 +610,17 @@ const DERIVED_FRUIT_PATTERN =
 function simpleFreshFruitKey(foodName: string): string | null {
   const normalized = normalizeFoodText(foodName)
   if (!normalized || DERIVED_FRUIT_PATTERN.test(normalized)) return null
-  const tokens = normalized.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+  const tokens = normalized
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
   const fruitKeys = tokens
     .map((token) => SIMPLE_FRESH_FRUIT_ALIASES.get(token))
     .filter((token): token is string => token != null)
   if (fruitKeys.length !== 1) return null
   if (
     tokens.some(
-      (token) =>
-        !SIMPLE_FRESH_FRUIT_ALIASES.has(token) && !SIMPLE_FRESH_FRUIT_MODIFIERS.has(token),
+      (token) => !SIMPLE_FRESH_FRUIT_ALIASES.has(token) && !SIMPLE_FRESH_FRUIT_MODIFIERS.has(token),
     )
   ) {
     return null
@@ -535,9 +642,7 @@ function isSweetDerivedFruitMismatch(
   if (!matched) return false
   const fruitKey = simpleFreshFruitKey(foodName)
   if (fruitKey != null && simpleFreshFruitKey(matched) === fruitKey) return false
-  return (
-    (matchCategory ?? '').toLowerCase().includes('doce') || DERIVED_FRUIT_PATTERN.test(matched)
-  )
+  return (matchCategory ?? '').toLowerCase().includes('doce') || DERIVED_FRUIT_PATTERN.test(matched)
 }
 
 function isImplausibleFreshFruitHistory(
@@ -567,7 +672,11 @@ type MilkFatState = 'skim' | 'semi_skim' | 'whole' | 'unspecified'
 
 function inferSkinState(foodName: string): SkinState {
   const n = normalizeFoodText(foodName)
-  if (/\bsem\s+(?:a\s+)?pele\b|\bpele\s+(?:retirada|removida)\b|\b(?:retirada|removida)\s+(?:a\s+)?pele\b/.test(n)) {
+  if (
+    /\bsem\s+(?:a\s+)?pele\b|\bpele\s+(?:retirada|removida)\b|\b(?:retirada|removida)\s+(?:a\s+)?pele\b/.test(
+      n,
+    )
+  ) {
     return 'skinless'
   }
   if (/\bcom\s+(?:a\s+)?pele\b/.test(n)) return 'skin_on'
@@ -655,8 +764,7 @@ export function requiresVisualPreparationConfirmation(foodName: string): boolean
   const normalized = normalizeFoodText(foodName)
   if (!PROTEIN_FOOD_PATTERN.test(normalized)) return false
   return (
-    inferPreparationState(foodName) !== 'unspecified' ||
-    inferSkinState(foodName) !== 'unspecified'
+    inferPreparationState(foodName) !== 'unspecified' || inferSkinState(foodName) !== 'unspecified'
   )
 }
 
@@ -698,15 +806,69 @@ export interface MealCalcResult {
  * "espinafre refogado" (39 kcal/100g) → 47 kcal pra 120g de arroz = absurdo.
  */
 const PREPARATION_QUALIFIERS = new Set([
-  'refogado', 'refogada', 'cozido', 'cozida', 'frito', 'frita', 'assado',
-  'assada', 'grelhado', 'grelhada', 'cru', 'crua', 'natural', 'temperado',
-  'temperada', 'recheado', 'recheada', 'gratinado', 'gratinada', 'mexido',
-  'mexida', 'desfiado', 'desfiada', 'moído', 'moida', 'moído', 'moída',
-  'picado', 'picada', 'fatiado', 'fatiada', 'ralado', 'ralada',
-  'branco', 'branca', 'integral', 'doce', 'salgado', 'salgada', 'light',
-  'diet', 'zero', 'magro', 'magra', 'gordo', 'gorda',
-  'com', 'sem', 'ao', 'no', 'na', 'de', 'do', 'da', 'dos', 'das', 'e', 'em',
-  'pra', 'para', 'tipo', 'estilo', 'mix',
+  'refogado',
+  'refogada',
+  'cozido',
+  'cozida',
+  'frito',
+  'frita',
+  'assado',
+  'assada',
+  'grelhado',
+  'grelhada',
+  'cru',
+  'crua',
+  'natural',
+  'temperado',
+  'temperada',
+  'recheado',
+  'recheada',
+  'gratinado',
+  'gratinada',
+  'mexido',
+  'mexida',
+  'desfiado',
+  'desfiada',
+  'moído',
+  'moida',
+  'moído',
+  'moída',
+  'picado',
+  'picada',
+  'fatiado',
+  'fatiada',
+  'ralado',
+  'ralada',
+  'branco',
+  'branca',
+  'integral',
+  'doce',
+  'salgado',
+  'salgada',
+  'light',
+  'diet',
+  'zero',
+  'magro',
+  'magra',
+  'gordo',
+  'gorda',
+  'com',
+  'sem',
+  'ao',
+  'no',
+  'na',
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'e',
+  'em',
+  'pra',
+  'para',
+  'tipo',
+  'estilo',
+  'mix',
 ])
 
 export function extractAnchor(foodName: string): string | null {
@@ -744,7 +906,8 @@ function isTrustedHistorySource(source: string | null | undefined): boolean {
  * coco e a coca NORMAL não casam (sem qualificador zero) e seguem o fluxo normal.
  */
 const ZERO_CAL_QUALIFIER = /\b(zero|diet|light|sem a[çc][uú]car|sem calorias?)\b/i
-const DRINK_KEYWORD = /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|tônica|t[ôo]nica|energ[ée]tico)\b/i
+const DRINK_KEYWORD =
+  /\b(refri|refrigerante|coca|cola|guaran[áa]|soda|gaseosa|soft\s*drink|tônica|t[ôo]nica|energ[ée]tico)\b/i
 
 export function isZeroCalDrink(foodName: string, matchCategory?: string | null): boolean {
   const n = foodName.toLowerCase()
@@ -790,9 +953,11 @@ async function matchFood(
   // — postgres não garante ordem estável em ORDER BY similarity DESC quando há
   // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-5, ordena por
   // (similarity DESC, id ASC) em JS — mesma chamada, mesmo retorno, sempre).
-  const { data, error } = await (supabase as unknown as {
-    rpc: (n: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
-  }).rpc('search_food_trgm', {
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (n: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
+    }
+  ).rpc('search_food_trgm', {
     search_term: name.toLowerCase(),
     min_similarity: 0.2,
     max_results: 5,
@@ -895,13 +1060,12 @@ export async function lookupFoodCorrection(
    * múltiplas vezes — aplicar silenciosamente sem warning audível). */
   is_well_established: boolean
 } | null> {
-  const normalize = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
   const target = normalize(foodName)
   if (!target) return null
   const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+  // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
   // Busca por said_name OU corrected_to. Bug Amanda 2026-05-16: ela corrigiu
   // "iogurte de pêssego" → "iogurte de pêssego whey" com custom_macros, depois
@@ -964,7 +1128,7 @@ export async function lookupFoodCorrection(
  * os logs antigos), nos dias seguintes esse log vira fonte de verdade.
  *
  * Filtros importantes:
- *   - source em taco/history (cadeia confiável, sem estimativa por categoria)
+ *   - source em fontes explicitamente confiáveis (sem estimativa por categoria)
  *   - kcal > 0 (exclui logs sanity-rejected)
  *   - últimas 30d
  *   - case/acento-insensitive (normalize)
@@ -984,12 +1148,11 @@ export async function lookupUserHistory(
   matched_log_id: string
   matched_food_name: string
 } | null> {
-  const normalize = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  const normalize = normalizeFoodText
   const target = normalize(foodName)
   const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+  // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
   const { data, error } = await supaTyped
     .from('meal_logs')
@@ -1012,33 +1175,30 @@ export async function lookupUserHistory(
     source: string | null
   }>
   const compatibleRows = rows.filter(
-    (r) =>
-      isTrustedHistorySource(r.source) && !hasNutritionModifierConflict(foodName, r.food_name),
+    (r) => isTrustedHistorySource(r.source) && !hasNutritionModifierConflict(foodName, r.food_name),
   )
-  // Match exato (normalizado) primeiro; depois substring forte.
+  // Histórico pessoal só é seguro para o mesmo nome normalizado. Similaridade
+  // textual não comprova equivalência nutricional: "sorvete" e "sorvete de
+  // iogurte", ou "frango ao molho" e "frango ao molho cremoso", podem ter
+  // densidades muito diferentes. Variações e aliases ficam a cargo do food_db
+  // canônico e das correções explícitas do paciente.
   const exact = compatibleRows.find((r) => normalize(r.food_name) === target)
-  const sub =
-    exact ??
-    compatibleRows.find((r) => {
-      const n = normalize(r.food_name)
-      return n.length >= 4 && target.length >= 4 && (n.includes(target) || target.includes(n))
-    })
-  if (!sub || sub.quantity_g <= 0) return null
-  const factor100 = 100 / Number(sub.quantity_g)
-  const kcalPer100g = +(Number(sub.kcal) * factor100).toFixed(2)
-  const carbsPer100g = +(Number(sub.carbs_g) * factor100).toFixed(2)
-  const fatPer100g = +(Number(sub.fat_g) * factor100).toFixed(2)
+  if (!exact || exact.quantity_g <= 0) return null
+  const factor100 = 100 / Number(exact.quantity_g)
+  const kcalPer100g = +(Number(exact.kcal) * factor100).toFixed(2)
+  const carbsPer100g = +(Number(exact.carbs_g) * factor100).toFixed(2)
+  const fatPer100g = +(Number(exact.fat_g) * factor100).toFixed(2)
   if (isImplausibleFreshFruitHistory(foodName, kcalPer100g, carbsPer100g, fatPer100g)) {
     return null
   }
   return {
     kcal_per_100g: kcalPer100g,
-    protein_g: +(Number(sub.protein_g) * factor100).toFixed(2),
+    protein_g: +(Number(exact.protein_g) * factor100).toFixed(2),
     carbs_g: carbsPer100g,
     fat_g: fatPer100g,
     fiber_g: 0,
-    matched_log_id: sub.id,
-    matched_food_name: sub.food_name,
+    matched_log_id: exact.id,
+    matched_food_name: exact.food_name,
   }
 }
 
@@ -1060,13 +1220,40 @@ export async function calcMealMacros(
     // O pending é a fronteira de aprovação. Reconsultar TACO/histórico no tap
     // pode gravar números diferentes dos que acabaram de ser mostrados.
     const approved = it.approved_nutrition
-    if (
-      approved &&
-      it.quantity_g > 0 &&
+    const approvedValuesValid =
+      approved != null &&
       [approved.kcal, approved.protein_g, approved.carbs_g, approved.fat_g].every(
         (value) => Number.isFinite(value) && value >= 0,
       )
-    ) {
+    const approvedHasImpossibleDensity =
+      approved != null &&
+      approvedValuesValid &&
+      it.quantity_g > 0 &&
+      hasImpossibleKcalDensity(approved.kcal, it.quantity_g)
+    if (approved && approvedHasImpossibleDensity) {
+      const kcalDensity = approved.kcal / it.quantity_g
+      auditWarnings.push(
+        `"${it.food_name}" ignorou nutrição do pending com densidade fisicamente impossível (${approved.kcal} kcal em ${it.quantity_g}g; ${kcalDensity.toFixed(1)} kcal/g).`,
+      )
+      userWarnings.push(
+        `Os valores aprovados para "${it.food_name}" parecem incompatíveis com a quantidade, então recalculei pela referência nutricional do alimento.`,
+      )
+      if (userIdHint) {
+        await supabase.from('product_events').insert({
+          user_id: userIdHint,
+          event: 'meal_calc.approved_nutrition_rejected',
+          properties: {
+            food_name: it.food_name,
+            quantity_g: it.quantity_g,
+            approved_kcal: approved.kcal,
+            kcal_per_g: +kcalDensity.toFixed(2),
+            reason: 'physically_impossible_density',
+          },
+        })
+      }
+      it = { ...it, approved_nutrition: undefined, user_kcal: undefined }
+    }
+    if (approved && it.quantity_g > 0 && approvedValuesValid && !approvedHasImpossibleDensity) {
       const nat = naturalUnit(it.food_name, it.quantity_g)
       const kcal = +approved.kcal.toFixed(1)
       const protein = +approved.protein_g.toFixed(2)
@@ -1096,33 +1283,76 @@ export async function calcMealMacros(
     }
     // ── PRIORIDADE -3: KCAL EXPLÍCITO DO PACIENTE (Bug Luciana 2026-06-16) ──
     // Quando o paciente disse "rap 10 : 70 calorias", o número de kcal é fonte
-    // de verdade — override total do TACO/histórico/estimativa. P/C/F vêm da
-    // proporção do `estimateMacros` (categoria implícita), re-escalonados pro
-    // novo total de kcal mantendo o ratio P/C/F.
+    // de verdade — override total do TACO/histórico/estimativa. P/C/F usam o
+    // perfil canônico exato quando existe; caso contrário, usam a categoria
+    // implícita, sempre re-escalonados pro novo total de kcal.
     //
     // Caso real: Luciana mandou "rap 10 : 70 calorias" 4× e o sistema gravou
     // wrap 140 kcal todas as vezes porque ignorava o número no texto. Aqui
     // o agente registra exatamente o que o paciente disse — sem segunda chance
     // do trigram dominar.
     if (it.user_kcal != null && it.user_kcal >= 0 && it.quantity_g > 0) {
+      const kcalDensity = it.user_kcal / it.quantity_g
+      if (hasImpossibleKcalDensity(it.user_kcal, it.quantity_g)) {
+        auditWarnings.push(
+          `"${it.food_name}" ignorou kcal explícita com densidade fisicamente impossível (${it.user_kcal} kcal em ${it.quantity_g}g; ${kcalDensity.toFixed(1)} kcal/g).`,
+        )
+        userWarnings.push(
+          `O valor de ${it.user_kcal} kcal para ${it.quantity_g}g de "${it.food_name}" parece incompatível com a quantidade, então usei a referência nutricional do alimento.`,
+        )
+        if (userIdHint) {
+          await supabase.from('product_events').insert({
+            user_id: userIdHint,
+            event: 'meal_calc.user_kcal_rejected',
+            properties: {
+              food_name: it.food_name,
+              quantity_g: it.quantity_g,
+              user_kcal: it.user_kcal,
+              kcal_per_g: +kcalDensity.toFixed(2),
+              reason: 'physically_impossible_density',
+            },
+          })
+        }
+        it = { ...it, user_kcal: undefined }
+      }
+    }
+    if (it.user_kcal != null && it.user_kcal >= 0 && it.quantity_g > 0) {
+      const canonical = await matchFood(supabase, it.food_name, country)
+      const hasExactCanonicalBaseline =
+        canonical.id != null &&
+        canonical.kcal_per_100g != null &&
+        canonical.kcal_per_100g > 0 &&
+        normalizeFoodText(canonical.name_pt ?? '') === normalizeFoodText(it.food_name)
       const est = estimateMacros(it.food_name)
-      const baselineKcal = (est.kcal * it.quantity_g) / 100
+      const baselineKcalPer100g = hasExactCanonicalBaseline
+        ? (canonical.kcal_per_100g ?? est.kcal)
+        : est.kcal
+      const baselineProteinPer100g = hasExactCanonicalBaseline
+        ? (canonical.protein_g ?? 0)
+        : est.protein
+      const baselineCarbsPer100g = hasExactCanonicalBaseline ? (canonical.carbs_g ?? 0) : est.carbs
+      const baselineFatPer100g = hasExactCanonicalBaseline ? (canonical.fat_g ?? 0) : est.fat
+      const baselineFiberPer100g = hasExactCanonicalBaseline ? (canonical.fiber_g ?? 0) : est.fiber
+      const baselineKcal = (baselineKcalPer100g * it.quantity_g) / 100
       // Ratio P/C/F do baseline (por unidade de kcal). Se baseline for 0 (raro),
       // grava kcal e P/C/F=0 — paciente forçou o valor exato.
       const ratio = baselineKcal > 0 ? it.user_kcal / baselineKcal : 0
-      const scaledProt = +((est.protein * it.quantity_g) / 100 * ratio).toFixed(2)
-      const scaledCarb = +((est.carbs * it.quantity_g) / 100 * ratio).toFixed(2)
-      const scaledFat = +((est.fat * it.quantity_g) / 100 * ratio).toFixed(2)
-      const scaledFib = +((est.fiber * it.quantity_g) / 100 * ratio).toFixed(2)
+      const scaledProt = +(((baselineProteinPer100g * it.quantity_g) / 100) * ratio).toFixed(2)
+      const scaledCarb = +(((baselineCarbsPer100g * it.quantity_g) / 100) * ratio).toFixed(2)
+      const scaledFat = +(((baselineFatPer100g * it.quantity_g) / 100) * ratio).toFixed(2)
+      const scaledFib = +(((baselineFiberPer100g * it.quantity_g) / 100) * ratio).toFixed(2)
       const overrideKcal = +it.user_kcal.toFixed(1)
       const natU = naturalUnit(it.food_name, it.quantity_g)
+      const baselineLabel = hasExactCanonicalBaseline
+        ? `item canônico "${canonical.name_pt}"`
+        : `categoria "${est.category}"`
       auditWarnings.push(
-        `"${it.food_name}" usou kcal informado pelo paciente (${overrideKcal} kcal) em vez do lookup TACO (baseline categoria "${est.category}" ~${baselineKcal.toFixed(0)} kcal). P/C/F re-escalonados.`,
+        `"${it.food_name}" usou kcal informado pelo paciente (${overrideKcal} kcal; baseline ${baselineLabel} ~${baselineKcal.toFixed(0)} kcal). P/C/F re-escalonados.`,
       )
       matched.push({
         food_name: it.food_name,
-        matched_taco_name: `[kcal informado pelo paciente] ${est.category}`,
-        matched_taco_id: null,
+        matched_taco_name: `[kcal informado pelo paciente] ${canonical.name_pt ?? est.category}`,
+        matched_taco_id: hasExactCanonicalBaseline ? canonical.id : null,
         quantity_g: it.quantity_g,
         kcal: overrideKcal,
         protein_g: scaledProt,
@@ -1323,159 +1553,163 @@ export async function calcMealMacros(
       ) {
         // Match completo bom — segue pelo caminho não-composite (queda abaixo)
       } else {
-      const parts = it.food_name
-        .split(/ com | e | \+ /i)
-        .map((s) => s.trim())
-        .filter((s) => s.length >= 2)
-      // Dividir qty igual entre as partes
-      const partQty = it.quantity_g / parts.length
-      const partMatches: Array<{ name: string; m: Awaited<ReturnType<typeof matchFood>> }> = []
-      for (const p of parts) {
-        let pm = await matchFood(supabase, p, country)
-        // FALLBACK (Erika+Amanda 2026-05-15/16): se match da parte completa
-        // ficou baixo, tenta a ÚLTIMA palavra "substantiva" (ignorando
-        // preposições de/do/da/com). Ex: "lasanha de abóbora" → tenta "abóbora"
-        // que é entry específica do food_db. Exige sim>=0.55 pra evitar falso
-        // match (mais conservador que match composto inicial).
-        if (pm.similarity < 0.45 || pm.kcal_per_100g == null) {
-          const words = p
-            .split(/\s+/)
-            .filter((w) => w.length >= 3 && !/^(de|do|da|dos|das|com|e|ou|na|no|à|ao)$/i.test(w))
-          for (const w of [...words].reverse()) {
-            const m2 = await matchFood(supabase, w, country)
-            if (m2.similarity >= 0.55 && m2.kcal_per_100g != null) {
-              pm = m2
-              break
+        const parts = it.food_name
+          .split(/ com | e | \+ /i)
+          .map((s) => s.trim())
+          .filter((s) => s.length >= 2)
+        // Dividir qty igual entre as partes
+        const partQty = it.quantity_g / parts.length
+        const partMatches: Array<{ name: string; m: Awaited<ReturnType<typeof matchFood>> }> = []
+        for (const p of parts) {
+          let pm = await matchFood(supabase, p, country)
+          // FALLBACK (Erika+Amanda 2026-05-15/16): se match da parte completa
+          // ficou baixo, tenta a ÚLTIMA palavra "substantiva" (ignorando
+          // preposições de/do/da/com). Ex: "lasanha de abóbora" → tenta "abóbora"
+          // que é entry específica do food_db. Exige sim>=0.55 pra evitar falso
+          // match (mais conservador que match composto inicial).
+          if (pm.similarity < 0.45 || pm.kcal_per_100g == null) {
+            const words = p
+              .split(/\s+/)
+              .filter((w) => w.length >= 3 && !/^(de|do|da|dos|das|com|e|ou|na|no|à|ao)$/i.test(w))
+            for (const w of [...words].reverse()) {
+              const m2 = await matchFood(supabase, w, country)
+              if (m2.similarity >= 0.55 && m2.kcal_per_100g != null) {
+                pm = m2
+                break
+              }
             }
           }
+          partMatches.push({ name: p, m: pm })
         }
-        partMatches.push({ name: p, m: pm })
-      }
-      // Conta partes BOAS (sim>=0.45 + kcal valido). Estratégia em camadas:
-      //  - 100% boas: agrega tudo (caminho original)
-      //  - parcial: agrega só as boas com warning ao paciente
-      //  - threshold de parcial:
-      //      2-3 partes: >=50% (>=1 ou 2 boas)
-      //      4-5 partes: >=2 boas (40-50%)
-      //      6+ partes: >=33% (composto super complexo aceita mais perda)
-      const goodMatches = partMatches.filter(
-        (pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null,
-      )
-      const allGood = goodMatches.length === partMatches.length
-      const minGoodForPartial =
-        partMatches.length >= 6
-          ? Math.ceil(partMatches.length / 3)
-          : partMatches.length >= 4
-            ? 2
-            : Math.ceil(partMatches.length / 2)
-      const someGood = !allGood && goodMatches.length >= minGoodForPartial
-      if (allGood) {
-        // Adiciona cada parte como item separado, com nome composto preservado em matched_taco_name
-        let totalKcal = 0,
-          totalProt = 0,
-          totalCarbs = 0,
-          totalFat = 0,
-          totalFib = 0
-        for (const pm of partMatches) {
-          const f = partQty / 100
-          const kcal = +((pm.m.kcal_per_100g ?? 0) * f).toFixed(1)
-          const prot = +((pm.m.protein_g ?? 0) * f).toFixed(2)
-          const carb = +((pm.m.carbs_g ?? 0) * f).toFixed(2)
-          const fat = +((pm.m.fat_g ?? 0) * f).toFixed(2)
-          const fib = +((pm.m.fiber_g ?? 0) * f).toFixed(2)
-          totalKcal += kcal
-          totalProt += prot
-          totalCarbs += carb
-          totalFat += fat
-          totalFib += fib
-        }
-        const natComp = naturalUnit(it.food_name, it.quantity_g)
-        matched.push({
-          food_name: it.food_name,
-          matched_taco_name: partMatches.map((pm) => pm.m.name_pt).join(' + '),
-          matched_taco_id: null,
-          quantity_g: it.quantity_g,
-          kcal: +totalKcal.toFixed(1),
-          protein_g: +totalProt.toFixed(2),
-          carbs_g: +totalCarbs.toFixed(2),
-          fat_g: +totalFat.toFixed(2),
-          fiber_g: +totalFib.toFixed(2),
-          similarity: Math.min(...partMatches.map((pm) => pm.m.similarity)),
-          source: 'taco',
-          display_qty: natComp.display_qty,
-          display_unit: natComp.display_unit,
-        })
-        totals.kcal += totalKcal
-        totals.protein_g += totalProt
-        totals.carbs_g += totalCarbs
-        totals.fat_g += totalFat
-        totals.fiber_g += totalFib
-        auditWarnings.push(
-          `"${it.food_name}" auto-dividido em ${partMatches.map((pm) => pm.m.name_pt).join(' + ')} (qty ${partQty.toFixed(0)}g cada).`,
+        // Conta partes BOAS (sim>=0.45 + kcal valido). Estratégia em camadas:
+        //  - 100% boas: agrega tudo (caminho original)
+        //  - parcial: agrega só as boas com warning ao paciente
+        //  - threshold de parcial:
+        //      2-3 partes: >=50% (>=1 ou 2 boas)
+        //      4-5 partes: >=2 boas (40-50%)
+        //      6+ partes: >=33% (composto super complexo aceita mais perda)
+        const goodMatches = partMatches.filter(
+          (pm) => pm.m.similarity >= 0.45 && pm.m.kcal_per_100g != null,
         )
-        continue
-      }
-      // Algumas partes OK (mas não todas) — agrega só as boas com warning.
-      // Casos reais (sessão 2026-05-19): "lasanha de abóbora com queijo"
-      // (Erika 16/05), "muffin de banana com castanhas" (Amanda 16/05).
-      // Em vez de zerar TUDO, usa as partes que matcharam (proporcional
-      // a partes boas) e avisa o paciente do que faltou.
-      if (someGood) {
-        const partQtyGood = it.quantity_g / goodMatches.length
-        let totalKcal = 0, totalProt = 0, totalCarbs = 0, totalFat = 0, totalFib = 0
-        for (const pm of goodMatches) {
-          const f = partQtyGood / 100
-          totalKcal += (pm.m.kcal_per_100g ?? 0) * f
-          totalProt += (pm.m.protein_g ?? 0) * f
-          totalCarbs += (pm.m.carbs_g ?? 0) * f
-          totalFat += (pm.m.fat_g ?? 0) * f
-          totalFib += (pm.m.fiber_g ?? 0) * f
+        const allGood = goodMatches.length === partMatches.length
+        const minGoodForPartial =
+          partMatches.length >= 6
+            ? Math.ceil(partMatches.length / 3)
+            : partMatches.length >= 4
+              ? 2
+              : Math.ceil(partMatches.length / 2)
+        const someGood = !allGood && goodMatches.length >= minGoodForPartial
+        if (allGood) {
+          // Adiciona cada parte como item separado, com nome composto preservado em matched_taco_name
+          let totalKcal = 0,
+            totalProt = 0,
+            totalCarbs = 0,
+            totalFat = 0,
+            totalFib = 0
+          for (const pm of partMatches) {
+            const f = partQty / 100
+            const kcal = +((pm.m.kcal_per_100g ?? 0) * f).toFixed(1)
+            const prot = +((pm.m.protein_g ?? 0) * f).toFixed(2)
+            const carb = +((pm.m.carbs_g ?? 0) * f).toFixed(2)
+            const fat = +((pm.m.fat_g ?? 0) * f).toFixed(2)
+            const fib = +((pm.m.fiber_g ?? 0) * f).toFixed(2)
+            totalKcal += kcal
+            totalProt += prot
+            totalCarbs += carb
+            totalFat += fat
+            totalFib += fib
+          }
+          const natComp = naturalUnit(it.food_name, it.quantity_g)
+          matched.push({
+            food_name: it.food_name,
+            matched_taco_name: partMatches.map((pm) => pm.m.name_pt).join(' + '),
+            matched_taco_id: null,
+            quantity_g: it.quantity_g,
+            kcal: +totalKcal.toFixed(1),
+            protein_g: +totalProt.toFixed(2),
+            carbs_g: +totalCarbs.toFixed(2),
+            fat_g: +totalFat.toFixed(2),
+            fiber_g: +totalFib.toFixed(2),
+            similarity: Math.min(...partMatches.map((pm) => pm.m.similarity)),
+            source: 'taco',
+            display_qty: natComp.display_qty,
+            display_unit: natComp.display_unit,
+          })
+          totals.kcal += totalKcal
+          totals.protein_g += totalProt
+          totals.carbs_g += totalCarbs
+          totals.fat_g += totalFat
+          totals.fiber_g += totalFib
+          auditWarnings.push(
+            `"${it.food_name}" auto-dividido em ${partMatches.map((pm) => pm.m.name_pt).join(' + ')} (qty ${partQty.toFixed(0)}g cada).`,
+          )
+          continue
         }
-        const missing = partMatches.filter((pm) => !goodMatches.includes(pm)).map((pm) => pm.name)
-        const natComp = naturalUnit(it.food_name, it.quantity_g)
-        matched.push({
-          food_name: it.food_name,
-          matched_taco_name: goodMatches.map((pm) => pm.m.name_pt).join(' + ') + ' (parcial)',
-          matched_taco_id: null,
-          quantity_g: it.quantity_g,
-          kcal: +totalKcal.toFixed(1),
-          protein_g: +totalProt.toFixed(2),
-          carbs_g: +totalCarbs.toFixed(2),
-          fat_g: +totalFat.toFixed(2),
-          fiber_g: +totalFib.toFixed(2),
-          similarity: Math.min(...goodMatches.map((pm) => pm.m.similarity)),
-          source: 'taco',
-          display_qty: natComp.display_qty,
-          display_unit: natComp.display_unit,
-        })
-        totals.kcal += totalKcal
-        totals.protein_g += totalProt
-        totals.carbs_g += totalCarbs
-        totals.fat_g += totalFat
-        totals.fiber_g += totalFib
+        // Algumas partes OK (mas não todas) — agrega só as boas com warning.
+        // Casos reais (sessão 2026-05-19): "lasanha de abóbora com queijo"
+        // (Erika 16/05), "muffin de banana com castanhas" (Amanda 16/05).
+        // Em vez de zerar TUDO, usa as partes que matcharam (proporcional
+        // a partes boas) e avisa o paciente do que faltou.
+        if (someGood) {
+          const partQtyGood = it.quantity_g / goodMatches.length
+          let totalKcal = 0,
+            totalProt = 0,
+            totalCarbs = 0,
+            totalFat = 0,
+            totalFib = 0
+          for (const pm of goodMatches) {
+            const f = partQtyGood / 100
+            totalKcal += (pm.m.kcal_per_100g ?? 0) * f
+            totalProt += (pm.m.protein_g ?? 0) * f
+            totalCarbs += (pm.m.carbs_g ?? 0) * f
+            totalFat += (pm.m.fat_g ?? 0) * f
+            totalFib += (pm.m.fiber_g ?? 0) * f
+          }
+          const missing = partMatches.filter((pm) => !goodMatches.includes(pm)).map((pm) => pm.name)
+          const natComp = naturalUnit(it.food_name, it.quantity_g)
+          matched.push({
+            food_name: it.food_name,
+            matched_taco_name: goodMatches.map((pm) => pm.m.name_pt).join(' + ') + ' (parcial)',
+            matched_taco_id: null,
+            quantity_g: it.quantity_g,
+            kcal: +totalKcal.toFixed(1),
+            protein_g: +totalProt.toFixed(2),
+            carbs_g: +totalCarbs.toFixed(2),
+            fat_g: +totalFat.toFixed(2),
+            fiber_g: +totalFib.toFixed(2),
+            similarity: Math.min(...goodMatches.map((pm) => pm.m.similarity)),
+            source: 'taco',
+            display_qty: natComp.display_qty,
+            display_unit: natComp.display_unit,
+          })
+          totals.kcal += totalKcal
+          totals.protein_g += totalProt
+          totals.carbs_g += totalCarbs
+          totals.fat_g += totalFat
+          totals.fiber_g += totalFib
+          warnings.push(
+            `Calculei "${it.food_name}" usando só [${goodMatches.map((g) => g.m.name_pt).join(', ')}] — não identifiquei ${missing.length > 1 ? 'as partes' : 'a parte'} ${missing.map((p) => `"${p}"`).join(' e ')}. Se faltou algo importante, me corrija com o nome certo dessa parte e a quantidade.`,
+          )
+          continue
+        }
+        // Nenhuma ou pouquíssimas partes OK — rejeição (composite_rejected).
         warnings.push(
-          `Calculei "${it.food_name}" usando só [${goodMatches.map((g) => g.m.name_pt).join(', ')}] — não identifiquei ${missing.length > 1 ? 'as partes' : 'a parte'} ${missing.map((p) => `"${p}"`).join(' e ')}. Se faltou algo importante, me corrija com o nome certo dessa parte e a quantidade.`,
+          `Não consegui identificar "${it.food_name}" porque veio com vários alimentos juntos. Peça pro paciente descrever cada item separado com a quantidade (ex: "leite 250ml" e "whey 30g"). Não foi possível calcular as calorias desse item ainda.`,
         )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: '',
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: 0,
+          source: 'composite_rejected',
+        })
         continue
-      }
-      // Nenhuma ou pouquíssimas partes OK — rejeição (composite_rejected).
-      warnings.push(
-        `Não consegui identificar "${it.food_name}" porque veio com vários alimentos juntos. Peça pro paciente descrever cada item separado com a quantidade (ex: "leite 250ml" e "whey 30g"). Não foi possível calcular as calorias desse item ainda.`,
-      )
-      matched.push({
-        food_name: it.food_name,
-        matched_taco_name: '',
-        matched_taco_id: null,
-        quantity_g: it.quantity_g,
-        kcal: 0,
-        protein_g: 0,
-        carbs_g: 0,
-        fat_g: 0,
-        fiber_g: 0,
-        similarity: 0,
-        source: 'composite_rejected',
-      })
-      continue
       } // fecha else (auto-split)
       // Se chegou aqui, directMatch é bom — cai pro fluxo de match direto abaixo
     }
@@ -1489,11 +1723,7 @@ export async function calcMealMacros(
     const anchor = extractAnchor(it.food_name)
     const matchedNameLower = normalizeFoodText(m.name_pt ?? '')
     const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
-    const fruitSweetMismatch = isSweetDerivedFruitMismatch(
-      it.food_name,
-      m.name_pt,
-      m.category,
-    )
+    const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
     const preparationMismatch =
       m.name_pt != null && hasPreparationModifierConflict(it.food_name, m.name_pt)
 
@@ -1565,12 +1795,9 @@ export async function calcMealMacros(
       const kcalPerG = (m.kcal_per_100g ?? 0) / 100
       const lowerName = it.food_name.toLowerCase()
       const matchCat = (m.category ?? '').toLowerCase()
-      const categoryAllowsHighKcal = [
-        'gorduras',
-        'oleaginosas',
-        'sementes',
-        'doces',
-      ].includes(matchCat)
+      const categoryAllowsHighKcal = ['gorduras', 'oleaginosas', 'sementes', 'doces'].includes(
+        matchCat,
+      )
       const isFatLike =
         categoryAllowsHighKcal ||
         /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
@@ -1745,7 +1972,7 @@ export async function calcMealMacros(
       // ────────────────────────────────────────────────────────────────────
       const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+      // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaTyped = supabase as any
       const { data: prior, error: priorError } = await supaTyped
         .from('meal_logs')
@@ -1760,15 +1987,17 @@ export async function calcMealMacros(
         throw nutritionSourceError(priorError, 'median food history lookup failed')
       }
       if (prior && prior.length > 0) {
-        const compatiblePrior = (prior as Array<{
-          food_name: string
-          quantity_g: number
-          kcal: number
-          protein_g: number
-          carbs_g: number
-          fat_g: number
-          source: string | null
-        }>).filter(
+        const compatiblePrior = (
+          prior as Array<{
+            food_name: string
+            quantity_g: number
+            kcal: number
+            protein_g: number
+            carbs_g: number
+            fat_g: number
+            source: string | null
+          }>
+        ).filter(
           (p) =>
             isTrustedHistorySource(p.source) &&
             !hasNutritionModifierConflict(it.food_name, p.food_name),
@@ -1795,9 +2024,7 @@ export async function calcMealMacros(
           const median = (arr: number[]): number => {
             const sorted = [...arr].sort((a, b) => a - b)
             const mid = Math.floor(sorted.length / 2)
-            return sorted.length % 2 === 0
-              ? (sorted[mid - 1]! + sorted[mid]!) / 2
-              : sorted[mid]!
+            return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
           }
           const medKcal100 = median(per100g.map((p) => p.kcal))
           const medProt100 = median(per100g.map((p) => p.protein_g))
@@ -1887,7 +2114,6 @@ export async function calcMealMacros(
       totals.carbs_g += eCarb
       totals.fat_g += eFat
       totals.fiber_g += eFib
-      continue
     }
   }
 
@@ -1900,7 +2126,13 @@ export async function calcMealMacros(
   }
 }
 
-function roundTotals(t: { kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number }) {
+function roundTotals(t: {
+  kcal: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+  fiber_g: number
+}) {
   return {
     kcal: +t.kcal.toFixed(1),
     protein_g: +t.protein_g.toFixed(1),

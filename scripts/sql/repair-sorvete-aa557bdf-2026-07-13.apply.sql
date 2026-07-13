@@ -46,6 +46,47 @@ BEGIN
 END;
 $lock_rows$;
 
+CREATE TEMP TABLE repair_expected_progress_before ON COMMIT DROP AS
+WITH profile AS (
+  SELECT CASE
+    WHEN user_profile.current_protocol = 'recomposicao'
+      THEN coalesce(user_profile.deficit_level, 500)
+    ELSE 0
+  END::numeric AS design_deficit
+  FROM public.user_profiles AS user_profile
+  JOIN repair_params AS params ON params.target_user_id = user_profile.user_id
+),
+credits AS (
+  SELECT CASE
+    WHEN NOT (
+      EXISTS (SELECT 1 FROM public.meal_logs AS meal WHERE meal.snapshot_id = snapshot.id)
+      OR coalesce(snapshot.exercise_calories, 0) > 0
+      OR snapshot.training_done
+    ) THEN 0
+    WHEN snapshot.day_status = 'user_skipped'
+      THEN profile.design_deficit - snapshot.daily_balance
+    WHEN snapshot.calories_target IS NOT NULL
+      AND snapshot.calories_target > 0
+      AND snapshot.calories_consumed < 0.5 * snapshot.calories_target
+      THEN CASE WHEN snapshot.day_status = 'complete' OR snapshot.day_status IS NULL
+        THEN profile.design_deficit ELSE 0 END
+    WHEN snapshot.day_status = 'incomplete_no_response' THEN 0
+    ELSE profile.design_deficit - snapshot.daily_balance
+  END AS credit
+  FROM public.daily_snapshots AS snapshot
+  JOIN repair_params AS params ON params.target_user_id = snapshot.user_id
+  CROSS JOIN profile
+  WHERE snapshot.day_closed = true
+),
+total AS (
+  SELECT greatest(0, round(coalesce(sum(credit), 0)))::integer AS value
+  FROM credits
+)
+SELECT
+  (total.value / 7700)::smallint AS blocks_completed,
+  total.value % 7700 AS deficit_block
+FROM total;
+
 DO $preconditions$
 BEGIN
   IF NOT EXISTS (
@@ -77,6 +118,7 @@ BEGIN
     SELECT 1
     FROM public.meal_logs AS meal
     JOIN repair_params AS params ON params.target_log_id = meal.id
+    JOIN public.users AS users ON users.id = params.target_user_id
     WHERE meal.user_id = params.target_user_id
       AND meal.snapshot_id = params.target_snapshot_id
       AND lower(trim(meal.food_name)) = 'sorvete'
@@ -88,6 +130,7 @@ BEGIN
       AND meal.source = 'taco'
       AND meal.food_db_id IS NULL
       AND meal.meal_type = 'jantar'
+      AND (meal.consumed_at AT TIME ZONE users.timezone)::date = params.target_date
   ) THEN
     RAISE EXCEPTION 'precondition failed: target meal log changed';
   END IF;
@@ -122,10 +165,13 @@ BEGIN
     SELECT 1
     FROM public.user_progress AS progress
     JOIN repair_params AS params ON params.target_user_id = progress.user_id
+    CROSS JOIN repair_expected_progress_before AS expected
     WHERE progress.deficit_block = 3581
       AND progress.blocks_completed = 6
+      AND progress.deficit_block = expected.deficit_block
+      AND progress.blocks_completed = expected.blocks_completed
   ) THEN
-    RAISE EXCEPTION 'precondition failed: block progress changed';
+    RAISE EXCEPTION 'precondition failed: block progress or replay baseline changed';
   END IF;
 END;
 $preconditions$;

@@ -53,6 +53,33 @@ profile AS (
   CROSS JOIN params
   WHERE profile.user_id = params.target_user_id
 ),
+current_credits AS (
+  SELECT CASE
+    WHEN NOT (
+      EXISTS (SELECT 1 FROM public.meal_logs AS meal WHERE meal.snapshot_id = snapshot.id)
+      OR coalesce(snapshot.exercise_calories, 0) > 0
+      OR snapshot.training_done
+    ) THEN 0
+    WHEN snapshot.day_status = 'user_skipped'
+      THEN profile.design_deficit - snapshot.daily_balance
+    WHEN snapshot.calories_target IS NOT NULL
+      AND snapshot.calories_target > 0
+      AND snapshot.calories_consumed < 0.5 * snapshot.calories_target
+      THEN CASE WHEN snapshot.day_status = 'complete' OR snapshot.day_status IS NULL
+        THEN profile.design_deficit ELSE 0 END
+    WHEN snapshot.day_status = 'incomplete_no_response' THEN 0
+    ELSE profile.design_deficit - snapshot.daily_balance
+  END AS credit
+  FROM public.daily_snapshots AS snapshot
+  CROSS JOIN params
+  CROSS JOIN profile
+  WHERE snapshot.user_id = params.target_user_id
+    AND snapshot.day_closed = true
+),
+current_progress AS (
+  SELECT greatest(0, round(coalesce(sum(credit), 0)))::integer AS total
+  FROM current_credits
+),
 effective_closed AS (
   SELECT
     snapshot.id,
@@ -125,7 +152,8 @@ checks AS (
        AND bool_and(source = 'taco')
        AND bool_and(food_db_id IS NULL)
        AND bool_and(meal_type = 'jantar')
-     FROM target_log CROSS JOIN params) AS log_ok,
+       AND bool_and((consumed_at AT TIME ZONE target_user.timezone)::date = params.target_date)
+     FROM target_log CROSS JOIN params CROSS JOIN target_user) AS log_ok,
     (SELECT count(*) = 1
        AND bool_and(user_id = params.target_user_id)
        AND bool_and(date = params.target_date)
@@ -144,7 +172,11 @@ checks AS (
     (SELECT count(*) = 1
        AND bool_and(deficit_block = 3581)
        AND bool_and(blocks_completed = 6)
-     FROM public.user_progress AS progress CROSS JOIN params
+       AND bool_and(deficit_block = current_progress.total % 7700)
+       AND bool_and(blocks_completed = current_progress.total / 7700)
+     FROM public.user_progress AS progress
+     CROSS JOIN params
+     CROSS JOIN current_progress
      WHERE progress.user_id = params.target_user_id) AS progress_ok
 )
 SELECT jsonb_build_object(
@@ -197,6 +229,10 @@ SELECT jsonb_build_object(
       FROM public.user_progress AS progress
       WHERE progress.user_id = params.target_user_id
     ),
+    'replay_before', jsonb_build_object(
+      'blocks_completed', current_progress.total / 7700,
+      'deficit_block', current_progress.total % 7700
+    ),
     'after', jsonb_build_object(
       'blocks_completed', proposed_progress.total / 7700,
       'deficit_block', proposed_progress.total % 7700
@@ -208,4 +244,5 @@ CROSS JOIN checks
 CROSS JOIN target_log
 CROSS JOIN target_snapshot
 CROSS JOIN proposed_snapshot
+CROSS JOIN current_progress
 CROSS JOIN proposed_progress;

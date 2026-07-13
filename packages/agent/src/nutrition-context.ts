@@ -2,6 +2,8 @@ const KCAL_VALUE = /\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?/
 const KCAL_CLAIM = new RegExp(`(?:${KCAL_VALUE.source})\\s*(?:k?cal(?:orias?)?)\\b`, 'i')
 const QUANTITY_IN_PARENS =
   /\([^)]*\d+(?:[.,]\d+)?\s*(?:kg|g|ml|litros?|l|unidades?|unid\.?|p(?:ão|ães|ao|aes)|fatias?|colheres?|copos?|xícaras?|xicaras?|bolas?|porções?|porcoes?|scoops?)[^)]*\)/i
+const NATURAL_PORTION_IN_PARENS =
+  /\(\s*\d+(?:[.,]\d+)?\s+(?:[\p{L}\p{M}][\p{L}\p{M}'-]*\s*){1,4}\)/iu
 const BULLET_PREFIX = /^\s*[•·\-*]\s+/
 const AGGREGATE_PREFIX =
   /^(?:total(?:\s+da\s+refeicao)?|consumid[oa]|restam?|restante|saldo|meta|proteina|carboidratos?|gorduras?|exercicio|bloco\s*7700)\s*:/i
@@ -22,7 +24,12 @@ export function isAggregateNutritionText(text: string): boolean {
 }
 
 function isStructuredNutritionItem(text: string): boolean {
-  if (!KCAL_CLAIM.test(text) || !QUANTITY_IN_PARENS.test(text)) return false
+  if (
+    !KCAL_CLAIM.test(text) ||
+    (!QUANTITY_IN_PARENS.test(text) && !NATURAL_PORTION_IN_PARENS.test(text))
+  ) {
+    return false
+  }
   return (
     BULLET_PREFIX.test(text) ||
     /[—–-]\s*\d/.test(text) ||

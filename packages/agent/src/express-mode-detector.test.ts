@@ -113,6 +113,22 @@ Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`,
     expect(r.reason).toBe('structured_nutrition_summary')
   })
 
+  it('card com porções naturais também nunca grava direto', () => {
+    const r = isMealExpressEligible({
+      contentType: 'text',
+      patientText: `· banana (1 banana): 89 kcal | 1.1g proteína
+· maçã (1 maçã): 72 kcal | 0.4g proteína
+Total: 161 kcal`,
+      items: [
+        { food_name: 'banana', quantity_g: 100 },
+        { food_name: 'maçã', quantity_g: 130 },
+      ],
+    })
+
+    expect(r.eligible).toBe(false)
+    expect(r.reason).toBe('structured_nutrition_summary')
+  })
+
   it('números de kcal sem quantidade explícita não tornam a refeição express', () => {
     const r = isMealExpressEligible({
       contentType: 'text',

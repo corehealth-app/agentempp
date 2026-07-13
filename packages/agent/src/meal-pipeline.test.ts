@@ -1754,6 +1754,18 @@ Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`,
     expect(overrides.size).toBe(0)
   })
 
+  it('não interpreta card com unidade natural repetindo o alimento como override', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      `· banana (1 banana): 89 kcal | 1.1g proteína | 22.8g carboidrato | 0.3g gordura
+· maçã (1 maçã): 72 kcal | 0.4g proteína | 19g carboidrato | 0.2g gordura
+Total: 161 kcal | 1.5g proteína | 41.8g carboidrato | 0.5g gordura`,
+      [{ food_name: 'banana' }, { food_name: 'maçã' }],
+    )
+
+    expect(overrides.size).toBe(0)
+  })
+
   it('preserva correção explícita escrita fora de um card nutricional', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
     const overrides = parseUserKcalOverrides(

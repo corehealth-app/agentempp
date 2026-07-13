@@ -913,6 +913,8 @@ export async function processMessage(
             )
             let proposalItems: MealItem[] = resolved.items.map((m) => ({
               name: m.food_name,
+              food_db_id: m.matched_taco_id,
+              nutrition_source: m.source,
               quantity_g: m.quantity_g,
               display_qty: m.display_qty ?? null,
               display_unit: m.display_unit ?? null,

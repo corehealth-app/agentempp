@@ -37,6 +37,10 @@ const MEAL_CONFIRM: Record<string, string> = {
 
 export interface MealItem {
   name: string
+  /** Canonical food reference used to calculate this item, when available. */
+  food_db_id?: number | null
+  /** Nutrition provenance captured before a pending is approved. */
+  nutrition_source?: string | null
   quantity_g: number
   display_qty?: number | null
   display_unit?: string | null

@@ -40,6 +40,7 @@ type HistoryRow = {
   carbs_g: number
   fat_g: number
   source?: string
+  food_db_id?: number | null
 }
 
 type CorrectionRow = {
@@ -111,7 +112,11 @@ function makeMock(
     from: (table: string) => {
       if (table === 'meal_logs') {
         return makeChain(
-          historyRows.map((row) => ({ source: 'taco', ...row })),
+          historyRows.map((row) => ({
+            source: 'canonical_exact',
+            food_db_id: row.food_db_id ?? 9999,
+            ...row,
+          })),
           failures.history,
         )
       }
@@ -142,7 +147,7 @@ describe('calcMealMacros — composite handling', () => {
     })
     const r = await calcMealMacros(mock, [{ food_name: 'leite com whey', quantity_g: 200 }], 'BR')
     expect(r.totals.kcal).toBeGreaterThan(0)
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeCloseTo(190, 0)
   })
 })
@@ -195,7 +200,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'bacon', quantity_g: 30 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeGreaterThan(150) // ~162 kcal
     expect(r.user_warnings).toHaveLength(0)
   })
@@ -215,7 +220,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'queijo parmesão', quantity_g: 20 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeGreaterThan(50)
     expect(r.user_warnings).toHaveLength(0)
   })
@@ -235,7 +240,7 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'castanha do pará', quantity_g: 25 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeGreaterThan(100)
     expect(r.user_warnings).toHaveLength(0)
   })
@@ -310,7 +315,7 @@ describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
 
     const r = await calcMealMacros(mock, [{ food_name: 'goiabada', quantity_g: 150 }], 'BR')
 
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.matched_taco_name).toBe('goiabada')
     expect(r.items[0]?.kcal).toBeCloseTo(382.5, 1)
   })
@@ -413,7 +418,7 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'arroz', quantity_g: 150 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.user_warnings).toHaveLength(0)
     expect(r.audit_warnings.some((w) => /baixa confian|sim=/i.test(w))).toBe(true)
   })
@@ -455,7 +460,7 @@ describe('calcMealMacros — separação user_warnings vs audit_warnings', () =>
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'leite e whey', quantity_g: 250 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_composite')
     expect(r.items[0]?.kcal).toBeGreaterThan(0)
     expect(r.user_warnings).toHaveLength(0)
     expect(r.audit_warnings.some((w) => /auto-dividido/i.test(w))).toBe(true)
@@ -501,7 +506,7 @@ describe('calcMealMacros — proteína esperada (sanity 3)', () => {
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'ovo', quantity_g: 100 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.items[0]?.kcal).toBe(146)
     expect(r.user_warnings).toHaveLength(0)
   })
@@ -590,8 +595,77 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       'user-with-bad-history',
     )
 
-    expect(result.items[0]?.source).toBe('taco')
+    expect(result.items[0]?.source).toBe('canonical_exact')
     expect(result.items[0]?.kcal).toBe(192)
+  })
+
+  it('dois usuários recebem o mesmo food_db id e os mesmos valores canônicos', async () => {
+    const canonical: MockRow = {
+      id: 379,
+      name_pt: 'sorvete',
+      category: 'doces',
+      similarity: 1,
+      kcal_per_100g: 210,
+      protein_g: 3.5,
+      carbs_g: 24,
+      fat_g: 11,
+      fiber_g: 0,
+    }
+    const mock = makeMock({ sorvete: canonical })
+
+    const [roberto, luciana] = await Promise.all([
+      calcMealMacros(mock, [{ food_name: 'sorvete', quantity_g: 120 }], 'BR', 'user-roberto'),
+      calcMealMacros(mock, [{ food_name: 'sorvete', quantity_g: 120 }], 'BR', 'user-luciana'),
+    ])
+
+    expect(roberto.items[0]).toMatchObject({
+      matched_taco_id: 379,
+      source: 'canonical_exact',
+      kcal: 252,
+      protein_g: 4.2,
+      carbs_g: 28.8,
+      fat_g: 13.2,
+    })
+    expect(luciana.items[0]).toEqual(roberto.items[0])
+  })
+
+  it('histórico derivado de outro histórico nunca alimenta um novo registro', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'history-recursive',
+        food_name: 'leite com whey',
+        quantity_g: 240,
+        kcal: 228,
+        protein_g: 24,
+        carbs_g: 12,
+        fat_g: 7.2,
+        source: 'history',
+        food_db_id: 413,
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'leite com whey')).resolves.toBeNull()
+  })
+
+  it('histórico canônico direto exige e preserva food_db_id', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'history-direct-canonical',
+        food_name: 'leite com whey',
+        quantity_g: 240,
+        kcal: 228,
+        protein_g: 24,
+        carbs_g: 12,
+        fat_g: 7.2,
+        source: 'canonical_exact',
+        food_db_id: 413,
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'leite com whey')).resolves.toMatchObject({
+      food_db_id: 413,
+      kcal_per_100g: 95,
+    })
   })
 
   it('nome genérico não herda silenciosamente um subtipo do histórico', async () => {
@@ -707,7 +781,7 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       'BR',
       undefined, // sem userId
     )
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.items[0]?.kcal).toBe(128) // do food_db, não do histórico
   })
 
@@ -744,7 +818,7 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       'BR',
       'user-y',
     )
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBe(89) // banana, não whey
     expect(r.items[0]?.matched_taco_name).not.toContain('histórico')
   })
@@ -785,7 +859,8 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
         protein_g: 20,
         carbs_g: 10,
         fat_g: 6,
-        source: 'taco',
+        source: 'canonical_exact',
+        food_db_id: 413,
       },
     ])
 
@@ -819,7 +894,7 @@ describe('calcMealMacros — fruta plural e proveniência do histórico', () => 
 
     const r = await calcMealMacros(mock, [{ food_name: 'uvas roxas', quantity_g: 70 }], 'BR')
 
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
     expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
   })
@@ -855,7 +930,7 @@ describe('calcMealMacros — fruta plural e proveniência do histórico', () => 
       'user-grapes',
     )
 
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
     expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
   })
@@ -881,7 +956,7 @@ describe('calcMealMacros — fruta plural e proveniência do histórico', () => 
       'user-grapes',
     )
 
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
     expect(r.items[0]?.matched_taco_name).toBe('uva roxa')
     expect(r.items[0]?.kcal).toBeCloseTo(48.3, 1)
   })
@@ -1253,7 +1328,7 @@ describe('calcMealMacros — bebida zero/diet/light (Bug Luciana 2026-05-25)', (
     })
     const r = await calcMealMacros(mock, [{ food_name: 'coca-cola', quantity_g: 350 }], 'BR')
     expect(r.items[0]?.kcal).toBeCloseTo(147, 0)
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
   })
 
   it('NÃO-REGRESSÃO: "suco de laranja" (bebida calórica, sem zero) NÃO zera', async () => {
@@ -1426,7 +1501,7 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
 
     const r = await calcMealMacros(mock, [{ food_name: 'frango grelhado', quantity_g: 120 }], 'BR')
 
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeCloseTo(190.8, 1)
     expect(r.items[0]?.fat_g).toBeCloseTo(3, 1)
   })
@@ -1499,7 +1574,7 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
       [{ food_name: 'frango à milanesa', quantity_g: 160 }],
       'BR',
     )
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeCloseTo(448, 0)
   })
 
@@ -1518,7 +1593,7 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
       },
     })
     const r = await calcMealMacros(mock, [{ food_name: 'frango assado', quantity_g: 160 }], 'BR')
-    expect(r.items[0]?.source).toBe('taco')
+    expect(r.items[0]?.source).toBe('canonical_exact')
     expect(r.items[0]?.kcal).toBeCloseTo(304, 0)
   })
 
@@ -1836,7 +1911,7 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
 
     expect(result.items[0]).toMatchObject({
       kcal: 37.5,
-      source: 'taco',
+      source: 'canonical_exact',
       carbs_g: 9.45,
     })
     expect(result.audit_warnings.some((warning) => /densidade.*impossível/i.test(warning))).toBe(
@@ -1967,7 +2042,7 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
       'user-with-corrupt-pending',
     )
 
-    expect(result.items[0]).toMatchObject({ kcal: 37.5, source: 'taco' })
+    expect(result.items[0]).toMatchObject({ kcal: 37.5, source: 'canonical_exact' })
     expect(result.audit_warnings.join(' ')).toMatch(/pending.*densidade.*impossível/i)
   })
 })

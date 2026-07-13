@@ -13,6 +13,7 @@ describe('buildConfirmedMealArgs', () => {
         items: [
           {
             name: 'frango grelhado',
+            food_db_id: 321,
             quantity_g: 120,
             kcal: 191,
             protein_g: 38.4,
@@ -46,6 +47,7 @@ describe('buildConfirmedMealArgs', () => {
       },
     ])
     expect(args.items[0]?.approved_nutrition).toEqual({
+      food_db_id: 321,
       kcal: 191,
       protein_g: 38.4,
       carbs_g: 0,

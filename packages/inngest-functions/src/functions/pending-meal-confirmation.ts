@@ -21,6 +21,7 @@ export interface ConfirmedMealArgs {
     display_unit?: string | null
     user_kcal?: number
     approved_nutrition: {
+      food_db_id?: number | null
       kcal: number
       protein_g: number
       carbs_g: number
@@ -80,6 +81,7 @@ export function buildConfirmedMealArgs(
       display_unit: item.display_unit,
       user_kcal: item.user_kcal ?? undefined,
       approved_nutrition: {
+        food_db_id: item.food_db_id ?? null,
         kcal: item.kcal,
         protein_g: item.protein_g,
         carbs_g: item.carbs_g,

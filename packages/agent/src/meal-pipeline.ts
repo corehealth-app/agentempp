@@ -19,6 +19,7 @@ export interface MealItemInput {
    * deterministic confirmation handler may provide it.
    */
   approved_nutrition?: {
+    food_db_id?: number | null
     kcal: number
     protein_g: number
     carbs_g: number
@@ -268,6 +269,12 @@ export interface MealItemMatched {
   similarity: number
   source:
     | 'taco'
+    | 'canonical_exact'
+    | 'canonical_fuzzy'
+    | 'canonical_composite'
+    | 'canonical_composite_partial'
+    | 'rule_based'
+    | 'user_correction'
     | 'history'
     | 'user_kcal'
     | 'pending_approved'
@@ -886,10 +893,24 @@ export function extractAnchor(foodName: string): string | null {
   return tokens[0] ? normalizeFoodText(tokens[0]) : null
 }
 
-const TRUSTED_HISTORY_SOURCES = ['taco', 'history', 'user_kcal', 'pending_approved'] as const
+const TRUSTED_HISTORY_SOURCES = [
+  'canonical_exact',
+  'canonical_fuzzy',
+  'user_kcal',
+  'pending_approved',
+] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
   return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
+}
+
+function canonicalSource(
+  requestedName: string,
+  canonicalName: string | null,
+): 'canonical_exact' | 'canonical_fuzzy' {
+  return normalizeFoodText(requestedName) === normalizeFoodText(canonicalName ?? '')
+    ? 'canonical_exact'
+    : 'canonical_fuzzy'
 }
 
 /**
@@ -1140,6 +1161,7 @@ export async function lookupUserHistory(
   userId: string,
   foodName: string,
 ): Promise<{
+  food_db_id: number
   kcal_per_100g: number
   protein_g: number
   carbs_g: number
@@ -1156,7 +1178,7 @@ export async function lookupUserHistory(
   const supaTyped = supabase as any
   const { data, error } = await supaTyped
     .from('meal_logs')
-    .select('id, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
+    .select('id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
     .eq('user_id', userId)
     .in('source', [...TRUSTED_HISTORY_SOURCES])
     .gt('kcal', 0)
@@ -1167,6 +1189,7 @@ export async function lookupUserHistory(
   const rows = (data ?? []) as Array<{
     id: string
     food_name: string
+    food_db_id: number | null
     quantity_g: number
     kcal: number
     protein_g: number
@@ -1182,7 +1205,9 @@ export async function lookupUserHistory(
   // iogurte", ou "frango ao molho" e "frango ao molho cremoso", podem ter
   // densidades muito diferentes. Variações e aliases ficam a cargo do food_db
   // canônico e das correções explícitas do paciente.
-  const exact = compatibleRows.find((r) => normalize(r.food_name) === target)
+  const exact = compatibleRows.find(
+    (r) => normalize(r.food_name) === target && Number.isInteger(r.food_db_id),
+  )
   if (!exact || exact.quantity_g <= 0) return null
   const factor100 = 100 / Number(exact.quantity_g)
   const kcalPer100g = +(Number(exact.kcal) * factor100).toFixed(2)
@@ -1192,6 +1217,7 @@ export async function lookupUserHistory(
     return null
   }
   return {
+    food_db_id: exact.food_db_id as number,
     kcal_per_100g: kcalPer100g,
     protein_g: +(Number(exact.protein_g) * factor100).toFixed(2),
     carbs_g: carbsPer100g,
@@ -1262,7 +1288,7 @@ export async function calcMealMacros(
       matched.push({
         food_name: it.food_name,
         matched_taco_name: '[pending aprovado]',
-        matched_taco_id: null,
+        matched_taco_id: approved.food_db_id ?? null,
         quantity_g: it.quantity_g,
         kcal,
         protein_g: protein,
@@ -1393,7 +1419,7 @@ export async function calcMealMacros(
         fat_g: 0,
         fiber_g: 0,
         similarity: 1.0,
-        source: 'taco',
+        source: 'rule_based',
         display_qty: natZero.display_qty,
         display_unit: natZero.display_unit,
       })
@@ -1440,7 +1466,7 @@ export async function calcMealMacros(
             fat_g: fat,
             fiber_g: 0,
             similarity: 1.0,
-            source: 'taco',
+            source: 'user_correction',
             display_qty: nat.display_qty,
             display_unit: nat.display_unit,
           })
@@ -1509,7 +1535,7 @@ export async function calcMealMacros(
         matched.push({
           food_name: it.food_name,
           matched_taco_name: `[histórico] ${hist.matched_food_name}`,
-          matched_taco_id: null,
+          matched_taco_id: hist.food_db_id,
           quantity_g: it.quantity_g,
           kcal,
           protein_g: protein,
@@ -1631,7 +1657,7 @@ export async function calcMealMacros(
             fat_g: +totalFat.toFixed(2),
             fiber_g: +totalFib.toFixed(2),
             similarity: Math.min(...partMatches.map((pm) => pm.m.similarity)),
-            source: 'taco',
+            source: 'canonical_composite',
             display_qty: natComp.display_qty,
             display_unit: natComp.display_unit,
           })
@@ -1678,7 +1704,7 @@ export async function calcMealMacros(
             fat_g: +totalFat.toFixed(2),
             fiber_g: +totalFib.toFixed(2),
             similarity: Math.min(...goodMatches.map((pm) => pm.m.similarity)),
-            source: 'taco',
+            source: 'canonical_composite_partial',
             display_qty: natComp.display_qty,
             display_unit: natComp.display_unit,
           })
@@ -1766,7 +1792,7 @@ export async function calcMealMacros(
           fat_g: 0,
           fiber_g: 0,
           similarity: m.similarity,
-          source: 'taco',
+          source: 'rule_based',
           display_qty: natZ.display_qty,
           display_unit: natZ.display_unit,
         })
@@ -1919,7 +1945,7 @@ export async function calcMealMacros(
         fat_g: fat,
         fiber_g: fiber,
         similarity: m.similarity,
-        source: 'taco',
+        source: canonicalSource(it.food_name, m.name_pt),
         display_qty: nat.display_qty,
         display_unit: nat.display_unit,
       })
@@ -1976,7 +2002,9 @@ export async function calcMealMacros(
       const supaTyped = supabase as any
       const { data: prior, error: priorError } = await supaTyped
         .from('meal_logs')
-        .select('food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id')
+        .select(
+          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id',
+        )
         .eq('user_id', userIdHint ?? '_no_user_')
         .ilike('food_name', it.food_name)
         .gte('created_at', lookback)
@@ -1990,6 +2018,7 @@ export async function calcMealMacros(
         const compatiblePrior = (
           prior as Array<{
             food_name: string
+            food_db_id: number | null
             quantity_g: number
             kcal: number
             protein_g: number
@@ -2000,6 +2029,8 @@ export async function calcMealMacros(
         ).filter(
           (p) =>
             isTrustedHistorySource(p.source) &&
+            Number.isInteger(p.food_db_id) &&
+            normalizeFoodText(p.food_name) === normalizeFoodText(it.food_name) &&
             !hasNutritionModifierConflict(it.food_name, p.food_name),
         )
         if (compatiblePrior.length !== prior.length) {
@@ -2009,7 +2040,15 @@ export async function calcMealMacros(
         }
         // Normaliza tudo pra per-100g (kcal/100g, P/100g, C/100g, G/100g),
         // descarta linhas com quantity_g ≤ 0 (lixo).
-        const per100g = compatiblePrior
+        const canonicalIds = new Set(compatiblePrior.map((p) => p.food_db_id as number))
+        if (canonicalIds.size > 1) {
+          auditWarnings.push(
+            `"${it.food_name}" ignorou histórico associado a referências canônicas divergentes.`,
+          )
+        }
+        const historyFoodDbId =
+          canonicalIds.size === 1 ? (canonicalIds.values().next().value ?? null) : null
+        const per100g = (historyFoodDbId == null ? [] : compatiblePrior)
           .filter((p) => Number(p.quantity_g) > 0)
           .map((p) => {
             const q = Number(p.quantity_g)
@@ -2060,7 +2099,7 @@ export async function calcMealMacros(
             matched.push({
               food_name: it.food_name,
               matched_taco_name: '[reuso histórico]',
-              matched_taco_id: null,
+              matched_taco_id: historyFoodDbId,
               quantity_g: it.quantity_g,
               kcal: reKcal,
               protein_g: reProt,

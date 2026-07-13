@@ -1378,6 +1378,7 @@ export const registraRefeicao: ToolDefinition = {
         quantity_g: number
         user_kcal?: number | null
         approved_nutrition?: {
+          food_db_id?: number | null
           kcal: number
           protein_g: number
           carbs_g: number
@@ -1459,6 +1460,7 @@ export const registraRefeicao: ToolDefinition = {
       quantity_g: number
       user_kcal?: number | null
       approved_nutrition?: {
+        food_db_id?: number | null
         kcal: number
         protein_g: number
         carbs_g: number
@@ -1731,6 +1733,7 @@ export const registraRefeicao: ToolDefinition = {
     }
     const atomicItems = itemsToInsert.map((item) => ({
       food_name: item.food_name,
+      food_db_id: item.matched_taco_id,
       quantity_g: item.quantity_g,
       kcal: item.kcal,
       protein_g: item.protein_g,
@@ -1817,6 +1820,8 @@ export const registraRefeicao: ToolDefinition = {
         // não entraram no snapshot.
         items: insertedItems.map((i) => ({
           name: i.food_name,
+          food_db_id: i.matched_taco_id,
+          nutrition_source: i.source,
           matched_to: i.matched_taco_name || null,
           quantity_g: i.quantity_g,
           // ⚠️ Use display_qty + display_unit ao MOSTRAR refeição ao paciente.

@@ -743,6 +743,7 @@ export type Database = {
           consumed_at: string
           created_at: string
           fat_g: number | null
+          food_db_id: number | null
           food_name: string
           id: string
           image_url: string | null
@@ -762,6 +763,7 @@ export type Database = {
           consumed_at?: string
           created_at?: string
           fat_g?: number | null
+          food_db_id?: number | null
           food_name: string
           id?: string
           image_url?: string | null
@@ -781,6 +783,7 @@ export type Database = {
           consumed_at?: string
           created_at?: string
           fat_g?: number | null
+          food_db_id?: number | null
           food_name?: string
           id?: string
           image_url?: string | null
@@ -795,6 +798,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "meal_logs_food_db_id_fkey"
+            columns: ["food_db_id"]
+            isOneToOne: false
+            referencedRelation: "food_db"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "meal_logs_snapshot_id_fkey"
             columns: ["snapshot_id"]

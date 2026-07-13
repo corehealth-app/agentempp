@@ -554,6 +554,43 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect((atomicCall?.params.p_items as Array<{ kcal: number }>)[0]?.kcal).toBe(95)
   })
 
+  it('propaga food_db_id aprovado no pending até register_meal_atomic', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: [],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        replace: false,
+        items: [
+          {
+            food_name: 'sorvete',
+            quantity_g: 120,
+            approved_nutrition: {
+              food_db_id: 379,
+              kcal: 252,
+              protein_g: 4.2,
+              carbs_g: 28.8,
+              fat_g: 13.2,
+            },
+          },
+        ],
+      } as never,
+      ctx,
+    )
+
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    const item = (atomicCall?.params.p_items as Array<Record<string, unknown>> | undefined)?.[0]
+    expect(item).toMatchObject({
+      food_db_id: 379,
+      source: 'pending_approved',
+      kcal: 252,
+    })
+  })
+
   it('preserva kcal explícita de mensagem anterior quando confirmação curta diz "Sim isso" — caso Luciana', async () => {
     const { ctx, mealInserts, rpcCalls, events } = makeContextAndSupabase({
       recentLogs: [],

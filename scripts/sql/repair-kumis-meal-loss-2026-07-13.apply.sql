@@ -600,6 +600,12 @@ JOIN public.food_db AS food
 DO $postconditions$
 DECLARE
   v_expected_snapshot record;
+  v_lunch_count integer;
+  v_lunch_kcal numeric;
+  v_lunch_protein numeric;
+  v_lunch_carbs numeric;
+  v_lunch_fat numeric;
+  v_lunch_type_ok boolean;
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -632,21 +638,39 @@ BEGIN
     RAISE EXCEPTION 'postcondition failed: corrected Kumis pending mismatch';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.meal_logs AS meal
-    JOIN repair_params AS params ON params.target_user_id = meal.user_id
-    JOIN public.pending_registrations AS pending ON pending.id = params.lunch_pending_id
-    WHERE meal.raw_provider_message_id = pending.proposal->>'source_provider_message_id'
-    GROUP BY meal.user_id
-    HAVING count(*) = 7
-      AND sum(meal.kcal) = 639.2
-      AND sum(meal.protein_g) = 58.26
-      AND sum(meal.carbs_g) = 69.97
-      AND sum(meal.fat_g) = 13
-      AND bool_and(meal.meal_type = 'almoco')
-  ) THEN
-    RAISE EXCEPTION 'postcondition failed: restored lunch mismatch';
+  SELECT
+    count(*)::integer,
+    coalesce(sum(meal.kcal), 0),
+    coalesce(sum(meal.protein_g), 0),
+    coalesce(sum(meal.carbs_g), 0),
+    coalesce(sum(meal.fat_g), 0),
+    coalesce(bool_and(meal.meal_type = 'almoco'), false)
+  INTO
+    v_lunch_count,
+    v_lunch_kcal,
+    v_lunch_protein,
+    v_lunch_carbs,
+    v_lunch_fat,
+    v_lunch_type_ok
+  FROM public.meal_logs AS meal
+  JOIN repair_params AS params ON params.target_user_id = meal.user_id
+  JOIN public.pending_registrations AS pending ON pending.id = params.lunch_pending_id
+  WHERE meal.raw_provider_message_id = pending.proposal->>'source_provider_message_id';
+
+  IF v_lunch_count <> 7
+    OR v_lunch_kcal <> 639.2
+    OR v_lunch_protein <> 58.26
+    OR v_lunch_carbs <> 69.97
+    OR v_lunch_fat <> 12.99
+    OR NOT v_lunch_type_ok THEN
+    RAISE EXCEPTION
+      'postcondition failed: restored lunch mismatch (count %, kcal %, protein %, carbs %, fat %, type_ok %)',
+      v_lunch_count,
+      v_lunch_kcal,
+      v_lunch_protein,
+      v_lunch_carbs,
+      v_lunch_fat,
+      v_lunch_type_ok;
   END IF;
 
   IF NOT EXISTS (

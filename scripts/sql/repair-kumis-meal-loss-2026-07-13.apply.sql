@@ -166,9 +166,11 @@ BEGIN
     WHERE snapshot.user_id = params.target_user_id
       AND snapshot.date = params.target_date
       AND snapshot.calories_consumed = totals.kcal
-      AND snapshot.protein_g = totals.protein_g
-      AND snapshot.carbs_g = totals.carbs_g
-      AND snapshot.fat_g = totals.fat_g
+      -- Legacy confirmations accumulated card totals rounded to 0.1g. Accept
+      -- only the observed rounding residue; any material drift still blocks.
+      AND abs(snapshot.protein_g - totals.protein_g) <= 0.05
+      AND abs(snapshot.carbs_g - totals.carbs_g) <= 0.05
+      AND abs(snapshot.fat_g - totals.fat_g) <= 0.05
   ) THEN
     RAISE EXCEPTION 'precondition failed: snapshot no longer matches meal logs';
   END IF;

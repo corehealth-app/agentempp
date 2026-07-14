@@ -216,9 +216,11 @@ checks AS (
        AND bool_and(target_snapshot.user_id = params.target_user_id)
        AND bool_and(target_snapshot.date = params.target_date)
        AND bool_and(target_snapshot.calories_consumed = current.calories_consumed)
-       AND bool_and(target_snapshot.protein_g = current.protein_g)
-       AND bool_and(target_snapshot.carbs_g = current.carbs_g)
-       AND bool_and(target_snapshot.fat_g = current.fat_g)
+       -- Legacy confirmations accumulated card totals rounded to 0.1g. Accept
+       -- only the observed rounding residue; any material drift still blocks.
+       AND bool_and(abs(target_snapshot.protein_g - current.protein_g) <= 0.05)
+       AND bool_and(abs(target_snapshot.carbs_g - current.carbs_g) <= 0.05)
+       AND bool_and(abs(target_snapshot.fat_g - current.fat_g) <= 0.05)
      FROM target_snapshot
      CROSS JOIN params
      CROSS JOIN current_totals AS current) AS snapshot_matches_logs,

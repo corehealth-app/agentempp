@@ -749,8 +749,36 @@ function hasPhysicalFormConflict(currentFoodName: string, matchedFoodName: strin
 }
 
 function hasMilkFatConflict(currentFoodName: string, matchedFoodName: string): boolean {
+  const dairyPattern = /\b(leite|iogurte|queijo|lacte[oa]|kefir|kumis|koumiss|skyr|whey)\b/
+  if (
+    !dairyPattern.test(normalizeFoodText(currentFoodName)) &&
+    !dairyPattern.test(normalizeFoodText(matchedFoodName))
+  ) {
+    return false
+  }
   const current = inferMilkFatState(currentFoodName)
   const matched = inferMilkFatState(matchedFoodName)
+  if (current === 'unspecified' && matched === 'unspecified') return false
+  return current !== matched
+}
+
+type FermentedDairySubtype = 'kumis' | 'greek' | 'kefir' | 'skyr' | 'unspecified'
+
+function inferFermentedDairySubtype(foodName: string): FermentedDairySubtype {
+  const n = normalizeFoodText(foodName)
+  if (/\b(kumis|koumiss|kumys)\b/.test(n)) return 'kumis'
+  if (/\b(grego|greek)\b/.test(n)) return 'greek'
+  if (/\bkefir\b/.test(n)) return 'kefir'
+  if (/\bskyr\b/.test(n)) return 'skyr'
+  return 'unspecified'
+}
+
+function hasFermentedDairySubtypeConflict(
+  currentFoodName: string,
+  matchedFoodName: string,
+): boolean {
+  const current = inferFermentedDairySubtype(currentFoodName)
+  const matched = inferFermentedDairySubtype(matchedFoodName)
   if (current === 'unspecified' && matched === 'unspecified') return false
   return current !== matched
 }
@@ -760,7 +788,8 @@ function hasNutritionModifierConflict(currentFoodName: string, matchedFoodName: 
     hasSkinModifierConflict(currentFoodName, matchedFoodName) ||
     hasPreparationModifierConflict(currentFoodName, matchedFoodName) ||
     hasPhysicalFormConflict(currentFoodName, matchedFoodName) ||
-    hasMilkFatConflict(currentFoodName, matchedFoodName)
+    hasMilkFatConflict(currentFoodName, matchedFoodName) ||
+    hasFermentedDairySubtypeConflict(currentFoodName, matchedFoodName)
   )
 }
 
@@ -1750,8 +1779,8 @@ export async function calcMealMacros(
     const matchedNameLower = normalizeFoodText(m.name_pt ?? '')
     const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
-    const preparationMismatch =
-      m.name_pt != null && hasPreparationModifierConflict(it.food_name, m.name_pt)
+    const nutritionModifierMismatch =
+      m.name_pt != null && hasNutritionModifierConflict(it.food_name, m.name_pt)
 
     // Threshold dinâmico por tamanho da query:
     // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa
@@ -1770,7 +1799,7 @@ export async function calcMealMacros(
       m.similarity >= matchThreshold &&
       anchorMatches &&
       !fruitSweetMismatch &&
-      !preparationMismatch
+      !nutritionModifierMismatch
     ) {
       // Camada 2 do guard de bebida zero (Bug Luciana 2026-05-25): nome sem
       // keyword de bebida ("zero" + nome genérico) mas que casou um item de
@@ -1967,9 +1996,9 @@ export async function calcMealMacros(
         m.id != null &&
         m.kcal_per_100g != null &&
         m.similarity >= matchThreshold &&
-        (!anchorMatches || fruitSweetMismatch || preparationMismatch)
+        (!anchorMatches || fruitSweetMismatch || nutritionModifierMismatch)
       ) {
-        if (preparationMismatch) {
+        if (nutritionModifierMismatch) {
           auditWarnings.push(
             `"${it.food_name}" rejeitou match em "${m.name_pt}" (sim=${m.similarity.toFixed(2)}) — preparo incompatível.`,
           )

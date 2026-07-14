@@ -14,6 +14,7 @@ import {
   rewriteForTTS,
   sendHumanized,
   TTSRouter,
+  type VisionNutritionLabelAnalysis,
 } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
@@ -492,6 +493,42 @@ export const processMessageFn = inngest.createFunction(
         // Formata cada imagem segundo seu tipo
         const blocks: string[] = []
         const bodySignals: BodyPhotoSignal[] = []
+        const appendNutritionLabel = (
+          img: VisionNutritionLabelAnalysis,
+          idx: string,
+          samePhotoAsMeal = false,
+        ) => {
+          visionNutritionLabelDetected = true
+          const ps = img.per_serving
+          const p100 = img.per_100g
+          const labelResolution = resolveTrustedNutritionLabel(
+            {
+              productName: img.product_name,
+              confidence: img.confidence,
+              servingSizeG: img.serving_size_g,
+              perServing: ps,
+              per100g: p100,
+            },
+            visionCfg.meal_confidence_threshold,
+          )
+          if (labelResolution.trusted) {
+            visionNutritionLabels.push(labelResolution.trusted)
+          }
+          const fmt = (n: number | null) => (n == null ? 'n/d' : String(n))
+          const servingLine =
+            img.serving_size_g != null
+              ? `  porção declarada: **${img.serving_size_g}g**`
+              : '  porção não declarada na imagem'
+          const perServingLine = `  POR PORÇÃO (${img.serving_size_g ?? '?'}g): ${fmt(ps.kcal)} kcal | ${fmt(ps.protein_g)}g P | ${fmt(ps.carbs_g)}g C | ${fmt(ps.fat_g)}g G`
+          const per100Line = `  POR 100g: ${fmt(p100.kcal)} kcal | ${fmt(p100.protein_g)}g P | ${fmt(p100.carbs_g)}g C | ${fmt(p100.fat_g)}g G`
+          const confPct = (img.confidence * 100).toFixed(0)
+          const guidance = labelResolution.trusted
+            ? `\n  ✅ AÇÃO: preserve o nome exato do produto e pergunte/extraia somente a quantidade consumida. Chame registra_refeicao com o item normal, SEM usar corrections para repetir macros. O sistema anexará os valores completos e validados do rótulo ao pending de confirmação.`
+            : `\n  ⚠️ AÇÃO: não use esses números no cálculo (${labelResolution.reason}). Peça ao paciente os quatro valores por porção: kcal, proteína, carboidrato e gordura.`
+          blocks.push(
+            `${idx} [tabela nutricional${samePhotoAsMeal ? ' na mesma foto' : ''}]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
+          )
+        }
         for (let i = 0; i < vRes.images.length; i++) {
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
@@ -515,6 +552,12 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
+            if (img.nutrition_label_visible) {
+              visionNutritionLabelDetected = true
+            }
+            if (img.nutrition_label) {
+              appendNutritionLabel(img.nutrition_label, idx, true)
+            }
           } else if (img.type === 'body') {
             const bodyMedia = vRes.imageMedia[i]
             bodySignals.push({
@@ -535,36 +578,7 @@ export const processMessageFn = inngest.createFunction(
               `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
             )
           } else if (img.type === 'nutrition_label') {
-            visionNutritionLabelDetected = true
-            const ps = img.per_serving
-            const p100 = img.per_100g
-            const labelResolution = resolveTrustedNutritionLabel(
-              {
-                productName: img.product_name,
-                confidence: img.confidence,
-                servingSizeG: img.serving_size_g,
-                perServing: ps,
-                per100g: p100,
-              },
-              visionCfg.meal_confidence_threshold,
-            )
-            if (labelResolution.trusted) {
-              visionNutritionLabels.push(labelResolution.trusted)
-            }
-            const fmt = (n: number | null) => (n == null ? 'n/d' : String(n))
-            const servingLine =
-              img.serving_size_g != null
-                ? `  porção declarada: **${img.serving_size_g}g**`
-                : '  porção não declarada na imagem'
-            const perServingLine = `  POR PORÇÃO (${img.serving_size_g ?? '?'}g): ${fmt(ps.kcal)} kcal | ${fmt(ps.protein_g)}g P | ${fmt(ps.carbs_g)}g C | ${fmt(ps.fat_g)}g G`
-            const per100Line = `  POR 100g: ${fmt(p100.kcal)} kcal | ${fmt(p100.protein_g)}g P | ${fmt(p100.carbs_g)}g C | ${fmt(p100.fat_g)}g G`
-            const confPct = (img.confidence * 100).toFixed(0)
-            const guidance = labelResolution.trusted
-              ? `\n  ✅ AÇÃO: preserve o nome exato do produto e pergunte/extraia somente a quantidade consumida. Chame registra_refeicao com o item normal, SEM usar corrections para repetir macros. O sistema anexará os valores completos e validados do rótulo ao pending de confirmação.`
-              : `\n  ⚠️ AÇÃO: não use esses números no cálculo (${labelResolution.reason}). Peça ao paciente os quatro valores por porção: kcal, proteína, carboidrato e gordura.`
-            blocks.push(
-              `${idx} [tabela nutricional]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
-            )
+            appendNutritionLabel(img, idx)
           } else if (img.type === 'equipment') {
             const confPct = (img.confidence * 100).toFixed(0)
             const items =

@@ -38,6 +38,10 @@ export interface VisionMealAnalysis {
     notes?: string
   }>
   meal_context?: string
+  /** A própria análise de refeição viu uma tabela nutricional legível. */
+  nutrition_label_visible?: boolean
+  /** OCR secundário da tabela, quando ela aparece junto do produto/refeição. */
+  nutrition_label?: VisionNutritionLabelAnalysis
   raw_response: string
   promptTokens: number
   completionTokens: number
@@ -203,6 +207,9 @@ Para CADA item, julgue honestamente:
 - Se não conseguir identificar absolutamente nada, retorne \`items: []\` e descreva em \`meal_context\`.
 - \`meal_context\`: 1 frase curta sobre o tipo de refeição (ex: "café da manhã salgado", "almoço executivo", "lanche da tarde").
 - Se a foto NÃO for de comida, retorne items=[] e meal_context com a descrição.
+- Se houver qualquer quadro "Nutrition Facts"/tabela nutricional legível na
+  embalagem, retorne nutrition_label_visible=true, mesmo que o produto também
+  seja alimento pronto para consumo. Caso contrário, use false.
 
 Retorne APENAS JSON com este formato exato:
 {
@@ -211,7 +218,8 @@ Retorne APENAS JSON com este formato exato:
     {"name": "bacon frito", "quantity_g_estimate": 30, "confidence": 0.85},
     {"name": "pão de forma tostado", "quantity_g_estimate": 60, "confidence": 0.9}
   ],
-  "meal_context": "café da manhã salgado tradicional"
+  "meal_context": "café da manhã salgado tradicional",
+  "nutrition_label_visible": false
 }`
 
 const BODY_SYSTEM_PROMPT = `Você é um avaliador físico experiente analisando uma foto corporal.
@@ -322,7 +330,9 @@ Retorne APENAS JSON com este formato exato:
   "notes": "tabela completa, valores nítidos"
 }`
 
-const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 6 palavras (sem aspas, sem nada além):
+const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 6 palavras (sem aspas, sem nada além).
+
+PRIORIDADE: se um quadro "Nutrition Facts" ou tabela de Valor energético/Proteínas/Carboidratos/Gorduras estiver legível, classifique como nutrition_label mesmo que a embalagem, bebida ou alimento também apareça:
 
 meal             — foto de refeição/comida no prato/bebida pronta pra consumir
 nutrition_label  — foto de TABELA NUTRICIONAL (rótulo da embalagem, quadro de "Valor energético / Carboidratos / Proteínas / Gorduras" tipicamente em pt-BR ANVISA)
@@ -524,7 +534,20 @@ export class GeminiVision {
   ): Promise<VisionAnalysis> {
     const type = options.hint ?? (await this.classify(imageUrl))
 
-    if (type === 'meal') return this.analyzeMeal(imageUrl, options.userMessage)
+    if (type === 'meal') {
+      const meal = await this.analyzeMeal(imageUrl, options.userMessage)
+      if (!meal.nutrition_label_visible) return meal
+      try {
+        return {
+          ...meal,
+          nutrition_label: await this.analyzeNutritionLabel(imageUrl, options.userMessage),
+        }
+      } catch {
+        // A refeição continua utilizável, mas o caller sabe que viu um rótulo e
+        // deve impedir cálculo não confiável até conseguir os quatro macros.
+        return meal
+      }
+    }
     if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
     if (type === 'scale') return this.analyzeScale(imageUrl)
     if (type === 'nutrition_label') return this.analyzeNutritionLabel(imageUrl, options.userMessage)
@@ -646,10 +669,16 @@ export class GeminiVision {
       (parsed.context as string) ??
       (parsed.description as string) ??
       undefined
+    const nutritionLabelVisible =
+      parsed.nutrition_label_visible === true ||
+      /\b(nutrition\s+facts|tabela\s+nutricional|rotulo\s+(?:esta\s+)?visivel|rotulo\s+nutricional)\b/i.test(
+        `${meal_context ?? ''} ${raw}`.normalize('NFD').replace(/\p{Diacritic}/gu, ''),
+      )
     return {
       type: 'meal',
       items,
       meal_context,
+      nutrition_label_visible: nutritionLabelVisible,
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,

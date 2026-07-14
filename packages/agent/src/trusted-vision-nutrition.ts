@@ -13,6 +13,7 @@ interface VisionNutritionMealItem {
 }
 
 const IGNORED_TOKENS = new Set(['a', 'ao', 'com', 'da', 'de', 'do', 'e', 'em', 'para', 'sabor'])
+const DISTINCTIVE_PRODUCT_TOKENS = new Set(['kefir', 'koumiss', 'kumis', 'kumys', 'skyr'])
 
 function normalizeName(value: string): string {
   return value
@@ -40,7 +41,9 @@ function namesMatch(foodName: string, productName: string | null): boolean {
   const productTokens = new Set(product.split(' ').filter((token) => !IGNORED_TOKENS.has(token)))
   const smallerSize = Math.min(foodTokens.size, productTokens.size)
   if (smallerSize === 0) return false
-  const overlap = [...foodTokens].filter((token) => productTokens.has(token)).length
+  const sharedTokens = [...foodTokens].filter((token) => productTokens.has(token))
+  if (sharedTokens.some((token) => DISTINCTIVE_PRODUCT_TOKENS.has(token))) return true
+  const overlap = sharedTokens.length
   const minimumOverlap = smallerSize === 1 ? 1 : 2
   return overlap >= minimumOverlap && overlap / smallerSize >= 0.6
 }

@@ -34,12 +34,6 @@ export function resolveTrustedNutritionLabel(
   if (input.confidence < confidenceThreshold) {
     return { trusted: null, reason: 'low_confidence' }
   }
-  if (isComplete(input.per100g)) {
-    return {
-      trusted: { productName: input.productName, per100g: input.per100g },
-      reason: 'per_100g',
-    }
-  }
   if (
     input.servingSizeG != null &&
     Number.isFinite(input.servingSizeG) &&
@@ -57,6 +51,12 @@ export function resolveTrustedNutritionLabel(
         },
       },
       reason: 'derived_from_serving',
+    }
+  }
+  if (isComplete(input.per100g)) {
+    return {
+      trusted: { productName: input.productName, per100g: input.per100g },
+      reason: 'per_100g',
     }
   }
   return { trusted: null, reason: 'incomplete_macros' }

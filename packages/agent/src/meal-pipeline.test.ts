@@ -2058,3 +2058,65 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
     expect(result.audit_warnings.join(' ')).toMatch(/pending.*densidade.*impossível/i)
   })
 })
+
+describe('calcMealMacros — subtipos de laticínios fermentados', () => {
+  it('não aceita iogurte grego como referência fuzzy para kumis', async () => {
+    const mock = makeMock({
+      'iogurte kumis': {
+        id: 259,
+        name_pt: 'iogurte grego',
+        category: 'lacteos',
+        similarity: 0.72,
+        kcal_per_100g: 97,
+        protein_g: 9,
+        carbs_g: 4,
+        fat_g: 5,
+        fiber_g: 0,
+      },
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'iogurte kumis', quantity_g: 150 }],
+      'US',
+    )
+
+    expect(result.items[0]?.matched_taco_name).not.toBe('iogurte grego')
+    expect(result.items[0]?.matched_taco_id).toBeNull()
+    expect(result.items[0]?.kcal).not.toBe(145.5)
+  })
+
+  it('usa a referência canônica exata de kumis para dois pacientes igualmente', async () => {
+    const kumis = {
+      id: 9001,
+      name_pt: 'iogurte kumis',
+      category: 'lacteos',
+      similarity: 1,
+      kcal_per_100g: 83.3333,
+      protein_g: 3.3333,
+      carbs_g: 9.5833,
+      fat_g: 3.3333,
+      fiber_g: 0,
+    }
+    const first = await calcMealMacros(
+      makeMock({ 'iogurte kumis': kumis }),
+      [{ food_name: 'iogurte kumis', quantity_g: 150 }],
+      'US',
+    )
+    const second = await calcMealMacros(
+      makeMock({ 'iogurte kumis': kumis }),
+      [{ food_name: 'iogurte kumis', quantity_g: 150 }],
+      'US',
+    )
+
+    expect(first.items[0]).toMatchObject({
+      matched_taco_id: 9001,
+      source: 'canonical_exact',
+      kcal: 125,
+      protein_g: 5,
+      carbs_g: 14.37,
+      fat_g: 5,
+    })
+    expect(second.items[0]).toMatchObject(first.items[0] ?? {})
+  })
+})

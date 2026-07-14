@@ -66,6 +66,19 @@ BEGIN
       v_result, v_log_count;
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.food_db
+    WHERE name_norm = lower(public.f_unaccent('iogurte kumis'))
+      AND country_code = 'US'
+      AND kcal_per_100g = 83.33
+      AND protein_g = 3.33
+      AND carbs_g = 9.58
+      AND fat_g = 3.33
+  ) THEN
+    RAISE EXCEPTION 'canonical US kumis label reference is missing or incorrect';
+  END IF;
+
   BEGIN
     INSERT INTO public.food_db (
       name_pt,

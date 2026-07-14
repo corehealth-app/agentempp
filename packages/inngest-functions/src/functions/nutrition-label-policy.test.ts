@@ -30,8 +30,8 @@ describe('resolveTrustedNutritionLabel', () => {
         {
           productName: 'Produto',
           confidence: 0.9,
-          servingSizeG: 30,
-          perServing: complete,
+          servingSizeG: null,
+          perServing: { kcal: null, protein_g: null, carbs_g: null, fat_g: null },
           per100g: complete,
         },
         0.6,
@@ -39,6 +39,27 @@ describe('resolveTrustedNutritionLabel', () => {
     ).toEqual({
       trusted: { productName: 'Produto', per100g: complete },
       reason: 'per_100g',
+    })
+  })
+
+  it('prioriza a proporção da porção impressa quando o per100g calculado diverge', () => {
+    expect(
+      resolveTrustedNutritionLabel(
+        {
+          productName: 'Yokey Kumis',
+          confidence: 0.98,
+          servingSizeG: 240,
+          perServing: { kcal: 200, protein_g: 8, carbs_g: 23, fat_g: 8 },
+          per100g: { kcal: 97, protein_g: 9, carbs_g: 4, fat_g: 5 },
+        },
+        0.6,
+      ),
+    ).toEqual({
+      trusted: {
+        productName: 'Yokey Kumis',
+        per100g: { kcal: 83.33, protein_g: 3.33, carbs_g: 9.58, fat_g: 3.33 },
+      },
+      reason: 'derived_from_serving',
     })
   })
 

@@ -49,4 +49,23 @@ describe('attachTrustedVisionNutrition', () => {
     const item = { food_name: 'peito de frango', quantity_g: 170 }
     expect(attachTrustedVisionNutrition([item], [label])).toEqual([item])
   })
+
+  it('associa nome comercial Yokey Kumis ao item iogurte kumis', () => {
+    const result = attachTrustedVisionNutrition(
+      [{ food_name: 'iogurte kumis', quantity_g: 150 }],
+      [
+        {
+          productName: 'Yokey Kumis',
+          per100g: { kcal: 83.33, protein_g: 3.33, carbs_g: 9.58, fat_g: 3.33 },
+        },
+      ],
+    )
+
+    expect(result[0]?.approved_nutrition).toEqual({
+      kcal: 125,
+      protein_g: 5,
+      carbs_g: 14.37,
+      fat_g: 5,
+    })
+  })
 })

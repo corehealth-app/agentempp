@@ -35,6 +35,13 @@ import { resolveRegistrationTime } from './registration-time.js'
 import { decideMealType } from './meal-type-decision.js'
 import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
 import { selectMealRegistrationGroup } from './meal-registration-group.js'
+import { resolveLinkedAdditionMealType } from './meal-addition-context.js'
+import {
+  hasExplicitWholeMealReplacementIntent,
+  selectMealReplacementTarget,
+  type MealReplacementTarget,
+  type ReplacementMealLog,
+} from './meal-replacement-target.js'
 import {
   isIanaTimezone,
   isMultiTimezoneCountry,
@@ -73,9 +80,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
     height_cm: z.number().optional(),
     weight_kg: z.number().optional(),
     body_fat_percent: z.number().optional(),
-    activity_level: z
-      .enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta'])
-      .optional(),
+    activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']).optional(),
     training_frequency: z.number().int().min(0).max(7).optional(),
     water_intake: z.enum(['pouco', 'moderado', 'bastante']).optional(),
     hunger_level: z.enum(['pouca', 'moderada', 'muita']).optional(),
@@ -98,7 +103,8 @@ export const cadastraDadosIniciais: ToolDefinition = {
     const strNonEmpty = (v: unknown): boolean => typeof v === 'string' && v.trim().length > 0
     const sanityErrors: string[] = []
     const inRange = (v: number, min: number, max: number, label: string, hint: string) => {
-      if (v < min || v > max) sanityErrors.push(`${label}=${v} fora do esperado ${min}-${max}. ${hint}`)
+      if (v < min || v > max)
+        sanityErrors.push(`${label}=${v} fora do esperado ${min}-${max}. ${hint}`)
     }
 
     if (strNonEmpty(args.sex)) updates.sex = args.sex
@@ -120,15 +126,33 @@ export const cadastraDadosIniciais: ToolDefinition = {
       }
     }
     if (numPositive(args.height_cm)) {
-      inRange(args.height_cm!, 100, 250, 'height_cm', 'Provavelmente passou em inches — converta: cm = inch × 2.54.')
+      inRange(
+        args.height_cm!,
+        100,
+        250,
+        'height_cm',
+        'Provavelmente passou em inches — converta: cm = inch × 2.54.',
+      )
       updates.height_cm = args.height_cm
     }
     if (numPositive(args.weight_kg)) {
-      inRange(args.weight_kg!, 30, 300, 'weight_kg', 'Provavelmente passou em libras — converta: kg = lb × 0.4536.')
+      inRange(
+        args.weight_kg!,
+        30,
+        300,
+        'weight_kg',
+        'Provavelmente passou em libras — converta: kg = lb × 0.4536.',
+      )
       updates.weight_kg = args.weight_kg
     }
     if (numPositive(args.body_fat_percent)) {
-      inRange(args.body_fat_percent!, 3, 60, 'body_fat_percent', 'BF% válido fica em 3-60. Reverifique com o paciente.')
+      inRange(
+        args.body_fat_percent!,
+        3,
+        60,
+        'body_fat_percent',
+        'BF% válido fica em 3-60. Reverifique com o paciente.',
+      )
       updates.body_fat_percent = args.body_fat_percent
       // Audit 06-18 (review HIGH B2 idempotência): timestamp dedicado da
       // medição. Antes tools usavam proxy via updated_at, mas updated_at
@@ -159,8 +183,7 @@ export const cadastraDadosIniciais: ToolDefinition = {
       return { success: false, error: 'sanity_check_failed', issues: sanityErrors }
     }
     if (strNonEmpty(args.activity_level)) updates.activity_level = args.activity_level
-    if (numPositive(args.training_frequency))
-      updates.training_frequency = args.training_frequency
+    if (numPositive(args.training_frequency)) updates.training_frequency = args.training_frequency
     if (strNonEmpty(args.water_intake)) updates.water_intake = args.water_intake
     if (strNonEmpty(args.hunger_level)) updates.hunger_level = args.hunger_level
     // Coerção time: aceita "HH:MM", "HH:MM:SS", "HHh", "HHhMM", "HH"
@@ -250,8 +273,13 @@ export const defineProtocolo: ToolDefinition = {
     deficit_level: z
       .union([z.literal(400), z.literal(500), z.literal(600)])
       .optional()
-      .describe('Apenas para protocolo recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome = menor déficit).'),
-    goal_type: z.enum(['BF', 'IMC']).optional().describe('"BF"=alvo de % gordura corporal, "IMC"=alvo de IMC'),
+      .describe(
+        'Apenas para protocolo recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome = menor déficit).',
+      ),
+    goal_type: z
+      .enum(['BF', 'IMC'])
+      .optional()
+      .describe('"BF"=alvo de % gordura corporal, "IMC"=alvo de IMC'),
     goal_value: z.number().optional().describe('Número alvo (ex: 15 pra BF=15%, 23 pra IMC=23)'),
   }),
   execute: async (args, ctx) => {
@@ -335,18 +363,22 @@ export const defineMetaPeso: ToolDefinition = {
           invalid_type_error:
             'target_weight_kg deve ser número em kg. Se paciente falou em libras: kg = lb × 0.4536.',
         })
-        .min(20, { message: 'target_weight_kg abaixo de 20kg é fisicamente improvável. Confirme com o paciente — pode ter sido erro de digitação.' })
+        .min(20, {
+          message:
+            'target_weight_kg abaixo de 20kg é fisicamente improvável. Confirme com o paciente — pode ter sido erro de digitação.',
+        })
         .max(300, { message: 'target_weight_kg acima de 300kg é fisicamente improvável.' })
         .optional()
-        .describe(
-          'Peso alvo em quilos (20-300). Se paciente falou em libras: kg = lb × 0.4536.',
-        ),
+        .describe('Peso alvo em quilos (20-300). Se paciente falou em libras: kg = lb × 0.4536.'),
       target_bf_percent: z
         .number({
           invalid_type_error:
             'target_bf_percent deve ser número (0-60). Use quando paciente fala em %BF/gordura corporal.',
         })
-        .min(1, { message: 'target_bf_percent abaixo de 1% é fisicamente impossível. Confirme com paciente.' })
+        .min(1, {
+          message:
+            'target_bf_percent abaixo de 1% é fisicamente impossível. Confirme com paciente.',
+        })
         .max(60, { message: 'target_bf_percent acima de 60% é fisicamente improvável.' })
         .optional()
         .describe(
@@ -357,7 +389,10 @@ export const defineMetaPeso: ToolDefinition = {
       (a) =>
         (a.target_weight_kg != null && a.target_bf_percent == null) ||
         (a.target_weight_kg == null && a.target_bf_percent != null),
-      { message: 'Passe EXATAMENTE UM dos dois: target_weight_kg OU target_bf_percent (não ambos, não nenhum).' },
+      {
+        message:
+          'Passe EXATAMENTE UM dos dois: target_weight_kg OU target_bf_percent (não ambos, não nenhum).',
+      },
     ),
   execute: async (args, ctx) => {
     // Busca dados do profile (peso atual, altura, sexo, BF atual,
@@ -532,21 +567,19 @@ export const registraRefeicao: ToolDefinition = {
     '✅ items=[{food_name:"arroz branco cozido", quantity_g:100}, {food_name:"feijão preto cozido", quantity_g:80}, {food_name:"bife grelhado", quantity_g:120}]. ' +
     'Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga. ' +
     '➕ ADIÇÃO de item a refeição JÁ REGISTRADA ("adicionei X", "esqueci de mencionar Y", "coloca mais Z"): chame com APENAS os itens NOVOS, sem re-listar a refeição inteira, e SEM replace=true. Exemplo: paciente diz "Adicionei uma medida de geleia de morango ao café" → items=[{food_name:"geleia de morango",quantity_g:20}]. Se você re-listar todos os itens da refeição + os novos sem replace=true, DUPLICA as calorias no tracking. ' +
-    '🔄 CORREÇÃO de refeição já registrada: passe `replace=true` + `meal_type` quando o paciente quiser SUBSTITUIR (ex: "corrige o café, era leite com whey, não chocolate", "na verdade comi X em vez de Y"). Com replace=true a tool apaga os logs anteriores do meal_type e insere os novos. Sem replace=true, a tool SOMA — gera dupla contagem. Default replace=false (assume nova refeição ou adição). ' +
-    '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false, apenas item novo. "na verdade era X" ou "corrige" = replace=true, todos os itens corretos. ' +
+    '🔄 CORREÇÃO de item já registrado: passe `replace=true` + `meal_type` quando o paciente corrigir quantidade, preparo, identidade ou kcal (ex: "o frango era grelhado", "o leite em pó tem 85 kcal"). O sistema localiza e substitui somente os itens correspondentes do registro recente. Sem alvo inequívoco, a operação é bloqueada e nada é apagado. ' +
+    '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false e apenas o item novo. "na verdade era X" ou "corrige X" = replace=true com os itens corrigidos. Só uma instrução explícita como "refaça/corrija o almoço inteiro" autoriza substituir a refeição inteira. ' +
     '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
     '📅 DIA DA REFEIÇÃO: por padrão assume HOJE. Se o paciente disser que a refeição foi de um DIA ANTERIOR ("isso foi ontem", "comi ontem à noite", "esse jantar foi de ontem"), passe `consumed_date` (YYYY-MM-DD) com a data certa — senão a refeição entra no dia errado. ' +
     '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca", ou "é cuscuz, não farofa", ou "o pão é francês"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Inclui também quando ele diz "apenas N unidades" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.',
   parameters: z.object({
-    meal_type: z
-      .enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
-      .optional(),
+    meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']).optional(),
     replace: z
       .boolean()
       .optional()
       .describe(
-        'Se true: deleta meal_logs do dia+meal_type ANTES de inserir os novos (correção/substituição). Se false ou omitido: soma no snapshot (nova refeição).',
+        'Se true: substitui atomicamente apenas os meal_logs identificados como alvo da correção; refeição inteira só com intenção explícita de totalidade. Se false ou omitido: soma no snapshot.',
       ),
     items: z
       .array(
@@ -571,12 +604,8 @@ export const registraRefeicao: ToolDefinition = {
     corrections: z
       .array(
         z.object({
-          de: z
-            .string()
-            .describe('Nome que foi identificado ERRADO (ex: "batata")'),
-          para: z
-            .string()
-            .describe('Nome correto que o paciente informou (ex: "mandioca")'),
+          de: z.string().describe('Nome que foi identificado ERRADO (ex: "batata")'),
+          para: z.string().describe('Nome correto que o paciente informou (ex: "mandioca")'),
           kcal_per_100g: z
             .number()
             .optional()
@@ -681,7 +710,7 @@ export const registraRefeicao: ToolDefinition = {
       // cast solto (mesmo padrão de lookupUserHistory). Tabela criada em
       // migration 20260514120000.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+      // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaCorr = ctx.supabase as any
       const normalizeName = (s: string) =>
         s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
@@ -737,7 +766,11 @@ export const registraRefeicao: ToolDefinition = {
             await ctx.supabase.from('product_events').insert({
               user_id: ctx.userId,
               event: 'food_correction.learned',
-              properties: { said_name: said, corrected_to: correctedTo, has_custom_macros: corr.kcal_per_100g != null },
+              properties: {
+                said_name: said,
+                corrected_to: correctedTo,
+                has_custom_macros: corr.kcal_per_100g != null,
+              },
             })
           } else if (normalizeName(existing.corrected_to) === correctedTo) {
             // Mesma correção de novo → confirma. 2ª confirmação ativa.
@@ -758,7 +791,12 @@ export const registraRefeicao: ToolDefinition = {
             await ctx.supabase.from('product_events').insert({
               user_id: ctx.userId,
               event: 'food_correction.confirmed',
-              properties: { said_name: said, corrected_to: correctedTo, confirmed_count: newCount, now_active: newCount >= 2 },
+              properties: {
+                said_name: said,
+                corrected_to: correctedTo,
+                confirmed_count: newCount,
+                now_active: newCount >= 2,
+              },
             })
           } else {
             // Correção CONTRADIZ a entrada (mesmo said_name, corrected_to diferente).
@@ -848,7 +886,6 @@ export const registraRefeicao: ToolDefinition = {
       }
     }
 
-
     // (0) EVIDÊNCIA OBJETIVA DE CORREÇÃO — sobreposição de food_names em janela curta.
     //
     // Casos reais que cobrimos:
@@ -860,20 +897,19 @@ export const registraRefeicao: ToolDefinition = {
     //    desnatado com café". LLM mandou replace=true CORRETAMENTE, mas o blocker
     //    (que pedia palavra-chave "corrige/errei") fez downgrade pra false → soma.
     //
-    // SOLUÇÃO UNIFICADA: calcular evidência objetiva SEMPRE e usar em ambos os
-    // caminhos. Evidência objetiva = >=50% overlap de food_name em <15min de
-    // QUALQUER meal_type recente. Verbal = palavra-chave nas msgs recentes.
-    // Qualquer uma serve pra ratificar replace=true.
-    //
-    // CROSS-MEAL-TYPE (Paulo 2026-05-13 18:43-19:15): foto chegou 15:43 BRT e
-    // foi registrada como 'lanche' (chute por hora). Paulo corrigiu e LLM
-    // mandou meal_type='almoco'. Antes: detector filtrava por meal_type igual,
-    // não via os logs anteriores em 'lanche' → soma. Agora: olha qualquer
-    // meal_type recente e, se encontrar overlap forte, marca crossMealTypeFrom
-    // pra apagar também daquele meal_type no replace.
+    // A evidência agora é calculada por REGISTRO, não por meal_type. Isso mantém
+    // a correção implícita, mas também produz IDs exatos pro delete atômico.
+    // Corrigir um leite em pó nunca mais autoriza apagar almoço/lanche inteiros.
     let objectiveCorrectionEvidence = false
-    let overlapMeta: { ratio: number; recent: string[]; new: string[]; from_meal_type: string | null } | null = null
+    let overlapMeta: {
+      ratio: number
+      recent: string[]
+      new: string[]
+      from_meal_type: string | null
+    } | null = null
     let crossMealTypeFrom: string | null = null
+    let recentCorrectionLogs: ReplacementMealLog[] = []
+    let replacementTarget: MealReplacementTarget = { status: 'not_found', overlapRatio: 0 }
     if (args.meal_type && args.items.length > 0) {
       // Janela 30min (era 15min). Caso Luciana 2026-05-15: corrigiu "não tem bacon"
       // 17min após a foto → fora dos 15min → detector pulou → blocker derrubou
@@ -881,69 +917,36 @@ export const registraRefeicao: ToolDefinition = {
       const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
       const { data: recentLogs, error: recentLogsError } = await ctx.supabase
         .from('meal_logs')
-        .select('food_name, quantity_g, meal_type')
+        .select('id, food_name, quantity_g, kcal, meal_type, consumed_at, raw_provider_message_id')
         .eq('user_id', ctx.userId)
         .gte('created_at', thirtyMinAgo)
+        .order('created_at', { ascending: false })
         .limit(30)
       if (recentLogsError) {
         throw new Error(recentLogsError.message ?? 'recent meal correction lookup failed')
       }
-      const recent = (recentLogs ?? []) as Array<{
-        food_name: string
-        quantity_g: number
-        meal_type: string
-      }>
-      if (recent.length > 0) {
-        const normalize = (s: string) =>
-          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-        const newNames: string[] = args.items.map((i: { food_name: string }) =>
-          normalize(i.food_name),
-        )
-        // Agrupa logs por meal_type e calcula overlap pra cada grupo separado.
-        // Se overlap >= 50% em algum grupo, esse é o "target da correção".
-        // Prioriza o MESMO meal_type (caso simples) sobre cross-meal-type.
-        const groups = new Map<string, string[]>()
-        for (const r of recent) {
-          const arr = groups.get(r.meal_type) ?? []
-          arr.push(normalize(r.food_name))
-          groups.set(r.meal_type, arr)
-        }
-        let bestRatio = 0
-        let bestMealType: string | null = null
-        let bestNames: string[] = []
-        // Tenta primeiro o mesmo meal_type
-        const sameTypeNames = groups.get(args.meal_type)
-        if (sameTypeNames && sameTypeNames.length > 0) {
-          const overlap = newNames.filter((nn) =>
-            sameTypeNames.some((rn) => rn.includes(nn) || nn.includes(rn)),
-          ).length
-          const ratio = overlap / Math.max(newNames.length, sameTypeNames.length)
-          if (ratio > bestRatio) {
-            bestRatio = ratio
-            bestMealType = args.meal_type
-            bestNames = sameTypeNames
-          }
-        }
-        // Depois testa outros meal_types — só aceita se overlap >= 50%.
-        for (const [mt, names] of groups.entries()) {
-          if (mt === args.meal_type) continue
-          const overlap = newNames.filter((nn) =>
-            names.some((rn) => rn.includes(nn) || nn.includes(rn)),
-          ).length
-          const ratio = overlap / Math.max(newNames.length, names.length)
-          if (ratio >= 0.5 && ratio > bestRatio) {
-            bestRatio = ratio
-            bestMealType = mt
-            bestNames = names
-          }
-        }
+      recentCorrectionLogs = (recentLogs ?? []) as ReplacementMealLog[]
+      if (recentCorrectionLogs.length > 0) {
+        const newNames = args.items.map((item: { food_name: string }) => item.food_name)
+        replacementTarget = selectMealReplacementTarget({
+          recentLogs: recentCorrectionLogs,
+          newFoodNames: newNames,
+          corrections: args.corrections,
+        })
+        const bestRatio = replacementTarget.overlapRatio
+        const bestMealType =
+          replacementTarget.status === 'selected' ? replacementTarget.mealType : null
+        const bestNames =
+          replacementTarget.status === 'selected'
+            ? replacementTarget.rows.map((row) => row.food_name)
+            : []
         overlapMeta = {
           ratio: Math.round(bestRatio * 100) / 100,
           recent: bestNames,
           new: newNames,
           from_meal_type: bestMealType,
         }
-        if (bestRatio >= 0.5) {
+        if (replacementTarget.status === 'selected' && bestRatio >= 0.5) {
           objectiveCorrectionEvidence = true
           if (bestMealType && bestMealType !== args.meal_type) {
             crossMealTypeFrom = bestMealType
@@ -968,7 +971,11 @@ export const registraRefeicao: ToolDefinition = {
       // Categoriza intent: identity_change, noop_same_name, custom_macros, removal.
       try {
         const normalizeName = (s: string) =>
-          s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+          s
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/\p{Diacritic}/gu, '')
+            .trim()
         let identityChanges = 0
         let noopSameName = 0
         let withCustomMacros = 0
@@ -1065,10 +1072,7 @@ export const registraRefeicao: ToolDefinition = {
         tz,
         referenceTimestamp,
       )
-      const { expected, source: windowSource } = resolveMealTypeByHour(
-        localHour,
-        personalWindows,
-      )
+      const { expected, source: windowSource } = resolveMealTypeByHour(localHour, personalWindows)
       const activeReminder = await loadActiveGapReminderMealTypes(
         ctx.supabase,
         ctx.userId,
@@ -1083,6 +1087,15 @@ export const registraRefeicao: ToolDefinition = {
         trustMealType: ctx.trustMealType,
         replace: args.replace === true,
       })
+      const currentText =
+        ctx.currentUserText ?? ctx.recentUserMessages?.[ctx.recentUserMessages.length - 1] ?? ''
+      const linkedAddition =
+        ctx.trustMealType === true || args.replace === true
+          ? null
+          : resolveLinkedAdditionMealType({
+              currentText,
+              recentLogs: recentCorrectionLogs,
+            })
 
       // RC7 telemetria: registra qual fonte resolveu o expected (pessoal ou
       // global), independente de ter divergência. Permite medir adoção e
@@ -1090,9 +1103,7 @@ export const registraRefeicao: ToolDefinition = {
       await ctx.supabase.from('product_events').insert({
         user_id: ctx.userId,
         event:
-          windowSource === 'personal'
-            ? 'tool.personal_window_used'
-            : 'tool.global_window_used',
+          windowSource === 'personal' ? 'tool.personal_window_used' : 'tool.global_window_used',
         properties: {
           claimed: args.meal_type,
           expected,
@@ -1104,7 +1115,21 @@ export const registraRefeicao: ToolDefinition = {
         },
       })
 
-      if (args.meal_type !== decision.mealType || args.meal_type !== expected) {
+      if (linkedAddition) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.meal_type_linked_addition',
+          properties: {
+            claimed: args.meal_type,
+            expected_by_hour: expected,
+            linked_meal_type: linkedAddition.mealType,
+            matched_log_id: linkedAddition.matchedLogId,
+            matched_food_name: linkedAddition.matchedFoodName,
+            addition_trigger: linkedAddition.trigger,
+          },
+        })
+        args.meal_type = linkedAddition.mealType as typeof args.meal_type
+      } else if (args.meal_type !== decision.mealType || args.meal_type !== expected) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: decision.autoCorrected
@@ -1181,9 +1206,8 @@ export const registraRefeicao: ToolDefinition = {
           },
         })
       }
-      let editedPendingContext:
-        | Array<{ id?: string | null; resolved_at?: string | null }>
-        | null = null
+      let editedPendingContext: Array<{ id?: string | null; resolved_at?: string | null }> | null =
+        null
       if (!objectiveCorrectionEvidence) {
         // Review HIGH 1 (audit 06-25): filtra por kind=meal E mealType
         // matching pra evitar pending de OUTRO meal_type ratificar replace
@@ -1202,9 +1226,7 @@ export const registraRefeicao: ToolDefinition = {
           .gte('resolved_at', thirtyMinAgo)
           .limit(1)
         if (editedPendingsError) {
-          throw new Error(
-            editedPendingsError.message ?? 'edited pending correction lookup failed',
-          )
+          throw new Error(editedPendingsError.message ?? 'edited pending correction lookup failed')
         }
         editedPendingContext = (editedPendings ?? []) as Array<{
           id?: string | null
@@ -1291,11 +1313,21 @@ export const registraRefeicao: ToolDefinition = {
     // CORREÇÃO: coleta o alvo e o resumo antes da RPC transacional. A remoção,
     // inserção e recomposição do snapshot acontecem juntas mais abaixo.
     let replacedSummary: { count: number; kcal_removed: number; cross_from?: string } | null = null
-    const mealTypesToReplace = args.meal_type
-      ? crossMealTypeFrom
-        ? [args.meal_type, crossMealTypeFrom]
-        : [args.meal_type]
-      : []
+    const replacementIntentMessages = [
+      ...(ctx.recentUserMessages ?? []),
+      ...(ctx.currentUserText ? [ctx.currentUserText] : []),
+    ]
+    const wholeMealReplacement =
+      args.replace === true && hasExplicitWholeMealReplacementIntent(replacementIntentMessages)
+    const replacementLogIds =
+      args.replace === true && replacementTarget.status === 'selected'
+        ? wholeMealReplacement
+          ? replacementTarget.registrationRows.map((row) => row.id)
+          : replacementTarget.logIds
+        : []
+    // Correções nunca mais apagam por meal_type. Mesmo "almoço inteiro" fica
+    // limitado ao grupo técnico da mensagem/registro selecionado.
+    const mealTypesToReplace: Array<NonNullable<typeof args.meal_type>> = []
     if (args.replace === true && args.meal_type) {
       // BUG HISTÓRICO (Roberto 09/05): query usava `created_at >= '${today}T00:00:00'`
       // sem timezone — Postgres interpretava como UTC, mas `today` era data LOCAL
@@ -1322,17 +1354,30 @@ export const registraRefeicao: ToolDefinition = {
       }
       let allRemoved: RemoveRow[] = []
       if (snapId) {
-        for (const mt of mealTypesToReplace) {
+        if (replacementLogIds.length > 0) {
           const { data: rows, error: rowsError } = await ctx.supabase
             .from('meal_logs')
             .select('id, kcal')
             .eq('user_id', ctx.userId)
-            .eq('meal_type', mt)
             .eq('snapshot_id', snapId)
+            .in('id', replacementLogIds)
           if (rowsError) {
             throw new Error(rowsError.message ?? 'replacement target lookup failed')
           }
           if (rows) allRemoved = allRemoved.concat(rows as RemoveRow[])
+        } else {
+          for (const mt of mealTypesToReplace) {
+            const { data: rows, error: rowsError } = await ctx.supabase
+              .from('meal_logs')
+              .select('id, kcal')
+              .eq('user_id', ctx.userId)
+              .eq('meal_type', mt)
+              .eq('snapshot_id', snapId)
+            if (rowsError) {
+              throw new Error(rowsError.message ?? 'replacement target lookup failed')
+            }
+            if (rows) allRemoved = allRemoved.concat(rows as RemoveRow[])
+          }
         }
       }
       if (allRemoved.length > 0) {
@@ -1343,18 +1388,23 @@ export const registraRefeicao: ToolDefinition = {
           ...(crossMealTypeFrom ? { cross_from: crossMealTypeFrom } : {}),
         }
       } else {
-        // replace=true mas nada pra substituir hoje desse meal_type.
-        // É indício de bug do LLM (achou que era correção quando não era).
-        // Loga e segue com insert normal — não bloqueia paciente.
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
-          event: 'tool.replace_without_target',
+          event: 'tool.replace_blocked_ambiguous_target',
           properties: {
             meal_type: args.meal_type,
             date: effectiveDate,
-            note: 'replace=true mas nenhum meal_log existente desse tipo hoje',
+            selection_status: replacementTarget.status,
+            requested_log_ids: replacementLogIds,
+            whole_meal_replacement: wholeMealReplacement,
           },
         })
+        return {
+          success: false,
+          error: 'replacement_target_not_found',
+          message:
+            'Não consegui identificar com segurança qual registro deve ser corrigido. Confirme o alimento e o horário da refeição; nenhum registro foi apagado ou adicionado.',
+        }
       }
     }
 
@@ -1467,13 +1517,12 @@ export const registraRefeicao: ToolDefinition = {
         fat_g: number
       }
     }
-    let itemsForCalc: MealItemInput[] =
-      args.items.map((it: ToolMealItem) => ({
-        food_name: it.food_name,
-        quantity_g: it.quantity_g,
-        ...(it.user_kcal != null ? { user_kcal: Number(it.user_kcal) } : {}),
-        ...(it.approved_nutrition ? { approved_nutrition: it.approved_nutrition } : {}),
-      }))
+    let itemsForCalc: MealItemInput[] = args.items.map((it: ToolMealItem) => ({
+      food_name: it.food_name,
+      quantity_g: it.quantity_g,
+      ...(it.user_kcal != null ? { user_kcal: Number(it.user_kcal) } : {}),
+      ...(it.approved_nutrition ? { approved_nutrition: it.approved_nutrition } : {}),
+    }))
     if (kcalOverrides.size > 0) {
       itemsForCalc = args.items.map((it: ToolMealItem) => ({
         food_name: it.food_name,
@@ -1482,7 +1531,7 @@ export const registraRefeicao: ToolDefinition = {
           ? { user_kcal: kcalOverrides.get(it.food_name)! }
           : it.user_kcal != null
             ? { user_kcal: Number(it.user_kcal) }
-          : {}),
+            : {}),
         ...(it.approved_nutrition ? { approved_nutrition: it.approved_nutrition } : {}),
       }))
       await ctx.supabase.from('product_events').insert({
@@ -1628,8 +1677,7 @@ export const registraRefeicao: ToolDefinition = {
           const normName = (s: string) =>
             s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
           // Chave = nome normalizado + quantidade arredondada (g inteiro).
-          const dedupKey = (food: string, qty: number) =>
-            `${normName(food)}|${Math.round(qty)}`
+          const dedupKey = (food: string, qty: number) => `${normName(food)}|${Math.round(qty)}`
           const existingKeys = new Set(existing.map((r) => dedupKey(r.food_name, r.quantity_g)))
           const skipped: Array<{ food_name: string; quantity_g: number }> = []
           const survivors = calc.items.filter((it) => {
@@ -1742,35 +1790,45 @@ export const registraRefeicao: ToolDefinition = {
       source: item.source,
       confidence: item.similarity,
     }))
-    const { data: updated, error: updErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{
-        data: AtomicMealResult | null
-        error: { message?: string } | null
-      }>
-    }).rpc('register_meal_atomic', {
+    const atomicRpcName =
+      replacementLogIds.length > 0 ? 'register_meal_atomic_scoped' : 'register_meal_atomic'
+    const atomicRpcParams: Record<string, unknown> = {
       p_user_id: ctx.userId,
       p_date: effectiveDate,
       p_meal_type: args.meal_type ?? null,
       p_items: atomicItems,
       p_replace: args.replace === true,
-      p_replace_meal_types: args.replace === true ? mealTypesToReplace : null,
+      p_replace_meal_types: mealTypesToReplace.length > 0 ? mealTypesToReplace : null,
       p_consumed_at: consumedAtIso,
       p_provider_message_id: ctx.providerMessageId ?? null,
       p_calories_target: targets.calories_target,
       p_protein_target: targets.protein_target,
-    })
-    if (updErr) throw new Error(updErr.message ?? 'register_meal_atomic failed')
-    if (!updated) throw new Error('register_meal_atomic returned null')
+    }
+    if (replacementLogIds.length > 0) {
+      atomicRpcParams.p_replace_log_ids = replacementLogIds
+    }
+    const { data: updated, error: updErr } = await (
+      ctx.supabase as unknown as {
+        rpc: (
+          n: string,
+          p: Record<string, unknown>,
+        ) => Promise<{
+          data: AtomicMealResult | null
+          error: { message?: string } | null
+        }>
+      }
+    ).rpc(atomicRpcName, atomicRpcParams)
+    if (updErr) throw new Error(updErr.message ?? `${atomicRpcName} failed`)
+    if (!updated) throw new Error(`${atomicRpcName} returned null`)
 
-    if (crossMealTypeFrom && updated.replaced_count > 0) {
+    if (replacementLogIds.length > 0 && updated.replaced_count > 0) {
       await ctx.supabase.from('product_events').insert({
         user_id: ctx.userId,
-        event: 'tool.replace_cross_meal_type',
+        event: 'tool.replace_item_scoped',
         properties: {
-          from_meal_type: crossMealTypeFrom,
+          target_log_ids: replacementLogIds,
+          from_meal_type:
+            replacementTarget.status === 'selected' ? replacementTarget.mealType : null,
           to_meal_type: args.meal_type,
           removed_count: updated.replaced_count,
           removed_kcal: replacedSummary?.kcal_removed ?? 0,
@@ -1853,16 +1911,9 @@ export const consultaProgresso: ToolDefinition = {
   parameters: z.object({}),
   execute: async (_args, ctx) => {
     const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
-    const today = getLocalDateString(
-      ctx.userTimezone ?? 'America/Sao_Paulo',
-      referenceTimestamp,
-    )
+    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo', referenceTimestamp)
     const [progressResult, snapshotResult] = await Promise.all([
-      ctx.supabase
-        .from('user_progress')
-        .select('*')
-        .eq('user_id', ctx.userId)
-        .maybeSingle(),
+      ctx.supabase.from('user_progress').select('*').eq('user_id', ctx.userId).maybeSingle(),
       ctx.supabase
         .from('daily_snapshots')
         .select('*')
@@ -1872,9 +1923,7 @@ export const consultaProgresso: ToolDefinition = {
     ])
     if (progressResult.error || snapshotResult.error) {
       throw new Error(
-        progressResult.error?.message ??
-          snapshotResult.error?.message ??
-          'progress lookup failed',
+        progressResult.error?.message ?? snapshotResult.error?.message ?? 'progress lookup failed',
       )
     }
     const progress = progressResult.data
@@ -1960,8 +2009,7 @@ export const consultaMetricas: ToolDefinition = {
         hungerLevel: profileTyped.hunger_level,
         currentProtocol: profileTyped.current_protocol,
         goalType: profileTyped.goal_type,
-        goalValue:
-          profileTyped.goal_value != null ? Number(profileTyped.goal_value) : null,
+        goalValue: profileTyped.goal_value != null ? Number(profileTyped.goal_value) : null,
         deficitLevel: profileTyped.deficit_level,
       },
       ctx.referenceTimestamp ?? new Date(),
@@ -2037,10 +2085,7 @@ export const registraTreino: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
-    const today = getLocalDateString(
-      ctx.userTimezone ?? 'America/Sao_Paulo',
-      referenceTimestamp,
-    )
+    const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo', referenceTimestamp)
 
     // Idempotência granular: bloqueia retry/Inngest replay (mesma msg + mesmo
     // workout_type), mas PERMITE múltiplos workouts diferentes da mesma foto
@@ -2163,12 +2208,14 @@ export const registraTreino: ToolDefinition = {
 
     // Cálculo determinístico via SQL function (ADR-007). Sempre roda — mesmo
     // quando vamos usar valor da foto, a fórmula serve de baseline pra sanity check.
-    const { data: kcalResult, error: kcalErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{ data: number | null; error: { message?: string } | null }>
-    }).rpc('calc_workout_kcal', {
+    const { data: kcalResult, error: kcalErr } = await (
+      ctx.supabase as unknown as {
+        rpc: (
+          n: string,
+          p: Record<string, unknown>,
+        ) => Promise<{ data: number | null; error: { message?: string } | null }>
+      }
+    ).rpc('calc_workout_kcal', {
       p_slug: args.workout_type,
       p_duration_min: args.duration_min,
       p_intensity: args.intensity ?? 'moderada',
@@ -2213,21 +2260,23 @@ export const registraTreino: ToolDefinition = {
       : `[kcal_source=${kcalSource}, formula=${formulaKcal}, image=${args.estimated_kcal_from_image ?? 'n/a'}]`
 
     // Atomic: optional replacement + workout log + all affected snapshots.
-    const { data: snap, error: snapErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{
-        data: {
-          snapshot_id: string
-          inserted: boolean
-          replaced_count: number
-          exercise_calories: number
-          training_done: boolean
-        } | null
-        error: { message?: string } | null
-      }>
-    }).rpc('register_workout_atomic', {
+    const { data: snap, error: snapErr } = await (
+      ctx.supabase as unknown as {
+        rpc: (
+          n: string,
+          p: Record<string, unknown>,
+        ) => Promise<{
+          data: {
+            snapshot_id: string
+            inserted: boolean
+            replaced_count: number
+            exercise_calories: number
+            training_done: boolean
+          } | null
+          error: { message?: string } | null
+        }>
+      }
+    ).rpc('register_workout_atomic', {
       p_user_id: ctx.userId,
       p_date: today,
       p_workout_type: args.workout_type,
@@ -2328,9 +2377,14 @@ export const atualizaDataUser: ToolDefinition = {
     }
     if (city) {
       // Atomic merge — não usar read-then-write (race com pause, escalation, etc)
-      const { error: rpcErr } = await (ctx.supabase as unknown as {
-        rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>
-      }).rpc('user_metadata_merge', {
+      const { error: rpcErr } = await (
+        ctx.supabase as unknown as {
+          rpc: (
+            n: string,
+            p: Record<string, unknown>,
+          ) => Promise<{ error: { message?: string } | null }>
+        }
+      ).rpc('user_metadata_merge', {
         p_user_id: ctx.userId,
         p_patch: { city },
       })
@@ -2353,12 +2407,14 @@ export const encerraAtendimento: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     // Atomic: adiciona label 'humano' + grava metadata extra na mesma transação
-    const { data: result, error: rpcErr } = await (ctx.supabase as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{ data: { labels?: string[] } | null; error: { message?: string } | null }>
-    }).rpc('user_metadata_label_add', {
+    const { data: result, error: rpcErr } = await (
+      ctx.supabase as unknown as {
+        rpc: (
+          n: string,
+          p: Record<string, unknown>,
+        ) => Promise<{ data: { labels?: string[] } | null; error: { message?: string } | null }>
+      }
+    ).rpc('user_metadata_label_add', {
       p_user_id: ctx.userId,
       p_label: 'humano',
       p_extra_patch: {
@@ -2423,9 +2479,11 @@ export const pausarAgente: ToolDefinition = {
     reason: z.string().optional().describe('Motivo opcional, livre.'),
   }),
   execute: async (args, ctx) => {
-    const { error } = await (ctx.supabase as unknown as {
-      rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
-    }).rpc('pause_user', { p_user_id: ctx.userId, p_days: args.days })
+    const { error } = await (
+      ctx.supabase as unknown as {
+        rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+      }
+    ).rpc('pause_user', { p_user_id: ctx.userId, p_days: args.days })
     if (error) throw error
     const until = new Date(Date.now() + args.days * 86400_000)
     await ctx.supabase.from('product_events').insert({
@@ -2451,9 +2509,11 @@ export const retomarAgente: ToolDefinition = {
     'Remove uma pausa ativa e retoma o atendimento normal. Use quando o usuário pedir "voltar", "destravar", "retomar agora" antes do prazo da pausa.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
-    const { error } = await (ctx.supabase as unknown as {
-      rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
-    }).rpc('resume_user', { p_user_id: ctx.userId })
+    const { error } = await (
+      ctx.supabase as unknown as {
+        rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+      }
+    ).rpc('resume_user', { p_user_id: ctx.userId })
     if (error) throw error
     await ctx.supabase.from('product_events').insert({
       user_id: ctx.userId,
@@ -2501,7 +2561,9 @@ export const confirmaPaisResidencia: ToolDefinition = {
       .string()
       .min(2)
       .optional()
-      .describe('Cidade de residência confirmada pelo paciente. Obrigatória em países com múltiplos fusos.'),
+      .describe(
+        'Cidade de residência confirmada pelo paciente. Obrigatória em países com múltiplos fusos.',
+      ),
     region: z
       .string()
       .min(2)
@@ -2569,28 +2631,28 @@ export const confirmaPaisResidencia: ToolDefinition = {
     }
     // Sistema de medidas: armazena em metadata pra evitar migration nova.
     // Default metric (BR/EU); imperial só pra US/GB confirmado pelo paciente.
-    const unitSystem =
-      args.unit_system ?? (['US', 'GB'].includes(country) ? null : 'metric')
+    const unitSystem = args.unit_system ?? (['US', 'GB'].includes(country) ? null : 'metric')
     const metadata = {
       ...existingMetadata,
       ...(unitSystem ? { unit_system: unitSystem } : {}),
       ...(args.city ? { residence_city: args.city.trim() } : {}),
       ...(args.region ? { residence_region: args.region.trim() } : {}),
       timezone_confirmed:
-        timezoneResolution.source === 'explicit' ||
-        existingMetadata.timezone_confirmed === true,
+        timezoneResolution.source === 'explicit' || existingMetadata.timezone_confirmed === true,
       timezone_source: timezoneResolution.source,
     }
     updates.metadata = metadata
     const tz = timezoneResolution.timezone
     updates.timezone = tz
-    const { error } = await (ctx.supabase as unknown as {
-      from: (t: string) => {
-        update: (u: Record<string, unknown>) => {
-          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+    const { error } = await (
+      ctx.supabase as unknown as {
+        from: (t: string) => {
+          update: (u: Record<string, unknown>) => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+          }
         }
       }
-    })
+    )
       .from('users')
       .update(updates)
       .eq('id', ctx.userId)
@@ -2756,9 +2818,7 @@ export const reclassificaRefeicao: ToolDefinition = {
         candidates: selection.groups.map((group) => ({
           consumed_at: group.rows[0]?.consumed_at ?? null,
           items: group.rows.map((row) => row.food_name),
-          kcal: Math.round(
-            group.rows.reduce((sum, row) => sum + (Number(row.kcal) || 0), 0),
-          ),
+          kcal: Math.round(group.rows.reduce((sum, row) => sum + (Number(row.kcal) || 0), 0)),
         })),
         message:
           `Encontrei ${selection.groups.length} refeições com meal_type=${args.from_meal_type}${args.food_hint ? ` contendo "${args.food_hint}"` : ''} no dia ${targetDate}. ` +
@@ -2847,7 +2907,9 @@ export const marcaRefeicaoPulada: ToolDefinition = {
     reason: z
       .string()
       .optional()
-      .describe('Motivo opcional informado pelo paciente (ex: "jejum intermitente", "sem fome", "trabalho")'),
+      .describe(
+        'Motivo opcional informado pelo paciente (ex: "jejum intermitente", "sem fome", "trabalho")',
+      ),
   }),
   execute: async (args, ctx) => {
     const timezone = ctx.userTimezone ?? 'America/Sao_Paulo'
@@ -2936,7 +2998,11 @@ export const consultaReavaliacaoProtocolo: ToolDefinition = {
             86_400_000,
         ),
       )
-      const velocity = evaluateGainVelocity(prof.cycle_start_weight_kg, args.current_weight_kg, days)
+      const velocity = evaluateGainVelocity(
+        prof.cycle_start_weight_kg,
+        args.current_weight_kg,
+        days,
+      )
       let safety: ReturnType<typeof evaluateGainSafety> | null = null
       if (
         prof.sex &&
@@ -3074,7 +3140,9 @@ export const geraDieta: ToolDefinition = {
     horizon: z
       .enum(['daily', 'weekly'])
       .default('daily')
-      .describe('Período da prescrição. "weekly" recomendado quando paciente quer planejamento semanal'),
+      .describe(
+        'Período da prescrição. "weekly" recomendado quando paciente quer planejamento semanal',
+      ),
     meals_per_day: z
       .number()
       .int()
@@ -3094,7 +3162,7 @@ export const geraDieta: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+    // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const sp = ctx.supabase as any
 
     // 1. Carrega perfil do paciente
@@ -3105,11 +3173,7 @@ export const geraDieta: ToolDefinition = {
         .select('sex, birth_date, weight_kg, height_cm, activity_level, current_protocol')
         .eq('user_id', ctx.userId)
         .maybeSingle(),
-      sp
-        .from('user_progress')
-        .select('current_bf_percent')
-        .eq('user_id', ctx.userId)
-        .maybeSingle(),
+      sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
     ])
     const profileReadError = userResult.error ?? profileResult.error ?? progressResult.error
     if (profileReadError) {
@@ -3120,9 +3184,7 @@ export const geraDieta: ToolDefinition = {
     const up = progressResult.data
     const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     const ageFromBirth = (bd: string | null | undefined): number | null =>
-      bd
-        ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000)
-        : null
+      bd ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000) : null
 
     // 2. Carrega targets calóricos/proteicos
     const cfg = await loadCalcConfig(ctx.supabase)
@@ -3167,7 +3229,7 @@ export const geraDieta: ToolDefinition = {
     // 4. Gera via diet-generator
     const { generateDietPlan, saveDietPlan } = await import('./diet-generator.js')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+    // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const llm = (ctx as any).llm
     if (!llm) {
       return {
@@ -3183,8 +3245,11 @@ export const geraDieta: ToolDefinition = {
         age: ageFromBirth(p?.birth_date),
         weight_kg: p?.weight_kg ?? null,
         height_cm: p?.height_cm ?? null,
-        activity_level: (p?.activity_level as 'sedentario' | 'leve' | 'moderado' | 'alto' | 'atleta' | null) ?? null,
-        protocol: (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
+        activity_level:
+          (p?.activity_level as 'sedentario' | 'leve' | 'moderado' | 'alto' | 'atleta' | null) ??
+          null,
+        protocol:
+          (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
         meta_kcal: targets.calories_target ?? null,
         meta_protein_g: targets.protein_target ?? null,
         bf_percent: up?.current_bf_percent ?? null,
@@ -3259,7 +3324,9 @@ export const geraTreino: ToolDefinition = {
     available_equipment: z
       .array(z.string())
       .min(1)
-      .describe('Lista de equipamentos identificados (ex: ["halteres 5-30kg", "barra fixa", "elástico"])'),
+      .describe(
+        'Lista de equipamentos identificados (ex: ["halteres 5-30kg", "barra fixa", "elástico"])',
+      ),
     location: z
       .enum(['academia_completa', 'academia_limitada', 'casa'])
       .describe('Local onde o paciente vai treinar'),
@@ -3291,7 +3358,7 @@ export const geraTreino: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+    // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const sp = ctx.supabase as any
     const [userResult, profileResult, progressResult] = await Promise.all([
       sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
@@ -3300,11 +3367,7 @@ export const geraTreino: ToolDefinition = {
         .select('sex, birth_date, weight_kg, height_cm, current_protocol')
         .eq('user_id', ctx.userId)
         .maybeSingle(),
-      sp
-        .from('user_progress')
-        .select('current_bf_percent')
-        .eq('user_id', ctx.userId)
-        .maybeSingle(),
+      sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
     ])
     const trainingProfileError = userResult.error ?? profileResult.error ?? progressResult.error
     if (trainingProfileError) {
@@ -3315,9 +3378,7 @@ export const geraTreino: ToolDefinition = {
     const up = progressResult.data
     const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     const ageFromBirthT = (bd: string | null | undefined): number | null =>
-      bd
-        ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000)
-        : null
+      bd ? Math.floor((referenceTimestamp.getTime() - new Date(bd).getTime()) / 31557600000) : null
 
     // Rate-limit: max 1 geração de plano nas últimas 24h. Treino é
     // esporádico — paciente NÃO precisa regenerar 5x/dia.
@@ -3341,7 +3402,7 @@ export const geraTreino: ToolDefinition = {
 
     const { generateTrainingPlan, saveTrainingPlan } = await import('./training-plan-generator.js')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+    // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const llm = (ctx as any).llm
     if (!llm) {
       return { success: false, error: 'LLM não disponível no contexto da tool.' }
@@ -3354,7 +3415,8 @@ export const geraTreino: ToolDefinition = {
         age: ageFromBirthT(p?.birth_date),
         weight_kg: p?.weight_kg ?? null,
         height_cm: p?.height_cm ?? null,
-        protocol: (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
+        protocol:
+          (p?.current_protocol as 'recomposicao' | 'manutencao' | 'ganho_massa' | null) ?? null,
         bf_percent: up?.current_bf_percent ?? null,
         training_level: args.training_level,
         limitations: args.limitations ?? [],
@@ -3369,11 +3431,7 @@ export const geraTreino: ToolDefinition = {
     if (!plan) {
       return { success: false, error: 'Falha ao gerar plano de treino. Tente novamente.' }
     }
-    const saved = await saveTrainingPlan(
-      ctx.supabase,
-      plan,
-      ctx.providerMessageId ?? null,
-    )
+    const saved = await saveTrainingPlan(ctx.supabase, plan, ctx.providerMessageId ?? null)
     if (!saved.id) {
       // Cron de entrega faz inner join com training_plans active=true.
       // Sem ID salvo, paciente nunca recebe o treino diário. Não registra

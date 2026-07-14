@@ -53,6 +53,7 @@ import {
 } from './pending-meal-confirmation.js'
 import { decidePendingMealItems } from './pending-meal-item-policy.js'
 import { transitionPendingStatus } from './pending-status-transition.js'
+import { requireSuccessfulMealToolResult } from './tool-result-policy.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
 
@@ -543,6 +544,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // workout usa registraTreino. Resultado vai pro mesmo card determinístico.
         let mealToolResult: {
           success?: boolean
+          error?: string
+          message?: string
           already_logged?: boolean
           meal?: { items?: MealItem[]; totals?: MealTotals }
         } | null = null
@@ -846,9 +849,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               toolCtx as never,
             )) as {
               success?: boolean
+              error?: string
+              message?: string
               already_logged?: boolean
               meal?: { items?: MealItem[]; totals?: MealTotals }
             }
+            requireSuccessfulMealToolResult(mealToolResult)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             await supabase.from('product_events').insert({

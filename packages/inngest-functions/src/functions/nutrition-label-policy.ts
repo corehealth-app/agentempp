@@ -43,6 +43,7 @@ export function resolveTrustedNutritionLabel(
     return {
       trusted: {
         productName: input.productName,
+        servingSizeG: input.servingSizeG,
         per100g: {
           kcal: scalePer100(input.perServing.kcal, input.servingSizeG),
           protein_g: scalePer100(input.perServing.protein_g, input.servingSizeG),
@@ -55,7 +56,11 @@ export function resolveTrustedNutritionLabel(
   }
   if (isComplete(input.per100g)) {
     return {
-      trusted: { productName: input.productName, per100g: input.per100g },
+      trusted: {
+        productName: input.productName,
+        servingSizeG: input.servingSizeG,
+        per100g: input.per100g,
+      },
       reason: 'per_100g',
     }
   }

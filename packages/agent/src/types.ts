@@ -2,6 +2,7 @@ import type { AgentStage } from '@mpp/core'
 
 export interface TrustedVisionNutritionLabel {
   productName: string | null
+  servingSizeG?: number | null
   per100g: {
     kcal: number
     protein_g: number
@@ -29,6 +30,8 @@ export interface AgentInput {
   visionNutritionLabels?: TrustedVisionNutritionLabel[]
   /** Houve rótulo no turno, mesmo se os valores não puderam ser validados. */
   visionNutritionLabelDetected?: boolean
+  /** Quantidade de rótulos detectados, incluindo OCRs incompletos/falhos. */
+  visionNutritionLabelDetectedCount?: number
   /** Para mídia única (compatibilidade). */
   mediaUrl?: string
   mediaMimeType?: string

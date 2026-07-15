@@ -42,6 +42,8 @@ export interface VisionMealAnalysis {
   nutrition_label_visible?: boolean
   /** OCR secundário da tabela, quando ela aparece junto do produto/refeição. */
   nutrition_label?: VisionNutritionLabelAnalysis
+  /** Falha do OCR secundário. Mantém a refeição utilizável, mas permite fail-closed no caller. */
+  nutrition_label_error?: string
   raw_response: string
   promptTokens: number
   completionTokens: number
@@ -106,7 +108,7 @@ export interface VisionEquipmentAnalysis {
   latencyMs: number
 }
 
-/** Tabela nutricional de embalagem (Amanda 2026-05-16 mandou foto de rótulo
+/** Tabela nutricional brasileira ou Nutrition Facts dos EUA (Amanda 2026-05-16 mandou foto de rótulo
  * 3x e gemini-2.5-flash não conseguiu extrair os valores; agente ficou
  * pedindo foto melhor em loop). Quando vision detecta rótulo, faz OCR
  * específico pra extrair kcal/proteína/carbo/gordura POR PORÇÃO (e por 100g
@@ -114,6 +116,8 @@ export interface VisionEquipmentAnalysis {
  * customizados via `corrections[]` em vez de cair no estimate genérico. */
 export interface VisionNutritionLabelAnalysis {
   type: 'nutrition_label'
+  /** Falha estruturada do OCR. Mantém a detecção para o caller bloquear estimativas. */
+  nutrition_label_error?: string
   /** Nome do produto na embalagem (ex: "iogurte whey de pêssego", "biscoito X"). */
   product_name: string | null
   /** Tamanho da porção em GRAMAS conforme rótulo (ex: 170 pra "porção 170g"). */
@@ -272,7 +276,7 @@ const OTHER_SYSTEM_PROMPT = `Você é um descritor visual em pt-BR. Em 2-3 frase
 Retorne APENAS JSON:
 { "description": "..." }`
 
-const NUTRITION_LABEL_SYSTEM_PROMPT = `Você é um leitor especializado em TABELAS NUTRICIONAIS de embalagens brasileiras. Sua única tarefa: extrair os valores numéricos da tabela.
+const NUTRITION_LABEL_SYSTEM_PROMPT = `Você é um leitor especializado em TABELAS NUTRICIONAIS de embalagens do Brasil e dos Estados Unidos. Sua única tarefa: extrair os valores numéricos da tabela.
 
 # Como ler a tabela (padrão brasileiro ANVISA)
 
@@ -291,6 +295,14 @@ Linhas típicas (na ordem que costumam aparecer):
 8. Sódio (ignore)
 
 ⚠️ Algumas embalagens mostram só **POR 100g** em vez de "por porção". Outras mostram **AMBOS** (2 colunas: "por porção" + "por 100g"). Capture o que estiver visível.
+
+# Como ler Nutrition Facts (padrão dos EUA)
+
+- "Serving size 1 wrap (43g)" significa porção de 43g.
+- "Calories 70" é o valor POR PORÇÃO, não por 100g.
+- Extraia "Total Fat", "Total Carbohydrate" e "Protein"; ignore os percentuais % Daily Value.
+- Não confunda "Dietary Fiber" ou "Net Carbs" com carboidratos totais. Use sempre "Total Carbohydrate" em carbs_g.
+- Quando houver "about N servings per container", isso é quantidade de porções na embalagem e NÃO multiplica o que foi consumido.
 
 # Como achar o serving_size (porção)
 
@@ -340,6 +352,23 @@ body             — foto corporal de pessoa (frente/lado/costas)
 scale            — foto de balança digital, fita métrica, ou medidor mostrando número
 equipment        — foto de EQUIPAMENTOS DE MUSCULAÇÃO ou cardio: halteres, anilhas, barras, máquinas (leg press, supino, smith), elásticos, banco, esteira, bike, sala de academia, área de treino em casa
 other            — qualquer outra coisa (embalagem fechada sem tabela visível, paisagem, etc)`
+
+const CLASSIFIER_RUNTIME_CONTRACT = `# CONTRATO RUNTIME VISION CLASSIFIER V1 — prevalece sobre instruções anteriores
+Retorne APENAS uma destas 6 palavras: meal, body, scale, nutrition_label, equipment ou other.
+Se houver um quadro "Nutrition Facts" ou tabela nutricional legível, retorne nutrition_label, mesmo que a imagem também mostre alimento, bebida ou embalagem.`
+
+const MEAL_RUNTIME_CONTRACT = `# CONTRATO RUNTIME VISION MEAL V1 — prevalece sobre instruções anteriores
+- A mensagem/legenda serve para identificar ou corrigir o que está VISÍVEL; não crie itens que existem apenas na legenda. O agente principal processa a legenda separadamente.
+- Se foto e legenda nomearem o mesmo alimento, emita esse alimento uma única vez.
+- Se houver "Nutrition Facts" ou tabela nutricional legível, use nutrition_label_visible=true. Caso contrário, use false.
+- O JSON deve conter exatamente items, meal_context e nutrition_label_visible; cada item deve conter name, quantity_g_estimate e confidence.`
+
+function appendRuntimeContract(prompt: string, contract: string): string {
+  const marker = contract.split('\n', 1)[0]
+  const markerIndex = marker ? prompt.indexOf(marker) : -1
+  const editorialPrompt = markerIndex >= 0 ? prompt.slice(0, markerIndex).trim() : prompt.trim()
+  return `${editorialPrompt}\n\n${contract}`
+}
 
 const EQUIPMENT_SYSTEM_PROMPT = `Você é um avaliador de equipamentos de treino. Olha a foto e enumera os equipamentos disponíveis pra musculação/cardio com PRECISÃO. Retorne APENAS um JSON válido com este schema:
 
@@ -486,13 +515,16 @@ export class GeminiVision {
     this.model = cfg.model ?? 'anthropic/claude-sonnet-4.5'
     this.nutritionLabelModel = cfg.nutritionLabelModel ?? this.model
     this.prompts = {
-      meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,
+      meal: appendRuntimeContract(cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT, MEAL_RUNTIME_CONTRACT),
       body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
       scale: cfg.prompts?.scale ?? SCALE_SYSTEM_PROMPT,
       nutrition_label: cfg.prompts?.nutrition_label ?? NUTRITION_LABEL_SYSTEM_PROMPT,
       equipment: cfg.prompts?.equipment ?? EQUIPMENT_SYSTEM_PROMPT,
       other: cfg.prompts?.other ?? OTHER_SYSTEM_PROMPT,
-      classifier: cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
+      classifier: appendRuntimeContract(
+        cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
+        CLASSIFIER_RUNTIME_CONTRACT,
+      ),
     }
   }
 
@@ -542,15 +574,43 @@ export class GeminiVision {
           ...meal,
           nutrition_label: await this.analyzeNutritionLabel(imageUrl, options.userMessage),
         }
-      } catch {
+      } catch (error) {
         // A refeição continua utilizável, mas o caller sabe que viu um rótulo e
         // deve impedir cálculo não confiável até conseguir os quatro macros.
-        return meal
+        return {
+          ...meal,
+          nutrition_label_error: error instanceof Error ? error.message : String(error),
+        }
       }
     }
     if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
     if (type === 'scale') return this.analyzeScale(imageUrl)
-    if (type === 'nutrition_label') return this.analyzeNutritionLabel(imageUrl, options.userMessage)
+    if (type === 'nutrition_label') {
+      try {
+        return await this.analyzeNutritionLabel(imageUrl, options.userMessage)
+      } catch (error) {
+        const emptyNutrition = {
+          kcal: null,
+          protein_g: null,
+          carbs_g: null,
+          fat_g: null,
+        }
+        return {
+          type: 'nutrition_label',
+          product_name: null,
+          serving_size_g: null,
+          per_serving: { ...emptyNutrition },
+          per_100g: { ...emptyNutrition },
+          confidence: 0,
+          notes: 'A tabela foi detectada, mas os valores não puderam ser extraídos com segurança.',
+          nutrition_label_error: error instanceof Error ? error.message : String(error),
+          raw_response: '',
+          promptTokens: 0,
+          completionTokens: 0,
+          latencyMs: 0,
+        }
+      }
+    }
     if (type === 'equipment') return this.analyzeEquipment(imageUrl)
     return this.analyzeOther(imageUrl)
   }
@@ -669,10 +729,13 @@ export class GeminiVision {
       (parsed.context as string) ??
       (parsed.description as string) ??
       undefined
+    const normalizedLabelEvidence = `${meal_context ?? ''} ${raw}`
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
     const nutritionLabelVisible =
       parsed.nutrition_label_visible === true ||
-      /\b(nutrition\s+facts|tabela\s+nutricional|rotulo\s+(?:esta\s+)?visivel|rotulo\s+nutricional)\b/i.test(
-        `${meal_context ?? ''} ${raw}`.normalize('NFD').replace(/\p{Diacritic}/gu, ''),
+      /\b(nutrition\s+facts|serving\s+size|tabela\s+nutricional|rotulo\s+(?:esta\s+)?visivel|rotulo\s+nutricional|segundo\s+(?:o\s+)?rotulo|rotulo\s+(?:indica|informa|mostra))\b/i.test(
+        normalizedLabelEvidence,
       )
     return {
       type: 'meal',

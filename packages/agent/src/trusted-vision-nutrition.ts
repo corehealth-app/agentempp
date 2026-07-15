@@ -52,13 +52,38 @@ function scale(value: number, quantityG: number): number {
   return Math.round(value * (quantityG / 100) * 100) / 100
 }
 
+function matchesDeclaredServing(
+  quantityG: number,
+  servingSizeG: number | null | undefined,
+): boolean {
+  if (
+    servingSizeG == null ||
+    !Number.isFinite(servingSizeG) ||
+    servingSizeG <= 0 ||
+    !Number.isFinite(quantityG) ||
+    quantityG <= 0
+  ) {
+    return false
+  }
+  return Math.abs(quantityG - servingSizeG) <= Math.max(0.5, servingSizeG * 0.01)
+}
+
 export function attachTrustedVisionNutrition<T extends VisionNutritionMealItem>(
   items: T[],
   labels: TrustedVisionNutritionLabel[],
 ): Array<T & { approved_nutrition?: VisionNutritionMealItem['approved_nutrition'] }> {
   return items.map((item) => {
     if (item.user_kcal != null || item.approved_nutrition) return item
-    const matchingLabels = labels.filter((label) => namesMatch(item.food_name, label.productName))
+    let matchingLabels = labels.filter((label) => namesMatch(item.food_name, label.productName))
+    if (matchingLabels.length === 0) {
+      matchingLabels = labels.filter((label) => {
+        if (!matchesDeclaredServing(item.quantity_g, label.servingSizeG)) return false
+        const itemsAtServing = items.filter((candidate) =>
+          matchesDeclaredServing(candidate.quantity_g, label.servingSizeG),
+        )
+        return itemsAtServing.length === 1
+      })
+    }
     if (matchingLabels.length !== 1) return item
 
     const [label] = matchingLabels

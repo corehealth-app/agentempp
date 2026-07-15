@@ -285,6 +285,7 @@ export const processMessageFn = inngest.createFunction(
     let mediaSummary: { kind: 'audio' | 'image' | 'mixed'; latency_ms: number } | null = null
     const visionNutritionLabels: TrustedVisionNutritionLabel[] = []
     let visionNutritionLabelDetected = false
+    let visionNutritionLabelDetectedCount = 0
 
     if (audioMediaItems.length > 0) {
       const sttRes = await step.run('stt-transcribe', async () => {
@@ -499,6 +500,7 @@ export const processMessageFn = inngest.createFunction(
           samePhotoAsMeal = false,
         ) => {
           visionNutritionLabelDetected = true
+          visionNutritionLabelDetectedCount += 1
           const ps = img.per_serving
           const p100 = img.per_100g
           const labelResolution = resolveTrustedNutritionLabel(
@@ -552,8 +554,9 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
-            if (img.nutrition_label_visible) {
+            if (img.nutrition_label_visible && !img.nutrition_label) {
               visionNutritionLabelDetected = true
+              visionNutritionLabelDetectedCount += 1
             }
             if (img.nutrition_label) {
               appendNutritionLabel(img.nutrition_label, idx, true)
@@ -604,10 +607,14 @@ export const processMessageFn = inngest.createFunction(
           vRes.failures.length > 0
             ? `\n\n[${vRes.failures.length} de ${imageMediaItems.length} foto(s) não puderam ser analisadas. Considere apenas as análises acima e peça somente a mídia faltante se ela for necessária.]`
             : ''
+        const multimodalFusionNotice = patientNarrative
+          ? `\n\n[REGRA DE FUSÃO MULTIMODAL: a análise visual e o relato acima descrevem o mesmo consumo. O texto do paciente corrige/completa a foto; não some novamente um alimento presente nas duas fontes.]`
+          : ''
         enrichedText =
           `[${vRes.images.length}/${imageMediaItems.length} foto(s) analisada(s) — análise visual automática abaixo]\n\n` +
           blocks.join('\n\n') +
           (patientNarrative ? `\n\nRelato do usuário: "${patientNarrative}"` : '') +
+          multimodalFusionNotice +
           partialFailureNotice
         mediaSummary = {
           kind: audioMediaItems.length > 0 ? 'mixed' : 'image',
@@ -645,6 +652,9 @@ export const processMessageFn = inngest.createFunction(
             let bodyBfPercentEstimate: number | null = null
             let bodyCompositionNotes: string | null = null
             let bodyPostureNotes: string | null = null
+            let nutritionLabelVisible = false
+            let nutritionLabelOcrAttached = false
+            let nutritionLabelOcrFailed = false
             if (img.type === 'meal') {
               confidence =
                 img.items.length > 0
@@ -659,6 +669,9 @@ export const processMessageFn = inngest.createFunction(
               needsDisambiguation = img.items.some(
                 (it) => it.confidence < visionCfg.meal_confidence_threshold,
               )
+              nutritionLabelVisible = img.nutrition_label_visible === true
+              nutritionLabelOcrAttached = img.nutrition_label != null
+              nutritionLabelOcrFailed = img.nutrition_label_error != null
             } else if (img.type === 'body') {
               confidence = img.bf_confidence
               bodyView = img.view
@@ -671,6 +684,11 @@ export const processMessageFn = inngest.createFunction(
               img.type === 'nutrition_label'
             ) {
               confidence = img.confidence
+              if (img.type === 'nutrition_label') {
+                nutritionLabelVisible = true
+                nutritionLabelOcrAttached = img.nutrition_label_error == null
+                nutritionLabelOcrFailed = img.nutrition_label_error != null
+              }
             }
             const model =
               img.type === 'nutrition_label' ? visionCfg.nutrition_label_model : visionCfg.model
@@ -697,6 +715,9 @@ export const processMessageFn = inngest.createFunction(
                 meal_items: mealItems,
                 meal_context: mealContext,
                 needs_disambiguation: needsDisambiguation,
+                nutrition_label_visible: nutritionLabelVisible,
+                nutrition_label_ocr_attached: nutritionLabelOcrAttached,
+                nutrition_label_ocr_failed: nutritionLabelOcrFailed,
                 view: bodyView,
                 bf_percent_estimate: bodyBfPercentEstimate,
                 bf_confidence: img.type === 'body' ? img.bf_confidence : null,
@@ -883,6 +904,7 @@ export const processMessageFn = inngest.createFunction(
           visionNutritionLabels:
             visionNutritionLabels.length > 0 ? visionNutritionLabels : undefined,
           visionNutritionLabelDetected,
+          visionNutritionLabelDetectedCount,
           mediaUrl,
           provider,
           timestamp: new Date(timestamp),

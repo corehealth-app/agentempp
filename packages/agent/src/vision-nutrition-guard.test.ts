@@ -18,6 +18,7 @@ describe('shouldBlockUntrustedNutritionLabelRegistration', () => {
         toolName: 'registra_refeicao',
         nutritionLabelDetected: true,
         trustedLabelCount: 1,
+        matchedLabelCount: 1,
       }),
     ).toBe(false)
     expect(
@@ -27,6 +28,29 @@ describe('shouldBlockUntrustedNutritionLabelRegistration', () => {
         trustedLabelCount: 0,
       }),
     ).toBe(false)
+  })
+
+  it('bloqueia quando o OCR é confiável mas nenhum item corresponde ao rótulo', () => {
+    expect(
+      shouldBlockUntrustedNutritionLabelRegistration({
+        toolName: 'registra_refeicao',
+        nutritionLabelDetected: true,
+        trustedLabelCount: 1,
+        matchedLabelCount: 0,
+      }),
+    ).toBe(true)
+  })
+
+  it('bloqueia burst enquanto existir qualquer rótulo detectado sem OCR confiável', () => {
+    expect(
+      shouldBlockUntrustedNutritionLabelRegistration({
+        toolName: 'registra_refeicao',
+        nutritionLabelDetected: true,
+        detectedLabelCount: 2,
+        trustedLabelCount: 1,
+        matchedLabelCount: 1,
+      }),
+    ).toBe(true)
   })
 
   it('não interfere em turnos sem rótulo', () => {

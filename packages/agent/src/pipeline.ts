@@ -84,6 +84,7 @@ import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
 import { loadVisionPending } from './vision-pending-loader.js'
 import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
 import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
+import { dedupeMealItems } from './meal-item-dedup.js'
 import {
   bodyPhotoSignalFromEventProperties,
   composeReevalBodyPhotoWaitMessage,
@@ -631,16 +632,40 @@ export async function processMessage(
       }
       try {
         const validated = tool.parameters.parse(parsed)
+        const trustedVisionLabels = input.visionNutritionLabels ?? []
+        let matchedLabelCount: number | undefined
+        if (tc.name === 'registra_refeicao' && trustedVisionLabels.length > 0) {
+          const mealArgs = validated as {
+            items: Array<{
+              food_name: string
+              quantity_g: number
+              approved_nutrition?: {
+                kcal: number
+                protein_g: number
+                carbs_g: number
+                fat_g: number
+              }
+            }>
+          }
+          mealArgs.items = attachTrustedVisionNutrition(mealArgs.items, trustedVisionLabels)
+          matchedLabelCount = mealArgs.items.filter(
+            (item) => item.approved_nutrition != null,
+          ).length
+        }
 
         if (
           shouldBlockUntrustedNutritionLabelRegistration({
             toolName: tc.name,
             nutritionLabelDetected: input.visionNutritionLabelDetected === true,
-            trustedLabelCount: input.visionNutritionLabels?.length ?? 0,
+            detectedLabelCount: input.visionNutritionLabelDetectedCount,
+            trustedLabelCount: trustedVisionLabels.length,
+            matchedLabelCount,
           })
         ) {
           const error =
-            'Rótulo incompleto ou com baixa confiança. Não registre nem estime ainda; peça kcal, proteína, carboidrato e gordura por porção.'
+            trustedVisionLabels.length > 0
+              ? 'Rótulo confiável, mas sem associação inequívoca a um item da refeição. Não estime: confirme qual item e porção pertencem ao rótulo.'
+              : 'Rótulo incompleto ou com baixa confiança. Não registre nem estime ainda; peça kcal, proteína, carboidrato e gordura por porção.'
           toolCallsSummary.push({ name: tc.name, arguments: validated, error })
           messages.push({
             role: 'tool',
@@ -851,7 +876,38 @@ export async function processMessage(
               items: Array<{
                 food_name: string
                 quantity_g?: number
+                approved_nutrition?: {
+                  kcal: number
+                  protein_g: number
+                  carbs_g: number
+                  fat_g: number
+                }
               }>
+            }
+            const originalItemCount = args.items.length
+            const dedupedArgs = dedupeMealItems(
+              args.items.map((item) => ({ ...item, quantity_g: item.quantity_g ?? 0 })),
+              { patientText: semanticPatientText },
+            )
+            args.items = dedupedArgs.items
+            if (dedupedArgs.duplicates.length > 0) {
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.pending_items_deduped',
+                properties: {
+                  meal_type: args.meal_type ?? null,
+                  provider_message_id: input.providerMessageId,
+                  source_content_type: ctx.lastInboundContentType,
+                  original_count: originalItemCount,
+                  merged_count: dedupedArgs.items.length,
+                  duplicates: dedupedArgs.duplicates.map((duplicate) => ({
+                    food_name: duplicate.food_name,
+                    repeated: duplicate.repeated,
+                    result_g: duplicate.result_g,
+                    strategy: duplicate.strategy,
+                  })),
+                },
+              })
             }
             const editedPendingRow = await loadRecentEditedMealPending(
               deps.supabase,
@@ -879,7 +935,7 @@ export async function processMessage(
             const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
             const itemsWithOverrides = attachTrustedVisionNutrition(
               args.items.map((it) => ({
-                food_name: it.food_name,
+                ...it,
                 quantity_g: it.quantity_g ?? 0,
                 ...(kcalOverrides.has(it.food_name)
                   ? { user_kcal: kcalOverrides.get(it.food_name)! }
@@ -2641,7 +2697,8 @@ function formatUserContext(
       `(o sistema quebra em chunks naturais).\n` +
       `3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
       `momentos de validação emocional, não como prefixo automático.\n` +
-      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.`,
+      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.\n` +
+      `5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.`,
   )
 
   return sections.join('\n\n')

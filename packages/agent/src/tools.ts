@@ -47,6 +47,7 @@ import {
   isMultiTimezoneCountry,
   resolveResidenceTimezone,
 } from './location-timezone.js'
+import { dedupeMealItems } from './meal-item-dedup.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -571,6 +572,7 @@ export const registraRefeicao: ToolDefinition = {
     '📌 TABELA DE DECISÃO replace: "adicionei X" = replace=false e apenas o item novo. "na verdade era X" ou "corrige X" = replace=true com os itens corrigidos. Só uma instrução explícita como "refaça/corrija o almoço inteiro" autoriza substituir a refeição inteira. ' +
     '🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer "corrige"), trate como correção e use replace=true. Ex: agent registrou "200g arroz + 180g carne" pela foto, paciente responde "100g arroz, 100g carne" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) ' +
     '📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser "2 ovos", converta pra 100g (50g/ovo). "250ml de leite" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→"2 unidades", leite→"250 ml", pão francês→"1 pão"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre "120g de ovo" pro paciente, mostre "2 ovos". ' +
+    '🧮 AGREGAÇÃO: cada alimento deve aparecer UMA única vez em `items`, com `quantity_g` igual ao TOTAL consumido. Ex.: 2 tortilhas de 43g → um item de 86g; nunca dois itens idênticos de 43g. ' +
     '📅 DIA DA REFEIÇÃO: por padrão assume HOJE. Se o paciente disser que a refeição foi de um DIA ANTERIOR ("isso foi ontem", "comi ontem à noite", "esse jantar foi de ontem"), passe `consumed_date` (YYYY-MM-DD) com a data certa — senão a refeição entra no dia errado. ' +
     '🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse "batata" e ele diz "não, é mandioca", ou "é cuscuz, não farofa", ou "o pão é francês"), passe o array `corrections` com `{de: "batata", para: "mandioca"}`. Inclui também quando ele diz "apenas N unidades" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: "minha geleia caseira tem 130 kcal por 100g"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.',
   parameters: z.object({
@@ -1417,64 +1419,12 @@ export const registraRefeicao: ToolDefinition = {
     // de 555. Luciana 2026-05-11 teve cenoura/tomate/alface/arroz QUADRUPLICADOS
     // num único almoço (2.199 kcal no almoço).
     //
-    // Defesa: cópias idênticas (mesmo nome + mesma quantidade) são uma repetição
-    // estrutural da LLM e ficam uma vez só. Quantidades distintas do mesmo item
-    // continuam sendo agregadas, mas cada variante idêntica entra uma única vez.
+    // Defesa: o contrato exige uma linha por alimento com quantidade total.
+    // Cópias idênticas sem multiplicidade declarada são repetição estrutural;
+    // se o texto declarou múltiplas porções, a ambiguidade falha fechado.
     {
-      const normName = (s: string) =>
-        s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
-      type DedupItem = {
-        food_name: string
-        quantity_g: number
-        user_kcal?: number | null
-        approved_nutrition?: {
-          food_db_id?: number | null
-          kcal: number
-          protein_g: number
-          carbs_g: number
-          fat_g: number
-        }
-      }
-      type DedupGroup = {
-        item: DedupItem
-        original_count: number
-        quantities: Map<string, DedupItem>
-      }
-      const mergedMap = new Map<string, DedupGroup>()
-      for (const it of args.items as DedupItem[]) {
-        const key = normName(it.food_name)
-        const existing = mergedMap.get(key)
-        const quantityKey = Number(it.quantity_g).toFixed(3)
-        if (existing) {
-          existing.original_count += 1
-          if (!existing.quantities.has(quantityKey)) existing.quantities.set(quantityKey, it)
-        } else {
-          mergedMap.set(key, {
-            item: it,
-            original_count: 1,
-            quantities: new Map([[quantityKey, it]]),
-          })
-        }
-      }
-      const dupCount = Array.from(mergedMap.values()).filter((m) => m.original_count > 1).length
-      if (dupCount > 0) {
-        const merged = Array.from(mergedMap.values()).map((group) => {
-          const uniqueItems = [...group.quantities.values()]
-          const quantity_g = uniqueItems.reduce((sum, item) => sum + item.quantity_g, 0)
-          const distinctUserKcal = uniqueItems
-            .map((item) => item.user_kcal)
-            .filter((value): value is number => value != null)
-          return {
-            ...group.item,
-            quantity_g,
-            ...(distinctUserKcal.length > 1
-              ? { user_kcal: distinctUserKcal.reduce((sum, value) => sum + value, 0) }
-              : {}),
-            original_count: group.original_count,
-            strategy:
-              uniqueItems.length === 1 ? 'collapsed_identical' : 'summed_distinct_quantities',
-          }
-        })
+      const deduped = dedupeMealItems(args.items, { patientText: ctx.currentUserText })
+      if (deduped.duplicates.length > 0) {
         await ctx.supabase.from('product_events').insert({
           user_id: ctx.userId,
           event: 'tool.items_deduped',
@@ -1482,18 +1432,16 @@ export const registraRefeicao: ToolDefinition = {
             meal_type: args.meal_type ?? null,
             provider_message_id: ctx.providerMessageId ?? null,
             original_count: args.items.length,
-            merged_count: merged.length,
-            duplicates: merged
-              .filter((m) => m.original_count > 1)
-              .map((m) => ({
-                food_name: m.food_name,
-                repeated: m.original_count,
-                result_g: m.quantity_g,
-                strategy: m.strategy,
-              })),
+            merged_count: deduped.items.length,
+            duplicates: deduped.duplicates.map((duplicate) => ({
+              food_name: duplicate.food_name,
+              repeated: duplicate.repeated,
+              result_g: duplicate.result_g,
+              strategy: duplicate.strategy,
+            })),
           },
         })
-        args.items = merged.map(({ original_count: _count, strategy: _strategy, ...item }) => item)
+        args.items = deduped.items
       }
     }
 

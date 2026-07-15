@@ -68,4 +68,58 @@ describe('attachTrustedVisionNutrition', () => {
       fat_g: 5,
     })
   })
+
+  it('prioriza os 70 kcal impressos da Mission Carb Balance para uma unidade de 43g', () => {
+    const result = attachTrustedVisionNutrition(
+      [{ food_name: 'tortilha integral Mission Carb Balance', quantity_g: 43 }],
+      [
+        {
+          productName: 'Mission Carb Balance Original',
+          servingSizeG: 43,
+          per100g: {
+            kcal: 162.79,
+            protein_g: 11.63,
+            carbs_g: 44.19,
+            fat_g: 4.65,
+          },
+        },
+      ],
+    )
+
+    expect(result[0]?.approved_nutrition).toEqual({
+      kcal: 70,
+      protein_g: 5,
+      carbs_g: 19,
+      fat_g: 2,
+    })
+  })
+
+  it('associa nome genérico à única porção exata do rótulo sem estimar por 100g', () => {
+    const result = attachTrustedVisionNutrition(
+      [
+        { food_name: 'rap10', quantity_g: 43 },
+        { food_name: 'patê de frango', quantity_g: 40 },
+      ],
+      [
+        {
+          productName: 'Mission Carb Balance Original',
+          servingSizeG: 43,
+          per100g: {
+            kcal: 162.79,
+            protein_g: 11.63,
+            carbs_g: 44.19,
+            fat_g: 4.65,
+          },
+        },
+      ],
+    )
+
+    expect(result[0]?.approved_nutrition).toEqual({
+      kcal: 70,
+      protein_g: 5,
+      carbs_g: 19,
+      fat_g: 2,
+    })
+    expect(result[1]?.approved_nutrition).toBeUndefined()
+  })
 })

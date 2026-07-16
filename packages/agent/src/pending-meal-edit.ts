@@ -1,4 +1,5 @@
-import type { MealItem, MealTotals } from './post-registration-message.js'
+import { foodNamesReferToSameItem } from './meal-replacement-target.js'
+import type { MealItem, MealTotals, PendingFoodCorrection } from './post-registration-message.js'
 
 export interface PendingMealEditAdjustment {
   food_name: string
@@ -54,9 +55,7 @@ export function reconcilePendingMealEdit(input: {
   const previousByName = new Map(
     input.previousItems.map((item) => [normalizeFoodName(item.name), item]),
   )
-  const explicitNames = new Set(
-    [...input.currentExplicitKcalFoods].map(normalizeFoodName),
-  )
+  const explicitNames = new Set([...input.currentExplicitKcalFoods].map(normalizeFoodName))
   const adjustments: PendingMealEditAdjustment[] = []
 
   const items = input.resolvedItems.map((resolved) => {
@@ -76,6 +75,8 @@ export function reconcilePendingMealEdit(input: {
     const ratio = resolved.quantity_g / previous.quantity_g
     const reconciled: MealItem = {
       ...resolved,
+      food_db_id: previous.food_db_id ?? null,
+      nutrition_source: previous.nutrition_source ?? resolved.nutrition_source ?? null,
       kcal: round(previous.kcal * ratio, 1),
       protein_g: round(previous.protein_g * ratio, 2),
       carbs_g: round(previous.carbs_g * ratio, 2),
@@ -99,4 +100,46 @@ export function reconcilePendingMealEdit(input: {
   })
 
   return { items, totals: totalsFor(items), adjustments }
+}
+
+/**
+ * Builds the full meal shown after an item-scoped correction from the last
+ * persisted meal. Only correction destinations come from the fresh proposal;
+ * every untouched item keeps the values the patient already approved.
+ */
+export function reconcileScopedMealCorrection(input: {
+  previousItems: MealItem[]
+  resolvedItems: MealItem[]
+  corrections: PendingFoodCorrection[]
+}): { items: MealItem[]; totals: MealTotals } | null {
+  if (input.previousItems.length === 0 || input.corrections.length === 0) return null
+
+  const replacements = new Map<number, MealItem>()
+  const usedDestinations = new Set<MealItem>()
+  for (const correction of input.corrections) {
+    const sourceIndexes = input.previousItems
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => foodNamesReferToSameItem(item.name, correction.de))
+      .map(({ index }) => index)
+    const destinations = input.resolvedItems.filter((item) =>
+      foodNamesReferToSameItem(item.name, correction.para),
+    )
+    const sourceIndex = sourceIndexes[0]
+    const destination = destinations[0]
+    if (
+      sourceIndexes.length !== 1 ||
+      destinations.length !== 1 ||
+      sourceIndex === undefined ||
+      destination === undefined ||
+      replacements.has(sourceIndex) ||
+      usedDestinations.has(destination)
+    ) {
+      return null
+    }
+    replacements.set(sourceIndex, destination)
+    usedDestinations.add(destination)
+  }
+
+  const items = input.previousItems.map((item, index) => replacements.get(index) ?? { ...item })
+  return { items, totals: totalsFor(items) }
 }

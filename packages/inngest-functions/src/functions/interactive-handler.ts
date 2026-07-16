@@ -49,6 +49,7 @@ import { buildOutboundMessageRows } from './outbound-message-rows.js'
 import {
   buildConfirmedMealArgs,
   buildConfirmedMealRegistrationEntry,
+  selectValidatedWriteItems,
   shouldBlockEffectiveReplace,
 } from './pending-meal-confirmation.js'
 import { decidePendingMealItems } from './pending-meal-item-policy.js'
@@ -475,6 +476,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           kind?: 'meal' | 'workout'
           mealType?: string
           items?: MealItem[]
+          writeItems?: MealItem[]
           totals?: MealTotals
           workoutType?: string
           durationMin?: number | null
@@ -690,7 +692,39 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             })
             return { handled: true, action: 'rejected_all_zero_kcal', pendingId }
           }
+          const validatedWriteItems = selectValidatedWriteItems(
+            proposal.writeItems,
+            itemDecision.validItems,
+          )
+          if (
+            proposal.writeItems != null &&
+            (itemDecision.action !== 'proceed' || validatedWriteItems == null)
+          ) {
+            await sendTextTracked(
+              'Não apliquei essa correção porque um dos valores da refeição não passou na validação. Me mande novamente o item corrigido e a quantidade.',
+              'scoped_correction_invalid',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.scoped_correction_invalid',
+              properties: {
+                pendingId,
+                meal_type: proposal.mealType ?? null,
+                write_items_count: proposal.writeItems.length,
+                valid_items_count: itemDecision.validItems.length,
+                suspicious_items_count: itemDecision.suspiciousItems.length,
+              },
+            })
+            return { handled: true, action: 'rejected_invalid_scoped_correction', pendingId }
+          }
           proposal.items = itemDecision.validItems
+          proposal.writeItems = validatedWriteItems ?? undefined
           if (itemDecision.action === 'register_valid_only') {
             await supabase.from('product_events').insert({
               user_id: userId,
@@ -841,6 +875,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 {
                   mealType: proposal.mealType,
                   items: proposal.items,
+                  writeItems: proposal.writeItems,
                   corrections: proposal.corrections,
                 },
                 effectiveReplace,
@@ -937,6 +972,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   {
                     mealType: proposal.mealType,
                     items: proposal.items,
+                    writeItems: proposal.writeItems,
                     totals: proposal.totals,
                   },
                   mealToolResult,

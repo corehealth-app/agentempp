@@ -9,6 +9,7 @@ import {
 export interface ConfirmedMealProposal {
   mealType?: string
   items: MealItem[]
+  writeItems?: MealItem[]
   corrections?: PendingFoodCorrection[]
 }
 
@@ -40,6 +41,7 @@ export interface ConfirmedMealArgs {
 interface ConfirmedMealRegistrationProposal {
   mealType?: string
   items?: MealItem[]
+  writeItems?: MealItem[]
   totals?: MealTotals
 }
 
@@ -54,6 +56,36 @@ interface EffectiveReplaceGuardInput {
   hasPriorEditedPending: boolean
   inferredReplace: boolean
   replaceEvidence?: string | null
+}
+
+function normalizeFoodName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function selectValidatedWriteItems(
+  writeItems: MealItem[] | undefined,
+  validItems: MealItem[],
+): MealItem[] | null | undefined {
+  if (writeItems == null) return undefined
+  if (writeItems.length === 0) return null
+
+  const selected: MealItem[] = []
+  for (const writeItem of writeItems) {
+    const matches = validItems.filter(
+      (validItem) =>
+        normalizeFoodName(validItem.name) === normalizeFoodName(writeItem.name) &&
+        Math.abs(Number(validItem.quantity_g) - Number(writeItem.quantity_g)) <= 0.01,
+    )
+    const match = matches[0]
+    if (matches.length !== 1 || match === undefined || selected.includes(match)) return null
+    selected.push(match)
+  }
+  return selected
 }
 
 export function shouldBlockEffectiveReplace(input: EffectiveReplaceGuardInput): boolean {
@@ -72,9 +104,10 @@ export function buildConfirmedMealArgs(
   sourceLocalDate: string,
 ): ConfirmedMealArgs {
   const corrections = normalizePendingFoodCorrections(proposal.corrections)
+  const writeItems = proposal.writeItems ?? proposal.items
   return {
     meal_type: proposal.mealType ?? 'outro',
-    items: proposal.items.map((item) => ({
+    items: writeItems.map((item) => ({
       food_name: item.name,
       quantity_g: item.quantity_g,
       display_qty: item.display_qty,
@@ -102,12 +135,15 @@ export function buildConfirmedMealRegistrationEntry(
   proposal: ConfirmedMealRegistrationProposal,
   result: ConfirmedMealResult | null,
 ): RegistrationEntry {
+  const itemScopedPatch = (proposal.writeItems?.length ?? 0) > 0
   return {
     tool: 'registra_refeicao',
     mealType: proposal.mealType ?? 'outro',
-    items: result?.meal?.items ?? proposal.items ?? [],
-    totals: result?.meal?.totals ??
-      proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    items: itemScopedPatch ? (proposal.items ?? []) : (result?.meal?.items ?? proposal.items ?? []),
+    totals: itemScopedPatch
+      ? (proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 })
+      : (result?.meal?.totals ??
+        proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }),
     alreadyLogged: result?.already_logged === true,
   }
 }

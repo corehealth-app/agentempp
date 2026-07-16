@@ -62,6 +62,60 @@ BEGIN
   WHERE user_id = v_user_id
     AND food_name = 'arroz';
 
+  -- Item-scoped replace must reject a full-meal payload that repeats an
+  -- untouched row from the same registration group.
+  BEGIN
+    PERFORM public.register_meal_atomic_scoped(
+      p_user_id => v_user_id,
+      p_date => DATE '2026-07-11',
+      p_meal_type => 'almoco'::public.meal_type_enum,
+      p_items => '[
+        {"food_name":"arroz integral","quantity_g":100,"kcal":90,"protein_g":2,"carbs_g":19,"fat_g":1,"source":"pending_approved","confidence":1},
+        {"food_name":"frango","quantity_g":120,"kcal":200,"protein_g":35,"carbs_g":0,"fat_g":7,"source":"pending_approved","confidence":1}
+      ]'::jsonb,
+      p_replace => true,
+      p_replace_log_ids => ARRAY[v_arroz_log_id],
+      p_provider_message_id => 'provider-atomic-unsafe-full-payload'
+    );
+    RAISE EXCEPTION 'unsafe scoped full payload was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM = 'unsafe scoped full payload was accepted' THEN
+        RAISE;
+      END IF;
+  END;
+
+  -- A one-for-one replacement may legitimately have the same name and
+  -- quantity as an untouched item (for example, salame -> a second egg).
+  -- Exercise it in a savepoint-like PL/pgSQL block and roll it back on purpose.
+  BEGIN
+    PERFORM public.register_meal_atomic_scoped(
+      p_user_id => v_user_id,
+      p_date => DATE '2026-07-11',
+      p_meal_type => 'almoco'::public.meal_type_enum,
+      p_items => '[
+        {"food_name":"frango","quantity_g":120,"kcal":200,"protein_g":35,"carbs_g":0,"fat_g":7,"source":"pending_approved","confidence":1}
+      ]'::jsonb,
+      p_replace => true,
+      p_replace_log_ids => ARRAY[v_arroz_log_id],
+      p_provider_message_id => 'provider-atomic-legitimate-identical-item'
+    );
+    IF (
+      SELECT count(*)
+      FROM public.meal_logs
+      WHERE user_id = v_user_id
+        AND food_name = 'frango'
+    ) <> 2 THEN
+      RAISE EXCEPTION 'legitimate identical replacement did not insert one item';
+    END IF;
+    RAISE EXCEPTION 'rollback-legitimate-identical-replacement';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'rollback-legitimate-identical-replacement' THEN
+        RAISE;
+      END IF;
+  END;
+
   -- An item correction must preserve the other item from the same meal.
   v_result := public.register_meal_atomic_scoped(
     p_user_id => v_user_id,

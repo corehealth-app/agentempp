@@ -1,13 +1,9 @@
 name: Lint @mpp/agent (ban new `as any`)
 
 # ACT-1 prevention plan 2026-06-16: bane `as any` NOVO em packages/agent/src.
-# Casts legacy (40 ocorrências) foram marcados com biome-ignore via script
-# scripts/ban-as-any-suppress-legacy.sh. Override do biome.json escala
-# noExplicitAny pra `error` só em packages/agent/src/** — qualquer cast
-# novo derruba o job.
-#
-# Como rodar localmente antes do push:
-#   pnpm --filter @mpp/agent lint
+# O repo ainda possui diagnósticos legados. O job cruza os erros do Biome com
+# as linhas adicionadas pelo commit/PR, então só um `as any` novo derruba o job.
+# Um caso excepcional pode ser suprimido na própria linha com justificativa.
 #
 # Como suprimir um caso justificado (use só quando há motivo real):
 #   // biome-ignore lint/suspicious/noExplicitAny: <motivo>
@@ -27,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.2
@@ -39,24 +37,61 @@ jobs:
       # imports, etc) ficam pra próxima fase. Aqui o foco é prevenir o padrão
       # que mascarou o bug P0 selector dead (cast `as any` em shape mismatch).
       - name: Check noExplicitAny errors in packages/agent/src
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          set -e
-          json=$(pnpm exec biome check packages/agent/src --max-diagnostics=999 --reporter=json 2>/dev/null || true)
-          count=$(echo "$json" | node -e '
-            let buf = ""; process.stdin.on("data", c => buf += c);
-            process.stdin.on("end", () => {
-              const j = JSON.parse(buf);
-              let n = 0;
-              for (const d of (j.diagnostics ?? [])) {
-                if (d.category === "lint/suspicious/noExplicitAny") n++;
-              }
-              process.stdout.write(String(n));
-            });
-          ')
-          echo "noExplicitAny errors: $count"
-          if [ "$count" -gt 0 ]; then
-            echo "::error::Novo \`as any\` detectado em packages/agent/src. Use tipo explícito ou suprima com motivo:"
-            echo "  // biome-ignore lint/suspicious/noExplicitAny: <motivo real>"
-            pnpm exec biome check packages/agent/src --max-diagnostics=999 2>&1 | grep -A 3 "noExplicitAny" | head -60
-            exit 1
-          fi
+          set -euo pipefail
+          json_file="$RUNNER_TEMP/biome-agent.json"
+          pnpm exec biome check packages/agent/src --max-diagnostics=999 --reporter=json > "$json_file" 2>/dev/null || true
+
+          JSON_FILE="$json_file" HEAD_SHA="$GITHUB_SHA" node <<'NODE'
+          const { execFileSync } = require('node:child_process')
+          const { readFileSync } = require('node:fs')
+
+          const baseSha = process.env.BASE_SHA
+          const headSha = process.env.HEAD_SHA
+          if (!baseSha || !headSha) throw new Error('BASE_SHA/HEAD_SHA ausente')
+
+          const diff = execFileSync(
+            'git',
+            ['diff', '--unified=0', '--no-renames', baseSha, headSha, '--', 'packages/agent/src'],
+            { encoding: 'utf8' },
+          )
+          const addedRanges = new Map()
+          let currentPath = null
+
+          for (const line of diff.split('\n')) {
+            if (line.startsWith('+++ b/')) {
+              currentPath = line.slice(6)
+              continue
+            }
+            if (!currentPath || !line.startsWith('@@')) continue
+            const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/)
+            if (!match) continue
+            const start = Number(match[1])
+            const count = match[2] === undefined ? 1 : Number(match[2])
+            if (count === 0) continue
+            const ranges = addedRanges.get(currentPath) ?? []
+            ranges.push([start, start + count - 1])
+            addedRanges.set(currentPath, ranges)
+          }
+
+          const report = JSON.parse(readFileSync(process.env.JSON_FILE, 'utf8'))
+          const explicitAny = (report.diagnostics ?? []).filter(
+            (diagnostic) => diagnostic.category === 'lint/suspicious/noExplicitAny',
+          )
+          const introduced = explicitAny.filter((diagnostic) => {
+            const path = diagnostic.location?.path
+            const line = diagnostic.location?.start?.line
+            if (!path || !line) return false
+            return (addedRanges.get(path) ?? []).some(([start, end]) => line >= start && line <= end)
+          })
+
+          console.log(`noExplicitAny legados fora do diff: ${explicitAny.length - introduced.length}`)
+          console.log(`noExplicitAny introduzidos pelo diff: ${introduced.length}`)
+          for (const diagnostic of introduced) {
+            const { path, start } = diagnostic.location
+            console.error(`::error file=${path},line=${start.line},col=${start.column}::Novo as any sem supressão justificada`)
+          }
+          if (introduced.length > 0) process.exit(1)
+          NODE

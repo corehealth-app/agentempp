@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reconcilePendingMealEdit } from './pending-meal-edit.js'
+import { reconcilePendingMealEdit, reconcileScopedMealCorrection } from './pending-meal-edit.js'
 
 describe('reconcilePendingMealEdit', () => {
   const previous = [
@@ -71,6 +71,47 @@ describe('reconcilePendingMealEdit', () => {
     expect(result.adjustments).toHaveLength(0)
   })
 
+  it('preserva kcal explícita e proveniência quando outro item da refeição é corrigido', () => {
+    const result = reconcilePendingMealEdit({
+      previousItems: [
+        {
+          name: 'rap10',
+          food_db_id: null,
+          nutrition_source: 'user_kcal',
+          quantity_g: 35,
+          kcal: 70,
+          user_kcal: 70,
+          protein_g: 3.27,
+          carbs_g: 8.4,
+          fat_g: 2.33,
+        },
+      ],
+      resolvedItems: [
+        {
+          name: 'rap10',
+          food_db_id: null,
+          nutrition_source: 'llm_estimate',
+          quantity_g: 35,
+          kcal: 52.5,
+          protein_g: 2.45,
+          carbs_g: 6.3,
+          fat_g: 1.75,
+        },
+      ],
+      currentExplicitKcalFoods: new Set(),
+    })
+
+    expect(result.items[0]).toMatchObject({
+      kcal: 70,
+      user_kcal: 70,
+      protein_g: 3.27,
+      carbs_g: 8.4,
+      fat_g: 2.33,
+      food_db_id: null,
+      nutrition_source: 'user_kcal',
+    })
+  })
+
   it('mudança de identidade ou preparo usa a nova resolução', () => {
     const result = reconcilePendingMealEdit({
       previousItems: [
@@ -130,5 +171,119 @@ describe('reconcilePendingMealEdit', () => {
       carbs_g: 10.4,
       fat_g: 2.4,
     })
+  })
+})
+
+describe('reconcileScopedMealCorrection', () => {
+  const previousDinner = [
+    {
+      name: 'rap10',
+      quantity_g: 35,
+      kcal: 70,
+      protein_g: 3.27,
+      carbs_g: 8.4,
+      fat_g: 2.33,
+    },
+    {
+      name: 'salame fatiado',
+      quantity_g: 60,
+      kcal: 201.6,
+      protein_g: 13.2,
+      carbs_g: 1.2,
+      fat_g: 16.2,
+    },
+    {
+      name: 'tomate cereja',
+      quantity_g: 40,
+      kcal: 7.2,
+      protein_g: 0.36,
+      carbs_g: 1.56,
+      fat_g: 0.08,
+    },
+  ]
+
+  it('reconstrói a refeição completa mesmo quando a LLM retorna só o substituto', () => {
+    const result = reconcileScopedMealCorrection({
+      previousItems: previousDinner,
+      resolvedItems: [
+        {
+          name: 'calabresa fatiada',
+          food_db_id: 317,
+          nutrition_source: 'canonical_fuzzy',
+          quantity_g: 60,
+          kcal: 186,
+          protein_g: 10.8,
+          carbs_g: 1.2,
+          fat_g: 15.6,
+        },
+      ],
+      corrections: [{ de: 'salame fatiado', para: 'calabresa fatiada' }],
+    })
+
+    expect(result?.items.map((item) => item.name)).toEqual([
+      'rap10',
+      'calabresa fatiada',
+      'tomate cereja',
+    ])
+    expect(result?.totals).toEqual({
+      kcal: 263.2,
+      protein_g: 14.43,
+      carbs_g: 11.16,
+      fat_g: 18.01,
+    })
+  })
+
+  it('ignora recálculos da LLM nos itens que não fazem parte da correção', () => {
+    const result = reconcileScopedMealCorrection({
+      previousItems: previousDinner,
+      resolvedItems: [
+        {
+          name: 'rap10',
+          quantity_g: 35,
+          kcal: 52.5,
+          protein_g: 2.45,
+          carbs_g: 6.3,
+          fat_g: 1.75,
+        },
+        {
+          name: 'calabresa fatiada',
+          quantity_g: 60,
+          kcal: 186,
+          protein_g: 10.8,
+          carbs_g: 1.2,
+          fat_g: 15.6,
+        },
+        {
+          name: 'tomate cereja',
+          quantity_g: 40,
+          kcal: 7.2,
+          protein_g: 0.36,
+          carbs_g: 1.56,
+          fat_g: 0.08,
+        },
+      ],
+      corrections: [{ de: 'salame fatiado', para: 'calabresa fatiada' }],
+    })
+
+    expect(result?.items[0]).toMatchObject({ name: 'rap10', kcal: 70 })
+  })
+
+  it('falha fechada se a refeição anterior não contém o item de origem', () => {
+    expect(
+      reconcileScopedMealCorrection({
+        previousItems: previousDinner,
+        resolvedItems: [
+          {
+            name: 'calabresa fatiada',
+            quantity_g: 60,
+            kcal: 186,
+            protein_g: 10.8,
+            carbs_g: 1.2,
+            fat_g: 15.6,
+          },
+        ],
+        corrections: [{ de: 'pepperoni', para: 'calabresa fatiada' }],
+      }),
+    ).toBeNull()
   })
 })

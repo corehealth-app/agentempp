@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   cancelOpenPendingRegistrations,
   createPendingRegistration,
+  loadRecentConfirmedMealPending,
   loadRecentEditedMealPending,
   loadRecentPendingMeal,
+  loadRecentRegisteredMeal,
 } from './pending-registration-store.js'
 
 type QueryResult = {
@@ -81,6 +83,139 @@ describe('pending registration store', () => {
       method: 'eq',
       args: ['proposal->>mealType', 'jantar'],
     })
+  })
+
+  it('carrega somente o pending confirmado recente da mesma refeição', async () => {
+    const { client, calls } = makeClient({
+      select: {
+        data: {
+          id: 'pending-confirmed',
+          proposal: { kind: 'meal', mealType: 'jantar', items: [] },
+          resolved_at: now.toISOString(),
+        },
+        error: null,
+      },
+    })
+
+    await loadRecentConfirmedMealPending(client, 'user-test', 'jantar', now)
+
+    expect(calls).toContainEqual({ method: 'eq', args: ['status', 'confirmed'] })
+    expect(calls).toContainEqual({
+      method: 'eq',
+      args: ['proposal->>mealType', 'jantar'],
+    })
+    expect(calls).toContainEqual({ method: 'gte', args: ['resolved_at', expect.any(String)] })
+  })
+
+  it('escolhe o registro confirmado que contém o alimento corrigido', async () => {
+    const { client } = makeClient({
+      select: {
+        data: [
+          {
+            id: 'pending-mais-recente-mas-diferente',
+            proposal: {
+              kind: 'meal',
+              mealType: 'jantar',
+              items: [{ name: 'iogurte', quantity_g: 120 }],
+            },
+            resolved_at: now.toISOString(),
+          },
+          {
+            id: 'pending-com-salame',
+            proposal: {
+              kind: 'meal',
+              mealType: 'jantar',
+              items: [{ name: 'salame fatiado', quantity_g: 60 }],
+            },
+            resolved_at: now.toISOString(),
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await loadRecentConfirmedMealPending(client, 'user-test', 'jantar', now, [
+      'salame fatiado',
+    ])
+
+    expect(result?.id).toBe('pending-com-salame')
+  })
+
+  it('recupera do banco a refeição registrada que contém o item corrigido', async () => {
+    const { client } = makeClient({
+      select: {
+        data: [
+          {
+            id: 'log-iogurte',
+            food_name: 'iogurte',
+            quantity_g: 120,
+            kcal: 80,
+            protein_g: 4,
+            carbs_g: 8,
+            fat_g: 3,
+            source: 'canonical_exact',
+            food_db_id: 10,
+            consumed_at: '2026-07-12T19:58:00.000Z',
+            created_at: '2026-07-12T19:58:00.000Z',
+            raw_provider_message_id: 'provider-newer',
+          },
+          {
+            id: 'log-rap10',
+            food_name: 'rap10',
+            quantity_g: 35,
+            kcal: 70,
+            protein_g: 3.3,
+            carbs_g: 8.4,
+            fat_g: 2.3,
+            source: 'pending_approved',
+            food_db_id: null,
+            consumed_at: '2026-07-12T19:40:00.000Z',
+            created_at: '2026-07-12T19:40:00.000Z',
+            raw_provider_message_id: 'provider-dinner',
+          },
+          {
+            id: 'log-salame',
+            food_name: 'salame fatiado',
+            quantity_g: 60,
+            kcal: 201.6,
+            protein_g: 13.2,
+            carbs_g: 1.2,
+            fat_g: 16.2,
+            source: 'canonical_fuzzy',
+            food_db_id: 301,
+            consumed_at: '2026-07-12T19:40:00.000Z',
+            created_at: '2026-07-12T19:40:00.000Z',
+            raw_provider_message_id: 'provider-dinner',
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await loadRecentRegisteredMeal(client, 'user-test', 'jantar', now, [
+      'salame fatiado',
+    ])
+
+    expect(result?.groupKey).toBe('provider:provider-dinner')
+    expect(result?.items).toEqual([
+      expect.objectContaining({ name: 'rap10', kcal: 70, nutrition_source: 'pending_approved' }),
+      expect.objectContaining({
+        name: 'salame fatiado',
+        kcal: 201.6,
+        food_db_id: 301,
+        nutrition_source: 'canonical_fuzzy',
+      }),
+    ])
+  })
+
+  it('falha fechada quando não consegue recuperar a refeição já registrada', async () => {
+    const { client } = makeClient({
+      select: { data: null, error: { message: 'meal history unavailable' } },
+    })
+
+    await expect(
+      loadRecentRegisteredMeal(client, 'user-test', 'jantar', now, ['salame']),
+    ).rejects.toThrow('meal history unavailable')
   })
 
   it('não prossegue quando o cancelamento dos pendings antigos falha', async () => {

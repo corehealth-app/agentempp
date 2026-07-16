@@ -357,6 +357,78 @@ function makeContextAndSupabase(opts: MockOptions) {
 }
 
 describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)', () => {
+  it('troca salame por calabresa sem reinserir os itens inalterados do jantar — caso Roberto 15/07', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [
+        {
+          id: 'rap10-log',
+          food_name: 'rap10',
+          quantity_g: 35,
+          kcal: 70,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'egg-log',
+          food_name: 'ovo cozido',
+          quantity_g: 100,
+          kcal: 146,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'salami-log',
+          food_name: 'salame fatiado',
+          quantity_g: 60,
+          kcal: 201.6,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'tomato-log',
+          food_name: 'tomate cereja',
+          quantity_g: 40,
+          kcal: 7.2,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'cheese-log',
+          food_name: 'queijo derretido',
+          quantity_g: 30,
+          kcal: 87,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+      ],
+      currentUserText: 'Digo, salame por calabresa',
+      recentUserMessages: ['Digo, salame por calabresa'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: true,
+        items: [
+          { food_name: 'rap10', quantity_g: 35 },
+          { food_name: 'ovo cozido', quantity_g: 100 },
+          { food_name: 'calabresa fatiada', quantity_g: 60 },
+          { food_name: 'tomate cereja', quantity_g: 40 },
+          { food_name: 'queijo derretido', quantity_g: 30 },
+        ],
+        corrections: [{ de: 'salame fatiado', para: 'calabresa fatiada' }],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic_scoped')
+    expect(atomic?.params.p_replace_log_ids).toEqual(['salami-log'])
+    expect(
+      (atomic?.params.p_items as Array<{ food_name: string }>).map((item) => item.food_name),
+    ).toEqual(['calabresa fatiada'])
+  })
+
   it('corrige somente o leite em pó e nunca apaga almoço/lanche inteiros — caso Roberto', async () => {
     const { ctx, events, rpcCalls } = makeContextAndSupabase({
       recentLogs: [

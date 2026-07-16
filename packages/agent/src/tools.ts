@@ -37,6 +37,7 @@ import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
 import { selectMealRegistrationGroup } from './meal-registration-group.js'
 import { resolveLinkedAdditionMealType } from './meal-addition-context.js'
 import {
+  foodNamesReferToSameItem,
   hasExplicitWholeMealReplacementIntent,
   selectMealReplacementTarget,
   type MealReplacementTarget,
@@ -1321,6 +1322,71 @@ export const registraRefeicao: ToolDefinition = {
     ]
     const wholeMealReplacement =
       args.replace === true && hasExplicitWholeMealReplacementIntent(replacementIntentMessages)
+
+    // Uma proposta pode exibir a refeição inteira para contexto, mas uma
+    // correção item-a-item deve escrever somente os destinos de corrections[].
+    // Sem esse recorte, removíamos o item antigo e reinseríamos todos os itens
+    // inalterados (Roberto 15/07: salame -> calabresa duplicou quatro itens).
+    if (args.replace === true && !wholeMealReplacement && (args.corrections?.length ?? 0) > 0) {
+      const corrections = (args.corrections ?? []) as Array<{
+        de?: string | null
+        para?: string | null
+      }>
+      const proposedItems = args.items as Array<{ food_name: string }>
+      const replacements = corrections.filter((correction) => {
+        const destination = correction.para?.trim().toLowerCase() ?? ''
+        return destination.length > 0 && destination !== 'nenhum'
+      })
+      if (replacements.length === 0) {
+        return {
+          success: false,
+          error: 'replacement_removal_requires_confirmation',
+          message:
+            'A correção remove itens sem indicar substitutos. Nenhum registro foi alterado; confirme explicitamente a remoção.',
+        }
+      }
+      const missingDestination = replacements.find(
+        (correction) =>
+          !proposedItems.some((item) =>
+            foodNamesReferToSameItem(item.food_name, correction.para ?? ''),
+          ),
+      )
+      if (missingDestination) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_blocked_missing_destination',
+          properties: {
+            meal_type: args.meal_type ?? null,
+            correction_from: missingDestination.de ?? null,
+            correction_to: missingDestination.para ?? null,
+          },
+        })
+        return {
+          success: false,
+          error: 'replacement_destination_missing',
+          message:
+            'A correção não contém o item substituto de forma inequívoca. Nenhum registro foi alterado.',
+        }
+      }
+      const scopedItems = proposedItems.filter((item) =>
+        replacements.some((correction) =>
+          foodNamesReferToSameItem(item.food_name, correction.para ?? ''),
+        ),
+      )
+      if (scopedItems.length < proposedItems.length) {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_payload_scoped',
+          properties: {
+            meal_type: args.meal_type ?? null,
+            proposed_count: proposedItems.length,
+            write_count: scopedItems.length,
+            correction_count: replacements.length,
+          },
+        })
+        args.items = scopedItems
+      }
+    }
     const replacementLogIds =
       args.replace === true && replacementTarget.status === 'selected'
         ? wholeMealReplacement

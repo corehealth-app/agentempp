@@ -61,7 +61,7 @@ type MockFailures = {
 }
 
 function makeMock(
-  matches: Record<string, MockRow | null>,
+  matches: Record<string, MockRow | MockRow[] | null>,
   historyRows: HistoryRow[] = [],
   correctionRows: CorrectionRow[] = [],
   failures: MockFailures = {},
@@ -106,7 +106,7 @@ function makeMock(
       }
       const term = params.search_term.toLowerCase().trim()
       const hit = matches[term]
-      if (hit) return { data: [hit], error: null }
+      if (hit) return { data: Array.isArray(hit) ? hit : [hit], error: null }
       return { data: [], error: null }
     },
     from: (table: string) => {
@@ -132,6 +132,50 @@ function makeMock(
 }
 
 describe('calcMealMacros — composite handling', () => {
+  it('"calabresa fatiada" rejeita pizza de calabresa e usa linguiça calabresa', async () => {
+    const mock = makeMock({
+      'calabresa fatiada': [
+        {
+          id: 304,
+          name_pt: 'pizza de calabresa',
+          category: 'pratos',
+          similarity: 0.37037,
+          kcal_per_100g: 280,
+          protein_g: 12,
+          carbs_g: 28,
+          fat_g: 13,
+          fiber_g: 0,
+        },
+        {
+          id: 317,
+          name_pt: 'linguiça calabresa',
+          category: 'carnes',
+          similarity: 0.37037,
+          kcal_per_100g: 310,
+          protein_g: 18,
+          carbs_g: 2,
+          fat_g: 26,
+          fiber_g: 0,
+        },
+      ],
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'calabresa fatiada', quantity_g: 60 }],
+      'BR',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      matched_taco_id: 317,
+      matched_taco_name: 'linguiça calabresa',
+      kcal: 186,
+      protein_g: 10.8,
+      carbs_g: 1.2,
+      fat_g: 15.6,
+    })
+  })
+
   it('"leite com whey" usa match direto (id 413, 95kcal/100g) — não zera', async () => {
     const mock = makeMock({
       'leite com whey': {

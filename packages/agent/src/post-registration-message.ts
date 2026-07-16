@@ -375,6 +375,9 @@ export interface PendingProposal {
   kind: 'meal' | 'workout'
   mealType?: string
   items?: MealItem[]
+  /** Subconjunto efetivamente persistido numa correção por item. `items`
+   * continua sendo a refeição completa exibida para confirmação. */
+  writeItems?: MealItem[]
   totals?: MealTotals
   workoutType?: string
   durationMin?: number | null

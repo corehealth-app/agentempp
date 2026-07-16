@@ -42,12 +42,14 @@ import {
   type MealItem,
   type RegistrationEntry,
 } from './post-registration-message.js'
-import { reconcilePendingMealEdit } from './pending-meal-edit.js'
+import { reconcilePendingMealEdit, reconcileScopedMealCorrection } from './pending-meal-edit.js'
 import {
   cancelOpenPendingRegistrations,
   createPendingRegistration,
+  loadRecentConfirmedMealPending,
   loadRecentEditedMealPending,
   loadRecentPendingMeal,
+  loadRecentRegisteredMeal,
 } from './pending-registration-store.js'
 import {
   loadDeterministicDailyState,
@@ -85,6 +87,10 @@ import { loadVisionPending } from './vision-pending-loader.js'
 import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
 import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
 import { dedupeMealItems } from './meal-item-dedup.js'
+import {
+  foodNamesReferToSameItem,
+  hasExplicitWholeMealReplacementIntent,
+} from './meal-replacement-target.js'
 import {
   bodyPhotoSignalFromEventProperties,
   composeReevalBodyPhotoWaitMessage,
@@ -909,12 +915,49 @@ export async function processMessage(
                 },
               })
             }
-            const editedPendingRow = await loadRecentEditedMealPending(
-              deps.supabase,
-              userId,
-              args.meal_type ?? 'outro',
-            )
+            const pendingCorrections = normalizePendingFoodCorrections(args.corrections)
+            const correctionSourceNames = pendingCorrections.map((correction) => correction.de)
+            const wholeMealReplacement =
+              args.replace === true &&
+              hasExplicitWholeMealReplacementIntent([
+                ...ctx.recentMessages
+                  .filter((message) => message.role === 'user')
+                  .map((message) => message.content),
+                semanticPatientText,
+              ])
+            const shouldLoadCorrectionContext =
+              args.replace === true && pendingCorrections.length > 0 && !wholeMealReplacement
+            const [editedPendingRow, confirmedPendingRow, registeredMeal] = await Promise.all([
+              loadRecentEditedMealPending(
+                deps.supabase,
+                userId,
+                args.meal_type ?? 'outro',
+                input.timestamp,
+              ),
+              shouldLoadCorrectionContext
+                ? loadRecentConfirmedMealPending(
+                    deps.supabase,
+                    userId,
+                    args.meal_type ?? 'outro',
+                    input.timestamp,
+                    correctionSourceNames,
+                  )
+                : Promise.resolve(null),
+              shouldLoadCorrectionContext
+                ? loadRecentRegisteredMeal(
+                    deps.supabase,
+                    userId,
+                    args.meal_type ?? 'outro',
+                    input.timestamp,
+                    correctionSourceNames,
+                  )
+                : Promise.resolve(null),
+            ])
             const editedPending = editedPendingRow as {
+              id: string
+              proposal?: { items?: MealItem[] }
+            } | null
+            const confirmedPending = confirmedPendingRow as {
               id: string
               proposal?: { items?: MealItem[] }
             } | null
@@ -992,7 +1035,11 @@ export async function processMessage(
               typeof reconcilePendingMealEdit
             >['adjustments'] = []
             let quantityEditAdjustmentPayload: Array<Record<string, string | number>> = []
-            const previousItems = editedPending?.proposal?.items ?? []
+            const previousItems =
+              registeredMeal?.items ??
+              editedPending?.proposal?.items ??
+              confirmedPending?.proposal?.items ??
+              []
             if (previousItems.length > 0) {
               const reconciled = reconcilePendingMealEdit({
                 previousItems,
@@ -1016,11 +1063,25 @@ export async function processMessage(
                   event: 'pipeline.pending_quantity_nutrition_scaled',
                   properties: {
                     edited_pending_id: editedPending?.id ?? null,
+                    confirmed_pending_id: confirmedPending?.id ?? null,
+                    registered_meal_context: registeredMeal != null,
                     meal_type: args.meal_type ?? 'outro',
                     adjustments: quantityEditAdjustmentPayload,
                   },
                 })
               }
+            }
+            if (shouldLoadCorrectionContext) {
+              const scopedCorrection = reconcileScopedMealCorrection({
+                previousItems,
+                resolvedItems: proposalItems,
+                corrections: pendingCorrections,
+              })
+              if (!scopedCorrection) {
+                throw new Error('pending scoped correction context is incomplete or ambiguous')
+              }
+              proposalItems = scopedCorrection.items
+              proposalTotals = scopedCorrection.totals
             }
             const ambiguousPreparationNames = [
               ...new Set(
@@ -1035,11 +1096,28 @@ export async function processMessage(
                     `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
                 )
               : []
-            const pendingCorrections = normalizePendingFoodCorrections(args.corrections)
+            let correctionWriteItems: MealItem[] | undefined
+            if (shouldLoadCorrectionContext) {
+              const destinations = pendingCorrections
+                .map((correction) => correction.para.trim())
+                .filter((destination) => destination && destination.toLowerCase() !== 'nenhum')
+              const allDestinationsPresent = destinations.every((destination) =>
+                proposalItems.some((item) => foodNamesReferToSameItem(item.name, destination)),
+              )
+              if (!allDestinationsPresent || destinations.length === 0) {
+                throw new Error('pending correction destination missing from proposal')
+              }
+              correctionWriteItems = proposalItems.filter((item) =>
+                destinations.some((destination) =>
+                  foodNamesReferToSameItem(item.name, destination),
+                ),
+              )
+            }
             const proposal = {
               kind: 'meal' as const,
               mealType: args.meal_type ?? 'outro',
               items: proposalItems,
+              ...(correctionWriteItems ? { writeItems: correctionWriteItems } : {}),
               totals: proposalTotals,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
@@ -1080,7 +1158,9 @@ export async function processMessage(
                   kind: 'meal',
                   meal_type: proposal.mealType,
                   items_count: proposalItems.length,
+                  write_items_count: correctionWriteItems?.length ?? proposalItems.length,
                   corrections_count: pendingCorrections.length,
+                  whole_meal_replacement: wholeMealReplacement,
                   express_reason: exprResult.reason,
                 },
               })

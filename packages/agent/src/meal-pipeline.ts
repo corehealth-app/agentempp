@@ -1041,10 +1041,39 @@ async function matchFood(
   if (error) throw nutritionSourceError(error, 'canonical food search failed')
   if (rows.length === 0) return empty
 
+  // Ingredientes simples não podem herdar os macros de um prato composto só
+  // porque ambos compartilham o ingrediente principal. Caso real: "calabresa
+  // fatiada" empatou no trigram com "pizza de calabresa" e "linguiça
+  // calabresa"; o desempate por menor id escolheu a pizza.
+  const dishMarkers = [
+    'pizza',
+    'pastel',
+    'torta',
+    'lasanha',
+    'sanduiche',
+    'hamburguer',
+    'risoto',
+    'sopa',
+    'omelete',
+    'panqueca',
+    'empada',
+    'esfiha',
+    'quiche',
+  ]
+  const requestedName = normalizeFoodText(name)
+  const compatibleRows = rows.filter((row) => {
+    if (normalizeFoodText(row.category ?? '') !== 'pratos') return true
+    const candidateName = normalizeFoodText(row.name_pt ?? '')
+    return !dishMarkers.some(
+      (marker) => candidateName.includes(marker) && !requestedName.includes(marker),
+    )
+  })
+  if (compatibleRows.length === 0) return empty
+
   // Tie-break determinístico: similarity DESC, id ASC. Empate de similarity
   // (até 0.001 de diferença, abaixo do ruído de cast real→float) → menor id,
   // que é estável entre chamadas e entre pacientes.
-  const sorted = [...rows].sort((a, b) => {
+  const sorted = [...compatibleRows].sort((a, b) => {
     const simA = a.similarity ?? 0
     const simB = b.similarity ?? 0
     if (Math.abs(simA - simB) > 0.001) return simB - simA

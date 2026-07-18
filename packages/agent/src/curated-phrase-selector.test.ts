@@ -23,9 +23,17 @@ function mockSupabase(
   } = {},
 ): ServiceClient {
   const seenAt = new Map<string, number>()
-  for (const phraseId of options.cooldownPhraseIds ?? []) {
-    const row = rows.find((candidate) => candidate.id === phraseId)
-    seenAt.set(phraseId, row?.last_used_at ? Date.parse(row.last_used_at) : Date.now())
+  const cooldownRows = (options.cooldownPhraseIds ?? [])
+    .map((phraseId) => rows.find((candidate) => candidate.id === phraseId))
+    .filter((row): row is (typeof rows)[number] => row != null)
+    .sort((left, right) => {
+      const leftAt = left.last_used_at ? Date.parse(left.last_used_at) : 0
+      const rightAt = right.last_used_at ? Date.parse(right.last_used_at) : 0
+      return leftAt - rightAt
+    })
+  const now = Date.now()
+  for (const [index, row] of cooldownRows.entries()) {
+    seenAt.set(row.id, now - (cooldownRows.length - index) * 60_000)
   }
   let claimSequence = 0
   const selectChain = {

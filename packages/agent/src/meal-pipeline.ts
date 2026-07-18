@@ -72,9 +72,9 @@ function parseExplicitMealTotal(patientText: string): number | null {
  * Estratégia (heurística simples conforme spec):
  *   1. Tokeniza o texto por separadores fortes (vírgula, dois-pontos, "e",
  *      "+", quebra de linha) — cada trecho representa "um item + opcionais".
- *   2. Em cada trecho com kcal, associa ao ÚLTIMO item cujo food_name aparece
- *      naquele trecho (substring case/acento-insensitive). Se nenhum item bate,
- *      associa ao item da última posição mencionada anteriormente.
+ *   2. Em cada trecho com kcal, associa ao item mais próximo ANTES do número.
+ *      Só usa um item posterior quando nenhum alimento foi citado antes. Se
+ *      nenhum item bate, associa ao item mencionado no trecho anterior.
  *   3. Retorna Map de food_name → kcal (último valor vence se múltiplas
  *      menções; conservador).
  *
@@ -136,25 +136,27 @@ export function parseUserKcalOverrides(
     if (!seg) continue
     if (isAggregateNutritionLine(seg)) continue
     const segNorm = normalize(seg)
-    let bestItem: string | null = null
-    let bestPos = -1
+    const mentions: Array<{ item: string; pos: number; length: number }> = []
+    const addMentions = (item: string, needle: string) => {
+      if (!needle) return
+      let from = 0
+      while (from < segNorm.length) {
+        const pos = segNorm.indexOf(needle, from)
+        if (pos < 0) break
+        mentions.push({ item, pos, length: needle.length })
+        from = pos + Math.max(needle.length, 1)
+      }
+    }
     for (const ni of normItems) {
       if (!ni.norm) continue
-      const pos = segNorm.lastIndexOf(ni.norm)
-      if (pos > bestPos) {
-        bestPos = pos
-        bestItem = ni.raw
-      }
+      addMentions(ni.raw, ni.norm)
       const firstWord = ni.norm.split(/\s+/)[0]
       if (firstWord && firstWord.length >= 3) {
-        const pf = segNorm.lastIndexOf(firstWord)
-        if (pf > bestPos) {
-          bestPos = pf
-          bestItem = ni.raw
-        }
+        addMentions(ni.raw, firstWord)
       }
     }
     let lastKcal: number | null = null
+    let lastKcalPos = -1
     KCAL_RE.lastIndex = 0
     if (!negatesKcalClaim(segNorm)) {
       while (true) {
@@ -163,9 +165,25 @@ export function parseUserKcalOverrides(
         const raw = match[1]
         if (!raw) continue
         const n = parseLocalizedNutritionNumber(raw)
-        if (Number.isFinite(n) && n >= 0) lastKcal = n
+        if (Number.isFinite(n) && n >= 0) {
+          lastKcal = n
+          lastKcalPos = match.index
+        }
       }
     }
+    const byNearestBefore = [...mentions]
+      .filter((mention) => mention.pos < lastKcalPos)
+      .sort((left, right) => right.pos - left.pos || right.length - left.length)
+    const byNearestAfter = [...mentions]
+      .filter((mention) => mention.pos >= lastKcalPos)
+      .sort((left, right) => left.pos - right.pos || right.length - left.length)
+    const byLastMention = [...mentions].sort(
+      (left, right) => right.pos - left.pos || right.length - left.length,
+    )
+    const bestItem =
+      lastKcalPos >= 0
+        ? (byNearestBefore[0]?.item ?? byNearestAfter[0]?.item ?? null)
+        : (byLastMention[0]?.item ?? null)
     segInfos.push({ seg, segNorm, lastKcal, bestItem })
   }
 
@@ -212,17 +230,49 @@ const EXPLICIT_KCAL_PATTERN = /\d+(?:[.,]\d+)?\s*(?:k?cal(?:orias?)?)\b/i
 const SHORT_CONFIRMATION_PATTERN =
   /^(?:sim(?:\s+isso)?|isso(?:\s+mesmo)?|e\s+isso|corret[oa]|confirmo?|pode|ok|certo|exato)[.!?\s]*$/i
 
-function mentionsCurrentFood(text: string, items: Array<{ food_name: string }>): boolean {
-  const normalizedText = normalizeFoodText(text)
+const FOOD_MENTION_QUALIFIERS = new Set([
+  'com',
+  'sem',
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'cozido',
+  'cozida',
+  'grelhado',
+  'grelhada',
+  'assado',
+  'assada',
+  'frito',
+  'frita',
+  'integral',
+  'branco',
+  'branca',
+  'derretido',
+  'derretida',
+  'fatiado',
+  'fatiada',
+  'cru',
+  'crua',
+])
+
+export function mentionsFoodItem(text: string, foodName: string): boolean {
+  const normalizeMention = (value: string) =>
+    normalizeFoodText(value).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const normalizedText = normalizeMention(text)
   const textTokens = new Set(normalizedText.split(/\s+/).filter(Boolean))
-  return items.some((item) => {
-    const normalizedFood = normalizeFoodText(item.food_name)
-    if (normalizedFood && normalizedText.includes(normalizedFood)) return true
-    return normalizedFood
-      .split(/\s+/)
-      .filter((token) => token.length >= 4 && !/^(?:com|para|sem)$/.test(token))
-      .some((token) => textTokens.has(token))
-  })
+  const normalizedFood = normalizeMention(foodName)
+  if (!normalizedText || !normalizedFood) return false
+  if (` ${normalizedText} `.includes(` ${normalizedFood} `)) return true
+  return normalizedFood
+    .split(/\s+/)
+    .filter((token) => token.length >= 3 && !FOOD_MENTION_QUALIFIERS.has(token))
+    .some((token) => textTokens.has(token))
+}
+
+function mentionsCurrentFood(text: string, items: Array<{ food_name: string }>): boolean {
+  return items.some((item) => mentionsFoodItem(text, item.food_name))
 }
 
 /**
@@ -1036,6 +1086,7 @@ async function matchFood(
     carbs_g: number | string | null
     fat_g: number | string | null
     fiber_g: number | string | null
+    country_code?: string | null
   }
   const rows = (data ?? []) as Row[]
   if (error) throw nutritionSourceError(error, 'canonical food search failed')
@@ -1070,13 +1121,18 @@ async function matchFood(
   })
   if (compatibleRows.length === 0) return empty
 
-  // Tie-break determinístico: similarity DESC, id ASC. Empate de similarity
-  // (até 0.001 de diferença, abaixo do ruído de cast real→float) → menor id,
-  // que é estável entre chamadas e entre pacientes.
+  // Tie-break determinístico: similarity DESC, país do paciente, id ASC.
+  // Empate de similarity (até 0.001 de diferença, abaixo do ruído de cast
+  // real→float) deve preservar a preferência da RPC por país. Reordenar só
+  // por id fazia uma linha BR mais antiga vencer a US para pacientes nos EUA.
   const sorted = [...compatibleRows].sort((a, b) => {
     const simA = a.similarity ?? 0
     const simB = b.similarity ?? 0
     if (Math.abs(simA - simB) > 0.001) return simB - simA
+    const requestedCountry = country.toUpperCase()
+    const countryRankA = a.country_code?.toUpperCase() === requestedCountry ? 0 : 1
+    const countryRankB = b.country_code?.toUpperCase() === requestedCountry ? 0 : 1
+    if (countryRankA !== countryRankB) return countryRankA - countryRankB
     const idA = a.id ?? Number.MAX_SAFE_INTEGER
     const idB = b.id ?? Number.MAX_SAFE_INTEGER
     return idA - idB

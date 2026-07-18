@@ -23,6 +23,7 @@ type MockRow = {
   id: number
   name_pt: string
   category?: string | null
+  country_code?: string | null
   similarity: number
   kcal_per_100g: number
   protein_g: number
@@ -1694,6 +1695,20 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
     expect(overrides.get('suco')).toBe(80)
   })
 
+  it('associa kcal ao alimento imediatamente anterior, não ao item citado depois', async () => {
+    const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
+    const overrides = parseUserKcalOverrides(
+      'rap10 de 70 kcal com queijo e Nutella',
+      [
+        { food_name: 'rap10' },
+        { food_name: 'queijo mussarela' },
+        { food_name: 'Nutella' },
+      ],
+    )
+
+    expect(Object.fromEntries(overrides)).toEqual({ rap10: 70 })
+  })
+
   it('texto sem números de kcal mas com gramas → Map vazio (não confunde g com kcal)', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
     const overrides = parseUserKcalOverrides('100g de arroz e 80g de feijão', [
@@ -1880,6 +1895,22 @@ Total: 500 kcal`,
     )
 
     expect(overrides.size).toBe(0)
+  })
+})
+
+describe('mentionsFoodItem — evidência no texto atual', () => {
+  it('reconhece alimento mesmo quando a menção termina em pontuação', async () => {
+    const { mentionsFoodItem } = await import('./meal-pipeline.js')
+
+    expect(mentionsFoodItem('Jantar: rap10, queijo e Nutella.', 'rap10')).toBe(true)
+    expect(mentionsFoodItem('Jantar: rap10, queijo e Nutella.', 'queijo mussarela')).toBe(true)
+    expect(mentionsFoodItem('Jantar: rap10, queijo e Nutella.', 'Nutella')).toBe(true)
+  })
+
+  it('não usa qualificador genérico como identidade do alimento', async () => {
+    const { mentionsFoodItem } = await import('./meal-pipeline.js')
+
+    expect(mentionsFoodItem('Comi pão integral', 'leite integral')).toBe(false)
   })
 })
 
@@ -2100,6 +2131,63 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
 
     expect(result.items[0]).toMatchObject({ kcal: 37.5, source: 'canonical_exact' })
     expect(result.audit_warnings.join(' ')).toMatch(/pending.*densidade.*impossível/i)
+  })
+})
+
+describe('calcMealMacros — referência canônica Nutella', () => {
+  it('20g usa a referência do país e preserva a proveniência', async () => {
+    const mock = makeMock({
+      nutella: [
+        {
+          id: 811,
+          name_pt: 'Nutella',
+          category: 'doces',
+          country_code: 'BR',
+          similarity: 1,
+          kcal_per_100g: 542,
+          protein_g: 6.3,
+          carbs_g: 58,
+          fat_g: 31,
+          fiber_g: 3,
+        },
+        {
+          id: 812,
+          name_pt: 'Nutella',
+          category: 'doces',
+          country_code: 'US',
+          similarity: 1,
+          kcal_per_100g: 540.54,
+          protein_g: 5.41,
+          carbs_g: 59.46,
+          fat_g: 29.73,
+          fiber_g: 2.7,
+        },
+      ],
+    })
+
+    const result = await calcMealMacros(
+      mock,
+      [{ food_name: 'Nutella', quantity_g: 20 }],
+      'US',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      food_name: 'Nutella',
+      matched_taco_id: 812,
+      source: 'canonical_exact',
+    })
+    expect(result.items[0]?.kcal).toBeCloseTo(108.11, 1)
+    expect(result.items[0]?.protein_g).toBeCloseTo(1.08, 1)
+    expect(result.items[0]?.carbs_g).toBeCloseTo(11.89, 1)
+    expect(result.items[0]?.fat_g).toBeCloseTo(5.95, 1)
+
+    const resultBr = await calcMealMacros(
+      mock,
+      [{ food_name: 'Nutella', quantity_g: 20 }],
+      'BR',
+    )
+    expect(resultBr.items[0]?.matched_taco_id).toBe(811)
+    expect(resultBr.items[0]?.kcal).toBeCloseTo(108.4, 1)
   })
 })
 

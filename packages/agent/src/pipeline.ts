@@ -30,6 +30,7 @@ import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timez
 import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
 import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
+  buildPendingNutritionConfirmationNotes,
   composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
@@ -1090,12 +1091,18 @@ export async function processMessage(
                   .filter(requiresVisualPreparationConfirmation),
               ),
             ]
-            const confirmationNotes = ctx.lastInboundContentType === 'image'
-              ? ambiguousPreparationNames.slice(0, 2).map(
-                  (name) =>
-                    `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
-                )
-              : []
+            const nutritionConfirmationNotes = buildPendingNutritionConfirmationNotes(proposalItems)
+            const preparationConfirmationNotes =
+              ctx.lastInboundContentType === 'image'
+                ? ambiguousPreparationNames.slice(0, 2).map(
+                    (name) =>
+                      `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
+                  )
+                : []
+            const confirmationNotes = [
+              ...nutritionConfirmationNotes,
+              ...preparationConfirmationNotes,
+            ].slice(0, 2)
             let correctionWriteItems: MealItem[] | undefined
             if (shouldLoadCorrectionContext) {
               const destinations = pendingCorrections

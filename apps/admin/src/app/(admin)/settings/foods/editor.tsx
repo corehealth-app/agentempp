@@ -1,10 +1,10 @@
 'use client'
 
+import { useId, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useState, useTransition } from 'react'
 import { upsertFood } from './actions'
 import type { FoodRow } from './page'
 
@@ -27,7 +27,6 @@ export function FoodEditor({
     fat_g: initial?.fat_g ?? 0,
     fiber_g: initial?.fiber_g ?? 0,
     country_code: initial?.country_code ?? 'BR',
-    source: initial?.source ?? 'alias',
   })
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -49,7 +48,7 @@ export function FoodEditor({
         fat_g: Number(form.fat_g),
         fiber_g: Number(form.fiber_g),
         country_code: form.country_code,
-        source: form.source.trim() || null,
+        source: null,
       })
       if (res.ok) onClose()
       else setError(res.error ?? 'Falha ao salvar')
@@ -73,8 +72,8 @@ export function FoodEditor({
               placeholder='ex: "ovo frito", "bacon", "feijão tropeiro"'
             />
             <p className="text-[11px] text-muted-foreground mt-1">
-              Use o nome que um brasileiro usaria conversando, não termo científico. Match no
-              banco usa trigram em name_pt.
+              Use o nome que um brasileiro usaria conversando, não termo científico. Match no banco
+              usa trigram em name_pt.
             </p>
           </div>
 
@@ -100,9 +99,7 @@ export function FoodEditor({
                 id="country"
                 maxLength={2}
                 value={form.country_code}
-                onChange={(e) =>
-                  setForm({ ...form, country_code: e.target.value.toUpperCase() })
-                }
+                onChange={(e) => setForm({ ...form, country_code: e.target.value.toUpperCase() })}
               />
             </div>
           </div>
@@ -140,16 +137,6 @@ export function FoodEditor({
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="source">Fonte</Label>
-            <Input
-              id="source"
-              value={form.source}
-              onChange={(e) => setForm({ ...form, source: e.target.value })}
-              placeholder="alias | TACO_4_seed_minimal | manual"
-            />
-          </div>
-
           {error && (
             <div className="text-sm text-destructive bg-destructive/10 rounded p-2">{error}</div>
           )}
@@ -177,12 +164,16 @@ function Field({
   value: number
   onChange: (v: number) => void
 }) {
+  const inputId = useId()
   return (
     <div>
-      <label className="text-[10px] uppercase tracking-wide text-muted-foreground block">
-        {label}
+      <label htmlFor={inputId}>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground block">
+          {label}
+        </span>
       </label>
       <Input
+        id={inputId}
         type="number"
         step="0.1"
         min="0"

@@ -13,13 +13,16 @@ import {
   evaluateGainVelocity,
   type SnapshotForAgg,
 } from '@mpp/core'
-import type { TablesUpdate } from '@mpp/db'
+import type { Json, TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import {
   calcMealMacros,
+  mentionsFoodItem,
   parseUserKcalOverridesFromMessages,
   type MealItemInput,
+  type MealNutritionSource,
 } from './meal-pipeline.js'
+import { applyKnownProductServingQuantities } from './known-product-servings.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -1477,6 +1480,33 @@ export const registraRefeicao: ToolDefinition = {
     }
 
     // ========================================================================
+    // PORÇÕES DE PRODUTOS COM RÓTULO VERIFICADO
+    // ========================================================================
+    // O modelo costumava converter "1 rap10" para uma tortilha genérica de
+    // 35 g. Para o produto Mission usado pelos pacientes em Orlando, o rótulo
+    // verificado declara 43 g. Aplique essa correção antes do dedup/cálculo,
+    // somente quando país, produto e número de unidades são inequívocos.
+    {
+      const servingPolicy = applyKnownProductServingQuantities(
+        args.items,
+        ctx.currentUserText ?? '',
+        ctx.userCountry ?? 'BR',
+      )
+      if (servingPolicy.adjustments.length > 0) {
+        args.items = servingPolicy.items
+        const properties: Json = {
+          provider_message_id: ctx.providerMessageId ?? null,
+          adjustments: servingPolicy.adjustments.map((adjustment) => ({ ...adjustment })),
+        }
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'nutrition.verified_product_serving_applied',
+          properties,
+        })
+      }
+    }
+
+    // ========================================================================
     // DEDUP INTRA-ARRAY (Amanda 2026-05-15) — Bug A
     // ========================================================================
     // Quando LLM envia items=[{burrito,300},{burrito,300},{coca,250},{coca,250}]
@@ -1524,6 +1554,7 @@ export const registraRefeicao: ToolDefinition = {
       quantity_g: number
       user_kcal?: number | null
       approved_nutrition?: {
+        source?: MealNutritionSource
         food_db_id?: number | null
         kcal: number
         protein_g: number
@@ -1694,13 +1725,32 @@ export const registraRefeicao: ToolDefinition = {
           const dedupKey = (food: string, qty: number) => `${normName(food)}|${Math.round(qty)}`
           const existingKeys = new Set(existing.map((r) => dedupKey(r.food_name, r.quantity_g)))
           const skipped: Array<{ food_name: string; quantity_g: number }> = []
+          const explicitlyMentioned: Array<{ food_name: string; quantity_g: number }> = []
+          const currentSourceText = ctx.currentUserText?.trim() ?? ''
           const survivors = calc.items.filter((it) => {
             if (existingKeys.has(dedupKey(it.food_name, it.quantity_g))) {
+              if (currentSourceText && mentionsFoodItem(currentSourceText, it.food_name)) {
+                explicitlyMentioned.push({ food_name: it.food_name, quantity_g: it.quantity_g })
+                return true
+              }
               skipped.push({ food_name: it.food_name, quantity_g: it.quantity_g })
               return false
             }
             return true
           })
+          if (explicitlyMentioned.length > 0) {
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'tool.same_day_dedup_bypassed_explicit_item',
+              properties: {
+                meal_type: args.meal_type,
+                provider_message_id: ctx.providerMessageId ?? null,
+                date: effectiveDate,
+                item_count: explicitlyMentioned.length,
+                items: explicitlyMentioned,
+              },
+            })
+          }
           if (skipped.length > 0) {
             await ctx.supabase.from('product_events').insert({
               user_id: ctx.userId,

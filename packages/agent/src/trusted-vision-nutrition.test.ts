@@ -18,6 +18,7 @@ describe('attachTrustedVisionNutrition', () => {
         food_name: 'iogurte whey morango',
         quantity_g: 170,
         approved_nutrition: {
+          source: 'product_label',
           kcal: 161.5,
           protein_g: 17,
           carbs_g: 13.6,
@@ -62,6 +63,7 @@ describe('attachTrustedVisionNutrition', () => {
     )
 
     expect(result[0]?.approved_nutrition).toEqual({
+      source: 'product_label',
       kcal: 125,
       protein_g: 5,
       carbs_g: 14.37,
@@ -87,6 +89,7 @@ describe('attachTrustedVisionNutrition', () => {
     )
 
     expect(result[0]?.approved_nutrition).toEqual({
+      source: 'product_label',
       kcal: 70,
       protein_g: 5,
       carbs_g: 19,
@@ -115,6 +118,7 @@ describe('attachTrustedVisionNutrition', () => {
     )
 
     expect(result[0]?.approved_nutrition).toEqual({
+      source: 'product_label',
       kcal: 70,
       protein_g: 5,
       carbs_g: 19,

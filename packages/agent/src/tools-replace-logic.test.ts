@@ -794,6 +794,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
             food_name: 'sorvete',
             quantity_g: 120,
             approved_nutrition: {
+              source: 'canonical_exact',
               food_db_id: 379,
               kcal: 252,
               protein_g: 4.2,
@@ -810,7 +811,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     const item = (atomicCall?.params.p_items as Array<Record<string, unknown>> | undefined)?.[0]
     expect(item).toMatchObject({
       food_db_id: 379,
-      source: 'pending_approved',
+      source: 'canonical_exact',
       kcal: 252,
     })
   })
@@ -1092,6 +1093,38 @@ Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`
     expect(redup?.properties.skipped_count).toBe(2)
     // NÃO deve ter virado replace (não é correção)
     expect(events.find((e) => e.event === 'tool.replace_implicit_detected')).toBeUndefined()
+  })
+
+  it('mantém itens repetidos quando o paciente os cita diretamente numa nova porção — caso Roberto 17/07', async () => {
+    const { ctx, events, rpcCalls } = makeContextAndSupabase({
+      dayLogs: [
+        { food_name: 'rap10', quantity_g: 70, meal_type: 'jantar' },
+        { food_name: 'queijo mussarela', quantity_g: 40, meal_type: 'jantar' },
+      ],
+      recentLogs: [],
+      currentUserText: 'rap10 de 70 kcal com queijo e Nutella',
+      recentUserMessages: ['rap10 de 70 kcal com queijo e Nutella'],
+      llmSentReplace: false,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: false,
+        items: [
+          { food_name: 'rap10', quantity_g: 70 },
+          { food_name: 'queijo mussarela', quantity_g: 40 },
+          { food_name: 'Nutella', quantity_g: 20 },
+        ],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(
+      (atomic?.params.p_items as Array<{ food_name: string }>).map((item) => item.food_name),
+    ).toEqual(['rap10', 'queijo mussarela', 'Nutella'])
+    expect(events.find((event) => event.event === 'tool.meal_item_redup_skipped')).toBeUndefined()
   })
 
   it('mesmo item em QUANTIDADE diferente → insere normal (não bloqueia) — não-regressão', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  buildPendingNutritionConfirmationNotes,
   composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
@@ -386,6 +387,17 @@ describe('composePendingProposal — proposta + botões pro tap [Sim, registrar]
 
     expect(out.body).toContain('Atenção: Confirme o preparo de frango frito')
     expect(out.body.indexOf('Atenção:')).toBeLessThan(out.body.indexOf('Confirma?'))
+  })
+
+  it('sinaliza itens com nutrição genérica sem rotular referências canônicas', () => {
+    const notes = buildPendingNutritionConfirmationNotes([
+      item({ name: 'produto artesanal', nutrition_source: 'llm_estimate' }),
+      item({ name: 'arroz branco', nutrition_source: 'canonical_exact' }),
+    ])
+
+    expect(notes).toEqual([
+      'O valor de produto artesanal é estimado. Envie o rótulo ou a receita para usar o valor exato.',
+    ])
   })
 
   it('áudio: abertura é "Entendi isso do áudio (Almoço):"', () => {

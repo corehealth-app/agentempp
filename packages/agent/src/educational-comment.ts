@@ -3,7 +3,7 @@
  *
  * Após a Fase 1 (registro determinístico), Roberto sentiu falta do comentário
  * de 2-4 frases que o LLM redigia depois do card. Era a peça neurocomportamental
- * do método MPP: microvitória → identidade → orientação com tato.
+ * do método MPP: microvitória → continuidade → orientação com tato.
  *
  * Solução: 1 chamada LLM PEQUENA pós-determinístico, só pro comentário. Usa
  * Haiku (barato, rápido). Prompt focado em poucos kbs (não os 52k do system
@@ -20,9 +20,9 @@ Após cada refeição/treino registrado, escreva um comentário de 2-4 frases se
 
 1. MICROVITÓRIA (§2.1) — abra celebrando o que o paciente fez de CERTO, ancorado num número real da refeição/treino. Registrar já é progresso. VARIE o elogio (§2.7 — elogio repetido anestesia o cérebro). Use ângulos diferentes: aporte proteico, custo-benefício, saciedade, comparação, escolha consciente.
 
-2. REFORÇO DE IDENTIDADE (§2.3) — conecte com QUEM o paciente está se tornando. NÃO elogie o comportamento isolado, reforce a identidade de pessoa consistente/disciplinada.
+2. CONTINUIDADE — conecte a escolha ao processo de forma factual e acolhedora. NÃO classifique o paciente, não compare pessoas e não use frases como "padrão de quem", "quem realmente" ou "leva a sério".
 
-3. ORIENTAÇÃO (rodapé — secundária, NUNCA manchete) — só DEPOIS de microvitória + identidade. Use a heurística:
+3. ORIENTAÇÃO (rodapé — secundária, NUNCA manchete) — só DEPOIS de microvitória + continuidade. Use a heurística:
    - Aliado: proteína > 15g/100g, gordura < 8g/100g (carnes magras, frango, peixe, ovos, whey, iogurte natural)
    - Cuidado-carboidrato: > 20g/100g (arroz, massa, pão, batata, doces)
    - Cuidado-gordura: > 15g/100g (queijos amarelos, embutidos, frituras, oleaginosas)
@@ -36,8 +36,8 @@ REGRAS INVIOLÁVEIS:
 - NÃO inclua emojis decorativos (use só se naturalmente couber).
 - NÃO repita a tabela nem o card.
 - Tom direto, próximo. Sem moralismo, sem proibição.
-- Se a refeição foi clara fora do padrão: ACOLHIMENTO (§2.8) — normalize, redirecione, reforce identidade. NUNCA puna.
-- Pra treino: foque em consistência, esforço, contribuição pro bloco. Mesma estrutura (microvitória + identidade + orientação se couber, ex: "da próxima, força > caminhada pra ganhar mais massa").
+- Se a refeição foi clara fora do padrão: ACOLHIMENTO (§2.8) — normalize e redirecione sem rotular a pessoa. NUNCA puna.
+- Pra treino: foque em consistência, esforço, contribuição pro bloco. Mesma estrutura (microvitória + continuidade + orientação se couber, ex: "da próxima, força > caminhada pra ganhar mais massa").
 
 REGRAS NOVAS (Roberto 2026-06-03):
 
@@ -61,9 +61,9 @@ B) **SUBSTITUIÇÕES PRECISAM SER COERENTES COM O TIPO DE REFEIÇÃO**
 
 C) **REFEIÇÕES "FORA DO PADRÃO" OCASIONAIS — NÃO SUGIRA SUBSTITUIÇÃO**
    Se o paciente comeu sorvete, doce, fast food, pizza — algo claramente OCASIONAL
-   (não rotina) — NÃO ofereça substituição. Em vez disso, normalize + reforce identidade:
+   (não rotina) — NÃO ofereça substituição. Em vez disso, normalize e contextualize:
    ✅ "Sorvete num jantar mais leve — às vezes a gente come algo mais calórico e tudo
-       bem, isso não vira rotina pra quem mantém o ritmo como você."
+       bem. O conjunto da semana é mais importante do que uma refeição isolada."
    ✅ "Pizza num final de semana cabe no processo. O que importa é o padrão da semana,
        não 1 refeição."
    ❌ "Pizza tem muito carboidrato — da próxima troca por salada"
@@ -89,10 +89,10 @@ E) **NUNCA INVENTE ITEM QUE NÃO ESTÁ NA LISTA — INVIOLÁVEL**
        é o mesmo que dizer "o item" (regra A). Sempre NOMEIE.
 
 F) **SEPARE EM PARÁGRAFOS — INVIOLÁVEL** (manual MPP § estrutura)
-   Em vez de uma frase corrida que mistura microvitória + identidade + orientação,
+   Em vez de uma frase corrida que mistura microvitória + continuidade + orientação,
    USE QUEBRA DE LINHA pra separar:
 
-   Parágrafo 1: MICROVITÓRIA + IDENTIDADE (1 frase ou 2 curtas, fluindo).
+   Parágrafo 1: MICROVITÓRIA + CONTINUIDADE (1 frase ou 2 curtas, fluindo).
    [LINHA EM BRANCO]
    Parágrafo 2: ORIENTAÇÃO (1 frase, opcional — só se houver cuidado-carb/cuidado-gordura).
 
@@ -191,6 +191,20 @@ export interface EduCommentOpts {
   embeddings?: { embed(text: string): Promise<number[]> }
 }
 
+export function hasMoralizingEducationalTone(comment: string): boolean {
+  const normalized = comment
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+  return [
+    /\b(?:esse|isso)\s+e\s+(?:o\s+)?padrao\s+de\s+quem\b/,
+    /\b(?:marca|habito|escolha)\s+de\s+quem\s+(?:realmente\s+)?\b/,
+    /\bquem\s+realmente\s+(?:leva|faz|prioriza|se\s+compromete)\b/,
+    /\bleva\s+(?:a|o|seu|sua)\s+[^.!?\n]{0,60}\s+a\s+serio\b/,
+    /\bsepara\s+quem\b/,
+  ].some((pattern) => pattern.test(normalized))
+}
+
 /**
  * Telemetria edu-comment (audit P2 2026-06-13): cada ponto do funil grava
  * product_event. Antes era cego — impossível distinguir curated_hit de
@@ -278,23 +292,32 @@ export async function generateEducationalComment(
         embeddings: opts.embeddings,
       })
       if (curated.phrase) {
-        await emitEdu(opts, 'edu_comment.curated_hit', {
-          kind: input.kind,
-          anchor: curated.food_canonical_name,
-          phrase_id: curated.phrase_id,
-          candidate_count: curated.candidate_count ?? 0,
-          compatible_count: curated.compatible_count ?? 0,
-          cooldown_count: curated.cooldown_count ?? 0,
-          selected_after_cooldown: curated.selected_after_cooldown ?? false,
-          reason: curated.reason,
-        })
-        return curated.phrase
+        if (hasMoralizingEducationalTone(curated.phrase)) {
+          await emitEdu(opts, 'edu_comment.curated_tone_drop', {
+            kind: input.kind,
+            anchor: curated.food_canonical_name,
+            phrase_id: curated.phrase_id,
+            reason: 'moralizing_identity_language',
+          })
+        } else {
+          await emitEdu(opts, 'edu_comment.curated_hit', {
+            kind: input.kind,
+            anchor: curated.food_canonical_name,
+            phrase_id: curated.phrase_id,
+            candidate_count: curated.candidate_count ?? 0,
+            compatible_count: curated.compatible_count ?? 0,
+            cooldown_count: curated.cooldown_count ?? 0,
+            selected_after_cooldown: curated.selected_after_cooldown ?? false,
+            reason: curated.reason,
+          })
+          return curated.phrase
+        }
       }
       // Defesa em camadas (audit P0 2026-06-13): se reason=invalid_anchor_shape
       // significa que o adapter de items quebrou (bug histórico voltou). NÃO
       // pode ser confundido com curated_miss normal — evento dedicado pra
       // dashboard alertar imediatamente em regressão futura.
-      if (curated.reason === 'invalid_anchor_shape') {
+      if (!curated.phrase && curated.reason === 'invalid_anchor_shape') {
         await emitEdu(opts, 'edu_comment.adapter_regression', {
           kind: input.kind,
           items_preview: input.items?.slice(0, 3).map((i) => ({
@@ -303,7 +326,7 @@ export async function generateEducationalComment(
           })),
           severity: 'critical',
         })
-      } else if (curated.reason === 'cooldown_lookup_failed') {
+      } else if (!curated.phrase && curated.reason === 'cooldown_lookup_failed') {
         await emitEdu(opts, 'edu_comment.cooldown_error', {
           kind: input.kind,
           anchor: curated.food_canonical_name,
@@ -311,7 +334,7 @@ export async function generateEducationalComment(
           candidate_count: curated.candidate_count ?? 0,
           compatible_count: curated.compatible_count ?? 0,
         })
-      } else {
+      } else if (!curated.phrase) {
         // curated_miss legítimo (planilha incompleta) — fire-and-forget,
         // não bloqueia turno do paciente.
         void emitEdu(opts, 'edu_comment.curated_miss', {
@@ -380,6 +403,13 @@ export async function generateEducationalComment(
     if (!cleaned) {
       await emitEdu(opts, 'edu_comment.haiku_empty', {
         rawLen: content.length,
+        ...usageTelemetry,
+      })
+      return ''
+    }
+    if (hasMoralizingEducationalTone(cleaned)) {
+      await emitEdu(opts, 'edu_comment.tone_drop', {
+        reason: 'moralizing_identity_language',
         ...usageTelemetry,
       })
       return ''
@@ -455,7 +485,7 @@ Tipo: ${w?.type ?? 'treino'}
 Duração: ${w?.durationMin ?? '?'} min
 Gasto estimado: ${w?.kcalBurned ?? 0} kcal
 
-Escreva o comentário de 2-4 frases (microvitória → identidade → orientação se couber).`
+Escreva o comentário de 2-4 frases (microvitória → continuidade → orientação se couber).`
   }
 
   const itemsTxt =
@@ -474,5 +504,5 @@ Itens:
 ${itemsTxt}
 Total da refeição: ${t.kcal} kcal | proteína ${t.protein_g}g | carboidrato ${t.carbs_g}g | gordura ${t.fat_g}g
 
-Escreva o comentário de 2-4 frases (microvitória → identidade → orientação com tato se houver cuidado-carb ou cuidado-gordura).`
+Escreva o comentário de 2-4 frases (microvitória → continuidade → orientação com tato se houver cuidado-carb ou cuidado-gordura).`
 }

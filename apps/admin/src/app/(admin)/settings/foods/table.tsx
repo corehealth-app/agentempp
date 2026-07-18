@@ -1,5 +1,8 @@
 'use client'
 
+import { CircleAlert, CircleCheck, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -9,9 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useState, useTransition } from 'react'
 import { deleteFood } from './actions'
 import { FoodEditor } from './editor'
 import type { FoodRow } from './page'
@@ -23,7 +23,7 @@ export function FoodsTable({
 }: {
   rows: FoodRow[]
   categories: string[]
-  searchParams: { q?: string; category?: string; country?: string; source?: string }
+  searchParams: { q?: string; category?: string; country?: string; verified?: 'true' | 'false' }
 }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -81,16 +81,16 @@ export function FoodsTable({
         </Select>
 
         <Select
-          value={searchParams.source ?? '__all__'}
-          onValueChange={(v) => updateFilter('source', v)}
+          value={searchParams.verified ?? '__all__'}
+          onValueChange={(v) => updateFilter('verified', v)}
         >
           <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Fonte" />
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">Todas</SelectItem>
-            <SelectItem value="alias">Alias</SelectItem>
-            <SelectItem value="TACO_4_seed_minimal">TACO</SelectItem>
+            <SelectItem value="__all__">Todos</SelectItem>
+            <SelectItem value="true">Verificados</SelectItem>
+            <SelectItem value="false">Quarentena</SelectItem>
           </SelectContent>
         </Select>
 
@@ -113,13 +113,14 @@ export function FoodsTable({
               <th className="text-right px-3 py-2">Fib</th>
               <th className="text-left px-3 py-2">País</th>
               <th className="text-left px-3 py-2">Fonte</th>
+              <th className="text-center px-3 py-2">Status</th>
               <th className="text-right px-3 py-2 w-24">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/40">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-muted-foreground">
+                <td colSpan={11} className="text-center py-12 text-muted-foreground">
                   Nenhum alimento encontrado
                 </td>
               </tr>
@@ -138,13 +139,28 @@ export function FoodsTable({
                     {r.source === 'alias' ? (
                       <span className="text-bronze">alias</span>
                     ) : (
-                      r.source ?? '—'
+                      (r.source ?? '—')
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {r.is_verified ? (
+                      <CircleCheck
+                        className="inline h-4 w-4 text-emerald-600"
+                        aria-label="Referência verificada"
+                      />
+                    ) : (
+                      <CircleAlert
+                        className="inline h-4 w-4 text-amber-600"
+                        aria-label="Referência em quarentena"
+                      />
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <Button
                       size="sm"
                       variant="ghost"
+                      disabled={r.is_verified}
+                      title={r.is_verified ? 'Referências verificadas são imutáveis' : 'Editar'}
                       onClick={() => setEditing(r)}
                       className="h-7 w-7 p-0"
                     >
@@ -153,7 +169,8 @@ export function FoodsTable({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={deleting === r.id}
+                      disabled={r.is_verified || deleting === r.id}
+                      title={r.is_verified ? 'Referências verificadas são imutáveis' : 'Excluir'}
                       onClick={() => onDelete(r.id, r.name_pt)}
                       className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                     >

@@ -41,7 +41,13 @@ describe('countNutritionAnomalies — proveniência e macros', () => {
         fat_g: 13.2,
         source: 'canonical_exact',
         food_db_id: 379,
-        food_db: { kcal_per_100g: 210, protein_g: 3.5, carbs_g: 24, fat_g: 11 },
+        food_db: {
+          kcal_per_100g: 210,
+          protein_g: 3.5,
+          carbs_g: 24,
+          fat_g: 11,
+          is_verified: true,
+        },
       },
       {
         quantity_g: 15,
@@ -81,7 +87,29 @@ describe('countNutritionAnomalies — proveniência e macros', () => {
         fat_g: 0,
         source: 'canonical_exact',
         food_db_id: 500,
-        food_db: { kcal_per_100g: 210, protein_g: 3.5, carbs_g: 24, fat_g: 11 },
+        food_db: {
+          kcal_per_100g: 210,
+          protein_g: 3.5,
+          carbs_g: 24,
+          fat_g: 11,
+          is_verified: true,
+        },
+      },
+      {
+        quantity_g: 100,
+        kcal: 342,
+        protein_g: 6,
+        carbs_g: 5,
+        fat_g: 34,
+        source: 'canonical_exact',
+        food_db_id: 176,
+        food_db: {
+          kcal_per_100g: 342,
+          protein_g: 6,
+          carbs_g: 5,
+          fat_g: 34,
+          is_verified: false,
+        },
       },
     ])
 
@@ -90,6 +118,7 @@ describe('countNutritionAnomalies — proveniência e macros', () => {
       impossibleMacroMass: 2,
       canonicalMissingFoodDbId: 1,
       canonicalDrift: 1,
+      unverifiedFoodDbReference: 1,
     })
   })
 })

@@ -401,6 +401,31 @@ export interface PendingFoodCorrection {
   fat_g?: number
 }
 
+const ESTIMATED_NUTRITION_SOURCES = new Set([
+  'llm_estimate',
+  'category_mismatch',
+  'protein_mismatch',
+  'composite_rejected',
+])
+
+export function buildPendingNutritionConfirmationNotes(items: MealItem[]): string[] {
+  const estimatedNames = [
+    ...new Set(
+      items
+        .filter((item) => ESTIMATED_NUTRITION_SOURCES.has(item.nutrition_source ?? ''))
+        .map((item) => item.name.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 2)
+  if (estimatedNames.length === 0) return []
+  const subject =
+    estimatedNames.length === 1
+      ? `O valor de ${estimatedNames[0]}`
+      : `Os valores de ${estimatedNames.join(' e ')}`
+  const verb = estimatedNames.length === 1 ? 'é estimado' : 'são estimados'
+  return [`${subject} ${verb}. Envie o rótulo ou a receita para usar o valor exato.`]
+}
+
 export function normalizePendingFoodCorrections(value: unknown): PendingFoodCorrection[] {
   if (!Array.isArray(value)) return []
   const normalized: PendingFoodCorrection[] = []

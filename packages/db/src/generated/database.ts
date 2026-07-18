@@ -571,11 +571,13 @@ export type Database = {
           fat_g: number | null
           fiber_g: number | null
           id: number
+          is_verified: boolean
           kcal_per_100g: number | null
           name_norm: string | null
           name_pt: string
           protein_g: number | null
           source: string
+          source_ref: string | null
         }
         Insert: {
           carbs_g?: number | null
@@ -585,11 +587,13 @@ export type Database = {
           fat_g?: number | null
           fiber_g?: number | null
           id?: number
+          is_verified?: boolean
           kcal_per_100g?: number | null
           name_norm?: string | null
           name_pt: string
           protein_g?: number | null
           source?: string
+          source_ref?: string | null
         }
         Update: {
           carbs_g?: number | null
@@ -599,11 +603,13 @@ export type Database = {
           fat_g?: number | null
           fiber_g?: number | null
           id?: number
+          is_verified?: boolean
           kcal_per_100g?: number | null
           name_norm?: string | null
           name_pt?: string
           protein_g?: number | null
           source?: string
+          source_ref?: string | null
         }
         Relationships: []
       }

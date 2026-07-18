@@ -3,6 +3,7 @@ export interface DedupableMealItem {
   quantity_g: number
   user_kcal?: number | null
   approved_nutrition?: {
+    source?: string
     food_db_id?: number | null
     kcal: number
     protein_g: number
@@ -39,7 +40,9 @@ function sumApprovedNutrition(items: DedupableMealItem[]) {
       nutrition != null,
   )
   const foodDbIds = new Set(values.map((nutrition) => nutrition.food_db_id ?? null))
+  const sources = new Set(values.map((nutrition) => nutrition.source ?? null))
   return {
+    source: sources.size === 1 ? (values[0]?.source ?? undefined) : undefined,
     food_db_id: foodDbIds.size === 1 ? (values[0]?.food_db_id ?? null) : null,
     kcal: values.reduce((sum, nutrition) => sum + nutrition.kcal, 0),
     protein_g: values.reduce((sum, nutrition) => sum + nutrition.protein_g, 0),
@@ -110,6 +113,7 @@ function nutritionSignature(item: DedupableMealItem): string {
     user_kcal: item.user_kcal ?? null,
     approved_nutrition: nutrition
       ? {
+          source: nutrition.source ?? null,
           food_db_id: nutrition.food_db_id ?? null,
           kcal: nutrition.kcal,
           protein_g: nutrition.protein_g,

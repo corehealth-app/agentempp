@@ -19,6 +19,7 @@ export interface MealItemInput {
    * deterministic confirmation handler may provide it.
    */
   approved_nutrition?: {
+    source?: MealNutritionSource
     food_db_id?: number | null
     kcal: number
     protein_g: number
@@ -72,9 +73,9 @@ function parseExplicitMealTotal(patientText: string): number | null {
  * Estratégia (heurística simples conforme spec):
  *   1. Tokeniza o texto por separadores fortes (vírgula, dois-pontos, "e",
  *      "+", quebra de linha) — cada trecho representa "um item + opcionais".
- *   2. Em cada trecho com kcal, associa ao ÚLTIMO item cujo food_name aparece
- *      naquele trecho (substring case/acento-insensitive). Se nenhum item bate,
- *      associa ao item da última posição mencionada anteriormente.
+ *   2. Em cada trecho com kcal, associa ao item mais próximo ANTES do número.
+ *      Só usa um item posterior quando nenhum alimento foi citado antes. Se
+ *      nenhum item bate, associa ao item mencionado no trecho anterior.
  *   3. Retorna Map de food_name → kcal (último valor vence se múltiplas
  *      menções; conservador).
  *
@@ -136,25 +137,27 @@ export function parseUserKcalOverrides(
     if (!seg) continue
     if (isAggregateNutritionLine(seg)) continue
     const segNorm = normalize(seg)
-    let bestItem: string | null = null
-    let bestPos = -1
+    const mentions: Array<{ item: string; pos: number; length: number }> = []
+    const addMentions = (item: string, needle: string) => {
+      if (!needle) return
+      let from = 0
+      while (from < segNorm.length) {
+        const pos = segNorm.indexOf(needle, from)
+        if (pos < 0) break
+        mentions.push({ item, pos, length: needle.length })
+        from = pos + Math.max(needle.length, 1)
+      }
+    }
     for (const ni of normItems) {
       if (!ni.norm) continue
-      const pos = segNorm.lastIndexOf(ni.norm)
-      if (pos > bestPos) {
-        bestPos = pos
-        bestItem = ni.raw
-      }
+      addMentions(ni.raw, ni.norm)
       const firstWord = ni.norm.split(/\s+/)[0]
       if (firstWord && firstWord.length >= 3) {
-        const pf = segNorm.lastIndexOf(firstWord)
-        if (pf > bestPos) {
-          bestPos = pf
-          bestItem = ni.raw
-        }
+        addMentions(ni.raw, firstWord)
       }
     }
     let lastKcal: number | null = null
+    let lastKcalPos = -1
     KCAL_RE.lastIndex = 0
     if (!negatesKcalClaim(segNorm)) {
       while (true) {
@@ -163,9 +166,25 @@ export function parseUserKcalOverrides(
         const raw = match[1]
         if (!raw) continue
         const n = parseLocalizedNutritionNumber(raw)
-        if (Number.isFinite(n) && n >= 0) lastKcal = n
+        if (Number.isFinite(n) && n >= 0) {
+          lastKcal = n
+          lastKcalPos = match.index
+        }
       }
     }
+    const byNearestBefore = [...mentions]
+      .filter((mention) => mention.pos < lastKcalPos)
+      .sort((left, right) => right.pos - left.pos || right.length - left.length)
+    const byNearestAfter = [...mentions]
+      .filter((mention) => mention.pos >= lastKcalPos)
+      .sort((left, right) => left.pos - right.pos || right.length - left.length)
+    const byLastMention = [...mentions].sort(
+      (left, right) => right.pos - left.pos || right.length - left.length,
+    )
+    const bestItem =
+      lastKcalPos >= 0
+        ? (byNearestBefore[0]?.item ?? byNearestAfter[0]?.item ?? null)
+        : (byLastMention[0]?.item ?? null)
     segInfos.push({ seg, segNorm, lastKcal, bestItem })
   }
 
@@ -212,17 +231,52 @@ const EXPLICIT_KCAL_PATTERN = /\d+(?:[.,]\d+)?\s*(?:k?cal(?:orias?)?)\b/i
 const SHORT_CONFIRMATION_PATTERN =
   /^(?:sim(?:\s+isso)?|isso(?:\s+mesmo)?|e\s+isso|corret[oa]|confirmo?|pode|ok|certo|exato)[.!?\s]*$/i
 
-function mentionsCurrentFood(text: string, items: Array<{ food_name: string }>): boolean {
-  const normalizedText = normalizeFoodText(text)
+const FOOD_MENTION_QUALIFIERS = new Set([
+  'com',
+  'sem',
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'cozido',
+  'cozida',
+  'grelhado',
+  'grelhada',
+  'assado',
+  'assada',
+  'frito',
+  'frita',
+  'integral',
+  'branco',
+  'branca',
+  'derretido',
+  'derretida',
+  'fatiado',
+  'fatiada',
+  'cru',
+  'crua',
+])
+
+export function mentionsFoodItem(text: string, foodName: string): boolean {
+  const normalizeMention = (value: string) =>
+    normalizeFoodText(value)
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const normalizedText = normalizeMention(text)
   const textTokens = new Set(normalizedText.split(/\s+/).filter(Boolean))
-  return items.some((item) => {
-    const normalizedFood = normalizeFoodText(item.food_name)
-    if (normalizedFood && normalizedText.includes(normalizedFood)) return true
-    return normalizedFood
-      .split(/\s+/)
-      .filter((token) => token.length >= 4 && !/^(?:com|para|sem)$/.test(token))
-      .some((token) => textTokens.has(token))
-  })
+  const normalizedFood = normalizeMention(foodName)
+  if (!normalizedText || !normalizedFood) return false
+  if (` ${normalizedText} `.includes(` ${normalizedFood} `)) return true
+  return normalizedFood
+    .split(/\s+/)
+    .filter((token) => token.length >= 3 && !FOOD_MENTION_QUALIFIERS.has(token))
+    .some((token) => textTokens.has(token))
+}
+
+function mentionsCurrentFood(text: string, items: Array<{ food_name: string }>): boolean {
+  return items.some((item) => mentionsFoodItem(text, item.food_name))
 }
 
 /**
@@ -256,6 +310,24 @@ export function parseUserKcalOverridesFromMessages(
   return parseUserKcalOverrides(previousText, items)
 }
 
+export type MealNutritionSource =
+  | 'taco'
+  | 'canonical_exact'
+  | 'canonical_fuzzy'
+  | 'canonical_composite'
+  | 'canonical_composite_partial'
+  | 'rule_based'
+  | 'user_correction'
+  | 'history'
+  | 'user_kcal'
+  | 'product_label'
+  | 'pending_approved'
+  | 'llm_estimate'
+  | 'no_match'
+  | 'composite_rejected'
+  | 'category_mismatch'
+  | 'protein_mismatch'
+
 export interface MealItemMatched {
   food_name: string
   matched_taco_name: string
@@ -267,25 +339,7 @@ export interface MealItemMatched {
   fat_g: number
   fiber_g: number
   similarity: number
-  source:
-    | 'taco'
-    | 'canonical_exact'
-    | 'canonical_fuzzy'
-    | 'canonical_composite'
-    | 'canonical_composite_partial'
-    | 'rule_based'
-    | 'user_correction'
-    | 'history'
-    | 'user_kcal'
-    | 'pending_approved'
-    | 'llm_estimate'
-    | 'no_match'
-    /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
-    | 'composite_rejected'
-    /** Match com densidade calórica de gordura mas food_name não é gordura. */
-    | 'category_mismatch'
-    /** Alimento que deveria ter proteína (ovo/carne/whey) bateu sem proteína. */
-    | 'protein_mismatch'
+  source: MealNutritionSource
   /** Quantidade em UNIDADE NATURAL pra exibir ao paciente (ex: "2 unidades", "250 ml"). */
   display_qty?: number
   /** Unidade natural pra exibição: 'g' (default), 'ml', 'unidade', 'unidades', 'pão', 'pães'. */
@@ -538,6 +592,21 @@ function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function productCodeIdentifiers(foodName: string): string[] {
+  const normalized = normalizeFoodText(foodName)
+  const tokens = normalized
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  const identifiers = tokens.filter((token) => /[a-z]/.test(token) && /\d/.test(token))
+  if (/\brap\s+10\b/.test(normalized)) identifiers.push('rap10')
+  return [...new Set(identifiers)]
+}
+
+function hasProductCodeIdentifier(foodName: string): boolean {
+  return productCodeIdentifiers(foodName).length > 0
+}
+
 const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
   ['abacaxi', 'abacaxi'],
   ['abacaxis', 'abacaxi'],
@@ -580,7 +649,13 @@ const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
 const SIMPLE_FRESH_FRUIT_MODIFIERS = new Set([
   'branca',
   'brancas',
+  'casca',
+  'cascas',
   'com',
+  'cru',
+  'crua',
+  'cruas',
+  'crus',
   'da',
   'das',
   'de',
@@ -922,15 +997,21 @@ export function extractAnchor(foodName: string): string | null {
   return tokens[0] ? normalizeFoodText(tokens[0]) : null
 }
 
-const TRUSTED_HISTORY_SOURCES = [
-  'canonical_exact',
-  'canonical_fuzzy',
-  'user_kcal',
-  'pending_approved',
-] as const
+const TRUSTED_HISTORY_SOURCES = ['canonical_exact', 'canonical_fuzzy', 'user_kcal'] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
   return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
+}
+
+function hasVerifiedFoodReference(
+  reference:
+    | { is_verified?: boolean | null }
+    | Array<{ is_verified?: boolean | null }>
+    | null
+    | undefined,
+): boolean {
+  const row = Array.isArray(reference) ? reference[0] : reference
+  return row?.is_verified === true
 }
 
 function canonicalSource(
@@ -998,10 +1079,13 @@ async function matchFood(
   fat_g: number | null
   fiber_g: number | null
 }> {
-  // Pede 5 candidatos pra fazer tie-break determinístico em código (Roberto+Luciana
+  // Pede uma janela maior de candidatos pra fazer tie-break determinístico em código.
+  // Com o catálogo oficial completo, top-5 pode ser ocupado por descrições muito
+  // parecidas do mesmo país e esconder a alternativa exata do país do paciente.
+  // (Roberto+Luciana
   // 2026-06-03: alface crespa retornava 6 kcal numa chamada e 4 noutra; milho 34 vs 14
   // — postgres não garante ordem estável em ORDER BY similarity DESC quando há
-  // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-5, ordena por
+  // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-N, ordena por
   // (similarity DESC, id ASC) em JS — mesma chamada, mesmo retorno, sempre).
   const { data, error } = await (
     supabase as unknown as {
@@ -1010,7 +1094,7 @@ async function matchFood(
   ).rpc('search_food_trgm', {
     search_term: name.toLowerCase(),
     min_similarity: 0.2,
-    max_results: 5,
+    max_results: 20,
     p_country: country,
   })
 
@@ -1036,6 +1120,7 @@ async function matchFood(
     carbs_g: number | string | null
     fat_g: number | string | null
     fiber_g: number | string | null
+    country_code?: string | null
   }
   const rows = (data ?? []) as Row[]
   if (error) throw nutritionSourceError(error, 'canonical food search failed')
@@ -1070,13 +1155,54 @@ async function matchFood(
   })
   if (compatibleRows.length === 0) return empty
 
-  // Tie-break determinístico: similarity DESC, id ASC. Empate de similarity
-  // (até 0.001 de diferença, abaixo do ruído de cast real→float) → menor id,
-  // que é estável entre chamadas e entre pacientes.
-  const sorted = [...compatibleRows].sort((a, b) => {
+  // O trigram pode ranquear um derivado acima do alimento simples ("goiaba"
+  // -> "goiaba, doce, cascão" antes de "goiaba, crua"). Se o conjunto contém
+  // uma fruta fresca compatível, descarte os doces antes do desempate. Quando
+  // só há derivados, preserve o melhor candidato para o guard posterior gerar
+  // o aviso explícito e cair no fallback de fruta.
+  let candidateRows = compatibleRows
+  if (hasProductCodeIdentifier(name)) {
+    const identifiers = productCodeIdentifiers(name)
+    const sameCountryRows = candidateRows.filter((row) => {
+      if (row.country_code?.toUpperCase() !== country.toUpperCase()) return false
+      const candidateTokens = normalizeFoodText(row.name_pt ?? '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+      return identifiers.every((identifier) => candidateTokens.includes(identifier))
+    })
+    // Um código comercial não é portável entre países: "rap10" no Brasil
+    // não pode herdar automaticamente o rótulo do produto Mission dos EUA.
+    if (sameCountryRows.length === 0) return empty
+    candidateRows = sameCountryRows
+  }
+  if (isSimpleFreshFruitName(name)) {
+    const freshRows = candidateRows.filter(
+      (row) => !isSweetDerivedFruitMismatch(name, row.name_pt, row.category),
+    )
+    if (freshRows.length > 0) candidateRows = freshRows
+  }
+
+  // A mesma regra vale para preparo e composição: se há uma alternativa
+  // compatível no top-N, não escolha primeiro a versão frita/com pele/integral
+  // errada para só depois rejeitá-la.
+  const modifierCompatibleRows = candidateRows.filter(
+    (row) => row.name_pt == null || !hasNutritionModifierConflict(name, row.name_pt),
+  )
+  if (modifierCompatibleRows.length > 0) candidateRows = modifierCompatibleRows
+
+  // Tie-break determinístico: similarity DESC, país do paciente, id ASC.
+  // Empate de similarity (até 0.001 de diferença, abaixo do ruído de cast
+  // real→float) deve preservar a preferência da RPC por país. Reordenar só
+  // por id fazia uma linha BR mais antiga vencer a US para pacientes nos EUA.
+  const sorted = [...candidateRows].sort((a, b) => {
     const simA = a.similarity ?? 0
     const simB = b.similarity ?? 0
     if (Math.abs(simA - simB) > 0.001) return simB - simA
+    const requestedCountry = country.toUpperCase()
+    const countryRankA = a.country_code?.toUpperCase() === requestedCountry ? 0 : 1
+    const countryRankB = b.country_code?.toUpperCase() === requestedCountry ? 0 : 1
+    if (countryRankA !== countryRankB) return countryRankA - countryRankB
     const idA = a.id ?? Number.MAX_SAFE_INTEGER
     const idB = b.id ?? Number.MAX_SAFE_INTEGER
     return idA - idB
@@ -1236,7 +1362,9 @@ export async function lookupUserHistory(
   const supaTyped = supabase as any
   const { data, error } = await supaTyped
     .from('meal_logs')
-    .select('id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
+    .select(
+      'id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, food_db:food_db_id(is_verified)',
+    )
     .eq('user_id', userId)
     .in('source', [...TRUSTED_HISTORY_SOURCES])
     .gt('kcal', 0)
@@ -1254,9 +1382,13 @@ export async function lookupUserHistory(
     carbs_g: number
     fat_g: number
     source: string | null
+    food_db: { is_verified?: boolean | null } | Array<{ is_verified?: boolean | null }> | null
   }>
   const compatibleRows = rows.filter(
-    (r) => isTrustedHistorySource(r.source) && !hasNutritionModifierConflict(foodName, r.food_name),
+    (r) =>
+      isTrustedHistorySource(r.source) &&
+      hasVerifiedFoodReference(r.food_db) &&
+      !hasNutritionModifierConflict(foodName, r.food_name),
   )
   // Histórico pessoal só é seguro para o mesmo nome normalizado. Similaridade
   // textual não comprova equivalência nutricional: "sorvete" e "sorvete de
@@ -1338,6 +1470,7 @@ export async function calcMealMacros(
       it = { ...it, approved_nutrition: undefined, user_kcal: undefined }
     }
     if (approved && it.quantity_g > 0 && approvedValuesValid && !approvedHasImpossibleDensity) {
+      const approvedSource = approved.source ?? 'pending_approved'
       const nat = naturalUnit(it.food_name, it.quantity_g)
       const kcal = +approved.kcal.toFixed(1)
       const protein = +approved.protein_g.toFixed(2)
@@ -1345,7 +1478,7 @@ export async function calcMealMacros(
       const fat = +approved.fat_g.toFixed(2)
       matched.push({
         food_name: it.food_name,
-        matched_taco_name: '[pending aprovado]',
+        matched_taco_name: `[pending aprovado: ${approvedSource}]`,
         matched_taco_id: approved.food_db_id ?? null,
         quantity_g: it.quantity_g,
         kcal,
@@ -1354,7 +1487,7 @@ export async function calcMealMacros(
         fat_g: fat,
         fiber_g: 0,
         similarity: 1,
-        source: 'pending_approved',
+        source: approvedSource,
         display_qty: nat.display_qty,
         display_unit: nat.display_unit,
       })
@@ -1821,7 +1954,10 @@ export async function calcMealMacros(
     const queryWords = it.food_name.trim().split(/\s+/).length
     const queryLen = it.food_name.trim().length
     const isShortQuery = queryWords <= 2 || queryLen <= 15
-    const matchThreshold = isShortQuery ? 0.3 : 0.45
+    const requestedFruitKey = simpleFreshFruitKey(it.food_name)
+    const matchedFruitKey = simpleFreshFruitKey(m.name_pt ?? '')
+    const sameFreshFruit = requestedFruitKey != null && requestedFruitKey === matchedFruitKey
+    const matchThreshold = sameFreshFruit ? 0.2 : isShortQuery ? 0.3 : 0.45
     if (
       m.id != null &&
       m.kcal_per_100g != null &&
@@ -1878,10 +2014,23 @@ export async function calcMealMacros(
       // etc. Categoria + regex juntos cobrem todos casos legítimos.
       const kcalPerG = (m.kcal_per_100g ?? 0) / 100
       const lowerName = it.food_name.toLowerCase()
-      const matchCat = (m.category ?? '').toLowerCase()
-      const categoryAllowsHighKcal = ['gorduras', 'oleaginosas', 'sementes', 'doces'].includes(
-        matchCat,
-      )
+      const matchCat = normalizeFoodText(m.category ?? '')
+      const categoryAllowsHighKcal = [
+        'gorduras',
+        'oleaginosas',
+        'sementes',
+        'doces',
+        // Categorias oficiais do USDA SR Legacy. Sem estas equivalências,
+        // azeites, manteigas, castanhas e chocolates em inglês eram encontrados
+        // corretamente e depois descartados pelo sanity check em português.
+        'fats and oils',
+        'nut and seed products',
+        'sweets',
+        'snacks',
+        'baked products',
+        'dairy and egg products',
+        'sausages and luncheon meats',
+      ].includes(matchCat)
       const isFatLike =
         categoryAllowsHighKcal ||
         /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
@@ -2061,7 +2210,7 @@ export async function calcMealMacros(
       const { data: prior, error: priorError } = await supaTyped
         .from('meal_logs')
         .select(
-          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id',
+          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id, food_db:food_db_id(is_verified)',
         )
         .eq('user_id', userIdHint ?? '_no_user_')
         .ilike('food_name', it.food_name)
@@ -2083,11 +2232,16 @@ export async function calcMealMacros(
             carbs_g: number
             fat_g: number
             source: string | null
+            food_db:
+              | { is_verified?: boolean | null }
+              | Array<{ is_verified?: boolean | null }>
+              | null
           }>
         ).filter(
           (p) =>
             isTrustedHistorySource(p.source) &&
             Number.isInteger(p.food_db_id) &&
+            hasVerifiedFoodReference(p.food_db) &&
             normalizeFoodText(p.food_name) === normalizeFoodText(it.food_name) &&
             !hasNutritionModifierConflict(it.food_name, p.food_name),
         )
@@ -2177,6 +2331,33 @@ export async function calcMealMacros(
           }
         }
       }
+      // ────────────────────────────────────────────────────────────────────
+      // Produto/SKU com código sem referência exata no país: não invente uma
+      // densidade por categoria. O rótulo é a única fonte segura e a proposta
+      // fica bloqueada em zero até o paciente fornecê-lo.
+      if (hasProductCodeIdentifier(it.food_name)) {
+        userWarnings.push(
+          `Não encontrei uma referência verificada para "${it.food_name}" neste país. Envie uma foto legível do rótulo para eu usar as calorias e os macros corretos.`,
+        )
+        auditWarnings.push(
+          `"${it.food_name}" não recebeu estimativa porque contém um código comercial sem referência verificada no país do paciente.`,
+        )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: '',
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: 0,
+          source: 'no_match',
+        })
+        continue
+      }
+
       // ────────────────────────────────────────────────────────────────────
       // FALLBACK 2: sem reuso — ESTIMA por categoria (em vez de zerar).
       // ────────────────────────────────────────────────────────────────────

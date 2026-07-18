@@ -58,12 +58,13 @@ describe('hasPhantomFoodMention', () => {
   })
 })
 
-function makeEducationalSupabase(cooldownError?: string) {
+function makeEducationalSupabase(cooldownError?: string, phraseText?: string) {
   const events: Array<{ event: string; properties: Record<string, unknown> }> = []
   const phraseRows = [
     {
       id: 'phrase-whey-1',
-      phrase: '{alimento} ajuda a sustentar uma refeição rica em proteína.',
+      phrase:
+        phraseText ?? '{alimento} ajuda a sustentar uma refeição rica em proteína.',
       tags: null,
       allowed_meal_types: null,
       usage_count: 0,
@@ -225,6 +226,56 @@ describe('generateEducationalComment — telemetria de cooldown', () => {
           model: 'anthropic/claude-haiku-4.5:provider',
           latency_ms: 876,
         }),
+      }),
+    )
+  })
+
+  it('descarta reforço de identidade moralizante gerado pelo Haiku', async () => {
+    const { supabase, events } = makeEducationalSupabase('force curated fallback')
+    const llm = {
+      complete: async () => ({
+        content:
+          'Almoço com 33g de proteína só na carne de porco — você está priorizando o que realmente constrói músculo e saciedade. Esse é o padrão de quem leva a recomposição a sério.',
+      }),
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(result).toBe('')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.tone_drop',
+        properties: expect.objectContaining({ reason: 'moralizing_identity_language' }),
+      }),
+    )
+  })
+
+  it('descarta frase curada moralizante e usa fallback neutro', async () => {
+    const { supabase, events } = makeEducationalSupabase(
+      undefined,
+      '{alimento} é o padrão de quem leva a recomposição a sério.',
+    )
+    const llm = {
+      complete: async () => ({
+        content: 'Leite com whey contribui com proteína e praticidade nessa refeição.',
+      }),
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(result).toBe(
+      'Leite com whey contribui com proteína e praticidade nessa refeição.',
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.curated_tone_drop',
+        properties: expect.objectContaining({ reason: 'moralizing_identity_language' }),
       }),
     )
   })

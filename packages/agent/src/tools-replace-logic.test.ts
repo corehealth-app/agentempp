@@ -794,6 +794,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
             food_name: 'sorvete',
             quantity_g: 120,
             approved_nutrition: {
+              source: 'canonical_exact',
               food_db_id: 379,
               kcal: 252,
               protein_g: 4.2,
@@ -810,7 +811,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     const item = (atomicCall?.params.p_items as Array<Record<string, unknown>> | undefined)?.[0]
     expect(item).toMatchObject({
       food_db_id: 379,
-      source: 'pending_approved',
+      source: 'canonical_exact',
       kcal: 252,
     })
   })

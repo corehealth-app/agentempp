@@ -647,6 +647,7 @@ export async function processMessage(
               food_name: string
               quantity_g: number
               approved_nutrition?: {
+                source?: 'product_label'
                 kcal: number
                 protein_g: number
                 carbs_g: number
@@ -884,6 +885,7 @@ export async function processMessage(
                 food_name: string
                 quantity_g?: number
                 approved_nutrition?: {
+                  source?: 'product_label'
                   kcal: number
                   protein_g: number
                   carbs_g: number

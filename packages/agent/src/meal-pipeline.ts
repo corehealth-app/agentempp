@@ -19,6 +19,7 @@ export interface MealItemInput {
    * deterministic confirmation handler may provide it.
    */
   approved_nutrition?: {
+    source?: MealNutritionSource
     food_db_id?: number | null
     kcal: number
     protein_g: number
@@ -306,6 +307,24 @@ export function parseUserKcalOverridesFromMessages(
   return parseUserKcalOverrides(previousText, items)
 }
 
+export type MealNutritionSource =
+  | 'taco'
+  | 'canonical_exact'
+  | 'canonical_fuzzy'
+  | 'canonical_composite'
+  | 'canonical_composite_partial'
+  | 'rule_based'
+  | 'user_correction'
+  | 'history'
+  | 'user_kcal'
+  | 'product_label'
+  | 'pending_approved'
+  | 'llm_estimate'
+  | 'no_match'
+  | 'composite_rejected'
+  | 'category_mismatch'
+  | 'protein_mismatch'
+
 export interface MealItemMatched {
   food_name: string
   matched_taco_name: string
@@ -317,25 +336,7 @@ export interface MealItemMatched {
   fat_g: number
   fiber_g: number
   similarity: number
-  source:
-    | 'taco'
-    | 'canonical_exact'
-    | 'canonical_fuzzy'
-    | 'canonical_composite'
-    | 'canonical_composite_partial'
-    | 'rule_based'
-    | 'user_correction'
-    | 'history'
-    | 'user_kcal'
-    | 'pending_approved'
-    | 'llm_estimate'
-    | 'no_match'
-    /** Nome com "X com Y", "X e Y" — paciente passou prato composto. */
-    | 'composite_rejected'
-    /** Match com densidade calórica de gordura mas food_name não é gordura. */
-    | 'category_mismatch'
-    /** Alimento que deveria ter proteína (ovo/carne/whey) bateu sem proteína. */
-    | 'protein_mismatch'
+  source: MealNutritionSource
   /** Quantidade em UNIDADE NATURAL pra exibir ao paciente (ex: "2 unidades", "250 ml"). */
   display_qty?: number
   /** Unidade natural pra exibição: 'g' (default), 'ml', 'unidade', 'unidades', 'pão', 'pães'. */
@@ -976,7 +977,6 @@ const TRUSTED_HISTORY_SOURCES = [
   'canonical_exact',
   'canonical_fuzzy',
   'user_kcal',
-  'pending_approved',
 ] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
@@ -1394,6 +1394,7 @@ export async function calcMealMacros(
       it = { ...it, approved_nutrition: undefined, user_kcal: undefined }
     }
     if (approved && it.quantity_g > 0 && approvedValuesValid && !approvedHasImpossibleDensity) {
+      const approvedSource = approved.source ?? 'pending_approved'
       const nat = naturalUnit(it.food_name, it.quantity_g)
       const kcal = +approved.kcal.toFixed(1)
       const protein = +approved.protein_g.toFixed(2)
@@ -1401,7 +1402,7 @@ export async function calcMealMacros(
       const fat = +approved.fat_g.toFixed(2)
       matched.push({
         food_name: it.food_name,
-        matched_taco_name: '[pending aprovado]',
+        matched_taco_name: `[pending aprovado: ${approvedSource}]`,
         matched_taco_id: approved.food_db_id ?? null,
         quantity_g: it.quantity_g,
         kcal,
@@ -1410,7 +1411,7 @@ export async function calcMealMacros(
         fat_g: fat,
         fiber_g: 0,
         similarity: 1,
-        source: 'pending_approved',
+        source: approvedSource,
         display_qty: nat.display_qty,
         display_unit: nat.display_unit,
       })

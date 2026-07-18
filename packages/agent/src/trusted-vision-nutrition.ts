@@ -5,6 +5,7 @@ interface VisionNutritionMealItem {
   quantity_g: number
   user_kcal?: number | null
   approved_nutrition?: {
+    source?: 'product_label'
     kcal: number
     protein_g: number
     carbs_g: number
@@ -91,6 +92,7 @@ export function attachTrustedVisionNutrition<T extends VisionNutritionMealItem>(
     return {
       ...item,
       approved_nutrition: {
+        source: 'product_label',
         kcal: scale(label.per100g.kcal, item.quantity_g),
         protein_g: scale(label.per100g.protein_g, item.quantity_g),
         carbs_g: scale(label.per100g.carbs_g, item.quantity_g),

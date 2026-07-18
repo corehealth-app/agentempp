@@ -713,6 +713,24 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
     })
   })
 
+  it('pending legado não vira fonte histórica só por carregar food_db_id', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'legacy-pending-approved',
+        food_name: 'queijo mussarela',
+        quantity_g: 40,
+        kcal: 70,
+        protein_g: 5.65,
+        carbs_g: 0.75,
+        fat_g: 5.5,
+        source: 'pending_approved',
+        food_db_id: 40,
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'queijo mussarela')).resolves.toBeNull()
+  })
+
   it('nome genérico não herda silenciosamente um subtipo do histórico', async () => {
     const mock = makeMock({}, [
       {
@@ -2093,6 +2111,35 @@ describe('calcMealMacros — user_kcal override (Bug Luciana 2026-06-16)', () =>
       fat_g: 13.5,
     })
     expect(result.totals.kcal).toBe(247.5)
+  })
+
+  it('preserva a fonte original de uma estimativa aprovada sem promovê-la a canônica', async () => {
+    const mock = makeMock({})
+    const result = await calcMealMacros(
+      mock,
+      [
+        {
+          food_name: 'produto artesanal',
+          quantity_g: 100,
+          approved_nutrition: {
+            source: 'llm_estimate',
+            food_db_id: null,
+            kcal: 150,
+            protein_g: 6,
+            carbs_g: 20,
+            fat_g: 5,
+          },
+        },
+      ],
+      'BR',
+      'user-confirming-estimate',
+    )
+
+    expect(result.items[0]).toMatchObject({
+      source: 'llm_estimate',
+      matched_taco_id: null,
+      kcal: 150,
+    })
   })
 
   it('pending aprovado com densidade fisicamente impossível não chega ao registro', async () => {

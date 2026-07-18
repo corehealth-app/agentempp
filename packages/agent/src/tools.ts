@@ -20,6 +20,7 @@ import {
   mentionsFoodItem,
   parseUserKcalOverridesFromMessages,
   type MealItemInput,
+  type MealNutritionSource,
 } from './meal-pipeline.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
@@ -1525,6 +1526,7 @@ export const registraRefeicao: ToolDefinition = {
       quantity_g: number
       user_kcal?: number | null
       approved_nutrition?: {
+        source?: MealNutritionSource
         food_db_id?: number | null
         kcal: number
         protein_g: number

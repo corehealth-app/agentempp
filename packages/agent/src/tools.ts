@@ -13,7 +13,7 @@ import {
   evaluateGainVelocity,
   type SnapshotForAgg,
 } from '@mpp/core'
-import type { TablesUpdate } from '@mpp/db'
+import type { Json, TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import {
   calcMealMacros,
@@ -22,6 +22,7 @@ import {
   type MealItemInput,
   type MealNutritionSource,
 } from './meal-pipeline.js'
+import { applyKnownProductServingQuantities } from './known-product-servings.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -1475,6 +1476,33 @@ export const registraRefeicao: ToolDefinition = {
           message:
             'Não consegui identificar com segurança qual registro deve ser corrigido. Confirme o alimento e o horário da refeição; nenhum registro foi apagado ou adicionado.',
         }
+      }
+    }
+
+    // ========================================================================
+    // PORÇÕES DE PRODUTOS COM RÓTULO VERIFICADO
+    // ========================================================================
+    // O modelo costumava converter "1 rap10" para uma tortilha genérica de
+    // 35 g. Para o produto Mission usado pelos pacientes em Orlando, o rótulo
+    // verificado declara 43 g. Aplique essa correção antes do dedup/cálculo,
+    // somente quando país, produto e número de unidades são inequívocos.
+    {
+      const servingPolicy = applyKnownProductServingQuantities(
+        args.items,
+        ctx.currentUserText ?? '',
+        ctx.userCountry ?? 'BR',
+      )
+      if (servingPolicy.adjustments.length > 0) {
+        args.items = servingPolicy.items
+        const properties: Json = {
+          provider_message_id: ctx.providerMessageId ?? null,
+          adjustments: servingPolicy.adjustments.map((adjustment) => ({ ...adjustment })),
+        }
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'nutrition.verified_product_serving_applied',
+          properties,
+        })
       }
     }
 

@@ -17,6 +17,7 @@ import type { TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import {
   calcMealMacros,
+  mentionsFoodItem,
   parseUserKcalOverridesFromMessages,
   type MealItemInput,
 } from './meal-pipeline.js'
@@ -1694,13 +1695,32 @@ export const registraRefeicao: ToolDefinition = {
           const dedupKey = (food: string, qty: number) => `${normName(food)}|${Math.round(qty)}`
           const existingKeys = new Set(existing.map((r) => dedupKey(r.food_name, r.quantity_g)))
           const skipped: Array<{ food_name: string; quantity_g: number }> = []
+          const explicitlyMentioned: Array<{ food_name: string; quantity_g: number }> = []
+          const currentSourceText = ctx.currentUserText?.trim() ?? ''
           const survivors = calc.items.filter((it) => {
             if (existingKeys.has(dedupKey(it.food_name, it.quantity_g))) {
+              if (currentSourceText && mentionsFoodItem(currentSourceText, it.food_name)) {
+                explicitlyMentioned.push({ food_name: it.food_name, quantity_g: it.quantity_g })
+                return true
+              }
               skipped.push({ food_name: it.food_name, quantity_g: it.quantity_g })
               return false
             }
             return true
           })
+          if (explicitlyMentioned.length > 0) {
+            await ctx.supabase.from('product_events').insert({
+              user_id: ctx.userId,
+              event: 'tool.same_day_dedup_bypassed_explicit_item',
+              properties: {
+                meal_type: args.meal_type,
+                provider_message_id: ctx.providerMessageId ?? null,
+                date: effectiveDate,
+                item_count: explicitlyMentioned.length,
+                items: explicitlyMentioned,
+              },
+            })
+          }
           if (skipped.length > 0) {
             await ctx.supabase.from('product_events').insert({
               user_id: ctx.userId,

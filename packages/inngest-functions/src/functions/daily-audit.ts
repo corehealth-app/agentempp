@@ -43,6 +43,7 @@ interface CanonicalNutritionReference {
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  is_verified: boolean | null
 }
 
 export interface NutritionAuditRow {
@@ -61,10 +62,12 @@ export function countNutritionAnomalies(rows: NutritionAuditRow[]): {
   impossibleMacroMass: number
   canonicalMissingFoodDbId: number
   canonicalDrift: number
+  unverifiedFoodDbReference: number
 } {
   let impossibleMacroMass = 0
   let canonicalMissingFoodDbId = 0
   let canonicalDrift = 0
+  let unverifiedFoodDbReference = 0
 
   for (const row of rows) {
     const quantity = Number(row.quantity_g)
@@ -78,6 +81,11 @@ export function countNutritionAnomalies(rows: NutritionAuditRow[]): {
       impossibleMacroMass += 1
     }
 
+    const reference = Array.isArray(row.food_db) ? (row.food_db[0] ?? null) : row.food_db
+    if (Number.isInteger(row.food_db_id) && reference?.is_verified === false) {
+      unverifiedFoodDbReference += 1
+    }
+
     const canonical = row.source === 'canonical_exact' || row.source === 'canonical_fuzzy'
     if (!canonical) continue
     if (!Number.isInteger(row.food_db_id)) {
@@ -85,7 +93,6 @@ export function countNutritionAnomalies(rows: NutritionAuditRow[]): {
       continue
     }
 
-    const reference = Array.isArray(row.food_db) ? (row.food_db[0] ?? null) : row.food_db
     if (!reference || !Number.isFinite(quantity) || quantity <= 0) continue
     const factor = quantity / 100
     const comparisons = [
@@ -110,6 +117,7 @@ export function countNutritionAnomalies(rows: NutritionAuditRow[]): {
     impossibleMacroMass,
     canonicalMissingFoodDbId,
     canonicalDrift,
+    unverifiedFoodDbReference,
   }
 }
 
@@ -452,7 +460,7 @@ export const dailyAuditFn = inngest.createFunction(
       const { data: nutritionRows, error: nutritionRowsError } = await supabase
         .from('meal_logs')
         .select(
-          'kcal, quantity_g, protein_g, carbs_g, fat_g, source, food_db_id, food_db:food_db_id(kcal_per_100g, protein_g, carbs_g, fat_g)',
+          'kcal, quantity_g, protein_g, carbs_g, fat_g, source, food_db_id, food_db:food_db_id(kcal_per_100g, protein_g, carbs_g, fat_g, is_verified)',
         )
         .gte('created_at', since24h)
       throwIfQueryFailed(nutritionRowsError, 'audit nutrition density lookup failed')
@@ -505,9 +513,9 @@ export const dailyAuditFn = inngest.createFunction(
         impossibleMacroLogs: nutritionAnomalies.impossibleMacroMass,
         canonicalMissingFoodDbId: nutritionAnomalies.canonicalMissingFoodDbId,
         canonicalNutritionDrift: nutritionAnomalies.canonicalDrift,
+        unverifiedFoodDbReferences: nutritionAnomalies.unverifiedFoodDbReference,
         nutritionGuardRejections: nutritionGuardRejections ?? 0,
-        educationalImmediateRepeats:
-          educationalRotationAnomalies.immediateRepeatAfterExhaustion,
+        educationalImmediateRepeats: educationalRotationAnomalies.immediateRepeatAfterExhaustion,
         educationalSelectedAllRecent: educationalRotationAnomalies.selectedAllRecent,
       }
     })
@@ -631,6 +639,10 @@ export const dailyAuditFn = inngest.createFunction(
       alerts.push(
         `🔴 ${metrics.canonicalNutritionDrift} meal_log(s) divergente(s) da referência canônica`,
       )
+    if (metrics.unverifiedFoodDbReferences > 0)
+      alerts.push(
+        `🔴 ${metrics.unverifiedFoodDbReferences} meal_log(s) ligado(s) a referência alimentar não verificada`,
+      )
     if (metrics.educationalImmediateRepeats > 0 || metrics.educationalSelectedAllRecent > 0)
       alerts.push(
         `⚠️ rotação educativa: ${metrics.educationalImmediateRepeats} repetição(ões) imediata(s), ${metrics.educationalSelectedAllRecent} fallback(s) legado(s)`,
@@ -651,7 +663,7 @@ export const dailyAuditFn = inngest.createFunction(
       `• Registro sem resposta: ${metrics.unansweredRegistrations}${metrics.unansweredRegistrations > 0 ? ` (${metrics.unansweredNames})` : ''}\n` +
       `• País/timezone incompatível: ${metrics.timezoneCountryMismatches}\n` +
       `• Densidade nutricional impossível: ${metrics.impossibleNutritionLogs} | bloqueados: ${metrics.nutritionGuardRejections}\n` +
-      `• Macros impossíveis: ${metrics.impossibleMacroLogs} | canônico sem ID: ${metrics.canonicalMissingFoodDbId} | drift: ${metrics.canonicalNutritionDrift}\n` +
+      `• Macros impossíveis: ${metrics.impossibleMacroLogs} | canônico sem ID: ${metrics.canonicalMissingFoodDbId} | drift: ${metrics.canonicalNutritionDrift} | referência não verificada: ${metrics.unverifiedFoodDbReferences}\n` +
       `• Rotação educativa: ${metrics.educationalImmediateRepeats} repetição imediata | legado: ${metrics.educationalSelectedAllRecent}\n` +
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke

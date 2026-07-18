@@ -4,6 +4,7 @@ DO $test$
 DECLARE
   v_user_id uuid := '00000000-0000-0000-0000-000000000112';
   v_food_id integer;
+  v_unverified_food_id integer;
   v_snapshot_id uuid;
   v_result jsonb;
   v_log_count integer;
@@ -22,7 +23,9 @@ BEGIN
     fat_g,
     fiber_g,
     source,
-    country_code
+    country_code,
+    is_verified,
+    source_ref
   ) VALUES (
     'alimento canonico teste atomico',
     'testes',
@@ -32,7 +35,9 @@ BEGIN
     2,
     1,
     'test_fixture',
-    'BR'
+    'BR',
+    true,
+    'TEST:nutrition-provenance:verified'
   )
   RETURNING id INTO v_food_id;
 
@@ -78,6 +83,55 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'canonical US kumis label reference is missing or incorrect';
   END IF;
+
+  INSERT INTO public.food_db (
+    name_pt,
+    category,
+    kcal_per_100g,
+    protein_g,
+    carbs_g,
+    fat_g,
+    fiber_g,
+    source,
+    country_code
+  ) VALUES (
+    'alimento em quarentena teste atomico',
+    'testes',
+    100,
+    10,
+    12,
+    2,
+    1,
+    'admin_unverified',
+    'BR'
+  )
+  RETURNING id INTO v_unverified_food_id;
+
+  BEGIN
+    PERFORM public.register_meal_atomic(
+      p_user_id => v_user_id,
+      p_date => DATE '2026-07-13',
+      p_meal_type => 'lanche'::public.meal_type_enum,
+      p_items => jsonb_build_array(jsonb_build_object(
+        'food_name', 'alimento em quarentena teste atomico',
+        'food_db_id', v_unverified_food_id,
+        'quantity_g', 100,
+        'kcal', 100,
+        'protein_g', 10,
+        'carbs_g', 12,
+        'fat_g', 2,
+        'source', 'canonical_exact',
+        'confidence', 1
+      )),
+      p_provider_message_id => 'provider-nutrition-unverified-fk'
+    );
+    RAISE EXCEPTION 'unverified food reference was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM = 'unverified food reference was accepted' THEN
+        RAISE;
+      END IF;
+  END;
 
   BEGIN
     INSERT INTO public.food_db (

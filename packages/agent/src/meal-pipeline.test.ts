@@ -42,6 +42,7 @@ type HistoryRow = {
   fat_g: number
   source?: string
   food_db_id?: number | null
+  food_db?: { is_verified: boolean } | null
 }
 
 type CorrectionRow = {
@@ -116,6 +117,7 @@ function makeMock(
           historyRows.map((row) => ({
             source: 'canonical_exact',
             food_db_id: row.food_db_id ?? 9999,
+            food_db: { is_verified: true },
             ...row,
           })),
           failures.history,
@@ -290,6 +292,29 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
     expect(r.user_warnings).toHaveLength(0)
   })
 
+  it('azeite USDA (884 kcal/100g, categoria Fats and Oils) NÃO zera', async () => {
+    const mock = makeMock({
+      'olive oil': {
+        id: 104,
+        name_pt: 'Oil, olive, salad or cooking',
+        category: 'Fats and Oils',
+        country_code: 'US',
+        similarity: 0.92,
+        kcal_per_100g: 884,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 100,
+        fiber_g: 0,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'olive oil', quantity_g: 15 }], 'US')
+
+    expect(r.items[0]?.source).toBe('canonical_fuzzy')
+    expect(r.items[0]?.kcal).toBeCloseTo(132.6, 1)
+    expect(r.user_warnings).toHaveLength(0)
+  })
+
   it('alimento NÃO-gordo matchado contra alimento gordo SEM categoria conhecida — anchor rejeita antes, vira llm_estimate', async () => {
     // Cenário: "iogurte natural" bateu contra "creme de leite condensado".
     // Anchor "iogurte" não aparece em "creme de leite condensado" → match rejeitado
@@ -320,6 +345,44 @@ describe('calcMealMacros — sanity check densidade calórica (regressão bacon/
 })
 
 describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
+  it('prefere a fruta fresca oficial mesmo quando o doce tem trigram maior', async () => {
+    const mock = makeMock({
+      goiaba: [
+        {
+          id: 356,
+          name_pt: 'Goiaba, doce, cascão',
+          category: 'Produtos açucarados',
+          similarity: 0.368,
+          kcal_per_100g: 285.59,
+          protein_g: 0.4,
+          carbs_g: 74,
+          fat_g: 0.1,
+          fiber_g: 4,
+        },
+        {
+          id: 354,
+          name_pt: 'Goiaba, branca, com casca, crua',
+          category: 'Frutas e derivados',
+          similarity: 0.269,
+          kcal_per_100g: 51.74,
+          protein_g: 0.9,
+          carbs_g: 12.4,
+          fat_g: 0.5,
+          fiber_g: 6.3,
+        },
+      ],
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'goiaba', quantity_g: 150 }], 'BR')
+
+    expect(r.items[0]).toMatchObject({
+      matched_taco_id: 354,
+      source: 'canonical_fuzzy',
+      kcal: 77.6,
+    })
+    expect(r.user_warnings).toHaveLength(0)
+  })
+
   it('rejeita match fuzzy goiaba → goiabada e cai em estimativa de fruta', async () => {
     const mock = makeMock({
       goiaba: {
@@ -433,6 +496,72 @@ describe('calcMealMacros — goiaba fruta não casa com goiabada', () => {
     expect(r.items[0]?.matched_taco_name).toMatch(/estimativa fruta/i)
     expect(r.items[0]?.kcal).toBeLessThan(120)
     expect(r.audit_warnings.join(' ')).toMatch(/histórico implausível/i)
+  })
+})
+
+describe('calcMealMacros — produtos com código comercial', () => {
+  it('rap10 no Brasil não herda rapadura nem uma referência de outro país', async () => {
+    const mock = makeMock({
+      rap10: [
+        {
+          id: 655,
+          name_pt: 'Rapadura',
+          category: 'Produtos açucarados',
+          country_code: 'BR',
+          similarity: 0.62,
+          kcal_per_100g: 351.96,
+          protein_g: 1,
+          carbs_g: 90.8,
+          fat_g: 0.1,
+          fiber_g: 0,
+        },
+        {
+          id: 9001,
+          name_pt: 'rap10',
+          category: 'Baked Products',
+          country_code: 'US',
+          similarity: 1,
+          kcal_per_100g: 162.79,
+          protein_g: 13.95,
+          carbs_g: 44.19,
+          fat_g: 8.14,
+          fiber_g: 39.53,
+        },
+      ],
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'rap10', quantity_g: 43 }], 'BR')
+
+    expect(r.items[0]).toMatchObject({ source: 'no_match', matched_taco_id: null, kcal: 0 })
+    expect(r.user_warnings.join(' ')).toMatch(/rótulo|rotulo/i)
+  })
+
+  it('rap10 nos EUA usa a referência exata do rótulo Mission', async () => {
+    const mock = makeMock({
+      rap10: {
+        id: 9001,
+        name_pt: 'rap10',
+        category: 'Baked Products',
+        country_code: 'US',
+        similarity: 1,
+        kcal_per_100g: 162.79,
+        protein_g: 13.95,
+        carbs_g: 44.19,
+        fat_g: 8.14,
+        fiber_g: 39.53,
+      },
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'rap10', quantity_g: 43 }], 'US')
+
+    expect(r.items[0]).toMatchObject({
+      source: 'canonical_exact',
+      matched_taco_id: 9001,
+      kcal: 70,
+      protein_g: 6,
+      carbs_g: 19,
+      fat_g: 3.5,
+    })
   })
 })
 
@@ -711,6 +840,25 @@ describe('calcMealMacros — reuso do histórico do paciente (Roberto 2026-05-13
       food_db_id: 413,
       kcal_per_100g: 95,
     })
+  })
+
+  it('histórico ligado a referência em quarentena não alimenta nova refeição', async () => {
+    const mock = makeMock({}, [
+      {
+        id: 'history-quarantined-reference',
+        food_name: 'queijo mussarela',
+        quantity_g: 40,
+        kcal: 70,
+        protein_g: 5.65,
+        carbs_g: 0.75,
+        fat_g: 5.5,
+        source: 'canonical_exact',
+        food_db_id: 40,
+        food_db: { is_verified: false },
+      },
+    ])
+
+    await expect(lookupUserHistory(mock, 'user-roberto', 'queijo mussarela')).resolves.toBeNull()
   })
 
   it('pending legado não vira fonte histórica só por carregar food_db_id', async () => {
@@ -1569,6 +1717,44 @@ describe('calcMealMacros — sanity 4 inverso: rejeita kcal baixo demais (Robert
     expect(r.items[0]?.fat_g).toBeCloseTo(3, 1)
   })
 
+  it('prefere candidato grelhado compatível mesmo quando o frito tem trigram maior', async () => {
+    const mock = makeMock({
+      'frango grelhado': [
+        {
+          id: 241,
+          name_pt: 'frango frito em óleo',
+          category: 'carnes',
+          similarity: 0.72,
+          kcal_per_100g: 280,
+          protein_g: 24,
+          carbs_g: 8,
+          fat_g: 17,
+          fiber_g: 0,
+        },
+        {
+          id: 242,
+          name_pt: 'peito de frango grelhado',
+          category: 'carnes',
+          similarity: 0.58,
+          kcal_per_100g: 165,
+          protein_g: 31,
+          carbs_g: 0,
+          fat_g: 3.6,
+          fiber_g: 0,
+        },
+      ],
+    })
+
+    const r = await calcMealMacros(mock, [{ food_name: 'frango grelhado', quantity_g: 120 }], 'BR')
+
+    expect(r.items[0]).toMatchObject({
+      matched_taco_id: 242,
+      source: 'canonical_fuzzy',
+      kcal: 198,
+      fat_g: 4.32,
+    })
+  })
+
   it('"frango à milanesa" matchando entry com "milanesa" no nome MAS kcal=120/100g → REJEITA pelo sanity 4', async () => {
     // Anchor "milanesa" passa (aparece no nome do match), mas kcal absurdamente
     // baixo (120) pra categoria empanado_frango (piso 200) → rejeita e estima.
@@ -1715,14 +1901,11 @@ describe('parseUserKcalOverrides — extrai kcal explícito do texto', () => {
 
   it('associa kcal ao alimento imediatamente anterior, não ao item citado depois', async () => {
     const { parseUserKcalOverrides } = await import('./meal-pipeline.js')
-    const overrides = parseUserKcalOverrides(
-      'rap10 de 70 kcal com queijo e Nutella',
-      [
-        { food_name: 'rap10' },
-        { food_name: 'queijo mussarela' },
-        { food_name: 'Nutella' },
-      ],
-    )
+    const overrides = parseUserKcalOverrides('rap10 de 70 kcal com queijo e Nutella', [
+      { food_name: 'rap10' },
+      { food_name: 'queijo mussarela' },
+      { food_name: 'Nutella' },
+    ])
 
     expect(Object.fromEntries(overrides)).toEqual({ rap10: 70 })
   })
@@ -2212,11 +2395,7 @@ describe('calcMealMacros — referência canônica Nutella', () => {
       ],
     })
 
-    const result = await calcMealMacros(
-      mock,
-      [{ food_name: 'Nutella', quantity_g: 20 }],
-      'US',
-    )
+    const result = await calcMealMacros(mock, [{ food_name: 'Nutella', quantity_g: 20 }], 'US')
 
     expect(result.items[0]).toMatchObject({
       food_name: 'Nutella',
@@ -2228,11 +2407,7 @@ describe('calcMealMacros — referência canônica Nutella', () => {
     expect(result.items[0]?.carbs_g).toBeCloseTo(11.89, 1)
     expect(result.items[0]?.fat_g).toBeCloseTo(5.95, 1)
 
-    const resultBr = await calcMealMacros(
-      mock,
-      [{ food_name: 'Nutella', quantity_g: 20 }],
-      'BR',
-    )
+    const resultBr = await calcMealMacros(mock, [{ food_name: 'Nutella', quantity_g: 20 }], 'BR')
     expect(resultBr.items[0]?.matched_taco_id).toBe(811)
     expect(resultBr.items[0]?.kcal).toBeCloseTo(108.4, 1)
   })

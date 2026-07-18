@@ -260,7 +260,10 @@ const FOOD_MENTION_QUALIFIERS = new Set([
 
 export function mentionsFoodItem(text: string, foodName: string): boolean {
   const normalizeMention = (value: string) =>
-    normalizeFoodText(value).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+    normalizeFoodText(value)
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
   const normalizedText = normalizeMention(text)
   const textTokens = new Set(normalizedText.split(/\s+/).filter(Boolean))
   const normalizedFood = normalizeMention(foodName)
@@ -589,6 +592,21 @@ function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function productCodeIdentifiers(foodName: string): string[] {
+  const normalized = normalizeFoodText(foodName)
+  const tokens = normalized
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  const identifiers = tokens.filter((token) => /[a-z]/.test(token) && /\d/.test(token))
+  if (/\brap\s+10\b/.test(normalized)) identifiers.push('rap10')
+  return [...new Set(identifiers)]
+}
+
+function hasProductCodeIdentifier(foodName: string): boolean {
+  return productCodeIdentifiers(foodName).length > 0
+}
+
 const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
   ['abacaxi', 'abacaxi'],
   ['abacaxis', 'abacaxi'],
@@ -631,7 +649,13 @@ const SIMPLE_FRESH_FRUIT_ALIASES = new Map<string, string>([
 const SIMPLE_FRESH_FRUIT_MODIFIERS = new Set([
   'branca',
   'brancas',
+  'casca',
+  'cascas',
   'com',
+  'cru',
+  'crua',
+  'cruas',
+  'crus',
   'da',
   'das',
   'de',
@@ -973,14 +997,21 @@ export function extractAnchor(foodName: string): string | null {
   return tokens[0] ? normalizeFoodText(tokens[0]) : null
 }
 
-const TRUSTED_HISTORY_SOURCES = [
-  'canonical_exact',
-  'canonical_fuzzy',
-  'user_kcal',
-] as const
+const TRUSTED_HISTORY_SOURCES = ['canonical_exact', 'canonical_fuzzy', 'user_kcal'] as const
 
 function isTrustedHistorySource(source: string | null | undefined): boolean {
   return (TRUSTED_HISTORY_SOURCES as readonly string[]).includes(source ?? '')
+}
+
+function hasVerifiedFoodReference(
+  reference:
+    | { is_verified?: boolean | null }
+    | Array<{ is_verified?: boolean | null }>
+    | null
+    | undefined,
+): boolean {
+  const row = Array.isArray(reference) ? reference[0] : reference
+  return row?.is_verified === true
 }
 
 function canonicalSource(
@@ -1048,10 +1079,13 @@ async function matchFood(
   fat_g: number | null
   fiber_g: number | null
 }> {
-  // Pede 5 candidatos pra fazer tie-break determinístico em código (Roberto+Luciana
+  // Pede uma janela maior de candidatos pra fazer tie-break determinístico em código.
+  // Com o catálogo oficial completo, top-5 pode ser ocupado por descrições muito
+  // parecidas do mesmo país e esconder a alternativa exata do país do paciente.
+  // (Roberto+Luciana
   // 2026-06-03: alface crespa retornava 6 kcal numa chamada e 4 noutra; milho 34 vs 14
   // — postgres não garante ordem estável em ORDER BY similarity DESC quando há
-  // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-5, ordena por
+  // empate, e LIMIT 1 expõe a flutuação. Fix: pega top-N, ordena por
   // (similarity DESC, id ASC) em JS — mesma chamada, mesmo retorno, sempre).
   const { data, error } = await (
     supabase as unknown as {
@@ -1060,7 +1094,7 @@ async function matchFood(
   ).rpc('search_food_trgm', {
     search_term: name.toLowerCase(),
     min_similarity: 0.2,
-    max_results: 5,
+    max_results: 20,
     p_country: country,
   })
 
@@ -1121,11 +1155,47 @@ async function matchFood(
   })
   if (compatibleRows.length === 0) return empty
 
+  // O trigram pode ranquear um derivado acima do alimento simples ("goiaba"
+  // -> "goiaba, doce, cascão" antes de "goiaba, crua"). Se o conjunto contém
+  // uma fruta fresca compatível, descarte os doces antes do desempate. Quando
+  // só há derivados, preserve o melhor candidato para o guard posterior gerar
+  // o aviso explícito e cair no fallback de fruta.
+  let candidateRows = compatibleRows
+  if (hasProductCodeIdentifier(name)) {
+    const identifiers = productCodeIdentifiers(name)
+    const sameCountryRows = candidateRows.filter((row) => {
+      if (row.country_code?.toUpperCase() !== country.toUpperCase()) return false
+      const candidateTokens = normalizeFoodText(row.name_pt ?? '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+      return identifiers.every((identifier) => candidateTokens.includes(identifier))
+    })
+    // Um código comercial não é portável entre países: "rap10" no Brasil
+    // não pode herdar automaticamente o rótulo do produto Mission dos EUA.
+    if (sameCountryRows.length === 0) return empty
+    candidateRows = sameCountryRows
+  }
+  if (isSimpleFreshFruitName(name)) {
+    const freshRows = candidateRows.filter(
+      (row) => !isSweetDerivedFruitMismatch(name, row.name_pt, row.category),
+    )
+    if (freshRows.length > 0) candidateRows = freshRows
+  }
+
+  // A mesma regra vale para preparo e composição: se há uma alternativa
+  // compatível no top-N, não escolha primeiro a versão frita/com pele/integral
+  // errada para só depois rejeitá-la.
+  const modifierCompatibleRows = candidateRows.filter(
+    (row) => row.name_pt == null || !hasNutritionModifierConflict(name, row.name_pt),
+  )
+  if (modifierCompatibleRows.length > 0) candidateRows = modifierCompatibleRows
+
   // Tie-break determinístico: similarity DESC, país do paciente, id ASC.
   // Empate de similarity (até 0.001 de diferença, abaixo do ruído de cast
   // real→float) deve preservar a preferência da RPC por país. Reordenar só
   // por id fazia uma linha BR mais antiga vencer a US para pacientes nos EUA.
-  const sorted = [...compatibleRows].sort((a, b) => {
+  const sorted = [...candidateRows].sort((a, b) => {
     const simA = a.similarity ?? 0
     const simB = b.similarity ?? 0
     if (Math.abs(simA - simB) > 0.001) return simB - simA
@@ -1292,7 +1362,9 @@ export async function lookupUserHistory(
   const supaTyped = supabase as any
   const { data, error } = await supaTyped
     .from('meal_logs')
-    .select('id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source')
+    .select(
+      'id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, food_db:food_db_id(is_verified)',
+    )
     .eq('user_id', userId)
     .in('source', [...TRUSTED_HISTORY_SOURCES])
     .gt('kcal', 0)
@@ -1310,9 +1382,13 @@ export async function lookupUserHistory(
     carbs_g: number
     fat_g: number
     source: string | null
+    food_db: { is_verified?: boolean | null } | Array<{ is_verified?: boolean | null }> | null
   }>
   const compatibleRows = rows.filter(
-    (r) => isTrustedHistorySource(r.source) && !hasNutritionModifierConflict(foodName, r.food_name),
+    (r) =>
+      isTrustedHistorySource(r.source) &&
+      hasVerifiedFoodReference(r.food_db) &&
+      !hasNutritionModifierConflict(foodName, r.food_name),
   )
   // Histórico pessoal só é seguro para o mesmo nome normalizado. Similaridade
   // textual não comprova equivalência nutricional: "sorvete" e "sorvete de
@@ -1878,7 +1954,10 @@ export async function calcMealMacros(
     const queryWords = it.food_name.trim().split(/\s+/).length
     const queryLen = it.food_name.trim().length
     const isShortQuery = queryWords <= 2 || queryLen <= 15
-    const matchThreshold = isShortQuery ? 0.3 : 0.45
+    const requestedFruitKey = simpleFreshFruitKey(it.food_name)
+    const matchedFruitKey = simpleFreshFruitKey(m.name_pt ?? '')
+    const sameFreshFruit = requestedFruitKey != null && requestedFruitKey === matchedFruitKey
+    const matchThreshold = sameFreshFruit ? 0.2 : isShortQuery ? 0.3 : 0.45
     if (
       m.id != null &&
       m.kcal_per_100g != null &&
@@ -1935,10 +2014,23 @@ export async function calcMealMacros(
       // etc. Categoria + regex juntos cobrem todos casos legítimos.
       const kcalPerG = (m.kcal_per_100g ?? 0) / 100
       const lowerName = it.food_name.toLowerCase()
-      const matchCat = (m.category ?? '').toLowerCase()
-      const categoryAllowsHighKcal = ['gorduras', 'oleaginosas', 'sementes', 'doces'].includes(
-        matchCat,
-      )
+      const matchCat = normalizeFoodText(m.category ?? '')
+      const categoryAllowsHighKcal = [
+        'gorduras',
+        'oleaginosas',
+        'sementes',
+        'doces',
+        // Categorias oficiais do USDA SR Legacy. Sem estas equivalências,
+        // azeites, manteigas, castanhas e chocolates em inglês eram encontrados
+        // corretamente e depois descartados pelo sanity check em português.
+        'fats and oils',
+        'nut and seed products',
+        'sweets',
+        'snacks',
+        'baked products',
+        'dairy and egg products',
+        'sausages and luncheon meats',
+      ].includes(matchCat)
       const isFatLike =
         categoryAllowsHighKcal ||
         /azeite|[óo]leo|manteiga|margarina|maionese|gordura|nozes|castanha|am[êe]ndoa|amendoim|pasta de amendoim|nutella|tahini|abacate|coco|chia|linha[çc]a|gergelim|girassol|abóbora|bacon|toucinho|torresmo|salame|chouri[çc]o|sal[áa]mi|pepperoni|mortadela|paio|presunto parma|copa|linguiça|chocolate|brigadeiro|beijinho|trufa|queijo parmes[ãa]o|parmes[ãa]o|gorgonzola|brie|camembert|provolone|gruy[èe]re|requeij[ãa]o cremoso|cream cheese|catupiry|nata|creme de leite|leite de coco|granola/.test(
@@ -2118,7 +2210,7 @@ export async function calcMealMacros(
       const { data: prior, error: priorError } = await supaTyped
         .from('meal_logs')
         .select(
-          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id',
+          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id, food_db:food_db_id(is_verified)',
         )
         .eq('user_id', userIdHint ?? '_no_user_')
         .ilike('food_name', it.food_name)
@@ -2140,11 +2232,16 @@ export async function calcMealMacros(
             carbs_g: number
             fat_g: number
             source: string | null
+            food_db:
+              | { is_verified?: boolean | null }
+              | Array<{ is_verified?: boolean | null }>
+              | null
           }>
         ).filter(
           (p) =>
             isTrustedHistorySource(p.source) &&
             Number.isInteger(p.food_db_id) &&
+            hasVerifiedFoodReference(p.food_db) &&
             normalizeFoodText(p.food_name) === normalizeFoodText(it.food_name) &&
             !hasNutritionModifierConflict(it.food_name, p.food_name),
         )
@@ -2234,6 +2331,33 @@ export async function calcMealMacros(
           }
         }
       }
+      // ────────────────────────────────────────────────────────────────────
+      // Produto/SKU com código sem referência exata no país: não invente uma
+      // densidade por categoria. O rótulo é a única fonte segura e a proposta
+      // fica bloqueada em zero até o paciente fornecê-lo.
+      if (hasProductCodeIdentifier(it.food_name)) {
+        userWarnings.push(
+          `Não encontrei uma referência verificada para "${it.food_name}" neste país. Envie uma foto legível do rótulo para eu usar as calorias e os macros corretos.`,
+        )
+        auditWarnings.push(
+          `"${it.food_name}" não recebeu estimativa porque contém um código comercial sem referência verificada no país do paciente.`,
+        )
+        matched.push({
+          food_name: it.food_name,
+          matched_taco_name: '',
+          matched_taco_id: null,
+          quantity_g: it.quantity_g,
+          kcal: 0,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: 0,
+          similarity: 0,
+          source: 'no_match',
+        })
+        continue
+      }
+
       // ────────────────────────────────────────────────────────────────────
       // FALLBACK 2: sem reuso — ESTIMA por categoria (em vez de zerar).
       // ────────────────────────────────────────────────────────────────────

@@ -103,13 +103,13 @@ logs, reavaliacoes e adesao.
 **Produces:** daily state informa meta/status de hidratacao e disponibilidade real
 de suplementos/medicamentos sem inventar dados.
 
-- [ ] Escrever teste RED para meta opcional e itens privados da rotina.
-- [ ] Fazer mudanca aditiva no DTO mantendo `bodyflow.daily-state.v1`.
-- [ ] Documentar contratos, estados, limites e fronteira sem APNs.
-- [ ] Rodar suites completas, typecheck, build, Biome dos arquivos alterados e
+- [x] Escrever teste RED para meta opcional e itens privados da rotina.
+- [x] Fazer mudanca aditiva no DTO mantendo `bodyflow.daily-state.v1`.
+- [x] Documentar contratos, estados, limites e fronteira sem APNs.
+- [x] Rodar suites completas, typecheck, build, Biome dos arquivos alterados e
   `git diff --check`.
-- [ ] Fazer dry-run e aplicar migrations somente em staging apos validar o ref.
-- [ ] Rodar teste SQL transacional, lint e advisors em staging.
-- [ ] Confirmar zero dados sinteticos remanescentes e crons ainda inativos.
-- [ ] Commit: `docs(mobile): document push and routine contracts`.
+- [x] Fazer dry-run e aplicar migrations somente em staging apos validar o ref.
+- [x] Rodar teste SQL transacional, lint e advisors em staging.
+- [x] Confirmar zero dados sinteticos remanescentes e crons ainda inativos.
+- [x] Commit: `feat(mobile-api): expose routine in daily state`.
 - [ ] Push da branch e abrir PR draft contra `codex/bodyflow-secure-media-v1`.

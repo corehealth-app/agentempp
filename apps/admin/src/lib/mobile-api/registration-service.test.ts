@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildMealPendingProposal,
   cancelRegistration,
+  confirmRegistration,
   proposeRegistration,
 } from './registration-service'
 
@@ -128,5 +129,42 @@ describe('mobile registration service', () => {
       ['id', 'registration-1'],
       ['user_id', 'patient-1'],
     ])
+  })
+
+  it('replays an already confirmed registration without writing it again', async () => {
+    const builder = {
+      select() {
+        return this
+      },
+      eq() {
+        return this
+      },
+      async maybeSingle() {
+        return {
+          data: {
+            id: 'registration-1',
+            proposal: { kind: 'meal', mealType: 'jantar' },
+            status: 'confirmed',
+            created_at: '2026-07-20T12:00:00Z',
+            expires_at: '2026-07-21T12:00:00Z',
+            resolved_at: '2026-07-20T12:10:00Z',
+          },
+          error: null,
+        }
+      },
+    }
+    const supabase = { from: () => builder }
+
+    await expect(
+      confirmRegistration(
+        supabase as never,
+        { userId: 'patient-1', patient: {} } as never,
+        'registration-1',
+      ),
+    ).resolves.toMatchObject({
+      id: 'registration-1',
+      status: 'confirmed',
+      already_confirmed: true,
+    })
   })
 })

@@ -2,6 +2,7 @@ export type { InngestEvents } from './client.js'
 export { inngest } from './client.js'
 
 import { bufferListenerFn } from './functions/buffer-listener.js'
+import { coachContentPackActivationFn } from './functions/coach-content-pack-activation.js'
 import { dailyAuditFn } from './functions/daily-audit.js'
 import { dailyCloserFn } from './functions/daily-closer.js'
 import { dailyGapCheckerFn } from './functions/daily-gap-checker.js'
@@ -44,10 +45,12 @@ export const allFunctions = [
   mediaRetentionCleanupFn,
   reminderSchedulerFn,
   reminderClaimFn,
+  coachContentPackActivationFn,
 ]
 
 export {
   bufferListenerFn,
+  coachContentPackActivationFn,
   dailyAuditFn,
   dailyCloserFn,
   dailyGapCheckerFn,

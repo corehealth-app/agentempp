@@ -10,6 +10,15 @@ DECLARE
   v_actor_id uuid := '00000000-0000-0000-0000-000000000802';
   v_pack_id uuid := '00000000-0000-0000-0000-000000000803';
   v_other_pack_id uuid := '00000000-0000-0000-0000-000000000804';
+  v_reminder_user_id uuid := '00000000-0000-0000-0000-000000000805';
+  v_reminder_rule_id uuid;
+  v_second_reminder_rule_id uuid;
+  v_missing_reminder_rule_id uuid;
+  v_routine_item_id uuid;
+  v_reminder_first jsonb;
+  v_reminder_second jsonb;
+  v_reminder_missing jsonb;
+  v_reminder_retry jsonb;
   v_first jsonb;
   v_retry jsonb;
   v_second jsonb;
@@ -24,6 +33,7 @@ DECLARE
   v_locale_isolated jsonb;
   v_mascot jsonb;
   v_version_id uuid;
+  v_usage_count integer;
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
     'coach_personalities',
@@ -60,6 +70,20 @@ BEGIN
       RAISE EXCEPTION 'client role has a forbidden privilege on public.%', v_table;
     END IF;
   END LOOP;
+
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'notification_deliveries'
+      AND column_name IN (
+        'coach_message_usage_id',
+        'coach_template_version_id',
+        'locale'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'notification deliveries are missing immutable coach catalog references';
+  END IF;
 
   FOREACH v_function IN ARRAY ARRAY[
     'public.set_user_coach_personality(uuid,text)',
@@ -407,6 +431,166 @@ BEGIN
   IF v_email_disabled->>'outcome' <> 'suppressed'
     OR v_email_disabled->>'reason' <> 'delivery_disabled' THEN
     RAISE EXCEPTION 'disabled email delivery was not suppressed';
+  END IF;
+
+  INSERT INTO public.users (id, name, timezone, locale)
+  VALUES (v_reminder_user_id, 'Synthetic Reminder Coach Test', 'America/New_York', 'pt-BR');
+
+  PERFORM public.set_user_coach_personality(v_reminder_user_id, 'focus');
+  PERFORM public.upsert_mobile_device(
+    v_reminder_user_id,
+    'coach-catalog-reminder-device',
+    'sandbox',
+    repeat('9', 64)
+  );
+
+  INSERT INTO public.notification_preferences (
+    user_id,
+    push_enabled,
+    daily_push_limit
+  ) VALUES (
+    v_reminder_user_id,
+    true,
+    2
+  );
+
+  UPDATE public.coach_message_template_versions version
+  SET status = 'archived',
+      archived_at = timestamptz '2026-07-20 13:50:00+00'
+  FROM public.coach_message_templates template
+  WHERE template.id = version.template_id
+    AND template.personality_code = 'focus'
+    AND template.context = 'workout'
+    AND template.channel = 'push'
+    AND template.locale = 'pt-BR';
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_reminder_user_id,
+    'workout',
+    time '10:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_reminder_rule_id;
+
+  v_reminder_first := public.claim_reminder_event(
+    v_reminder_rule_id,
+    timestamptz '2026-07-20 14:00:00+00',
+    timestamptz '2026-07-20 14:00:00+00'
+  );
+
+  IF v_reminder_first->>'status' <> 'queued'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.notification_deliveries delivery
+      JOIN public.coach_message_usage usage
+        ON usage.id = delivery.coach_message_usage_id
+        AND usage.template_version_id = delivery.coach_template_version_id
+      WHERE delivery.reminder_event_id = (v_reminder_first->>'event_id')::uuid
+        AND delivery.personality = 'balanced'
+        AND delivery.locale = 'pt-BR'
+        AND usage.requested_personality = 'focus'
+        AND usage.effective_personality = 'balanced'
+        AND usage.reason = 'balanced_fallback'
+    ) THEN
+    RAISE EXCEPTION 'reminder did not preserve the deterministic balanced fallback: %',
+      v_reminder_first;
+  END IF;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_reminder_user_id,
+    'reengagement',
+    time '10:30',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_second_reminder_rule_id;
+
+  v_reminder_second := public.claim_reminder_event(
+    v_second_reminder_rule_id,
+    timestamptz '2026-07-20 14:30:00+00',
+    timestamptz '2026-07-20 14:30:00+00'
+  );
+
+  IF v_reminder_second->>'status' <> 'queued'
+    OR (
+      SELECT count(*)
+      FROM public.reminder_events event
+      WHERE event.user_id = v_reminder_user_id
+        AND event.status = 'queued'
+    ) <> 2 THEN
+    RAISE EXCEPTION 'linked catalog usage double-counted the daily push limit: %',
+      v_reminder_second;
+  END IF;
+
+  UPDATE public.notification_preferences
+  SET daily_push_limit = 8
+  WHERE user_id = v_reminder_user_id;
+
+  INSERT INTO public.routine_items (user_id, item_type, name, active)
+  VALUES (v_reminder_user_id, 'medication', 'Synthetic catalog test item', true)
+  RETURNING id INTO v_routine_item_id;
+
+  UPDATE public.coach_message_template_versions version
+  SET status = 'archived',
+      archived_at = timestamptz '2026-07-20 14:50:00+00'
+  FROM public.coach_message_templates template
+  WHERE template.id = version.template_id
+    AND template.personality_code IN ('focus', 'balanced')
+    AND template.context = 'medication'
+    AND template.channel = 'push'
+    AND template.locale = 'pt-BR';
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    routine_item_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_reminder_user_id,
+    v_routine_item_id,
+    'medication',
+    time '11:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_missing_reminder_rule_id;
+
+  v_reminder_missing := public.claim_reminder_event(
+    v_missing_reminder_rule_id,
+    timestamptz '2026-07-20 15:00:00+00',
+    timestamptz '2026-07-20 15:00:00+00'
+  );
+  v_reminder_retry := public.claim_reminder_event(
+    v_missing_reminder_rule_id,
+    timestamptz '2026-07-20 15:00:00+00',
+    timestamptz '2026-07-20 15:01:00+00'
+  );
+
+  SELECT count(*)
+  INTO v_usage_count
+  FROM public.coach_message_usage
+  WHERE user_id = v_reminder_user_id
+    AND context = 'medication'
+    AND channel = 'push';
+
+  IF v_reminder_missing->>'status' <> 'suppressed'
+    OR v_reminder_missing->>'suppression_reason' <> 'coach_message_catalog_incomplete'
+    OR (v_reminder_retry->>'existing')::boolean IS NOT TRUE
+    OR v_reminder_retry->>'event_id' <> v_reminder_missing->>'event_id'
+    OR v_usage_count <> 1
+    OR EXISTS (
+      SELECT 1
+      FROM public.notification_deliveries
+      WHERE reminder_event_id = (v_reminder_missing->>'event_id')::uuid
+    ) THEN
+    RAISE EXCEPTION 'missing reminder catalog copy was not fail-closed and retry-safe: first %, retry %, usage %',
+      v_reminder_missing, v_reminder_retry, v_usage_count;
   END IF;
 
   IF EXISTS (

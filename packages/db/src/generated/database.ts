@@ -1724,9 +1724,12 @@ export type Database = {
         Row: {
           attempt_count: number
           channel: string
+          coach_message_usage_id: string | null
+          coach_template_version_id: string | null
           created_at: string
           error_code: string | null
           id: string
+          locale: string | null
           mobile_device_id: string
           personality: string
           provider: string
@@ -1741,9 +1744,12 @@ export type Database = {
         Insert: {
           attempt_count?: number
           channel: string
+          coach_message_usage_id?: string | null
+          coach_template_version_id?: string | null
           created_at?: string
           error_code?: string | null
           id?: string
+          locale?: string | null
           mobile_device_id: string
           personality: string
           provider: string
@@ -1758,9 +1764,12 @@ export type Database = {
         Update: {
           attempt_count?: number
           channel?: string
+          coach_message_usage_id?: string | null
+          coach_template_version_id?: string | null
           created_at?: string
           error_code?: string | null
           id?: string
+          locale?: string | null
           mobile_device_id?: string
           personality?: string
           provider?: string
@@ -1773,6 +1782,24 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notification_deliveries_coach_usage_owner_version_fkey"
+            columns: [
+              "coach_message_usage_id",
+              "user_id",
+              "coach_template_version_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "coach_message_usage"
+            referencedColumns: ["id", "user_id", "template_version_id"]
+          },
+          {
+            foreignKeyName: "notification_deliveries_coach_version_fkey"
+            columns: ["coach_template_version_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_template_versions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notification_deliveries_device_owner_fkey"
             columns: ["mobile_device_id", "user_id"]

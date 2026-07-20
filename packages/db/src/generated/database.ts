@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -371,6 +376,369 @@ export type Database = {
           id?: string
           ip_address?: string | null
           user_agent?: string | null
+        }
+        Relationships: []
+      }
+      coach_content_pack_entries: {
+        Row: {
+          created_at: string
+          pack_id: string
+          template_id: string
+          template_version_id: string
+        }
+        Insert: {
+          created_at?: string
+          pack_id: string
+          template_id: string
+          template_version_id: string
+        }
+        Update: {
+          created_at?: string
+          pack_id?: string
+          template_id?: string
+          template_version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_content_pack_entries_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "coach_content_packs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_content_pack_entries_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_content_pack_entries_version_template_fkey"
+            columns: ["template_version_id", "template_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_template_versions"
+            referencedColumns: ["id", "template_id"]
+          },
+        ]
+      }
+      coach_content_packs: {
+        Row: {
+          activated_at: string | null
+          activated_by: string | null
+          approved_at: string | null
+          approved_by: string | null
+          archived_at: string | null
+          created_at: string
+          created_by: string | null
+          effective_at: string | null
+          id: string
+          label: string
+          parent_pack_id: string | null
+          slug: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          activated_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_at?: string | null
+          id?: string
+          label: string
+          parent_pack_id?: string | null
+          slug: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          activated_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_at?: string | null
+          id?: string
+          label?: string
+          parent_pack_id?: string | null
+          slug?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_content_packs_parent_pack_id_fkey"
+            columns: ["parent_pack_id"]
+            isOneToOne: false
+            referencedRelation: "coach_content_packs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_message_context_policies: {
+        Row: {
+          channel: string
+          context: string
+          cooldown_seconds: number
+          created_at: string
+          delivery_enabled: boolean
+          max_per_local_day: number | null
+          refresh_cadence: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          context: string
+          cooldown_seconds?: number
+          created_at?: string
+          delivery_enabled?: boolean
+          max_per_local_day?: number | null
+          refresh_cadence: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          context?: string
+          cooldown_seconds?: number
+          created_at?: string
+          delivery_enabled?: boolean
+          max_per_local_day?: number | null
+          refresh_cadence?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      coach_message_template_versions: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          archived_at: string | null
+          authored_by: string | null
+          body: string
+          content_hash: string
+          created_at: string
+          id: string
+          provenance: string
+          status: string
+          subject: string | null
+          template_id: string
+          title: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          archived_at?: string | null
+          authored_by?: string | null
+          body: string
+          content_hash: string
+          created_at?: string
+          id?: string
+          provenance: string
+          status?: string
+          subject?: string | null
+          template_id: string
+          title?: string | null
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          archived_at?: string | null
+          authored_by?: string | null
+          body?: string
+          content_hash?: string
+          created_at?: string
+          id?: string
+          provenance?: string
+          status?: string
+          subject?: string | null
+          template_id?: string
+          title?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_message_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_message_templates: {
+        Row: {
+          allowed_variables: string[]
+          channel: string
+          context: string
+          created_at: string
+          id: string
+          locale: string
+          personality_code: string
+          required_variables: string[]
+          template_key: string
+          variant: number
+        }
+        Insert: {
+          allowed_variables?: string[]
+          channel: string
+          context: string
+          created_at?: string
+          id?: string
+          locale: string
+          personality_code: string
+          required_variables?: string[]
+          template_key: string
+          variant: number
+        }
+        Update: {
+          allowed_variables?: string[]
+          channel?: string
+          context?: string
+          created_at?: string
+          id?: string
+          locale?: string
+          personality_code?: string
+          required_variables?: string[]
+          template_key?: string
+          variant?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_message_templates_personality_code_fkey"
+            columns: ["personality_code"]
+            isOneToOne: false
+            referencedRelation: "coach_personalities"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      coach_message_usage: {
+        Row: {
+          channel: string
+          context: string
+          effective_personality: string
+          event_key_hash: string | null
+          id: string
+          local_date: string
+          locale: string
+          occurred_at: string
+          outcome: string
+          pack_id: string | null
+          reason: string
+          requested_personality: string
+          template_id: string | null
+          template_version_id: string | null
+          user_id: string
+        }
+        Insert: {
+          channel: string
+          context: string
+          effective_personality: string
+          event_key_hash?: string | null
+          id?: string
+          local_date: string
+          locale: string
+          occurred_at?: string
+          outcome: string
+          pack_id?: string | null
+          reason: string
+          requested_personality: string
+          template_id?: string | null
+          template_version_id?: string | null
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          context?: string
+          effective_personality?: string
+          event_key_hash?: string | null
+          id?: string
+          local_date?: string
+          locale?: string
+          occurred_at?: string
+          outcome?: string
+          pack_id?: string | null
+          reason?: string
+          requested_personality?: string
+          template_id?: string | null
+          template_version_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_message_usage_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "coach_content_packs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_message_usage_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_message_usage_template_version_id_fkey"
+            columns: ["template_version_id"]
+            isOneToOne: false
+            referencedRelation: "coach_message_template_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_message_usage_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_personalities: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          description_en_us: string
+          description_pt_br: string
+          name_en_us: string
+          name_pt_br: string
+          selectable: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          description_en_us: string
+          description_pt_br: string
+          name_en_us: string
+          name_pt_br: string
+          selectable?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          description_en_us?: string
+          description_pt_br?: string
+          name_en_us?: string
+          name_pt_br?: string
+          selectable?: boolean
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2219,6 +2587,45 @@ export type Database = {
         }
         Relationships: []
       }
+      user_coach_preferences: {
+        Row: {
+          created_at: string
+          personality_code: string
+          selected_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          personality_code: string
+          selected_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          personality_code?: string
+          selected_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_coach_preferences_personality_code_fkey"
+            columns: ["personality_code"]
+            isOneToOne: false
+            referencedRelation: "coach_personalities"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "user_coach_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_food_corrections: {
         Row: {
           confirmed_count: number
@@ -2268,6 +2675,76 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_food_corrections_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_mascot_state: {
+        Row: {
+          changed_at: string
+          created_at: string
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          changed_at?: string
+          created_at?: string
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          changed_at?: string
+          created_at?: string
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_mascot_state_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_mascot_state_events: {
+        Row: {
+          event_key_hash: string
+          from_state: string | null
+          id: string
+          occurred_at: string
+          reason: string
+          to_state: string
+          user_id: string
+        }
+        Insert: {
+          event_key_hash: string
+          from_state?: string | null
+          id?: string
+          occurred_at?: string
+          reason: string
+          to_state: string
+          user_id: string
+        }
+        Update: {
+          event_key_hash?: string
+          from_state?: string | null
+          id?: string
+          occurred_at?: string
+          reason?: string
+          to_state?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_mascot_state_events_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -2874,6 +3351,14 @@ export type Database = {
       }
     }
     Functions: {
+      activate_coach_content_pack: {
+        Args: { p_activated_by: string; p_now: string; p_pack_id: string }
+        Returns: Json
+      }
+      activate_due_coach_content_pack: {
+        Args: { p_now: string }
+        Returns: Json
+      }
       admin_role: { Args: never; Returns: string }
       advance_reevaluation_schedule: {
         Args: { p_closing_date: string; p_user_id: string }
@@ -2910,6 +3395,18 @@ export type Database = {
           p_weight_kg?: number
         }
         Returns: number
+      }
+      claim_coach_message: {
+        Args: {
+          p_available_variables: string[]
+          p_channel: string
+          p_context: string
+          p_event_key: string
+          p_locale: string
+          p_now?: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       claim_daily_gap_reminder: {
         Args: {
@@ -2967,19 +3464,6 @@ export type Database = {
           p_scheduled_for: string
         }
         Returns: Json
-      }
-      list_due_reminder_rules: {
-        Args: {
-          p_after_rule_id?: string
-          p_after_scheduled_for?: string
-          p_fired_at: string
-          p_limit?: number
-          p_lookback_minutes?: number
-        }
-        Returns: {
-          reminder_rule_id: string
-          scheduled_for: string
-        }[]
       }
       claim_subscription_event: {
         Args: {
@@ -3154,6 +3638,19 @@ export type Database = {
         Returns: Json
       }
       is_admin: { Args: never; Returns: boolean }
+      list_due_reminder_rules: {
+        Args: {
+          p_after_rule_id?: string
+          p_after_scheduled_for?: string
+          p_fired_at: string
+          p_limit?: number
+          p_lookback_minutes?: number
+        }
+        Returns: {
+          reminder_rule_id: string
+          scheduled_for: string
+        }[]
+      }
       match_food_phrases: {
         Args: {
           match_count: number
@@ -3318,6 +3815,10 @@ export type Database = {
         Args: { p_key: string; p_value: Json }
         Returns: undefined
       }
+      set_user_coach_personality: {
+        Args: { p_personality: string; p_user_id: string }
+        Returns: Json
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       snapshot_add_meal: {
@@ -3408,6 +3909,15 @@ export type Database = {
       tag_user: {
         Args: { p_tag: string; p_user_id: string }
         Returns: string[]
+      }
+      transition_user_mascot_state: {
+        Args: {
+          p_event_key: string
+          p_next_state: string
+          p_reason: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       unaccent: { Args: { "": string }; Returns: string }
       untag_user: {

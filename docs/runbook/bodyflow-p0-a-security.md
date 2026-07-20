@@ -80,6 +80,15 @@ As garantias centrais são:
 - aplica leitura administrativa conforme o RBAC canônico;
 - limita colunas diretamente legíveis de `users`, `messages` e `subscriptions`.
 
+### `20260720024646_p0_resolve_security_advisors.sql`
+
+- converte todas as views públicas restantes para `security_invoker`;
+- remove acesso direto de clientes a todas as views e à `mv_kpis_daily`;
+- mantém views e materialized view disponíveis ao backend;
+- fixa o `search_path` das funções próprias legadas que ainda o herdavam da
+  sessão;
+- elimina todos os findings de nível `ERROR` do security advisor no staging.
+
 ## Identidade e bootstrap
 
 ### Conta paciente nova
@@ -282,6 +291,13 @@ nunca `migration repair`, edição manual do histórico ou reset.
   protegidos. Defaults pertencentes ao papel gerenciado `supabase_admin` não
   puderam ser alterados pela role de migration e permanecem uma limitação da
   plataforma a validar com suporte/configuração administrativa.
+- O security advisor permanece com sete avisos aceitos nesta etapa:
+  - `pg_trgm`, `unaccent`, `vector` e `pg_net` estão historicamente instaladas
+    no schema `public`; movê-las exige um plano próprio de dependências;
+  - `admin_role()`, `is_admin()` e `bootstrap_patient_profile()` são
+    `SECURITY DEFINER` acessíveis a `authenticated` por desenho. As duas
+    primeiras fazem somente leitura de RBAC e a terceira tem validação de
+    identidade, e-mail confirmado, separação de conta e testes negativos.
 - O lint global do admin já possuía dívida histórica fora do P0-A. Os 17 arquivos
   tocados passaram no Biome, mas o comando global ainda reporta problemas
   preexistentes.

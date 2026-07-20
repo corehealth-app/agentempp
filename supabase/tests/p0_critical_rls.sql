@@ -109,7 +109,12 @@ BEGIN
   SELECT string_agg(expected.view_name, ', ' ORDER BY expected.view_name)
   INTO v_unsafe_views
   FROM unnest(ARRAY[
+    'v_active_prompts',
     'v_attention_items',
+    'v_cron_jobs',
+    'v_daily_cost',
+    'v_funnel_activation',
+    'v_mrr_summary',
     'v_user_metrics',
     'vw_meal_state'
   ]) AS expected(view_name)
@@ -123,7 +128,13 @@ BEGIN
     OR has_table_privilege('authenticated', view_row.oid, 'SELECT');
 
   IF v_unsafe_views IS NOT NULL THEN
-    RAISE EXCEPTION 'unsafe user-data views: %', v_unsafe_views;
+    RAISE EXCEPTION 'unsafe public views: %', v_unsafe_views;
+  END IF;
+
+  IF has_table_privilege('anon', 'public.mv_kpis_daily', 'SELECT')
+    OR has_table_privilege('authenticated', 'public.mv_kpis_daily', 'SELECT')
+    OR NOT has_table_privilege('service_role', 'public.mv_kpis_daily', 'SELECT') THEN
+    RAISE EXCEPTION 'materialized KPI view grants are unsafe';
   END IF;
 END;
 $test$;
@@ -168,6 +179,37 @@ BEGIN
       'EXECUTE'
     ) THEN
     RAISE EXCEPTION 'patient bootstrap grants are incorrect';
+  END IF;
+END;
+$test$;
+
+DO $test$
+DECLARE
+  v_mutable_search_path text;
+BEGIN
+  SELECT string_agg(
+    function_row.oid::regprocedure::text,
+    ', '
+    ORDER BY function_row.oid::regprocedure::text
+  )
+  INTO v_mutable_search_path
+  FROM pg_proc function_row
+  JOIN pg_namespace schema_row ON schema_row.oid = function_row.pronamespace
+  LEFT JOIN pg_depend extension_member
+    ON extension_member.classid = 'pg_proc'::regclass
+    AND extension_member.objid = function_row.oid
+    AND extension_member.deptype = 'e'
+  WHERE schema_row.nspname = 'public'
+    AND function_row.prokind = 'f'
+    AND extension_member.objid IS NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM unnest(COALESCE(function_row.proconfig, ARRAY[]::text[])) setting
+      WHERE setting LIKE 'search_path=%'
+    );
+
+  IF v_mutable_search_path IS NOT NULL THEN
+    RAISE EXCEPTION 'application functions with mutable search_path: %', v_mutable_search_path;
   END IF;
 END;
 $test$;

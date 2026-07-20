@@ -4,6 +4,8 @@ import { DailyStateLoadError, loadOfficialDailyState } from './daily-state-servi
 
 interface FakeTable {
   rows?: unknown[]
+  rowsSequence?: unknown[][]
+  rowReads?: number
   single?: unknown | null
   singleSequence?: Array<unknown | null>
   singleReads?: number
@@ -22,6 +24,14 @@ class FakeQuery {
   }
 
   gt() {
+    return this
+  }
+
+  gte() {
+    return this
+  }
+
+  lt() {
     return this
   }
 
@@ -53,7 +63,11 @@ class FakeQuery {
       | null,
     onrejected?: ((reason: unknown) => TResult2) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve({ data: this.table.rows ?? [], error: this.table.error ?? null }).then(
+    const sequence = this.table.rowsSequence
+    const read = this.table.rowReads ?? 0
+    if (sequence && sequence.length > 0) this.table.rowReads = read + 1
+    const rows = sequence ? sequence[Math.min(read, sequence.length - 1)] : this.table.rows
+    return Promise.resolve({ data: rows ?? [], error: this.table.error ?? null }).then(
       onfulfilled,
       onrejected,
     )
@@ -62,12 +76,17 @@ class FakeQuery {
 
 function fakeSupabase(tables: Record<string, FakeTable>) {
   const queries: string[] = []
+  const optionalTables: Record<string, FakeTable> = {
+    notification_preferences: { single: null },
+    routine_items: { rows: [] },
+    routine_adherence_logs: { rows: [] },
+  }
   return {
     queries,
     client: {
       from(table: string) {
         queries.push(table)
-        const config = tables[table]
+        const config = tables[table] ?? optionalTables[table]
         if (!config) throw new Error(`unexpected table: ${table}`)
         return new FakeQuery(config)
       },
@@ -193,6 +212,39 @@ describe('loadOfficialDailyState', () => {
           },
         ],
       },
+      notification_preferences: {
+        single: {
+          hydration_target_ml: 2_200,
+          updated_at: '2026-07-20T14:03:00.000Z',
+        },
+      },
+      routine_items: {
+        rows: [
+          {
+            id: 'supplement-1',
+            item_type: 'supplement',
+            name: 'Creatina',
+            updated_at: '2026-07-20T14:04:00.000Z',
+          },
+          {
+            id: 'medication-1',
+            item_type: 'medication',
+            name: 'Item cadastrado',
+            updated_at: '2026-07-20T14:04:30.000Z',
+          },
+        ],
+      },
+      routine_adherence_logs: {
+        rows: [
+          {
+            routine_item_id: 'supplement-1',
+            status: 'taken',
+            occurred_at: '2026-07-20T14:05:00.000Z',
+            snoozed_until: null,
+            created_at: '2026-07-20T14:06:00.000Z',
+          },
+        ],
+      },
     })
 
     const state = await loadOfficialDailyState(
@@ -233,6 +285,32 @@ describe('loadOfficialDailyState', () => {
     expect(JSON.stringify(state)).not.toContain('must never leave the backend')
     expect(JSON.stringify(state)).not.toContain('private free-form text')
     expect(state.completion_status.status).toBe('pending_information')
+    expect(state.hydration).toEqual({
+      consumed_ml: 1_500,
+      target_ml: 2_200,
+      remaining_ml: 700,
+      percentage: 68,
+      status: 'in_progress',
+    })
+    expect(state.supplements.items).toEqual([
+      {
+        id: 'supplement-1',
+        name: 'Creatina',
+        status: 'taken',
+        occurred_at: '2026-07-20T14:05:00.000Z',
+        snoozed_until: null,
+      },
+    ])
+    expect(state.medications.items).toEqual([
+      {
+        id: 'medication-1',
+        name: 'Item cadastrado',
+        status: 'not_recorded',
+        occurred_at: null,
+        snoozed_until: null,
+      },
+    ])
+    expect(state.updated_at).toBe('2026-07-20T14:06:00.000Z')
   })
 
   it('does not query item logs when no snapshot exists', async () => {
@@ -253,6 +331,9 @@ describe('loadOfficialDailyState', () => {
 
     expect(state.meals).toEqual([])
     expect(state.workouts).toEqual([])
+    expect(state.hydration).toMatchObject({ target_ml: null, status: 'not_recorded' })
+    expect(state.supplements).toEqual({ availability: 'not_configured', items: [] })
+    expect(state.medications).toEqual({ availability: 'not_configured', items: [] })
     expect(db.queries).not.toContain('meal_logs')
     expect(db.queries).not.toContain('workout_logs')
   })
@@ -331,6 +412,64 @@ describe('loadOfficialDailyState', () => {
     expect(state.consumed.calories_kcal).toBe(250)
     expect(state.meals.map((meal) => meal.id)).toEqual(['meal-1', 'meal-2'])
     expect(db.queries.filter((table) => table === 'daily_snapshots')).toHaveLength(4)
+  })
+
+  it('retries instead of returning routine items mixed with adherence from another write', async () => {
+    const snapshot = {
+      id: 'snapshot-1',
+      calories_consumed: 0,
+      calories_target: 1_900,
+      protein_g: 0,
+      protein_target: 140,
+      carbs_g: 0,
+      fat_g: 0,
+      exercise_calories: 0,
+      water_consumed_ml: 0,
+      current_protocol: 'recomposicao',
+      day_closed: false,
+      day_status: 'complete',
+      updated_at: '2026-07-20T14:00:00.000Z',
+      meal_logs: [],
+      workout_logs: [],
+    }
+    const oldItem = {
+      id: 'supplement-1',
+      item_type: 'supplement',
+      name: 'Nome antigo',
+      updated_at: '2026-07-20T13:00:00.000Z',
+    }
+    const newItem = {
+      ...oldItem,
+      name: 'Nome atual',
+      updated_at: '2026-07-20T14:01:00.000Z',
+    }
+    const db = fakeSupabase({
+      user_profiles: { single: null },
+      daily_snapshots: { single: snapshot },
+      user_progress: { single: null },
+      pending_registrations: { rows: [] },
+      routine_items: { rowsSequence: [[oldItem], [newItem], [newItem], [newItem]] },
+      routine_adherence_logs: { rows: [] },
+    })
+
+    const state = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'UTC',
+      new Date('2026-07-20T15:00:00.000Z'),
+      dependencies,
+    )
+
+    expect(state.supplements.items).toEqual([
+      {
+        id: 'supplement-1',
+        name: 'Nome atual',
+        status: 'not_recorded',
+        occurred_at: null,
+        snoozed_until: null,
+      },
+    ])
+    expect(db.queries.filter((table) => table === 'routine_items')).toHaveLength(4)
   })
 
   it('fails closed when the snapshot changes during both consistency attempts', async () => {

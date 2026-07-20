@@ -3,12 +3,14 @@ import {
   computeDailyTargets,
   type DailyStateDayStatus,
   type DailyStateMealType,
+  type DailyStateRoutineAdherenceStatus,
+  type DailyStateRoutineItemInput,
   type ProfileRow,
 } from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { getMealPattern, getSkippedMealsForDate } from './meal-patterns.js'
-import { getLocalDateString } from './timezone-utils.js'
+import { getLocalDateString, getLocalDayUtcBounds } from './timezone-utils.js'
 
 const MEAL_TYPE_ORDER: DailyStateMealType[] = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia']
 const PUBLIC_PENDING_MEAL_TYPES = new Set([...MEAL_TYPE_ORDER, 'outro'])
@@ -121,6 +123,28 @@ function orderedMealTypes(values: Set<DailyStateMealType>): DailyStateMealType[]
   return MEAL_TYPE_ORDER.filter((mealType) => values.has(mealType))
 }
 
+function routineAdherenceStatus(value: string): DailyStateRoutineAdherenceStatus | null {
+  if (value === 'taken' || value === 'snoozed' || value === 'skipped' || value === 'missed') {
+    return value
+  }
+  return null
+}
+
+function latestSourceTimestamp(...values: Array<string | null | undefined>): string | null {
+  let latest: { value: string; timestamp: number } | null = null
+  for (const value of values) {
+    if (!value) continue
+    const timestamp = Date.parse(value)
+    if (!Number.isFinite(timestamp)) continue
+    if (!latest || timestamp > latest.timestamp) latest = { value, timestamp }
+  }
+  return latest?.value ?? null
+}
+
+function sourceFingerprint(value: unknown): string {
+  return JSON.stringify(value ?? null)
+}
+
 function snapshotFingerprint(
   snapshot: {
     id: string
@@ -165,6 +189,7 @@ async function loadOfficialDailyStateAttempt(
 ) {
   const localDate = getLocalDateString(timezone, now)
   const nowIso = now.toISOString()
+  const localDayBounds = getLocalDayUtcBounds(timezone, localDate)
 
   const profileQuery = supabase
     .from('user_profiles')
@@ -192,6 +217,26 @@ async function loadOfficialDailyStateAttempt(
     .gt('expires_at', nowIso)
     .order('created_at', { ascending: false })
     .limit(20)
+  const hydrationTargetQuery = supabase
+    .from('notification_preferences')
+    .select('hydration_target_ml, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const routineItemsQuery = supabase
+    .from('routine_items')
+    .select('id, item_type, name, updated_at')
+    .eq('user_id', userId)
+    .eq('active', true)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+  const routineAdherenceQuery = supabase
+    .from('routine_adherence_logs')
+    .select('routine_item_id, status, occurred_at, snoozed_until, created_at')
+    .eq('user_id', userId)
+    .gte('occurred_at', localDayBounds.startIso)
+    .lt('occurred_at', localDayBounds.endExclusiveIso)
+    .order('occurred_at', { ascending: false })
+    .order('created_at', { ascending: false })
 
   const results = await Promise.all([
     profileQuery,
@@ -201,16 +246,32 @@ async function loadOfficialDailyStateAttempt(
     dependencies.loadConfig(supabase),
     dependencies.loadMealPattern(supabase, userId, timezone),
     dependencies.loadSkippedMeals(supabase, userId, timezone, localDate),
+    hydrationTargetQuery,
+    routineItemsQuery,
+    routineAdherenceQuery,
   ]).catch(() => {
     throw new DailyStateLoadError('daily state dependency lookup')
   })
-  const [profileResult, snapshotResult, progressResult, pendingResult, config, pattern, skipped] =
-    results
+  const [
+    profileResult,
+    snapshotResult,
+    progressResult,
+    pendingResult,
+    config,
+    pattern,
+    skipped,
+    hydrationTargetResult,
+    routineItemsResult,
+    routineAdherenceResult,
+  ] = results
 
   assertQuerySucceeded(profileResult.error, 'daily state profile lookup')
   assertQuerySucceeded(snapshotResult.error, 'daily state snapshot lookup')
   assertQuerySucceeded(progressResult.error, 'daily state progress lookup')
   assertQuerySucceeded(pendingResult.error, 'daily state pending lookup')
+  assertQuerySucceeded(hydrationTargetResult.error, 'daily state hydration target lookup')
+  assertQuerySucceeded(routineItemsResult.error, 'daily state routine items lookup')
+  assertQuerySucceeded(routineAdherenceResult.error, 'daily state routine adherence lookup')
 
   const snapshot = snapshotResult.data
   const meals: Array<{
@@ -269,6 +330,43 @@ async function loadOfficialDailyStateAttempt(
     created_at: pending.created_at,
     expires_at: pending.expires_at,
   }))
+  const latestAdherenceByItem = new Map<
+    string,
+    {
+      status: Exclude<DailyStateRoutineAdherenceStatus, 'not_recorded'>
+      occurredAt: string
+      snoozedUntil: string | null
+      createdAt: string
+    }
+  >()
+  for (const adherence of routineAdherenceResult.data ?? []) {
+    if (latestAdherenceByItem.has(adherence.routine_item_id)) continue
+    const status = routineAdherenceStatus(adherence.status)
+    if (!status || status === 'not_recorded') continue
+    latestAdherenceByItem.set(adherence.routine_item_id, {
+      status,
+      occurredAt: adherence.occurred_at,
+      snoozedUntil: adherence.snoozed_until,
+      createdAt: adherence.created_at,
+    })
+  }
+  const routineItems: DailyStateRoutineItemInput[] = (routineItemsResult.data ?? [])
+    .filter(
+      (item): item is typeof item & { item_type: 'supplement' | 'medication' } =>
+        item.item_type === 'supplement' || item.item_type === 'medication',
+    )
+    .map((item) => {
+      const adherence = latestAdherenceByItem.get(item.id)
+      return {
+        id: item.id,
+        itemType: item.item_type,
+        name: item.name,
+        adherenceStatus: adherence?.status ?? 'not_recorded',
+        occurredAt: adherence?.occurredAt ?? null,
+        snoozedUntil: adherence?.snoozedUntil ?? null,
+        updatedAt: latestSourceTimestamp(item.updated_at, adherence?.createdAt),
+      }
+    })
   const registered = new Set<DailyStateMealType>()
   for (const meal of meals) {
     if (meal.meal_type && MEAL_TYPE_ORDER.includes(meal.meal_type as DailyStateMealType)) {
@@ -282,14 +380,60 @@ async function loadOfficialDailyStateAttempt(
 
   // Registration/workout writes update the snapshot atomically. Re-reading its
   // scalar version prevents returning old totals with new embedded logs (or vice versa).
-  const { data: currentSnapshot, error: currentSnapshotError } = await supabase
-    .from('daily_snapshots')
-    .select(SNAPSHOT_VERSION_SELECT)
-    .eq('user_id', userId)
-    .eq('date', localDate)
-    .maybeSingle()
-  assertQuerySucceeded(currentSnapshotError, 'daily state consistency lookup')
-  if (snapshotFingerprint(snapshot) !== snapshotFingerprint(currentSnapshot)) {
+  const [
+    currentSnapshotResult,
+    currentHydrationTargetResult,
+    currentRoutineItemsResult,
+    currentRoutineAdherenceResult,
+  ] = await Promise.all([
+    supabase
+      .from('daily_snapshots')
+      .select(SNAPSHOT_VERSION_SELECT)
+      .eq('user_id', userId)
+      .eq('date', localDate)
+      .maybeSingle(),
+    supabase
+      .from('notification_preferences')
+      .select('hydration_target_ml, updated_at')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('routine_items')
+      .select('id, item_type, name, updated_at')
+      .eq('user_id', userId)
+      .eq('active', true)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true }),
+    supabase
+      .from('routine_adherence_logs')
+      .select('routine_item_id, status, occurred_at, snoozed_until, created_at')
+      .eq('user_id', userId)
+      .gte('occurred_at', localDayBounds.startIso)
+      .lt('occurred_at', localDayBounds.endExclusiveIso)
+      .order('occurred_at', { ascending: false })
+      .order('created_at', { ascending: false }),
+  ]).catch(() => {
+    throw new DailyStateLoadError('daily state consistency lookup')
+  })
+  assertQuerySucceeded(currentSnapshotResult.error, 'daily state consistency lookup')
+  assertQuerySucceeded(
+    currentHydrationTargetResult.error,
+    'daily state hydration consistency lookup',
+  )
+  assertQuerySucceeded(currentRoutineItemsResult.error, 'daily state routine consistency lookup')
+  assertQuerySucceeded(
+    currentRoutineAdherenceResult.error,
+    'daily state adherence consistency lookup',
+  )
+  if (
+    snapshotFingerprint(snapshot) !== snapshotFingerprint(currentSnapshotResult.data) ||
+    sourceFingerprint(hydrationTargetResult.data) !==
+      sourceFingerprint(currentHydrationTargetResult.data) ||
+    sourceFingerprint(routineItemsResult.data) !==
+      sourceFingerprint(currentRoutineItemsResult.data) ||
+    sourceFingerprint(routineAdherenceResult.data) !==
+      sourceFingerprint(currentRoutineAdherenceResult.data)
+  ) {
     throw new DailyStateReadChangedError()
   }
 
@@ -317,6 +461,13 @@ async function loadOfficialDailyStateAttempt(
     meals,
     workouts,
     pendingRegistrations,
+    hydrationTarget: hydrationTargetResult.data
+      ? {
+          targetMl: hydrationTargetResult.data.hydration_target_ml,
+          updatedAt: hydrationTargetResult.data.updated_at,
+        }
+      : null,
+    routineItems,
     mealGap: {
       expected: orderedMealTypes(pattern.expected),
       registered: orderedMealTypes(registered),

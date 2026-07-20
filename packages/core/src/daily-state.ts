@@ -73,6 +73,29 @@ export interface DailyStateProgressInput {
   updatedAt: string | null
 }
 
+export interface DailyStateHydrationTargetInput {
+  targetMl: number | null
+  updatedAt: string | null
+}
+
+export type DailyStateRoutineItemType = 'supplement' | 'medication'
+export type DailyStateRoutineAdherenceStatus =
+  | 'taken'
+  | 'snoozed'
+  | 'skipped'
+  | 'missed'
+  | 'not_recorded'
+
+export interface DailyStateRoutineItemInput {
+  id: string
+  itemType: DailyStateRoutineItemType
+  name: string
+  adherenceStatus: DailyStateRoutineAdherenceStatus
+  occurredAt: string | null
+  snoozedUntil: string | null
+  updatedAt: string | null
+}
+
 export interface DailyStateInput {
   localDate: string
   generatedAt: string
@@ -82,6 +105,8 @@ export interface DailyStateInput {
   meals: DailyStateMeal[]
   workouts: DailyStateWorkout[]
   pendingRegistrations: DailyStatePendingRegistration[]
+  hydrationTarget: DailyStateHydrationTargetInput | null
+  routineItems: DailyStateRoutineItemInput[]
   mealGap: DailyStateMealGapInput
   progress: DailyStateProgressInput | null
 }
@@ -157,6 +182,23 @@ function completionStatus(
   return { status: 'open', day_closed: false, has_sufficient_data: null }
 }
 
+function routineSection(items: DailyStateRoutineItemInput[], itemType: DailyStateRoutineItemType) {
+  const publicItems = items
+    .filter((item) => item.itemType === itemType)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      status: item.adherenceStatus,
+      occurred_at: item.occurredAt,
+      snoozed_until: item.snoozedUntil,
+    }))
+
+  return {
+    availability: publicItems.length > 0 ? ('available' as const) : ('not_configured' as const),
+    items: publicItems,
+  }
+}
+
 export function buildDailyState(input: DailyStateInput) {
   const snapshot = input.snapshot
   const snapshotCaloriesTarget = positiveOrNull(snapshot?.caloriesTarget ?? null)
@@ -208,6 +250,21 @@ export function buildDailyState(input: DailyStateInput) {
     ? Math.floor(nonNegative(input.progress.blocksCompleted))
     : null
   const waterConsumed = nonNegative(snapshot?.waterConsumedMl ?? 0)
+  const hydrationTarget = positiveOrNull(input.hydrationTarget?.targetMl ?? null)
+  const hydrationRemaining =
+    hydrationTarget === null ? null : Math.max(0, hydrationTarget - waterConsumed)
+  const hydrationPercentage =
+    hydrationTarget === null ? null : percentage(waterConsumed, hydrationTarget)
+  const hydrationStatus =
+    hydrationTarget === null
+      ? waterConsumed > 0
+        ? ('tracked_without_target' as const)
+        : ('not_recorded' as const)
+      : waterConsumed >= hydrationTarget
+        ? ('target_reached' as const)
+        : waterConsumed > 0
+          ? ('in_progress' as const)
+          : ('not_started' as const)
   const consumedSource = snapshot ? ('daily_snapshot' as const) : ('empty_day' as const)
   const progressSource = input.progress ? ('user_progress' as const) : ('unavailable' as const)
 
@@ -255,17 +312,13 @@ export function buildDailyState(input: DailyStateInput) {
     workouts: input.workouts,
     hydration: {
       consumed_ml: waterConsumed,
-      target_ml: null,
-      status: waterConsumed > 0 ? ('tracked_without_target' as const) : ('not_recorded' as const),
+      target_ml: hydrationTarget,
+      remaining_ml: hydrationRemaining,
+      percentage: hydrationPercentage,
+      status: hydrationStatus,
     },
-    supplements: {
-      availability: 'not_implemented' as const,
-      items: [] as Array<Record<string, unknown>>,
-    },
-    medications: {
-      availability: 'not_implemented' as const,
-      items: [] as Array<Record<string, unknown>>,
-    },
+    supplements: routineSection(input.routineItems, 'supplement'),
+    medications: routineSection(input.routineItems, 'medication'),
     pending_actions: {
       registrations: input.pendingRegistrations,
       meal_gaps: {
@@ -301,6 +354,10 @@ export function buildDailyState(input: DailyStateInput) {
       meals: 'meal_logs' as const,
       workouts: 'workout_logs' as const,
       hydration: consumedSource,
+      hydration_target:
+        hydrationTarget === null ? ('unavailable' as const) : ('notification_preferences' as const),
+      supplements: 'routine_items_and_adherence_logs' as const,
+      medications: 'routine_items_and_adherence_logs' as const,
       pending_actions: 'pending_registrations_and_meal_pattern' as const,
       block_7700: progressSource,
     },
@@ -308,6 +365,8 @@ export function buildDailyState(input: DailyStateInput) {
     updated_at: latestTimestamp([
       snapshot?.updatedAt,
       input.progress?.updatedAt,
+      input.hydrationTarget?.updatedAt,
+      ...input.routineItems.flatMap((item) => [item.updatedAt, item.occurredAt]),
       ...input.pendingRegistrations.map((registration) => registration.created_at),
     ]),
     generated_at: input.generatedAt,

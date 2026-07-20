@@ -17,6 +17,8 @@ function input(overrides: Partial<DailyStateInput> = {}): DailyStateInput {
     meals: [],
     workouts: [],
     pendingRegistrations: [],
+    hydrationTarget: null,
+    routineItems: [],
     mealGap: {
       expected: ['cafe', 'almoco', 'jantar'],
       registered: [],
@@ -63,10 +65,12 @@ describe('buildDailyState', () => {
       hydration: {
         consumed_ml: 0,
         target_ml: null,
+        remaining_ml: null,
+        percentage: null,
         status: 'not_recorded',
       },
-      supplements: { availability: 'not_implemented', items: [] },
-      medications: { availability: 'not_implemented', items: [] },
+      supplements: { availability: 'not_configured', items: [] },
+      medications: { availability: 'not_configured', items: [] },
       completion_status: {
         status: 'open',
         day_closed: false,
@@ -80,6 +84,7 @@ describe('buildDailyState', () => {
       reliable: false,
       source: 'new_user_fallback',
     })
+    expect(state.sources.hydration_target).toBe('unavailable')
     expect(state.block_7700).toMatchObject({
       availability: 'unavailable',
       current_kcal: null,
@@ -124,6 +129,95 @@ describe('buildDailyState', () => {
       day_closed: true,
       has_sufficient_data: true,
     })
+  })
+
+  it('derives hydration progress only when an explicit target is available', () => {
+    const state = buildDailyState(
+      input({
+        snapshot: {
+          caloriesConsumed: 0,
+          caloriesTarget: 1_900,
+          proteinG: 0,
+          proteinTarget: 140,
+          carbsG: 0,
+          fatG: 0,
+          exerciseCalories: 0,
+          waterConsumedMl: 1_500,
+          protocol: 'recomposicao',
+          dayClosed: false,
+          dayStatus: null,
+          updatedAt: '2026-07-20T14:00:00.000Z',
+        },
+        hydrationTarget: {
+          targetMl: 2_000,
+          updatedAt: '2026-07-20T14:05:00.000Z',
+        },
+      }),
+    )
+
+    expect(state.hydration).toEqual({
+      consumed_ml: 1_500,
+      target_ml: 2_000,
+      remaining_ml: 500,
+      percentage: 75,
+      status: 'in_progress',
+    })
+    expect(state.calculation_version).toBe(DAILY_STATE_CALCULATION_VERSION)
+    expect(state.sources.hydration_target).toBe('notification_preferences')
+    expect(state.updated_at).toBe('2026-07-20T14:05:00.000Z')
+  })
+
+  it('exposes configured routine items with today adherence and no invented dose data', () => {
+    const state = buildDailyState(
+      input({
+        routineItems: [
+          {
+            id: 'supplement-1',
+            itemType: 'supplement',
+            name: 'Creatina',
+            adherenceStatus: 'taken',
+            occurredAt: '2026-07-20T12:00:00.000Z',
+            snoozedUntil: null,
+            updatedAt: '2026-07-20T12:00:00.000Z',
+          },
+          {
+            id: 'medication-1',
+            itemType: 'medication',
+            name: 'Item cadastrado',
+            adherenceStatus: 'not_recorded',
+            occurredAt: null,
+            snoozedUntil: null,
+            updatedAt: '2026-07-20T11:00:00.000Z',
+          },
+        ],
+      }),
+    )
+
+    expect(state.supplements).toEqual({
+      availability: 'available',
+      items: [
+        {
+          id: 'supplement-1',
+          name: 'Creatina',
+          status: 'taken',
+          occurred_at: '2026-07-20T12:00:00.000Z',
+          snoozed_until: null,
+        },
+      ],
+    })
+    expect(state.medications).toEqual({
+      availability: 'available',
+      items: [
+        {
+          id: 'medication-1',
+          name: 'Item cadastrado',
+          status: 'not_recorded',
+          occurred_at: null,
+          snoozed_until: null,
+        },
+      ],
+    })
+    expect(JSON.stringify(state)).not.toContain('dose')
   })
 
   it('marks a reliable open gap as pending information without treating it as failure', () => {

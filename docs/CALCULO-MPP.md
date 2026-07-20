@@ -125,6 +125,12 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   snapshot evita misturar totais anteriores com logs de uma confirmação
   concorrente; após duas leituras instáveis, a API falha sem publicar estado
   híbrido.
+- Hidratação usa somente `daily_snapshots.water_consumed_ml`; meta, quando
+  configurada, vem de `notification_preferences.hydration_target_ml`. Percentual
+  e restante não existem sem essa meta explícita.
+- Suplementos e medicamentos expõem itens ativos de `routine_items` e a ação mais
+  recente do dia local em `routine_adherence_logs`. O estado não calcula dose,
+  prescrição nem recomendação.
 - A versão inicial da semântica é `bodyflow.daily-state.v1`. Mudança futura de
   fórmula exige incrementar `calculation_version`, atualizar testes e este
   documento na mesma PR. O app nunca replica estas fórmulas.

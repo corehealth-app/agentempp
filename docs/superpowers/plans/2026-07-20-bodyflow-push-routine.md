@@ -79,14 +79,14 @@ logs, reavaliacoes e adesao.
 
 **Produces:** funcao Inngest registrada e evento tipado contendo apenas IDs.
 
-- [ ] Escrever testes RED para regra resolvida, quiet hours, limite, retry e ausencia
+- [x] Escrever testes RED para regra resolvida, quiet hours, limite, retry e ausencia
   de fonte oficial.
-- [ ] Implementar avaliador puro de elegibilidade.
-- [ ] Implementar repositorio Supabase e claim transacional.
-- [ ] Registrar scheduler com concorrencia limitada, sem provider APNs.
-- [ ] Garantir que nenhum token ou texto sensivel entre no evento/log.
-- [ ] Rodar `pnpm --filter @mpp/inngest-functions test` e typecheck.
-- [ ] Commit: `feat(workers): queue official-state reminders`.
+- [x] Implementar avaliador puro de elegibilidade.
+- [x] Implementar repositorio Supabase e claim transacional.
+- [x] Registrar scheduler com concorrencia limitada, sem provider APNs.
+- [x] Garantir que nenhum token ou texto sensivel entre no evento/log.
+- [x] Rodar `pnpm --filter @mpp/inngest-functions test` e typecheck.
+- [x] Commit: `feat(workers): queue official-state reminders`.
 
 ### Task 4: Daily state, documentacao e staging
 

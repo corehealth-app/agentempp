@@ -21,6 +21,7 @@ DECLARE
   v_item_id uuid;
   v_inactive_item_id uuid;
   v_inactive_rule_id uuid;
+  v_dst_rule_id uuid;
   v_event_first jsonb;
   v_event_retry jsonb;
   v_event_id uuid;
@@ -28,6 +29,9 @@ DECLARE
   v_water_ml integer;
   v_status text;
   v_reason text;
+  v_due_count integer;
+  v_due_scheduled_for timestamptz;
+  v_dst_due_count integer;
   v_table text;
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
@@ -94,8 +98,27 @@ BEGIN
     'authenticated',
     'public.update_notification_preferences_atomic(uuid,jsonb)',
     'EXECUTE'
+  ) OR has_function_privilege(
+    'authenticated',
+    'public.list_due_reminder_rules(timestamptz,integer,integer)',
+    'EXECUTE'
   ) THEN
-    RAISE EXCEPTION 'authenticated can execute a mutable BodyFlow RPC';
+    RAISE EXCEPTION 'authenticated can execute a forbidden BodyFlow backend RPC';
+  END IF;
+
+  IF NOT has_function_privilege(
+    'service_role',
+    'public.list_due_reminder_rules(timestamptz,integer,integer)',
+    'EXECUTE'
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_proc function_definition
+    JOIN pg_namespace namespace ON namespace.oid = function_definition.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND function_definition.proname = 'list_due_reminder_rules'
+      AND function_definition.prosecdef
+  ) THEN
+    RAISE EXCEPTION 'due reminder discovery is not service-only SECURITY INVOKER';
   END IF;
 
   INSERT INTO auth.users (
@@ -408,6 +431,60 @@ BEGIN
     ARRAY[0, 1, 2, 3, 4, 5, 6],
     true
   ) RETURNING id INTO v_rule_id;
+
+  SELECT count(*), min(due.scheduled_for)
+  INTO v_due_count, v_due_scheduled_for
+  FROM public.list_due_reminder_rules(
+    timestamptz '2026-07-21 01:01:00+00',
+    5,
+    100
+  ) due
+  WHERE due.reminder_rule_id = v_rule_id;
+
+  IF v_due_count <> 1
+    OR v_due_scheduled_for <> timestamptz '2026-07-21 00:58:00+00' THEN
+    RAISE EXCEPTION 'due reminder discovery did not convert local time safely: count %, instant %',
+      v_due_count, v_due_scheduled_for;
+  END IF;
+
+  UPDATE public.users
+  SET timezone = 'America/New_York'
+  WHERE id = v_other_user_id;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_other_user_id,
+    'hydration',
+    time '01:30',
+    ARRAY[0]
+  ) RETURNING id INTO v_dst_rule_id;
+
+  SELECT count(*)
+  INTO v_dst_due_count
+  FROM (
+    SELECT *
+    FROM public.list_due_reminder_rules(
+      timestamptz '2026-11-01 05:32:00+00',
+      5,
+      100
+    )
+    UNION ALL
+    SELECT *
+    FROM public.list_due_reminder_rules(
+      timestamptz '2026-11-01 06:32:00+00',
+      5,
+      100
+    )
+  ) due
+  WHERE due.reminder_rule_id = v_dst_rule_id;
+
+  IF v_dst_due_count <> 1 THEN
+    RAISE EXCEPTION 'DST fallback scheduled one local reminder % times', v_dst_due_count;
+  END IF;
 
   v_event_first := public.claim_reminder_event(
     v_rule_id,

@@ -2968,6 +2968,17 @@ export type Database = {
         }
         Returns: Json
       }
+      list_due_reminder_rules: {
+        Args: {
+          p_fired_at: string
+          p_limit?: number
+          p_lookback_minutes?: number
+        }
+        Returns: {
+          reminder_rule_id: string
+          scheduled_for: string
+        }[]
+      }
       claim_subscription_event: {
         Args: {
           p_event_type: string

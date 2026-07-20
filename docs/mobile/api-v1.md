@@ -162,6 +162,7 @@ Estrutura resumida:
   },
   "block_7700": {
     "enabled": true,
+    "availability": "available",
     "target_kcal": 7700,
     "current_kcal": 2500,
     "percentage": 32,
@@ -202,13 +203,19 @@ Semântica obrigatória:
 - `user_skipped` aparece como `complete_with_explicit_skip`, porque a ausência foi
   confirmada pelo paciente.
 - O bloco expõe somente `user_progress` já persistido. A API não soma um crédito
-  especulativo do dia aberto.
+  especulativo do dia aberto. Quando `user_progress` não existe ou não pode ser
+  comprovido, `availability` e `source` são `unavailable` e os campos de progresso
+  são `null`; ausência de registro nunca é apresentada como progresso zero.
 - `targets.source`, `consumed.source`, `block_7700.source` e `sources` identificam
   a origem operacional de cada seção.
 - Propostas pendentes expõem somente ID, tipo, horário e `meal_type`; texto bruto,
   mídia, IDs de provider e evidências internas não saem do backend.
 - Hidratação ainda não possui meta diária de domínio. Suplementos e medicamentos
   ainda não possuem módulo; a resposta declara isso em vez de inventar dados.
+- Snapshot, refeições e treinos são lidos em uma única consulta relacional. O
+  backend valida novamente a versão escalar do snapshot e repete a leitura uma
+  vez se uma confirmação concorrente alterar o dia. Se ele continuar mudando, a
+  API falha sem devolver totais e itens de versões diferentes.
 
 `calculation_version` versiona a semântica do agregador. Mudanças aditivas no DTO
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.

@@ -119,7 +119,12 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
 - O saldo é `provisional` enquanto o dia está aberto, `final` após fechamento
   válido e `insufficient_data` quando o fechamento não possui informação
   suficiente. O bloco exposto é sempre o progresso persistido em `user_progress`;
-  o cliente não projeta crédito para o dia aberto.
+  o cliente não projeta crédito para o dia aberto. Sem uma linha persistida de
+  progresso, o bloco é `unavailable` e seus números são `null`, não zero.
+- Snapshot, refeições e treinos são lidos juntos. Uma releitura da versão do
+  snapshot evita misturar totais anteriores com logs de uma confirmação
+  concorrente; após duas leituras instáveis, a API falha sem publicar estado
+  híbrido.
 - A versão inicial da semântica é `bodyflow.daily-state.v1`. Mudança futura de
   fórmula exige incrementar `calculation_version`, atualizar testes e este
   documento na mesma PR. O app nunca replica estas fórmulas.

@@ -1,10 +1,12 @@
 import { DEFAULT_CALC_CONFIG } from '@mpp/core'
 import { describe, expect, it } from 'vitest'
-import { loadOfficialDailyState } from './daily-state-service.js'
+import { DailyStateLoadError, loadOfficialDailyState } from './daily-state-service.js'
 
 interface FakeTable {
   rows?: unknown[]
   single?: unknown | null
+  singleSequence?: Array<unknown | null>
+  singleReads?: number
   error?: { message: string } | null
 }
 
@@ -32,6 +34,15 @@ class FakeQuery {
   }
 
   async maybeSingle() {
+    const sequence = this.table.singleSequence
+    if (sequence && sequence.length > 0) {
+      const read = this.table.singleReads ?? 0
+      this.table.singleReads = read + 1
+      return {
+        data: sequence[Math.min(read, sequence.length - 1)] ?? null,
+        error: this.table.error ?? null,
+      }
+    }
     return { data: this.table.single ?? null, error: this.table.error ?? null }
   }
 
@@ -66,18 +77,14 @@ function fakeSupabase(tables: Record<string, FakeTable>) {
 
 const dependencies = {
   loadConfig: async () => DEFAULT_CALC_CONFIG,
-  loadGap: async () => ({
-    pattern: {
-      expected: new Set(['cafe', 'almoco', 'jantar'] as const),
-      activeDays: 10,
-      countByType: { cafe: 10, almoco: 10, lanche: 2, jantar: 9, ceia: 0 },
-      threshold: 0.5,
-      fallbackUsed: false,
-    },
-    registered: new Set(['cafe', 'almoco'] as const),
-    skipped: new Set<'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'>(),
-    gap: new Set(['jantar'] as const),
+  loadMealPattern: async () => ({
+    expected: new Set(['cafe', 'almoco', 'jantar'] as const),
+    activeDays: 10,
+    countByType: { cafe: 10, almoco: 10, lanche: 2, jantar: 9, ceia: 0 },
+    threshold: 0.5,
+    fallbackUsed: false,
   }),
+  loadSkippedMeals: async () => new Set<'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'>(),
 }
 
 describe('loadOfficialDailyState', () => {
@@ -115,6 +122,42 @@ describe('loadOfficialDailyState', () => {
           day_closed: false,
           day_status: 'pending_close',
           updated_at: '2026-07-20T14:00:00.000Z',
+          meal_logs: [
+            {
+              id: 'meal-1',
+              meal_type: 'almoco',
+              food_name: 'arroz',
+              quantity_g: 100,
+              kcal: 130,
+              protein_g: 2.5,
+              carbs_g: 28,
+              fat_g: 0.3,
+              consumed_at: '2026-07-20T13:00:00.000Z',
+              source: 'canonical_exact',
+            },
+            {
+              id: 'meal-cafe',
+              meal_type: 'cafe',
+              food_name: 'ovo',
+              quantity_g: 50,
+              kcal: 72,
+              protein_g: 6,
+              carbs_g: 0.4,
+              fat_g: 5,
+              consumed_at: '2026-07-20T09:00:00.000Z',
+              source: 'canonical_exact',
+            },
+          ],
+          workout_logs: [
+            {
+              id: 'workout-1',
+              workout_type: 'musculacao',
+              duration_min: 40,
+              estimated_kcal: 300,
+              intensity: 'moderada',
+              performed_at: '2026-07-20T13:30:00.000Z',
+            },
+          ],
         },
       },
       user_progress: {
@@ -150,34 +193,6 @@ describe('loadOfficialDailyState', () => {
           },
         ],
       },
-      meal_logs: {
-        rows: [
-          {
-            id: 'meal-1',
-            meal_type: 'almoco',
-            food_name: 'arroz',
-            quantity_g: 100,
-            kcal: 130,
-            protein_g: 2.5,
-            carbs_g: 28,
-            fat_g: 0.3,
-            consumed_at: '2026-07-20T13:00:00.000Z',
-            source: 'canonical_exact',
-          },
-        ],
-      },
-      workout_logs: {
-        rows: [
-          {
-            id: 'workout-1',
-            workout_type: 'musculacao',
-            duration_min: 40,
-            estimated_kcal: 300,
-            intensity: 'moderada',
-            performed_at: '2026-07-20T13:30:00.000Z',
-          },
-        ],
-      },
     })
 
     const state = await loadOfficialDailyState(
@@ -197,6 +212,7 @@ describe('loadOfficialDailyState', () => {
     })
     expect(state.remaining_food_kcal).toBe(735)
     expect(state.daily_balance_kcal).toBe(-1_035)
+    expect(state.meals.map((meal) => meal.id)).toEqual(['meal-cafe', 'meal-1'])
     expect(state.meals[0]).toMatchObject({ nutrition_source: 'canonical_exact' })
     expect(state.pending_actions.registrations).toEqual([
       {
@@ -239,5 +255,120 @@ describe('loadOfficialDailyState', () => {
     expect(state.workouts).toEqual([])
     expect(db.queries).not.toContain('meal_logs')
     expect(db.queries).not.toContain('workout_logs')
+  })
+
+  it('retries instead of returning snapshot totals mixed with logs from another write', async () => {
+    const oldSnapshot = {
+      id: 'snapshot-1',
+      calories_consumed: 100,
+      calories_target: 1_900,
+      protein_g: 10,
+      protein_target: 140,
+      carbs_g: 12,
+      fat_g: 2,
+      exercise_calories: 0,
+      water_consumed_ml: 0,
+      current_protocol: 'recomposicao',
+      day_closed: false,
+      day_status: 'complete',
+      updated_at: '2026-07-20T14:00:00.000Z',
+      meal_logs: [
+        {
+          id: 'meal-1',
+          meal_type: 'cafe',
+          food_name: 'item antigo',
+          quantity_g: 100,
+          kcal: 100,
+          protein_g: 10,
+          carbs_g: 12,
+          fat_g: 2,
+          consumed_at: '2026-07-20T13:00:00.000Z',
+          source: 'canonical_exact',
+        },
+      ],
+      workout_logs: [],
+    }
+    const newSnapshot = {
+      ...oldSnapshot,
+      calories_consumed: 250,
+      protein_g: 20,
+      carbs_g: 30,
+      fat_g: 5,
+      updated_at: '2026-07-20T14:01:00.000Z',
+      meal_logs: [
+        ...oldSnapshot.meal_logs,
+        {
+          id: 'meal-2',
+          meal_type: 'almoco',
+          food_name: 'item novo',
+          quantity_g: 100,
+          kcal: 150,
+          protein_g: 10,
+          carbs_g: 18,
+          fat_g: 3,
+          consumed_at: '2026-07-20T14:01:00.000Z',
+          source: 'canonical_exact',
+        },
+      ],
+    }
+    const db = fakeSupabase({
+      user_profiles: { single: null },
+      daily_snapshots: {
+        singleSequence: [oldSnapshot, newSnapshot, newSnapshot, newSnapshot],
+      },
+      user_progress: { single: null },
+      pending_registrations: { rows: [] },
+    })
+
+    const state = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'UTC',
+      new Date('2026-07-20T15:00:00.000Z'),
+      dependencies,
+    )
+
+    expect(state.consumed.calories_kcal).toBe(250)
+    expect(state.meals.map((meal) => meal.id)).toEqual(['meal-1', 'meal-2'])
+    expect(db.queries.filter((table) => table === 'daily_snapshots')).toHaveLength(4)
+  })
+
+  it('fails closed when the snapshot changes during both consistency attempts', async () => {
+    const snapshot = (version: number) => ({
+      id: 'snapshot-1',
+      calories_consumed: version * 100,
+      calories_target: 1_900,
+      protein_g: version * 10,
+      protein_target: 140,
+      carbs_g: version * 12,
+      fat_g: version * 2,
+      exercise_calories: 0,
+      water_consumed_ml: 0,
+      current_protocol: 'recomposicao',
+      day_closed: false,
+      day_status: 'complete',
+      updated_at: `2026-07-20T14:0${version}:00.000Z`,
+      meal_logs: [],
+      workout_logs: [],
+    })
+    const db = fakeSupabase({
+      user_profiles: { single: null },
+      daily_snapshots: {
+        singleSequence: [snapshot(1), snapshot(2), snapshot(3), snapshot(4)],
+      },
+      user_progress: { single: null },
+      pending_registrations: { rows: [] },
+    })
+
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-20T15:00:00.000Z'),
+        dependencies,
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state consistency'))
+    expect(db.queries.filter((table) => table === 'daily_snapshots')).toHaveLength(4)
   })
 })

@@ -80,6 +80,14 @@ describe('buildDailyState', () => {
       reliable: false,
       source: 'new_user_fallback',
     })
+    expect(state.block_7700).toMatchObject({
+      availability: 'unavailable',
+      current_kcal: null,
+      percentage: null,
+      completed_blocks: null,
+      total_credited_kcal: null,
+      source: 'unavailable',
+    })
   })
 
   it('keeps food remaining separate from the final net balance on a complete day', () => {
@@ -193,6 +201,70 @@ describe('buildDailyState', () => {
 
     expect(state.completion_status.status).toBe('open')
     expect(state.pending_actions.meal_gaps.open).toEqual(['almoco', 'jantar'])
+  })
+
+  it('clears pending information when the reminded gap is resolved by registration', () => {
+    const state = buildDailyState(
+      input({
+        snapshot: {
+          caloriesConsumed: 1_600,
+          caloriesTarget: 1_900,
+          proteinG: 120,
+          proteinTarget: 140,
+          carbsG: 150,
+          fatG: 50,
+          exerciseCalories: 0,
+          waterConsumedMl: 0,
+          protocol: 'recomposicao',
+          dayClosed: false,
+          dayStatus: 'pending_close',
+          updatedAt: '2026-07-20T22:30:00.000Z',
+        },
+        mealGap: {
+          expected: ['cafe', 'almoco', 'jantar'],
+          registered: ['cafe', 'almoco', 'jantar'],
+          skipped: [],
+          open: [],
+          reliable: true,
+          activeDays: 12,
+        },
+      }),
+    )
+
+    expect(state.completion_status.status).toBe('open')
+    expect(state.pending_actions.meal_gaps.open).toEqual([])
+  })
+
+  it('clears pending information when the reminded gap is explicitly skipped', () => {
+    const state = buildDailyState(
+      input({
+        snapshot: {
+          caloriesConsumed: 1_300,
+          caloriesTarget: 1_900,
+          proteinG: 100,
+          proteinTarget: 140,
+          carbsG: 120,
+          fatG: 45,
+          exerciseCalories: 0,
+          waterConsumedMl: 0,
+          protocol: 'recomposicao',
+          dayClosed: false,
+          dayStatus: 'pending_close',
+          updatedAt: '2026-07-20T22:30:00.000Z',
+        },
+        mealGap: {
+          expected: ['cafe', 'almoco', 'jantar'],
+          registered: ['cafe', 'almoco'],
+          skipped: ['jantar'],
+          open: [],
+          reliable: true,
+          activeDays: 12,
+        },
+      }),
+    )
+
+    expect(state.completion_status.status).toBe('open')
+    expect(state.pending_actions.meal_gaps.skipped).toEqual(['jantar'])
   })
 
   it('represents an explicitly skipped meal as a valid completed day', () => {
@@ -416,6 +488,7 @@ describe('buildDailyState', () => {
 
     expect(state.block_7700).toEqual({
       enabled: true,
+      availability: 'available',
       target_kcal: 7_700,
       current_kcal: 3_850,
       percentage: 50,

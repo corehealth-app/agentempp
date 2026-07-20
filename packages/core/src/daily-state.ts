@@ -119,6 +119,7 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
 function completionStatus(
   snapshot: DailyStateSnapshotInput | null,
   hasObservedActivity: boolean,
+  mealGap: DailyStateMealGapInput,
 ): {
   status: CompletionState
   day_closed: boolean
@@ -143,10 +144,10 @@ function completionStatus(
   if (dayClosed && !hasObservedActivity) {
     return { status: 'insufficient_data', day_closed: true, has_sufficient_data: false }
   }
-  if (dayClosed && snapshot?.dayStatus !== 'pending_close') {
+  if (dayClosed && (snapshot?.dayStatus !== 'pending_close' || mealGap.open.length === 0)) {
     return { status: 'complete', day_closed: true, has_sufficient_data: true }
   }
-  if (snapshot?.dayStatus === 'pending_close') {
+  if (snapshot?.dayStatus === 'pending_close' && mealGap.open.length > 0) {
     return {
       status: 'pending_information',
       day_closed: dayClosed,
@@ -193,7 +194,7 @@ export function buildDailyState(input: DailyStateInput) {
     input.workouts.length > 0 ||
     caloriesConsumed > 0 ||
     exerciseCalories > 0
-  const completion = completionStatus(snapshot, hasObservedActivity)
+  const completion = completionStatus(snapshot, hasObservedActivity, input.mealGap)
   const dailyBalanceStatus =
     completion.status === 'insufficient_data'
       ? ('insufficient_data' as const)
@@ -202,11 +203,13 @@ export function buildDailyState(input: DailyStateInput) {
         : ('provisional' as const)
   const protocol = snapshot?.protocol ?? input.protocol
 
-  const blockCurrent = nonNegative(input.progress?.deficitBlock ?? 0)
-  const completedBlocks = Math.floor(nonNegative(input.progress?.blocksCompleted ?? 0))
+  const blockCurrent = input.progress ? nonNegative(input.progress.deficitBlock) : null
+  const completedBlocks = input.progress
+    ? Math.floor(nonNegative(input.progress.blocksCompleted))
+    : null
   const waterConsumed = nonNegative(snapshot?.waterConsumedMl ?? 0)
   const consumedSource = snapshot ? ('daily_snapshot' as const) : ('empty_day' as const)
-  const progressSource = input.progress ? ('user_progress' as const) : ('empty_progress' as const)
+  const progressSource = input.progress ? ('user_progress' as const) : ('unavailable' as const)
 
   const proteinRemaining =
     proteinTarget === null ? null : Math.max(0, proteinTarget - proteinConsumed)
@@ -279,11 +282,15 @@ export function buildDailyState(input: DailyStateInput) {
     },
     block_7700: {
       enabled: protocol === 'recomposicao',
+      availability: input.progress ? ('available' as const) : ('unavailable' as const),
       target_kcal: KCAL_BLOCK,
       current_kcal: blockCurrent,
-      percentage: percentage(blockCurrent, KCAL_BLOCK),
+      percentage: blockCurrent === null ? null : percentage(blockCurrent, KCAL_BLOCK),
       completed_blocks: completedBlocks,
-      total_credited_kcal: completedBlocks * KCAL_BLOCK + blockCurrent,
+      total_credited_kcal:
+        completedBlocks === null || blockCurrent === null
+          ? null
+          : completedBlocks * KCAL_BLOCK + blockCurrent,
       source: progressSource,
     },
     completion_status: completion,

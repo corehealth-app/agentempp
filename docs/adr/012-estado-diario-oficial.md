@@ -35,6 +35,11 @@ aplicação única sobre essas fontes.
    substituto é inventado.
 9. `calculation_version=bodyflow.daily-state.v1` identifica a semântica. Alteração
    de fórmula incrementa a versão; quebra de JSON exige nova versão da API.
+10. Snapshot, refeições e treinos são carregados por uma consulta relacional. Uma
+    releitura escalar ao final detecta confirmação concorrente; o serviço repete
+    uma vez e falha de forma fechada se o dia continuar mudando.
+11. Ausência de `user_progress` é `unavailable`, com valores `null`, e nunca um
+    bloco implicitamente zerado.
 
 ## Idempotência e recálculo
 
@@ -51,7 +56,10 @@ aplicação única sobre essas fontes.
 - **+** O app permanece uma camada de apresentação, sem fórmulas concorrentes.
 - **+** Origens e qualidade do dado ficam explícitas para UI e observabilidade.
 - **+** A versão permite detectar drift entre cliente e backend.
+- **+** Uma confirmação concorrente não mistura totais antigos com itens novos.
 - **−** A leitura agrega mais fontes e depende da disponibilidade delas.
+- **−** Sob escrita contínua, `/today` pode falhar temporariamente para preservar
+  consistência; o cliente deve repetir a leitura.
 - **−** Hidratação completa, suplementos e medicamentos aguardam seus domínios.
 
 Nenhuma migration, consulta live ou alteração de ambiente foi realizada nesta

@@ -7,33 +7,51 @@ import {
 } from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
 import { loadCalcConfig } from './calc-config-loader.js'
-import { getGapForDate } from './meal-patterns.js'
+import { getMealPattern, getSkippedMealsForDate } from './meal-patterns.js'
 import { getLocalDateString } from './timezone-utils.js'
 
 const MEAL_TYPE_ORDER: DailyStateMealType[] = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia']
 const PUBLIC_PENDING_MEAL_TYPES = new Set([...MEAL_TYPE_ORDER, 'outro'])
 
-type GapResult = Awaited<ReturnType<typeof getGapForDate>>
+type MealPatternResult = Awaited<ReturnType<typeof getMealPattern>>
+type SkippedMealsResult = Awaited<ReturnType<typeof getSkippedMealsForDate>>
 
 export interface DailyStateServiceDependencies {
   loadConfig: typeof loadCalcConfig
-  loadGap: (
+  loadMealPattern: (
+    supabase: ServiceClient,
+    userId: string,
+    timezone: string,
+  ) => Promise<MealPatternResult>
+  loadSkippedMeals: (
     supabase: ServiceClient,
     userId: string,
     timezone: string,
     localDate: string,
-  ) => Promise<GapResult>
+  ) => Promise<SkippedMealsResult>
 }
 
 const DEFAULT_DEPENDENCIES: DailyStateServiceDependencies = {
   loadConfig: loadCalcConfig,
-  loadGap: getGapForDate,
+  loadMealPattern: getMealPattern,
+  loadSkippedMeals: getSkippedMealsForDate,
 }
+
+const SNAPSHOT_VERSION_SELECT =
+  'id, calories_consumed, calories_target, protein_g, protein_target, carbs_g, fat_g, exercise_calories, water_consumed_ml, current_protocol, day_closed, day_status, updated_at'
+const SNAPSHOT_WITH_LOGS_SELECT = `${SNAPSHOT_VERSION_SELECT}, meal_logs(id, meal_type, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at, source), workout_logs(id, workout_type, duration_min, estimated_kcal, intensity, performed_at)`
 
 export class DailyStateLoadError extends Error {
   constructor(readonly operation: string) {
     super(`${operation} failed`)
     this.name = 'DailyStateLoadError'
+  }
+}
+
+class DailyStateReadChangedError extends Error {
+  constructor() {
+    super('Daily state changed during read')
+    this.name = 'DailyStateReadChangedError'
   }
 }
 
@@ -103,7 +121,42 @@ function orderedMealTypes(values: Set<DailyStateMealType>): DailyStateMealType[]
   return MEAL_TYPE_ORDER.filter((mealType) => values.has(mealType))
 }
 
-export async function loadOfficialDailyState(
+function snapshotFingerprint(
+  snapshot: {
+    id: string
+    calories_consumed: number
+    calories_target: number | null
+    protein_g: number
+    protein_target: number | null
+    carbs_g: number
+    fat_g: number
+    exercise_calories: number
+    water_consumed_ml: number
+    current_protocol: string | null
+    day_closed: boolean
+    day_status: string
+    updated_at: string
+  } | null,
+): string {
+  if (!snapshot) return 'null'
+  return JSON.stringify({
+    id: snapshot.id,
+    calories_consumed: snapshot.calories_consumed,
+    calories_target: snapshot.calories_target,
+    protein_g: snapshot.protein_g,
+    protein_target: snapshot.protein_target,
+    carbs_g: snapshot.carbs_g,
+    fat_g: snapshot.fat_g,
+    exercise_calories: snapshot.exercise_calories,
+    water_consumed_ml: snapshot.water_consumed_ml,
+    current_protocol: snapshot.current_protocol,
+    day_closed: snapshot.day_closed,
+    day_status: snapshot.day_status,
+    updated_at: snapshot.updated_at,
+  })
+}
+
+async function loadOfficialDailyStateAttempt(
   supabase: ServiceClient,
   userId: string,
   timezone: string,
@@ -122,9 +175,7 @@ export async function loadOfficialDailyState(
     .maybeSingle()
   const snapshotQuery = supabase
     .from('daily_snapshots')
-    .select(
-      'id, calories_consumed, calories_target, protein_g, protein_target, carbs_g, fat_g, exercise_calories, water_consumed_ml, current_protocol, day_closed, day_status, updated_at',
-    )
+    .select(SNAPSHOT_WITH_LOGS_SELECT)
     .eq('user_id', userId)
     .eq('date', localDate)
     .maybeSingle()
@@ -148,11 +199,13 @@ export async function loadOfficialDailyState(
     progressQuery,
     pendingQuery,
     dependencies.loadConfig(supabase),
-    dependencies.loadGap(supabase, userId, timezone, localDate),
+    dependencies.loadMealPattern(supabase, userId, timezone),
+    dependencies.loadSkippedMeals(supabase, userId, timezone, localDate),
   ]).catch(() => {
     throw new DailyStateLoadError('daily state dependency lookup')
   })
-  const [profileResult, snapshotResult, progressResult, pendingResult, config, gap] = results
+  const [profileResult, snapshotResult, progressResult, pendingResult, config, pattern, skipped] =
+    results
 
   assertQuerySucceeded(profileResult.error, 'daily state profile lookup')
   assertQuerySucceeded(snapshotResult.error, 'daily state snapshot lookup')
@@ -160,7 +213,7 @@ export async function loadOfficialDailyState(
   assertQuerySucceeded(pendingResult.error, 'daily state pending lookup')
 
   const snapshot = snapshotResult.data
-  let meals: Array<{
+  const meals: Array<{
     id: string
     meal_type: string | null
     food_name: string
@@ -171,56 +224,41 @@ export async function loadOfficialDailyState(
     fat_g: number | null
     consumed_at: string
     nutrition_source: string | null
-  }> = []
-  let workouts: Array<{
+  }> = (snapshot?.meal_logs ?? []).map((meal) => ({
+    id: meal.id,
+    meal_type: meal.meal_type,
+    food_name: meal.food_name,
+    quantity_g: meal.quantity_g,
+    kcal: meal.kcal,
+    protein_g: meal.protein_g,
+    carbs_g: meal.carbs_g,
+    fat_g: meal.fat_g,
+    consumed_at: meal.consumed_at,
+    nutrition_source: meal.source,
+  }))
+  meals.sort(
+    (left, right) =>
+      left.consumed_at.localeCompare(right.consumed_at) || left.id.localeCompare(right.id),
+  )
+  const workouts: Array<{
     id: string
     workout_type: string | null
     duration_min: number | null
     estimated_kcal: number | null
     intensity: string | null
     performed_at: string
-  }> = []
-
-  if (snapshot) {
-    const [mealResult, workoutResult] = await Promise.all([
-      supabase
-        .from('meal_logs')
-        .select(
-          'id, meal_type, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at, source',
-        )
-        .eq('user_id', userId)
-        .eq('snapshot_id', snapshot.id)
-        .order('consumed_at', { ascending: true }),
-      supabase
-        .from('workout_logs')
-        .select('id, workout_type, duration_min, estimated_kcal, intensity, performed_at')
-        .eq('user_id', userId)
-        .eq('snapshot_id', snapshot.id)
-        .order('performed_at', { ascending: true }),
-    ])
-    assertQuerySucceeded(mealResult.error, 'daily state meals lookup')
-    assertQuerySucceeded(workoutResult.error, 'daily state workouts lookup')
-    meals = (mealResult.data ?? []).map((meal) => ({
-      id: meal.id,
-      meal_type: meal.meal_type,
-      food_name: meal.food_name,
-      quantity_g: meal.quantity_g,
-      kcal: meal.kcal,
-      protein_g: meal.protein_g,
-      carbs_g: meal.carbs_g,
-      fat_g: meal.fat_g,
-      consumed_at: meal.consumed_at,
-      nutrition_source: meal.source,
-    }))
-    workouts = (workoutResult.data ?? []).map((workout) => ({
-      id: workout.id,
-      workout_type: workout.workout_type,
-      duration_min: workout.duration_min,
-      estimated_kcal: workout.estimated_kcal,
-      intensity: workout.intensity,
-      performed_at: workout.performed_at,
-    }))
-  }
+  }> = (snapshot?.workout_logs ?? []).map((workout) => ({
+    id: workout.id,
+    workout_type: workout.workout_type,
+    duration_min: workout.duration_min,
+    estimated_kcal: workout.estimated_kcal,
+    intensity: workout.intensity,
+    performed_at: workout.performed_at,
+  }))
+  workouts.sort(
+    (left, right) =>
+      left.performed_at.localeCompare(right.performed_at) || left.id.localeCompare(right.id),
+  )
 
   const profile = profileRow(profileResult.data)
   const progress = progressResult.data
@@ -231,6 +269,29 @@ export async function loadOfficialDailyState(
     created_at: pending.created_at,
     expires_at: pending.expires_at,
   }))
+  const registered = new Set<DailyStateMealType>()
+  for (const meal of meals) {
+    if (meal.meal_type && MEAL_TYPE_ORDER.includes(meal.meal_type as DailyStateMealType)) {
+      registered.add(meal.meal_type as DailyStateMealType)
+    }
+  }
+  const openGap = new Set<DailyStateMealType>()
+  for (const mealType of pattern.expected) {
+    if (!registered.has(mealType) && !skipped.has(mealType)) openGap.add(mealType)
+  }
+
+  // Registration/workout writes update the snapshot atomically. Re-reading its
+  // scalar version prevents returning old totals with new embedded logs (or vice versa).
+  const { data: currentSnapshot, error: currentSnapshotError } = await supabase
+    .from('daily_snapshots')
+    .select(SNAPSHOT_VERSION_SELECT)
+    .eq('user_id', userId)
+    .eq('date', localDate)
+    .maybeSingle()
+  assertQuerySucceeded(currentSnapshotError, 'daily state consistency lookup')
+  if (snapshotFingerprint(snapshot) !== snapshotFingerprint(currentSnapshot)) {
+    throw new DailyStateReadChangedError()
+  }
 
   return buildDailyState({
     localDate,
@@ -257,12 +318,12 @@ export async function loadOfficialDailyState(
     workouts,
     pendingRegistrations,
     mealGap: {
-      expected: orderedMealTypes(gap.pattern.expected),
-      registered: orderedMealTypes(gap.registered),
-      skipped: orderedMealTypes(gap.skipped),
-      open: orderedMealTypes(gap.gap),
-      reliable: !gap.pattern.fallbackUsed,
-      activeDays: gap.pattern.activeDays,
+      expected: orderedMealTypes(pattern.expected),
+      registered: orderedMealTypes(registered),
+      skipped: orderedMealTypes(skipped),
+      open: orderedMealTypes(openGap),
+      reliable: !pattern.fallbackUsed,
+      activeDays: pattern.activeDays,
     },
     progress: progress
       ? {
@@ -272,4 +333,21 @@ export async function loadOfficialDailyState(
         }
       : null,
   })
+}
+
+export async function loadOfficialDailyState(
+  supabase: ServiceClient,
+  userId: string,
+  timezone: string,
+  now = new Date(),
+  dependencies: DailyStateServiceDependencies = DEFAULT_DEPENDENCIES,
+) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await loadOfficialDailyStateAttempt(supabase, userId, timezone, now, dependencies)
+    } catch (error) {
+      if (!(error instanceof DailyStateReadChangedError)) throw error
+    }
+  }
+  throw new DailyStateLoadError('daily state consistency')
 }

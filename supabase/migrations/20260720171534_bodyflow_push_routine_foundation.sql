@@ -21,6 +21,7 @@ CREATE TABLE public.mobile_devices (
     char_length(apns_token) BETWEEN 64 AND 512
     AND char_length(apns_token) % 2 = 0
     AND apns_token ~ '^[0-9A-Fa-f]+$'
+    AND apns_token = lower(apns_token)
   ),
   CONSTRAINT mobile_devices_token_hash_check CHECK (apns_token_hash ~ '^[0-9a-f]{64}$')
 );
@@ -341,6 +342,7 @@ AS $$
 DECLARE
   v_device_id uuid;
   v_installation_id text := NULLIF(btrim(p_installation_id), '');
+  v_apns_token text := lower(p_apns_token);
   v_token_hash text;
   v_existing_user_id uuid;
   v_existing_token_hash text;
@@ -351,14 +353,14 @@ BEGIN
   IF p_user_id IS NULL
     OR v_installation_id IS NULL
     OR p_apns_environment NOT IN ('sandbox', 'production')
-    OR p_apns_token IS NULL
-    OR p_apns_token !~ '^[0-9A-Fa-f]+$'
-    OR char_length(p_apns_token) NOT BETWEEN 64 AND 512
-    OR char_length(p_apns_token) % 2 <> 0 THEN
+    OR v_apns_token IS NULL
+    OR v_apns_token !~ '^[0-9a-f]+$'
+    OR char_length(v_apns_token) NOT BETWEEN 64 AND 512
+    OR char_length(v_apns_token) % 2 <> 0 THEN
     RAISE EXCEPTION 'invalid mobile device payload' USING ERRCODE = '22023';
   END IF;
 
-  v_token_hash := encode(extensions.digest(p_apns_token, 'sha256'), 'hex');
+  v_token_hash := encode(extensions.digest(v_apns_token, 'sha256'), 'hex');
   PERFORM pg_advisory_xact_lock(hashtextextended(v_token_hash || ':apns-token', 0));
   PERFORM pg_advisory_xact_lock(hashtextextended(v_installation_id || ':installation', 0));
 
@@ -396,7 +398,7 @@ BEGIN
     v_installation_id,
     'ios',
     p_apns_environment,
-    p_apns_token,
+    v_apns_token,
     true,
     clock_timestamp(),
     clock_timestamp()

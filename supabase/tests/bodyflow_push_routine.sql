@@ -180,7 +180,7 @@ BEGIN
     v_other_user_id,
     'ios-installation-b',
     'sandbox',
-    repeat('a', 64)
+    repeat('A', 64)
   );
 
   IF EXISTS (

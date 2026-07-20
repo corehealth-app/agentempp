@@ -1,6 +1,6 @@
+import type { Database } from '@mpp/db'
 import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '@mpp/db'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
@@ -13,7 +13,9 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
+        setAll(
+          cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>,
+        ) {
           try {
             for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options)
@@ -36,5 +38,17 @@ export function createServiceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } },
+  )
+}
+
+/** Supabase client scoped to a patient JWT received by the mobile BFF. */
+export function createPatientBearerClient(accessToken: string) {
+  return createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    },
   )
 }

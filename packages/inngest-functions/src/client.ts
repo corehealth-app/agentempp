@@ -1,4 +1,4 @@
-import { Inngest, EventSchemas } from 'inngest'
+import { EventSchemas, Inngest } from 'inngest'
 
 /**
  * Eventos tipados que circulam no Inngest.
@@ -58,6 +58,13 @@ type Events = {
       provider_event_id: string
       event_type: string
       raw: unknown
+    }
+  }
+  'media.asset.process.requested': {
+    data: {
+      assetId: string
+      userId: string
+      requestId: string
     }
   }
   /** Roberto 2026-05-28 (Fase A botões #4) — paciente tocou em botão interativo

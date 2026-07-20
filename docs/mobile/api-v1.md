@@ -92,6 +92,11 @@ somente ao backend.
 | `GET` | `/content` | lista vazia e estado indisponível nesta fase |
 | `GET` | `/content/:id` | reservado; retorna `404` até o módulo existir |
 | `GET` | `/entitlements` | assinaturas sanitizadas e estado do billing mobile |
+| `POST` | `/media` | cria ativo privado e devolve URL temporária de upload |
+| `POST` | `/media/:id/complete` | verifica tipo/tamanho reais e conclui o upload |
+| `GET` | `/media/:id` | metadados próprios, resultado e download temporário quando disponível |
+| `POST` | `/media/:id/process` | solicita Vision/STT idempotente para um upload concluído |
+| `DELETE` | `/media/:id` | remove o objeto físico antes de encerrar o catálogo |
 
 Todos os caminhos acima têm o prefixo `/api/mobile/v1`.
 
@@ -249,6 +254,96 @@ O servidor calcula os itens via base nutricional, cria um pending de 24 horas e
 retorna apenas o DTO necessário para confirmação. Texto bruto, IDs de provider,
 evidência de replace, audit warnings e referências internas não são expostos.
 
+## Mídia privada
+
+O app nunca recebe `service_role` e não possui policy para listar, inserir,
+alterar ou excluir diretamente em `storage.objects`. Todo acesso nasce no BFF,
+depois da resolução do paciente autenticado. O catálogo `media_assets` é a fonte
+canônica de ownership; `storage.objects.owner_id` não é usado como autorização.
+
+Tipos aceitos pelo paciente:
+
+| `kind` | MIME aceitos | Limite | Retenção padrão | Download |
+|---|---|---:|---:|---:|
+| `meal_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 30 dias | 300 s |
+| `body_checkin_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 730 dias | 60 s |
+| `gym_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 90 dias | 300 s |
+| `audio_note` | MP3, M4A/MP4, AAC, WAV, OGG | 25 MiB | 30 dias | 300 s |
+
+`content-covers` também existe como bucket privado, limitado a 10 MiB e sem
+expiração automática, mas não faz parte do contrato de upload do paciente. Ele
+fica reservado para o futuro CMS com RBAC próprio. SVG não é aceito.
+
+### Fluxo de upload
+
+1. O app chama `POST /media` com `Idempotency-Key`:
+
+```json
+{
+  "kind": "meal_photo",
+  "mime_type": "image/jpeg",
+  "size_bytes": 2048000,
+  "context_text": "Jantar: frango grelhado com arroz."
+}
+```
+
+2. A API cria um caminho imutável e não enumerável e devolve `asset` mais
+   `upload.signed_url`. A URL expira em duas horas. Ela já contém a capacidade
+   temporária; o app não recebe bucket, caminho interno nem token separado.
+3. O app envia os bytes diretamente para `signed_url` usando o `method` e os
+   `headers` devolvidos (`PUT`, `Content-Type` declarado e `x-upsert: false`),
+   com o mesmo total de bytes declarado. A URL deve permanecer apenas em
+   memória e nunca entrar em analytics, crash logs ou telemetria.
+4. O app chama `POST /media/:id/complete` com uma nova `Idempotency-Key`.
+   O backend consulta os metadados reais no Storage. Divergência de MIME ou
+   tamanho remove o objeto, marca falha de upload e retorna `422`. Objeto ausente
+   também encerra o pending como falha; indisponibilidade transitória do Storage
+   retorna `503` sem alterar o estado. O `422` mutável é replayado pelo ledger.
+5. Quando houver análise, o app chama `POST /media/:id/process`. O evento contém
+   apenas IDs técnicos; a legenda permanece no catálogo privado e é carregada
+   pelo worker junto da foto. Foto e texto formam um único contexto e não viram
+   dois registros de refeição.
+6. O app consulta `GET /media/:id` até `processed` ou `failed`. A resposta inclui
+   `result` somente depois de `processed` e uma URL curta de download apenas nos
+   estados em que o objeto já foi validado.
+
+Repetir `POST /media` com a mesma chave nunca cria outro ativo. Como o ledger da
+API dura 24 horas e a URL dura duas, um replay regenera somente a URL temporária
+quando o ativo ainda está em `pending_upload`. A capacidade assinada não é
+persistida no corpo do ledger idempotente.
+
+Estados válidos:
+
+```text
+pending_upload -> uploaded -> processing -> processed
+       |             |            |
+       +----------> failed <-------+
+       |             |
+       +----------> deleted <------+---- processed
+```
+
+Retry do evento pode retomar a falha com o mesmo `processing_request_id`, e um
+novo pedido explícito pode criar outro claim depois que o estado já é `failed`.
+Enquanto o ativo está em `processing`, nenhum outro evento toma o claim ativo.
+`deleted` é terminal.
+
+### Privacidade, retenção e exclusão
+
+- O path é derivado no servidor de `user_id + asset_id + extensão`; nome original
+  do arquivo não é armazenado.
+- Antes de Vision/STT, o worker valida a assinatura binária compatível com o
+  MIME. Conteúdo disfarçado é rejeitado sem custo de IA.
+- `raw_response` do provedor não é persistido. O resultado estruturado fica no
+  registro privado do paciente.
+- A limpeza de retenção roda em lotes e remove o objeto físico antes de marcar o
+  catálogo como `deleted`.
+- No purge de conta, o FK `RESTRICT` impede apagar o paciente antes da remoção
+  física. O worker remove objetos, apaga o catálogo e só então apaga `users`.
+- `DELETE /media/:id` segue a mesma ordem. URLs já emitidas têm TTL máximo de 60
+  ou 300 segundos; clientes não devem reutilizá-las nem mantê-las em cache.
+- Fotos corporais são tratadas como mídia sensível: bucket separado, TTL de 60
+  segundos e nenhuma URL pública permanente.
+
 ## Proposta de treino
 
 ```json
@@ -277,7 +372,8 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 
 ## Limites desta fase
 
-- Não há chat nativo, upload mobile, APNs, StoreKit ou app iOS nesta entrega.
+- Não há chat nativo, APNs, StoreKit ou app iOS nesta entrega. O backend de upload
+  mobile está implementado, mas ainda depende de integração e QA no app nativo.
 - `persona` não persiste seleção até o Prompt correspondente implementar o domínio.
 - `content` não consulta frases educativas nem inventa um CMS sobre tabelas legadas.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.

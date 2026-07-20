@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   historyQuerySchema,
   idempotencyKeySchema,
+  mediaUploadInputSchema,
   onboardingInputSchema,
   patchMeInputSchema,
   registrationProposalInputSchema,
@@ -73,5 +74,78 @@ describe('mobile API v1 contracts', () => {
     ).toMatchObject({ training_frequency: 0 })
     expect(() => onboardingInputSchema.parse({ height_cm: 70 })).toThrow()
     expect(() => onboardingInputSchema.parse({ wake_time: '27:00' })).toThrow()
+  })
+
+  it('accepts bounded patient media uploads with optional photo context', () => {
+    expect(
+      mediaUploadInputSchema.parse({
+        kind: 'meal_photo',
+        mime_type: 'image/jpeg',
+        size_bytes: 2_048_000,
+        context_text: 'Jantar: frango grelhado com arroz.',
+      }),
+    ).toEqual({
+      kind: 'meal_photo',
+      mime_type: 'image/jpeg',
+      size_bytes: 2_048_000,
+      context_text: 'Jantar: frango grelhado com arroz.',
+    })
+  })
+
+  it('keeps content covers and mismatched media outside the patient upload contract', () => {
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'content_cover',
+        mime_type: 'image/jpeg',
+        size_bytes: 100,
+      }),
+    ).toThrow()
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'audio_note',
+        mime_type: 'image/jpeg',
+        size_bytes: 100,
+      }),
+    ).toThrow()
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'meal_photo',
+        mime_type: 'image/svg+xml',
+        size_bytes: 100,
+      }),
+    ).toThrow()
+  })
+
+  it('rejects oversized media, unbounded context, and unknown fields', () => {
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'meal_photo',
+        mime_type: 'image/jpeg',
+        size_bytes: 15 * 1024 * 1024 + 1,
+      }),
+    ).toThrow()
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'audio_note',
+        mime_type: 'audio/mpeg',
+        size_bytes: 25 * 1024 * 1024 + 1,
+      }),
+    ).toThrow()
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'gym_photo',
+        mime_type: 'image/png',
+        size_bytes: 100,
+        context_text: 'x'.repeat(1001),
+      }),
+    ).toThrow()
+    expect(() =>
+      mediaUploadInputSchema.parse({
+        kind: 'gym_photo',
+        mime_type: 'image/png',
+        size_bytes: 100,
+        user_id: 'forbidden',
+      }),
+    ).toThrow()
   })
 })

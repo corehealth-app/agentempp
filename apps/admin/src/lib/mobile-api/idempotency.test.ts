@@ -110,6 +110,70 @@ describe('mobile mutation idempotency', () => {
     })
   })
 
+  it('can refresh a temporary capability while preserving the completed mutation replay', async () => {
+    const persistence = store({
+      action: 'replay',
+      status: 201,
+      body: { data: { asset: { id: 'asset-1' }, upload: { signed_url: 'expired' } } },
+    })
+    const operation = vi.fn()
+    const refreshReplay = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          { data: { asset: { id: 'asset-1' }, upload: { signed_url: 'fresh' } } },
+          { status: 201 },
+        ),
+      )
+
+    const response = await executeIdempotent(
+      context('mobile-request-0001'),
+      { kind: 'meal_photo' },
+      persistence,
+      operation,
+      { refreshReplay },
+    )
+
+    expect(operation).not.toHaveBeenCalled()
+    expect(refreshReplay).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'replay', status: 201 }),
+    )
+    expect(response.headers.get('idempotency-replayed')).toBe('true')
+    expect(await response.json()).toMatchObject({
+      data: { asset: { id: 'asset-1' }, upload: { signed_url: 'fresh' } },
+    })
+  })
+
+  it('can keep a temporary capability out of the persisted replay body', async () => {
+    const persistence = store({ action: 'claimed', claimId: 'claim-1' })
+    const operation = vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          data: {
+            asset: { id: 'asset-1' },
+            upload: { signed_url: 'https://storage.test/private-capability' },
+          },
+        },
+        { status: 201 },
+      ),
+    )
+
+    const response = await executeIdempotent(
+      context('mobile-request-0001'),
+      { kind: 'meal_photo' },
+      persistence,
+      operation,
+      { responseBodyForStorage: () => ({ temporary_capability_redacted: true }) },
+    )
+
+    expect(await response.json()).toMatchObject({
+      data: { upload: { signed_url: 'https://storage.test/private-capability' } },
+    })
+    expect(persistence.complete).toHaveBeenCalledWith('claim-1', 'patient-1', 201, {
+      temporary_capability_redacted: true,
+    })
+  })
+
   it('rejects reuse of a key for another request', async () => {
     const persistence = store({ action: 'conflict' })
 

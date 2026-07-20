@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -886,6 +906,89 @@ export type Database = {
           },
         ]
       }
+      media_assets: {
+        Row: {
+          actual_size_bytes: number | null
+          bucket_id: string
+          context_text: string | null
+          created_at: string
+          declared_size_bytes: number
+          deleted_at: string | null
+          etag: string | null
+          failure_code: string | null
+          failure_stage: string | null
+          id: string
+          kind: string
+          mime_type: string
+          object_path: string
+          processed_at: string | null
+          processing_request_id: string | null
+          processing_result: Json | null
+          retention_until: string | null
+          source_request_hash: string
+          status: string
+          updated_at: string
+          uploaded_at: string | null
+          user_id: string
+        }
+        Insert: {
+          actual_size_bytes?: number | null
+          bucket_id: string
+          context_text?: string | null
+          created_at?: string
+          declared_size_bytes: number
+          deleted_at?: string | null
+          etag?: string | null
+          failure_code?: string | null
+          failure_stage?: string | null
+          id?: string
+          kind: string
+          mime_type: string
+          object_path: string
+          processed_at?: string | null
+          processing_request_id?: string | null
+          processing_result?: Json | null
+          retention_until?: string | null
+          source_request_hash: string
+          status?: string
+          updated_at?: string
+          uploaded_at?: string | null
+          user_id: string
+        }
+        Update: {
+          actual_size_bytes?: number | null
+          bucket_id?: string
+          context_text?: string | null
+          created_at?: string
+          declared_size_bytes?: number
+          deleted_at?: string | null
+          etag?: string | null
+          failure_code?: string | null
+          failure_stage?: string | null
+          id?: string
+          kind?: string
+          mime_type?: string
+          object_path?: string
+          processed_at?: string | null
+          processing_request_id?: string | null
+          processing_result?: Json | null
+          retention_until?: string | null
+          source_request_hash?: string
+          status?: string
+          updated_at?: string
+          uploaded_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_assets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_buffer: {
         Row: {
           buffered_at: string
@@ -1104,6 +1207,62 @@ export type Database = {
           protocol?: string | null
         }
         Relationships: []
+      }
+      mobile_api_idempotency: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          expires_at: string
+          id: string
+          idempotency_key: string
+          request_hash: string
+          request_method: string
+          request_route: string
+          response_body: Json | null
+          response_status: number | null
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          expires_at?: string
+          id?: string
+          idempotency_key: string
+          request_hash: string
+          request_method: string
+          request_route: string
+          response_body?: Json | null
+          response_status?: number | null
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          expires_at?: string
+          id?: string
+          idempotency_key?: string
+          request_hash?: string
+          request_method?: string
+          request_route?: string
+          response_body?: Json | null
+          response_status?: number | null
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mobile_api_idempotency_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pending_approvals: {
         Row: {
@@ -2382,6 +2541,20 @@ export type Database = {
           usage_count: number
         }[]
       }
+      claim_media_asset_processing: {
+        Args: { p_asset_id: string; p_request_id: string; p_user_id: string }
+        Returns: Json
+      }
+      claim_mobile_api_request: {
+        Args: {
+          p_idempotency_key: string
+          p_request_hash: string
+          p_request_method: string
+          p_request_route: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       claim_subscription_event: {
         Args: {
           p_event_type: string
@@ -2391,9 +2564,27 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_media_asset_processing: {
+        Args: {
+          p_asset_id: string
+          p_request_id: string
+          p_result: Json
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       complete_message_dispatch: {
         Args: { p_dispatch_id: string }
         Returns: Json
+      }
+      complete_mobile_api_request: {
+        Args: {
+          p_claim_id: string
+          p_response_body: Json
+          p_response_status: number
+          p_user_id: string
+        }
+        Returns: boolean
       }
       cron_run_now: { Args: { p_jobname: string }; Returns: Json }
       cron_toggle_job: {
@@ -2442,6 +2633,19 @@ export type Database = {
           p_error: string
           p_now?: string
         }
+        Returns: boolean
+      }
+      fail_media_asset_processing: {
+        Args: {
+          p_asset_id: string
+          p_failure_code: string
+          p_request_id: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      fail_mobile_api_request: {
+        Args: { p_claim_id: string; p_user_id: string }
         Returns: boolean
       }
       finalize_daily_close_atomic: {
@@ -2935,6 +3139,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       activity_enum: ["sedentario", "leve", "moderado", "alto", "atleta"],

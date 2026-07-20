@@ -12,18 +12,21 @@ DECLARE
   v_unsafe_defaults text;
 BEGIN
   IF has_table_privilege('anon', 'public.p0_default_table_probe', 'SELECT,INSERT,UPDATE,DELETE')
-    OR has_table_privilege('authenticated', 'public.p0_default_table_probe', 'SELECT,INSERT,UPDATE,DELETE') THEN
-    RAISE EXCEPTION 'new public tables inherit privileges for anon/authenticated';
+    OR has_table_privilege('authenticated', 'public.p0_default_table_probe', 'SELECT,INSERT,UPDATE,DELETE')
+    OR has_table_privilege('service_role', 'public.p0_default_table_probe', 'SELECT,INSERT,UPDATE,DELETE') THEN
+    RAISE EXCEPTION 'new public tables inherit application-role privileges';
   END IF;
 
   IF has_sequence_privilege('anon', 'public.p0_default_sequence_probe', 'USAGE')
-    OR has_sequence_privilege('authenticated', 'public.p0_default_sequence_probe', 'USAGE') THEN
-    RAISE EXCEPTION 'new public sequences inherit privileges for anon/authenticated';
+    OR has_sequence_privilege('authenticated', 'public.p0_default_sequence_probe', 'USAGE')
+    OR has_sequence_privilege('service_role', 'public.p0_default_sequence_probe', 'USAGE') THEN
+    RAISE EXCEPTION 'new public sequences inherit application-role privileges';
   END IF;
 
   IF has_function_privilege('anon', 'public.p0_default_function_probe()', 'EXECUTE')
-    OR has_function_privilege('authenticated', 'public.p0_default_function_probe()', 'EXECUTE') THEN
-    RAISE EXCEPTION 'new public functions inherit EXECUTE for anon/authenticated';
+    OR has_function_privilege('authenticated', 'public.p0_default_function_probe()', 'EXECUTE')
+    OR has_function_privilege('service_role', 'public.p0_default_function_probe()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'new public functions inherit application-role EXECUTE';
   END IF;
 
   SELECT string_agg(
@@ -39,10 +42,10 @@ BEGIN
   CROSS JOIN LATERAL aclexplode(defaults.defaclacl) privileges
   LEFT JOIN pg_roles grantee_role ON grantee_role.oid = privileges.grantee
   WHERE defaults.defaclnamespace = 'public'::regnamespace
-    AND owner_role.rolname IN ('postgres', 'supabase_admin')
+    AND owner_role.rolname = current_user
     AND (
       privileges.grantee = 0
-      OR grantee_role.rolname IN ('anon', 'authenticated')
+      OR grantee_role.rolname IN ('anon', 'authenticated', 'service_role')
     );
 
   IF v_unsafe_defaults IS NOT NULL THEN

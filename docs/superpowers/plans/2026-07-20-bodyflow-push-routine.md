@@ -115,4 +115,4 @@ de suplementos/medicamentos sem inventar dados.
 - [x] Corrigir erros HTTP de constraints, ownership historico de devices,
   paginacao acima de 500 regras e claim atrasado auditavel.
 - [x] Reaplicar testes, lint, advisors e invariantes no staging apos o hardening.
-- [ ] Push da branch e abrir PR draft contra `codex/bodyflow-secure-media-v1`.
+- [x] Push da branch e abrir PR draft contra `codex/bodyflow-secure-media-v1`.

@@ -1,12 +1,12 @@
-import { ContentCard, PageHeader } from '@/components/page-header'
+import { Bot, User as UserIcon } from 'lucide-react'
+import { notFound } from 'next/navigation'
 import { CountryBadge } from '@/components/country-badge'
+import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
-import { notFound } from 'next/navigation'
-import { Bot, User as UserIcon } from 'lucide-react'
+import { DangerZone } from '../../messages/danger-zone'
 import { CheckoutButton } from './checkout-button'
 import { CountryConfirmButton } from './country-confirm'
-import { DangerZone } from '../../messages/danger-zone'
 
 const PROTOCOL_LABELS: Record<string, string> = {
   recomposicao: 'Recomposição',
@@ -32,9 +32,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     svc.from('user_progress').select('*').eq('user_id', id).maybeSingle(),
     svc
       .from('messages')
-      .select(
-        'id, direction, content, content_type, agent_stage, model_used, cost_usd, created_at',
-      )
+      .select('id, direction, content, content_type, agent_stage, model_used, cost_usd, created_at')
       .eq('user_id', id)
       .order('created_at', { ascending: false })
       .limit(50),
@@ -52,16 +50,15 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .limit(1)
       .maybeSingle(),
   ])
-  const sub = subscription as
-    | {
-        id: string
-        plan: string
-        status: string
-        current_period_end: string | null
-        trial_ends_at: string | null
-        cancel_at_period_end: boolean
-      }
-    | null
+  const sub = subscription as {
+    id: string
+    plan: string
+    status: string
+    current_period_end: string | null
+    trial_ends_at: string | null
+    cancel_at_period_end: boolean
+  } | null
+  const identityLabel = user.name ?? user.email ?? user.wpp ?? 'Usuario app'
 
   return (
     <div className="space-y-4">
@@ -69,9 +66,9 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         breadcrumbs={[
           { label: 'Operação' },
           { label: 'Usuários', href: '/users' },
-          { label: user.name ?? user.wpp },
+          { label: identityLabel },
         ]}
-        title={user.name ?? user.wpp}
+        title={identityLabel}
         description={
           <span className="font-mono text-xs inline-flex items-center gap-2 flex-wrap">
             {user.wpp} · {user.id.slice(0, 8)}…
@@ -112,7 +109,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
               label="Atual"
               value={
                 profile?.current_protocol
-                  ? PROTOCOL_LABELS[profile.current_protocol] ?? profile.current_protocol
+                  ? (PROTOCOL_LABELS[profile.current_protocol] ?? profile.current_protocol)
                   : null
               }
             />
@@ -129,8 +126,16 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           <div className="space-y-2 text-sm">
             <Field label="XP Total" value={progress?.xp_total?.toString()} mono />
             <Field label="Level" value={progress?.level?.toString()} mono />
-            <Field label="Streak atual" value={progress?.current_streak?.toString() ? `${progress.current_streak}d` : null} mono />
-            <Field label="Maior streak" value={progress?.longest_streak?.toString() ? `${progress.longest_streak}d` : null} mono />
+            <Field
+              label="Streak atual"
+              value={progress?.current_streak?.toString() ? `${progress.current_streak}d` : null}
+              mono
+            />
+            <Field
+              label="Maior streak"
+              value={progress?.longest_streak?.toString() ? `${progress.longest_streak}d` : null}
+              mono
+            />
             <Field label="Blocos 7700" value={progress?.blocks_completed?.toString()} mono />
             <Field label="Déficit bloco" value={progress?.deficit_block?.toString()} mono />
             {(progress?.badges_earned ?? []).length > 0 && (
@@ -177,9 +182,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
               <Field
                 label="Trial até"
                 value={
-                  sub.trial_ends_at
-                    ? new Date(sub.trial_ends_at).toLocaleDateString('pt-BR')
-                    : null
+                  sub.trial_ends_at ? new Date(sub.trial_ends_at).toLocaleDateString('pt-BR') : null
                 }
                 mono
               />
@@ -242,9 +245,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                     <td className="text-right px-3 py-2.5 font-mono text-xs tabular-nums">
                       {s.xp_earned}
                     </td>
-                    <td className="text-center px-5 py-2.5 text-xs">
-                      {s.day_closed ? '🔒' : '—'}
-                    </td>
+                    <td className="text-center px-5 py-2.5 text-xs">{s.day_closed ? '🔒' : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -311,12 +312,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         title="Zona de perigo"
         description="Resetar mantém o paciente e zera onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
       >
-        <DangerZone
-          userId={user.id}
-          userName={user.name}
-          userWpp={user.wpp}
-          layout="full"
-        />
+        <DangerZone userId={user.id} userName={user.name} userWpp={user.wpp} layout="full" />
       </ContentCard>
     </div>
   )

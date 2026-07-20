@@ -1,4 +1,7 @@
 'use client'
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,16 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useState, useTransition } from 'react'
-import { toast } from 'sonner'
-import { useRouter } from 'next/navigation'
+import { ADMIN_ROLES, type AdminRole } from '@/lib/admin-rbac'
 import { addAdmin } from './actions'
 
 export function AdminInviteForm() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [role, setRole] = useState('admin')
+  const [role, setRole] = useState<AdminRole>('support')
   const [pending, startTransition] = useTransition()
 
   function onSubmit(e: React.FormEvent) {
@@ -53,14 +54,16 @@ export function AdminInviteForm() {
       </div>
       <div className="space-y-1.5">
         <Label>Role</Label>
-        <Select value={role} onValueChange={setRole}>
+        <Select value={role} onValueChange={(value) => setRole(value as AdminRole)}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="admin">admin</SelectItem>
-            <SelectItem value="editor">editor</SelectItem>
-            <SelectItem value="viewer">viewer</SelectItem>
+            {ADMIN_ROLES.map((adminRole) => (
+              <SelectItem key={adminRole} value={adminRole}>
+                {adminRole}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

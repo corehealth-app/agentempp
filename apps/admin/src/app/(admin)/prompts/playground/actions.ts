@@ -1,7 +1,8 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { processMessage } from '@mpp/agent'
 import { OpenRouterLLM } from '@mpp/providers'
+import { AI_PLAYGROUND_ROLES, hasAdminRole } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -15,7 +16,9 @@ async function requireAdmin() {
     .select('id, role')
     .eq('id', user.id)
     .maybeSingle()
-  if (!admin) throw new Error('Acesso negado')
+  if (!admin || !hasAdminRole(admin.role, AI_PLAYGROUND_ROLES)) {
+    throw new Error('Acesso negado')
+  }
   return user
 }
 

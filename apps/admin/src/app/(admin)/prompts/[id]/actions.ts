@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { CONTENT_ADMIN_ROLES, hasAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 interface SaveInput {
   id: string
@@ -24,7 +25,9 @@ async function requireEditor() {
     .select('id, role, email')
     .eq('id', user.id)
     .maybeSingle()
-  if (!admin || !['admin', 'editor'].includes(admin.role)) throw new Error('Acesso negado')
+  if (!admin || !hasAdminRole(admin.role, CONTENT_ADMIN_ROLES)) {
+    throw new Error('Acesso negado')
+  }
   return { user, admin }
 }
 
@@ -33,7 +36,7 @@ export async function saveRule(input: SaveInput) {
     const { user, admin } = await requireEditor()
 
     // Apenas admin pode publicar (status='active')
-    if (input.status === 'active' && admin.role !== 'admin') {
+    if (input.status === 'active' && !hasAdminRole(admin.role, MASTER_ADMIN_ROLES)) {
       return { error: 'Apenas admin pode publicar regras' }
     }
 
@@ -93,7 +96,9 @@ export async function saveRule(input: SaveInput) {
 export async function deleteRule(id: string) {
   try {
     const { user, admin } = await requireEditor()
-    if (admin.role !== 'admin') return { error: 'Apenas admin pode apagar' }
+    if (!hasAdminRole(admin.role, MASTER_ADMIN_ROLES)) {
+      return { error: 'Apenas master admin pode apagar' }
+    }
 
     const svc = createServiceClient()
     const { error } = await svc.from('agent_rules').delete().eq('id', id)

@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { hasAdminRole, OPERATIONS_ADMIN_ROLES, PATIENT_SUPPORT_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 /**
  * Marca country_confirmed=true (e atualiza country se vier diferente).
@@ -21,7 +22,9 @@ export async function confirmCountryAction(userId: string, country: string) {
       .select('id, role')
       .eq('id', user.id)
       .maybeSingle()
-    if (!admin) return { error: 'Acesso negado' }
+    if (!admin || !hasAdminRole(admin.role, PATIENT_SUPPORT_ROLES)) {
+      return { error: 'Acesso negado' }
+    }
 
     const iso = country.trim().toUpperCase()
     if (!/^[A-Z]{2}$/.test(iso)) return { error: 'país deve ser ISO alpha-2 (BR, US, …)' }
@@ -32,13 +35,15 @@ export async function confirmCountryAction(userId: string, country: string) {
       .eq('id', userId)
       .maybeSingle()
 
-    const { error } = await (svc as unknown as {
-      from: (t: string) => {
-        update: (u: Record<string, unknown>) => {
-          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+    const { error } = await (
+      svc as unknown as {
+        from: (t: string) => {
+          update: (u: Record<string, unknown>) => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+          }
         }
       }
-    })
+    )
       .from('users')
       .update({
         country: iso,
@@ -80,20 +85,27 @@ export async function closeDay(userId: string, date: string) {
       .select('role')
       .eq('id', user.id)
       .maybeSingle()
-    if (!admin) return { error: 'Acesso negado' }
+    if (!admin || !hasAdminRole(admin.role, OPERATIONS_ADMIN_ROLES)) {
+      return { error: 'Acesso negado' }
+    }
 
     // daily_close_user SQL function foi removida na migration de auditoria.
     // Lógica 100% migrada pro Inngest worker daily-closer (TS).
     // Aqui marcamos snapshot como fechado e disparamos evento pro worker.
-    const { error: closeErr } = await (svc as unknown as {
-      from: (t: string) => {
-        update: (u: Record<string, unknown>) => {
-          eq: (col: string, val: string) => {
-            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+    const { error: closeErr } = await (
+      svc as unknown as {
+        from: (t: string) => {
+          update: (u: Record<string, unknown>) => {
+            eq: (
+              col: string,
+              val: string,
+            ) => {
+              eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+            }
           }
         }
       }
-    })
+    )
       .from('daily_snapshots')
       .update({ day_closed: true, closed_at: new Date().toISOString() })
       .eq('user_id', userId)
@@ -101,12 +113,14 @@ export async function closeDay(userId: string, date: string) {
     if (closeErr) return { error: closeErr.message }
 
     // Dispara evento Inngest pra recalcular user_progress (XP/streak/blocks)
-    await (svc as unknown as {
-      rpc: (
-        n: string,
-        p: Record<string, unknown>,
-      ) => Promise<{ error: { message?: string } | null }>
-    })
+    await (
+      svc as unknown as {
+        rpc: (
+          n: string,
+          p: Record<string, unknown>,
+        ) => Promise<{ error: { message?: string } | null }>
+      }
+    )
       .rpc('dispatch_inngest_event', {
         p_event_name: 'day.close.tick',
         p_data: { hour: 99, fired_at: new Date().toISOString(), force_user_id: userId },

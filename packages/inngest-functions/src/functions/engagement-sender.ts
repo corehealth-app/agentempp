@@ -52,6 +52,7 @@ export const engagementSenderFn = inngest.createFunction(
         .from('users')
         .select('id, wpp, name, timezone')
         .eq('status', 'active')
+        .not('wpp', 'is', null)
       throwIfQueryFailed(usersError, 'engagement users lookup failed')
       // Filtra só quem TEM perfil + onboarding completo + protocolo definido
       const ids = (data ?? []).map((u) => u.id)
@@ -64,7 +65,9 @@ export const engagementSenderFn = inngest.createFunction(
         .not('current_protocol', 'is', null)
       throwIfQueryFailed(profilesError, 'engagement profiles lookup failed')
       const eligibleIds = new Set((profiles ?? []).map((p) => p.user_id))
-      return (data ?? []).filter((u) => eligibleIds.has(u.id))
+      return (data ?? []).filter(
+        (u): u is typeof u & { wpp: string } => u.wpp !== null && eligibleIds.has(u.id),
+      )
     })
 
     let sent = 0

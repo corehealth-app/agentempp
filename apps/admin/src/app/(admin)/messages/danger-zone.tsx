@@ -29,17 +29,11 @@ export function DangerZone({
 }: {
   userId: string
   userName: string | null
-  userWpp: string
+  userWpp: string | null
   layout?: 'compact' | 'full'
 }) {
   return (
-    <div
-      className={
-        layout === 'compact'
-          ? 'flex flex-wrap gap-1.5'
-          : 'flex flex-col gap-2'
-      }
-    >
+    <div className={layout === 'compact' ? 'flex flex-wrap gap-1.5' : 'flex flex-col gap-2'}>
       <ResetDialog userId={userId} userName={userName} userWpp={userWpp} layout={layout} />
       <DeleteDialog userId={userId} userName={userName} userWpp={userWpp} layout={layout} />
     </div>
@@ -54,7 +48,7 @@ function ResetDialog({
 }: {
   userId: string
   userName: string | null
-  userWpp: string
+  userWpp: string | null
   layout: 'compact' | 'full'
 }) {
   const router = useRouter()
@@ -69,7 +63,9 @@ function ResetDialog({
       if (r.error) {
         toast.error(r.error)
       } else {
-        toast.success(`Conversa de ${userName ?? userWpp} resetada — pronto pra começar do zero`)
+        toast.success(
+          `Conversa de ${userName ?? userWpp ?? 'usuario app'} resetada — pronto pra começar do zero`,
+        )
         setOpen(false)
         setConfirm('')
         router.push('/messages')
@@ -91,10 +87,10 @@ function ResetDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Resetar conversa de {userName ?? userWpp}?</DialogTitle>
+          <DialogTitle>Resetar conversa de {userName ?? userWpp ?? 'usuario app'}?</DialogTitle>
           <DialogDescription>
-            Apaga TODAS as mensagens, refeições, treinos, progresso, snapshots, embeddings.
-            Mantém o paciente cadastrado mas zera o onboarding (nome, perfil clínico, badges).
+            Apaga TODAS as mensagens, refeições, treinos, progresso, snapshots, embeddings. Mantém o
+            paciente cadastrado mas zera o onboarding (nome, perfil clínico, badges).
             <br />
             <strong>Útil pra testar o fluxo do zero sem precisar criar paciente novo.</strong>
             <br />
@@ -136,7 +132,7 @@ function DeleteDialog({
 }: {
   userId: string
   userName: string | null
-  userWpp: string
+  userWpp: string | null
   layout: 'compact' | 'full'
 }) {
   const router = useRouter()
@@ -151,7 +147,7 @@ function DeleteDialog({
       if (r.error) {
         toast.error(r.error)
       } else {
-        toast.success(`${userName ?? userWpp} excluído permanentemente`)
+        toast.success(`${userName ?? userWpp ?? 'usuario app'} excluído permanentemente`)
         setOpen(false)
         setConfirm('')
         router.push('/users')
@@ -173,15 +169,15 @@ function DeleteDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Excluir {userName ?? userWpp} permanentemente?</DialogTitle>
+          <DialogTitle>Excluir {userName ?? userWpp ?? 'usuario app'} permanentemente?</DialogTitle>
           <DialogDescription>
             Isso é <strong>irreversível</strong>. Apaga o paciente + todas as mensagens, tools,
             refeições, treinos, snapshots, progresso, assinaturas Stripe locais e qualquer dado
             associado. Cascade total via FK.
             <br />
             <br />
-            Quando essa pessoa mandar nova msg pelo WhatsApp, vai ser tratado como paciente novo
-            (1ª interação, onboarding do zero).
+            Quando essa pessoa mandar nova msg pelo WhatsApp, vai ser tratado como paciente novo (1ª
+            interação, onboarding do zero).
             <br />
             <br />
             Digite <code className="font-mono bg-muted px-1.5 py-0.5 rounded">EXCLUIR</code> pra

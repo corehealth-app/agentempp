@@ -58,13 +58,13 @@ atomicas e claims.
 
 **Produces:** endpoints de devices, preferencias, reminders, hidratacao e `taken`.
 
-- [ ] Escrever testes RED para validacao de token, horarios, dias, ownership,
+- [x] Escrever testes RED para validacao de token, horarios, dias, ownership,
   idempotencia, DTO sem token, hidratacao e tipo correto de routine item.
-- [ ] Implementar schemas Zod estritos e DTOs minimizados.
-- [ ] Implementar servico com dependencias injetaveis e erros mobile explicitos.
-- [ ] Implementar adaptador Supabase e rotas usando `executeSupabaseIdempotent`.
-- [ ] Rodar `pnpm --filter @mpp/admin test` e typecheck.
-- [ ] Commit: `feat(mobile-api): add reminders and routine endpoints`.
+- [x] Implementar schemas Zod estritos e DTOs minimizados.
+- [x] Implementar servico com dependencias injetaveis e erros mobile explicitos.
+- [x] Implementar adaptador Supabase e rotas usando `executeSupabaseIdempotent`.
+- [x] Rodar `pnpm --filter @mpp/admin test` e typecheck.
+- [x] Commit: `feat(mobile-api): add reminders and routine endpoints`.
 
 ### Task 3: Scheduler e fila idempotente
 

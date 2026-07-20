@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createReminderInputSchema,
   historyQuerySchema,
+  hydrationInputSchema,
   idempotencyKeySchema,
+  markRoutineTakenInputSchema,
   mediaUploadInputSchema,
+  mobileDeviceInputSchema,
+  notificationPreferencesPatchSchema,
   onboardingInputSchema,
   patchMeInputSchema,
+  patchReminderInputSchema,
   registrationProposalInputSchema,
 } from './contracts'
 
@@ -147,5 +153,116 @@ describe('mobile API v1 contracts', () => {
         user_id: 'forbidden',
       }),
     ).toThrow()
+  })
+
+  it('accepts only bounded hexadecimal APNs device tokens', () => {
+    expect(
+      mobileDeviceInputSchema.parse({
+        installation_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+        apns_environment: 'sandbox',
+        apns_token: 'A'.repeat(64),
+      }),
+    ).toMatchObject({ apns_environment: 'sandbox', apns_token: 'a'.repeat(64) })
+
+    expect(() =>
+      mobileDeviceInputSchema.parse({
+        installation_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+        apns_environment: 'sandbox',
+        apns_token: 'g'.repeat(64),
+      }),
+    ).toThrow()
+    expect(() =>
+      mobileDeviceInputSchema.parse({
+        installation_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+        apns_environment: 'production',
+        apns_token: 'a'.repeat(63),
+        user_id: 'forbidden',
+      }),
+    ).toThrow()
+  })
+
+  it('treats quiet hours as one atomic preference', () => {
+    expect(
+      notificationPreferencesPatchSchema.parse({
+        quiet_hours: { start: '22:00', end: '07:00' },
+        daily_push_limit: 6,
+        hydration_target_ml: 2400,
+      }),
+    ).toEqual({
+      quiet_hours: { start: '22:00', end: '07:00' },
+      daily_push_limit: 6,
+      hydration_target_ml: 2400,
+    })
+    expect(notificationPreferencesPatchSchema.parse({ quiet_hours: null })).toEqual({
+      quiet_hours: null,
+    })
+    expect(() =>
+      notificationPreferencesPatchSchema.parse({ quiet_hours: { start: '22:00' } }),
+    ).toThrow()
+    expect(() =>
+      notificationPreferencesPatchSchema.parse({
+        quiet_hours: { start: '22:00', end: '22:00' },
+      }),
+    ).toThrow()
+  })
+
+  it('validates reminder ownership references and unique weekdays', () => {
+    expect(
+      createReminderInputSchema.parse({
+        category: 'meal',
+        meal_type: 'jantar',
+        local_time: '20:30',
+        weekdays: [1, 2, 3, 4, 5],
+      }),
+    ).toMatchObject({ category: 'meal', meal_type: 'jantar' })
+    expect(
+      createReminderInputSchema.parse({
+        category: 'supplement',
+        routine_item_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+        local_time: '08:00',
+        weekdays: [0, 6],
+      }),
+    ).toMatchObject({ category: 'supplement' })
+
+    expect(() =>
+      createReminderInputSchema.parse({
+        category: 'meal',
+        local_time: '20:30',
+        weekdays: [1],
+      }),
+    ).toThrow()
+    expect(() =>
+      createReminderInputSchema.parse({
+        category: 'hydration',
+        routine_item_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+        local_time: '08:00',
+        weekdays: [1, 1],
+      }),
+    ).toThrow()
+  })
+
+  it('keeps reminder identity immutable while allowing schedule edits', () => {
+    expect(
+      patchReminderInputSchema.parse({ local_time: '09:15', weekdays: [1, 3, 5], active: false }),
+    ).toEqual({ local_time: '09:15', weekdays: [1, 3, 5], active: false })
+    expect(() => patchReminderInputSchema.parse({})).toThrow()
+    expect(() => patchReminderInputSchema.parse({ category: 'meal' })).toThrow()
+  })
+
+  it('bounds hydration and routine adherence timestamps', () => {
+    expect(
+      hydrationInputSchema.parse({
+        amount_ml: 350,
+        occurred_at: '2026-07-20T12:00:00-04:00',
+      }),
+    ).toEqual({ amount_ml: 350, occurred_at: '2026-07-20T12:00:00-04:00' })
+    expect(() => hydrationInputSchema.parse({ amount_ml: 350 })).toThrow()
+    expect(() => hydrationInputSchema.parse({ amount_ml: 0 })).toThrow()
+    expect(() => hydrationInputSchema.parse({ amount_ml: 5001 })).toThrow()
+    expect(markRoutineTakenInputSchema.parse({ occurred_at: '2026-07-20T12:00:00-04:00' })).toEqual(
+      { occurred_at: '2026-07-20T12:00:00-04:00' },
+    )
+    expect(() => markRoutineTakenInputSchema.parse({})).toThrow()
+    expect(() => markRoutineTakenInputSchema.parse({ occurred_at: 'today' })).toThrow()
   })
 })

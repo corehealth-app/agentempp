@@ -84,6 +84,23 @@ describe('mobile mutation idempotency', () => {
     )
   })
 
+  it('passes the normalized idempotency key to the mutation', async () => {
+    const persistence = store({ action: 'claimed', claimId: 'claim-1' })
+    const operation = vi.fn().mockResolvedValue(Response.json({ data: { ok: true } }))
+
+    await executeIdempotent(
+      context('  mobile-request-0001  '),
+      { amount_ml: 350 },
+      persistence,
+      operation,
+    )
+
+    expect(operation).toHaveBeenCalledWith('mobile-request-0001')
+    expect(persistence.claim).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: 'mobile-request-0001' }),
+    )
+  })
+
   it('replays a completed response without running the mutation again', async () => {
     const persistence = store({
       action: 'replay',

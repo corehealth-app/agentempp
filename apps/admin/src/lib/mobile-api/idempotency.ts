@@ -158,7 +158,7 @@ export async function executeIdempotent(
   context: MobileRouteContext,
   validatedPayload: unknown,
   store: MobileIdempotencyStore,
-  operation: () => Promise<Response>,
+  operation: (idempotencyKey: string) => Promise<Response>,
   options: ExecuteIdempotentOptions = {},
 ): Promise<Response> {
   const rawKey = context.request.headers.get('idempotency-key')
@@ -201,7 +201,7 @@ export async function executeIdempotent(
   }
 
   try {
-    const response = await operation()
+    const response = await operation(parsedKey.data)
     if (response.status >= 500) {
       await releaseClaim(store, claim.claimId, context.auth.userId)
       return response
@@ -235,7 +235,7 @@ export async function executeIdempotent(
 export function executeSupabaseIdempotent(
   context: MobileRouteContext,
   validatedPayload: unknown,
-  operation: () => Promise<Response>,
+  operation: (idempotencyKey: string) => Promise<Response>,
   options: ExecuteIdempotentOptions = {},
 ): Promise<Response> {
   return executeIdempotent(

@@ -99,6 +99,11 @@ describe('reminder scheduler', () => {
       }),
       'missing_official_context',
     ],
+    [
+      'stale event',
+      claimResult({ status: 'suppressed', suppressionReason: 'stale', deliveryCount: 0 }),
+      'stale',
+    ],
   ] as const)('keeps %s out of provider delivery', (_label, result, expectedReason) => {
     expect(evaluateReminderClaim(result)).toEqual({
       status: result.status,

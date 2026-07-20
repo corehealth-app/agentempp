@@ -30,6 +30,7 @@ DECLARE
   v_inactive_item_id uuid;
   v_inactive_rule_id uuid;
   v_dst_rule_id uuid;
+  v_stale_rule_id uuid;
   v_page_rule_id_a uuid;
   v_page_rule_id_b uuid;
   v_page_cursor_rule_id uuid;
@@ -870,6 +871,49 @@ BEGIN
   IF v_event_first ->> 'status' <> 'suppressed'
     OR v_event_first ->> 'suppression_reason' <> 'routine_item_inactive' THEN
     RAISE EXCEPTION 'inactive routine item still queued a reminder: %', v_event_first;
+  END IF;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays,
+    template_key
+  ) VALUES (
+    v_history_new_user_id,
+    'hydration',
+    time '14:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    'bodyflow.hydration.stale-test'
+  ) RETURNING id INTO v_stale_rule_id;
+
+  v_event_first := public.claim_reminder_event(
+    v_stale_rule_id,
+    timestamptz '2026-07-20 17:00:00+00',
+    timestamptz '2026-07-20 18:00:00+00'
+  );
+  v_event_retry := public.claim_reminder_event(
+    v_stale_rule_id,
+    timestamptz '2026-07-20 17:00:00+00',
+    timestamptz '2026-07-20 18:01:00+00'
+  );
+
+  IF v_event_first ->> 'status' <> 'suppressed'
+    OR v_event_first ->> 'suppression_reason' <> 'stale'
+    OR (v_event_first ->> 'existing')::boolean
+    OR (v_event_retry ->> 'existing')::boolean IS NOT TRUE
+    OR (v_event_retry ->> 'event_id') <> (v_event_first ->> 'event_id')
+    OR EXISTS (
+      SELECT 1
+      FROM public.notification_deliveries
+      WHERE reminder_event_id = (v_event_first ->> 'event_id')::uuid
+    ) OR EXISTS (
+      SELECT 1
+      FROM public.notification_preferences
+      WHERE user_id = v_history_new_user_id
+    ) THEN
+    RAISE EXCEPTION 'stale reminder was not audited without side effects: first %, retry %',
+      v_event_first, v_event_retry;
   END IF;
 END;
 $test$;

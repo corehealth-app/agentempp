@@ -63,7 +63,17 @@ export const registrationProposalInputSchema = z.discriminatedUnion('kind', [
   workoutProposalInputSchema,
 ])
 
+export const historyQuerySchema = z
+  .object({
+    before: z.string().datetime({ offset: true }).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+  })
+  .strict()
+
+export const resourceIdSchema = z.string().uuid()
+
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
+export type HistoryQuery = z.infer<typeof historyQuerySchema>
 
 export { localeSchema, timezoneSchema }

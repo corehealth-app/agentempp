@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  historyQuerySchema,
   idempotencyKeySchema,
   patchMeInputSchema,
   registrationProposalInputSchema,
@@ -50,5 +51,11 @@ describe('mobile API v1 contracts', () => {
     expect(idempotencyKeySchema.parse('mobile-018f2c34-abcdef')).toBe('mobile-018f2c34-abcdef')
     expect(() => idempotencyKeySchema.parse('short')).toThrow()
     expect(() => idempotencyKeySchema.parse('line\nbreak-123')).toThrow()
+  })
+
+  it('bounds mobile history pagination', () => {
+    expect(historyQuerySchema.parse({}).limit).toBe(30)
+    expect(historyQuerySchema.parse({ limit: '100' }).limit).toBe(100)
+    expect(() => historyQuerySchema.parse({ limit: '101' })).toThrow()
   })
 })

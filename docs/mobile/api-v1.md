@@ -97,6 +97,17 @@ somente ao backend.
 | `GET` | `/media/:id` | metadados próprios, resultado e download temporário quando disponível |
 | `POST` | `/media/:id/process` | solicita Vision/STT idempotente para um upload concluído |
 | `DELETE` | `/media/:id` | remove o objeto físico antes de encerrar o catálogo |
+| `GET` | `/devices` | lista instalações iOS próprias sem token APNs |
+| `POST` | `/devices` | registra ou atualiza uma instalação iOS e seu token no backend |
+| `DELETE` | `/devices/:id` | desativa uma instalação própria sem apagar auditoria |
+| `GET` | `/notification-preferences` | lê opt-in, horário silencioso, limite e meta de hidratação |
+| `PATCH` | `/notification-preferences` | altera parcialmente preferências validadas |
+| `GET` | `/reminders` | lista regras próprias em horário local e dias da semana |
+| `POST` | `/reminders` | cria uma regra simples; não aceita cron arbitrário |
+| `PATCH` | `/reminders/:id` | altera ou desativa uma regra própria |
+| `POST` | `/routine/hydration` | soma água atomicamente ao dia local correto |
+| `POST` | `/routine/supplements/:id/taken` | registra adesão de suplemento próprio e ativo |
+| `POST` | `/routine/medications/:id/taken` | registra adesão de medicamento próprio e ativo |
 
 Todos os caminhos acima têm o prefixo `/api/mobile/v1`.
 
@@ -148,11 +159,27 @@ Estrutura resumida:
   "workouts": [],
   "hydration": {
     "consumed_ml": 1500,
-    "target_ml": null,
-    "status": "tracked_without_target"
+    "target_ml": 2200,
+    "remaining_ml": 700,
+    "percentage": 68,
+    "status": "in_progress"
   },
-  "supplements": { "availability": "not_implemented", "items": [] },
-  "medications": { "availability": "not_implemented", "items": [] },
+  "supplements": {
+    "availability": "available",
+    "items": [
+      {
+        "id": "supplement-id",
+        "name": "Creatina",
+        "status": "taken",
+        "occurred_at": "2026-07-20T14:05:00.000Z",
+        "snoozed_until": null
+      }
+    ]
+  },
+  "medications": {
+    "availability": "not_configured",
+    "items": []
+  },
   "pending_actions": {
     "registrations": [],
     "meal_gaps": {
@@ -187,11 +214,14 @@ Estrutura resumida:
     "meals": "meal_logs",
     "workouts": "workout_logs",
     "hydration": "daily_snapshot",
+    "hydration_target": "notification_preferences",
+    "supplements": "routine_items_and_adherence_logs",
+    "medications": "routine_items_and_adherence_logs",
     "pending_actions": "pending_registrations_and_meal_pattern",
     "block_7700": "user_progress"
   },
   "calculation_version": "bodyflow.daily-state.v1",
-  "updated_at": "2026-07-20T14:02:00.000Z",
+  "updated_at": "2026-07-20T14:05:00.000Z",
   "generated_at": "2026-07-20T15:00:00.000Z"
 }
 ```
@@ -215,17 +245,69 @@ Semântica obrigatória:
   a origem operacional de cada seção.
 - Propostas pendentes expõem somente ID, tipo, horário e `meal_type`; texto bruto,
   mídia, IDs de provider e evidências internas não saem do backend.
-- Hidratação ainda não possui meta diária de domínio. Suplementos e medicamentos
-  ainda não possuem módulo; a resposta declara isso em vez de inventar dados.
+- A meta de hidratação existe apenas quando foi configurada em
+  `notification_preferences`. Sem meta, percentual e restante são `null`, e o
+  estado é `not_recorded` ou `tracked_without_target`. Com meta, os estados são
+  `not_started`, `in_progress` ou `target_reached`.
+- Suplementos e medicamentos mostram somente itens ativos do próprio paciente e
+  a ação oficial mais recente do dia local: `taken`, `snoozed`, `skipped`,
+  `missed` ou `not_recorded`. Ausência de item é `not_configured`; dose,
+  prescrição e recomendação não são inferidas.
 - Snapshot, refeições e treinos são lidos em uma única consulta relacional. O
-  backend valida novamente a versão escalar do snapshot e repete a leitura uma
-  vez se uma confirmação concorrente alterar o dia. Se ele continuar mudando, a
-  API falha sem devolver totais e itens de versões diferentes.
+  backend revalida a versão escalar do snapshot e também as fontes de meta de
+  hidratação, itens de rotina e adesão diária. Se uma escrita concorrente alterar
+  qualquer uma dessas fontes, a leitura é repetida uma vez; se continuar mudando,
+  a API falha sem devolver dados de versões diferentes.
 
 `calculation_version` versiona a semântica do agregador. Mudanças aditivas no DTO
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.
 Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
 do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
+
+## Devices, lembretes e rotina
+
+O registro de device aceita somente iOS, `installation_id` opaco, ambiente APNs
+`sandbox` ou `production` e token hexadecimal. O token é normalizado e permanece
+em tabela backend-only; respostas, eventos e logs não incluem token nem hash. Uma
+instalação desativada continua no histórico e deixa de receber novas entregas. Se
+o mesmo device trocar de conta com evidência do mesmo token, o backend desativa a
+identidade anterior e cria outra; entregas antigas continuam ligadas ao usuário e
+ao device originais.
+
+Preferências suportam opt-in global, início/fim de horário silencioso, limite de
+0 a 20 pushes por dia e meta opcional de hidratação entre 250 e 10.000 ml. Início
+e fim do horário silencioso devem ser ambos nulos ou ambos presentes. O timezone
+canônico vem do perfil do paciente.
+
+Regras aceitam `local_time` no formato `HH:MM`, dias únicos entre 0 (domingo) e 6
+(sábado) e uma das categorias: `meal`, `hydration`, `supplement`, `medication`,
+`workout`, `reevaluation`, `content` ou `reengagement`. Refeição exige
+`meal_type`; suplemento e medicamento exigem item de rotina próprio, ativo e do
+tipo correspondente. Os demais tipos rejeitam essas referências.
+
+Hidratação exige `amount_ml` entre 1 e 5.000 e `occurred_at` explícito. A ação
+`taken` também exige `occurred_at`. O servidor recusa instantes mais de cinco
+minutos no futuro ou sete dias no passado e usa o timezone do paciente para o dia
+local. Retry com a mesma `Idempotency-Key` não soma nem registra novamente.
+
+O scheduler Inngest descobre regras vencidas com janela de cinco minutos e emite
+`reminder.rule.due` contendo somente `reminderRuleId` e `scheduledFor`. O
+worker percorre páginas de 500 regras por cursor determinístico, até o limite
+explícito de 20 páginas; se o limite for excedido, a execução falha em vez de
+omitir regras. O Postgres faz o claim transacional e consulta preferências,
+dispositivo ativo, horário silencioso, limite diário e estado oficial. Os
+resultados possíveis são `queued`, `resolved` e `suppressed`, sempre auditáveis e
+idempotentes. Claims executados mais de 15 minutos depois do instante esperado são
+registrados como `suppressed` com motivo `stale`, sem criar delivery.
+
+Criação ou reativação de lembrete que conflite com outra regra ativa retorna
+`409 reminder_conflict`. Referência inválida ou combinação rejeitada por constraint
+retorna `422 reminder_invalid`, sem converter erro do paciente em `500`.
+
+Nesta fase, `queued` significa apenas que uma linha foi criada em
+`notification_deliveries`. Não existe chamada ao APNs, não há credencial de push
+e nenhum registro é marcado como `sent`. A integração futura consumirá essa
+outbox sem mudar o contrato de decisão.
 
 ## Proposta de refeição
 
@@ -372,10 +454,10 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 
 ## Limites desta fase
 
-- Não há chat nativo, APNs, StoreKit ou app iOS nesta entrega. O backend de upload
-  mobile está implementado, mas ainda depende de integração e QA no app nativo.
+- Não há chat nativo, envio APNs, StoreKit ou app iOS nesta entrega. Os backends de
+  mídia, devices, regras e rotina ainda dependem de integração e QA no app nativo.
 - `persona` não persiste seleção até o Prompt correspondente implementar o domínio.
 - `content` não consulta frases educativas nem inventa um CMS sobre tabelas legadas.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
-- Suplementos, medicamentos e meta quantitativa de hidratação permanecem
-  explicitamente indisponíveis no estado diário até seus domínios existirem.
+- O catálogo mínimo de suplementos e medicamentos é somente leitura nesta fase.
+  CRUD, dose, orientação clínica e prescrição permanecem fora do escopo.

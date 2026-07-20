@@ -16,6 +16,7 @@ import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { processMessageFn } from './functions/process-message.js'
 import { regressionBeaconFn } from './functions/regression-beacon.js'
+import { reminderClaimFn, reminderSchedulerFn } from './functions/reminder-scheduler.js'
 import { sampleJudgeFn } from './functions/sample-judge.js'
 import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 import { userDeletionPurgerFn } from './functions/user-deletion-purger.js'
@@ -41,6 +42,8 @@ export const allFunctions = [
   userDeletionPurgerFn,
   mediaAssetProcessingFn,
   mediaRetentionCleanupFn,
+  reminderSchedulerFn,
+  reminderClaimFn,
 ]
 
 export {
@@ -58,6 +61,8 @@ export {
   pendingCleanupFn,
   pipelineHealthFn,
   processMessageFn,
+  reminderClaimFn,
+  reminderSchedulerFn,
   sampleJudgeFn,
   trainingDailyDeliveryFn,
   userDeletionPurgerFn,

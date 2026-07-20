@@ -36,6 +36,7 @@ export const patchMeInputSchema = z
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
+const minuteTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
 
 export const onboardingInputSchema = z
   .object({
@@ -155,10 +156,117 @@ export const mediaUploadInputSchema = z.discriminatedUnion('kind', [
   mediaAudioUploadSchema,
 ])
 
+export const mobileDeviceInputSchema = z
+  .object({
+    installation_id: z.string().uuid(),
+    apns_environment: z.enum(['sandbox', 'production']),
+    apns_token: z
+      .string()
+      .min(64)
+      .max(512)
+      .regex(/^[0-9A-Fa-f]+$/)
+      .refine((value) => value.length % 2 === 0, 'APNs token must have an even length')
+      .transform((value) => value.toLowerCase()),
+  })
+  .strict()
+
+const quietHoursSchema = z
+  .object({ start: minuteTimeSchema, end: minuteTimeSchema })
+  .strict()
+  .refine((value) => value.start !== value.end, 'Quiet hours must have distinct boundaries')
+
+export const notificationPreferencesPatchSchema = z
+  .object({
+    push_enabled: z.boolean().optional(),
+    quiet_hours: quietHoursSchema.nullable().optional(),
+    daily_push_limit: z.number().int().min(0).max(20).optional(),
+    hydration_target_ml: z.number().int().min(250).max(10_000).nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+
+const reminderCategorySchema = z.enum([
+  'meal',
+  'hydration',
+  'supplement',
+  'medication',
+  'workout',
+  'reevaluation',
+  'content',
+  'reengagement',
+])
+
+const reminderWeekdaysSchema = z
+  .array(z.number().int().min(0).max(6))
+  .min(1)
+  .max(7)
+  .refine((values) => new Set(values).size === values.length, 'Weekdays must be unique')
+  .transform((values) => [...values].sort((left, right) => left - right))
+
+export const createReminderInputSchema = z
+  .object({
+    category: reminderCategorySchema,
+    meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia']).optional(),
+    routine_item_id: z.string().uuid().optional(),
+    local_time: minuteTimeSchema,
+    weekdays: reminderWeekdaysSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.category === 'meal' && !value.meal_type) {
+      context.addIssue({ code: 'custom', path: ['meal_type'], message: 'Meal type is required' })
+    }
+    if (value.category !== 'meal' && value.meal_type) {
+      context.addIssue({ code: 'custom', path: ['meal_type'], message: 'Meal type is not allowed' })
+    }
+
+    const routineCategory = value.category === 'supplement' || value.category === 'medication'
+    if (routineCategory && !value.routine_item_id) {
+      context.addIssue({
+        code: 'custom',
+        path: ['routine_item_id'],
+        message: 'Routine item is required',
+      })
+    }
+    if (!routineCategory && value.routine_item_id) {
+      context.addIssue({
+        code: 'custom',
+        path: ['routine_item_id'],
+        message: 'Routine item is not allowed',
+      })
+    }
+  })
+
+export const patchReminderInputSchema = z
+  .object({
+    local_time: minuteTimeSchema.optional(),
+    weekdays: reminderWeekdaysSchema.optional(),
+    active: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+
+export const hydrationInputSchema = z
+  .object({
+    amount_ml: z.number().int().min(1).max(5000),
+    occurred_at: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
+export const markRoutineTakenInputSchema = z
+  .object({ occurred_at: z.string().datetime({ offset: true }) })
+  .strict()
+
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
 export type HistoryQuery = z.infer<typeof historyQuerySchema>
 export type MediaUploadInput = z.infer<typeof mediaUploadInputSchema>
+export type MobileDeviceInput = z.infer<typeof mobileDeviceInputSchema>
+export type NotificationPreferencesPatch = z.infer<typeof notificationPreferencesPatchSchema>
+export type CreateReminderInput = z.infer<typeof createReminderInputSchema>
+export type PatchReminderInput = z.infer<typeof patchReminderInputSchema>
+export type HydrationInput = z.infer<typeof hydrationInputSchema>
+export type MarkRoutineTakenInput = z.infer<typeof markRoutineTakenInputSchema>
 
 export { localeSchema, timezoneSchema }

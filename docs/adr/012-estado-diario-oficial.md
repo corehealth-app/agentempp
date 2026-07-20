@@ -31,13 +31,15 @@ aplicação única sobre essas fontes.
    dia atual.
 7. Pendências são reduzidas a metadados públicos. Payload bruto e evidências
    internas permanecem no servidor.
-8. Módulos ainda inexistentes são declarados como `not_implemented`; nenhum valor
-   substituto é inventado.
+8. Módulos inexistentes são declarados explicitamente e nenhum valor substituto é
+   inventado. A ADR 013 estende o estado com meta de hidratação configurada e
+   itens ativos de rotina; ausência de configuração continua explícita.
 9. `calculation_version=bodyflow.daily-state.v1` identifica a semântica. Alteração
    de fórmula incrementa a versão; quebra de JSON exige nova versão da API.
 10. Snapshot, refeições e treinos são carregados por uma consulta relacional. Uma
-    releitura escalar ao final detecta confirmação concorrente; o serviço repete
-    uma vez e falha de forma fechada se o dia continuar mudando.
+    releitura do snapshot e das fontes de hidratação e rotina detecta escrita
+    concorrente; o serviço repete uma vez e falha de forma fechada se o dia
+    continuar mudando.
 11. Ausência de `user_progress` é `unavailable`, com valores `null`, e nunca um
     bloco implicitamente zerado.
 
@@ -60,7 +62,8 @@ aplicação única sobre essas fontes.
 - **−** A leitura agrega mais fontes e depende da disponibilidade delas.
 - **−** Sob escrita contínua, `/today` pode falhar temporariamente para preservar
   consistência; o cliente deve repetir a leitura.
-- **−** Hidratação completa, suplementos e medicamentos aguardam seus domínios.
+- **−** CRUD completo de rotina, doses e orientação clínica continuam fora do
+  estado diário e aguardam seus domínios próprios.
 
 Nenhuma migration, consulta live ou alteração de ambiente foi realizada nesta
 decisão.

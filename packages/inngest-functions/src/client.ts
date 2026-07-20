@@ -67,6 +67,12 @@ type Events = {
       requestId: string
     }
   }
+  'reminder.rule.due': {
+    data: {
+      reminderRuleId: string
+      scheduledFor: string
+    }
+  }
   /** Roberto 2026-05-28 (Fase A botões #4) — paciente tocou em botão interativo
    *  ([Sim, registrar]/[Editar]). Webhook dispara imediato (sem buffer). */
   'interactive.button.tapped': {

@@ -19,6 +19,8 @@ DECLARE
   v_resolved_rule_id uuid;
   v_routine_rule_id uuid;
   v_item_id uuid;
+  v_inactive_item_id uuid;
+  v_inactive_rule_id uuid;
   v_event_first jsonb;
   v_event_retry jsonb;
   v_event_id uuid;
@@ -242,6 +244,67 @@ BEGIN
   VALUES (v_user_id, 'supplement', 'Vitamina D', true)
   RETURNING id INTO v_item_id;
 
+  UPDATE public.routine_items SET active = false WHERE id = v_item_id;
+  BEGIN
+    INSERT INTO public.reminder_rules (
+      user_id,
+      routine_item_id,
+      category,
+      local_time,
+      weekdays
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'supplement',
+      time '07:30',
+      ARRAY[1, 2, 3, 4, 5]
+    );
+    RAISE EXCEPTION 'active reminder accepted an inactive routine item';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+  UPDATE public.routine_items SET active = true WHERE id = v_item_id;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_user_id,
+    'hydration',
+    time '06:30',
+    ARRAY[2, 1]
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.reminder_rules
+    WHERE user_id = v_user_id
+      AND category = 'hydration'
+      AND local_time = time '06:30'
+      AND weekdays = ARRAY[1, 2]::smallint[]
+  ) THEN
+    RAISE EXCEPTION 'reminder weekdays were not canonicalized';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.reminder_rules (
+      user_id,
+      category,
+      local_time,
+      weekdays
+    ) VALUES (
+      v_user_id,
+      'hydration',
+      time '06:30',
+      ARRAY[1, 2]
+    );
+    RAISE EXCEPTION 'duplicate active reminder was accepted';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
   BEGIN
     INSERT INTO public.reminder_rules (
       user_id,
@@ -258,7 +321,7 @@ BEGIN
     );
     RAISE EXCEPTION 'cross-user routine reminder was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN foreign_key_violation OR check_violation THEN NULL;
   END;
 
   BEGIN
@@ -277,7 +340,7 @@ BEGIN
     );
     RAISE EXCEPTION 'routine reminder accepted an incompatible item type';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN foreign_key_violation OR check_violation THEN NULL;
   END;
 
   v_adherence_first := public.record_routine_adherence_atomic(
@@ -530,6 +593,34 @@ BEGIN
   );
   IF v_event_first ->> 'status' <> 'resolved' THEN
     RAISE EXCEPTION 'taken supplement still produced a reminder: %', v_event_first;
+  END IF;
+
+  INSERT INTO public.routine_items (user_id, item_type, name, active)
+  VALUES (v_user_id, 'medication', 'Synthetic medication', true)
+  RETURNING id INTO v_inactive_item_id;
+  INSERT INTO public.reminder_rules (
+    user_id,
+    routine_item_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_user_id,
+    v_inactive_item_id,
+    'medication',
+    time '19:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_inactive_rule_id;
+  UPDATE public.routine_items SET active = false WHERE id = v_inactive_item_id;
+
+  v_event_first := public.claim_reminder_event(
+    v_inactive_rule_id,
+    timestamptz '2026-07-20 22:00:00+00',
+    timestamptz '2026-07-20 22:00:00+00'
+  );
+  IF v_event_first ->> 'status' <> 'suppressed'
+    OR v_event_first ->> 'suppression_reason' <> 'routine_item_inactive' THEN
+    RAISE EXCEPTION 'inactive routine item still queued a reminder: %', v_event_first;
   END IF;
 END;
 $test$;

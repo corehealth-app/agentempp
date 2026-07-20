@@ -178,7 +178,17 @@ BEGIN
         v_status := 'resolved';
       END IF;
     ELSIF v_rule.category IN ('supplement', 'medication') THEN
-      IF EXISTS (
+      IF NOT EXISTS (
+        SELECT 1
+        FROM public.routine_items item
+        WHERE item.id = v_rule.routine_item_id
+          AND item.user_id = v_rule.user_id
+          AND item.item_type = v_rule.category
+          AND item.active
+      ) THEN
+        v_status := 'suppressed';
+        v_reason := 'routine_item_inactive';
+      ELSIF EXISTS (
         SELECT 1
         FROM public.routine_adherence_logs adherence
         WHERE adherence.user_id = v_rule.user_id

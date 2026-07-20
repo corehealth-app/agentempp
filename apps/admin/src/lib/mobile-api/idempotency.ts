@@ -24,6 +24,11 @@ export interface MobileIdempotencyStore {
   fail(claimId: string, userId: string): Promise<void>
 }
 
+interface ExecuteIdempotentOptions {
+  refreshReplay?: (claim: Extract<IdempotencyClaim, { action: 'replay' }>) => Promise<Response>
+  responseBodyForStorage?: (body: unknown) => unknown
+}
+
 type RpcResult = Promise<{
   data: unknown
   error: { message: string } | null
@@ -128,6 +133,15 @@ function replayResponse(claim: Extract<IdempotencyClaim, { action: 'replay' }>, 
   })
 }
 
+function markResponseAsReplay(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers)
+  headers.set('Cache-Control', 'no-store')
+  headers.set('Idempotency-Replayed', 'true')
+  headers.set('Vary', 'Authorization')
+  headers.set('X-Request-Id', requestId)
+  return new Response(response.body, { status: response.status, headers })
+}
+
 async function releaseClaim(
   store: MobileIdempotencyStore,
   claimId: string,
@@ -145,6 +159,7 @@ export async function executeIdempotent(
   validatedPayload: unknown,
   store: MobileIdempotencyStore,
   operation: () => Promise<Response>,
+  options: ExecuteIdempotentOptions = {},
 ): Promise<Response> {
   const rawKey = context.request.headers.get('idempotency-key')
   if (!rawKey) {
@@ -178,7 +193,12 @@ export async function executeIdempotent(
       'A request with this Idempotency-Key is still in progress',
     )
   }
-  if (claim.action === 'replay') return replayResponse(claim, context.requestId)
+  if (claim.action === 'replay') {
+    if (options.refreshReplay) {
+      return markResponseAsReplay(await options.refreshReplay(claim), context.requestId)
+    }
+    return replayResponse(claim, context.requestId)
+  }
 
   try {
     const response = await operation()
@@ -199,7 +219,12 @@ export async function executeIdempotent(
       )
     }
 
-    await store.complete(claim.claimId, context.auth.userId, response.status, body)
+    await store.complete(
+      claim.claimId,
+      context.auth.userId,
+      response.status,
+      options.responseBodyForStorage?.(body) ?? body,
+    )
     return response
   } catch (error) {
     await releaseClaim(store, claim.claimId, context.auth.userId)
@@ -211,11 +236,13 @@ export function executeSupabaseIdempotent(
   context: MobileRouteContext,
   validatedPayload: unknown,
   operation: () => Promise<Response>,
+  options: ExecuteIdempotentOptions = {},
 ): Promise<Response> {
   return executeIdempotent(
     context,
     validatedPayload,
     createSupabaseIdempotencyStore(context.supabase),
     operation,
+    options,
   )
 }

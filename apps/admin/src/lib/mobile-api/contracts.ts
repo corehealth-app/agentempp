@@ -103,9 +103,62 @@ export const personaInputSchema = z
   .object({ persona: z.enum(['focus', 'impulse', 'zen']) })
   .strict()
 
+const patientImageMimeSchema = z.enum([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+])
+
+const patientAudioMimeSchema = z.enum([
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/ogg',
+])
+
+const mediaUploadBaseSchema = z.object({
+  size_bytes: z.number().int().positive(),
+  context_text: z.string().trim().min(1).max(1000).optional(),
+})
+
+const mediaPhotoUploadSchema = mediaUploadBaseSchema
+  .extend({
+    kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo']),
+    mime_type: patientImageMimeSchema,
+    size_bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(15 * 1024 * 1024),
+  })
+  .strict()
+
+const mediaAudioUploadSchema = mediaUploadBaseSchema
+  .extend({
+    kind: z.literal('audio_note'),
+    mime_type: patientAudioMimeSchema,
+    size_bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(25 * 1024 * 1024),
+  })
+  .strict()
+
+export const mediaUploadInputSchema = z.discriminatedUnion('kind', [
+  mediaPhotoUploadSchema,
+  mediaAudioUploadSchema,
+])
+
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
 export type HistoryQuery = z.infer<typeof historyQuerySchema>
+export type MediaUploadInput = z.infer<typeof mediaUploadInputSchema>
 
 export { localeSchema, timezoneSchema }

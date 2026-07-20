@@ -89,6 +89,16 @@ As garantias centrais são:
   sessão;
 - elimina todos os findings de nível `ERROR` do security advisor no staging.
 
+### `20260720025041_p0_optimize_rls_policies.sql`
+
+- combina ownership do paciente e acesso de atendimento em uma policy por
+  tabela;
+- usa initplan para `auth.uid()` e helpers estáveis de RBAC;
+- remove policies diretas de escrita que já estavam bloqueadas pelos grants;
+- preserva o índice da exclusion constraint de `agent_configs` e remove o
+  índice comum comprovadamente duplicado;
+- elimina todos os findings do performance advisor no staging.
+
 ## Identidade e bootstrap
 
 ### Conta paciente nova
@@ -267,14 +277,18 @@ Resultado esperado em staging: `34 total`, `0 active`, `34 inactive`.
 
 Se for indispensável desfazer o P0-A, a ordem é inversa:
 
-1. restaurar grants/policies anteriores a `20260720022441`;
-2. remover bootstrap, triggers e vínculo Auth de `20260720020351` somente se
+1. restaurar as policies separadas e o índice comum de `20260720025041`, se
+   houver necessidade comprovada;
+2. restaurar grants de views e `search_path` anteriores a `20260720024646`
+   somente em branch descartável;
+3. restaurar grants/policies anteriores a `20260720022441`;
+4. remover bootstrap, triggers e vínculo Auth de `20260720020351` somente se
    nenhum app-first user tiver sido criado;
-3. restaurar defaults globais de função de `20260720015730` somente se houver
+5. restaurar defaults globais de função de `20260720015730` somente se houver
    justificativa explícita;
-4. restaurar defaults por schema de `20260720015358` somente em ambiente
+6. restaurar defaults por schema de `20260720015358` somente em ambiente
    descartável;
-5. restaurar funções anteriores a `20260720014221` somente após provar que não
+7. restaurar funções anteriores a `20260720014221` somente após provar que não
    reabre execução de cliente.
 
 No staging atual, a opção operacional mais segura para uma reversão total é

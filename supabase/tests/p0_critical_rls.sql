@@ -214,4 +214,66 @@ BEGIN
 END;
 $test$;
 
+DO $test$
+DECLARE
+  v_multiple_policies text;
+BEGIN
+  SELECT string_agg(policy_group.tablename, ', ' ORDER BY policy_group.tablename)
+  INTO v_multiple_policies
+  FROM (
+    SELECT policy_row.tablename
+    FROM pg_policies policy_row
+    WHERE policy_row.schemaname = 'public'
+      AND policy_row.permissive = 'PERMISSIVE'
+      AND policy_row.cmd IN ('ALL', 'SELECT')
+      AND (
+        'public' = ANY(policy_row.roles)
+        OR 'authenticated' = ANY(policy_row.roles)
+      )
+    GROUP BY policy_row.tablename
+    HAVING count(*) > 1
+  ) AS policy_group;
+
+  IF v_multiple_policies IS NOT NULL THEN
+    RAISE EXCEPTION 'multiple authenticated SELECT policies: %', v_multiple_policies;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'admin_users'
+      AND policyname = 'admin_users_read'
+      AND qual LIKE '%auth.uid()%'
+      AND qual NOT LIKE '%SELECT auth.uid()%'
+  ) THEN
+    RAISE EXCEPTION 'admin_users policy does not cache auth.uid() with an initplan';
+  END IF;
+END;
+$test$;
+
+DO $test$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_index first_index
+    JOIN pg_index second_index
+      ON second_index.indrelid = first_index.indrelid
+      AND second_index.indexrelid > first_index.indexrelid
+      AND second_index.indkey = first_index.indkey
+      AND second_index.indclass = first_index.indclass
+      AND second_index.indcollation = first_index.indcollation
+      AND second_index.indoption = first_index.indoption
+      AND second_index.indexprs IS NOT DISTINCT FROM first_index.indexprs
+      AND second_index.indpred IS NOT DISTINCT FROM first_index.indpred
+    JOIN pg_class table_row ON table_row.oid = first_index.indrelid
+    JOIN pg_namespace schema_row ON schema_row.oid = table_row.relnamespace
+    WHERE schema_row.nspname = 'public'
+      AND table_row.relname = 'agent_configs'
+  ) THEN
+    RAISE EXCEPTION 'agent_configs retains duplicate indexes';
+  END IF;
+END;
+$test$;
+
 ROLLBACK;

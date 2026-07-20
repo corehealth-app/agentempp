@@ -119,4 +119,3 @@ vez de apagar o historico de auditoria.
 - `taken` so aceita item pertencente ao paciente e do tipo da rota.
 - RLS impede leitura cruzada e grants nao expoem token/metadata interna.
 - Todos os testes rodam em transacao e deixam staging sem dados sinteticos.
-

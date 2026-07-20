@@ -6,7 +6,7 @@ import {
   type CoachPersonaRouteDependencies,
   handleCoachPersonaGet,
   handleCoachPersonaPatch,
-} from './route'
+} from './handler'
 
 const userId = '00000000-0000-0000-0000-000000000921'
 

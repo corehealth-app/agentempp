@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import * as reminderSchedulerModule from './reminder-scheduler.js'
 import {
   buildReminderDueEvents,
   claimDueReminder,
   createReminderSchedulerRepository,
   evaluateReminderClaim,
   type ReminderClaimResult,
+  type ReminderSchedulerRepository,
 } from './reminder-scheduler.js'
 
 const RULE_ID = '00000000-0000-4000-8000-000000000801'
@@ -160,9 +162,12 @@ describe('reminder scheduler', () => {
       })
     const repository = createReminderSchedulerRepository({ rpc } as never)
 
-    await expect(repository.listDue(FIRED_AT, 5, 500)).resolves.toEqual([
-      { reminder_rule_id: RULE_ID, scheduled_for: SCHEDULED_FOR },
-    ])
+    await expect(
+      repository.listDue(FIRED_AT, 5, 500, {
+        scheduledFor: SCHEDULED_FOR,
+        reminderRuleId: RULE_ID,
+      }),
+    ).resolves.toEqual([{ reminder_rule_id: RULE_ID, scheduled_for: SCHEDULED_FOR }])
     await expect(repository.claim(RULE_ID, SCHEDULED_FOR, FIRED_AT)).resolves.toEqual(
       claimResult({ status: 'suppressed', suppressionReason: 'quiet_hours', deliveryCount: 0 }),
     )
@@ -170,11 +175,50 @@ describe('reminder scheduler', () => {
       p_fired_at: FIRED_AT,
       p_limit: 500,
       p_lookback_minutes: 5,
+      p_after_rule_id: RULE_ID,
+      p_after_scheduled_for: SCHEDULED_FOR,
     })
     expect(rpc).toHaveBeenNthCalledWith(2, 'claim_reminder_event', {
       p_claimed_at: FIRED_AT,
       p_reminder_rule_id: RULE_ID,
       p_scheduled_for: SCHEDULED_FOR,
+    })
+  })
+
+  it('paginates more than 500 due reminders without duplicates or omissions', async () => {
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      reminder_rule_id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+      scheduled_for: SCHEDULED_FOR,
+    }))
+    const repository = {
+      listDue: vi
+        .fn()
+        .mockResolvedValueOnce(rows.slice(0, 500))
+        .mockResolvedValueOnce(rows.slice(500)),
+      claim: vi.fn(),
+    }
+    const discover = (
+      reminderSchedulerModule as typeof reminderSchedulerModule & {
+        discoverReminderDueEvents?: (
+          repository: ReminderSchedulerRepository,
+          firedAt: string,
+          lookbackMinutes: number,
+          pageLimit: number,
+        ) => Promise<ReturnType<typeof buildReminderDueEvents>>
+      }
+    ).discoverReminderDueEvents
+
+    expect(discover).toBeTypeOf('function')
+    if (!discover) return
+
+    const events = await discover(repository, FIRED_AT, 5, 500)
+
+    expect(events).toHaveLength(501)
+    expect(new Set(events.map((event) => event.id)).size).toBe(501)
+    expect(repository.listDue).toHaveBeenNthCalledWith(1, FIRED_AT, 5, 500, null)
+    expect(repository.listDue).toHaveBeenNthCalledWith(2, FIRED_AT, 5, 500, {
+      scheduledFor: SCHEDULED_FOR,
+      reminderRuleId: rows[499]?.reminder_rule_id,
     })
   })
 })

@@ -5,6 +5,7 @@ import { createWorkerSupabase } from '../lib/env.js'
 
 const REMINDER_LOOKBACK_MINUTES = 5
 const REMINDER_DISCOVERY_LIMIT = 500
+const REMINDER_DISCOVERY_MAX_PAGES = 20
 const REMINDER_EVENT_BATCH_SIZE = 100
 
 const timestampSchema = z.string().datetime({ offset: true })
@@ -30,6 +31,11 @@ export interface DueReminderRow {
   scheduled_for: string
 }
 
+export interface DueReminderCursor {
+  scheduledFor: string
+  reminderRuleId: string
+}
+
 export interface ReminderClaimResult {
   eventId: string
   status: 'queued' | 'suppressed' | 'resolved'
@@ -39,7 +45,12 @@ export interface ReminderClaimResult {
 }
 
 export interface ReminderSchedulerRepository {
-  listDue(firedAt: string, lookbackMinutes: number, limit: number): Promise<DueReminderRow[]>
+  listDue(
+    firedAt: string,
+    lookbackMinutes: number,
+    limit: number,
+    cursor: DueReminderCursor | null,
+  ): Promise<DueReminderRow[]>
   claim(
     reminderRuleId: string,
     scheduledFor: string,
@@ -108,6 +119,62 @@ export function buildReminderDueEvents(
   return [...events.values()]
 }
 
+function compareDueReminderTuple(left: DueReminderCursor, right: DueReminderCursor): number {
+  const timestampDifference = Date.parse(left.scheduledFor) - Date.parse(right.scheduledFor)
+  if (timestampDifference !== 0) return timestampDifference
+  if (left.reminderRuleId < right.reminderRuleId) return -1
+  if (left.reminderRuleId > right.reminderRuleId) return 1
+  return 0
+}
+
+export async function discoverReminderDueEvents(
+  repository: ReminderSchedulerRepository,
+  firedAt: string,
+  lookbackMinutes = REMINDER_LOOKBACK_MINUTES,
+  pageLimit = REMINDER_DISCOVERY_LIMIT,
+  maxPages = REMINDER_DISCOVERY_MAX_PAGES,
+): Promise<ReminderDueEvent[]> {
+  if (!Number.isInteger(pageLimit) || pageLimit < 1 || pageLimit > 5000) {
+    throw new Error('reminder discovery page limit is invalid')
+  }
+  if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new Error('reminder discovery page count is invalid')
+  }
+
+  const allRows: DueReminderRow[] = []
+  let cursor: DueReminderCursor | null = null
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const rows = await repository.listDue(firedAt, lookbackMinutes, pageLimit, cursor)
+    if (rows.length > pageLimit) throw new Error('due reminder page exceeded its limit')
+
+    let previous: DueReminderCursor | null = cursor
+    for (const rawRow of rows) {
+      const row = dueReminderRowSchema.parse(rawRow)
+      const next = {
+        scheduledFor: new Date(row.scheduled_for).toISOString(),
+        reminderRuleId: row.reminder_rule_id,
+      }
+      if (previous && compareDueReminderTuple(next, previous) <= 0) {
+        throw new Error('due reminder page did not advance its cursor')
+      }
+      allRows.push({
+        reminder_rule_id: next.reminderRuleId,
+        scheduled_for: next.scheduledFor,
+      })
+      previous = next
+    }
+
+    if (rows.length < pageLimit) {
+      return buildReminderDueEvents(allRows, firedAt, lookbackMinutes)
+    }
+    if (!previous) throw new Error('full due reminder page has no cursor')
+    cursor = previous
+  }
+
+  throw new Error('due reminder pagination limit exceeded')
+}
+
 export function evaluateReminderClaim(result: ReminderClaimResult): EvaluatedReminderClaim {
   if (result.status === 'queued') {
     if (result.deliveryCount < 1) throw new Error('queued reminder has no delivery')
@@ -146,11 +213,17 @@ export function createReminderSchedulerRepository(
   supabase: ServiceClient,
 ): ReminderSchedulerRepository {
   return {
-    async listDue(firedAt, lookbackMinutes, limit) {
+    async listDue(firedAt, lookbackMinutes, limit, cursor) {
       const { data, error } = await supabase.rpc('list_due_reminder_rules', {
         p_fired_at: firedAt,
         p_lookback_minutes: lookbackMinutes,
         p_limit: limit,
+        ...(cursor
+          ? {
+              p_after_scheduled_for: cursor.scheduledFor,
+              p_after_rule_id: cursor.reminderRuleId,
+            }
+          : {}),
       })
       if (error) throw new Error('due reminder lookup failed')
       return z.array(dueReminderRowSchema).parse(data ?? [])
@@ -188,11 +261,15 @@ export const reminderSchedulerFn = inngest.createFunction(
   async ({ event, step, logger }) => {
     if (event.ts === undefined) throw new Error('cron event timestamp is missing')
     const firedAt = new Date(event.ts).toISOString()
-    const rows = await step.run('list-due-reminder-rules', async () => {
+    const events = await step.run('list-due-reminder-rules', async () => {
       const repository = createReminderSchedulerRepository(createWorkerSupabase())
-      return repository.listDue(firedAt, REMINDER_LOOKBACK_MINUTES, REMINDER_DISCOVERY_LIMIT)
+      return discoverReminderDueEvents(
+        repository,
+        firedAt,
+        REMINDER_LOOKBACK_MINUTES,
+        REMINDER_DISCOVERY_LIMIT,
+      )
     })
-    const events = buildReminderDueEvents(rows, firedAt)
 
     for (const [index, batch] of chunkEvents(events).entries()) {
       await step.sendEvent(`emit-due-reminders-${index}`, batch)

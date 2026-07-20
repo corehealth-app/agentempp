@@ -2970,6 +2970,8 @@ export type Database = {
       }
       list_due_reminder_rules: {
         Args: {
+          p_after_rule_id?: string
+          p_after_scheduled_for?: string
           p_fired_at: string
           p_limit?: number
           p_lookback_minutes?: number

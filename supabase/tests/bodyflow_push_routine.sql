@@ -30,6 +30,10 @@ DECLARE
   v_inactive_item_id uuid;
   v_inactive_rule_id uuid;
   v_dst_rule_id uuid;
+  v_page_rule_id_a uuid;
+  v_page_rule_id_b uuid;
+  v_page_cursor_rule_id uuid;
+  v_page_cursor_scheduled_for timestamptz;
   v_event_first jsonb;
   v_event_retry jsonb;
   v_event_id uuid;
@@ -108,7 +112,7 @@ BEGIN
     'EXECUTE'
   ) OR has_function_privilege(
     'authenticated',
-    'public.list_due_reminder_rules(timestamptz,integer,integer)',
+    'public.list_due_reminder_rules(timestamptz,integer,integer,timestamptz,uuid)',
     'EXECUTE'
   ) THEN
     RAISE EXCEPTION 'authenticated can execute a forbidden BodyFlow backend RPC';
@@ -116,7 +120,7 @@ BEGIN
 
   IF NOT has_function_privilege(
     'service_role',
-    'public.list_due_reminder_rules(timestamptz,integer,integer)',
+    'public.list_due_reminder_rules(timestamptz,integer,integer,timestamptz,uuid)',
     'EXECUTE'
   ) OR EXISTS (
     SELECT 1
@@ -517,13 +521,15 @@ BEGIN
     category,
     local_time,
     weekdays,
-    active
+    active,
+    template_key
   ) VALUES (
     v_user_id,
     'hydration',
     time '21:58',
     ARRAY[0, 1, 2, 3, 4, 5, 6],
-    true
+    true,
+    'bodyflow.hydration.discovery'
   ) RETURNING id INTO v_rule_id;
 
   SELECT count(*), min(due.scheduled_for)
@@ -539,6 +545,78 @@ BEGIN
     OR v_due_scheduled_for <> timestamptz '2026-07-21 00:58:00+00' THEN
     RAISE EXCEPTION 'due reminder discovery did not convert local time safely: count %, instant %',
       v_due_count, v_due_scheduled_for;
+  END IF;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays,
+    active,
+    template_key
+  ) VALUES (
+    v_user_id,
+    'hydration',
+    time '21:58',
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    true,
+    'bodyflow.hydration.page-a'
+  )
+  RETURNING id INTO v_page_rule_id_a;
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays,
+    active,
+    template_key
+  ) VALUES (
+    v_user_id,
+    'hydration',
+    time '21:58',
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    true,
+    'bodyflow.hydration.page-b'
+  )
+  RETURNING id INTO v_page_rule_id_b;
+
+  SELECT due.reminder_rule_id, due.scheduled_for
+  INTO v_page_cursor_rule_id, v_page_cursor_scheduled_for
+  FROM public.list_due_reminder_rules(
+    timestamptz '2026-07-21 01:01:00+00',
+    5,
+    2,
+    NULL,
+    NULL
+  ) due
+  ORDER BY due.scheduled_for DESC, due.reminder_rule_id DESC
+  LIMIT 1;
+
+  SELECT count(*)
+  INTO v_due_count
+  FROM (
+    SELECT *
+    FROM public.list_due_reminder_rules(
+      timestamptz '2026-07-21 01:01:00+00',
+      5,
+      2,
+      NULL,
+      NULL
+    )
+    UNION ALL
+    SELECT *
+    FROM public.list_due_reminder_rules(
+      timestamptz '2026-07-21 01:01:00+00',
+      5,
+      2,
+      v_page_cursor_scheduled_for,
+      v_page_cursor_rule_id
+    )
+  ) paged_due;
+
+  IF v_due_count <> 3
+    OR v_page_rule_id_b IS NULL THEN
+    RAISE EXCEPTION 'due reminder keyset pagination lost or duplicated rows: count %', v_due_count;
   END IF;
 
   UPDATE public.users

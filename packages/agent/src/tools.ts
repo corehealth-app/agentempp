@@ -188,7 +188,12 @@ export const cadastraDadosIniciais: ToolDefinition = {
       return { success: false, error: 'sanity_check_failed', issues: sanityErrors }
     }
     if (strNonEmpty(args.activity_level)) updates.activity_level = args.activity_level
-    if (numPositive(args.training_frequency)) updates.training_frequency = args.training_frequency
+    if (
+      typeof args.training_frequency === 'number' &&
+      args.training_frequency >= 0 &&
+      args.training_frequency <= 7
+    )
+      updates.training_frequency = args.training_frequency
     if (strNonEmpty(args.water_intake)) updates.water_intake = args.water_intake
     if (strNonEmpty(args.hunger_level)) updates.hunger_level = args.hunger_level
     // Coerção time: aceita "HH:MM", "HH:MM:SS", "HHh", "HHhMM", "HH"

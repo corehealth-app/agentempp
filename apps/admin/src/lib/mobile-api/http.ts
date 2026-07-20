@@ -28,6 +28,30 @@ export function extractBearerToken(headers: Headers): string | null {
   return match?.[1] ?? null
 }
 
+export async function readJsonBody(request: Request, maxBytes = 64 * 1024): Promise<unknown> {
+  const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  if (contentType !== 'application/json') {
+    throw new MobileApiError(415, 'unsupported_media_type', 'Content-Type must be application/json')
+  }
+
+  const contentLength = request.headers.get('content-length')
+  if (contentLength && Number(contentLength) > maxBytes) {
+    throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
+  }
+
+  const text = await request.text()
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
+  }
+  if (!text.trim()) throw new MobileApiError(400, 'invalid_json', 'JSON body is required')
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new MobileApiError(400, 'invalid_json', 'Request body must contain valid JSON')
+  }
+}
+
 export function mobileSuccess<T>(
   data: T,
   requestId: string,

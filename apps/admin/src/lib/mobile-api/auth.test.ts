@@ -78,4 +78,27 @@ describe('mobile patient authentication', () => {
       code: 'identity_migration_required',
     })
   })
+
+  it('rejects a blocked or deleted domain account', async () => {
+    const deps = dependencies({
+      loadPatient: vi.fn().mockResolvedValue({
+        id: 'patient-1',
+        authUserId: 'auth-1',
+        email: 'patient@example.com',
+        name: null,
+        locale: 'pt-BR',
+        timezone: 'America/New_York',
+        country: 'US',
+        status: 'blocked',
+      }),
+    })
+    const request = new Request('https://example.test', {
+      headers: { authorization: 'Bearer valid-token' },
+    })
+
+    await expect(authenticatePatient(request, deps)).rejects.toMatchObject({
+      status: 403,
+      code: 'patient_account_inactive',
+    })
+  })
 })

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { extractBearerToken, MobileApiError, mobileErrorResponse, mobileSuccess } from './http'
+import {
+  extractBearerToken,
+  MobileApiError,
+  mobileErrorResponse,
+  mobileSuccess,
+  readJsonBody,
+} from './http'
 
 describe('mobile API v1 HTTP boundary', () => {
   it('extracts only a valid bearer token', () => {
@@ -36,5 +42,27 @@ describe('mobile API v1 HTTP boundary', () => {
         request_id: 'request-2',
       },
     })
+  })
+
+  it('accepts bounded JSON and rejects unsupported bodies', async () => {
+    await expect(
+      readJsonBody(
+        new Request('https://example.test', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+          body: '{"ok":true}',
+        }),
+      ),
+    ).resolves.toEqual({ ok: true })
+
+    await expect(
+      readJsonBody(
+        new Request('https://example.test', {
+          method: 'POST',
+          headers: { 'content-type': 'text/plain' },
+          body: '{}',
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 415, code: 'unsupported_media_type' })
   })
 })

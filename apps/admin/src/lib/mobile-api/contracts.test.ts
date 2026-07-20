@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   historyQuerySchema,
   idempotencyKeySchema,
+  onboardingInputSchema,
   patchMeInputSchema,
   registrationProposalInputSchema,
 } from './contracts'
@@ -37,11 +38,13 @@ describe('mobile API v1 contracts', () => {
         name: 'Paciente Teste',
         locale: 'pt-BR',
         timezone: 'America/New_York',
+        country: 'US',
       }),
     ).toEqual({
       name: 'Paciente Teste',
       locale: 'pt-BR',
       timezone: 'America/New_York',
+      country: 'US',
     })
 
     expect(() => patchMeInputSchema.parse({ admin_notes: 'forbidden' })).toThrow()
@@ -57,5 +60,18 @@ describe('mobile API v1 contracts', () => {
     expect(historyQuerySchema.parse({}).limit).toBe(30)
     expect(historyQuerySchema.parse({ limit: '100' }).limit).toBe(100)
     expect(() => historyQuerySchema.parse({ limit: '101' })).toThrow()
+  })
+
+  it('validates onboarding measurements at the public boundary', () => {
+    expect(
+      onboardingInputSchema.parse({
+        height_cm: 180,
+        weight_kg: 82,
+        training_frequency: 0,
+        wake_time: '07:30',
+      }),
+    ).toMatchObject({ training_frequency: 0 })
+    expect(() => onboardingInputSchema.parse({ height_cm: 70 })).toThrow()
+    expect(() => onboardingInputSchema.parse({ wake_time: '27:00' })).toThrow()
   })
 })

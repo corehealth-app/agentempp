@@ -206,3 +206,16 @@ export async function executeIdempotent(
     throw error
   }
 }
+
+export function executeSupabaseIdempotent(
+  context: MobileRouteContext,
+  validatedPayload: unknown,
+  operation: () => Promise<Response>,
+): Promise<Response> {
+  return executeIdempotent(
+    context,
+    validatedPayload,
+    createSupabaseIdempotencyStore(context.supabase),
+    operation,
+  )
+}

@@ -78,6 +78,9 @@ export function sanitizePendingProposal(value: Json) {
       meal_type: stringValue(proposal?.mealType) ?? stringValue(proposal?.meal_type) ?? 'outro',
       items,
       totals: safeTotals(proposal?.totals),
+      warnings: Array.isArray(proposal?.userWarnings)
+        ? proposal.userWarnings.filter((warning): warning is string => typeof warning === 'string')
+        : [],
     }
   }
 

@@ -51,7 +51,6 @@ describe('mobile route wrapper', () => {
         requestId: 'request-id',
         supabase: { kind: 'service-client' },
       }),
-      undefined,
     )
   })
 

@@ -93,6 +93,9 @@ export async function authenticatePatient(
   if (!patient || patient.id !== patientId || patient.authUserId !== identity.id) {
     throw new MobileApiError(403, 'patient_profile_unavailable', 'Patient profile unavailable')
   }
+  if (patient.status !== 'active') {
+    throw new MobileApiError(403, 'patient_account_inactive', 'Patient account is not active')
+  }
 
   return {
     accessToken,

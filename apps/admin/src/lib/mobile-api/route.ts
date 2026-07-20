@@ -18,10 +18,12 @@ export interface MobileRouteRuntime {
   createRequestId(request: Request): string
 }
 
-type MobileRouteHandler<RouteContext = unknown> = (
+type MobileRouteHandler<RouteContext> = (
   context: MobileRouteContext,
-  routeContext?: RouteContext,
+  routeContext: RouteContext,
 ) => Promise<Response>
+
+type StaticMobileRouteHandler = (context: MobileRouteContext) => Promise<Response>
 
 const defaultRuntime: MobileRouteRuntime = {
   authenticate(request, supabase) {
@@ -34,28 +36,44 @@ const defaultRuntime: MobileRouteRuntime = {
   },
 }
 
-export function createMobileRoute<RouteContext = unknown>(
+async function runMobileRoute<RouteContext>(
+  request: Request,
+  routeContext: RouteContext,
+  handler: MobileRouteHandler<RouteContext>,
+  runtime: MobileRouteRuntime = defaultRuntime,
+): Promise<Response> {
+  const requestId = runtime.createRequestId(request)
+  try {
+    const supabase = runtime.createServiceClient()
+    const auth = await runtime.authenticate(request, supabase)
+    return await handler({ auth, request, requestId, supabase }, routeContext)
+  } catch (error) {
+    if (error instanceof MobileApiError) return mobileErrorResponse(error, requestId)
+    if (error instanceof ZodError) return mobileErrorResponse(validationError(error), requestId)
+    console.error('[mobile-api] unexpected_error', {
+      request_id: requestId,
+      path: new URL(request.url).pathname,
+      error_name: error instanceof Error ? error.name : 'UnknownError',
+    })
+    return mobileErrorResponse(
+      new MobileApiError(500, 'internal_error', 'Unexpected server error'),
+      requestId,
+    )
+  }
+}
+
+export function createMobileRoute(
+  handler: StaticMobileRouteHandler,
+  runtime: MobileRouteRuntime = defaultRuntime,
+) {
+  return (request: Request): Promise<Response> =>
+    runMobileRoute(request, undefined, (context) => handler(context), runtime)
+}
+
+export function createMobileRouteWithContext<RouteContext>(
   handler: MobileRouteHandler<RouteContext>,
   runtime: MobileRouteRuntime = defaultRuntime,
 ) {
-  return async (request: Request, routeContext?: RouteContext): Promise<Response> => {
-    const requestId = runtime.createRequestId(request)
-    try {
-      const supabase = runtime.createServiceClient()
-      const auth = await runtime.authenticate(request, supabase)
-      return await handler({ auth, request, requestId, supabase }, routeContext)
-    } catch (error) {
-      if (error instanceof MobileApiError) return mobileErrorResponse(error, requestId)
-      if (error instanceof ZodError) return mobileErrorResponse(validationError(error), requestId)
-      console.error('[mobile-api] unexpected_error', {
-        request_id: requestId,
-        path: new URL(request.url).pathname,
-        error_name: error instanceof Error ? error.name : 'UnknownError',
-      })
-      return mobileErrorResponse(
-        new MobileApiError(500, 'internal_error', 'Unexpected server error'),
-        requestId,
-      )
-    }
-  }
+  return (request: Request, routeContext: RouteContext): Promise<Response> =>
+    runMobileRoute(request, routeContext, handler, runtime)
 }

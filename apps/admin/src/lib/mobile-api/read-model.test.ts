@@ -23,6 +23,7 @@ describe('mobile read model', () => {
           },
         ],
         totals: { kcal: 130, protein_g: 2.5, carbs_g: 28, fat_g: 0.3 },
+        userWarnings: ['Confirme o preparo antes de registrar.'],
       }),
     ).toEqual({
       kind: 'meal',
@@ -38,6 +39,7 @@ describe('mobile read model', () => {
         },
       ],
       totals: { kcal: 130, protein_g: 2.5, carbs_g: 28, fat_g: 0.3 },
+      warnings: ['Confirme o preparo antes de registrar.'],
     })
   })
 

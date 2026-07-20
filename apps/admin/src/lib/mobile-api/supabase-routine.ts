@@ -259,6 +259,16 @@ function createRepository(supabase: ServiceClient): RoutineRepository {
         .eq('user_id', input.userId)
         .select(reminderSelection)
         .maybeSingle()
+      if (error?.code === '23505') {
+        throw new MobileApiError(
+          409,
+          'reminder_conflict',
+          'An active reminder already uses this schedule',
+        )
+      }
+      if (error?.code === '23503' || error?.code === '23514') {
+        throw new MobileApiError(422, 'reminder_invalid', 'Reminder configuration is invalid')
+      }
       if (error) databaseFailure('update_reminder', error)
       return data ? parseReminder(data) : null
     },

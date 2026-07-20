@@ -83,4 +83,45 @@ describe('Supabase routine adapter', () => {
     expect(selection).not.toContain('apns_token')
     expect(result).toEqual(device)
   })
+
+  it.each([
+    {
+      databaseCode: '23505',
+      expectedStatus: 409,
+      expectedCode: 'reminder_conflict',
+    },
+    {
+      databaseCode: '23514',
+      expectedStatus: 422,
+      expectedCode: 'reminder_invalid',
+    },
+  ])('maps reminder update constraint $databaseCode to a client error', async ({
+    databaseCode,
+    expectedStatus,
+    expectedCode,
+  }) => {
+    const query = {
+      update: vi.fn(),
+      eq: vi.fn(),
+      select: vi.fn(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: databaseCode, message: 'constraint violation' },
+      }),
+    }
+    query.update.mockReturnValue(query)
+    query.eq.mockReturnValue(query)
+    query.select.mockReturnValue(query)
+    const deps = createSupabaseRoutineDependencies({
+      from: vi.fn().mockReturnValue(query),
+    } as unknown as ServiceClient)
+
+    await expect(
+      deps.repository.updateReminder({
+        userId: 'patient-1',
+        reminderId: reminder.id,
+        active: true,
+      }),
+    ).rejects.toMatchObject({ status: expectedStatus, code: expectedCode })
+  })
 })

@@ -764,6 +764,44 @@ export type Database = {
         }
         Relationships: []
       }
+      hydration_logs: {
+        Row: {
+          amount_ml: number
+          created_at: string
+          id: string
+          idempotency_key: string
+          local_date: string
+          occurred_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_ml: number
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          local_date: string
+          occurred_at: string
+          user_id: string
+        }
+        Update: {
+          amount_ml?: number
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          local_date?: string
+          occurred_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hydration_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       llm_evaluations: {
         Row: {
           agent_name: string | null
@@ -1264,6 +1302,173 @@ export type Database = {
           },
         ]
       }
+      mobile_devices: {
+        Row: {
+          active: boolean
+          apns_environment: string
+          apns_token: string
+          apns_token_hash: string | null
+          created_at: string
+          id: string
+          installation_id: string
+          last_seen_at: string
+          platform: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          apns_environment: string
+          apns_token: string
+          apns_token_hash?: string | null
+          created_at?: string
+          id?: string
+          installation_id: string
+          last_seen_at?: string
+          platform?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          apns_environment?: string
+          apns_token?: string
+          apns_token_hash?: string | null
+          created_at?: string
+          id?: string
+          installation_id?: string
+          last_seen_at?: string
+          platform?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mobile_devices_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_deliveries: {
+        Row: {
+          attempt_count: number
+          channel: string
+          created_at: string
+          error_code: string | null
+          id: string
+          mobile_device_id: string
+          personality: string
+          provider: string
+          provider_message_id: string | null
+          reminder_event_id: string
+          scheduled_for: string
+          status: string
+          template_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          channel: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          mobile_device_id: string
+          personality: string
+          provider: string
+          provider_message_id?: string | null
+          reminder_event_id: string
+          scheduled_for: string
+          status?: string
+          template_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          channel?: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          mobile_device_id?: string
+          personality?: string
+          provider?: string
+          provider_message_id?: string | null
+          reminder_event_id?: string
+          scheduled_for?: string
+          status?: string
+          template_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_deliveries_device_owner_fkey"
+            columns: ["mobile_device_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "mobile_devices"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "notification_deliveries_event_owner_fkey"
+            columns: ["reminder_event_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "reminder_events"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "notification_deliveries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          created_at: string
+          daily_push_limit: number
+          hydration_target_ml: number | null
+          push_enabled: boolean
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_push_limit?: number
+          hydration_target_ml?: number | null
+          push_enabled?: boolean
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_push_limit?: number
+          hydration_target_ml?: number | null
+          push_enabled?: boolean
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pending_approvals: {
         Row: {
           application_error: string | null
@@ -1497,6 +1702,206 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "reevaluations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminder_events: {
+        Row: {
+          created_at: string
+          id: string
+          reminder_rule_id: string
+          resolved_at: string | null
+          scheduled_for: string
+          status: string
+          suppression_reason: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reminder_rule_id: string
+          resolved_at?: string | null
+          scheduled_for: string
+          status: string
+          suppression_reason?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reminder_rule_id?: string
+          resolved_at?: string | null
+          scheduled_for?: string
+          status?: string
+          suppression_reason?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_events_rule_owner_fkey"
+            columns: ["reminder_rule_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "reminder_rules"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "reminder_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminder_rules: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          id: string
+          local_time: string
+          meal_type: string | null
+          routine_item_id: string | null
+          template_key: string | null
+          updated_at: string
+          user_id: string
+          weekdays: number[]
+        }
+        Insert: {
+          active?: boolean
+          category: string
+          created_at?: string
+          id?: string
+          local_time: string
+          meal_type?: string | null
+          routine_item_id?: string | null
+          template_key?: string | null
+          updated_at?: string
+          user_id: string
+          weekdays: number[]
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          id?: string
+          local_time?: string
+          meal_type?: string | null
+          routine_item_id?: string | null
+          template_key?: string | null
+          updated_at?: string
+          user_id?: string
+          weekdays?: number[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_rules_item_owner_type_fkey"
+            columns: ["routine_item_id", "user_id", "category"]
+            isOneToOne: false
+            referencedRelation: "routine_items"
+            referencedColumns: ["id", "user_id", "item_type"]
+          },
+          {
+            foreignKeyName: "reminder_rules_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routine_adherence_logs: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          item_type: string
+          occurred_at: string
+          routine_item_id: string
+          scheduled_for: string | null
+          snoozed_until: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          item_type: string
+          occurred_at: string
+          routine_item_id: string
+          scheduled_for?: string | null
+          snoozed_until?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          item_type?: string
+          occurred_at?: string
+          routine_item_id?: string
+          scheduled_for?: string | null
+          snoozed_until?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routine_adherence_logs_item_owner_type_fkey"
+            columns: ["routine_item_id", "user_id", "item_type"]
+            isOneToOne: false
+            referencedRelation: "routine_items"
+            referencedColumns: ["id", "user_id", "item_type"]
+          },
+          {
+            foreignKeyName: "routine_adherence_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routine_items: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          item_type: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          item_type: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          item_type?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routine_items_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -2555,6 +2960,14 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_reminder_event: {
+        Args: {
+          p_claimed_at?: string
+          p_reminder_rule_id: string
+          p_scheduled_for: string
+        }
+        Returns: Json
+      }
       claim_subscription_event: {
         Args: {
           p_event_type: string
@@ -2594,6 +3007,10 @@ export type Database = {
       cron_update_schedule: {
         Args: { p_jobname: string; p_schedule: string }
         Returns: undefined
+      }
+      deactivate_mobile_device: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: boolean
       }
       detect_country_from_wpp: { Args: { p_wpp: string }; Returns: string }
       dispatch_inngest_event: {
@@ -2746,6 +3163,26 @@ export type Database = {
         Returns: undefined
       }
       pending_approvals_expire_old: { Args: never; Returns: number }
+      record_hydration_atomic: {
+        Args: {
+          p_amount_ml: number
+          p_idempotency_key: string
+          p_local_date: string
+          p_occurred_at: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      record_routine_adherence_atomic: {
+        Args: {
+          p_expected_item_type: string
+          p_idempotency_key: string
+          p_routine_item_id: string
+          p_taken_at: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       refresh_mv_kpis_daily: { Args: never; Returns: undefined }
       register_meal_atomic: {
         Args: {
@@ -2963,6 +3400,19 @@ export type Database = {
       untag_user: {
         Args: { p_tag: string; p_user_id: string }
         Returns: string[]
+      }
+      update_notification_preferences_atomic: {
+        Args: { p_patch: Json; p_user_id: string }
+        Returns: Json
+      }
+      upsert_mobile_device: {
+        Args: {
+          p_apns_environment: string
+          p_apns_token: string
+          p_installation_id: string
+          p_user_id: string
+        }
+        Returns: string
       }
       user_metadata_label_add: {
         Args: { p_extra_patch?: Json; p_label: string; p_user_id: string }

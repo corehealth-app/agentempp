@@ -26,7 +26,7 @@ estado oficial e enfileira entregas sem chamar APNs nesta fase.
 ### Task 1: Schema privado e invariantes transacionais
 
 **Files:**
-- Create: `supabase/migrations/<timestamp>_bodyflow_push_routine_foundation.sql`
+- Create with Supabase CLI: `supabase/migrations/*_bodyflow_push_routine_foundation.sql`
 - Create: `supabase/tests/bodyflow_push_routine.sql`
 - Modify: `packages/db/src/generated/database.ts`
 
@@ -35,15 +35,15 @@ estado oficial e enfileira entregas sem chamar APNs nesta fase.
 `reminder_events` e `notification_deliveries`; RPCs backend-only para as mutacoes
 atomicas e claims.
 
-- [ ] Escrever primeiro o teste SQL para buckets de ownership, grants, RLS,
+- [x] Escrever primeiro o teste SQL para buckets de ownership, grants, RLS,
   idempotencia, hidratacao atomica, adesao, quiet hours e claim sem duplicidade.
-- [ ] Executar o teste contra banco sem a migration e confirmar falha pela ausencia
+- [x] Executar o teste contra banco sem a migration e confirmar falha pela ausencia
   das relacoes.
-- [ ] Criar a migration com `supabase migration new bodyflow_push_routine_foundation`.
-- [ ] Implementar constraints, indices, RLS, grants e RPCs service-only.
-- [ ] Aplicar em banco local descartavel e executar o teste ate passar.
-- [ ] Regenerar tipos e executar `pnpm --filter @mpp/db typecheck`.
-- [ ] Commit: `feat(database): add push and routine foundation`.
+- [x] Criar a migration com `supabase migration new bodyflow_push_routine_foundation`.
+- [x] Implementar constraints, indices, RLS, grants e RPCs service-only.
+- [x] Aplicar em banco local descartavel e executar o teste ate passar.
+- [x] Regenerar tipos e executar `pnpm --filter @mpp/db typecheck`.
+- [x] Commit: `feat(database): add push and routine foundation`.
 
 ### Task 2: Contratos e servicos mobile
 
@@ -91,6 +91,8 @@ logs, reavaliacoes e adesao.
 ### Task 4: Daily state, documentacao e staging
 
 **Files:**
+- Modify: `packages/core/src/daily-state.ts`
+- Modify: `packages/core/src/daily-state.test.ts`
 - Modify: `packages/agent/src/daily-state-service.ts`
 - Modify: `packages/agent/src/daily-state-service.test.ts`
 - Modify: `docs/mobile/api-v1.md`
@@ -111,4 +113,3 @@ de suplementos/medicamentos sem inventar dados.
 - [ ] Confirmar zero dados sinteticos remanescentes e crons ainda inativos.
 - [ ] Commit: `docs(mobile): document push and routine contracts`.
 - [ ] Push da branch e abrir PR draft contra `codex/bodyflow-secure-media-v1`.
-

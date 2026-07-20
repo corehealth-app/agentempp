@@ -8,7 +8,15 @@ DECLARE
   v_other_user_id uuid := '00000000-0000-0000-0000-000000000702';
   v_auth_user_id uuid := '00000000-0000-0000-0000-000000000703';
   v_other_auth_user_id uuid := '00000000-0000-0000-0000-000000000704';
+  v_history_user_id uuid := '00000000-0000-0000-0000-000000000705';
+  v_history_new_user_id uuid := '00000000-0000-0000-0000-000000000706';
+  v_history_auth_user_id uuid := '00000000-0000-0000-0000-000000000707';
+  v_history_new_auth_user_id uuid := '00000000-0000-0000-0000-000000000708';
   v_device_id uuid;
+  v_history_device_id uuid;
+  v_reassigned_device_id uuid;
+  v_history_rule_id uuid;
+  v_history_event_id uuid;
   v_hydration_first jsonb;
   v_hydration_retry jsonb;
   v_adherence_first jsonb;
@@ -127,12 +135,16 @@ BEGIN
     is_sso_user, is_anonymous
   ) VALUES
     (v_auth_user_id, 'authenticated', 'authenticated', 'bodyflow-push-a-auth@example.com', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
-    (v_other_auth_user_id, 'authenticated', 'authenticated', 'bodyflow-push-b-auth@example.com', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false);
+    (v_other_auth_user_id, 'authenticated', 'authenticated', 'bodyflow-push-b-auth@example.com', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
+    (v_history_auth_user_id, 'authenticated', 'authenticated', 'bodyflow-push-history-a-auth@example.com', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
+    (v_history_new_auth_user_id, 'authenticated', 'authenticated', 'bodyflow-push-history-b-auth@example.com', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false);
 
   INSERT INTO public.users (id, auth_user_id, email, timezone)
   VALUES
     (v_user_id, v_auth_user_id, 'bodyflow-push-a@example.com', 'America/Sao_Paulo'),
-    (v_other_user_id, v_other_auth_user_id, 'bodyflow-push-b@example.com', 'America/Sao_Paulo');
+    (v_other_user_id, v_other_auth_user_id, 'bodyflow-push-b@example.com', 'America/Sao_Paulo'),
+    (v_history_user_id, v_history_auth_user_id, 'bodyflow-push-history-a@example.com', 'America/Sao_Paulo'),
+    (v_history_new_user_id, v_history_new_auth_user_id, 'bodyflow-push-history-b@example.com', 'America/Sao_Paulo');
 
   INSERT INTO public.daily_snapshots (user_id, date)
   VALUES (v_user_id, date '2026-07-20');
@@ -234,6 +246,88 @@ BEGIN
     'sandbox',
     repeat('c', 64)
   );
+
+  v_history_device_id := public.upsert_mobile_device(
+    v_history_user_id,
+    'ios-installation-history',
+    'sandbox',
+    repeat('e', 64)
+  );
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_history_user_id,
+    'hydration',
+    time '12:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_history_rule_id;
+  INSERT INTO public.reminder_events (
+    user_id,
+    reminder_rule_id,
+    scheduled_for,
+    status
+  ) VALUES (
+    v_history_user_id,
+    v_history_rule_id,
+    timestamptz '2026-07-20 15:00:00+00',
+    'queued'
+  ) RETURNING id INTO v_history_event_id;
+  INSERT INTO public.notification_deliveries (
+    user_id,
+    reminder_event_id,
+    mobile_device_id,
+    channel,
+    provider,
+    template_key,
+    personality,
+    status,
+    scheduled_for
+  ) VALUES (
+    v_history_user_id,
+    v_history_event_id,
+    v_history_device_id,
+    'push',
+    'apns',
+    'bodyflow.hydration.reminder',
+    'default',
+    'queued',
+    timestamptz '2026-07-20 15:00:00+00'
+  );
+
+  v_reassigned_device_id := public.upsert_mobile_device(
+    v_history_new_user_id,
+    'ios-installation-history',
+    'sandbox',
+    repeat('e', 64)
+  );
+
+  IF v_reassigned_device_id = v_history_device_id
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.mobile_devices
+      WHERE id = v_history_device_id
+        AND user_id = v_history_user_id
+        AND NOT active
+    ) OR NOT EXISTS (
+      SELECT 1
+      FROM public.mobile_devices
+      WHERE id = v_reassigned_device_id
+        AND user_id = v_history_new_user_id
+        AND active
+    ) OR (SELECT count(*) FROM public.mobile_devices
+          WHERE installation_id = 'ios-installation-history' AND active) <> 1
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.notification_deliveries
+      WHERE reminder_event_id = v_history_event_id
+        AND mobile_device_id = v_history_device_id
+        AND user_id = v_history_user_id
+    ) THEN
+    RAISE EXCEPTION 'device reassignment rewrote or detached historical delivery ownership';
+  END IF;
 
   v_hydration_first := public.record_hydration_atomic(
     v_user_id,
@@ -733,7 +827,7 @@ BEGIN
       v_token_denied := true;
   END;
 
-  IF v_safe_device_count <> 2
+  IF v_safe_device_count <> 3
     OR v_cross_device_count <> 0
     OR NOT v_token_denied THEN
     RAISE EXCEPTION 'RLS or APNs column protections failed: own %, cross %, token denied %',

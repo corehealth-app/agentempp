@@ -18,7 +18,9 @@ identidade ou entrega.
 
 ## Decisão
 
-1. `mobile_devices` guarda uma instalação iOS por `installation_id`. Token APNs e
+1. `mobile_devices` mantém no máximo uma linha ativa por `installation_id`. Linhas
+   inativas preservam o vínculo das entregas históricas; ao trocar de conta com o
+   mesmo token comprovado, uma nova identidade de device é criada. Token APNs e
    hash são backend-only e nunca aparecem em DTO, evento ou log.
 2. `notification_preferences` guarda opt-in, horário silencioso, limite diário e
    meta opcional de hidratação. O timezone continua canônico em `users`.
@@ -27,9 +29,10 @@ identidade ou entrega.
 4. Hidratação e adesão são append-only e passam por RPCs idempotentes. Hidratação
    atualiza `daily_snapshots.water_consumed_ml` na mesma transação.
 5. O scheduler consulta `list_due_reminder_rules`, que retorna apenas IDs e
-   instantes UTC. A conversão usa data e horário locais canônicos e valida a ida e
-   volta do timezone para evitar duas ocorrências no retorno do DST e horários
-   inexistentes no avanço do relógio.
+   instantes UTC em páginas ordenadas por `(scheduled_for, reminder_rule_id)`. A
+   conversão usa data e horário locais canônicos e valida a ida e volta do timezone
+   para evitar duas ocorrências no retorno do DST e horários inexistentes no avanço
+   do relógio.
 6. O evento `reminder.rule.due` contém somente `reminderRuleId` e `scheduledFor`,
    com ID determinístico. Retry do scheduler produz o mesmo evento.
 7. `claim_reminder_event` é a autoridade de elegibilidade. Sob lock transacional,
@@ -54,7 +57,9 @@ identidade ou entrega.
 - `resolved`: o objetivo já foi cumprido; nenhuma entrega é criada.
 - `suppressed`: a ocorrência é registrada com motivo, como `quiet_hours`,
   `daily_limit`, `push_disabled`, `no_active_device`, `snoozed`,
-  `routine_item_inactive` ou `missing_official_context`.
+  `routine_item_inactive`, `missing_official_context` ou `stale`. Um evento com
+  mais de 15 minutos de atraso é auditado como `stale` antes de preferências ou
+  deliveries serem criados.
 - `queued`: a decisão e as entregas foram persistidas, mas nada foi enviado ao
   provider.
 - Falha antes do commit não deixa ocorrência parcial. Retry depois do commit
@@ -64,6 +69,9 @@ identidade ou entrega.
 
 - **+** Estado oficial e efeito externo ficam separados e auditáveis.
 - **+** Retry do cron, evento e claim não duplica ocorrência ou entrega.
+- **+** O scheduler percorre até 20 páginas de 500 regras; exceder o limite falha
+  de forma observável, sem descartar silenciosamente o restante da fila.
+- **+** Reassociação de conta não reescreve o proprietário de entregas antigas.
 - **+** Token e conteúdo de notificação não circulam no Inngest.
 - **+** Horário silencioso e limite são avaliados perto do efeito pretendido.
 - **+** O app pode consumir hidratação e rotina sem reimplementar fórmulas.

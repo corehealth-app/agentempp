@@ -269,7 +269,10 @@ do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
 O registro de device aceita somente iOS, `installation_id` opaco, ambiente APNs
 `sandbox` ou `production` e token hexadecimal. O token é normalizado e permanece
 em tabela backend-only; respostas, eventos e logs não incluem token nem hash. Uma
-instalação desativada continua no histórico e deixa de receber novas entregas.
+instalação desativada continua no histórico e deixa de receber novas entregas. Se
+o mesmo device trocar de conta com evidência do mesmo token, o backend desativa a
+identidade anterior e cria outra; entregas antigas continuam ligadas ao usuário e
+ao device originais.
 
 Preferências suportam opt-in global, início/fim de horário silencioso, limite de
 0 a 20 pushes por dia e meta opcional de hidratação entre 250 e 10.000 ml. Início
@@ -289,9 +292,17 @@ local. Retry com a mesma `Idempotency-Key` não soma nem registra novamente.
 
 O scheduler Inngest descobre regras vencidas com janela de cinco minutos e emite
 `reminder.rule.due` contendo somente `reminderRuleId` e `scheduledFor`. O
-Postgres faz o claim transacional e consulta preferências, dispositivo ativo,
-horário silencioso, limite diário e estado oficial. Os resultados possíveis são
-`queued`, `resolved` e `suppressed`, sempre auditáveis e idempotentes.
+worker percorre páginas de 500 regras por cursor determinístico, até o limite
+explícito de 20 páginas; se o limite for excedido, a execução falha em vez de
+omitir regras. O Postgres faz o claim transacional e consulta preferências,
+dispositivo ativo, horário silencioso, limite diário e estado oficial. Os
+resultados possíveis são `queued`, `resolved` e `suppressed`, sempre auditáveis e
+idempotentes. Claims executados mais de 15 minutos depois do instante esperado são
+registrados como `suppressed` com motivo `stale`, sem criar delivery.
+
+Criação ou reativação de lembrete que conflite com outra regra ativa retorna
+`409 reminder_conflict`. Referência inválida ou combinação rejeitada por constraint
+retorna `422 reminder_invalid`, sem converter erro do paciente em `500`.
 
 Nesta fase, `queued` significa apenas que uma linha foi criada em
 `notification_deliveries`. Não existe chamada ao APNs, não há credencial de push

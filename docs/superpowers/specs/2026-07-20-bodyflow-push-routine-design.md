@@ -27,11 +27,12 @@ ou integracoes externas reais.
 
 ### Identidade e dispositivos
 
-`mobile_devices` armazena uma instalacao iOS por paciente e ambiente APNs. O token
-e mantido em uma tabela backend-only, com hash para unicidade e sem aparecer nos
-DTOs, logs ou eventos Inngest. Um novo token da mesma instalacao substitui o
-anterior; um token reassociado deixa de pertencer a conta anterior para evitar
-push de dados apos troca de conta.
+`mobile_devices` armazena uma instalacao iOS ativa por identificador e ambiente
+APNs. O token e mantido em uma tabela backend-only, com hash para unicidade e sem
+aparecer nos DTOs, logs ou eventos Inngest. Um novo token da mesma instalacao ativa
+e atualizado na identidade atual; ao trocar de conta com o mesmo token, a linha
+anterior e desativada e uma nova e criada, preservando o ownership das entregas
+historicas.
 
 ### Preferencias
 
@@ -56,10 +57,10 @@ calorias, bloco 7700 ou fechamento do dia.
 
 ### Ocorrencias e entrega
 
-O scheduler converte regras vencidas em `reminder_events` por uma RPC transacional.
-A unicidade por regra/instante impede duplicidade por retry. Antes de criar uma
-entrega, ele verifica preferencia, horario silencioso, limite diario, dispositivo
-ativo e estado oficial:
+O scheduler descobre regras vencidas por keyset pagination e as converte em
+`reminder_events` por uma RPC transacional. A unicidade por regra/instante impede
+duplicidade por retry. Antes de criar uma entrega, ele verifica preferencia,
+horario silencioso, limite diario, dispositivo ativo e estado oficial:
 
 - refeicao: gap ainda aberto;
 - hidratacao: meta configurada ainda nao atingida;
@@ -71,6 +72,8 @@ Contextos sem fonte oficial suficiente sao suprimidos, nunca enviados por
 suposicao. `notification_deliveries` registra canal, template, personalidade,
 status e erro tecnico sem payload sensivel. Nesta fase, uma ocorrencia elegivel
 termina como `queued` com entrega `queued`; nao existe estado `sent` ficticio.
+Claims com mais de 15 minutos de atraso terminam como `suppressed/stale`, de forma
+auditavel e sem criar preferencias ou deliveries.
 
 ## Seguranca
 
@@ -106,6 +109,8 @@ vez de apagar o historico de auditoria.
 - Falha antes da claim nao cria evento parcial.
 - Uma claim abandonada pode ser retomada depois do lease; uma entrega `queued` ou
   resolvida nao e criada novamente.
+- Descoberta percorre ate 20 paginas de 500 regras e falha de forma observavel se
+  esse teto for excedido; nenhuma pagina posterior e descartada silenciosamente.
 - Falha futura do APNs sera registrada por device e podera desativar token invalido,
   mas essa integracao nao faz parte desta fase.
 
@@ -113,6 +118,10 @@ vez de apagar o historico de auditoria.
 
 - Token nunca aparece em DTO, evento ou log.
 - Dois retries criam um device, um log de hidratacao e uma ocorrencia.
+- Troca de conta preserva o device e as entregas historicas do proprietario
+  anterior, criando uma nova identidade ativa.
+- 501 regras vencidas sao descobertas sem duplicidade nem omissao.
+- Claim atrasado e persistido uma vez como `suppressed/stale`, sem delivery.
 - Quiet hours e limite diario suprimem a fila com motivo auditavel.
 - Evento resolvido nao produz entrega.
 - Hidratacao soma atomicamente no dia local correto.

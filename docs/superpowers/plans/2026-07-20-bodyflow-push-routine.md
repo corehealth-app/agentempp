@@ -112,4 +112,7 @@ de suplementos/medicamentos sem inventar dados.
 - [x] Rodar teste SQL transacional, lint e advisors em staging.
 - [x] Confirmar zero dados sinteticos remanescentes e crons ainda inativos.
 - [x] Commit: `feat(mobile-api): expose routine in daily state`.
+- [x] Corrigir erros HTTP de constraints, ownership historico de devices,
+  paginacao acima de 500 regras e claim atrasado auditavel.
+- [x] Reaplicar testes, lint, advisors e invariantes no staging apos o hardening.
 - [ ] Push da branch e abrir PR draft contra `codex/bodyflow-secure-media-v1`.

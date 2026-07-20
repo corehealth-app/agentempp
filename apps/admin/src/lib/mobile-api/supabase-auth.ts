@@ -25,7 +25,9 @@ export function createMobileAuthDependencies(supabase: ServiceClient): MobileAut
     async loadPatient(authUserId) {
       const { data, error } = await supabase
         .from('users')
-        .select('id, auth_user_id, email, name, locale, timezone, country, status')
+        .select(
+          'id, auth_user_id, email, name, locale, timezone, country, country_confirmed, status',
+        )
         .eq('auth_user_id', authUserId)
         .maybeSingle()
       if (error) throw new Error('patient identity lookup failed')
@@ -38,6 +40,7 @@ export function createMobileAuthDependencies(supabase: ServiceClient): MobileAut
         locale: data.locale,
         timezone: data.timezone,
         country: data.country,
+        countryConfirmed: data.country_confirmed,
         status: data.status,
       } satisfies MobilePatient
     },

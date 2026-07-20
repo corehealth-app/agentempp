@@ -1,8 +1,43 @@
 import type { MealCalcResult } from '@mpp/agent'
 import { describe, expect, it } from 'vitest'
-import { buildMealPendingProposal, cancelRegistration } from './registration-service'
+import {
+  buildMealPendingProposal,
+  cancelRegistration,
+  proposeRegistration,
+} from './registration-service'
 
 describe('mobile registration service', () => {
+  it('rejects meal calculation until the patient confirms their country', async () => {
+    const supabase = {
+      from() {
+        throw new Error('nutrition lookup must not run before country confirmation')
+      },
+    }
+
+    await expect(
+      proposeRegistration(
+        supabase as never,
+        {
+          userId: 'patient-1',
+          patient: {
+            country: 'BR',
+            countryConfirmed: false,
+            timezone: 'America/New_York',
+          },
+        } as never,
+        {
+          kind: 'meal',
+          meal_type: 'jantar',
+          items: [{ food_name: 'arroz branco', quantity_g: 100 }],
+        },
+        'mobile-request-country-1',
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'country_confirmation_required',
+    })
+  })
+
   it('builds a server-calculated meal proposal without internal match details', () => {
     const calculation: MealCalcResult = {
       items: [

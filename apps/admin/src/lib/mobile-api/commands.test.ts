@@ -19,6 +19,7 @@ const auth: MobileAuthContext = {
     locale: 'pt-BR',
     timezone: 'America/Sao_Paulo',
     country: null,
+    countryConfirmed: false,
     status: 'active',
   },
 }
@@ -45,6 +46,7 @@ describe('mobile profile commands', () => {
             locale: 'en-US',
             timezone: 'America/New_York',
             country: 'US',
+            country_confirmed: true,
             status: 'active',
           },
           error: null,

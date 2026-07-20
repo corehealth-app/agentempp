@@ -30,6 +30,7 @@ export function meDto(auth: MobileAuthContext) {
     locale: auth.patient.locale,
     timezone: auth.patient.timezone,
     country: auth.patient.country,
+    country_confirmed: auth.patient.countryConfirmed,
     status: auth.patient.status,
     email_confirmed: auth.identity.emailConfirmedAt !== null,
   }

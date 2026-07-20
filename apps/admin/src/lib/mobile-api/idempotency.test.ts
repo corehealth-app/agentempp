@@ -25,6 +25,7 @@ function context(idempotencyKey?: string): MobileRouteContext {
         locale: 'pt-BR',
         timezone: 'America/New_York',
         country: 'US',
+        countryConfirmed: true,
         status: 'active',
       },
     },

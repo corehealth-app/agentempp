@@ -14,6 +14,7 @@ export interface MobilePatient {
   locale: string | null
   timezone: string | null
   country: string | null
+  countryConfirmed: boolean
   status: string
 }
 

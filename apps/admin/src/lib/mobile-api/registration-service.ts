@@ -158,10 +158,17 @@ async function buildProposal(
   }
 
   if (input.kind === 'meal') {
+    if (!auth.patient.countryConfirmed || !auth.patient.country) {
+      throw new MobileApiError(
+        409,
+        'country_confirmation_required',
+        'Confirm your country before calculating nutrition',
+      )
+    }
     const calculation = await calcMealMacros(
       supabase,
       input.items,
-      auth.patient.country ?? 'BR',
+      auth.patient.country,
       auth.userId,
     )
     return buildMealPendingProposal(input, calculation, timing) as unknown as Json

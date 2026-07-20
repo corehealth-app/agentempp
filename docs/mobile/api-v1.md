@@ -95,6 +95,12 @@ somente ao backend.
 
 Todos os caminhos acima têm o prefixo `/api/mobile/v1`.
 
+O campo `country_confirmed` de `/me` indica se o país operacional já foi
+confirmado. Propostas de refeição retornam `409 country_confirmation_required`
+enquanto ele for falso; a API não usa o `BR` provisório de contas novas para
+calcular silenciosamente a nutrição de pacientes de outro país. Enviar `country`
+em `PATCH /me` confirma o país.
+
 ## Proposta de refeição
 
 Request:

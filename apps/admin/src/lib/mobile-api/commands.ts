@@ -20,7 +20,7 @@ export async function updateMe(
     .update(updates)
     .eq('id', auth.userId)
     .eq('auth_user_id', auth.authUserId)
-    .select('id, auth_user_id, email, name, locale, timezone, country, status')
+    .select('id, auth_user_id, email, name, locale, timezone, country, country_confirmed, status')
     .maybeSingle()
   if (error) throw new MobileApiError(500, 'profile_update_failed', 'Profile update failed')
   if (!data?.auth_user_id) {
@@ -37,6 +37,7 @@ export async function updateMe(
       locale: data.locale,
       timezone: data.timezone,
       country: data.country,
+      countryConfirmed: data.country_confirmed,
       status: data.status,
     },
   })

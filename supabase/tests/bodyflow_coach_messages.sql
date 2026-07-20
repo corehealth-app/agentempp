@@ -216,102 +216,11 @@ BEGIN
     timestamptz '2026-07-20 12:00:00+00'
   );
 
-  INSERT INTO public.coach_message_templates (
-    template_key,
-    personality_code,
-    context,
-    channel,
-    locale,
-    variant,
-    allowed_variables,
-    required_variables
-  )
-  SELECT
-    format(
-      'test.%s.%s.%s.%s.v%s',
-      personality.code,
-      context.code,
-      channel.code,
-      replace(lower(locale.code), '-', '_'),
-      variant.value
-    ),
-    personality.code,
-    context.code,
-    channel.code,
-    locale.code,
-    variant.value,
-    ARRAY[]::text[],
-    ARRAY[]::text[]
-  FROM unnest(ARRAY['balanced', 'focus', 'impulse', 'zen']) AS personality(code)
-  CROSS JOIN unnest(ARRAY[
-    'onboarding',
-    'meal_pending',
-    'registration_confirmed',
-    'error_corrected',
-    'hydration',
-    'supplement',
-    'medication',
-    'workout',
-    'progress',
-    'day_incomplete',
-    'reevaluation',
-    'reengagement',
-    'trial',
-    'paywall',
-    'return_after_abandonment'
-  ]) AS context(code)
-  CROSS JOIN unnest(ARRAY['in_app', 'push', 'email']) AS channel(code)
-  CROSS JOIN unnest(ARRAY['pt-BR', 'en-US']) AS locale(code)
-  CROSS JOIN generate_series(1, 3) AS variant(value);
-
-  INSERT INTO public.coach_message_template_versions (
-    template_id,
-    version,
-    title,
-    subject,
-    body,
-    status,
-    provenance,
-    authored_by,
-    approved_by,
-    approved_at,
-    content_hash
-  )
-  SELECT
-    template.id,
-    1,
-    CASE WHEN template.channel = 'push' THEN 'BodyFlow' ELSE NULL END,
-    CASE WHEN template.channel = 'email' THEN 'BodyFlow' ELSE NULL END,
-    format('Safe synthetic copy for %s.', template.template_key),
-    'draft',
-    'human',
-    v_actor_id,
-    CASE
-      WHEN template.template_key = 'test.focus.hydration.in_app.pt_br.v1' THEN NULL
-      ELSE v_actor_id
-    END,
-    CASE
-      WHEN template.template_key = 'test.focus.hydration.in_app.pt_br.v1' THEN NULL
-      ELSE timestamptz '2026-07-20 12:00:00+00'
-    END,
-    encode(
-      extensions.digest(
-        format(
-          '%s|%s|%s|%s',
-          COALESCE(CASE WHEN template.channel = 'push' THEN 'BodyFlow' END, ''),
-          COALESCE(CASE WHEN template.channel = 'email' THEN 'BodyFlow' END, ''),
-          format('Safe synthetic copy for %s.', template.template_key),
-          template.template_key
-        ),
-        'sha256'
-      ),
-      'hex'
-    )
-  FROM public.coach_message_templates template;
-
   INSERT INTO public.coach_content_pack_entries (pack_id, template_id, template_version_id)
-  SELECT v_pack_id, version.template_id, version.id
-  FROM public.coach_message_template_versions version;
+  SELECT v_pack_id, entry.template_id, entry.template_version_id
+  FROM public.coach_content_pack_entries entry
+  JOIN public.coach_content_packs pack ON pack.id = entry.pack_id
+  WHERE pack.status = 'active';
 
   IF (SELECT count(*) FROM public.coach_content_pack_entries WHERE pack_id = v_pack_id) <> 1080 THEN
     RAISE EXCEPTION 'synthetic complete pack does not contain 1,080 entries';
@@ -364,17 +273,17 @@ BEGIN
   END;
 
   v_first := public.claim_coach_message(
-    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-1', ARRAY[]::text[],
+    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-1', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 13:00:00+00'
   );
   v_retry := public.claim_coach_message(
-    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-1', ARRAY[]::text[],
+    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-1', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 13:01:00+00'
   );
 
   BEGIN
     PERFORM public.claim_coach_message(
-      v_user_id, 'hydration', 'in_app', 'en-US', 'claim-event-1', ARRAY[]::text[],
+      v_user_id, 'hydration', 'in_app', 'en-US', 'claim-event-1', ARRAY['water_remaining_ml'],
       timestamptz '2026-07-20 13:01:30+00'
     );
     RAISE EXCEPTION 'one event key was accepted with two locales';
@@ -383,15 +292,15 @@ BEGIN
   END;
 
   v_second := public.claim_coach_message(
-    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-2', ARRAY[]::text[],
+    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-2', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 13:02:00+00'
   );
   v_third := public.claim_coach_message(
-    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-3', ARRAY[]::text[],
+    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-3', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 13:03:00+00'
   );
   v_fourth := public.claim_coach_message(
-    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-4', ARRAY[]::text[],
+    v_user_id, 'hydration', 'in_app', 'pt-BR', 'claim-event-4', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 13:04:00+00'
   );
 
@@ -461,11 +370,11 @@ BEGIN
   END IF;
 
   v_push_first := public.claim_coach_message(
-    v_user_id, 'hydration', 'push', 'pt-BR', 'push-event-1', ARRAY[]::text[],
+    v_user_id, 'hydration', 'push', 'pt-BR', 'push-event-1', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 14:00:00+00'
   );
   v_push_cooldown := public.claim_coach_message(
-    v_user_id, 'hydration', 'push', 'pt-BR', 'push-event-2', ARRAY[]::text[],
+    v_user_id, 'hydration', 'push', 'pt-BR', 'push-event-2', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 15:00:00+00'
   );
 
@@ -491,7 +400,7 @@ BEGIN
   END IF;
 
   v_email_disabled := public.claim_coach_message(
-    v_user_id, 'hydration', 'email', 'pt-BR', 'email-event-1', ARRAY[]::text[],
+    v_user_id, 'hydration', 'email', 'pt-BR', 'email-event-1', ARRAY['water_remaining_ml'],
     timestamptz '2026-07-20 18:00:00+00'
   );
 

@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { cadastraDadosIniciais, deleteUser } from './tools.js'
 
 function makeProfileContext(options: { nameUpdateError?: string } = {}) {
+  const profileUpserts: Array<Record<string, unknown>> = []
   const supabase = {
     from(table: string) {
       if (table === 'user_profiles') {
         return {
-          upsert: async () => ({ error: null }),
+          upsert: async (values: Record<string, unknown>) => {
+            profileUpserts.push(values)
+            return { error: null }
+          },
           select: () => ({
             eq: () => ({
               maybeSingle: async () => ({ data: null, error: null }),
@@ -44,6 +48,7 @@ function makeProfileContext(options: { nameUpdateError?: string } = {}) {
   }
   return {
     supabase,
+    profileUpserts,
     context: {
       supabase,
       userId: 'user-1',
@@ -60,6 +65,15 @@ describe('profile write safety', () => {
     await expect(
       cadastraDadosIniciais.execute({ name: 'Nome Teste' }, context as never),
     ).rejects.toThrow('name write failed')
+  })
+
+  it('cadastra_dados_iniciais preserva frequência sedentária igual a zero', async () => {
+    const { context, profileUpserts } = makeProfileContext()
+
+    await expect(
+      cadastraDadosIniciais.execute({ training_frequency: 0 }, context as never),
+    ).resolves.toMatchObject({ success: true })
+    expect(profileUpserts[0]).toMatchObject({ training_frequency: 0 })
   })
 
   it('delete_user não confirma exclusão quando status não foi persistido', async () => {

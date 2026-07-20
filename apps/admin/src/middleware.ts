@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { isSelfAuthenticatedApiPath } from '@/lib/public-api-path'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -12,7 +13,9 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
+        setAll(
+          cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>,
+        ) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value)
           }
@@ -32,8 +35,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
   const isAuthPage = path === '/login' || path.startsWith('/auth/')
   // Endpoints públicos (validam auth próprio via bearer/signing key, não JWT cookie)
-  const isPublicApi =
-    path.startsWith('/api/inngest') || path.startsWith('/api/admin/send-message')
+  const isPublicApi = isSelfAuthenticatedApiPath(path)
 
   if (!user && !isAuthPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/login', request.url))

@@ -11,6 +11,7 @@ export interface STTConfig {
 export interface TranscribeParams {
   audio: Blob | Buffer | Uint8Array
   filename?: string
+  mimeType?: string
   language?: string // ISO-639-1, default 'pt'
   prompt?: string // contexto opcional pra melhorar acurácia
   temperature?: number
@@ -42,7 +43,7 @@ export class GroqSTT {
       p.audio instanceof Blob
         ? new File([p.audio], p.filename ?? 'audio.ogg', { type: p.audio.type || 'audio/ogg' })
         : new File([new Uint8Array(p.audio as Uint8Array | Buffer)], p.filename ?? 'audio.ogg', {
-            type: 'audio/ogg',
+            type: p.mimeType ?? 'audio/ogg',
           })
 
     const result = await this.client.audio.transcriptions.create({

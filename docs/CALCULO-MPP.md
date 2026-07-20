@@ -5,7 +5,7 @@
 > (1) o código, (2) o teste que a trava, (3) este documento — na mesma PR.
 > Nunca mude uma fórmula "no susto" por um print de paciente sem checar aqui.
 
-Última revisão: 2026-05-21.
+Última revisão: 2026-07-20.
 
 ---
 
@@ -107,6 +107,27 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   com dados frescos do banco (`injectCanonicalCard`). O LLM nunca "calcula" o card.
 - A prosa fora do card é reconciliada (`reconcileBalanceProse`) pela mesma base
   do card (comida, §2a) — rótulo e número não podem contradizer o card.
+
+### 4a. Estado diário para clientes mobile
+
+- Fonte pura: `@mpp/core/daily-state` (`buildDailyState`).
+- Serviço de aplicação: `@mpp/agent/daily-state-service`
+  (`loadOfficialDailyState`).
+- API: `GET /api/mobile/v1/today`.
+- `remaining_food_kcal` deriva de `eatingBalance` (§2a), sem exercício.
+- `daily_balance_kcal` deriva de `netBalance` (§2b), com exercício.
+- O saldo é `provisional` enquanto o dia está aberto, `final` após fechamento
+  válido e `insufficient_data` quando o fechamento não possui informação
+  suficiente. O bloco exposto é sempre o progresso persistido em `user_progress`;
+  o cliente não projeta crédito para o dia aberto. Sem uma linha persistida de
+  progresso, o bloco é `unavailable` e seus números são `null`, não zero.
+- Snapshot, refeições e treinos são lidos juntos. Uma releitura da versão do
+  snapshot evita misturar totais anteriores com logs de uma confirmação
+  concorrente; após duas leituras instáveis, a API falha sem publicar estado
+  híbrido.
+- A versão inicial da semântica é `bodyflow.daily-state.v1`. Mudança futura de
+  fórmula exige incrementar `calculation_version`, atualizar testes e este
+  documento na mesma PR. O app nunca replica estas fórmulas.
 
 ## 5. Defesas anti-erro (não remover)
 

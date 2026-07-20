@@ -1,4 +1,4 @@
-import { getLocalDateString } from '@mpp/agent'
+import { DailyStateLoadError, loadOfficialDailyState } from '@mpp/agent'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery } from './contracts'
@@ -116,51 +116,13 @@ export async function loadToday(
   timezone: string,
   now = new Date(),
 ) {
-  const date = getLocalDateString(timezone, now)
-  const { data: snapshot, error: snapshotError } = await supabase
-    .from('daily_snapshots')
-    .select(
-      'id, date, calories_consumed, calories_target, protein_g, protein_target, carbs_g, fat_g, exercise_calories, steps, training_done, sleep_hours, water_consumed_ml, deficit_accumulated, current_protocol, day_closed, day_status, updated_at',
-    )
-    .eq('user_id', userId)
-    .eq('date', date)
-    .maybeSingle()
-  throwQueryError(snapshotError, 'Daily state lookup')
-
-  if (!snapshot) return { date, snapshot: null, meals: [], workouts: [] }
-
-  const [mealResult, workoutResult] = await Promise.all([
-    supabase
-      .from('meal_logs')
-      .select('id, meal_type, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at')
-      .eq('user_id', userId)
-      .eq('snapshot_id', snapshot.id)
-      .order('consumed_at', { ascending: true }),
-    supabase
-      .from('workout_logs')
-      .select('id, workout_type, duration_min, estimated_kcal, intensity, performed_at')
-      .eq('user_id', userId)
-      .eq('snapshot_id', snapshot.id)
-      .order('performed_at', { ascending: true }),
-  ])
-  throwQueryError(mealResult.error, 'Daily meals lookup')
-  throwQueryError(workoutResult.error, 'Daily workouts lookup')
-
-  return {
-    date,
-    snapshot: {
-      ...snapshot,
-      calories_remaining:
-        snapshot.calories_target === null
-          ? null
-          : snapshot.calories_target - snapshot.calories_consumed,
-      protein_remaining_g:
-        snapshot.protein_target === null
-          ? null
-          : Number(snapshot.protein_target) - Number(snapshot.protein_g),
-    },
-    meals: mealResult.data ?? [],
-    workouts: workoutResult.data ?? [],
+  try {
+    return await loadOfficialDailyState(supabase, userId, timezone, now)
+  } catch (error) {
+    if (error instanceof DailyStateLoadError) {
+      throw new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed')
+    }
+    throw error
   }
 }
 

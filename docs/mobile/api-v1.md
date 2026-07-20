@@ -76,7 +76,7 @@ somente ao backend.
 |---|---|---|
 | `GET` | `/me` | identidade pública do paciente, locale, país e timezone |
 | `PATCH` | `/me` | altera `name`, `locale`, `timezone` e/ou país ISO alpha-2 |
-| `GET` | `/today` | snapshot local, itens de refeição e treinos do dia |
+| `GET` | `/today` | estado diário oficial, determinístico e versionado |
 | `GET` | `/profile` | perfil corporal, rotina, objetivo e onboarding |
 | `POST` | `/onboarding` | salva dados validados e retorna perfil + metas disponíveis |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
@@ -100,6 +100,127 @@ confirmado. Propostas de refeição retornam `409 country_confirmation_required`
 enquanto ele for falso; a API não usa o `BR` provisório de contas novas para
 calcular silenciosamente a nutrição de pacientes de outro país. Enviar `country`
 em `PATCH /me` confirma o país.
+
+## Estado diário oficial
+
+`GET /today` devolve a visão oficial usada pelo app. O cliente não soma refeições,
+não recalcula metas, não incorpora exercício em `remaining_food_kcal` e não projeta
+crédito do bloco para um dia ainda aberto.
+
+Estrutura resumida:
+
+```json
+{
+  "local_date": "2026-07-20",
+  "protocol": "recomposicao",
+  "targets": {
+    "calories_kcal": 1935,
+    "protein_g": 148,
+    "source": "daily_snapshot",
+    "calories_source": "daily_snapshot",
+    "protein_source": "daily_snapshot"
+  },
+  "consumed": {
+    "calories_kcal": 1200,
+    "protein_g": 90,
+    "carbs_g": 110,
+    "fat_g": 42,
+    "source": "daily_snapshot"
+  },
+  "remaining_food_kcal": 735,
+  "food_excess_kcal": 0,
+  "exercise_kcal": 300,
+  "daily_balance_kcal": -1035,
+  "daily_balance_status": "provisional",
+  "protein_status": {
+    "consumed_g": 90,
+    "target_g": 148,
+    "remaining_g": 58,
+    "percentage": 61,
+    "status": "below_target"
+  },
+  "meals": [],
+  "workouts": [],
+  "hydration": {
+    "consumed_ml": 1500,
+    "target_ml": null,
+    "status": "tracked_without_target"
+  },
+  "supplements": { "availability": "not_implemented", "items": [] },
+  "medications": { "availability": "not_implemented", "items": [] },
+  "pending_actions": {
+    "registrations": [],
+    "meal_gaps": {
+      "expected": ["cafe", "almoco", "jantar"],
+      "registered": ["cafe", "almoco"],
+      "skipped": [],
+      "open": ["jantar"],
+      "reliable": true,
+      "source": "personalized_pattern",
+      "active_days": 10
+    }
+  },
+  "block_7700": {
+    "enabled": true,
+    "availability": "available",
+    "target_kcal": 7700,
+    "current_kcal": 2500,
+    "percentage": 32,
+    "completed_blocks": 1,
+    "total_credited_kcal": 10200,
+    "source": "user_progress"
+  },
+  "completion_status": {
+    "status": "pending_information",
+    "day_closed": false,
+    "has_sufficient_data": null
+  },
+  "sources": {
+    "targets": "daily_snapshot",
+    "consumed": "daily_snapshot",
+    "exercise": "daily_snapshot",
+    "meals": "meal_logs",
+    "workouts": "workout_logs",
+    "hydration": "daily_snapshot",
+    "pending_actions": "pending_registrations_and_meal_pattern",
+    "block_7700": "user_progress"
+  },
+  "calculation_version": "bodyflow.daily-state.v1",
+  "updated_at": "2026-07-20T14:02:00.000Z",
+  "generated_at": "2026-07-20T15:00:00.000Z"
+}
+```
+
+Semântica obrigatória:
+
+- `remaining_food_kcal = max(meta - consumido, 0)`. Exercício não aumenta esse
+  valor; `food_excess_kcal` informa o excedente de ingestão separadamente.
+- `daily_balance_kcal = consumido - meta - exercício`. Esse saldo é
+  `provisional` durante o dia, `final` após fechamento válido e
+  `insufficient_data` quando faltaram dados no fechamento.
+- `completion_status.status=insufficient_data` descreve qualidade insuficiente da
+  informação. Não representa falha, punição ou falta de esforço do paciente.
+- `user_skipped` aparece como `complete_with_explicit_skip`, porque a ausência foi
+  confirmada pelo paciente.
+- O bloco expõe somente `user_progress` já persistido. A API não soma um crédito
+  especulativo do dia aberto. Quando `user_progress` não existe ou não pode ser
+  comprovido, `availability` e `source` são `unavailable` e os campos de progresso
+  são `null`; ausência de registro nunca é apresentada como progresso zero.
+- `targets.source`, `consumed.source`, `block_7700.source` e `sources` identificam
+  a origem operacional de cada seção.
+- Propostas pendentes expõem somente ID, tipo, horário e `meal_type`; texto bruto,
+  mídia, IDs de provider e evidências internas não saem do backend.
+- Hidratação ainda não possui meta diária de domínio. Suplementos e medicamentos
+  ainda não possuem módulo; a resposta declara isso em vez de inventar dados.
+- Snapshot, refeições e treinos são lidos em uma única consulta relacional. O
+  backend valida novamente a versão escalar do snapshot e repete a leitura uma
+  vez se uma confirmação concorrente alterar o dia. Se ele continuar mudando, a
+  API falha sem devolver totais e itens de versões diferentes.
+
+`calculation_version` versiona a semântica do agregador. Mudanças aditivas no DTO
+podem manter a versão; mudança de fórmula ou significado incrementa a versão.
+Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
+do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
 
 ## Proposta de refeição
 
@@ -160,5 +281,5 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 - `persona` não persiste seleção até o Prompt correspondente implementar o domínio.
 - `content` não consulta frases educativas nem inventa um CMS sobre tabelas legadas.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
-- O daily state expõe o snapshot canônico atual; evolução do motor diário pertence
-  ao próximo prompt técnico.
+- Suplementos, medicamentos e meta quantitativa de hidratação permanecem
+  explicitamente indisponíveis no estado diário até seus domínios existirem.

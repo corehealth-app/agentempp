@@ -38,6 +38,7 @@ export interface MealPattern {
 const DEFAULT_THRESHOLD = 0.5
 const MIN_ACTIVE_DAYS_FOR_PATTERN = 5
 const FALLBACK_EXPECTED: Set<MealType> = new Set(['cafe', 'almoco', 'jantar'])
+const MEAL_TYPES = new Set<MealType>(['cafe', 'almoco', 'lanche', 'jantar', 'ceia'])
 
 export async function getMealPattern(
   supabase: ServiceClient,
@@ -124,6 +125,51 @@ export async function getMealPattern(
   return { expected, activeDays, countByType, threshold, fallbackUsed: false }
 }
 
+/** Carrega confirmações explícitas de refeições puladas em uma data local. */
+export async function getSkippedMealsForDate(
+  supabase: ServiceClient,
+  userId: string,
+  userTimezone: string,
+  dateStr: string,
+): Promise<Set<MealType>> {
+  // A segunda consulta preserva eventos legados sem `properties.local_date`.
+  const { startIso, endExclusiveIso } = getLocalDayUtcBounds(userTimezone, dateStr)
+  const [datedSkipResult, legacySkipResult] = await Promise.all([
+    supabase
+      .from('product_events')
+      .select('properties')
+      .eq('user_id', userId)
+      .eq('event', 'meal.user_skipped')
+      .filter('properties->>local_date', 'eq', dateStr),
+    supabase
+      .from('product_events')
+      .select('properties')
+      .eq('user_id', userId)
+      .eq('event', 'meal.user_skipped')
+      .gte('occurred_at', startIso)
+      .lt('occurred_at', endExclusiveIso),
+  ])
+  if (datedSkipResult.error || legacySkipResult.error) {
+    throw new Error(
+      datedSkipResult.error?.message ??
+        legacySkipResult.error?.message ??
+        'skip events lookup failed',
+    )
+  }
+
+  const skipped = new Set<MealType>()
+  const skipEvents = [...(datedSkipResult.data ?? []), ...(legacySkipResult.data ?? [])]
+  for (const event of skipEvents as Array<{ properties: Record<string, unknown> }>) {
+    const eventLocalDate = event.properties?.local_date
+    if (typeof eventLocalDate === 'string' && eventLocalDate !== dateStr) continue
+    const mealType = event.properties?.meal_type
+    if (typeof mealType === 'string' && MEAL_TYPES.has(mealType as MealType)) {
+      skipped.add(mealType as MealType)
+    }
+  }
+  return skipped
+}
+
 /**
  * Identifica quais refeições esperadas ainda NÃO foram registradas em UMA
  * DATA específica (formato YYYY-MM-DD em fuso local).
@@ -174,44 +220,7 @@ export async function getGapForDate(
     }
   }
 
-  // Refeições marcadas como "pulei" na data (product_events meal.user_skipped)
-  // Janela: 00:00 a 23:59 da data no fuso LOCAL do paciente.
-  // BUG corrigido (Roberto 2026-05-19): faltava o tzOffset. Roberto (NY/EDT)
-  // disse "Pulei" às 21:32 EDT = 01:32 UTC do dia seguinte. Janela sem offset
-  // ("2026-05-19T23:59:59" interpretado como UTC) terminava 19:59 EDT — o
-  // evento das 21:32 ficava FORA → daily-closer não via o skip → marcava
-  // incomplete_no_response em vez de user_skipped → bloco 7700 não creditava.
-  const { startIso, endExclusiveIso } = getLocalDayUtcBounds(userTimezone, dateStr)
-  const [datedSkipResult, legacySkipResult] = await Promise.all([
-    supabase
-      .from('product_events')
-      .select('properties')
-      .eq('user_id', userId)
-      .eq('event', 'meal.user_skipped')
-      .filter('properties->>local_date', 'eq', dateStr),
-    supabase
-      .from('product_events')
-      .select('properties')
-      .eq('user_id', userId)
-      .eq('event', 'meal.user_skipped')
-      .gte('occurred_at', startIso)
-      .lt('occurred_at', endExclusiveIso),
-  ])
-  if (datedSkipResult.error || legacySkipResult.error) {
-    throw new Error(
-      datedSkipResult.error?.message ??
-        legacySkipResult.error?.message ??
-        'skip events lookup failed',
-    )
-  }
-  const skipEvents = [...(datedSkipResult.data ?? []), ...(legacySkipResult.data ?? [])]
-  const skipped = new Set<MealType>()
-  for (const e of (skipEvents ?? []) as Array<{ properties: Record<string, unknown> }>) {
-    const eventLocalDate = e.properties?.local_date
-    if (typeof eventLocalDate === 'string' && eventLocalDate !== dateStr) continue
-    const mt = e.properties?.meal_type as MealType | undefined
-    if (mt) skipped.add(mt)
-  }
+  const skipped = await getSkippedMealsForDate(supabase, userId, userTimezone, dateStr)
 
   const gap = new Set<MealType>()
   for (const mt of pattern.expected) {

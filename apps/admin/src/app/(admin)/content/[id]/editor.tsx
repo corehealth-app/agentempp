@@ -25,7 +25,7 @@ import {
   saveContentDraftAction,
   submitContentVersionAction,
 } from '../actions'
-import { type ContentLocale, selectLocaleVersions } from '../presenter'
+import { type ContentLocale, formatOperationalDate, selectLocaleVersions } from '../presenter'
 import { CoverUploader } from './cover-uploader'
 import { MarkdownPreview } from './markdown-preview'
 import { WorkflowControls } from './workflow-controls'
@@ -74,13 +74,15 @@ export function ContentEditor({
   publication,
   role,
   initialError,
+  now,
 }: {
   publication: ContentPublicationDetail
   role: AdminRole
   initialError?: string
+  now: string
 }) {
   const [activeLocale, setActiveLocale] = useState<ContentLocale>('pt-BR')
-  const activeSelection = selectLocaleVersions(publication.versions, activeLocale)
+  const activeSelection = selectLocaleVersions(publication.versions, activeLocale, now)
 
   return (
     <div className="space-y-4">
@@ -98,7 +100,7 @@ export function ContentEditor({
           <TabsTrigger value="en-US">Ingles · en-US</TabsTrigger>
         </TabsList>
         {(['pt-BR', 'en-US'] as const).map((locale) => {
-          const selection = selectLocaleVersions(publication.versions, locale)
+          const selection = selectLocaleVersions(publication.versions, locale, now)
           return (
             <TabsContent key={locale} value={locale} className="mt-4">
               <LocaleEditor
@@ -107,6 +109,7 @@ export function ContentEditor({
                 locale={locale}
                 version={selection.latest}
                 previousPublished={selection.previousPublished}
+                futureScheduled={selection.futureScheduled}
                 role={role}
                 archived={Boolean(publication.archivedAt)}
               />
@@ -129,6 +132,7 @@ function LocaleEditor({
   locale,
   version,
   previousPublished,
+  futureScheduled,
   role,
   archived,
 }: {
@@ -136,6 +140,7 @@ function LocaleEditor({
   locale: ContentLocale
   version: Version | null
   previousPublished: Version | null
+  futureScheduled: Version | null
   role: AdminRole
   archived: boolean
 }) {
@@ -183,7 +188,7 @@ function LocaleEditor({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{STATUS_LABELS[version.state]}</Badge>
           <span className="font-mono text-[10px] text-muted-foreground">
-            v{version.version} · atualizado {formatDate(version.updatedAt)}
+            v{version.version} · atualizado {formatOperationalDate(version.updatedAt)}
           </span>
         </div>
         {role === 'content_editor' && version.state !== 'draft' && !archived && (
@@ -202,14 +207,18 @@ function LocaleEditor({
         <div className="border-l-2 border-emerald-600 bg-emerald-500/5 px-3 py-2 text-xs">
           <span className="font-medium">Versao publicada preservada:</span> v
           {previousPublished.version} · {previousPublished.title ?? locale} ·{' '}
-          {formatDate(
-            previousPublished.publishedAt ??
-              previousPublished.publishAt ??
-              previousPublished.updatedAt,
-          )}
+          {formatOperationalDate(previousPublished.publishAt ?? previousPublished.updatedAt)}
+        </div>
+      )}
+      {futureScheduled && (
+        <div className="border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+          <span className="font-medium">Versao agendada:</span> v{futureScheduled.version} ·{' '}
+          {futureScheduled.title ?? locale} · efetiva em{' '}
+          {formatOperationalDate(futureScheduled.publishAt ?? futureScheduled.updatedAt)}
         </div>
       )}
       <ActionMessage message={message} />
+      <VersionMetadata version={version} />
       <DraftForm version={version} canEdit={canEdit} role={role} />
     </div>
   )
@@ -510,6 +519,60 @@ function ActionMessage({
   )
 }
 
+function VersionMetadata({ version }: { version: Version }) {
+  const metadata = [
+    ['Autor', identityLabel(version.author)],
+    ['Revisor', identityLabel(version.reviewer)],
+    ['Publicador', identityLabel(version.publisher)],
+    ['Enviada para revisao', timestampLabel(version.submittedAt)],
+    ['Revisada', timestampLabel(version.reviewedAt)],
+    ['Comando de publicacao', timestampLabel(version.publishedAt)],
+    ['Publicacao efetiva', timestampLabel(version.publishAt)],
+    ['Tempo de leitura', version.readingTimeMinutes ? `${version.readingTimeMinutes} min` : '-'],
+    ['Hash do conteudo', version.bodyHash ? `${version.bodyHash.slice(0, 12)}...` : '-'],
+  ] as const
+
+  return (
+    <section className="border-y border-border py-3" aria-label="Metadados editoriais">
+      <p className="mb-3 font-mono text-[10px] uppercase text-muted-foreground">
+        Metadados editoriais
+      </p>
+      <dl className="grid min-w-0 gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
+        {metadata.map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="font-mono text-[9px] uppercase text-muted-foreground">{label}</dt>
+            <dd className="mt-0.5 break-words text-xs">{value}</dd>
+          </div>
+        ))}
+        {version.rejectionReason && (
+          <div className="min-w-0 sm:col-span-2 xl:col-span-3">
+            <dt className="font-mono text-[9px] uppercase text-muted-foreground">
+              Motivo da rejeicao
+            </dt>
+            <dd className="mt-0.5 whitespace-pre-wrap break-words text-xs">
+              {version.rejectionReason}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  )
+}
+
+function identityLabel(identity: Version['author'] | null): string {
+  if (!identity) return '-'
+  const label = identity.name?.trim() || identity.role
+  return `${label} · ${shortId(identity.id)}`
+}
+
+function timestampLabel(value: string | null): string {
+  return value ? formatOperationalDate(value) : '-'
+}
+
+function shortId(value: string): string {
+  return `${value.slice(0, 8)}...`
+}
+
 function normalizeTags(value: string): string[] {
   return [
     ...new Set(
@@ -527,10 +590,4 @@ function normalizeTags(value: string): string[] {
         .filter(Boolean),
     ),
   ]
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(
-    new Date(value),
-  )
 }

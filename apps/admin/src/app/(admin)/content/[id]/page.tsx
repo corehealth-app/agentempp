@@ -30,6 +30,7 @@ export default async function ContentDetailPage({
   if (!publication) notFound()
   const query = await searchParams
   const initialError = scalar(query.error)?.slice(0, 160)
+  const now = new Date().toISOString()
 
   return (
     <div className="space-y-4">
@@ -47,7 +48,12 @@ export default async function ContentDetailPage({
           </Button>
         }
       />
-      <ContentEditor publication={publication} role={admin.role} initialError={initialError} />
+      <ContentEditor
+        publication={publication}
+        role={admin.role}
+        initialError={initialError}
+        now={now}
+      />
     </div>
   )
 }

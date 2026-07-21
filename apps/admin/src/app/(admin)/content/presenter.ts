@@ -53,6 +53,10 @@ export interface PublicationListRow {
 }
 
 const LOCALES = ['pt-BR', 'en-US'] as const
+export const PUBLICATION_PAGE_SIZE = 25
+export const PUBLICATION_BATCH_SIZE = 100
+export const PUBLICATION_MAX_OFFSET = 10_000
+export const PUBLICATION_MAX_PAGE = Math.floor(PUBLICATION_MAX_OFFSET / PUBLICATION_PAGE_SIZE) + 1
 
 const COMMANDS_BY_ROLE: Record<AdminRole, readonly ContentCommand[]> = {
   support: [],
@@ -99,16 +103,44 @@ export function visibleContentCommands(role: AdminRole): ContentCommand[] {
   return [...COMMANDS_BY_ROLE[role]]
 }
 
-function formatOperationalDate(value: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
+export function formatOperationalDate(value: string): string {
+  const formatted = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     timeZone: 'UTC',
   }).format(new Date(value))
+  return `${formatted} UTC`
+}
+
+export function parseUtcDateTimeLocal(value: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+
+  const [, yearPart, monthPart, dayPart, hourPart, minutePart] = match
+  const year = Number(yearPart)
+  const month = Number(monthPart)
+  const day = Number(dayPart)
+  const hour = Number(hourPart)
+  const minute = Number(minutePart)
+  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59) return null
+
+  const parsed = new Date(0)
+  parsed.setUTCFullYear(year, month - 1, day)
+  parsed.setUTCHours(hour, minute, 0, 0)
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day ||
+    parsed.getUTCHours() !== hour ||
+    parsed.getUTCMinutes() !== minute
+  ) {
+    return null
+  }
+  return parsed.toISOString()
 }
 
 export function scheduleLabel(
@@ -128,16 +160,79 @@ export function scheduleLabel(
 export function selectLocaleVersions(
   versions: readonly ContentPublicationDetail['versions'][number][],
   locale: ContentLocale,
+  now: string,
 ): {
   latest: ContentPublicationDetail['versions'][number] | null
   previousPublished: ContentPublicationDetail['versions'][number] | null
+  futureScheduled: ContentPublicationDetail['versions'][number] | null
 } {
   const ordered = versions.filter((version) => version.locale === locale).sort(byNewestVersion)
   const latest = ordered[0] ?? null
   const previousPublished =
-    ordered.find((version) => version.versionId !== latest?.versionId && version.publishedAt) ??
-    null
-  return { latest, previousPublished }
+    ordered.find(
+      (version) =>
+        version.versionId !== latest?.versionId &&
+        version.state === 'approved' &&
+        version.publishAt !== null &&
+        Date.parse(version.publishAt) <= Date.parse(now),
+    ) ?? null
+  const futureScheduled =
+    ordered.find(
+      (version) =>
+        version.state === 'approved' &&
+        version.publishAt !== null &&
+        Date.parse(version.publishAt) > Date.parse(now),
+    ) ?? null
+  return { latest, previousPublished, futureScheduled }
+}
+
+export function filterPublicationSummaries(
+  publications: readonly ContentPublicationSummary[],
+  text: string,
+): ContentPublicationSummary[] {
+  const normalized = text.trim().toLocaleLowerCase('pt-BR')
+  if (!normalized) return [...publications]
+  return publications.filter((publication) =>
+    [publication.slug, ...publication.versions.map((version) => version.title ?? '')]
+      .join(' ')
+      .toLocaleLowerCase('pt-BR')
+      .includes(normalized),
+  )
+}
+
+export function paginatePublications(
+  publications: readonly ContentPublicationSummary[],
+  page: number,
+  pageSize: number = PUBLICATION_PAGE_SIZE,
+): {
+  rows: ContentPublicationSummary[]
+  page: number
+  hasPrevious: boolean
+  hasNext: boolean
+  total: number
+} {
+  const stable = [...publications].sort(
+    (left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt) ||
+      left.publicationId.localeCompare(right.publicationId),
+  )
+  const safePage = Number.isInteger(page) && page > 0 ? page : 1
+  const offset = (safePage - 1) * pageSize
+  return {
+    rows: stable.slice(offset, offset + pageSize),
+    page: safePage,
+    hasPrevious: safePage > 1,
+    hasNext: offset + pageSize < stable.length,
+    total: stable.length,
+  }
+}
+
+export function parsePublicationPage(value: string | string[] | undefined): number {
+  const scalar = Array.isArray(value) ? value[0] : value
+  if (!scalar || !/^\d+$/.test(scalar)) return 1
+  const parsed = Number(scalar)
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 1
+  return Math.min(parsed, PUBLICATION_MAX_PAGE)
 }
 
 export function toPublicationListRow(

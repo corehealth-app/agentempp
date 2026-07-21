@@ -6,7 +6,16 @@ import { CONTENT_MODULE_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rba
 import type { ContentAdminFilters, ContentPublicationSummary } from '@/lib/content/admin-service'
 import { createClient } from '@/lib/supabase/server'
 import { listContentPublicationsAction } from './actions'
-import { toPublicationListRow } from './presenter'
+import {
+  filterPublicationSummaries,
+  PUBLICATION_BATCH_SIZE,
+  PUBLICATION_MAX_OFFSET,
+  PUBLICATION_MAX_PAGE,
+  PUBLICATION_PAGE_SIZE,
+  paginatePublications,
+  parsePublicationPage,
+  toPublicationListRow,
+} from './presenter'
 import { type PublicationFilterState, PublicationTable } from './publication-table'
 
 export const dynamic = 'force-dynamic'
@@ -43,10 +52,10 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
   const admin = await loadAdmin()
   if (!admin || !hasAdminRole(admin.role, CONTENT_MODULE_ROLES)) return <AccessDenied />
 
-  const filters = parseFilters(await searchParams)
-  const actionFilters: ContentAdminFilters = {
-    limit: 100,
-    offset: 0,
+  const params = await searchParams
+  const filters = parseFilters(params)
+  const page = parsePublicationPage(params.page)
+  const actionFilters: Omit<ContentAdminFilters, 'limit' | 'offset'> = {
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.locale ? { locale: filters.locale } : {}),
     ...(filters.category ? { category: filters.category } : {}),
@@ -55,13 +64,49 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
     ...(filters.schedule ? { schedule: filters.schedule } : {}),
     ...(filters.featuredToday !== undefined ? { featuredToday: filters.featuredToday } : {}),
   }
-  const result = await listContentPublicationsAction(actionFilters)
-
-  if (!result.ok) return <PageFailure message={result.error} />
-
   const now = new Date().toISOString()
-  const summaries = result.data as ContentPublicationSummary[]
+  let summaries: ContentPublicationSummary[] = []
+  let hasPrevious = page > 1
+  let hasNext = false
+  let total: number | null = null
+  let truncated = false
+
+  if (filters.text) {
+    for (let offset = 0; offset <= PUBLICATION_MAX_OFFSET; offset += PUBLICATION_BATCH_SIZE) {
+      const result = await listContentPublicationsAction({
+        ...actionFilters,
+        limit: PUBLICATION_BATCH_SIZE,
+        offset,
+      })
+      if (!result.ok) return <PageFailure message={result.error} />
+      const batch = result.data as ContentPublicationSummary[]
+      summaries.push(...batch)
+      if (batch.length < PUBLICATION_BATCH_SIZE) break
+      if (offset === PUBLICATION_MAX_OFFSET) truncated = true
+    }
+    const filtered = filterPublicationSummaries(summaries, filters.text)
+    const pagination = paginatePublications(filtered, page)
+    summaries = pagination.rows
+    hasPrevious = pagination.hasPrevious
+    hasNext = pagination.hasNext && page < PUBLICATION_MAX_PAGE
+    total = pagination.total
+  } else {
+    const result = await listContentPublicationsAction({
+      ...actionFilters,
+      limit: PUBLICATION_PAGE_SIZE + 1,
+      offset: (page - 1) * PUBLICATION_PAGE_SIZE,
+    })
+    if (!result.ok) return <PageFailure message={result.error} />
+    const pageWithProbe = result.data as ContentPublicationSummary[]
+    summaries = pageWithProbe.slice(0, PUBLICATION_PAGE_SIZE)
+    hasNext = pageWithProbe.length > PUBLICATION_PAGE_SIZE && page < PUBLICATION_MAX_PAGE
+  }
+
   const rows = summaries.map((publication) => toPublicationListRow(publication, now))
+  const description =
+    total === null
+      ? `Pagina ${page.toLocaleString('pt-BR')} · ${rows.length.toLocaleString('pt-BR')} itens`
+      : `${total.toLocaleString('pt-BR')} resultados no recorte carregado`
 
   return (
     <div className="space-y-4">
@@ -69,7 +114,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
         compact
         breadcrumbs={[{ label: 'Publicacoes' }]}
         title="Publicacoes"
-        description={`${rows.length.toLocaleString('pt-BR')} itens no recorte atual`}
+        description={description}
         actions={
           admin.role === 'content_editor' ? (
             <Button asChild size="sm">
@@ -81,7 +126,23 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
           ) : undefined
         }
       />
-      <PublicationTable rows={rows} filters={filters} now={now} />
+      {truncated && (
+        <p
+          role="status"
+          className="border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          A busca atingiu o limite operacional de 10.100 publicacoes. Refine os filtros para
+          consultar resultados alem desse recorte.
+        </p>
+      )}
+      <PublicationTable
+        rows={rows}
+        filters={filters}
+        now={now}
+        page={page}
+        hasPrevious={hasPrevious}
+        hasNext={hasNext}
+      />
     </div>
   )
 }

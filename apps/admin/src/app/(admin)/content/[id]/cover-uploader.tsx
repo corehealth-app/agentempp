@@ -1,18 +1,37 @@
 'use client'
 
-import { ImagePlus, Loader2, Upload } from 'lucide-react'
+import { Check, ImagePlus, Loader2, RotateCcw, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { SafeContentAsset } from '@/lib/content/admin-service'
-import { completeContentCoverAction, createContentCoverAction } from '../actions'
+import {
+  completeContentCoverAction,
+  createContentCoverAction,
+  deleteContentCoverAction,
+} from '../actions'
+import {
+  beginCoverUpload,
+  type CoverFlowResult,
+  coverAttemptBlocked,
+  type PendingCoverResolution,
+  resolvePendingCover,
+} from '../cover-flow'
 
-type UploadPhase = 'idle' | 'preparing' | 'uploading' | 'completing' | 'success' | 'error'
+type UploadPhase =
+  | 'idle'
+  | 'preparing'
+  | 'uploading'
+  | 'completing'
+  | 'discarding'
+  | 'success'
+  | 'error'
 
 const PHASE_LABELS: Record<UploadPhase, string> = {
   idle: 'Nenhum envio em andamento',
   preparing: 'Preparando envio...',
   uploading: 'Enviando arquivo...',
   completing: 'Confirmando capa...',
+  discarding: 'Descartando capa pendente...',
   success: 'Capa enviada',
   error: 'Falha no envio',
 }
@@ -29,9 +48,16 @@ export function CoverUploader({
   const inputRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<UploadPhase>('idle')
   const [error, setError] = useState<string | null>(null)
-  const busy = phase === 'preparing' || phase === 'uploading' || phase === 'completing'
+  const [pendingResolution, setPendingResolution] = useState<PendingCoverResolution | null>(null)
+  const busy =
+    phase === 'preparing' ||
+    phase === 'uploading' ||
+    phase === 'completing' ||
+    phase === 'discarding'
+  const attemptBlocked = coverAttemptBlocked(pendingResolution)
 
   async function upload(file: File) {
+    if (attemptBlocked) return
     setError(null)
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       setPhase('error')
@@ -44,54 +70,71 @@ export function CoverUploader({
       return
     }
 
-    setPhase('preparing')
-    const createResult = await createContentCoverAction({
-      mimeType: file.type,
-      sizeBytes: file.size,
+    const result = await beginCoverUpload(file, {
+      async create() {
+        const created = await createContentCoverAction({
+          mimeType: file.type,
+          sizeBytes: file.size,
+        })
+        if (!created.ok) return created
+        return {
+          ok: true,
+          data: created.data as {
+            asset: SafeContentAsset
+            upload: { signedUrl: string }
+          },
+        }
+      },
+      async upload(signedUrl, selectedFile) {
+        const response = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': selectedFile.type },
+          body: selectedFile,
+        })
+        if (!response.ok) throw new Error('upload_failed')
+      },
+      async complete(assetId) {
+        const completed = await completeContentCoverAction({ assetId })
+        if (!completed.ok) return completed
+        return { ok: true, data: completed.data as SafeContentAsset }
+      },
+      discard: discardAsset,
+      onPhase: setPhase,
     })
-    if (!createResult.ok) {
-      setPhase('error')
-      setError(createResult.error)
-      return
-    }
-
-    let assetId = ''
-    let uploadUrl = ''
-    {
-      const capability = createResult.data as {
-        asset: SafeContentAsset
-        upload: { signedUrl: string }
-      }
-      assetId = capability.asset.assetId
-      uploadUrl = capability.upload.signedUrl
-    }
-    try {
-      setPhase('uploading')
-      const response = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      })
-      if (!response.ok) throw new Error('upload_failed')
-    } catch {
-      setPhase('error')
-      setError('Nao foi possivel enviar a capa agora.')
-      return
-    } finally {
-      uploadUrl = ''
-    }
-
-    setPhase('completing')
-    const completeResult = await completeContentCoverAction({ assetId })
-    if (!completeResult.ok) {
-      setPhase('error')
-      setError(completeResult.error)
-      return
-    }
-    const asset = completeResult.data as SafeContentAsset
-    onAssetChange(asset.assetId)
-    setPhase('success')
     if (inputRef.current) inputRef.current.value = ''
+    applyResult(result)
+  }
+
+  async function retry(command: 'complete' | 'discard') {
+    if (!pendingResolution) return
+    setError(null)
+    setPhase(command === 'complete' ? 'completing' : 'discarding')
+    const result = await resolvePendingCover(pendingResolution, command, {
+      async complete(assetId) {
+        const completed = await completeContentCoverAction({ assetId })
+        if (!completed.ok) return completed
+        return { ok: true, data: completed.data as SafeContentAsset }
+      },
+      discard: discardAsset,
+    })
+    applyResult(result)
+  }
+
+  function applyResult(result: CoverFlowResult) {
+    setPendingResolution(result.pending)
+    if (result.status === 'completed') {
+      onAssetChange(result.asset.assetId)
+      setPhase('success')
+      setError(null)
+      return
+    }
+    if (result.status === 'discarded') {
+      setPhase('idle')
+      setError(null)
+      return
+    }
+    setPhase('error')
+    setError(result.error)
   }
 
   return (
@@ -113,7 +156,7 @@ export function CoverUploader({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={busy || attemptBlocked}
             onClick={() => inputRef.current?.click()}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Upload />}
@@ -126,7 +169,7 @@ export function CoverUploader({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
-        disabled={disabled || busy}
+        disabled={disabled || busy || attemptBlocked}
         onChange={(event) => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
@@ -137,6 +180,38 @@ export function CoverUploader({
           {error ?? PHASE_LABELS[phase]}
         </p>
       </div>
+      {!disabled && pendingResolution && (
+        <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+          {pendingResolution.kind === 'complete' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void retry('complete')}
+            >
+              {phase === 'completing' ? <Loader2 className="animate-spin" /> : <Check />}
+              Tentar confirmar
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void retry('discard')}
+          >
+            {phase === 'discarding' ? (
+              <Loader2 className="animate-spin" />
+            ) : pendingResolution.kind === 'discard' ? (
+              <RotateCcw />
+            ) : (
+              <Trash2 />
+            )}
+            {pendingResolution.kind === 'discard' ? 'Tentar descartar' : 'Descartar'}
+          </Button>
+        </div>
+      )}
       {!disabled && cover && (
         <Button type="button" size="sm" variant="ghost" onClick={() => onAssetChange(null)}>
           Remover do rascunho
@@ -144,6 +219,10 @@ export function CoverUploader({
       )}
     </div>
   )
+}
+
+async function discardAsset(assetId: string) {
+  return deleteContentCoverAction({ assetId })
 }
 
 function formatBytes(value: number): string {

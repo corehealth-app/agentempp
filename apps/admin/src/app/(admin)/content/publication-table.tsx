@@ -1,9 +1,9 @@
 'use client'
 
-import { ArrowRight, Search, SearchX, Star } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Search, SearchX, Star } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,29 +63,31 @@ export function PublicationTable({
   rows,
   filters,
   now,
+  page,
+  hasPrevious,
+  hasNext,
 }: {
   rows: PublicationListRow[]
   filters: PublicationFilterState
   now: string
+  page: number
+  hasPrevious: boolean
+  hasNext: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
   const [text, setText] = useState(filters.text ?? '')
-  const normalizedText = (filters.text ?? '').toLocaleLowerCase('pt-BR')
-  const visibleRows = normalizedText
-    ? rows.filter((row) =>
-        [row.slug, ...row.versions.map((version) => version.title ?? '')]
-          .join(' ')
-          .toLocaleLowerCase('pt-BR')
-          .includes(normalizedText),
-      )
-    : rows
+
+  useEffect(() => {
+    setText(filters.text ?? '')
+  }, [filters.text])
+
   const authors = uniqueIds(rows.flatMap((row) => row.versions.map((version) => version.authorId)))
   const reviewers = uniqueIds(
     rows.flatMap((row) => row.versions.map((version) => version.reviewerId).filter(Boolean)),
   )
 
-  function navigate(next: PublicationFilterState) {
+  function navigate(next: PublicationFilterState, requestedPage = 1) {
     const params = new URLSearchParams()
     if (next.status) params.set('status', next.status)
     if (next.locale) params.set('locale', next.locale)
@@ -95,6 +97,7 @@ export function PublicationTable({
     if (next.schedule) params.set('schedule', next.schedule)
     if (next.featuredToday !== undefined) params.set('featured', String(next.featuredToday))
     if (next.text) params.set('text', next.text)
+    if (requestedPage > 1) params.set('page', String(requestedPage))
     const query = params.toString()
     router.push(query ? `${pathname}?${query}` : pathname, { scroll: false })
   }
@@ -187,7 +190,7 @@ export function PublicationTable({
         </div>
       </section>
 
-      {visibleRows.length === 0 ? (
+      {rows.length === 0 ? (
         <section className="flex min-h-56 flex-col items-center justify-center border-y border-border px-6 text-center">
           <SearchX className="h-6 w-6 text-muted-foreground" />
           <p className="mt-3 text-sm font-medium">Nenhuma publicacao encontrada</p>
@@ -223,7 +226,7 @@ export function PublicationTable({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((row) => (
+                {rows.map((row) => (
                   <PublicationDesktopRow key={row.publicationId} row={row} now={now} />
                 ))}
               </TableBody>
@@ -234,12 +237,36 @@ export function PublicationTable({
             className="divide-y divide-border border-y border-border lg:hidden"
             aria-label="Publicacoes"
           >
-            {visibleRows.map((row) => (
+            {rows.map((row) => (
               <PublicationMobileRow key={row.publicationId} row={row} now={now} />
             ))}
           </section>
         </>
       )}
+
+      <nav className="flex min-h-10 items-center justify-between gap-3" aria-label="Paginacao">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!hasPrevious}
+          onClick={() => navigate(filters, page - 1)}
+        >
+          <ArrowLeft />
+          Anterior
+        </Button>
+        <span className="font-mono text-[10px] text-muted-foreground">Pagina {page}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!hasNext}
+          onClick={() => navigate(filters, page + 1)}
+        >
+          Proxima
+          <ArrowRight />
+        </Button>
+      </nav>
     </TooltipProvider>
   )
 }
@@ -264,10 +291,10 @@ function PublicationDesktopRow({ row, now }: { row: PublicationListRow; now: str
       <TableCell className="truncate px-3 text-xs">
         {primary?.category ? CATEGORY_LABELS[primary.category] : 'Sem categoria'}
       </TableCell>
-      <TableCell className="px-3 font-mono text-[10px]" title={primary?.authorId}>
+      <TableCell className="px-3 font-mono text-[10px]">
         {primary ? shortId(primary.authorId) : '-'}
       </TableCell>
-      <TableCell className="px-3 font-mono text-[10px]" title={primary?.reviewerId ?? undefined}>
+      <TableCell className="px-3 font-mono text-[10px]">
         {primary?.reviewerId ? shortId(primary.reviewerId) : '-'}
       </TableCell>
       <TableCell className="px-3 text-[11px] text-muted-foreground">{timing.label}</TableCell>

@@ -24,6 +24,7 @@ import {
   publishContentVersionAction,
   reviewContentVersionAction,
 } from '../actions'
+import { parseUtcDateTimeLocal } from '../presenter'
 
 type Version = ContentPublicationDetail['versions'][number]
 
@@ -88,12 +89,12 @@ export function WorkflowControls({
   }
 
   async function schedule() {
-    const timestamp = Date.parse(scheduleAt)
-    if (!Number.isFinite(timestamp)) {
+    const timestamp = parseUtcDateTimeLocal(scheduleAt)
+    if (!timestamp) {
       setMessage({ tone: 'error', text: 'Informe uma data e hora validas.' })
       return
     }
-    await publish(new Date(timestamp).toISOString())
+    await publish(timestamp)
   }
 
   async function archivePublication() {
@@ -201,10 +202,12 @@ export function WorkflowControls({
               <DialogContent className="max-w-md rounded-lg">
                 <DialogHeader>
                   <DialogTitle>Agendar publicacao</DialogTitle>
-                  <DialogDescription>Confirme a data e a hora de liberacao.</DialogDescription>
+                  <DialogDescription>
+                    Confirme a data e a hora de liberacao no fuso operacional UTC.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">
-                  <Label htmlFor="publish-at">Data e hora</Label>
+                  <Label htmlFor="publish-at">Data e hora (UTC)</Label>
                   <Input
                     id="publish-at"
                     type="datetime-local"

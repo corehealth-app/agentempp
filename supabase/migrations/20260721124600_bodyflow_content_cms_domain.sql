@@ -771,6 +771,12 @@ DECLARE
   END;
   v_version_state text;
 BEGIN
+  IF TG_OP = 'UPDATE'
+    AND NEW.content_version_id IS DISTINCT FROM OLD.content_version_id THEN
+    RAISE EXCEPTION 'content targets cannot be reparented'
+      USING ERRCODE = '23514';
+  END IF;
+
   SELECT version.state
   INTO v_version_state
   FROM public.content_versions version

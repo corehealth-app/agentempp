@@ -1222,6 +1222,9 @@ BEGIN
     WHEN serialization_failure THEN NULL;
   END;
 
+  INSERT INTO public.content_version_target_plans (content_version_id, plan)
+  VALUES (v_version_pt_id, 'mensal');
+
   PERFORM public.submit_content_version(v_editor_id, v_version_pt_id, v_expected_updated_at);
 
   IF (
@@ -1259,6 +1262,75 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  BEGIN
+    UPDATE public.content_version_target_protocols
+    SET content_version_id = v_version_en_id
+    WHERE content_version_id = v_version_pt_id
+      AND protocol = 'ganho_massa'::public.protocol_enum;
+    RAISE EXCEPTION 'submitted protocol target was reparented into a draft';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_version_target_protocols target
+    WHERE target.content_version_id = v_version_pt_id
+      AND target.protocol = 'ganho_massa'::public.protocol_enum
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.content_version_target_protocols target
+    WHERE target.content_version_id = v_version_en_id
+      AND target.protocol = 'ganho_massa'::public.protocol_enum
+  ) THEN
+    RAISE EXCEPTION 'submitted protocol target changed after failed reparenting';
+  END IF;
+
+  BEGIN
+    UPDATE public.content_version_target_plans
+    SET content_version_id = v_version_en_id
+    WHERE content_version_id = v_version_pt_id
+      AND plan = 'mensal'::public.plan_enum;
+    RAISE EXCEPTION 'submitted plan target was reparented into a draft';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_version_target_plans target
+    WHERE target.content_version_id = v_version_pt_id
+      AND target.plan = 'mensal'::public.plan_enum
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.content_version_target_plans target
+    WHERE target.content_version_id = v_version_en_id
+      AND target.plan = 'mensal'::public.plan_enum
+  ) THEN
+    RAISE EXCEPTION 'submitted plan target changed after failed reparenting';
+  END IF;
+
+  BEGIN
+    UPDATE public.content_version_target_personalities
+    SET content_version_id = v_version_en_id
+    WHERE content_version_id = v_version_pt_id
+      AND personality_code = 'zen';
+    RAISE EXCEPTION 'submitted personality target was reparented into a draft';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_version_target_personalities target
+    WHERE target.content_version_id = v_version_pt_id
+      AND target.personality_code = 'zen'
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.content_version_target_personalities target
+    WHERE target.content_version_id = v_version_en_id
+      AND target.personality_code = 'zen'
+  ) THEN
+    RAISE EXCEPTION 'submitted personality target changed after failed reparenting';
+  END IF;
 
   BEGIN
     PERFORM public.review_content_version(v_editor_id, v_version_pt_id, 'approve', NULL);

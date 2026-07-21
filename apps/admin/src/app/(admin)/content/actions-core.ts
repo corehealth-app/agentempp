@@ -249,13 +249,14 @@ export async function executeContentAdminAction(
       {
         const publication = await service.get({ publicationId: action.input.publicationId })
         if (!publication) throw new ContentAdminError('not_found', 'createDraft')
-        const hasApprovedUnpublished = publication.versions.some(
+        const hasOpenEditorialWorkflow = publication.versions.some(
           (version) =>
             version.locale === action.input.locale &&
-            version.state === 'approved' &&
-            version.publishAt === null,
+            (version.state === 'draft' ||
+              version.state === 'in_review' ||
+              (version.state === 'approved' && version.publishAt === null)),
         )
-        if (hasApprovedUnpublished) throw new ContentAdminError('lifecycle', 'createDraft')
+        if (hasOpenEditorialWorkflow) throw new ContentAdminError('lifecycle', 'createDraft')
       }
       result = await service.createDraft({ ...action.input, actorId: admin.id })
       break
@@ -321,7 +322,7 @@ function publicError(error: unknown): string {
   }
   if (error.code === 'validation') return 'Confira os dados informados e tente novamente.'
   if (error.code === 'lifecycle' && error.operation === 'createDraft') {
-    return 'Publique ou agende a versão aprovada antes de criar outro rascunho.'
+    return 'Já existe um fluxo editorial aberto para este idioma.'
   }
   if (error.code === 'lifecycle') return 'O estado atual não permite esta operação.'
   return 'Não foi possível concluir a operação.'

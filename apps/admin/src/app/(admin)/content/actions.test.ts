@@ -221,7 +221,44 @@ describe('content admin action core', () => {
     })
   })
 
-  it('rejects a new locale draft while an approved version remains unpublished', async () => {
+  it.each([
+    ['draft', 'pt-BR', 'draft', null, true],
+    ['in review', 'pt-BR', 'in_review', null, true],
+    ['approved without publication', 'pt-BR', 'approved', null, true],
+    ['a different locale', 'en-US', 'draft', null, false],
+    ['rejected', 'pt-BR', 'rejected', null, false],
+    ['approved with publication', 'pt-BR', 'approved', UPDATED_AT, false],
+  ] as const)('enforces the open workflow preflight for %s through the authenticated server action', async (_caseName, locale, state, publishAt, blocked) => {
+    const guardedService = service()
+    vi.mocked(guardedService.get).mockResolvedValue({
+      publicationId: PUBLICATION_ID,
+      archivedAt: null,
+      versions: [
+        {
+          versionId: VERSION_ID,
+          locale,
+          state,
+          publishAt,
+        },
+      ],
+    } as never)
+    const { deps } = dependencies('content_editor', guardedService)
+
+    const operation = executeContentAdminAction(action('createDraft'), deps)
+
+    if (blocked) {
+      await expect(operation).rejects.toMatchObject({
+        code: 'lifecycle',
+        operation: 'createDraft',
+      })
+      expect(guardedService.createDraft).not.toHaveBeenCalled()
+    } else {
+      await expect(operation).resolves.toBeDefined()
+      expect(guardedService.createDraft).toHaveBeenCalledOnce()
+    }
+  })
+
+  it('uses one general public message for every blocked open workflow', async () => {
     const guardedService = service()
     vi.mocked(guardedService.get).mockResolvedValue({
       publicationId: PUBLICATION_ID,
@@ -230,7 +267,7 @@ describe('content admin action core', () => {
         {
           versionId: VERSION_ID,
           locale: 'pt-BR',
-          state: 'approved',
+          state: 'in_review',
           publishAt: null,
         },
       ],
@@ -241,7 +278,7 @@ describe('content admin action core', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Publique ou agende a versão aprovada antes de criar outro rascunho.',
+      error: 'Já existe um fluxo editorial aberto para este idioma.',
     })
     expect(guardedService.createDraft).not.toHaveBeenCalled()
   })

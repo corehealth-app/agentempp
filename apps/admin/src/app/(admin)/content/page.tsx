@@ -2,7 +2,13 @@ import { LockKeyhole, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
-import { CONTENT_MODULE_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rbac'
+import {
+  CONTENT_AUTHOR_ROLES,
+  CONTENT_MODULE_ROLES,
+  CONTENT_REVIEW_ROLES,
+  hasAdminRole,
+  isAdminRole,
+} from '@/lib/admin-rbac'
 import {
   filterAdminListPublications,
   textAdminListScanFilters,
@@ -20,11 +26,13 @@ import {
   parsePublicationPage,
   toPublicationListRow,
 } from './presenter'
+import type { PublicationIdentityOptionSource } from './publication-filter-options'
 import { type PublicationFilterState, PublicationTable } from './publication-table'
 
 export const dynamic = 'force-dynamic'
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
 const STATUSES = [
   'draft',
@@ -53,8 +61,10 @@ const SCHEDULES = ['unscheduled', 'scheduled', 'published'] as const
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export default async function ContentPage({ searchParams }: { searchParams: SearchParams }) {
-  const admin = await loadAdmin()
+  const supabase = await createClient()
+  const admin = await loadAdmin(supabase)
   if (!admin || !hasAdminRole(admin.role, CONTENT_MODULE_ROLES)) return <AccessDenied />
+  const filterIdentities = await loadPublicationFilterIdentities(supabase)
 
   const params = await searchParams
   const filters = parseFilters(params)
@@ -145,6 +155,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
       <PublicationTable
         rows={rows}
         filters={filters}
+        globalAuthors={filterIdentities.authors}
+        globalReviewers={filterIdentities.reviewers}
         now={now}
         page={page}
         hasPrevious={hasPrevious}
@@ -154,8 +166,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
   )
 }
 
-async function loadAdmin() {
-  const supabase = await createClient()
+async function loadAdmin(supabase: SupabaseClient) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -183,6 +194,43 @@ async function loadAdmin() {
     .maybeSingle()
   if (!data || !isAdminRole(data.role)) return null
   return { id: data.id, role: data.role }
+}
+
+async function loadPublicationFilterIdentities(supabase: SupabaseClient): Promise<{
+  authors: PublicationIdentityOptionSource[]
+  reviewers: PublicationIdentityOptionSource[]
+}> {
+  try {
+    const reader = supabase as unknown as {
+      from(table: 'admin_users'): {
+        select(columns: 'id, name, role'): {
+          in(
+            column: 'role',
+            values: string[],
+          ): Promise<{
+            data: Array<{ id: string; name: string | null; role: string }> | null
+            error: unknown
+          }>
+        }
+      }
+    }
+    const { data, error } = await reader
+      .from('admin_users')
+      .select('id, name, role')
+      .in('role', [...CONTENT_AUTHOR_ROLES, ...CONTENT_REVIEW_ROLES])
+    if (error || !data) return { authors: [], reviewers: [] }
+
+    return {
+      authors: data
+        .filter((identity) => identity.role === 'content_editor')
+        .map(({ id, name }) => ({ id, name })),
+      reviewers: data
+        .filter((identity) => identity.role === 'nutrition_admin')
+        .map(({ id, name }) => ({ id, name })),
+    }
+  } catch {
+    return { authors: [], reviewers: [] }
+  }
 }
 
 function scalar(value: string | string[] | undefined): string | undefined {

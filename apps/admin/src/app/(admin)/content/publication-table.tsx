@@ -25,6 +25,10 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ContentAdminFilters } from '@/lib/content/admin-service'
 import { type PublicationListRow, scheduleLabel } from './presenter'
+import {
+  buildPublicationIdentityOptions,
+  type PublicationIdentityOptionSource,
+} from './publication-filter-options'
 
 export interface PublicationFilterState
   extends Omit<ContentAdminFilters, 'limit' | 'offset' | 'featuredToday'> {
@@ -62,6 +66,8 @@ const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS) as Record<string, s
 export function PublicationTable({
   rows,
   filters,
+  globalAuthors,
+  globalReviewers,
   now,
   page,
   hasPrevious,
@@ -69,6 +75,8 @@ export function PublicationTable({
 }: {
   rows: PublicationListRow[]
   filters: PublicationFilterState
+  globalAuthors: PublicationIdentityOptionSource[]
+  globalReviewers: PublicationIdentityOptionSource[]
   now: string
   page: number
   hasPrevious: boolean
@@ -82,9 +90,15 @@ export function PublicationTable({
     setText(filters.text ?? '')
   }, [filters.text])
 
-  const authors = uniqueIds(rows.flatMap((row) => row.versions.map((version) => version.authorId)))
-  const reviewers = uniqueIds(
-    rows.flatMap((row) => row.versions.map((version) => version.reviewerId).filter(Boolean)),
+  const authorOptions = buildPublicationIdentityOptions(
+    globalAuthors,
+    rows.flatMap((row) => row.versions.map((version) => version.authorId)),
+    filters.authorId,
+  )
+  const reviewerOptions = buildPublicationIdentityOptions(
+    globalReviewers,
+    rows.flatMap((row) => row.versions.map((version) => version.reviewerId)),
+    filters.reviewerId,
   )
 
   function navigate(next: PublicationFilterState, requestedPage = 1) {
@@ -139,13 +153,13 @@ export function PublicationTable({
           <FilterSelect
             label="Autor"
             value={filters.authorId ?? 'all'}
-            options={withCurrent(authors, filters.authorId).map((id) => [id, shortId(id)])}
+            options={authorOptions}
             onChange={(value) => setFilter('authorId', value)}
           />
           <FilterSelect
             label="Revisor"
             value={filters.reviewerId ?? 'all'}
-            options={withCurrent(reviewers, filters.reviewerId).map((id) => [id, shortId(id)])}
+            options={reviewerOptions}
             onChange={(value) => setFilter('reviewerId', value)}
           />
           <FilterSelect
@@ -438,14 +452,6 @@ function OpenPublication({ id }: { id: string }) {
       <TooltipContent>Abrir publicacao</TooltipContent>
     </Tooltip>
   )
-}
-
-function uniqueIds(values: Array<string | null>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
-}
-
-function withCurrent(values: string[], current: string | undefined): string[] {
-  return current && !values.includes(current) ? [current, ...values] : values
 }
 
 function shortId(value: string): string {

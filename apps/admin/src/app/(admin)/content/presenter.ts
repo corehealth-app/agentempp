@@ -49,6 +49,7 @@ export interface PublicationListRow {
   createdAt: string
   updatedAt: string
   effectiveStatus: EffectiveContentStatus
+  primaryVersionId: string | null
   locales: ContentLocale[]
   versions: PublicationListVersion[]
 }
@@ -474,11 +475,16 @@ export function toPublicationListRow(
     ]
   })
 
+  const primaryVersion = versions.find(
+    (version) => version.versionId === publication.matchedVersionId,
+  )
   const effectiveStatus = publication.archivedAt
     ? 'archived'
-    : (versions
+    : (primaryVersion?.effectiveStatus ??
+      versions
         .map((version) => version.effectiveStatus)
-        .sort((left, right) => STATUS_PRIORITY[right] - STATUS_PRIORITY[left])[0] ?? 'draft')
+        .sort((left, right) => STATUS_PRIORITY[right] - STATUS_PRIORITY[left])[0] ??
+      'draft')
 
   return {
     publicationId: publication.publicationId,
@@ -487,6 +493,7 @@ export function toPublicationListRow(
     createdAt: publication.createdAt,
     updatedAt: publication.updatedAt,
     effectiveStatus,
+    primaryVersionId: primaryVersion?.versionId ?? null,
     locales: versions.map((version) => version.locale),
     versions,
   }

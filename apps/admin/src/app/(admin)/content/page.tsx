@@ -3,6 +3,10 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { CONTENT_MODULE_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rbac'
+import {
+  filterAdminListPublications,
+  textAdminListScanFilters,
+} from '@/lib/content/admin-list-filter'
 import type { ContentAdminFilters, ContentPublicationSummary } from '@/lib/content/admin-service'
 import { createClient } from '@/lib/supabase/server'
 import { listContentPublicationsAction } from './actions'
@@ -73,18 +77,17 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
 
   if (filters.text) {
     for (let offset = 0; offset <= PUBLICATION_MAX_OFFSET; offset += PUBLICATION_BATCH_SIZE) {
-      const result = await listContentPublicationsAction({
-        ...actionFilters,
-        limit: PUBLICATION_BATCH_SIZE,
-        offset,
-      })
+      const result = await listContentPublicationsAction(
+        textAdminListScanFilters(actionFilters, offset, PUBLICATION_BATCH_SIZE),
+      )
       if (!result.ok) return <PageFailure message={result.error} />
       const batch = result.data as ContentPublicationSummary[]
       summaries.push(...batch)
       if (batch.length < PUBLICATION_BATCH_SIZE) break
       if (offset === PUBLICATION_MAX_OFFSET) truncated = true
     }
-    const filtered = filterPublicationSummaries(summaries, filters.text)
+    const versionFiltered = filterAdminListPublications(summaries, actionFilters, Date.parse(now))
+    const filtered = filterPublicationSummaries(versionFiltered, filters.text)
     const pagination = paginatePublications(filtered, page)
     summaries = pagination.rows
     hasPrevious = pagination.hasPrevious

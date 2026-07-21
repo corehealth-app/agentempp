@@ -46,6 +46,7 @@ const publicationSummarySchema = z.object({
   archivedAt: nullableTimestampSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
+  matchedVersionId: uuidSchema.nullable().optional(),
   versions: z.array(versionSummarySchema),
 })
 

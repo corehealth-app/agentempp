@@ -601,6 +601,55 @@ describe('content presenter', () => {
       /bodyMarkdown|segredo editorial|signedUrl|token|objectPath|bucketId|content-covers/,
     )
   })
+
+  it('projects the matched en-US version as the primary row context', () => {
+    const englishVersionId = '00000000-0000-4000-8000-000000000701'
+    const matchedSummary = {
+      ...publicationSummary(PUBLICATION_ID, 'bilingual', 'Portugues'),
+      matchedVersionId: englishVersionId,
+      versions: [
+        version({ version: 8, state: 'approved', title: 'Portugues' }),
+        version({
+          versionId: englishVersionId,
+          locale: 'en-US',
+          category: 'training',
+          title: 'English matched version',
+          state: 'rejected',
+          authorId: REVIEWER_ID,
+        }),
+      ],
+    } as ContentPublicationSummary
+
+    const row = toPublicationListRow(matchedSummary, NOW)
+
+    expect(row).toMatchObject({
+      primaryVersionId: englishVersionId,
+      effectiveStatus: 'rejected',
+    })
+    expect(
+      row.versions.find((candidate) => candidate.versionId === row.primaryVersionId),
+    ).toMatchObject({
+      locale: 'en-US',
+      category: 'training',
+      title: 'English matched version',
+      authorId: REVIEWER_ID,
+    })
+  })
+
+  it('keeps archived as the effective status for a matched version', () => {
+    const matched = version({ locale: 'en-US', state: 'rejected' })
+    const archived = {
+      ...publicationSummary(PUBLICATION_ID, 'archived', 'Arquivada'),
+      archivedAt: NOW,
+      matchedVersionId: matched.versionId,
+      versions: [matched],
+    } as ContentPublicationSummary
+
+    expect(toPublicationListRow(archived, NOW)).toMatchObject({
+      primaryVersionId: matched.versionId,
+      effectiveStatus: 'archived',
+    })
+  })
 })
 
 function publicationSummary(

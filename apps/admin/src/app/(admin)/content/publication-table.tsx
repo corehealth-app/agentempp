@@ -273,6 +273,7 @@ export function PublicationTable({
 
 function PublicationDesktopRow({ row, now }: { row: PublicationListRow; now: string }) {
   const primary =
+    row.versions.find((version) => version.versionId === row.primaryVersionId) ??
     row.versions.find((version) => version.effectiveStatus === row.effectiveStatus) ??
     row.versions[0]
   const timing = primary ? scheduleLabel(primary, now) : { label: 'Sem agendamento' }
@@ -299,7 +300,11 @@ function PublicationDesktopRow({ row, now }: { row: PublicationListRow; now: str
       </TableCell>
       <TableCell className="px-3 text-[11px] text-muted-foreground">{timing.label}</TableCell>
       <TableCell className="px-3">
-        {row.versions.some((version) => version.featuredToday) ? (
+        {(
+          row.primaryVersionId
+            ? primary?.featuredToday
+            : row.versions.some((version) => version.featuredToday)
+        ) ? (
           <Star className="h-4 w-4 fill-current text-amber-500" aria-label="Em destaque" />
         ) : (
           '-'
@@ -314,6 +319,7 @@ function PublicationDesktopRow({ row, now }: { row: PublicationListRow; now: str
 
 function PublicationMobileRow({ row, now }: { row: PublicationListRow; now: string }) {
   const primary =
+    row.versions.find((version) => version.versionId === row.primaryVersionId) ??
     row.versions.find((version) => version.effectiveStatus === row.effectiveStatus) ??
     row.versions[0]
   const timing = primary ? scheduleLabel(primary, now).label : 'Sem agendamento'
@@ -329,7 +335,9 @@ function PublicationMobileRow({ row, now }: { row: PublicationListRow; now: stri
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <StatusBadge status={row.effectiveStatus} />
         <LocaleBadges locales={row.locales} />
-        {row.versions.some((version) => version.featuredToday) && (
+        {(row.primaryVersionId
+          ? primary?.featuredToday
+          : row.versions.some((version) => version.featuredToday)) && (
           <Badge variant="outline" className="gap-1 text-[10px]">
             <Star className="h-3 w-3 fill-current" /> Destaque
           </Badge>

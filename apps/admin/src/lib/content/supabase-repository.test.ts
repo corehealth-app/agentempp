@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ContentAdminError, ContentStorageError } from './admin-service'
+import { filterAdminListPublications, textAdminListScanFilters } from './admin-list-filter'
+import { ContentAdminError, type ContentAdminFilters, ContentStorageError } from './admin-service'
 import {
   type ContentSupabaseClient,
   createSupabaseContentAdminDependencies,
@@ -123,6 +124,33 @@ function versionSummaryRow() {
   }
 }
 
+function testUuid(index: number): string {
+  return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+}
+
+function listRow(
+  index: number,
+  versions: Array<Record<string, unknown>>,
+): ReturnType<typeof publicationRow> & { content_versions: Array<Record<string, unknown>> } {
+  return {
+    ...publicationRow(),
+    id: testUuid(index),
+    slug: `publication-${index}`,
+    content_versions: versions,
+  }
+}
+
+function summaryVersion(
+  index: number,
+  overrides: Record<string, unknown> = {},
+): ReturnType<typeof versionSummaryRow> {
+  return {
+    ...versionSummaryRow(),
+    id: testUuid(20_000 + index),
+    ...overrides,
+  }
+}
+
 function versionDetailRow() {
   return {
     ...versionSummaryRow(),
@@ -161,7 +189,127 @@ function validDraft() {
 }
 
 describe('Supabase content admin repository', () => {
-  it('filters through a matching alias while returning every version without sensitive fields', async () => {
+  it.each([
+    ['status', { status: 'rejected' }, { state: 'rejected' }, { state: 'draft' }],
+    ['category', { category: 'training' }, { category: 'training' }, { category: 'nutrition' }],
+    ['author', { authorId: REVIEWER_ID }, { authored_by: REVIEWER_ID }, { authored_by: ACTOR_ID }],
+    ['reviewer', { reviewerId: REVIEWER_ID }, { reviewed_by: REVIEWER_ID }, { reviewed_by: null }],
+    [
+      'schedule',
+      { schedule: 'published' },
+      { state: 'approved', publish_at: '2026-07-20T12:00:00.000Z' },
+      { state: 'approved', publish_at: '2099-07-22T12:00:00.000Z' },
+    ],
+    ['featured', { featuredToday: true }, { featured_today: true }, { featured_today: false }],
+  ] as Array<
+    [string, Partial<ContentAdminFilters>, Record<string, unknown>, Record<string, unknown>]
+  >)('does not match a historical %s value when the latest locale version diverges', async (_name, filter, historical, latest) => {
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: [
+              listRow(1, [
+                summaryVersion(1, { version: 1, ...historical }),
+                summaryVersion(2, { version: 2, ...latest }),
+              ]),
+            ],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    await expect(repository.list({ ...filter, limit: 25, offset: 0 })).resolves.toEqual([])
+  })
+
+  it('requires every combined filter to match the same latest locale candidate', async () => {
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: [
+              listRow(1, [
+                summaryVersion(1, {
+                  version: 2,
+                  locale: 'pt-BR',
+                  category: 'nutrition',
+                  authored_by: ACTOR_ID,
+                }),
+                summaryVersion(2, {
+                  version: 3,
+                  locale: 'en-US',
+                  category: 'training',
+                  authored_by: REVIEWER_ID,
+                }),
+              ]),
+            ],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    await expect(
+      repository.list({
+        category: 'nutrition',
+        authorId: REVIEWER_ID,
+        limit: 25,
+        offset: 0,
+      }),
+    ).resolves.toEqual([])
+  })
+
+  it.each([
+    ['approved', { status: 'approved' }, [1]],
+    ['scheduled status', { status: 'scheduled' }, [2]],
+    ['published status', { status: 'published' }, [3]],
+    ['scheduled schedule', { schedule: 'scheduled' }, [2]],
+    ['published schedule', { schedule: 'published' }, [3]],
+  ] as Array<
+    [string, Partial<ContentAdminFilters>, number[]]
+  >)('evaluates %s from the approved latest version and one captured now', async (_name, filter, expectedIndexes) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-21T12:00:00.000Z'))
+    const rows = [
+      listRow(1, [summaryVersion(1, { state: 'approved', publish_at: null })]),
+      listRow(2, [
+        summaryVersion(2, {
+          state: 'approved',
+          publish_at: '2026-07-21T12:00:00.001Z',
+        }),
+      ]),
+      listRow(3, [
+        summaryVersion(3, {
+          state: 'approved',
+          publish_at: '2026-07-21T12:00:00.000Z',
+        }),
+      ]),
+      listRow(4, [
+        summaryVersion(4, {
+          state: 'draft',
+          publish_at: '2026-07-21T12:00:00.001Z',
+        }),
+      ]),
+    ]
+    const client = fakeClient({
+      tableResults: { content_publications: [{ data: rows, error: null }] },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    try {
+      const result = await repository.list({ ...filter, limit: 25, offset: 0 })
+      expect(result.map((publication) => publication.publicationId)).toEqual(
+        expectedIndexes.map(testUuid),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns the complete bilingual history after filtering against one latest locale', async () => {
     const client = fakeClient({
       tableResults: {
         content_publications: [
@@ -170,7 +318,8 @@ describe('Supabase content admin repository', () => {
               {
                 ...publicationRow(),
                 content_versions: [
-                  versionSummaryRow(),
+                  summaryVersion(1, { version: 1, state: 'rejected' }),
+                  summaryVersion(2, { version: 2, state: 'draft' }),
                   {
                     ...versionSummaryRow(),
                     id: ENGLISH_VERSION_ID,
@@ -190,88 +339,173 @@ describe('Supabase content admin repository', () => {
     const result = await repository.list({
       status: 'draft',
       locale: 'pt-BR',
-      category: 'nutrition',
-      authorId: ACTOR_ID,
-      reviewerId: REVIEWER_ID,
-      schedule: 'unscheduled',
-      featuredToday: false,
       limit: 25,
-      offset: 5,
+      offset: 0,
     })
 
-    expect(result).toEqual([
-      {
-        publicationId: PUBLICATION_ID,
-        slug: 'alimentacao-consciente',
-        archivedAt: null,
-        createdAt: UPDATED_AT,
-        updatedAt: UPDATED_AT,
-        versions: [
-          {
-            versionId: VERSION_ID,
-            version: 1,
-            locale: 'pt-BR',
-            category: 'nutrition',
-            title: 'Alimentação consciente',
-            state: 'draft',
-            featuredToday: false,
-            authorId: ACTOR_ID,
-            reviewerId: null,
-            publishAt: null,
-            updatedAt: UPDATED_AT,
-          },
-          {
-            versionId: ENGLISH_VERSION_ID,
-            version: 1,
-            locale: 'en-US',
-            category: 'nutrition',
-            title: 'Mindful eating',
-            state: 'draft',
-            featuredToday: false,
-            authorId: ACTOR_ID,
-            reviewerId: null,
-            publishAt: null,
-            updatedAt: UPDATED_AT,
-          },
-        ],
-      },
-    ])
+    expect(result).toHaveLength(1)
+    expect(result[0]?.matchedVersionId).toBe(testUuid(20_002))
+    expect(result[0]?.versions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ version: 2, locale: 'pt-BR', state: 'draft' }),
+        expect.objectContaining({ versionId: ENGLISH_VERSION_ID, locale: 'en-US' }),
+      ]),
+    )
     const selection = client.queryLog.find(
       (entry) => entry.table === 'content_publications' && entry.method === 'select',
     )?.args[0]
     expect(selection).toContain('content_versions (')
-    expect(selection).toContain('matching_versions:content_versions!inner ()')
+    expect(selection).not.toContain('content_versions!inner')
     expect(selection).not.toMatch(/body_markdown|object_path|bucket_id|etag|signed_url|token/)
-    expect(
-      client.queryLog
-        .filter(
-          (entry) =>
-            entry.table === 'content_publications' &&
-            ['eq', 'is', 'gt', 'lte'].includes(entry.method) &&
-            String(entry.args[0]).startsWith('matching_versions.'),
-        )
-        .map(({ method, args }) => ({ method, args })),
-    ).toEqual([
-      { method: 'eq', args: ['matching_versions.state', 'draft'] },
-      { method: 'eq', args: ['matching_versions.locale', 'pt-BR'] },
-      { method: 'eq', args: ['matching_versions.category', 'nutrition'] },
-      { method: 'eq', args: ['matching_versions.authored_by', ACTOR_ID] },
-      { method: 'eq', args: ['matching_versions.reviewed_by', REVIEWER_ID] },
-      { method: 'eq', args: ['matching_versions.featured_today', false] },
-      { method: 'is', args: ['matching_versions.publish_at', null] },
+  })
+
+  it('identifies the exact locale candidate that satisfies combined filters', async () => {
+    const englishVersionId = testUuid(20_002)
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: [
+              listRow(1, [
+                summaryVersion(1, {
+                  version: 5,
+                  locale: 'pt-BR',
+                  category: 'nutrition',
+                  authored_by: ACTOR_ID,
+                }),
+                summaryVersion(2, {
+                  id: englishVersionId,
+                  locale: 'en-US',
+                  category: 'training',
+                  authored_by: REVIEWER_ID,
+                }),
+              ]),
+            ],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    const result = await repository.list({
+      category: 'training',
+      authorId: REVIEWER_ID,
+      limit: 25,
+      offset: 0,
+    })
+
+    expect(result[0]).toMatchObject({
+      matchedVersionId: englishVersionId,
+      versions: expect.arrayContaining([
+        expect.objectContaining({ locale: 'pt-BR' }),
+        expect.objectContaining({ versionId: englishVersionId, locale: 'en-US' }),
+      ]),
+    })
+  })
+
+  it('chooses pt-BR deterministically when both latest locale candidates match', async () => {
+    const portugueseVersionId = testUuid(20_001)
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: [
+              listRow(1, [
+                summaryVersion(2, { locale: 'en-US', version: 9 }),
+                summaryVersion(1, { id: portugueseVersionId, locale: 'pt-BR', version: 2 }),
+              ]),
+            ],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    const result = await repository.list({ featuredToday: false, limit: 25, offset: 0 })
+
+    expect(result[0]?.matchedVersionId).toBe(portugueseVersionId)
+  })
+
+  it('applies offset and limit after latest-version filtering across stable raw batches', async () => {
+    const firstBatch = Array.from({ length: 100 }, (_, index) =>
+      listRow(index + 1, [summaryVersion(index + 1, { featured_today: index === 99 })]),
+    )
+    const secondBatch = Array.from({ length: 100 }, (_, index) =>
+      listRow(index + 101, [
+        summaryVersion(index + 101, { featured_today: index === 0 || index === 50 }),
+      ]),
+    )
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          { data: firstBatch, error: null },
+          { data: secondBatch, error: null },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    const result = await repository.list({ featuredToday: true, limit: 2, offset: 1 })
+
+    expect(result.map((publication) => publication.publicationId)).toEqual([
+      testUuid(101),
+      testUuid(151),
     ])
     expect(
       client.queryLog
-        .filter(
-          (entry) =>
-            entry.table === 'content_publications' &&
-            (entry.method === 'order' || entry.method === 'range'),
-        )
-        .map(({ method, args }) => ({ method, args })),
+        .filter((entry) => entry.table === 'content_publications' && entry.method === 'range')
+        .map((entry) => entry.args),
     ).toEqual([
-      { method: 'order', args: ['updated_at', { ascending: false }] },
-      { method: 'order', args: ['id', { ascending: true }] },
-      { method: 'range', args: [5, 29] },
+      [0, 99],
+      [100, 199],
+    ])
+  })
+
+  it('reads each raw text batch once before applying version filters in memory', async () => {
+    const firstBatch = Array.from({ length: 100 }, (_, index) =>
+      listRow(index + 1, [
+        summaryVersion(index + 1, { category: index === 99 ? 'training' : 'nutrition' }),
+      ]),
+    )
+    const secondBatch = Array.from({ length: 100 }, (_, index) =>
+      listRow(index + 101, [
+        summaryVersion(index + 101, { category: index === 0 ? 'training' : 'nutrition' }),
+      ]),
+    )
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          { data: firstBatch, error: null },
+          { data: secondBatch, error: null },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+    const versionFilters = { category: 'training' as const }
+
+    const loaded = [
+      ...(await repository.list(textAdminListScanFilters(versionFilters, 0, 100))),
+      ...(await repository.list(textAdminListScanFilters(versionFilters, 100, 100))),
+    ]
+    const filtered = filterAdminListPublications(
+      loaded,
+      versionFilters,
+      Date.parse('2026-07-21T12:00:00.000Z'),
+    )
+
+    expect(filtered.map((publication) => publication.publicationId)).toEqual([
+      testUuid(100),
+      testUuid(101),
+    ])
+    expect(
+      client.queryLog
+        .filter((entry) => entry.table === 'content_publications' && entry.method === 'range')
+        .map((entry) => entry.args),
+    ).toEqual([
+      [0, 99],
+      [100, 199],
     ])
   })
 
@@ -295,6 +529,17 @@ describe('Supabase content admin repository', () => {
     )?.args[0]
     expect(selection).toContain('content_versions (')
     expect(selection).not.toContain('content_versions!inner')
+    expect(
+      client.queryLog
+        .filter((entry) => entry.table === 'content_publications')
+        .map(({ method, args }) => ({ method, args })),
+    ).toEqual([
+      { method: 'select', args: [expect.any(String)] },
+      { method: 'order', args: ['updated_at', { ascending: false }] },
+      { method: 'order', args: ['id', { ascending: true }] },
+      { method: 'range', args: [0, 9] },
+      { method: 'is', args: ['archived_at', null] },
+    ])
   })
 
   it('strictly parses list rows instead of forwarding malformed unknown data', async () => {

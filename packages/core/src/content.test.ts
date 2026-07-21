@@ -76,6 +76,27 @@ describe('content contracts', () => {
     expect(contentDraftInputSchema.safeParse(validDraft({ unexpected: true })).success).toBe(false)
   })
 
+  it('enforces the Markdown policy and returns canonical Markdown through the draft contract', () => {
+    const canonical = contentDraftInputSchema.parse(
+      validDraft({ bodyMarkdown: `## Título\r\n\r\n${LONG_BODY}` }),
+    )
+    expect(canonical.bodyMarkdown).toBe(`## Título\n\n${LONG_BODY.trimEnd()}\n`)
+
+    for (const bodyMarkdown of [
+      `<strong>${LONG_BODY}</strong>`,
+      `# Duplicated title\n\n${LONG_BODY}`,
+      `![cover](https://bodyflow.app/cover.png)\n\n${LONG_BODY}`,
+      `Use \`code\` carefully. ${LONG_BODY}`,
+      `${LONG_BODY}\n\n---\n\n${LONG_BODY}`,
+      `[source](http://bodyflow.app)\n\n${LONG_BODY}`,
+      `[source][bodyflow]\n\n[bodyflow]: https://bodyflow.app\n\n${LONG_BODY}`,
+      'a'.repeat(50_001),
+      `${'> '.repeat(9)}${LONG_BODY}`,
+    ]) {
+      expect(contentDraftInputSchema.safeParse(validDraft({ bodyMarkdown })).success).toBe(false)
+    }
+  })
+
   it('limits cover declarations to approved MIME types and ten MiB', () => {
     for (const mimeType of ['image/jpeg', 'image/png', 'image/webp']) {
       expect(contentCoverInputSchema.safeParse({ mimeType, sizeBytes: 10 * 1024 * 1024 }).success).toBe(true)
@@ -197,6 +218,12 @@ describe('validateContentMarkdown', () => {
     ['body over 50,000 characters', 'a'.repeat(50_001)],
   ])('rejects %s', (_description, value) => {
     expect(() => validateContentMarkdown(value)).toThrow()
+  })
+
+  it('rejects more than eight nested inline nodes', () => {
+    const nestedInlineMarkdown = `${'**'.repeat(9)}texto${'**'.repeat(9)}\n\n${LONG_BODY}`
+
+    expect(() => validateContentMarkdown(nestedInlineMarkdown)).toThrow()
   })
 })
 

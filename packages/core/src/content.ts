@@ -105,13 +105,25 @@ const contentTargetingSchema = z
     uniqueValues(value.personalities, context)
   })
 
+const contentMarkdownSchema = z.string().transform((value, context) => {
+  try {
+    return validateContentMarkdown(value).normalized
+  } catch (error) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: error instanceof Error ? error.message : 'Invalid content Markdown',
+    })
+    return z.NEVER
+  }
+})
+
 export const contentDraftInputSchema = z
   .object({
     locale: contentLocaleSchema,
     category: contentCategorySchema,
     title: z.string().trim().min(3).max(120),
     excerpt: z.string().trim().min(20).max(280),
-    bodyMarkdown: z.string().min(MIN_CONTENT_BODY_LENGTH).max(MAX_CONTENT_BODY_LENGTH),
+    bodyMarkdown: contentMarkdownSchema,
     tags: z.array(contentTagSchema).max(20),
     featuredToday: z.boolean(),
     coverAssetId: z.string().uuid().nullable(),
@@ -189,19 +201,25 @@ function isMarkdownNode(value: unknown): value is MarkdownNode {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
 }
 
-function convertInline(node: MarkdownNode): ContentMarkdownInline {
+function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline {
   switch (node.type) {
     case 'text':
       if (typeof node.value !== 'string') invalidMarkdown('text has no value')
       return { type: 'text', value: node.value }
     case 'strong':
     case 'emphasis':
-      return { type: node.type, children: nodeChildren(node).map(convertInline) }
+      if (depth > MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
+      return { type: node.type, children: nodeChildren(node).map((child) => convertInline(child, depth + 1)) }
     case 'link': {
       if (typeof node.url !== 'string' || !isHttpsUrl(node.url)) {
         invalidMarkdown('links must use an absolute HTTPS URL')
       }
-      return { type: 'link', url: node.url, children: nodeChildren(node).map(convertInline) }
+      if (depth > MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
+      return {
+        type: 'link',
+        url: node.url,
+        children: nodeChildren(node).map((child) => convertInline(child, depth + 1)),
+      }
     }
     default:
       return invalidMarkdown(`unsupported inline node: ${node.type}`)
@@ -213,10 +231,14 @@ function convertBlock(node: MarkdownNode, depth: number): ContentMarkdownBlock {
 
   switch (node.type) {
     case 'paragraph':
-      return { type: 'paragraph', children: nodeChildren(node).map(convertInline) }
+      return { type: 'paragraph', children: nodeChildren(node).map((child) => convertInline(child, 1)) }
     case 'heading': {
       if (node.depth !== 2 && node.depth !== 3) invalidMarkdown('only H2 and H3 headings are supported')
-      return { type: 'heading', level: node.depth, children: nodeChildren(node).map(convertInline) }
+      return {
+        type: 'heading',
+        level: node.depth,
+        children: nodeChildren(node).map((child) => convertInline(child, 1)),
+      }
     }
     case 'blockquote':
       return { type: 'blockquote', children: nodeChildren(node).map((child) => convertBlock(child, depth + 1)) }

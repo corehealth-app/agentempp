@@ -396,6 +396,7 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
         .from('content_publications')
         .select(selection)
         .order('updated_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(filters.offset, filters.offset + filters.limit - 1)
 
       if (filters.status === 'archived') {

@@ -214,11 +214,19 @@ describe('Supabase content admin repository', () => {
     )?.args[0]
     expect(selection).toContain('content_versions!inner')
     expect(selection).not.toMatch(/body_markdown|object_path|bucket_id|etag|signed_url|token/)
-    expect(client.queryLog).toContainEqual({
-      table: 'content_publications',
-      method: 'range',
-      args: [5, 29],
-    })
+    expect(
+      client.queryLog
+        .filter(
+          (entry) =>
+            entry.table === 'content_publications' &&
+            (entry.method === 'order' || entry.method === 'range'),
+        )
+        .map(({ method, args }) => ({ method, args })),
+    ).toEqual([
+      { method: 'order', args: ['updated_at', { ascending: false }] },
+      { method: 'order', args: ['id', { ascending: true }] },
+      { method: 'range', args: [5, 29] },
+    ])
   })
 
   it('keeps publications without versions when no version filter is active', async () => {

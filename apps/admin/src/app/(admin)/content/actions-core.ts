@@ -246,6 +246,17 @@ export async function executeContentAdminAction(
       result = await service.createPublication({ ...action.input, actorId: admin.id })
       break
     case 'createDraft':
+      {
+        const publication = await service.get({ publicationId: action.input.publicationId })
+        if (!publication) throw new ContentAdminError('not_found', 'createDraft')
+        const hasApprovedUnpublished = publication.versions.some(
+          (version) =>
+            version.locale === action.input.locale &&
+            version.state === 'approved' &&
+            version.publishAt === null,
+        )
+        if (hasApprovedUnpublished) throw new ContentAdminError('lifecycle', 'createDraft')
+      }
       result = await service.createDraft({ ...action.input, actorId: admin.id })
       break
     case 'saveDraft':
@@ -291,7 +302,7 @@ function publicError(error: unknown): string {
   }
   if (!(error instanceof ContentAdminError)) return 'Não foi possível concluir a operação.'
   if (error.code === 'stale') {
-    return 'Este conteúdo foi alterado. Recarregue e tente novamente.'
+    return 'Este rascunho foi alterado. Atualize a baseline antes de salvar novamente.'
   }
   if (error.code === 'duplicate' && error.operation === 'createPublication') {
     return 'Já existe uma publicação com este slug.'
@@ -309,11 +320,16 @@ function publicError(error: unknown): string {
     return 'Não foi possível acessar o armazenamento de capas agora.'
   }
   if (error.code === 'validation') return 'Confira os dados informados e tente novamente.'
+  if (error.code === 'lifecycle' && error.operation === 'createDraft') {
+    return 'Publique ou agende a versão aprovada antes de criar outro rascunho.'
+  }
   if (error.code === 'lifecycle') return 'O estado atual não permite esta operação.'
   return 'Não foi possível concluir a operação.'
 }
 
-export type ContentAdminActionResult = { ok: true; data: unknown } | { ok: false; error: string }
+export type ContentAdminActionResult =
+  | { ok: true; data: unknown }
+  | { ok: false; error: string; code?: 'stale' }
 
 export async function runContentAdminAction(
   action: unknown,
@@ -322,6 +338,10 @@ export async function runContentAdminAction(
   try {
     return { ok: true, data: await executeContentAdminAction(action, dependencies) }
   } catch (error) {
-    return { ok: false, error: publicError(error).slice(0, 160) }
+    const publicMessage = publicError(error).slice(0, 160)
+    if (error instanceof ContentAdminError && error.code === 'stale') {
+      return { ok: false, error: publicMessage, code: 'stale' }
+    }
+    return { ok: false, error: publicMessage }
   }
 }

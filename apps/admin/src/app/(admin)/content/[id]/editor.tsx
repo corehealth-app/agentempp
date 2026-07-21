@@ -1,7 +1,7 @@
 'use client'
 
 import type { ContentDraftInput } from '@mpp/core'
-import { FilePlus2, Loader2, Save, Send } from 'lucide-react'
+import { FilePlus2, Loader2, RefreshCw, Save, Send } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +22,7 @@ import type { AdminRole } from '@/lib/admin-rbac'
 import type { ContentPublicationDetail } from '@/lib/content/admin-service'
 import {
   createContentDraftAction,
+  getContentPublicationAction,
   saveContentDraftAction,
   submitContentVersionAction,
 } from '../actions'
@@ -33,7 +34,17 @@ import {
   type PendingCoverResolution,
   transitionConfirmedDraftCover,
 } from '../cover-flow'
-import { type ContentLocale, formatOperationalDate, selectLocaleVersions } from '../presenter'
+import {
+  buildDraftSavePayload,
+  type ContentLocale,
+  canCreateContentDraft,
+  type DraftSaveState,
+  formatOperationalDate,
+  markDraftSaveStale,
+  recoverDraftSaveState,
+  selectLocaleVersions,
+  selectWorkflowContentVersion,
+} from '../presenter'
 import { CoverUploader } from './cover-uploader'
 import { MarkdownPreview } from './markdown-preview'
 import { WorkflowControls } from './workflow-controls'
@@ -95,7 +106,12 @@ export function ContentEditor({
   const [confirmedDraftCover, setConfirmedDraftCover] = useState<ConfirmedDraftCover | null>(null)
   const [coverBusy, setCoverBusy] = useState(false)
   const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy, confirmedDraftCover)
-  const activeSelection = selectLocaleVersions(publication.versions, activeLocale, now)
+  const activeWorkflowVersion = selectWorkflowContentVersion(
+    publication.versions,
+    activeLocale,
+    role,
+    publication.archivedAt,
+  )
   useConfirmedCoverNavigationGuard(confirmedDraftCover !== null)
 
   function updateConfirmedDraftCover(event: ConfirmedDraftCoverEvent) {
@@ -135,6 +151,11 @@ export function ContentEditor({
                 publicationId={publication.publicationId}
                 locale={locale}
                 version={selection.latest}
+                canCreateDraft={canCreateContentDraft(
+                  publication.versions,
+                  locale,
+                  publication.archivedAt,
+                )}
                 previousPublished={selection.previousPublished}
                 futureScheduled={selection.futureScheduled}
                 role={role}
@@ -155,7 +176,7 @@ export function ContentEditor({
         role={role}
         publicationId={publication.publicationId}
         archivedAt={publication.archivedAt}
-        version={activeSelection.latest}
+        version={activeWorkflowVersion}
       />
     </div>
   )
@@ -165,6 +186,7 @@ function LocaleEditor({
   publicationId,
   locale,
   version,
+  canCreateDraft,
   previousPublished,
   futureScheduled,
   role,
@@ -180,6 +202,7 @@ function LocaleEditor({
   publicationId: string
   locale: ContentLocale
   version: Version | null
+  canCreateDraft: boolean
   previousPublished: Version | null
   futureScheduled: Version | null
   role: AdminRole
@@ -217,7 +240,7 @@ function LocaleEditor({
     return (
       <section className="flex min-h-64 flex-col items-center justify-center border-y border-border px-5 text-center">
         <p className="text-sm font-medium">Nenhuma versao em {locale}</p>
-        {role === 'content_editor' && !archived && (
+        {role === 'content_editor' && canCreateDraft && (
           <Button className="mt-4" size="sm" onClick={() => void createDraft()} disabled={creating}>
             {creating ? <Loader2 className="animate-spin" /> : <FilePlus2 />}
             Criar rascunho
@@ -239,7 +262,7 @@ function LocaleEditor({
             v{version.version} · atualizado {formatOperationalDate(version.updatedAt)}
           </span>
         </div>
-        {role === 'content_editor' && version.state !== 'draft' && !archived && (
+        {role === 'content_editor' && canCreateDraft && (
           <Button
             size="sm"
             variant="outline"
@@ -268,6 +291,7 @@ function LocaleEditor({
       <ActionMessage message={message} />
       <VersionMetadata version={version} />
       <DraftForm
+        publicationId={publicationId}
         version={version}
         canEdit={canEdit}
         role={role}
@@ -284,6 +308,7 @@ function LocaleEditor({
 }
 
 function DraftForm({
+  publicationId,
   version,
   canEdit,
   role,
@@ -295,6 +320,7 @@ function DraftForm({
   onConfirmedDraftCoverEvent,
   onCoverBusyChange,
 }: {
+  publicationId: string
   version: Version
   canEdit: boolean
   role: AdminRole
@@ -317,8 +343,13 @@ function DraftForm({
   const [targeting, setTargeting] = useState<Targeting>(version.targeting)
   const [bodyMarkdown, setBodyMarkdown] = useState(version.bodyMarkdown ?? '')
   const [coverAssetId, setCoverAssetId] = useState<string | null>(version.cover?.assetId ?? null)
-  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(version.updatedAt)
-  const [pending, setPending] = useState<'save' | 'submit' | null>(null)
+  const [saveState, setSaveState] = useState<DraftSaveState>({
+    versionId: version.versionId,
+    expectedUpdatedAt: version.updatedAt,
+    stale: false,
+    confirmedCover: confirmedDraftCover,
+  })
+  const [pending, setPending] = useState<'save' | 'submit' | 'recover' | null>(null)
   const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null)
 
   function draft(): ContentDraftInput {
@@ -337,23 +368,29 @@ function DraftForm({
   }
 
   async function persist(andSubmit: boolean) {
-    if (coverBusy || pendingCoverResolution) return
+    if (coverBusy || pendingCoverResolution || saveState.stale) return
+    const attemptState = { ...saveState, confirmedCover: confirmedDraftCover }
+    const payload = buildDraftSavePayload(attemptState, draft())
+    if (!payload) return
     setPending(andSubmit ? 'submit' : 'save')
     setMessage(null)
-    const saveResult = await saveContentDraftAction({
-      versionId: version.versionId,
-      expectedUpdatedAt,
-      draft: draft(),
-    })
+    const saveResult = await saveContentDraftAction(payload)
     if (!saveResult.ok) {
       onConfirmedDraftCoverEvent({ type: 'save', locale: version.locale, succeeded: false })
+      if (saveResult.code === 'stale') setSaveState(markDraftSaveStale(attemptState))
       setPending(null)
       setMessage({ tone: 'error', text: saveResult.error })
       return
     }
     const saved = saveResult.data as { updatedAt: string }
+    const savedState: DraftSaveState = {
+      ...attemptState,
+      expectedUpdatedAt: saved.updatedAt,
+      stale: false,
+      confirmedCover: null,
+    }
     onConfirmedDraftCoverEvent({ type: 'save', locale: version.locale, succeeded: true })
-    setExpectedUpdatedAt(saved.updatedAt)
+    setSaveState(savedState)
     setTagInput(normalizeTags(tagInput).join(', '))
     if (andSubmit) {
       const submitResult = await submitContentVersionAction({
@@ -361,6 +398,7 @@ function DraftForm({
         expectedUpdatedAt: saved.updatedAt,
       })
       if (!submitResult.ok) {
+        if (submitResult.code === 'stale') setSaveState(markDraftSaveStale(savedState))
         setPending(null)
         setMessage({ tone: 'error', text: submitResult.error })
         return
@@ -372,6 +410,39 @@ function DraftForm({
       text: andSubmit ? 'Versao enviada para revisao.' : 'Rascunho salvo.',
     })
     router.refresh()
+  }
+
+  async function recoverBaseline() {
+    if (!saveState.stale || pending !== null) return
+    setPending('recover')
+    setMessage(null)
+    const result = await getContentPublicationAction({ publicationId })
+    if (!result.ok) {
+      setPending(null)
+      setMessage({
+        tone: 'error',
+        text: `Não foi possível atualizar a baseline. ${result.error}`,
+      })
+      return
+    }
+    const currentPublication = result.data as ContentPublicationDetail | null
+    const recovery = currentPublication
+      ? recoverDraftSaveState(saveState, currentPublication.versions)
+      : { recovered: false as const, state: saveState }
+    if (!recovery.recovered) {
+      setPending(null)
+      setMessage({
+        tone: 'error',
+        text: 'A versão não está mais disponível como rascunho. Suas edições e a capa foram preservadas.',
+      })
+      return
+    }
+    setSaveState(recovery.state)
+    setPending(null)
+    setMessage({
+      tone: 'success',
+      text: 'Baseline atualizada. Revise as edições preservadas e salve novamente.',
+    })
   }
 
   function toggleTarget(key: keyof Targeting, value: string) {
@@ -504,18 +575,49 @@ function DraftForm({
             />
           </Field>
 
+          {canEdit && saveState.stale && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-amber-500 bg-amber-500/5 px-3 py-3"
+            >
+              <p className="max-w-2xl text-xs text-amber-900 dark:text-amber-200">
+                Conflito detectado. As edições e a capa foram preservadas; atualize somente a
+                baseline antes de uma nova tentativa.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending !== null}
+                onClick={() => void recoverBaseline()}
+              >
+                {pending === 'recover' ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                Atualizar baseline
+              </Button>
+            </div>
+          )}
+
           {canEdit && role === 'content_editor' && (
             <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
               <Button
                 variant="outline"
-                disabled={pending !== null || coverBusy || pendingCoverResolution !== null}
+                disabled={
+                  pending !== null ||
+                  coverBusy ||
+                  pendingCoverResolution !== null ||
+                  saveState.stale
+                }
                 onClick={() => void persist(false)}
               >
                 {pending === 'save' ? <Loader2 className="animate-spin" /> : <Save />}Salvar
                 rascunho
               </Button>
               <Button
-                disabled={pending !== null || coverBusy || pendingCoverResolution !== null}
+                disabled={
+                  pending !== null ||
+                  coverBusy ||
+                  pendingCoverResolution !== null ||
+                  saveState.stale
+                }
                 onClick={() => void persist(true)}
               >
                 {pending === 'submit' ? <Loader2 className="animate-spin" /> : <Send />}Enviar para

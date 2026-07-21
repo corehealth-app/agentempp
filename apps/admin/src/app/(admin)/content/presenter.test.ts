@@ -4,21 +4,28 @@ import type {
   ContentPublicationSummary,
 } from '@/lib/content/admin-service'
 import {
+  buildDraftSavePayload,
+  canCreateContentDraft,
   canPublishContentVersion,
   canReviewContentVersion,
+  contentWorkflowTargetLabel,
   directPublicationPage,
   effectiveVersionStatus,
   filterPublicationSummaries,
+  findDraftVersionBaseline,
   formatOperationalDate,
   localeCompleteness,
+  markDraftSaveStale,
   PUBLICATION_DIRECT_MAX_PAGE,
   PUBLICATION_MAX_OFFSET,
   PUBLICATION_TEXT_MAX_PAGE,
   paginatePublications,
   parsePublicationPage,
   parseUtcDateTimeLocal,
+  recoverDraftSaveState,
   scheduleLabel,
   selectLocaleVersions,
+  selectWorkflowContentVersion,
   toPublicationListRow,
   visibleContentCommands,
 } from './presenter'
@@ -212,6 +219,169 @@ describe('content presenter', () => {
       latest: null,
       previousPublished: null,
       futureScheduled: null,
+    })
+  })
+
+  it('keeps the newest locale version in the form while selecting workflow targets by role', () => {
+    const approved = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000621',
+      version: 2,
+      state: 'approved',
+      publishAt: null,
+      title: 'Versao aprovada',
+    })
+    const inReview = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000622',
+      version: 3,
+      state: 'in_review',
+      title: 'Versao em revisao',
+    })
+    const newestDraft = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000623',
+      version: 4,
+      state: 'draft',
+      title: 'Rascunho mais novo',
+    })
+    const versions = [approved, inReview, newestDraft]
+
+    expect(selectLocaleVersions(versions, 'pt-BR', NOW).latest).toBe(newestDraft)
+    expect(selectWorkflowContentVersion(versions, 'pt-BR', 'nutrition_admin', null)).toBe(inReview)
+    expect(selectWorkflowContentVersion(versions, 'pt-BR', 'master_admin', null)).toBe(approved)
+    expect(selectWorkflowContentVersion(versions, 'pt-BR', 'content_editor', null)).toBeNull()
+    expect(selectWorkflowContentVersion(versions, 'pt-BR', 'support', null)).toBeNull()
+    expect(selectWorkflowContentVersion(versions, 'pt-BR', 'master_admin', NOW)).toBeNull()
+  })
+
+  it('selects the newest applicable workflow version in the active locale', () => {
+    const olderReview = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000624',
+      version: 2,
+      state: 'in_review',
+    })
+    const newerReview = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000625',
+      version: 5,
+      state: 'in_review',
+      locale: 'en-US',
+      title: 'English review',
+    })
+    const wrongLocale = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000626',
+      version: 8,
+      state: 'in_review',
+    })
+
+    expect(
+      selectWorkflowContentVersion(
+        [olderReview, newerReview, wrongLocale],
+        'en-US',
+        'nutrition_admin',
+        null,
+      ),
+    ).toBe(newerReview)
+    expect(contentWorkflowTargetLabel(newerReview)).toBe(
+      'en-US · v5 · English review · 00000000...0625',
+    )
+  })
+
+  it('blocks a new locale draft until an approved unpublished version is published or scheduled', () => {
+    const approved = detailVersion({ version: 2, state: 'approved', publishAt: null })
+    const scheduled = detailVersion({
+      version: 2,
+      state: 'approved',
+      publishAt: '2026-07-22T12:00:00.000Z',
+    })
+
+    expect(canCreateContentDraft([approved], 'pt-BR', null)).toBe(false)
+    expect(canCreateContentDraft([detailVersion({ state: 'in_review' })], 'pt-BR', null)).toBe(
+      false,
+    )
+    expect(canCreateContentDraft([scheduled], 'pt-BR', null)).toBe(true)
+    expect(canCreateContentDraft([detailVersion({ state: 'rejected' })], 'pt-BR', null)).toBe(true)
+    expect(canCreateContentDraft([], 'pt-BR', NOW)).toBe(false)
+    expect(canCreateContentDraft([approved], 'en-US', null)).toBe(true)
+  })
+
+  it('recovers a stale save only from the same version while preserving local cover state', () => {
+    const confirmedCover = {
+      assetId: '00000000-0000-0000-0000-000000000627',
+      locale: 'pt-BR' as const,
+    }
+    const initialState = {
+      versionId: '00000000-0000-0000-0000-000000000628',
+      expectedUpdatedAt: NOW,
+      stale: false,
+      confirmedCover,
+    }
+    const staleState = markDraftSaveStale(initialState)
+    const localDraft = {
+      locale: 'pt-BR' as const,
+      category: 'nutrition' as const,
+      title: 'Edicao local preservada',
+      excerpt: 'Uma edicao local longa o suficiente para continuar preservada.',
+      bodyMarkdown: '## Edicao local\n\nEste texto ainda nao foi sobrescrito.',
+      tags: ['edicao-local'],
+      featuredToday: false,
+      coverAssetId: confirmedCover.assetId,
+      targeting: { protocols: [], plans: [], personalities: [] },
+    }
+    const refreshedDraft = detailVersion({
+      versionId: initialState.versionId,
+      version: 4,
+      state: 'draft',
+      updatedAt: '2026-07-21T13:30:00.000Z',
+    })
+
+    expect(buildDraftSavePayload(staleState, localDraft)).toBeNull()
+    expect(findDraftVersionBaseline([refreshedDraft], initialState.versionId)).toEqual({
+      versionId: initialState.versionId,
+      expectedUpdatedAt: refreshedDraft.updatedAt,
+    })
+
+    const recovery = recoverDraftSaveState(staleState, [refreshedDraft])
+    expect(recovery).toEqual({
+      recovered: true,
+      state: {
+        ...initialState,
+        expectedUpdatedAt: refreshedDraft.updatedAt,
+        stale: false,
+      },
+    })
+    if (!recovery.recovered) throw new Error('Expected a recovered baseline')
+    expect(buildDraftSavePayload(recovery.state, localDraft)).toEqual({
+      versionId: initialState.versionId,
+      expectedUpdatedAt: refreshedDraft.updatedAt,
+      draft: localDraft,
+    })
+  })
+
+  it('keeps the stale baseline and safe cover when baseline refresh cannot recover a draft', () => {
+    const staleState = markDraftSaveStale({
+      versionId: '00000000-0000-0000-0000-000000000629',
+      expectedUpdatedAt: NOW,
+      stale: false,
+      confirmedCover: {
+        assetId: '00000000-0000-0000-0000-000000000630',
+        locale: 'pt-BR',
+      },
+    })
+    const otherDraft = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000631',
+      state: 'draft',
+      updatedAt: '2026-07-21T13:30:00.000Z',
+    })
+    const sameVersionApproved = detailVersion({
+      versionId: staleState.versionId,
+      state: 'approved',
+      updatedAt: '2026-07-21T13:45:00.000Z',
+    })
+
+    expect(
+      findDraftVersionBaseline([otherDraft, sameVersionApproved], staleState.versionId),
+    ).toBeNull()
+    expect(recoverDraftSaveState(staleState, [otherDraft, sameVersionApproved])).toEqual({
+      recovered: false,
+      state: staleState,
     })
   })
 

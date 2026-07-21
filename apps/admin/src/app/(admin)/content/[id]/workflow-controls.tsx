@@ -27,6 +27,7 @@ import {
 import {
   canPublishContentVersion,
   canReviewContentVersion,
+  contentWorkflowTargetLabel,
   parseUtcDateTimeLocal,
 } from '../presenter'
 
@@ -119,10 +120,16 @@ export function WorkflowControls({
     ? canPublishContentVersion(role, version.state, version.publishAt, archivedAt)
     : false
   const canArchive = role === 'master_admin' && !archivedAt
+  const targetLabel = version ? contentWorkflowTargetLabel(version) : null
   if (!canReview && !canPublish && !canArchive && !message) return null
 
   return (
     <section className="border-y border-border py-3" aria-label="Fluxo editorial">
+      {targetLabel && (canReview || canPublish) && (
+        <p className="mb-2 break-words font-mono text-[10px] text-muted-foreground">
+          Alvo do workflow: {targetLabel}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {canReview && (
           <>
@@ -141,7 +148,7 @@ export function WorkflowControls({
                 <DialogHeader>
                   <DialogTitle>Rejeitar versao</DialogTitle>
                   <DialogDescription>
-                    O motivo ficara registrado no fluxo editorial.
+                    {targetLabel}. O motivo ficara registrado no fluxo editorial.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">
@@ -185,7 +192,7 @@ export function WorkflowControls({
                 <DialogHeader>
                   <DialogTitle>Publicar agora</DialogTitle>
                   <DialogDescription>
-                    Esta versao ficara disponivel imediatamente.
+                    {targetLabel}. Esta versao ficara disponivel imediatamente.
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -209,7 +216,7 @@ export function WorkflowControls({
                 <DialogHeader>
                   <DialogTitle>Agendar publicacao</DialogTitle>
                   <DialogDescription>
-                    Confirme a data e a hora de liberacao no fuso operacional UTC.
+                    {targetLabel}. Confirme a data e a hora de liberacao no fuso operacional UTC.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">

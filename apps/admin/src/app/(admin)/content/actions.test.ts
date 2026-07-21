@@ -90,7 +90,9 @@ function service(): ContentAdminService {
   const result = { publicationId: PUBLICATION_ID, updatedAt: UPDATED_AT }
   return {
     list: vi.fn(async () => []),
-    get: vi.fn(async () => null),
+    get: vi.fn(
+      async () => ({ publicationId: PUBLICATION_ID, archivedAt: null, versions: [] }) as never,
+    ),
     createPublication: vi.fn(async () => result),
     createDraft: vi.fn(async () => result),
     saveDraft: vi.fn(async () => result),
@@ -219,6 +221,31 @@ describe('content admin action core', () => {
     })
   })
 
+  it('rejects a new locale draft while an approved version remains unpublished', async () => {
+    const guardedService = service()
+    vi.mocked(guardedService.get).mockResolvedValue({
+      publicationId: PUBLICATION_ID,
+      archivedAt: null,
+      versions: [
+        {
+          versionId: VERSION_ID,
+          locale: 'pt-BR',
+          state: 'approved',
+          publishAt: null,
+        },
+      ],
+    } as never)
+    const { deps } = dependencies('content_editor', guardedService)
+
+    const result = await runContentAdminAction(action('createDraft'), deps)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Publique ou agende a versão aprovada antes de criar outro rascunho.',
+    })
+    expect(guardedService.createDraft).not.toHaveBeenCalled()
+  })
+
   it('revalidates list and concrete publication pages after successful mutations', async () => {
     const { deps } = dependencies('content_editor')
 
@@ -251,13 +278,23 @@ describe('content admin action core', () => {
     expect(read.deps.revalidatePath).not.toHaveBeenCalled()
   })
 
+  it('returns only an allowlisted stale code for editorial conflict recovery', async () => {
+    const staleService = service()
+    vi.mocked(staleService.saveDraft).mockRejectedValue(new ContentAdminError('stale', 'saveDraft'))
+    const { deps } = dependencies('content_editor', staleService)
+
+    const result = await runContentAdminAction(action('saveDraft'), deps)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Este rascunho foi alterado. Atualize a baseline antes de salvar novamente.',
+      code: 'stale',
+    })
+  })
+
   it.each([
     [new ContentActionAuthError('unauthenticated'), 'Faça login novamente para continuar.'],
     [new ContentActionAuthError('forbidden'), 'Você não tem acesso a esta operação.'],
-    [
-      new ContentAdminError('stale', 'saveDraft'),
-      'Este conteúdo foi alterado. Recarregue e tente novamente.',
-    ],
     [
       new ContentAdminError('duplicate', 'createPublication'),
       'Já existe uma publicação com este slug.',
@@ -289,6 +326,7 @@ describe('content admin action core', () => {
 
     expect(result).toEqual({ ok: false, error: message })
     if (result.ok) throw new Error('Expected a public action failure')
+    expect(result).not.toHaveProperty('code')
     expect(result.error.length).toBeLessThanOrEqual(160)
     expect(JSON.stringify(result)).not.toMatch(/SQL secret|token=|content\/asset|provider/i)
   })

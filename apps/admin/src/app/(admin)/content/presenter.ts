@@ -1,3 +1,4 @@
+import type { ContentDraftInput } from '@mpp/core'
 import type { AdminRole } from '@/lib/admin-rbac'
 import type {
   ContentPublicationDetail,
@@ -50,6 +51,13 @@ export interface PublicationListRow {
   effectiveStatus: EffectiveContentStatus
   locales: ContentLocale[]
   versions: PublicationListVersion[]
+}
+
+export interface DraftSaveState {
+  versionId: string
+  expectedUpdatedAt: string
+  stale: boolean
+  confirmedCover: { assetId: string; locale: ContentLocale } | null
 }
 
 const LOCALES = ['pt-BR', 'en-US'] as const
@@ -122,6 +130,82 @@ export function canPublishContentVersion(
   archivedAt: string | null,
 ): boolean {
   return role === 'master_admin' && state === 'approved' && publishAt === null && !archivedAt
+}
+
+export function canCreateContentDraft(
+  versions: readonly ContentPublicationDetail['versions'][number][],
+  locale: ContentLocale,
+  archivedAt: string | null,
+): boolean {
+  if (archivedAt) return false
+  return !versions.some(
+    (version) =>
+      version.locale === locale &&
+      (version.state === 'draft' ||
+        version.state === 'in_review' ||
+        (version.state === 'approved' && version.publishAt === null)),
+  )
+}
+
+export function selectWorkflowContentVersion(
+  versions: readonly ContentPublicationDetail['versions'][number][],
+  locale: ContentLocale,
+  role: AdminRole,
+  archivedAt: string | null,
+): ContentPublicationDetail['versions'][number] | null {
+  if (archivedAt) return null
+  const applicable = versions.filter((version) => {
+    if (version.locale !== locale) return false
+    if (role === 'nutrition_admin') return version.state === 'in_review'
+    if (role === 'master_admin') return version.state === 'approved' && version.publishAt === null
+    return false
+  })
+  return applicable.sort(byNewestVersion)[0] ?? null
+}
+
+export function contentWorkflowTargetLabel(
+  version: ContentPublicationDetail['versions'][number],
+): string {
+  const title = version.title?.trim() || 'Sem titulo'
+  return `${version.locale} · v${version.version} · ${title} · ${version.versionId.slice(0, 8)}...${version.versionId.slice(-4)}`
+}
+
+export function findDraftVersionBaseline(
+  versions: readonly ContentPublicationDetail['versions'][number][],
+  versionId: string,
+): { versionId: string; expectedUpdatedAt: string } | null {
+  const version = versions.find(
+    (candidate) => candidate.versionId === versionId && candidate.state === 'draft',
+  )
+  return version ? { versionId: version.versionId, expectedUpdatedAt: version.updatedAt } : null
+}
+
+export function markDraftSaveStale(state: DraftSaveState): DraftSaveState {
+  return { ...state, stale: true }
+}
+
+export function recoverDraftSaveState(
+  state: DraftSaveState,
+  versions: readonly ContentPublicationDetail['versions'][number][],
+): { recovered: true; state: DraftSaveState } | { recovered: false; state: DraftSaveState } {
+  const baseline = findDraftVersionBaseline(versions, state.versionId)
+  if (!baseline) return { recovered: false, state }
+  return {
+    recovered: true,
+    state: { ...state, expectedUpdatedAt: baseline.expectedUpdatedAt, stale: false },
+  }
+}
+
+export function buildDraftSavePayload(
+  state: DraftSaveState,
+  draft: ContentDraftInput,
+): { versionId: string; expectedUpdatedAt: string; draft: ContentDraftInput } | null {
+  if (state.stale) return null
+  return {
+    versionId: state.versionId,
+    expectedUpdatedAt: state.expectedUpdatedAt,
+    draft,
+  }
 }
 
 export function formatOperationalDate(value: string): string {

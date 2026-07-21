@@ -56,7 +56,11 @@ const LOCALES = ['pt-BR', 'en-US'] as const
 export const PUBLICATION_PAGE_SIZE = 25
 export const PUBLICATION_BATCH_SIZE = 100
 export const PUBLICATION_MAX_OFFSET = 10_000
-export const PUBLICATION_MAX_PAGE = Math.floor(PUBLICATION_MAX_OFFSET / PUBLICATION_PAGE_SIZE) + 1
+export const PUBLICATION_DIRECT_MAX_PAGE =
+  Math.floor(PUBLICATION_MAX_OFFSET / PUBLICATION_PAGE_SIZE) + 1
+export const PUBLICATION_TEXT_MAX_PAGE = Math.ceil(
+  (PUBLICATION_MAX_OFFSET + PUBLICATION_BATCH_SIZE) / PUBLICATION_PAGE_SIZE,
+)
 
 const COMMANDS_BY_ROLE: Record<AdminRole, readonly ContentCommand[]> = {
   support: [],
@@ -101,6 +105,14 @@ export function localeCompleteness(
 
 export function visibleContentCommands(role: AdminRole): ContentCommand[] {
   return [...COMMANDS_BY_ROLE[role]]
+}
+
+export function canReviewContentVersion(
+  role: AdminRole,
+  state: ContentPublicationDetail['versions'][number]['state'],
+  archivedAt: string | null,
+): boolean {
+  return role === 'nutrition_admin' && state === 'in_review' && !archivedAt
 }
 
 export function formatOperationalDate(value: string): string {
@@ -227,12 +239,35 @@ export function paginatePublications(
   }
 }
 
-export function parsePublicationPage(value: string | string[] | undefined): number {
+export function directPublicationPage(
+  publications: readonly ContentPublicationSummary[],
+  page: number,
+): {
+  rows: ContentPublicationSummary[]
+  hasPrevious: boolean
+  hasNext: boolean
+  truncated: boolean
+} {
+  const hasProbe = publications.length > PUBLICATION_PAGE_SIZE
+  const atOffsetCeiling = page >= PUBLICATION_DIRECT_MAX_PAGE
+  return {
+    rows: publications.slice(0, PUBLICATION_PAGE_SIZE),
+    hasPrevious: page > 1,
+    hasNext: hasProbe && !atOffsetCeiling,
+    truncated: hasProbe && atOffsetCeiling,
+  }
+}
+
+export function parsePublicationPage(
+  value: string | string[] | undefined,
+  mode: 'direct' | 'text',
+): number {
   const scalar = Array.isArray(value) ? value[0] : value
   if (!scalar || !/^\d+$/.test(scalar)) return 1
   const parsed = Number(scalar)
   if (!Number.isSafeInteger(parsed) || parsed < 1) return 1
-  return Math.min(parsed, PUBLICATION_MAX_PAGE)
+  const maximum = mode === 'text' ? PUBLICATION_TEXT_MAX_PAGE : PUBLICATION_DIRECT_MAX_PAGE
+  return Math.min(parsed, maximum)
 }
 
 export function toPublicationListRow(

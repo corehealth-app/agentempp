@@ -25,6 +25,7 @@ import {
   saveContentDraftAction,
   submitContentVersionAction,
 } from '../actions'
+import { coverPublicationLocked, type PendingCoverResolution } from '../cover-flow'
 import { type ContentLocale, formatOperationalDate, selectLocaleVersions } from '../presenter'
 import { CoverUploader } from './cover-uploader'
 import { MarkdownPreview } from './markdown-preview'
@@ -82,6 +83,10 @@ export function ContentEditor({
   now: string
 }) {
   const [activeLocale, setActiveLocale] = useState<ContentLocale>('pt-BR')
+  const [pendingCoverResolution, setPendingCoverResolution] =
+    useState<PendingCoverResolution | null>(null)
+  const [coverBusy, setCoverBusy] = useState(false)
+  const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy)
   const activeSelection = selectLocaleVersions(publication.versions, activeLocale, now)
 
   return (
@@ -94,10 +99,19 @@ export function ContentEditor({
           {initialError}
         </p>
       )}
-      <Tabs value={activeLocale} onValueChange={(value) => setActiveLocale(value as ContentLocale)}>
+      <Tabs
+        value={activeLocale}
+        onValueChange={(value) => {
+          if (!coverLocked) setActiveLocale(value as ContentLocale)
+        }}
+      >
         <TabsList className="grid h-10 w-full max-w-sm grid-cols-2 rounded-lg">
-          <TabsTrigger value="pt-BR">Portugues · pt-BR</TabsTrigger>
-          <TabsTrigger value="en-US">Ingles · en-US</TabsTrigger>
+          <TabsTrigger value="pt-BR" disabled={coverLocked}>
+            Portugues · pt-BR
+          </TabsTrigger>
+          <TabsTrigger value="en-US" disabled={coverLocked}>
+            Ingles · en-US
+          </TabsTrigger>
         </TabsList>
         {(['pt-BR', 'en-US'] as const).map((locale) => {
           const selection = selectLocaleVersions(publication.versions, locale, now)
@@ -112,6 +126,10 @@ export function ContentEditor({
                 futureScheduled={selection.futureScheduled}
                 role={role}
                 archived={Boolean(publication.archivedAt)}
+                pendingCoverResolution={pendingCoverResolution}
+                coverLocked={coverLocked}
+                onPendingCoverResolutionChange={setPendingCoverResolution}
+                onCoverBusyChange={setCoverBusy}
               />
             </TabsContent>
           )
@@ -135,6 +153,10 @@ function LocaleEditor({
   futureScheduled,
   role,
   archived,
+  pendingCoverResolution,
+  coverLocked,
+  onPendingCoverResolutionChange,
+  onCoverBusyChange,
 }: {
   publicationId: string
   locale: ContentLocale
@@ -143,6 +165,10 @@ function LocaleEditor({
   futureScheduled: Version | null
   role: AdminRole
   archived: boolean
+  pendingCoverResolution: PendingCoverResolution | null
+  coverLocked: boolean
+  onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
+  onCoverBusyChange: (busy: boolean) => void
 }) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
@@ -219,7 +245,15 @@ function LocaleEditor({
       )}
       <ActionMessage message={message} />
       <VersionMetadata version={version} />
-      <DraftForm version={version} canEdit={canEdit} role={role} />
+      <DraftForm
+        version={version}
+        canEdit={canEdit}
+        role={role}
+        pendingCoverResolution={pendingCoverResolution}
+        coverLocked={coverLocked}
+        onPendingCoverResolutionChange={onPendingCoverResolutionChange}
+        onCoverBusyChange={onCoverBusyChange}
+      />
     </div>
   )
 }
@@ -228,10 +262,18 @@ function DraftForm({
   version,
   canEdit,
   role,
+  pendingCoverResolution,
+  coverLocked,
+  onPendingCoverResolutionChange,
+  onCoverBusyChange,
 }: {
   version: Version
   canEdit: boolean
   role: AdminRole
+  pendingCoverResolution: PendingCoverResolution | null
+  coverLocked: boolean
+  onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
+  onCoverBusyChange: (busy: boolean) => void
 }) {
   const router = useRouter()
   const [title, setTitle] = useState(version.title ?? '')
@@ -405,7 +447,11 @@ function DraftForm({
           <CoverUploader
             cover={version.cover}
             disabled={!canEdit}
+            publicationLocked={coverLocked}
+            pendingResolution={pendingCoverResolution}
             onAssetChange={setCoverAssetId}
+            onPendingResolutionChange={onPendingCoverResolutionChange}
+            onBusyChange={onCoverBusyChange}
           />
 
           <Field label="Markdown" htmlFor={`body-${version.versionId}`}>

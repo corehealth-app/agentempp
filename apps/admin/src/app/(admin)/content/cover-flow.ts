@@ -35,6 +35,13 @@ export function coverAttemptBlocked(pending: PendingCoverResolution | null): boo
   return pending !== null
 }
 
+export function coverPublicationLocked(
+  pending: PendingCoverResolution | null,
+  busy: boolean,
+): boolean {
+  return busy || coverAttemptBlocked(pending)
+}
+
 export async function beginCoverUpload<FileValue>(
   file: FileValue,
   dependencies: CoverUploadDependencies<FileValue>,

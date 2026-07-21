@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   beginCoverUpload,
   coverAttemptBlocked,
+  coverPublicationLocked,
   type PendingCoverResolution,
   resolvePendingCover,
 } from './cover-flow'
@@ -122,5 +123,12 @@ describe('cover flow', () => {
     })
     expect(discarded).toEqual({ status: 'discarded', pending: null })
     expect(coverAttemptBlocked(discarded.pending)).toBe(false)
+  })
+
+  it('locks the publication across locales while an upload is busy or resolution is pending', () => {
+    expect(coverPublicationLocked(null, false)).toBe(false)
+    expect(coverPublicationLocked(null, true)).toBe(true)
+    expect(coverPublicationLocked({ kind: 'complete', assetId: ASSET_ID }, false)).toBe(true)
+    expect(coverPublicationLocked({ kind: 'discard', assetId: ASSET_ID }, false)).toBe(true)
   })
 })

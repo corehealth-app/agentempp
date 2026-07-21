@@ -7,10 +7,10 @@ import type { ContentAdminFilters, ContentPublicationSummary } from '@/lib/conte
 import { createClient } from '@/lib/supabase/server'
 import { listContentPublicationsAction } from './actions'
 import {
+  directPublicationPage,
   filterPublicationSummaries,
   PUBLICATION_BATCH_SIZE,
   PUBLICATION_MAX_OFFSET,
-  PUBLICATION_MAX_PAGE,
   PUBLICATION_PAGE_SIZE,
   paginatePublications,
   parsePublicationPage,
@@ -54,7 +54,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
 
   const params = await searchParams
   const filters = parseFilters(params)
-  const page = parsePublicationPage(params.page)
+  const page = parsePublicationPage(params.page, filters.text ? 'text' : 'direct')
   const actionFilters: Omit<ContentAdminFilters, 'limit' | 'offset'> = {
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.locale ? { locale: filters.locale } : {}),
@@ -88,7 +88,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
     const pagination = paginatePublications(filtered, page)
     summaries = pagination.rows
     hasPrevious = pagination.hasPrevious
-    hasNext = pagination.hasNext && page < PUBLICATION_MAX_PAGE
+    hasNext = pagination.hasNext
     total = pagination.total
   } else {
     const result = await listContentPublicationsAction({
@@ -98,8 +98,11 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
     })
     if (!result.ok) return <PageFailure message={result.error} />
     const pageWithProbe = result.data as ContentPublicationSummary[]
-    summaries = pageWithProbe.slice(0, PUBLICATION_PAGE_SIZE)
-    hasNext = pageWithProbe.length > PUBLICATION_PAGE_SIZE && page < PUBLICATION_MAX_PAGE
+    const pagination = directPublicationPage(pageWithProbe, page)
+    summaries = pagination.rows
+    hasPrevious = pagination.hasPrevious
+    hasNext = pagination.hasNext
+    truncated = pagination.truncated
   }
 
   const rows = summaries.map((publication) => toPublicationListRow(publication, now))
@@ -131,8 +134,9 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
           role="status"
           className="border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
         >
-          A busca atingiu o limite operacional de 10.100 publicacoes. Refine os filtros para
-          consultar resultados alem desse recorte.
+          {filters.text
+            ? 'A busca atingiu o limite operacional de 10.100 publicacoes. Refine os filtros para consultar resultados alem desse recorte.'
+            : 'A listagem atingiu o limite operacional de paginacao. Refine os filtros para tornar os demais resultados acessiveis.'}
         </p>
       )}
       <PublicationTable

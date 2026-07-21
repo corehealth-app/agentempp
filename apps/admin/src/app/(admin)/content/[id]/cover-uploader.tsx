@@ -39,16 +39,23 @@ const PHASE_LABELS: Record<UploadPhase, string> = {
 export function CoverUploader({
   cover,
   disabled,
+  publicationLocked,
+  pendingResolution,
   onAssetChange,
+  onPendingResolutionChange,
+  onBusyChange,
 }: {
   cover: SafeContentAsset | null
   disabled: boolean
+  publicationLocked: boolean
+  pendingResolution: PendingCoverResolution | null
   onAssetChange: (assetId: string | null) => void
+  onPendingResolutionChange: (pending: PendingCoverResolution | null) => void
+  onBusyChange: (busy: boolean) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<UploadPhase>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [pendingResolution, setPendingResolution] = useState<PendingCoverResolution | null>(null)
   const busy =
     phase === 'preparing' ||
     phase === 'uploading' ||
@@ -56,16 +63,26 @@ export function CoverUploader({
     phase === 'discarding'
   const attemptBlocked = coverAttemptBlocked(pendingResolution)
 
+  function updatePhase(nextPhase: UploadPhase) {
+    setPhase(nextPhase)
+    onBusyChange(
+      nextPhase === 'preparing' ||
+        nextPhase === 'uploading' ||
+        nextPhase === 'completing' ||
+        nextPhase === 'discarding',
+    )
+  }
+
   async function upload(file: File) {
-    if (attemptBlocked) return
+    if (publicationLocked || busy || attemptBlocked) return
     setError(null)
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setPhase('error')
+      updatePhase('error')
       setError('Use uma imagem JPEG, PNG ou WebP.')
       return
     }
     if (file.size < 1 || file.size > 10 * 1024 * 1024) {
-      setPhase('error')
+      updatePhase('error')
       setError('A capa deve ter no maximo 10 MB.')
       return
     }
@@ -99,7 +116,7 @@ export function CoverUploader({
         return { ok: true, data: completed.data as SafeContentAsset }
       },
       discard: discardAsset,
-      onPhase: setPhase,
+      onPhase: updatePhase,
     })
     if (inputRef.current) inputRef.current.value = ''
     applyResult(result)
@@ -108,7 +125,7 @@ export function CoverUploader({
   async function retry(command: 'complete' | 'discard') {
     if (!pendingResolution) return
     setError(null)
-    setPhase(command === 'complete' ? 'completing' : 'discarding')
+    updatePhase(command === 'complete' ? 'completing' : 'discarding')
     const result = await resolvePendingCover(pendingResolution, command, {
       async complete(assetId) {
         const completed = await completeContentCoverAction({ assetId })
@@ -121,19 +138,19 @@ export function CoverUploader({
   }
 
   function applyResult(result: CoverFlowResult) {
-    setPendingResolution(result.pending)
+    onPendingResolutionChange(result.pending)
     if (result.status === 'completed') {
       onAssetChange(result.asset.assetId)
-      setPhase('success')
+      updatePhase('success')
       setError(null)
       return
     }
     if (result.status === 'discarded') {
-      setPhase('idle')
+      updatePhase('idle')
       setError(null)
       return
     }
-    setPhase('error')
+    updatePhase('error')
     setError(result.error)
   }
 
@@ -156,7 +173,7 @@ export function CoverUploader({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy || attemptBlocked}
+            disabled={publicationLocked || busy || attemptBlocked}
             onClick={() => inputRef.current?.click()}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Upload />}
@@ -169,7 +186,7 @@ export function CoverUploader({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
-        disabled={disabled || busy || attemptBlocked}
+        disabled={disabled || publicationLocked || busy || attemptBlocked}
         onChange={(event) => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
@@ -213,7 +230,13 @@ export function CoverUploader({
         </div>
       )}
       {!disabled && cover && (
-        <Button type="button" size="sm" variant="ghost" onClick={() => onAssetChange(null)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={publicationLocked}
+          onClick={() => onAssetChange(null)}
+        >
           Remover do rascunho
         </Button>
       )}

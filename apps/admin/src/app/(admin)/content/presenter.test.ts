@@ -4,10 +4,15 @@ import type {
   ContentPublicationSummary,
 } from '@/lib/content/admin-service'
 import {
+  canReviewContentVersion,
+  directPublicationPage,
   effectiveVersionStatus,
   filterPublicationSummaries,
   formatOperationalDate,
   localeCompleteness,
+  PUBLICATION_DIRECT_MAX_PAGE,
+  PUBLICATION_MAX_OFFSET,
+  PUBLICATION_TEXT_MAX_PAGE,
   paginatePublications,
   parsePublicationPage,
   parseUtcDateTimeLocal,
@@ -110,6 +115,12 @@ describe('content presenter', () => {
     expect(visibleContentCommands('operations_admin')).toEqual([])
   })
 
+  it('hides review controls after the publication is archived', () => {
+    expect(canReviewContentVersion('nutrition_admin', 'in_review', null)).toBe(true)
+    expect(canReviewContentVersion('nutrition_admin', 'in_review', NOW)).toBe(false)
+    expect(canReviewContentVersion('content_editor', 'in_review', null)).toBe(false)
+  })
+
   it('labels unscheduled, scheduled, and published timing in Portuguese', () => {
     expect(scheduleLabel(version(), NOW)).toEqual({ kind: 'none', label: 'Sem agendamento' })
     expect(
@@ -202,7 +213,7 @@ describe('content presenter', () => {
     expect(filterPublicationSummaries(summaries, 'rotina-mat')).toEqual([summaries[0]])
   })
 
-  it('paginates a stable filtered collection and safely parses requested pages', () => {
+  it('paginates a stable filtered collection and clamps pages to the active mode', () => {
     const summaries = Array.from({ length: 5 }, (_, index) =>
       publicationSummary(
         `00000000-0000-0000-0000-${String(700 + index).padStart(12, '0')}`,
@@ -219,12 +230,54 @@ describe('content presenter', () => {
       hasNext: true,
       total: 5,
     })
-    expect(parsePublicationPage('2')).toBe(2)
-    expect(parsePublicationPage(['3', '8'])).toBe(3)
-    expect(parsePublicationPage('-1')).toBe(1)
-    expect(parsePublicationPage('1.5')).toBe(1)
-    expect(parsePublicationPage('999999')).toBe(401)
-    expect(parsePublicationPage(undefined)).toBe(1)
+    expect(parsePublicationPage('2', 'direct')).toBe(2)
+    expect(parsePublicationPage(['3', '8'], 'direct')).toBe(3)
+    expect(parsePublicationPage('-1', 'direct')).toBe(1)
+    expect(parsePublicationPage('1.5', 'direct')).toBe(1)
+    expect(parsePublicationPage('999999', 'direct')).toBe(PUBLICATION_DIRECT_MAX_PAGE)
+    expect(parsePublicationPage('999999', 'text')).toBe(PUBLICATION_TEXT_MAX_PAGE)
+    expect(PUBLICATION_DIRECT_MAX_PAGE).toBe(401)
+    expect(PUBLICATION_TEXT_MAX_PAGE).toBe(404)
+    expect(parsePublicationPage(undefined, 'text')).toBe(1)
+  })
+
+  it.each([
+    { totalRows: 10_025, expectedRows: 25, truncated: false },
+    { totalRows: 10_026, expectedRows: 25, truncated: true },
+    { totalRows: 10_100, expectedRows: 25, truncated: true },
+  ])('shows the direct page 401 boundary for $totalRows server rows without offering page 402', ({
+    totalRows,
+    expectedRows,
+    truncated,
+  }) => {
+    const loaded = directBoundaryRows(totalRows)
+
+    expect(directPublicationPage(loaded, PUBLICATION_DIRECT_MAX_PAGE)).toMatchObject({
+      rows: { length: expectedRows },
+      hasPrevious: true,
+      hasNext: false,
+      truncated,
+    })
+  })
+
+  it('keeps all 10,100 loaded text matches reachable through page 404', () => {
+    const summaries = Array.from({ length: 10_100 }, (_, index) =>
+      publicationSummary(
+        `publication-${String(index).padStart(5, '0')}`,
+        `publicacao-${index}`,
+        `Publicacao ${index}`,
+        `2026-07-21T${String(Math.floor(index / 3600) % 24).padStart(2, '0')}:${String(
+          Math.floor(index / 60) % 60,
+        ).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+      ),
+    )
+
+    const lastPage = paginatePublications(summaries, PUBLICATION_TEXT_MAX_PAGE)
+
+    expect(lastPage.rows).toHaveLength(25)
+    expect(lastPage.hasPrevious).toBe(true)
+    expect(lastPage.hasNext).toBe(false)
+    expect(lastPage.total).toBe(10_100)
   })
 
   it('projects list rows without body Markdown or signed and storage data', () => {
@@ -275,4 +328,15 @@ function publicationSummary(
     updatedAt,
     versions: [version({ title, updatedAt })],
   }
+}
+
+function directBoundaryRows(totalRows: number): ContentPublicationSummary[] {
+  const probeLength = Math.min(26, Math.max(0, totalRows - PUBLICATION_MAX_OFFSET))
+  return Array.from({ length: probeLength }, (_, index) =>
+    publicationSummary(
+      `direct-boundary-${totalRows}-${index}`,
+      `publicacao-${PUBLICATION_MAX_OFFSET + index}`,
+      `Publicacao ${PUBLICATION_MAX_OFFSET + index}`,
+    ),
+  )
 }

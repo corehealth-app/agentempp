@@ -1,9 +1,9 @@
 'use client'
-import { cn } from '@/lib/utils'
 import {
   Activity,
-  Bot,
+  Apple,
   BookOpen,
+  Bot,
   Calculator,
   ChevronLeft,
   ChevronRight,
@@ -12,25 +12,23 @@ import {
   CreditCard,
   FileText,
   FunctionSquare,
-  Apple,
-  Wrench,
   Key,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquare,
+  MessageSquareText,
   Settings,
   Sparkles,
-  Trophy,
   TrendingUp,
   UserCog,
   Users,
+  Wrench,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +37,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { createClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 
 interface NavItem {
   label: string
@@ -80,6 +80,7 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Cálculos', href: '/settings/calc', icon: Calculator },
       { label: 'Fórmulas', href: '/formulas', icon: FunctionSquare },
       { label: 'Banco de alimentos', href: '/settings/foods', icon: Apple },
+      { label: 'Mensagens do coach', href: '/settings/coach-messages', icon: MessageSquareText },
       { label: 'API Keys', href: '/settings/api-keys', icon: Key },
       { label: 'Stripe', href: '/settings/stripe', icon: CreditCard },
       { label: 'Crons', href: '/settings/crons', icon: Clock },
@@ -188,6 +189,7 @@ export function Sidebar({ userEmail, userName }: { userEmail: string; userName?:
       {/* Collapse toggle (desktop only) */}
       <div className={cn('px-3 py-2 border-t border-sidebar-border hidden lg:block')}>
         <button
+          type="button"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
             'nav-card-glass flex items-center gap-2.5 px-3 py-2 text-xs w-full',
@@ -205,6 +207,7 @@ export function Sidebar({ userEmail, userName }: { userEmail: string; userName?:
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              type="button"
               className={cn(
                 'flex items-center gap-2 w-full p-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors',
                 isCollapsed && 'justify-center',
@@ -255,6 +258,7 @@ export function Sidebar({ userEmail, userName }: { userEmail: string; userName?:
       {/* Mobile header */}
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-background border-b border-border">
         <button
+          type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
           className="p-2 rounded-lg hover:bg-accent/20 transition-colors"
@@ -282,7 +286,9 @@ export function Sidebar({ userEmail, userName }: { userEmail: string; userName?:
 
       {/* Mobile Sidebar */}
       {mobileOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Fechar menu"
           onClick={() => setMobileOpen(false)}
           className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
         />

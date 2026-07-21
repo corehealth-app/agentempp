@@ -146,10 +146,10 @@ edited, reviewed, or waiting for a schedule. No cron is required to swap it.
 Target rows are normalized and keyed by `content_version_id` so values retain
 database integrity and targeting changes pass through the same review workflow:
 
-- `content_target_protocols` uses the existing `protocol_enum` values
+- `content_version_target_protocols` uses the existing `protocol_enum` values
   `recomposicao`, `ganho_massa`, and `manutencao` as product objectives;
-- `content_target_plans` uses the existing `plan_enum`;
-- `content_target_personalities` references `coach_personalities(code)` and is
+- `content_version_target_plans` uses the existing `plan_enum`;
+- `content_version_target_personalities` references `coach_personalities(code)` and is
   limited to selectable personalities.
 
 For each dimension independently, no rows means wildcard. When rows exist, the

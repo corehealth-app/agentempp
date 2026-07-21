@@ -1,5 +1,11 @@
 -- BodyFlow educational content CMS persistence and editorial lifecycle.
 -- The existing private content-covers bucket remains owned by Storage.
+--
+-- Trust boundary: these SECURITY INVOKER RPCs execute as service_role, which
+-- also needs direct DML grants for backend repositories. PostgreSQL therefore
+-- cannot make RPC use cryptographically exclusive. Every persisted row and
+-- legal lifecycle transition is nevertheless validated by constraints and
+-- triggers so direct service_role DML cannot create an invalid CMS state.
 
 CREATE TABLE public.content_publications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -69,6 +75,17 @@ CREATE TABLE public.content_assets (
     ) OR (
       status = 'deleted'
       AND deleted_at IS NOT NULL
+      AND (
+        (
+          actual_size_bytes IS NULL
+          AND etag IS NULL
+          AND uploaded_at IS NULL
+        ) OR (
+          actual_size_bytes = declared_size_bytes
+          AND char_length(btrim(etag)) BETWEEN 1 AND 512
+          AND uploaded_at IS NOT NULL
+        )
+      )
     )
   )
 );
@@ -143,6 +160,7 @@ CREATE TABLE public.content_versions (
   ),
   CONSTRAINT content_versions_review_pair_check CHECK (
     (reviewed_by IS NULL) = (reviewed_at IS NULL)
+    AND (reviewed_by IS NULL OR reviewed_by <> authored_by)
   ),
   CONSTRAINT content_versions_publish_pair_check CHECK (
     (published_by IS NULL) = (published_at IS NULL)
@@ -150,7 +168,17 @@ CREATE TABLE public.content_versions (
   ),
   CONSTRAINT content_versions_state_metadata_check CHECK (
     (
-      state IN ('draft', 'in_review')
+      state = 'draft'
+      AND submitted_at IS NULL
+      AND reviewed_by IS NULL
+      AND reviewed_at IS NULL
+      AND rejection_reason IS NULL
+      AND published_by IS NULL
+      AND published_at IS NULL
+      AND publish_at IS NULL
+    ) OR (
+      state = 'in_review'
+      AND submitted_at IS NOT NULL
       AND reviewed_by IS NULL
       AND reviewed_at IS NULL
       AND rejection_reason IS NULL
@@ -159,11 +187,13 @@ CREATE TABLE public.content_versions (
       AND publish_at IS NULL
     ) OR (
       state = 'approved'
+      AND submitted_at IS NOT NULL
       AND reviewed_by IS NOT NULL
       AND reviewed_at IS NOT NULL
       AND rejection_reason IS NULL
     ) OR (
       state = 'rejected'
+      AND submitted_at IS NOT NULL
       AND reviewed_by IS NOT NULL
       AND reviewed_at IS NOT NULL
       AND char_length(btrim(rejection_reason)) BETWEEN 10 AND 1000
@@ -171,6 +201,11 @@ CREATE TABLE public.content_versions (
       AND published_at IS NULL
       AND publish_at IS NULL
     )
+  ),
+  CONSTRAINT content_versions_lifecycle_chronology_check CHECK (
+    (submitted_at IS NULL OR submitted_at >= created_at)
+    AND (reviewed_at IS NULL OR reviewed_at >= submitted_at)
+    AND (published_at IS NULL OR published_at >= reviewed_at)
   )
 );
 
@@ -185,6 +220,10 @@ CREATE INDEX content_versions_visibility_idx
 CREATE INDEX content_versions_review_queue_idx
   ON public.content_versions (state, submitted_at, id)
   WHERE state = 'in_review';
+
+CREATE INDEX content_versions_cover_asset_idx
+  ON public.content_versions (cover_asset_id)
+  WHERE cover_asset_id IS NOT NULL;
 
 CREATE TABLE public.content_version_target_protocols (
   content_version_id uuid NOT NULL REFERENCES public.content_versions(id) ON DELETE RESTRICT,
@@ -282,6 +321,25 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.version_counter <> 0
+      OR NEW.archived_by IS NOT NULL
+      OR NEW.archived_at IS NOT NULL THEN
+      RAISE EXCEPTION 'content publications must begin active with a zero version counter'
+        USING ERRCODE = '23514';
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.admin_users admin_user
+      WHERE admin_user.id = NEW.created_by
+        AND admin_user.role = 'content_editor'
+    ) THEN
+      RAISE EXCEPTION 'content publication creator must be a content_editor'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'content publications cannot be deleted' USING ERRCODE = '23514';
   END IF;
@@ -293,30 +351,29 @@ BEGIN
     RAISE EXCEPTION 'content publication identity is immutable' USING ERRCODE = '23514';
   END IF;
 
-  IF NEW.version_counter < OLD.version_counter THEN
-    RAISE EXCEPTION 'content publication version counter is monotonic' USING ERRCODE = '23514';
-  END IF;
-
-  IF NEW.version_counter IS DISTINCT FROM OLD.version_counter
-    AND current_setting('bodyflow.content_publication_write', true) IS DISTINCT FROM 'allocate' THEN
-    RAISE EXCEPTION 'content publication versions must be allocated by the lifecycle RPC'
+  IF NEW.version_counter IS DISTINCT FROM OLD.version_counter AND (
+    NEW.version_counter <> OLD.version_counter + 1
+    OR pg_trigger_depth() < 2
+  ) THEN
+    RAISE EXCEPTION 'content publication version counter advances only from a version insert'
       USING ERRCODE = '23514';
   END IF;
 
-  IF OLD.archived_at IS NOT NULL
-    AND (
-      NEW.archived_at IS DISTINCT FROM OLD.archived_at
-      OR NEW.archived_by IS DISTINCT FROM OLD.archived_by
-    ) THEN
-    RAISE EXCEPTION 'content publication archive is immutable' USING ERRCODE = '23514';
-  END IF;
-
-  IF (
-    NEW.archived_at IS DISTINCT FROM OLD.archived_at
-    OR NEW.archived_by IS DISTINCT FROM OLD.archived_by
-  ) AND current_setting('bodyflow.content_publication_write', true) IS DISTINCT FROM 'archive' THEN
-    RAISE EXCEPTION 'content publication archive must use the lifecycle RPC'
-      USING ERRCODE = '23514';
+  IF NEW.archived_at IS DISTINCT FROM OLD.archived_at
+    OR NEW.archived_by IS DISTINCT FROM OLD.archived_by THEN
+    IF OLD.archived_at IS NOT NULL
+      OR NEW.archived_at IS NULL
+      OR NEW.archived_by IS NULL
+      OR NEW.version_counter IS DISTINCT FROM OLD.version_counter
+      OR NOT EXISTS (
+        SELECT 1
+        FROM public.admin_users admin_user
+        WHERE admin_user.id = NEW.archived_by
+          AND admin_user.role = 'master_admin'
+      ) THEN
+      RAISE EXCEPTION 'content publication archive requires a master_admin and is irreversible'
+        USING ERRCODE = '23514';
+    END IF;
   END IF;
 
   NEW.updated_at := clock_timestamp();
@@ -325,7 +382,7 @@ END;
 $$;
 
 CREATE TRIGGER guard_content_publication_mutation
-  BEFORE UPDATE OR DELETE ON public.content_publications
+  BEFORE INSERT OR UPDATE OR DELETE ON public.content_publications
   FOR EACH ROW
   EXECUTE FUNCTION private.guard_content_publication_mutation();
 
@@ -335,7 +392,30 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = pg_catalog, public, private, pg_temp
 AS $$
+DECLARE
+  v_object_etag text;
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'pending_upload'
+      OR NEW.actual_size_bytes IS NOT NULL
+      OR NEW.etag IS NOT NULL
+      OR NEW.uploaded_at IS NOT NULL
+      OR NEW.deleted_at IS NOT NULL THEN
+      RAISE EXCEPTION 'content assets must begin pending upload without lifecycle metadata'
+        USING ERRCODE = '23514';
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.admin_users admin_user
+      WHERE admin_user.id = NEW.created_by
+        AND admin_user.role = 'content_editor'
+    ) THEN
+      RAISE EXCEPTION 'content asset creator must be a content_editor'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'content assets cannot be physically deleted' USING ERRCODE = '23514';
   END IF;
@@ -355,22 +435,66 @@ BEGIN
     RAISE EXCEPTION 'deleted content assets are immutable' USING ERRCODE = '23514';
   END IF;
 
-  IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
-    (OLD.status = 'pending_upload' AND NEW.status IN ('uploaded', 'deleted'))
-    OR (OLD.status = 'uploaded' AND NEW.status = 'deleted')
-  ) THEN
+  IF NEW.status = OLD.status THEN
+    IF NEW.actual_size_bytes IS DISTINCT FROM OLD.actual_size_bytes
+      OR NEW.etag IS DISTINCT FROM OLD.etag
+      OR NEW.uploaded_at IS DISTINCT FROM OLD.uploaded_at
+      OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
+      RAISE EXCEPTION 'content asset lifecycle metadata is immutable without a state transition'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF OLD.status = 'pending_upload' AND NEW.status = 'uploaded' THEN
+    SELECT object.metadata->>'eTag'
+    INTO v_object_etag
+    FROM storage.objects object
+    WHERE object.bucket_id = OLD.bucket_id
+      AND object.name = OLD.object_path
+      AND object.metadata->>'mimetype' = OLD.mime_type
+      AND CASE
+        WHEN object.metadata->>'size' ~ '^[0-9]+$'
+          THEN (object.metadata->>'size')::bigint
+        ELSE NULL
+      END = OLD.declared_size_bytes
+      AND char_length(btrim(object.metadata->>'eTag')) BETWEEN 1 AND 512
+    FOR SHARE;
+
+    IF NOT FOUND
+      OR NEW.actual_size_bytes <> OLD.declared_size_bytes
+      OR btrim(NEW.etag) IS DISTINCT FROM btrim(v_object_etag)
+      OR NEW.uploaded_at IS NULL
+      OR NEW.deleted_at IS NOT NULL THEN
+      RAISE EXCEPTION 'content asset upload transition requires matching Storage metadata'
+        USING ERRCODE = '23514';
+    END IF;
+    NEW.etag := btrim(v_object_etag);
+  ELSIF OLD.status = 'pending_upload' AND NEW.status = 'deleted' THEN
+    IF NEW.actual_size_bytes IS NOT NULL
+      OR NEW.etag IS NOT NULL
+      OR NEW.uploaded_at IS NOT NULL
+      OR NEW.deleted_at IS NULL THEN
+      RAISE EXCEPTION 'pending content asset deletion has invalid lifecycle metadata'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF OLD.status = 'uploaded' AND NEW.status = 'deleted' THEN
+    IF NEW.actual_size_bytes IS DISTINCT FROM OLD.actual_size_bytes
+      OR NEW.etag IS DISTINCT FROM OLD.etag
+      OR NEW.uploaded_at IS DISTINCT FROM OLD.uploaded_at
+      OR NEW.deleted_at IS NULL THEN
+      RAISE EXCEPTION 'uploaded content asset deletion has invalid lifecycle metadata'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSE
     RAISE EXCEPTION 'invalid content asset status transition: % -> %', OLD.status, NEW.status
       USING ERRCODE = '23514';
   END IF;
 
-  IF (
-    NEW.status IS DISTINCT FROM OLD.status
-    OR NEW.actual_size_bytes IS DISTINCT FROM OLD.actual_size_bytes
-    OR NEW.etag IS DISTINCT FROM OLD.etag
-    OR NEW.uploaded_at IS DISTINCT FROM OLD.uploaded_at
-    OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
-  ) AND current_setting('bodyflow.content_asset_write', true) IS DISTINCT FROM 'on' THEN
-    RAISE EXCEPTION 'content asset lifecycle must use its RPC' USING ERRCODE = '23514';
+  IF NEW.status = 'deleted' AND EXISTS (
+    SELECT 1
+    FROM public.content_versions version
+    WHERE version.cover_asset_id = OLD.id
+  ) THEN
+    RAISE EXCEPTION 'referenced content cover cannot be deleted'
+      USING ERRCODE = '23514';
   END IF;
 
   NEW.updated_at := clock_timestamp();
@@ -379,7 +503,7 @@ END;
 $$;
 
 CREATE TRIGGER guard_content_asset_mutation
-  BEFORE UPDATE OR DELETE ON public.content_assets
+  BEFORE INSERT OR UPDATE OR DELETE ON public.content_assets
   FOR EACH ROW
   EXECUTE FUNCTION private.guard_content_asset_mutation();
 
@@ -391,9 +515,56 @@ SET search_path = pg_catalog, public, private, extensions, pg_temp
 AS $$
 DECLARE
   v_word_count integer;
-  v_lifecycle_write boolean :=
-    current_setting('bodyflow.content_version_lifecycle_write', true) = 'on';
+  v_parent_counter integer;
+  v_parent_archived_at timestamptz;
+  v_snapshot_changed boolean;
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'draft'
+      OR NEW.submitted_at IS NOT NULL
+      OR NEW.reviewed_by IS NOT NULL
+      OR NEW.reviewed_at IS NOT NULL
+      OR NEW.rejection_reason IS NOT NULL
+      OR NEW.published_by IS NOT NULL
+      OR NEW.published_at IS NOT NULL
+      OR NEW.publish_at IS NOT NULL THEN
+      RAISE EXCEPTION 'content versions must begin as clean drafts'
+        USING ERRCODE = '23514';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.admin_users admin_user
+      WHERE admin_user.id = NEW.authored_by
+        AND admin_user.role = 'content_editor'
+    ) THEN
+      RAISE EXCEPTION 'content version author must be a content_editor'
+        USING ERRCODE = '23514';
+    END IF;
+
+    SELECT publication.version_counter, publication.archived_at
+    INTO v_parent_counter, v_parent_archived_at
+    FROM public.content_publications publication
+    WHERE publication.id = NEW.publication_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'content publication not found' USING ERRCODE = '23503';
+    END IF;
+    IF v_parent_archived_at IS NOT NULL THEN
+      RAISE EXCEPTION 'archived content publication cannot accept versions'
+        USING ERRCODE = '23514';
+    END IF;
+    IF NEW.version <> v_parent_counter + 1 THEN
+      RAISE EXCEPTION 'content version number must be the next publication revision'
+        USING ERRCODE = '23514';
+    END IF;
+
+    UPDATE public.content_publications
+    SET version_counter = NEW.version
+    WHERE id = NEW.publication_id;
+  END IF;
+
   IF TG_OP = 'UPDATE' THEN
     IF NEW.id IS DISTINCT FROM OLD.id
       OR NEW.publication_id IS DISTINCT FROM OLD.publication_id
@@ -404,7 +575,7 @@ BEGIN
       RAISE EXCEPTION 'content version identity is immutable' USING ERRCODE = '23514';
     END IF;
 
-    IF OLD.state <> 'draft' AND (
+    v_snapshot_changed := (
       NEW.category IS DISTINCT FROM OLD.category
       OR NEW.title IS DISTINCT FROM OLD.title
       OR NEW.excerpt IS DISTINCT FROM OLD.excerpt
@@ -414,35 +585,81 @@ BEGIN
       OR NEW.tags IS DISTINCT FROM OLD.tags
       OR NEW.featured_today IS DISTINCT FROM OLD.featured_today
       OR NEW.cover_asset_id IS DISTINCT FROM OLD.cover_asset_id
-    ) THEN
-      RAISE EXCEPTION 'submitted content snapshots are immutable' USING ERRCODE = '23514';
-    END IF;
+    );
 
-    IF OLD.state <> 'draft' AND NOT v_lifecycle_write THEN
-      RAISE EXCEPTION 'submitted content versions can change only through lifecycle RPCs'
-        USING ERRCODE = '23514';
-    END IF;
-
-    IF NEW.state IS DISTINCT FROM OLD.state THEN
-      IF NOT v_lifecycle_write OR NOT (
-        (OLD.state = 'draft' AND NEW.state = 'in_review')
-        OR (OLD.state = 'in_review' AND NEW.state IN ('approved', 'rejected'))
-      ) THEN
+    IF OLD.state = 'draft' THEN
+      IF NEW.state = 'draft' THEN
+        NULL;
+      ELSIF NEW.state = 'in_review' THEN
+        IF v_snapshot_changed
+          OR OLD.submitted_at IS NOT NULL
+          OR NEW.submitted_at IS NULL
+          OR NEW.reviewed_by IS NOT NULL
+          OR NEW.reviewed_at IS NOT NULL
+          OR NEW.rejection_reason IS NOT NULL
+          OR NEW.published_by IS NOT NULL
+          OR NEW.published_at IS NOT NULL
+          OR NEW.publish_at IS NOT NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM public.admin_users admin_user
+            WHERE admin_user.id = NEW.authored_by
+              AND admin_user.role = 'content_editor'
+          ) THEN
+          RAISE EXCEPTION 'draft submission has invalid lifecycle metadata or actor role'
+            USING ERRCODE = '23514';
+        END IF;
+      ELSE
         RAISE EXCEPTION 'invalid content version state transition: % -> %', OLD.state, NEW.state
           USING ERRCODE = '23514';
       END IF;
-    END IF;
-
-    IF NEW.state = OLD.state
-      AND OLD.state = 'approved'
-      AND (
-        NEW.published_by IS DISTINCT FROM OLD.published_by
-        OR NEW.published_at IS DISTINCT FROM OLD.published_at
-        OR NEW.publish_at IS DISTINCT FROM OLD.publish_at
-      )
-      AND NOT v_lifecycle_write THEN
-      RAISE EXCEPTION 'content publication schedule must use the lifecycle RPC'
-        USING ERRCODE = '23514';
+    ELSIF OLD.state = 'in_review' THEN
+      IF v_snapshot_changed
+        OR NEW.state NOT IN ('approved', 'rejected')
+        OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at
+        OR NEW.reviewed_by IS NULL
+        OR NEW.reviewed_at IS NULL
+        OR NEW.reviewed_by = NEW.authored_by
+        OR NEW.published_by IS NOT NULL
+        OR NEW.published_at IS NOT NULL
+        OR NEW.publish_at IS NOT NULL
+        OR NOT EXISTS (
+          SELECT 1
+          FROM public.admin_users admin_user
+          WHERE admin_user.id = NEW.reviewed_by
+            AND admin_user.role = 'nutrition_admin'
+        ) THEN
+        RAISE EXCEPTION 'technical review has invalid lifecycle metadata or actor role'
+          USING ERRCODE = '23514';
+      END IF;
+    ELSIF OLD.state = 'approved' THEN
+      IF v_snapshot_changed
+        OR NEW.state <> OLD.state
+        OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at
+        OR NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
+        OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
+        OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
+        OR OLD.published_by IS NOT NULL
+        OR OLD.published_at IS NOT NULL
+        OR OLD.publish_at IS NOT NULL
+        OR NEW.published_by IS NULL
+        OR NEW.published_at IS NULL
+        OR NEW.publish_at IS NULL
+        OR NOT (
+          NEW.publish_at <= NEW.published_at
+          OR NEW.publish_at >= NEW.published_at + interval '5 minutes'
+        )
+        OR NOT EXISTS (
+          SELECT 1
+          FROM public.admin_users admin_user
+          WHERE admin_user.id = NEW.published_by
+            AND admin_user.role = 'master_admin'
+        ) THEN
+        RAISE EXCEPTION 'publication scheduling has invalid lifecycle metadata or actor role'
+          USING ERRCODE = '23514';
+      END IF;
+    ELSE
+      RAISE EXCEPTION 'rejected content versions are immutable' USING ERRCODE = '23514';
     END IF;
   END IF;
 
@@ -517,15 +734,20 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = pg_catalog, public, private, pg_temp
 AS $$
+DECLARE
+  v_asset_status text;
 BEGIN
-  IF NEW.cover_asset_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
+  IF NEW.cover_asset_id IS NOT NULL THEN
+    SELECT asset.status
+    INTO v_asset_status
     FROM public.content_assets asset
     WHERE asset.id = NEW.cover_asset_id
-      AND asset.status = 'uploaded'
-  ) THEN
-    RAISE EXCEPTION 'content cover must be uploaded before attachment'
-      USING ERRCODE = '23514';
+    FOR SHARE;
+
+    IF NOT FOUND OR v_asset_status <> 'uploaded' THEN
+      RAISE EXCEPTION 'content cover must be uploaded before attachment'
+        USING ERRCODE = '23514';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -547,13 +769,15 @@ DECLARE
     THEN OLD.content_version_id
     ELSE NEW.content_version_id
   END;
+  v_version_state text;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.content_versions version
-    WHERE version.id = v_version_id
-      AND version.state = 'draft'
-  ) THEN
+  SELECT version.state
+  INTO v_version_state
+  FROM public.content_versions version
+  WHERE version.id = v_version_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_version_state <> 'draft' THEN
     RAISE EXCEPTION 'content targets are mutable only while their version is a draft'
       USING ERRCODE = '23514';
   END IF;
@@ -712,8 +936,8 @@ BEGIN
     RAISE EXCEPTION 'valid publication and locale are required' USING ERRCODE = '22023';
   END IF;
 
-  SELECT publication.archived_at
-  INTO v_archived_at
+  SELECT publication.archived_at, publication.version_counter + 1
+  INTO v_archived_at, v_next_version
   FROM public.content_publications publication
   WHERE publication.id = p_publication_id
   FOR UPDATE;
@@ -753,12 +977,6 @@ BEGIN
         USING ERRCODE = '23514';
     END IF;
   END IF;
-
-  PERFORM set_config('bodyflow.content_publication_write', 'allocate', true);
-  UPDATE public.content_publications
-  SET version_counter = version_counter + 1
-  WHERE id = p_publication_id
-  RETURNING version_counter INTO v_next_version;
 
   IF p_source_version_id IS NULL THEN
     INSERT INTO public.content_versions (
@@ -1174,7 +1392,6 @@ BEGIN
     RAISE EXCEPTION 'content cover is not uploaded' USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('bodyflow.content_version_lifecycle_write', 'on', true);
   UPDATE public.content_versions
   SET state = 'in_review',
       submitted_at = v_now
@@ -1280,7 +1497,6 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('bodyflow.content_version_lifecycle_write', 'on', true);
   UPDATE public.content_versions
   SET state = v_next_state,
       reviewed_by = p_actor_id,
@@ -1384,7 +1600,6 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('bodyflow.content_version_lifecycle_write', 'on', true);
   UPDATE public.content_versions
   SET published_by = p_actor_id,
       published_at = v_now,
@@ -1468,7 +1683,6 @@ BEGIN
     );
   END IF;
 
-  PERFORM set_config('bodyflow.content_publication_write', 'archive', true);
   UPDATE public.content_publications
   SET archived_by = p_actor_id,
       archived_at = v_now
@@ -1586,6 +1800,7 @@ AS $$
 DECLARE
   v_asset public.content_assets%ROWTYPE;
   v_now timestamptz := clock_timestamp();
+  v_object_etag text;
 BEGIN
   IF p_actor_id IS NULL OR NOT EXISTS (
     SELECT 1
@@ -1625,8 +1840,8 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
+  SELECT object.metadata->>'eTag'
+  INTO v_object_etag
     FROM storage.objects object
     WHERE object.bucket_id = v_asset.bucket_id
       AND object.name = v_asset.object_path
@@ -1636,15 +1851,21 @@ BEGIN
           THEN (object.metadata->>'size')::bigint
         ELSE NULL
       END = p_actual_size_bytes
-  ) THEN
+      AND char_length(btrim(object.metadata->>'eTag')) BETWEEN 1 AND 512
+  FOR SHARE;
+
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'matching content cover object was not found in Storage'
       USING ERRCODE = '23514';
   END IF;
+  IF btrim(p_etag) IS DISTINCT FROM btrim(v_object_etag) THEN
+    RAISE EXCEPTION 'content cover ETag does not match Storage metadata'
+      USING ERRCODE = '23514';
+  END IF;
 
-  PERFORM set_config('bodyflow.content_asset_write', 'on', true);
   UPDATE public.content_assets
   SET actual_size_bytes = p_actual_size_bytes,
-      etag = btrim(p_etag),
+      etag = btrim(v_object_etag),
       status = 'uploaded',
       uploaded_at = v_now
   WHERE id = p_asset_id
@@ -1724,7 +1945,6 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('bodyflow.content_asset_write', 'on', true);
   UPDATE public.content_assets
   SET status = 'deleted',
       deleted_at = v_now

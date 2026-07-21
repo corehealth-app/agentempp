@@ -1,4 +1,5 @@
 export * from './calc-config.js'
+export * from './coach-messages.js'
 export * from './daily-state.js'
 export * from './engine/aggregates.js'
 export * from './engine/balance.js'

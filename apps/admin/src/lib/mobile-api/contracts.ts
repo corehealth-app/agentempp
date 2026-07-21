@@ -1,3 +1,4 @@
+import { selectableCoachPersonalitySchema } from '@mpp/core'
 import { z } from 'zod'
 
 const localeSchema = z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/)
@@ -100,9 +101,7 @@ export const historyQuerySchema = z
 
 export const resourceIdSchema = z.string().uuid()
 
-export const personaInputSchema = z
-  .object({ persona: z.enum(['focus', 'impulse', 'zen']) })
-  .strict()
+export const personaInputSchema = z.object({ persona: selectableCoachPersonalitySchema }).strict()
 
 const patientImageMimeSchema = z.enum([
   'image/jpeg',

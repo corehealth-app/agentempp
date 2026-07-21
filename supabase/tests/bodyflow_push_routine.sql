@@ -35,9 +35,15 @@ DECLARE
   v_page_rule_id_b uuid;
   v_page_cursor_rule_id uuid;
   v_page_cursor_scheduled_for timestamptz;
+  v_no_device_rule_id uuid;
+  v_no_device_claim jsonb;
   v_event_first jsonb;
   v_event_retry jsonb;
   v_event_id uuid;
+  v_delivery_usage_id uuid;
+  v_delivery_version_id uuid;
+  v_delivery_personality text;
+  v_delivery_locale text;
   v_delivery_count integer;
   v_water_ml integer;
   v_status text;
@@ -332,6 +338,35 @@ BEGIN
         AND user_id = v_history_user_id
     ) THEN
     RAISE EXCEPTION 'device reassignment rewrote or detached historical delivery ownership';
+  END IF;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    category,
+    local_time,
+    weekdays
+  ) VALUES (
+    v_history_user_id,
+    'workout',
+    time '13:30',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]
+  ) RETURNING id INTO v_no_device_rule_id;
+
+  v_no_device_claim := public.claim_reminder_event(
+    v_no_device_rule_id,
+    timestamptz '2026-07-20 16:30:00+00',
+    timestamptz '2026-07-20 16:30:00+00'
+  );
+
+  IF v_no_device_claim->>'status' <> 'suppressed'
+    OR v_no_device_claim->>'suppression_reason' <> 'no_active_device'
+    OR EXISTS (
+      SELECT 1
+      FROM public.coach_message_usage
+      WHERE user_id = v_history_user_id
+    ) THEN
+    RAISE EXCEPTION 'no-device reminder claimed catalog copy or queued a delivery: %',
+      v_no_device_claim;
   END IF;
 
   v_hydration_first := public.record_hydration_atomic(
@@ -744,11 +779,57 @@ BEGIN
   FROM public.notification_deliveries
   WHERE reminder_event_id = (v_event_first ->> 'event_id')::uuid;
 
+  SELECT
+    delivery.coach_message_usage_id,
+    delivery.coach_template_version_id,
+    delivery.personality,
+    delivery.locale
+  INTO
+    v_delivery_usage_id,
+    v_delivery_version_id,
+    v_delivery_personality,
+    v_delivery_locale
+  FROM public.notification_deliveries delivery
+  WHERE delivery.reminder_event_id = (v_event_first ->> 'event_id')::uuid
+  ORDER BY delivery.id
+  LIMIT 1;
+
   IF v_event_first ->> 'status' <> 'queued'
     OR v_event_retry ->> 'status' <> 'queued'
     OR (v_event_retry ->> 'existing')::boolean IS NOT TRUE
-    OR v_delivery_count <> 2 THEN
-    RAISE EXCEPTION 'queued reminder was not retry-safe per device: first %, retry %, deliveries %',
+    OR v_delivery_count <> 2
+    OR v_delivery_usage_id IS NULL
+    OR v_delivery_version_id IS NULL
+    OR v_delivery_personality = 'default'
+    OR v_delivery_locale <> 'pt-BR'
+    OR EXISTS (
+      SELECT 1
+      FROM public.notification_deliveries delivery
+      WHERE delivery.reminder_event_id = (v_event_first ->> 'event_id')::uuid
+        AND (
+          delivery.coach_message_usage_id IS DISTINCT FROM v_delivery_usage_id
+          OR delivery.coach_template_version_id IS DISTINCT FROM v_delivery_version_id
+          OR delivery.personality IS DISTINCT FROM v_delivery_personality
+          OR delivery.locale IS DISTINCT FROM v_delivery_locale
+        )
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.coach_message_usage usage
+      JOIN public.coach_message_templates template ON template.id = usage.template_id
+      JOIN public.notification_deliveries delivery
+        ON delivery.reminder_event_id = (v_event_first ->> 'event_id')::uuid
+        AND delivery.coach_message_usage_id = usage.id
+        AND delivery.coach_template_version_id = usage.template_version_id
+        AND delivery.template_key = template.template_key
+      WHERE usage.id = v_delivery_usage_id
+        AND usage.user_id = v_user_id
+        AND usage.outcome = 'selected'
+        AND usage.channel = 'push'
+        AND usage.effective_personality = v_delivery_personality
+        AND usage.locale = v_delivery_locale
+    ) THEN
+    RAISE EXCEPTION 'queued reminder did not share one immutable catalog claim across devices: first %, retry %, deliveries %',
       v_event_first, v_event_retry, v_delivery_count;
   END IF;
 

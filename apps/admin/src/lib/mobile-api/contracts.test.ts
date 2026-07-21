@@ -11,6 +11,7 @@ import {
   onboardingInputSchema,
   patchMeInputSchema,
   patchReminderInputSchema,
+  personaInputSchema,
   registrationProposalInputSchema,
 } from './contracts'
 
@@ -61,6 +62,12 @@ describe('mobile API v1 contracts', () => {
     expect(idempotencyKeySchema.parse('mobile-018f2c34-abcdef')).toBe('mobile-018f2c34-abcdef')
     expect(() => idempotencyKeySchema.parse('short')).toThrow()
     expect(() => idempotencyKeySchema.parse('line\nbreak-123')).toThrow()
+  })
+
+  it('accepts only public coach personalities', () => {
+    expect(personaInputSchema.parse({ persona: 'focus' })).toEqual({ persona: 'focus' })
+    expect(() => personaInputSchema.parse({ persona: 'balanced' })).toThrow()
+    expect(() => personaInputSchema.parse({ persona: 'zen', user_id: 'forbidden' })).toThrow()
   })
 
   it('bounds mobile history pagination', () => {

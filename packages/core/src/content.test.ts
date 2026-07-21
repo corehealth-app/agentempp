@@ -244,6 +244,10 @@ describe('validateContentMarkdown', () => {
     expect(() => validateContentMarkdown(`3. Terceiro item\n\n${LONG_BODY}`)).toThrow()
   })
 
+  it('rejects titled HTTPS links because link titles are not portable', () => {
+    expect(() => validateContentMarkdown(`[source](https://bodyflow.app "Official site")\n\n${LONG_BODY}`)).toThrow()
+  })
+
   it('rejects more than eight nested inline nodes', () => {
     const nestedInlineMarkdown = `${'**'.repeat(9)}texto${'**'.repeat(9)}\n\n${LONG_BODY}`
 

@@ -214,6 +214,7 @@ function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline
       if (typeof node.url !== 'string' || !isHttpsUrl(node.url)) {
         invalidMarkdown('links must use an absolute HTTPS URL')
       }
+      if (node.title !== null) invalidMarkdown('links must not have titles')
       if (depth > MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
       return {
         type: 'link',

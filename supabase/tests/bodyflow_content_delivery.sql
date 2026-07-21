@@ -25,6 +25,7 @@ DO $test$
 DECLARE
   v_function text;
   v_definition text;
+  v_failures text[] := '{}'::text[];
 BEGIN
   FOREACH v_function IN ARRAY ARRAY[
     'public.list_mobile_content(uuid,text,text,integer,timestamp with time zone,uuid,timestamp with time zone)',
@@ -150,6 +151,44 @@ BEGIN
     RAISE EXCEPTION 'content delivery defaults do not match the approved signatures';
   END IF;
 
+  IF (
+    SELECT proargnames
+    FROM pg_proc
+    WHERE oid = to_regprocedure(
+      'public.list_mobile_content(uuid,text,text,integer,timestamp with time zone,uuid,timestamp with time zone)'
+    )
+  ) <> ARRAY[
+    'p_user_id', 'p_surface', 'p_category', 'p_limit',
+    'p_cursor_publish_at', 'p_cursor_publication_id', 'p_now'
+  ] OR (
+    SELECT proargnames
+    FROM pg_proc
+    WHERE oid = to_regprocedure(
+      'public.get_mobile_content(uuid,uuid,timestamp with time zone)'
+    )
+  ) <> ARRAY['p_user_id', 'p_publication_id', 'p_now']
+  OR (
+    SELECT proargnames
+    FROM pg_proc
+    WHERE oid = to_regprocedure(
+      'public.record_mobile_content_event(uuid,uuid,integer,text,text,text,timestamp with time zone)'
+    )
+  ) <> ARRAY[
+    'p_user_id', 'p_publication_id', 'p_version', 'p_event_type',
+    'p_origin', 'p_event_key', 'p_now'
+  ] OR (
+    SELECT proargnames
+    FROM pg_proc
+    WHERE oid = to_regprocedure(
+      'public.set_mobile_content_saved(uuid,uuid,integer,boolean,text,text,timestamp with time zone)'
+    )
+  ) <> ARRAY[
+    'p_user_id', 'p_publication_id', 'p_version', 'p_saved',
+    'p_origin', 'p_event_key', 'p_now'
+  ] THEN
+    RAISE EXCEPTION 'content RPCs accepted client targeting input or changed p_now placement';
+  END IF;
+
   IF to_regclass('public.subscriptions_content_delivery_idx') IS NULL THEN
     RAISE EXCEPTION 'missing deterministic subscription lookup index';
   END IF;
@@ -167,7 +206,141 @@ BEGIN
       RAISE EXCEPTION 'content mutation does not hash trimmed event keys with extensions.digest: %',
         v_function;
     END IF;
+
+    IF position('PG_ADVISORY_XACT_LOCK' IN v_definition) = 0
+      OR position('FROM PUBLIC.CONTENT_VERSIONS CONTENT_VERSION' IN v_definition) = 0
+      OR position('FOR KEY SHARE OF CONTENT_VERSION' IN v_definition) = 0
+      OR position('FROM PUBLIC.CONTENT_PUBLICATIONS PUBLICATION' IN v_definition) = 0
+      OR position('FOR UPDATE' IN v_definition) = 0
+      OR position('WITH PATIENT AS' IN v_definition) = 0
+      OR position('PG_ADVISORY_XACT_LOCK' IN v_definition)
+        >= position('FROM PUBLIC.CONTENT_VERSIONS CONTENT_VERSION' IN v_definition)
+      OR position('FROM PUBLIC.CONTENT_VERSIONS CONTENT_VERSION' IN v_definition)
+        >= position('FOR KEY SHARE OF CONTENT_VERSION' IN v_definition)
+      OR position('FOR KEY SHARE OF CONTENT_VERSION' IN v_definition)
+        >= position('FROM PUBLIC.CONTENT_PUBLICATIONS PUBLICATION' IN v_definition)
+      OR position('FROM PUBLIC.CONTENT_PUBLICATIONS PUBLICATION' IN v_definition)
+        >= position('FOR UPDATE' IN v_definition)
+      OR position('FOR UPDATE' IN v_definition) >= position('WITH PATIENT AS' IN v_definition) THEN
+      v_failures := array_append(
+        v_failures,
+        'missing advisory/version-key-share/publication-update/eligibility lock order: ' || v_function
+      );
+    END IF;
+
+    IF v_definition ~ 'CONTENT_VERSIONS[^;]+FOR UPDATE' THEN
+      v_failures := array_append(v_failures, 'Task 3 must not row-lock versions: ' || v_function);
+    END IF;
   END LOOP;
+
+  IF to_regclass('private.content_mutation_receipts') IS NULL THEN
+    v_failures := array_append(v_failures, 'missing private.content_mutation_receipts');
+  ELSE
+    IF (
+      SELECT array_agg(attribute.attname ORDER BY attribute.attnum)
+      FROM pg_attribute attribute
+      WHERE attribute.attrelid = 'private.content_mutation_receipts'::regclass
+        AND attribute.attnum > 0
+        AND NOT attribute.attisdropped
+    ) <> ARRAY[
+      'user_id',
+      'event_key_hash',
+      'operation',
+      'publication_id',
+      'content_version',
+      'event_type',
+      'desired_saved',
+      'origin',
+      'response',
+      'created_at'
+    ]::name[] THEN
+      RAISE EXCEPTION 'private receipt columns exceed the approved technical data model';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint constraint_definition
+      WHERE constraint_definition.conrelid = 'private.content_mutation_receipts'::regclass
+        AND constraint_definition.contype = 'p'
+        AND pg_get_constraintdef(constraint_definition.oid)
+          = 'PRIMARY KEY (user_id, event_key_hash)'
+    ) OR NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint constraint_definition
+      WHERE constraint_definition.conrelid = 'private.content_mutation_receipts'::regclass
+        AND constraint_definition.contype = 'c'
+        AND pg_get_constraintdef(constraint_definition.oid) LIKE '%octet_length((response)::text) <= 2048%'
+    ) THEN
+      RAISE EXCEPTION 'private receipt key or bounded-response constraint is missing';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_class relation
+      WHERE relation.oid = 'private.content_mutation_receipts'::regclass
+        AND relation.relrowsecurity
+        AND relation.relforcerowsecurity
+    ) OR EXISTS (
+      SELECT 1
+      FROM pg_policies policy
+      WHERE policy.schemaname = 'private'
+        AND policy.tablename = 'content_mutation_receipts'
+    ) THEN
+      RAISE EXCEPTION 'private receipt RLS must be enabled and forced without client policies';
+    END IF;
+
+    IF has_table_privilege('anon', 'private.content_mutation_receipts', 'SELECT,INSERT,UPDATE,DELETE')
+      OR has_table_privilege('authenticated', 'private.content_mutation_receipts', 'SELECT,INSERT,UPDATE,DELETE')
+      OR NOT has_table_privilege('service_role', 'private.content_mutation_receipts', 'SELECT,INSERT,UPDATE')
+      OR has_table_privilege('service_role', 'private.content_mutation_receipts', 'DELETE,TRUNCATE,REFERENCES,TRIGGER') THEN
+      RAISE EXCEPTION 'private receipt table privileges are not least-privilege service-only';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM pg_class relation
+      CROSS JOIN LATERAL aclexplode(relation.relacl) privilege
+      WHERE relation.oid = 'private.content_mutation_receipts'::regclass
+        AND privilege.grantee <> relation.relowner
+        AND (
+          privilege.grantee <> (SELECT oid FROM pg_roles WHERE rolname = 'service_role')
+          OR privilege.privilege_type NOT IN ('SELECT', 'INSERT', 'UPDATE')
+        )
+    ) OR (
+      SELECT count(*)
+      FROM pg_class relation
+      CROSS JOIN LATERAL aclexplode(relation.relacl) privilege
+      WHERE relation.oid = 'private.content_mutation_receipts'::regclass
+        AND privilege.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'service_role')
+        AND privilege.privilege_type IN ('SELECT', 'INSERT', 'UPDATE')
+    ) <> 3 THEN
+      RAISE EXCEPTION 'private receipt ACL has unexpected grantees or privileges';
+    END IF;
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_class relation
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND relation.relkind = 'r'
+      AND relation.relname IN (
+        'content_publications',
+        'content_assets',
+        'content_versions',
+        'content_version_target_protocols',
+        'content_version_target_plans',
+        'content_version_target_personalities',
+        'content_user_state',
+        'content_events'
+      )
+  ) <> 8 OR to_regclass('public.content_mutation_receipts') IS NOT NULL THEN
+    RAISE EXCEPTION 'CMS must retain exactly eight public tables and no public receipt table';
+  END IF;
+
+  IF cardinality(v_failures) > 0 THEN
+    RAISE EXCEPTION 'Task 3 review RED: %', array_to_string(v_failures, '; ');
+  END IF;
 END;
 $test$;
 
@@ -426,6 +599,8 @@ DECLARE
   v_list jsonb;
   v_detail jsonb;
   v_replay jsonb;
+  v_first_response jsonb;
+  v_noop_response jsonb;
   v_publication_id uuid;
   v_version_id uuid;
   v_version integer;
@@ -448,6 +623,10 @@ DECLARE
   v_replacement_future_version integer;
   v_due_publication_id uuid;
   v_due_version integer;
+  v_target_guard_publication_id uuid;
+  v_target_guard_version_id uuid;
+  v_target_guard_old_version integer;
+  v_target_guard_new_version integer;
   v_cover_publication_id uuid;
   v_duplicate_annual_id uuid;
   v_duplicate_monthly_id uuid;
@@ -466,9 +645,12 @@ DECLARE
   v_expected_cursor_ids uuid[];
   v_event_count integer;
   v_saved_event_count integer;
+  v_receipt_count integer;
   v_hash text;
-  v_changed_semantics_rejected boolean := false;
-  v_changed_save_semantics_rejected boolean := false;
+  v_legacy_hash text;
+  v_collision_rejected boolean := false;
+  v_target_event_rejected boolean := false;
+  v_target_save_rejected boolean := false;
   v_stale_rejected boolean := false;
   v_non_visible_rejected boolean := false;
   v_malformed_cursor_rejected boolean := false;
@@ -661,6 +843,30 @@ BEGIN
   );
   v_due_version := (v_result->>'version')::integer;
 
+  v_result := public.create_content_publication(v_editor_id, 'task3-newest-targeting-guard');
+  v_target_guard_publication_id := (v_result->>'publication_id')::uuid;
+  v_result := pg_temp.task3_publish_version(
+    v_target_guard_publication_id,
+    'pt-BR',
+    'neuroscience',
+    false
+  );
+  v_target_guard_version_id := (v_result->>'versionId')::uuid;
+  v_target_guard_old_version := (v_result->>'version')::integer;
+  v_result := pg_temp.task3_publish_version(
+    v_target_guard_publication_id,
+    'pt-BR',
+    'neuroscience',
+    false,
+    ARRAY['ganho_massa'],
+    '{}'::text[],
+    '{}'::text[],
+    NULL,
+    NULL,
+    v_target_guard_version_id
+  );
+  v_target_guard_new_version := (v_result->>'version')::integer;
+
   v_result := pg_temp.task3_publish_publication(
     'task3-cover',
     'pt-BR',
@@ -817,6 +1023,55 @@ BEGIN
   END IF;
 
   v_list := public.list_mobile_content(
+    v_user_id, 'library', 'neuroscience', 10, NULL, NULL, v_effective_now
+  );
+  IF v_target_guard_new_version <= v_target_guard_old_version
+    OR v_list->'items' @> jsonb_build_array(
+      jsonb_build_object('publicationId', v_target_guard_publication_id)
+    )
+    OR public.get_mobile_content(
+      v_user_id, v_target_guard_publication_id, v_effective_now
+    ) IS NOT NULL THEN
+    RAISE EXCEPTION 'newest due ineligible version fell back to an older universal version';
+  END IF;
+
+  BEGIN
+    PERFORM public.record_mobile_content_event(
+      v_user_id,
+      v_target_guard_publication_id,
+      v_target_guard_old_version,
+      'opened',
+      'library',
+      'task3-target-guard-event-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM = 'content_not_visible' THEN
+        v_target_event_rejected := true;
+      END IF;
+  END;
+  BEGIN
+    PERFORM public.set_mobile_content_saved(
+      v_user_id,
+      v_target_guard_publication_id,
+      v_target_guard_old_version,
+      true,
+      'library',
+      'task3-target-guard-save-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM = 'content_not_visible' THEN
+        v_target_save_rejected := true;
+      END IF;
+  END;
+  IF NOT v_target_event_rejected OR NOT v_target_save_rejected THEN
+    RAISE EXCEPTION 'mutation eligibility fell back to an older universal version';
+  END IF;
+
+  v_list := public.list_mobile_content(
     v_user_id, 'library', 'hydration', 10, NULL, NULL, v_effective_now
   );
   v_detail := v_list#>'{items,0}';
@@ -833,6 +1088,28 @@ BEGIN
     OR v_list::text LIKE '%eligible-task3@example.invalid%'
     OR v_list::text LIKE '%task3-secret-marker%' THEN
     RAISE EXCEPTION 'trusted cover DTO or PII/path leakage contract failed: %', v_detail;
+  END IF;
+
+  v_detail := public.get_mobile_content(v_user_id, v_cover_publication_id, v_effective_now);
+  IF (v_detail->>'publicationId')::uuid <> v_cover_publication_id
+    OR jsonb_typeof(v_detail->'cover') <> 'object'
+    OR v_detail->'cover' <> jsonb_build_object(
+      'bucketId', 'content-covers',
+      'objectPath', 'content/' || v_asset_id::text || '.jpg'
+    )
+    OR (SELECT count(*) FROM jsonb_object_keys(v_detail->'cover')) <> 2
+    OR v_detail ?| ARRAY[
+      'userId', 'email', 'name', 'wpp', 'token', 'accessToken', 'signedUrl',
+      'eventKey', 'eventKeyHash', 'coverAssetId', 'bucketId', 'objectPath', 'bodyHash'
+    ]
+    OR v_detail::text LIKE '%Task 3 Eligible PII Marker%'
+    OR v_detail::text LIKE '%eligible-task3@example.invalid%'
+    OR v_detail::text LIKE '%task3-secret-marker%'
+    OR v_detail::text LIKE '%signedUrl%'
+    OR v_detail::text LIKE '%eventKey%'
+    OR v_detail::text LIKE '%eventKeyHash%'
+    OR v_detail::text ~ '[0-9a-f]{64}' THEN
+    RAISE EXCEPTION 'detail DTO leaked forbidden data or malformed its cover: %', v_detail;
   END IF;
 
   SELECT array_agg(publication_id ORDER BY publication_id DESC)
@@ -935,6 +1212,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'trimmed SHA-256 event hash or impression-only state behavior failed';
   END IF;
+  v_first_response := v_result;
 
   v_replay := public.record_mobile_content_event(
     v_user_id,
@@ -950,10 +1228,27 @@ BEGIN
   FROM public.content_events event
   WHERE event.user_id = v_user_id
     AND event.event_key_hash = v_hash;
-  IF NOT (v_replay->>'replayed')::boolean OR v_event_count <> 1 THEN
-    RAISE EXCEPTION 'same-semantic event retry was not idempotent';
+  IF v_replay <> v_first_response
+    OR v_event_count <> 1
+    OR v_replay::text LIKE '%' || v_hash || '%'
+    OR v_replay::text LIKE '%task3-impression-key%'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.content_mutation_receipts receipt
+      WHERE receipt.user_id = v_user_id
+        AND receipt.event_key_hash = v_hash
+        AND receipt.operation = 'record_event'
+        AND receipt.publication_id = v_state_publication_id
+        AND receipt.content_version = v_state_version
+        AND receipt.event_type = 'impression'
+        AND receipt.desired_saved IS NULL
+        AND receipt.origin = 'library'
+        AND receipt.response = v_first_response
+    ) THEN
+    RAISE EXCEPTION 'same-semantic event retry did not return the exact prior response';
   END IF;
 
+  v_collision_rejected := false;
   BEGIN
     PERFORM public.record_mobile_content_event(
       v_user_id,
@@ -967,11 +1262,161 @@ BEGIN
   EXCEPTION
     WHEN invalid_parameter_value THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
-        v_changed_semantics_rejected := true;
+        v_collision_rejected := true;
       END IF;
   END;
-  IF NOT v_changed_semantics_rejected THEN
-    RAISE EXCEPTION 'event key replay with changed semantics was not rejected stably';
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'event key origin collision was not rejected stably';
+  END IF;
+
+  v_collision_rejected := false;
+  BEGIN
+    PERFORM public.record_mobile_content_event(
+      v_user_id,
+      v_universal_publication_id,
+      1,
+      'impression',
+      'library',
+      'task3-impression-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN invalid_parameter_value THEN
+      IF SQLERRM = 'content_event_key_conflict' THEN
+        v_collision_rejected := true;
+      END IF;
+  END;
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'event key publication collision was not rejected stably';
+  END IF;
+
+  v_collision_rejected := false;
+  BEGIN
+    PERFORM public.record_mobile_content_event(
+      v_user_id,
+      v_state_publication_id,
+      v_state_version + 1,
+      'impression',
+      'library',
+      'task3-impression-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN invalid_parameter_value THEN
+      IF SQLERRM = 'content_event_key_conflict' THEN
+        v_collision_rejected := true;
+      END IF;
+  END;
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'event key visible-version collision was not rejected stably';
+  END IF;
+
+  v_collision_rejected := false;
+  BEGIN
+    PERFORM public.record_mobile_content_event(
+      v_user_id,
+      v_state_publication_id,
+      v_state_version,
+      'opened',
+      'library',
+      'task3-impression-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN invalid_parameter_value THEN
+      IF SQLERRM = 'content_event_key_conflict' THEN
+        v_collision_rejected := true;
+      END IF;
+  END;
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'event key event-type collision was not rejected stably';
+  END IF;
+
+  v_collision_rejected := false;
+  BEGIN
+    PERFORM public.set_mobile_content_saved(
+      v_user_id,
+      v_state_publication_id,
+      v_state_version,
+      false,
+      'library',
+      'task3-impression-key',
+      v_effective_now
+    );
+  EXCEPTION
+    WHEN invalid_parameter_value THEN
+      IF SQLERRM = 'content_event_key_conflict' THEN
+        v_collision_rejected := true;
+      END IF;
+  END;
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'event key cross-RPC collision was not rejected stably';
+  END IF;
+
+  SELECT count(*)
+  INTO v_event_count
+  FROM public.content_events event
+  WHERE event.user_id = v_user_id
+    AND event.event_key_hash = v_hash;
+  IF v_event_count <> 1 THEN
+    RAISE EXCEPTION 'event collision matrix changed the exact metric count';
+  END IF;
+
+  v_legacy_hash := encode(
+    extensions.digest(convert_to('task3-legacy-event-key', 'UTF8'), 'sha256'),
+    'hex'
+  );
+  INSERT INTO public.content_events (
+    user_id,
+    publication_id,
+    content_version_id,
+    event_type,
+    origin,
+    event_key_hash,
+    occurred_at
+  ) VALUES (
+    v_user_id,
+    v_state_publication_id,
+    v_state_version_id,
+    'impression',
+    'push',
+    v_legacy_hash,
+    v_effective_now
+  );
+  v_first_response := public.record_mobile_content_event(
+    v_user_id,
+    v_state_publication_id,
+    v_state_version,
+    'impression',
+    'push',
+    'task3-legacy-event-key',
+    v_effective_now
+  );
+  v_replay := public.record_mobile_content_event(
+    v_user_id,
+    v_state_publication_id,
+    v_state_version,
+    'impression',
+    'push',
+    'task3-legacy-event-key',
+    v_effective_now + interval '1 second'
+  );
+  SELECT count(*)
+  INTO v_event_count
+  FROM public.content_events event
+  WHERE event.user_id = v_user_id
+    AND event.event_key_hash = v_legacy_hash;
+  IF v_event_count <> 1
+    OR NOT (v_first_response->>'replayed')::boolean
+    OR v_replay <> v_first_response
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.content_mutation_receipts receipt
+      WHERE receipt.user_id = v_user_id
+        AND receipt.event_key_hash = v_legacy_hash
+        AND receipt.response = v_first_response
+    ) THEN
+    RAISE EXCEPTION 'existing metric event hash was not defensively adopted into receipts';
   END IF;
 
   PERFORM public.record_mobile_content_event(
@@ -1029,6 +1474,11 @@ BEGIN
     OR v_result ?| ARRAY['eventKey', 'eventKeyHash', 'rawKey', 'hash'] THEN
     RAISE EXCEPTION 'save state transition response failed: %', v_result;
   END IF;
+  v_first_response := v_result;
+  v_hash := encode(
+    extensions.digest(convert_to('task3-saved-key', 'UTF8'), 'sha256'),
+    'hex'
+  );
 
   v_replay := public.set_mobile_content_saved(
     v_user_id,
@@ -1037,13 +1487,28 @@ BEGIN
     true,
     'library',
     'task3-saved-key',
-    v_effective_now + interval '3 seconds'
+    v_effective_now + interval '30 seconds'
   );
-  IF NOT (v_replay->>'replayed')::boolean
-    OR NOT (v_replay->>'saved')::boolean THEN
-    RAISE EXCEPTION 'save event retry was not idempotent';
+  IF v_replay <> v_first_response
+    OR v_replay::text LIKE '%' || v_hash || '%'
+    OR v_replay::text LIKE '%task3-saved-key%'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.content_mutation_receipts receipt
+      WHERE receipt.user_id = v_user_id
+        AND receipt.event_key_hash = v_hash
+        AND receipt.operation = 'set_saved'
+        AND receipt.publication_id = v_state_publication_id
+        AND receipt.content_version = v_state_version
+        AND receipt.event_type IS NULL
+        AND receipt.desired_saved
+        AND receipt.origin = 'library'
+        AND receipt.response = v_first_response
+    ) THEN
+    RAISE EXCEPTION 'save event retry did not return the exact prior response';
   END IF;
 
+  v_collision_rejected := false;
   BEGIN
     PERFORM public.set_mobile_content_saved(
       v_user_id,
@@ -1052,16 +1517,24 @@ BEGIN
       false,
       'library',
       'task3-saved-key',
-      v_effective_now + interval '3 seconds'
+      v_effective_now + interval '31 seconds'
     );
   EXCEPTION
     WHEN invalid_parameter_value THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
-        v_changed_save_semantics_rejected := true;
+        v_collision_rejected := true;
       END IF;
   END;
-  IF NOT v_changed_save_semantics_rejected THEN
-    RAISE EXCEPTION 'save key replay with changed semantics was not rejected stably';
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'save key desired-state collision was not rejected stably';
+  END IF;
+  SELECT count(*)
+  INTO v_event_count
+  FROM public.content_events event
+  WHERE event.user_id = v_user_id
+    AND event.event_key_hash = v_hash;
+  IF v_event_count <> 1 THEN
+    RAISE EXCEPTION 'save collision matrix changed the exact metric count';
   END IF;
 
   v_result := public.set_mobile_content_saved(
@@ -1083,6 +1556,65 @@ BEGIN
     OR NOT (v_result->>'saved')::boolean
     OR v_saved_event_count <> 1 THEN
     RAISE EXCEPTION 'same saved final state was not a no-op';
+  END IF;
+  v_noop_response := v_result;
+  v_hash := encode(
+    extensions.digest(convert_to('task3-save-noop-key', 'UTF8'), 'sha256'),
+    'hex'
+  );
+  v_replay := public.set_mobile_content_saved(
+    v_user_id,
+    v_state_publication_id,
+    v_state_version,
+    true,
+    'today',
+    'task3-save-noop-key',
+    v_effective_now + interval '40 seconds'
+  );
+  SELECT count(*)
+  INTO v_event_count
+  FROM public.content_events event
+  WHERE event.user_id = v_user_id
+    AND event.event_key_hash = v_hash;
+  SELECT count(*)
+  INTO v_receipt_count
+  FROM private.content_mutation_receipts receipt
+  WHERE receipt.user_id = v_user_id
+    AND receipt.event_key_hash = v_hash
+    AND receipt.operation = 'set_saved'
+    AND receipt.publication_id = v_state_publication_id
+    AND receipt.content_version = v_state_version
+    AND receipt.event_type IS NULL
+    AND receipt.desired_saved
+    AND receipt.origin = 'today'
+    AND receipt.response = v_noop_response;
+  IF v_replay <> v_noop_response
+    OR v_event_count <> 0
+    OR v_receipt_count <> 1
+    OR v_replay::text LIKE '%' || v_hash || '%'
+    OR v_replay::text LIKE '%task3-save-noop-key%' THEN
+    RAISE EXCEPTION 'no-op save key was not reserved and replayed exactly';
+  END IF;
+
+  v_collision_rejected := false;
+  BEGIN
+    PERFORM public.record_mobile_content_event(
+      v_user_id,
+      v_state_publication_id,
+      v_state_version,
+      'impression',
+      'today',
+      'task3-save-noop-key',
+      v_effective_now + interval '41 seconds'
+    );
+  EXCEPTION
+    WHEN invalid_parameter_value THEN
+      IF SQLERRM = 'content_event_key_conflict' THEN
+        v_collision_rejected := true;
+      END IF;
+  END;
+  IF NOT v_collision_rejected THEN
+    RAISE EXCEPTION 'prior no-op key was reusable with cross-RPC semantics';
   END IF;
 
   v_result := public.set_mobile_content_saved(
@@ -1210,6 +1742,55 @@ BEGIN
       )
   ) THEN
     RAISE EXCEPTION 'rejected or no-op mutation persisted an event';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.content_events event
+    JOIN public.content_versions content_version
+      ON content_version.id = event.content_version_id
+    WHERE event.user_id = v_user_id
+      AND NOT EXISTS (
+        SELECT 1
+        FROM private.content_mutation_receipts receipt
+        WHERE receipt.user_id = event.user_id
+          AND receipt.event_key_hash = event.event_key_hash
+          AND receipt.publication_id = event.publication_id
+          AND receipt.content_version = content_version.version
+          AND receipt.origin = event.origin
+          AND (
+            (
+              receipt.operation = 'record_event'
+              AND receipt.event_type = event.event_type
+              AND receipt.desired_saved IS NULL
+            ) OR (
+              receipt.operation = 'set_saved'
+              AND receipt.event_type IS NULL
+              AND receipt.desired_saved = (event.event_type = 'saved')
+            )
+          )
+      )
+  ) THEN
+    RAISE EXCEPTION 'an actual metric event lacks its exact technical receipt';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.content_mutation_receipts receipt
+    WHERE receipt.user_id = v_user_id
+      AND (
+        receipt.response ?| ARRAY[
+          'userId', 'eventKey', 'eventKeyHash', 'rawKey', 'hash', 'bodyMarkdown',
+          'signedUrl', 'email', 'name', 'wpp', 'token', 'accessToken'
+        ]
+        OR receipt.response::text ~ '[0-9a-f]{64}'
+        OR receipt.response::text LIKE '%task3-%-key%'
+        OR receipt.response::text LIKE '%Task 3 Eligible PII Marker%'
+        OR receipt.response::text LIKE '%eligible-task3@example.invalid%'
+        OR receipt.response::text LIKE '%task3-secret-marker%'
+      )
+  ) THEN
+    RAISE EXCEPTION 'receipt response retained a raw key/hash, body, signed URL, or PII marker';
   END IF;
 
   IF EXISTS (

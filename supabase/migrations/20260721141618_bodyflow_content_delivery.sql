@@ -11,6 +11,56 @@ CREATE INDEX subscriptions_content_delivery_idx
   INCLUDE (plan, status, trial_ends_at)
   WHERE status IN ('active', 'trial');
 
+CREATE TABLE private.content_mutation_receipts (
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  event_key_hash text NOT NULL,
+  operation text NOT NULL,
+  publication_id uuid NOT NULL REFERENCES public.content_publications(id) ON DELETE RESTRICT,
+  content_version integer NOT NULL,
+  event_type text,
+  desired_saved boolean,
+  origin text NOT NULL,
+  response jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (user_id, event_key_hash),
+  CONSTRAINT content_mutation_receipts_key_hash_check CHECK (
+    event_key_hash ~ '^[0-9a-f]{64}$'
+  ),
+  CONSTRAINT content_mutation_receipts_operation_check CHECK (
+    operation IN ('record_event', 'set_saved')
+  ),
+  CONSTRAINT content_mutation_receipts_version_check CHECK (content_version > 0),
+  CONSTRAINT content_mutation_receipts_event_type_check CHECK (
+    event_type IS NULL OR event_type IN ('impression', 'opened', 'completed')
+  ),
+  CONSTRAINT content_mutation_receipts_origin_check CHECK (
+    origin IN ('today', 'library', 'push')
+  ),
+  CONSTRAINT content_mutation_receipts_semantics_check CHECK (
+    (
+      operation = 'record_event'
+      AND event_type IS NOT NULL
+      AND desired_saved IS NULL
+    ) OR (
+      operation = 'set_saved'
+      AND event_type IS NULL
+      AND desired_saved IS NOT NULL
+    )
+  ),
+  CONSTRAINT content_mutation_receipts_response_check CHECK (
+    jsonb_typeof(response) = 'object'
+    AND octet_length(response::text) <= 2048
+  )
+);
+
+ALTER TABLE private.content_mutation_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.content_mutation_receipts FORCE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE private.content_mutation_receipts
+  FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE private.content_mutation_receipts
+  TO service_role;
+
 CREATE OR REPLACE FUNCTION public.list_mobile_content(
   p_user_id uuid,
   p_surface text DEFAULT 'library',
@@ -458,13 +508,18 @@ DECLARE
   v_visible_version integer;
   v_key text;
   v_key_hash text;
+  v_existing_operation text;
   v_existing_publication_id uuid;
   v_existing_version integer;
   v_existing_event_type text;
+  v_existing_desired_saved boolean;
   v_existing_origin text;
-  v_inserted boolean := false;
+  v_existing_response jsonb;
+  v_receipt_inserted boolean := false;
+  v_event_inserted boolean := false;
   v_saved boolean;
   v_completed boolean;
+  v_response jsonb;
 BEGIN
   IF p_user_id IS NULL OR p_publication_id IS NULL THEN
     RAISE EXCEPTION 'invalid_content_identity' USING ERRCODE = '22023';
@@ -494,6 +549,62 @@ BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended(p_user_id::text || ':' || p_publication_id::text, 0)
   );
+
+  PERFORM content_version.id
+  FROM public.content_versions content_version
+  WHERE content_version.publication_id = p_publication_id
+    AND content_version.locale = (
+      SELECT domain_user.locale
+      FROM public.users domain_user
+      WHERE domain_user.id = p_user_id
+        AND domain_user.locale IN ('pt-BR', 'en-US')
+    )
+    AND content_version.state = 'approved'
+    AND content_version.publish_at IS NOT NULL
+    AND content_version.publish_at <= p_now
+  ORDER BY content_version.publish_at DESC, content_version.version DESC
+  LIMIT 1
+  FOR KEY SHARE OF content_version;
+
+  PERFORM 1
+  FROM public.content_publications publication
+  WHERE publication.id = p_publication_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'content_not_visible' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT
+    receipt.operation,
+    receipt.publication_id,
+    receipt.content_version,
+    receipt.event_type,
+    receipt.desired_saved,
+    receipt.origin,
+    receipt.response
+  INTO
+    v_existing_operation,
+    v_existing_publication_id,
+    v_existing_version,
+    v_existing_event_type,
+    v_existing_desired_saved,
+    v_existing_origin,
+    v_existing_response
+  FROM private.content_mutation_receipts receipt
+  WHERE receipt.user_id = p_user_id
+    AND receipt.event_key_hash = v_key_hash;
+
+  IF FOUND THEN
+    IF v_existing_operation IS DISTINCT FROM 'record_event'
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM p_event_type
+      OR v_existing_desired_saved IS NOT NULL
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+    RETURN v_existing_response;
+  END IF;
 
   WITH patient AS (
     SELECT
@@ -614,6 +725,63 @@ BEGIN
     RAISE EXCEPTION 'content_version_changed' USING ERRCODE = '40001';
   END IF;
 
+  INSERT INTO private.content_mutation_receipts (
+    user_id,
+    event_key_hash,
+    operation,
+    publication_id,
+    content_version,
+    event_type,
+    desired_saved,
+    origin,
+    response
+  ) VALUES (
+    p_user_id,
+    v_key_hash,
+    'record_event',
+    p_publication_id,
+    p_version,
+    p_event_type,
+    NULL,
+    p_origin,
+    '{}'::jsonb
+  )
+  ON CONFLICT (user_id, event_key_hash) DO NOTHING
+  RETURNING true INTO v_receipt_inserted;
+
+  IF NOT COALESCE(v_receipt_inserted, false) THEN
+    SELECT
+      receipt.operation,
+      receipt.publication_id,
+      receipt.content_version,
+      receipt.event_type,
+      receipt.desired_saved,
+      receipt.origin,
+      receipt.response
+    INTO
+      v_existing_operation,
+      v_existing_publication_id,
+      v_existing_version,
+      v_existing_event_type,
+      v_existing_desired_saved,
+      v_existing_origin,
+      v_existing_response
+    FROM private.content_mutation_receipts receipt
+    WHERE receipt.user_id = p_user_id
+      AND receipt.event_key_hash = v_key_hash;
+
+    IF NOT FOUND
+      OR v_existing_operation IS DISTINCT FROM 'record_event'
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM p_event_type
+      OR v_existing_desired_saved IS NOT NULL
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+    RETURN v_existing_response;
+  END IF;
+
   SELECT
     event.publication_id,
     content_version.version,
@@ -630,11 +798,11 @@ BEGIN
   WHERE event.user_id = p_user_id
     AND event.event_key_hash = v_key_hash;
 
-  IF v_existing_publication_id IS NOT NULL THEN
-    IF v_existing_publication_id <> p_publication_id
-      OR v_existing_version <> p_version
-      OR v_existing_event_type <> p_event_type
-      OR v_existing_origin <> p_origin THEN
+  IF FOUND THEN
+    IF v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM p_event_type
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
       RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
     END IF;
 
@@ -651,7 +819,7 @@ BEGIN
       ON state.user_id = p_user_id
       AND state.publication_id = p_publication_id;
 
-    RETURN jsonb_build_object(
+    v_response := jsonb_build_object(
       'publicationId', p_publication_id,
       'version', p_version,
       'saved', v_saved,
@@ -659,6 +827,84 @@ BEGIN
       'changed', false,
       'replayed', true
     );
+    UPDATE private.content_mutation_receipts
+    SET response = v_response
+    WHERE user_id = p_user_id
+      AND event_key_hash = v_key_hash;
+    RETURN v_response;
+  END IF;
+
+  INSERT INTO public.content_events (
+    user_id,
+    publication_id,
+    content_version_id,
+    event_type,
+    origin,
+    event_key_hash,
+    occurred_at
+  ) VALUES (
+    p_user_id,
+    p_publication_id,
+    v_version_id,
+    p_event_type,
+    p_origin,
+    v_key_hash,
+    p_now
+  )
+  ON CONFLICT (user_id, event_key_hash) DO NOTHING
+  RETURNING true INTO v_event_inserted;
+
+  IF NOT COALESCE(v_event_inserted, false) THEN
+    SELECT
+      event.publication_id,
+      content_version.version,
+      event.event_type,
+      event.origin
+    INTO
+      v_existing_publication_id,
+      v_existing_version,
+      v_existing_event_type,
+      v_existing_origin
+    FROM public.content_events event
+    JOIN public.content_versions content_version
+      ON content_version.id = event.content_version_id
+    WHERE event.user_id = p_user_id
+      AND event.event_key_hash = v_key_hash;
+
+    IF NOT FOUND
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM p_event_type
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT
+      COALESCE(state.saved_at IS NOT NULL, false),
+      COALESCE(
+        state.completed_at IS NOT NULL
+          AND state.completed_version_id = v_version_id,
+        false
+      )
+    INTO v_saved, v_completed
+    FROM (SELECT 1) singleton
+    LEFT JOIN public.content_user_state state
+      ON state.user_id = p_user_id
+      AND state.publication_id = p_publication_id;
+
+    v_response := jsonb_build_object(
+      'publicationId', p_publication_id,
+      'version', p_version,
+      'saved', v_saved,
+      'completed', v_completed,
+      'changed', false,
+      'replayed', true
+    );
+    UPDATE private.content_mutation_receipts
+    SET response = v_response
+    WHERE user_id = p_user_id
+      AND event_key_hash = v_key_hash;
+    RETURN v_response;
   END IF;
 
   IF p_event_type = 'opened' THEN
@@ -708,52 +954,6 @@ BEGIN
         last_origin = EXCLUDED.last_origin;
   END IF;
 
-  INSERT INTO public.content_events (
-    user_id,
-    publication_id,
-    content_version_id,
-    event_type,
-    origin,
-    event_key_hash,
-    occurred_at
-  ) VALUES (
-    p_user_id,
-    p_publication_id,
-    v_version_id,
-    p_event_type,
-    p_origin,
-    v_key_hash,
-    p_now
-  )
-  ON CONFLICT (user_id, event_key_hash) DO NOTHING
-  RETURNING true INTO v_inserted;
-
-  IF NOT COALESCE(v_inserted, false) THEN
-    SELECT
-      event.publication_id,
-      content_version.version,
-      event.event_type,
-      event.origin
-    INTO
-      v_existing_publication_id,
-      v_existing_version,
-      v_existing_event_type,
-      v_existing_origin
-    FROM public.content_events event
-    JOIN public.content_versions content_version
-      ON content_version.id = event.content_version_id
-    WHERE event.user_id = p_user_id
-      AND event.event_key_hash = v_key_hash;
-
-    IF v_existing_publication_id IS NULL
-      OR v_existing_publication_id <> p_publication_id
-      OR v_existing_version <> p_version
-      OR v_existing_event_type <> p_event_type
-      OR v_existing_origin <> p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
-    END IF;
-  END IF;
-
   SELECT
     COALESCE(state.saved_at IS NOT NULL, false),
     COALESCE(
@@ -767,14 +967,19 @@ BEGIN
     ON state.user_id = p_user_id
     AND state.publication_id = p_publication_id;
 
-  RETURN jsonb_build_object(
+  v_response := jsonb_build_object(
     'publicationId', p_publication_id,
     'version', p_version,
     'saved', v_saved,
     'completed', v_completed,
-    'changed', COALESCE(v_inserted, false),
-    'replayed', NOT COALESCE(v_inserted, false)
+    'changed', true,
+    'replayed', false
   );
+  UPDATE private.content_mutation_receipts
+  SET response = v_response
+  WHERE user_id = p_user_id
+    AND event_key_hash = v_key_hash;
+  RETURN v_response;
 END;
 $$;
 
@@ -798,13 +1003,18 @@ DECLARE
   v_key text;
   v_key_hash text;
   v_event_type text;
+  v_existing_operation text;
   v_existing_publication_id uuid;
   v_existing_version integer;
   v_existing_event_type text;
+  v_existing_desired_saved boolean;
   v_existing_origin text;
-  v_inserted boolean := false;
+  v_existing_response jsonb;
+  v_receipt_inserted boolean := false;
+  v_event_inserted boolean := false;
   v_current_saved boolean := false;
   v_completed boolean := false;
+  v_response jsonb;
 BEGIN
   IF p_user_id IS NULL OR p_publication_id IS NULL THEN
     RAISE EXCEPTION 'invalid_content_identity' USING ERRCODE = '22023';
@@ -832,6 +1042,62 @@ BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended(p_user_id::text || ':' || p_publication_id::text, 0)
   );
+
+  PERFORM content_version.id
+  FROM public.content_versions content_version
+  WHERE content_version.publication_id = p_publication_id
+    AND content_version.locale = (
+      SELECT domain_user.locale
+      FROM public.users domain_user
+      WHERE domain_user.id = p_user_id
+        AND domain_user.locale IN ('pt-BR', 'en-US')
+    )
+    AND content_version.state = 'approved'
+    AND content_version.publish_at IS NOT NULL
+    AND content_version.publish_at <= p_now
+  ORDER BY content_version.publish_at DESC, content_version.version DESC
+  LIMIT 1
+  FOR KEY SHARE OF content_version;
+
+  PERFORM 1
+  FROM public.content_publications publication
+  WHERE publication.id = p_publication_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'content_not_visible' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT
+    receipt.operation,
+    receipt.publication_id,
+    receipt.content_version,
+    receipt.event_type,
+    receipt.desired_saved,
+    receipt.origin,
+    receipt.response
+  INTO
+    v_existing_operation,
+    v_existing_publication_id,
+    v_existing_version,
+    v_existing_event_type,
+    v_existing_desired_saved,
+    v_existing_origin,
+    v_existing_response
+  FROM private.content_mutation_receipts receipt
+  WHERE receipt.user_id = p_user_id
+    AND receipt.event_key_hash = v_key_hash;
+
+  IF FOUND THEN
+    IF v_existing_operation IS DISTINCT FROM 'set_saved'
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS NOT NULL
+      OR v_existing_desired_saved IS DISTINCT FROM p_saved
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+    RETURN v_existing_response;
+  END IF;
 
   WITH patient AS (
     SELECT
@@ -952,6 +1218,63 @@ BEGIN
     RAISE EXCEPTION 'content_version_changed' USING ERRCODE = '40001';
   END IF;
 
+  INSERT INTO private.content_mutation_receipts (
+    user_id,
+    event_key_hash,
+    operation,
+    publication_id,
+    content_version,
+    event_type,
+    desired_saved,
+    origin,
+    response
+  ) VALUES (
+    p_user_id,
+    v_key_hash,
+    'set_saved',
+    p_publication_id,
+    p_version,
+    NULL,
+    p_saved,
+    p_origin,
+    '{}'::jsonb
+  )
+  ON CONFLICT (user_id, event_key_hash) DO NOTHING
+  RETURNING true INTO v_receipt_inserted;
+
+  IF NOT COALESCE(v_receipt_inserted, false) THEN
+    SELECT
+      receipt.operation,
+      receipt.publication_id,
+      receipt.content_version,
+      receipt.event_type,
+      receipt.desired_saved,
+      receipt.origin,
+      receipt.response
+    INTO
+      v_existing_operation,
+      v_existing_publication_id,
+      v_existing_version,
+      v_existing_event_type,
+      v_existing_desired_saved,
+      v_existing_origin,
+      v_existing_response
+    FROM private.content_mutation_receipts receipt
+    WHERE receipt.user_id = p_user_id
+      AND receipt.event_key_hash = v_key_hash;
+
+    IF NOT FOUND
+      OR v_existing_operation IS DISTINCT FROM 'set_saved'
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS NOT NULL
+      OR v_existing_desired_saved IS DISTINCT FROM p_saved
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+    RETURN v_existing_response;
+  END IF;
+
   SELECT
     event.publication_id,
     content_version.version,
@@ -968,11 +1291,11 @@ BEGIN
   WHERE event.user_id = p_user_id
     AND event.event_key_hash = v_key_hash;
 
-  IF v_existing_publication_id IS NOT NULL THEN
-    IF v_existing_publication_id <> p_publication_id
-      OR v_existing_version <> p_version
-      OR v_existing_event_type <> v_event_type
-      OR v_existing_origin <> p_origin THEN
+  IF FOUND THEN
+    IF v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM v_event_type
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
       RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
     END IF;
 
@@ -989,7 +1312,7 @@ BEGIN
       ON state.user_id = p_user_id
       AND state.publication_id = p_publication_id;
 
-    RETURN jsonb_build_object(
+    v_response := jsonb_build_object(
       'publicationId', p_publication_id,
       'version', p_version,
       'saved', v_current_saved,
@@ -997,6 +1320,11 @@ BEGIN
       'changed', false,
       'replayed', true
     );
+    UPDATE private.content_mutation_receipts
+    SET response = v_response
+    WHERE user_id = p_user_id
+      AND event_key_hash = v_key_hash;
+    RETURN v_response;
   END IF;
 
   SELECT COALESCE(state.saved_at IS NOT NULL, false)
@@ -1018,7 +1346,7 @@ BEGIN
       ON state.user_id = p_user_id
       AND state.publication_id = p_publication_id;
 
-    RETURN jsonb_build_object(
+    v_response := jsonb_build_object(
       'publicationId', p_publication_id,
       'version', p_version,
       'saved', p_saved,
@@ -1026,6 +1354,84 @@ BEGIN
       'changed', false,
       'replayed', false
     );
+    UPDATE private.content_mutation_receipts
+    SET response = v_response
+    WHERE user_id = p_user_id
+      AND event_key_hash = v_key_hash;
+    RETURN v_response;
+  END IF;
+
+  INSERT INTO public.content_events (
+    user_id,
+    publication_id,
+    content_version_id,
+    event_type,
+    origin,
+    event_key_hash,
+    occurred_at
+  ) VALUES (
+    p_user_id,
+    p_publication_id,
+    v_version_id,
+    v_event_type,
+    p_origin,
+    v_key_hash,
+    p_now
+  )
+  ON CONFLICT (user_id, event_key_hash) DO NOTHING
+  RETURNING true INTO v_event_inserted;
+
+  IF NOT COALESCE(v_event_inserted, false) THEN
+    SELECT
+      event.publication_id,
+      content_version.version,
+      event.event_type,
+      event.origin
+    INTO
+      v_existing_publication_id,
+      v_existing_version,
+      v_existing_event_type,
+      v_existing_origin
+    FROM public.content_events event
+    JOIN public.content_versions content_version
+      ON content_version.id = event.content_version_id
+    WHERE event.user_id = p_user_id
+      AND event.event_key_hash = v_key_hash;
+
+    IF NOT FOUND
+      OR v_existing_publication_id IS DISTINCT FROM p_publication_id
+      OR v_existing_version IS DISTINCT FROM p_version
+      OR v_existing_event_type IS DISTINCT FROM v_event_type
+      OR v_existing_origin IS DISTINCT FROM p_origin THEN
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT
+      COALESCE(state.saved_at IS NOT NULL, false),
+      COALESCE(
+        state.completed_at IS NOT NULL
+          AND state.completed_version_id = v_version_id,
+        false
+      )
+    INTO v_current_saved, v_completed
+    FROM (SELECT 1) singleton
+    LEFT JOIN public.content_user_state state
+      ON state.user_id = p_user_id
+      AND state.publication_id = p_publication_id;
+
+    v_response := jsonb_build_object(
+      'publicationId', p_publication_id,
+      'version', p_version,
+      'saved', v_current_saved,
+      'completed', v_completed,
+      'changed', false,
+      'replayed', true
+    );
+    UPDATE private.content_mutation_receipts
+    SET response = v_response
+    WHERE user_id = p_user_id
+      AND event_key_hash = v_key_hash;
+    RETURN v_response;
   END IF;
 
   IF p_saved THEN
@@ -1051,52 +1457,6 @@ BEGIN
       AND publication_id = p_publication_id;
   END IF;
 
-  INSERT INTO public.content_events (
-    user_id,
-    publication_id,
-    content_version_id,
-    event_type,
-    origin,
-    event_key_hash,
-    occurred_at
-  ) VALUES (
-    p_user_id,
-    p_publication_id,
-    v_version_id,
-    v_event_type,
-    p_origin,
-    v_key_hash,
-    p_now
-  )
-  ON CONFLICT (user_id, event_key_hash) DO NOTHING
-  RETURNING true INTO v_inserted;
-
-  IF NOT COALESCE(v_inserted, false) THEN
-    SELECT
-      event.publication_id,
-      content_version.version,
-      event.event_type,
-      event.origin
-    INTO
-      v_existing_publication_id,
-      v_existing_version,
-      v_existing_event_type,
-      v_existing_origin
-    FROM public.content_events event
-    JOIN public.content_versions content_version
-      ON content_version.id = event.content_version_id
-    WHERE event.user_id = p_user_id
-      AND event.event_key_hash = v_key_hash;
-
-    IF v_existing_publication_id IS NULL
-      OR v_existing_publication_id <> p_publication_id
-      OR v_existing_version <> p_version
-      OR v_existing_event_type <> v_event_type
-      OR v_existing_origin <> p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
-    END IF;
-  END IF;
-
   SELECT COALESCE(
     state.completed_at IS NOT NULL
       AND state.completed_version_id = v_version_id,
@@ -1108,14 +1468,19 @@ BEGIN
     ON state.user_id = p_user_id
     AND state.publication_id = p_publication_id;
 
-  RETURN jsonb_build_object(
+  v_response := jsonb_build_object(
     'publicationId', p_publication_id,
     'version', p_version,
     'saved', p_saved,
     'completed', v_completed,
-    'changed', COALESCE(v_inserted, false),
-    'replayed', NOT COALESCE(v_inserted, false)
+    'changed', true,
+    'replayed', false
   );
+  UPDATE private.content_mutation_receipts
+  SET response = v_response
+  WHERE user_id = p_user_id
+    AND event_key_hash = v_key_hash;
+  RETURN v_response;
 END;
 $$;
 

@@ -8,6 +8,10 @@ import {
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import {
+  type ContentCoverCapabilityCodec,
+  createDefaultContentCoverCapabilityCodec,
+} from './content-cover-capability'
+import {
   type ContentRepository,
   ContentRepositoryError,
   type ContentServiceDependencies,
@@ -17,7 +21,7 @@ const CONTENT_COVERS_BUCKET = 'content-covers'
 
 const coverReferenceSchema = z
   .object({
-    bucketId: z.string().min(1),
+    bucketId: z.literal(CONTENT_COVERS_BUCKET),
     objectPath: z.string().min(1),
   })
   .strict()
@@ -84,8 +88,6 @@ const userStateSchema = z
     replayed: z.boolean(),
   })
   .strict()
-
-const signedUrlSchema = z.object({ signedUrl: z.string().min(1) }).strict()
 
 type RpcResult = Promise<{
   data: unknown
@@ -196,27 +198,23 @@ function createRepository(supabase: ServiceClient): ContentRepository {
   }
 }
 
-function createCoverGateway(supabase: ServiceClient): ContentServiceDependencies['covers'] {
+function createCoverGateway(
+  injectedCapabilities?: Pick<ContentCoverCapabilityCodec, 'issue'>,
+): ContentServiceDependencies['covers'] {
   return {
-    async sign(bucketId, objectPath, expiresInSeconds) {
-      if (bucketId !== CONTENT_COVERS_BUCKET) {
-        operationFailure('sign_cover', { code: 'invalid_bucket' })
-      }
-
-      const { data, error } = await supabase.storage
-        .from(CONTENT_COVERS_BUCKET)
-        .createSignedUrl(objectPath, expiresInSeconds, { download: false })
-      if (error) operationFailure('sign_cover', { code: 'storage_error' })
-      return parseResult(signedUrlSchema, data, 'parse_signed_cover').signedUrl
+    async issue(input) {
+      const capabilities = injectedCapabilities ?? createDefaultContentCoverCapabilityCodec()
+      return capabilities.issue(input)
     },
   }
 }
 
 export function createSupabaseContentDependencies(
   supabase: ServiceClient,
+  options: { coverCapabilities?: Pick<ContentCoverCapabilityCodec, 'issue'> } = {},
 ): ContentServiceDependencies {
   return {
     repository: createRepository(supabase),
-    covers: createCoverGateway(supabase),
+    covers: createCoverGateway(options.coverCapabilities),
   }
 }

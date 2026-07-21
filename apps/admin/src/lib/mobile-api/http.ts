@@ -28,9 +28,166 @@ export function extractBearerToken(headers: Headers): string | null {
   return match?.[1] ?? null
 }
 
+class StrictJsonParser {
+  private position = 0
+
+  constructor(private readonly source: string) {}
+
+  parse(): unknown {
+    this.skipWhitespace()
+    const value = this.parseValue(0)
+    this.skipWhitespace()
+    if (this.position !== this.source.length) throw new SyntaxError('Unexpected JSON suffix')
+    return value
+  }
+
+  private parseValue(depth: number): unknown {
+    if (depth > 128) throw new SyntaxError('JSON nesting limit exceeded')
+    const character = this.source[this.position]
+    if (character === '{') return this.parseObject(depth + 1)
+    if (character === '[') return this.parseArray(depth + 1)
+    if (character === '"') return this.parseString()
+    if (character === 't') return this.parseLiteral('true', true)
+    if (character === 'f') return this.parseLiteral('false', false)
+    if (character === 'n') return this.parseLiteral('null', null)
+    return this.parseNumber()
+  }
+
+  private parseObject(depth: number): Record<string, unknown> {
+    this.position++
+    this.skipWhitespace()
+    const result: Record<string, unknown> = {}
+    const keys = new Set<string>()
+    if (this.consume('}')) return result
+
+    while (true) {
+      if (this.source[this.position] !== '"') throw new SyntaxError('JSON object key required')
+      const key = this.parseString()
+      if (keys.has(key)) throw new SyntaxError('Duplicate JSON object key')
+      keys.add(key)
+      this.skipWhitespace()
+      if (!this.consume(':')) throw new SyntaxError('JSON object colon required')
+      this.skipWhitespace()
+      const value = this.parseValue(depth)
+      Object.defineProperty(result, key, {
+        value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      })
+      this.skipWhitespace()
+      if (this.consume('}')) return result
+      if (!this.consume(',')) throw new SyntaxError('JSON object comma required')
+      this.skipWhitespace()
+    }
+  }
+
+  private parseArray(depth: number): unknown[] {
+    this.position++
+    this.skipWhitespace()
+    const result: unknown[] = []
+    if (this.consume(']')) return result
+
+    while (true) {
+      result.push(this.parseValue(depth))
+      this.skipWhitespace()
+      if (this.consume(']')) return result
+      if (!this.consume(',')) throw new SyntaxError('JSON array comma required')
+      this.skipWhitespace()
+    }
+  }
+
+  private parseString(): string {
+    const start = this.position
+    this.position++
+    while (this.position < this.source.length) {
+      const character = this.source[this.position]
+      if (character === '"') {
+        this.position++
+        return JSON.parse(this.source.slice(start, this.position)) as string
+      }
+      if (character === '\\') {
+        this.position++
+        const escapeCode = this.source[this.position]
+        if (escapeCode === 'u') {
+          const codePoint = this.source.slice(this.position + 1, this.position + 5)
+          if (!/^[0-9A-Fa-f]{4}$/.test(codePoint)) throw new SyntaxError('Invalid JSON escape')
+          this.position += 5
+          continue
+        }
+        if (!escapeCode || !'"\\/bfnrt'.includes(escapeCode))
+          throw new SyntaxError('Invalid JSON escape')
+        this.position++
+        continue
+      }
+      if (character.charCodeAt(0) <= 0x1f) throw new SyntaxError('Invalid JSON string')
+      this.position++
+    }
+    throw new SyntaxError('Unterminated JSON string')
+  }
+
+  private parseLiteral<T>(literal: string, value: T): T {
+    if (!this.source.startsWith(literal, this.position))
+      throw new SyntaxError('Invalid JSON literal')
+    this.position += literal.length
+    return value
+  }
+
+  private parseNumber(): number {
+    const match = this.source
+      .slice(this.position)
+      .match(/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/)
+    if (!match) throw new SyntaxError('Invalid JSON number')
+    this.position += match[0].length
+    return Number(match[0])
+  }
+
+  private consume(character: string): boolean {
+    if (this.source[this.position] !== character) return false
+    this.position++
+    return true
+  }
+
+  private skipWhitespace(): void {
+    while (
+      this.source[this.position] === ' ' ||
+      this.source[this.position] === '\t' ||
+      this.source[this.position] === '\r' ||
+      this.source[this.position] === '\n'
+    ) {
+      this.position++
+    }
+  }
+}
+
+async function readBoundedUtf8Body(request: Request, maxBytes: number): Promise<string> {
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let byteLength = 0
+  let text = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    byteLength += value.byteLength
+    if (byteLength > maxBytes) {
+      await reader.cancel().catch(() => undefined)
+      throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  return text + decoder.decode()
+}
+
 export async function readJsonBody(request: Request, maxBytes = 64 * 1024): Promise<unknown> {
-  const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-  if (contentType !== 'application/json') {
+  const contentType = request.headers.get('content-type')
+  if (
+    !contentType ||
+    !/^[ \t]*application\/json(?:[ \t]*;[ \t]*charset[ \t]*=[ \t]*(?:utf-8|"utf-8"))?[ \t]*$/i.test(
+      contentType,
+    )
+  ) {
     throw new MobileApiError(415, 'unsupported_media_type', 'Content-Type must be application/json')
   }
 
@@ -39,14 +196,18 @@ export async function readJsonBody(request: Request, maxBytes = 64 * 1024): Prom
     throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
   }
 
-  const text = await request.text()
-  if (new TextEncoder().encode(text).byteLength > maxBytes) {
-    throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
+  let text: string
+  try {
+    text = await readBoundedUtf8Body(request, maxBytes)
+  } catch (error) {
+    if (error instanceof MobileApiError) throw error
+    throw new MobileApiError(400, 'invalid_json', 'Request body must contain valid JSON')
   }
-  if (!text.trim()) throw new MobileApiError(400, 'invalid_json', 'JSON body is required')
+  if (!text || /^[ \t\r\n]*$/.test(text))
+    throw new MobileApiError(400, 'invalid_json', 'JSON body is required')
 
   try {
-    return JSON.parse(text)
+    return new StrictJsonParser(text).parse()
   } catch {
     throw new MobileApiError(400, 'invalid_json', 'Request body must contain valid JSON')
   }

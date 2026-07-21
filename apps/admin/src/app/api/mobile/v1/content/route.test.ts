@@ -13,14 +13,14 @@ import {
   type MobileIdempotencyStore,
 } from '@/lib/mobile-api/idempotency'
 import type { MobileRouteContext, MobileRouteRuntime } from '@/lib/mobile-api/route'
-import { type ContentReadRouteDependencies, handleContentRead } from './[id]/read/route'
-import { type ContentDetailRouteDependencies, handleContentDetail } from './[id]/route'
-import { type ContentSaveRouteDependencies, handleContentSave } from './[id]/save/route'
+import { type ContentDetailRouteDependencies, handleContentDetail } from './[id]/handlers'
+import { type ContentReadRouteDependencies, handleContentRead } from './[id]/read/handlers'
+import { type ContentSaveRouteDependencies, handleContentSave } from './[id]/save/handlers'
 import {
   type ContentListRouteDependencies,
   createContentListRoute,
   handleContentList,
-} from './route'
+} from './handlers'
 
 const USER_ID = '00000000-0000-0000-0000-000000000421'
 const AUTH_USER_ID = '00000000-0000-0000-0000-000000000422'
@@ -80,7 +80,12 @@ function serviceDependencies(
 ): ContentServiceDependencies {
   return {
     repository: repository(repositoryOverrides),
-    covers: { sign: vi.fn(async () => 'https://storage.example.test/signed-cover') },
+    covers: {
+      issue: vi.fn(async () => ({
+        token: 'opaque-cover-capability',
+        expiresAt: '2026-07-21T12:10:00.000Z',
+      })),
+    },
   }
 }
 

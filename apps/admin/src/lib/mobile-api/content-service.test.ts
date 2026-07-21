@@ -106,7 +106,10 @@ function dependencies(
   return {
     repository: repository(repositoryOverrides),
     covers: {
-      sign: vi.fn(async () => 'https://storage.example.test/signed-cover'),
+      issue: vi.fn(async () => ({
+        token: 'opaque-cover-capability',
+        expiresAt: '2026-07-21T12:10:00.000Z',
+      })),
     },
   }
 }
@@ -116,7 +119,34 @@ afterEach(() => {
 })
 
 describe('mobile educational content service', () => {
-  it('maps an eligible feed to the public snake_case DTO and signs covers for 300 seconds', async () => {
+  it('creates same-origin cover capabilities from user and publication context only', async () => {
+    const repositoryDependency = repository()
+    const issue = vi.fn(async () => ({
+      token: 'opaque-cover-capability',
+      expiresAt: '2026-07-21T12:10:00.000Z',
+    }))
+    const deps = {
+      repository: repositoryDependency,
+      covers: { issue },
+    } as unknown as ContentServiceDependencies
+
+    const result = await listContent(deps, auth, { surface: 'library', limit: 20 })
+
+    expect(issue).toHaveBeenCalledWith({
+      userId: USER_ID,
+      publicationId: PUBLICATION_ID,
+      version: 3,
+    })
+    expect(result.items[0]?.cover).toEqual({
+      url: '/api/mobile/v1/content/covers/opaque-cover-capability',
+      expires_at: '2026-07-21T12:10:00.000Z',
+    })
+    expect(JSON.stringify(issue.mock.calls)).not.toContain('content-covers')
+    expect(JSON.stringify(issue.mock.calls)).not.toContain('private-cover.webp')
+    expect(JSON.stringify(result)).not.toContain('storage.example.test')
+  })
+
+  it('maps an eligible feed to the public snake_case DTO with an opaque cover capability', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-21T12:05:00.000Z'))
     const deps = dependencies()
@@ -130,11 +160,11 @@ describe('mobile educational content service', () => {
     const result = await listContent(deps, auth, query)
 
     expect(deps.repository.list).toHaveBeenCalledWith(USER_ID, query)
-    expect(deps.covers.sign).toHaveBeenCalledWith(
-      'content-covers',
-      'content/private-cover.webp',
-      300,
-    )
+    expect(deps.covers.issue).toHaveBeenCalledWith({
+      userId: USER_ID,
+      publicationId: PUBLICATION_ID,
+      version: 3,
+    })
     expect(result).toEqual({
       items: [
         {
@@ -152,7 +182,7 @@ describe('mobile educational content service', () => {
           saved: false,
           completed: false,
           cover: {
-            url: 'https://storage.example.test/signed-cover',
+            url: '/api/mobile/v1/content/covers/opaque-cover-capability',
             expires_at: '2026-07-21T12:10:00.000Z',
           },
         },
@@ -177,7 +207,7 @@ describe('mobile educational content service', () => {
       locale: 'pt-BR',
       body_markdown: expect.stringContaining('## Sono consistente'),
       cover: {
-        url: 'https://storage.example.test/signed-cover',
+        url: '/api/mobile/v1/content/covers/opaque-cover-capability',
         expires_at: '2026-07-21T12:10:00.000Z',
       },
     })
@@ -193,18 +223,58 @@ describe('mobile educational content service', () => {
       code: 'content_not_found',
       message: 'Content item not found',
     })
-    expect(deps.covers.sign).not.toHaveBeenCalled()
+    expect(deps.covers.issue).not.toHaveBeenCalled()
   })
 
   it('fails opaquely when a private cover capability cannot be created', async () => {
     const deps = dependencies()
-    vi.mocked(deps.covers.sign).mockRejectedValue(new Error('private storage detail'))
+    vi.mocked(deps.covers.issue).mockRejectedValue(new Error('private storage detail'))
 
     await expect(listContent(deps, auth, { surface: 'library', limit: 20 })).rejects.toMatchObject({
       status: 500,
       code: 'internal_error',
       message: 'Unexpected server error',
     })
+  })
+
+  it('fails the entire feed opaquely when the second of multiple covers cannot be issued', async () => {
+    const secondPublicationId = '00000000-0000-0000-0000-000000000406'
+    const deps = dependencies({
+      list: vi.fn(async () => ({
+        items: [
+          contentRecord(),
+          contentRecord({
+            publicationId: secondPublicationId,
+            slug: 'movimento-consistente',
+            cover: {
+              bucketId: 'content-covers',
+              objectPath: 'content/private-second-cover.png',
+            },
+          }),
+        ],
+        nextCursor: null,
+      })),
+    })
+    vi.mocked(deps.covers.issue)
+      .mockResolvedValueOnce({
+        token: 'first-opaque-capability',
+        expiresAt: '2026-07-21T12:10:00.000Z',
+      })
+      .mockRejectedValueOnce(new Error('https://provider.invalid/content/private-second-cover.png'))
+
+    const error = await listContent(deps, auth, { surface: 'library', limit: 20 }).catch(
+      (caught: unknown) => caught,
+    )
+
+    expect(error).toMatchObject({
+      status: 500,
+      code: 'internal_error',
+      message: 'Unexpected server error',
+    })
+    expect(JSON.stringify(error)).not.toMatch(
+      /first-opaque|content-covers|private-second|provider\.invalid/i,
+    )
+    expect(deps.covers.issue).toHaveBeenCalledTimes(2)
   })
 
   it('records read state with the authenticated patient and the same event key', async () => {

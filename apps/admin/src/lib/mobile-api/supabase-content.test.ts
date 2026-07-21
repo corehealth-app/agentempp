@@ -331,44 +331,61 @@ describe('Supabase educational content adapter', () => {
     })
   })
 
-  it('signs only content-covers with the requested expiry and returns no internal metadata', async () => {
-    const createSignedUrl = vi.fn().mockResolvedValue({
-      data: { signedUrl: 'https://storage.example.test/signed-content-cover' },
-      error: null,
+  it('issues cover capabilities without sending storage locators to the codec or storage API', async () => {
+    const storageFrom = vi.fn()
+    const issue = vi.fn(() => ({
+      token: 'opaque-cover-capability',
+      expiresAt: '2026-07-21T12:10:00.000Z',
+    }))
+    const dependencies = createSupabaseContentDependencies(serviceClient(vi.fn(), storageFrom), {
+      coverCapabilities: { issue },
     })
-    const storageFrom = vi.fn().mockReturnValue({ createSignedUrl })
-    const dependencies = createSupabaseContentDependencies(serviceClient(vi.fn(), storageFrom))
 
     await expect(
-      dependencies.covers.sign('content-covers', 'content/private-cover.webp', 300),
-    ).resolves.toBe('https://storage.example.test/signed-content-cover')
-    expect(storageFrom).toHaveBeenCalledWith('content-covers')
-    expect(createSignedUrl).toHaveBeenCalledWith('content/private-cover.webp', 300, {
-      download: false,
+      dependencies.covers.issue({
+        userId: USER_ID,
+        publicationId: PUBLICATION_ID,
+        version: 4,
+      }),
+    ).resolves.toEqual({
+      token: 'opaque-cover-capability',
+      expiresAt: '2026-07-21T12:10:00.000Z',
     })
+    expect(issue).toHaveBeenCalledWith({
+      userId: USER_ID,
+      publicationId: PUBLICATION_ID,
+      version: 4,
+    })
+    expect(storageFrom).not.toHaveBeenCalled()
+    expect(JSON.stringify(issue.mock.calls)).not.toContain('content-covers')
+    expect(JSON.stringify(issue.mock.calls)).not.toContain('private-cover.webp')
   })
 
-  it('rejects every other bucket before storage access and fails signing opaquely', async () => {
+  it('rejects every other cover bucket opaquely before storage access', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const storageFrom = vi.fn()
-    const rejectedBucket = createSupabaseContentDependencies(serviceClient(vi.fn(), storageFrom))
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        items: [
+          feedItem({
+            cover: {
+              bucketId: 'patient-private-media',
+              objectPath: 'patient/private.jpg',
+            },
+          }),
+        ],
+        nextCursor: null,
+      },
+      error: null,
+    })
+    const rejectedBucket = createSupabaseContentDependencies(serviceClient(rpc, storageFrom))
 
     await expect(
-      rejectedBucket.covers.sign('patient-private-media', 'patient/private.jpg', 300),
+      rejectedBucket.repository.list(USER_ID, { surface: 'library', limit: 20 }),
     ).rejects.toEqual(new ContentRepositoryError('internal'))
     expect(storageFrom).not.toHaveBeenCalled()
-
-    const createSignedUrl = vi.fn().mockResolvedValue({
-      data: null,
-      error: { code: 'storage_unavailable', message: 'private provider detail' },
-    })
-    const failingStorageFrom = vi.fn().mockReturnValue({ createSignedUrl })
-    const failing = createSupabaseContentDependencies(serviceClient(vi.fn(), failingStorageFrom))
-    await expect(
-      failing.covers.sign('content-covers', 'content/private-cover.webp', 300),
-    ).rejects.toEqual(new ContentRepositoryError('internal'))
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('patient-private-media')
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('patient/private.jpg')
-    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private provider detail')
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(USER_ID)
   })
 })

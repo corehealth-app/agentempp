@@ -2,8 +2,6 @@ import type { ContentListQuery, ContentReadInput, ContentSaveInput } from '@mpp/
 import type { MobileAuthContext } from './auth'
 import { MobileApiError } from './http'
 
-const COVER_TTL_SECONDS = 300
-
 type ContentCategory = NonNullable<ContentListQuery['category']>
 
 export interface ContentCoverReference {
@@ -67,7 +65,11 @@ export interface ContentRepository {
 }
 
 export interface ContentCoverGateway {
-  sign(bucketId: string, objectPath: string, expiresInSeconds: number): Promise<string>
+  issue(input: {
+    userId: string
+    publicationId: string
+    version: number
+  }): Promise<{ token: string; expiresAt: string }>
 }
 
 export interface ContentServiceDependencies {
@@ -164,14 +166,15 @@ async function repositoryCall<T>(operation: () => Promise<T>): Promise<T> {
 async function mapCover(
   dependencies: ContentServiceDependencies,
   cover: ContentCoverReference | null,
-  expiresAt: string,
+  input: { userId: string; publicationId: string; version: number },
 ): Promise<ContentCoverDto | null> {
   if (!cover) return null
 
   try {
+    const capability = await dependencies.covers.issue(input)
     return {
-      url: await dependencies.covers.sign(cover.bucketId, cover.objectPath, COVER_TTL_SECONDS),
-      expires_at: expiresAt,
+      url: `/api/mobile/v1/content/covers/${capability.token}`,
+      expires_at: capability.expiresAt,
     }
   } catch {
     throw internalError()
@@ -181,7 +184,7 @@ async function mapCover(
 async function mapFeedItem(
   dependencies: ContentServiceDependencies,
   record: ContentFeedRecord,
-  expiresAt: string,
+  userId: string,
 ): Promise<ContentFeedItemDto> {
   return {
     publication_id: record.publicationId,
@@ -197,7 +200,11 @@ async function mapFeedItem(
     version: record.version,
     saved: record.saved,
     completed: record.completed,
-    cover: await mapCover(dependencies, record.cover, expiresAt),
+    cover: await mapCover(dependencies, record.cover, {
+      userId,
+      publicationId: record.publicationId,
+      version: record.version,
+    }),
   }
 }
 
@@ -218,10 +225,11 @@ export async function listContent(
   query: ContentListQuery,
 ): Promise<ContentFeedDto> {
   const page = await repositoryCall(() => dependencies.repository.list(auth.userId, query))
-  const expiresAt = new Date(Date.now() + COVER_TTL_SECONDS * 1000).toISOString()
 
   return {
-    items: await Promise.all(page.items.map((item) => mapFeedItem(dependencies, item, expiresAt))),
+    items: await Promise.all(
+      page.items.map((item) => mapFeedItem(dependencies, item, auth.userId)),
+    ),
     next_cursor: page.nextCursor,
   }
 }
@@ -234,9 +242,8 @@ export async function getContent(
   const record = await repositoryCall(() => dependencies.repository.get(auth.userId, publicationId))
   if (!record) throw contentNotFound()
 
-  const expiresAt = new Date(Date.now() + COVER_TTL_SECONDS * 1000).toISOString()
   return {
-    ...(await mapFeedItem(dependencies, record, expiresAt)),
+    ...(await mapFeedItem(dependencies, record, auth.userId)),
     body_markdown: record.bodyMarkdown,
   }
 }

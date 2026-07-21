@@ -236,7 +236,7 @@ BEGIN
   FOREACH v_index IN ARRAY ARRAY[
     'content_publications_slug_key',
     'content_versions_publication_version_key',
-    'content_versions_one_draft_per_locale_idx',
+    'content_versions_one_open_workflow_per_locale_idx',
     'content_versions_visibility_idx',
     'content_versions_cover_asset_idx',
     'content_assets_object_path_key',
@@ -513,6 +513,159 @@ END;
 $test$;
 
 SET LOCAL ROLE service_role;
+
+DO $test$
+DECLARE
+  v_editor_id constant uuid := '00000000-0000-0000-0000-000000000981';
+  v_reviewer_id constant uuid := '00000000-0000-0000-0000-000000000982';
+  v_master_id constant uuid := '00000000-0000-0000-0000-000000000983';
+  v_publication_id uuid;
+  v_version_id uuid;
+  v_result jsonb;
+  v_expected_updated_at timestamptz;
+  v_body text := '## Open workflow regression' || E'\n\n' || repeat('word ', 205);
+  v_draft jsonb;
+BEGIN
+  v_result := public.create_content_publication(v_editor_id, 'synthetic-open-workflow-guard');
+  v_publication_id := (v_result->>'publication_id')::uuid;
+  v_result := public.create_content_draft(v_editor_id, v_publication_id, 'pt-BR');
+  v_version_id := (v_result->>'version_id')::uuid;
+  v_expected_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_draft := jsonb_build_object(
+    'locale', 'pt-BR',
+    'category', 'nutrition',
+    'title', 'Open workflow regression guide',
+    'excerpt', 'A synthetic excerpt for the open editorial workflow regression.',
+    'bodyMarkdown', v_body,
+    'tags', jsonb_build_array('workflow-regression'),
+    'featuredToday', false,
+    'coverAssetId', NULL,
+    'targeting', jsonb_build_object(
+      'protocols', '[]'::jsonb,
+      'plans', '[]'::jsonb,
+      'personalities', '[]'::jsonb
+    )
+  );
+
+  BEGIN
+    PERFORM public.create_content_draft(v_editor_id, v_publication_id, 'pt-BR');
+    RAISE EXCEPTION 'create_content_draft accepted an existing draft workflow';
+  EXCEPTION
+    WHEN SQLSTATE '23514' THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.content_versions (publication_id, version, locale, authored_by)
+    VALUES (v_publication_id, 2, 'pt-BR', v_editor_id);
+    RAISE EXCEPTION 'open-workflow index accepted a second draft';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  v_result := public.save_content_draft(
+    v_editor_id,
+    v_version_id,
+    v_expected_updated_at,
+    v_draft
+  );
+  v_expected_updated_at := (v_result->>'updated_at')::timestamptz;
+  PERFORM public.submit_content_version(v_editor_id, v_version_id, v_expected_updated_at);
+
+  BEGIN
+    PERFORM public.create_content_draft(v_editor_id, v_publication_id, 'pt-BR');
+    RAISE EXCEPTION 'create_content_draft accepted an in-review workflow';
+  EXCEPTION
+    WHEN SQLSTATE '23514' THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.content_versions (publication_id, version, locale, authored_by)
+    VALUES (v_publication_id, 2, 'pt-BR', v_editor_id);
+    RAISE EXCEPTION 'open-workflow index accepted a draft beside an in-review version';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  PERFORM public.review_content_version(v_reviewer_id, v_version_id, 'approve', NULL);
+
+  BEGIN
+    PERFORM public.create_content_draft(v_editor_id, v_publication_id, 'pt-BR');
+    RAISE EXCEPTION 'create_content_draft accepted an approved unpublished workflow';
+  EXCEPTION
+    WHEN SQLSTATE '23514' THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.content_versions (publication_id, version, locale, authored_by)
+    VALUES (v_publication_id, 2, 'pt-BR', v_editor_id);
+    RAISE EXCEPTION 'open-workflow index accepted a draft beside an approved unpublished version';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  PERFORM public.publish_content_version(v_master_id, v_version_id, NULL);
+  v_result := public.create_content_draft(
+    v_editor_id,
+    v_publication_id,
+    'pt-BR',
+    v_version_id
+  );
+  v_version_id := (v_result->>'version_id')::uuid;
+  v_expected_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  IF (
+    SELECT count(*)
+    FROM public.content_versions version
+    WHERE version.publication_id = v_publication_id
+      AND version.locale = 'pt-BR'
+      AND (
+        version.state IN ('draft', 'in_review')
+        OR (version.state = 'approved' AND version.publish_at IS NULL)
+      )
+  ) <> 1 OR NOT EXISTS (
+    SELECT 1
+    FROM public.content_versions version
+    WHERE version.publication_id = v_publication_id
+      AND version.locale = 'pt-BR'
+      AND version.state = 'approved'
+      AND version.publish_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'published approved version did not coexist with exactly one open workflow';
+  END IF;
+
+  v_result := public.save_content_draft(
+    v_editor_id,
+    v_version_id,
+    v_expected_updated_at,
+    v_draft
+  );
+  v_expected_updated_at := (v_result->>'updated_at')::timestamptz;
+  PERFORM public.submit_content_version(v_editor_id, v_version_id, v_expected_updated_at);
+  PERFORM public.review_content_version(
+    v_reviewer_id,
+    v_version_id,
+    'reject',
+    'Synthetic rejection leaves the locale available for a replacement draft.'
+  );
+
+  v_result := public.create_content_draft(
+    v_editor_id,
+    v_publication_id,
+    'pt-BR',
+    v_version_id
+  );
+
+  IF (v_result->>'version')::integer <> 3 OR NOT EXISTS (
+    SELECT 1
+    FROM public.content_versions version
+    WHERE version.id = (v_result->>'version_id')::uuid
+      AND version.state = 'draft'
+  ) THEN
+    RAISE EXCEPTION 'rejected workflow did not allow the next replacement draft';
+  END IF;
+END;
+$test$;
 
 DO $test$
 DECLARE

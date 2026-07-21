@@ -209,9 +209,10 @@ CREATE TABLE public.content_versions (
   )
 );
 
-CREATE UNIQUE INDEX content_versions_one_draft_per_locale_idx
+CREATE UNIQUE INDEX content_versions_one_open_workflow_per_locale_idx
   ON public.content_versions (publication_id, locale)
-  WHERE state = 'draft';
+  WHERE state IN ('draft', 'in_review')
+    OR (state = 'approved' AND publish_at IS NULL);
 
 CREATE INDEX content_versions_visibility_idx
   ON public.content_versions (publication_id, locale, publish_at DESC, version DESC)
@@ -961,10 +962,13 @@ BEGIN
     FROM public.content_versions version
     WHERE version.publication_id = p_publication_id
       AND version.locale = p_locale
-      AND version.state = 'draft'
+      AND (
+        version.state IN ('draft', 'in_review')
+        OR (version.state = 'approved' AND version.publish_at IS NULL)
+      )
   ) THEN
-    RAISE EXCEPTION 'a draft already exists for this publication locale'
-      USING ERRCODE = '23505';
+    RAISE EXCEPTION 'an open editorial workflow already exists for this publication locale'
+      USING ERRCODE = '23514';
   END IF;
 
   IF p_source_version_id IS NOT NULL THEN

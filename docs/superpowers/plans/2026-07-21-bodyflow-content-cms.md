@@ -88,7 +88,7 @@ export function encodeContentCursor(input: { publishAt: string; publicationId: s
 export function decodeContentCursor(value: string): { publishAt: string; publicationId: string }
 ```
 
-- [ ] **Step 1: Add exact parser dependencies.**
+- [x] **Step 1: Add exact parser dependencies.**
 
 Run:
 
@@ -99,20 +99,20 @@ pnpm add --save-exact --filter @mpp/core \
 pnpm add --save-exact --save-dev --filter @mpp/core @types/mdast@4.0.4
 ```
 
-- [ ] **Step 2: Write RED tests for exact enums, strict draft limits, normalized tags, content-cover MIME/size limits, query defaults, and strict unknown-key rejection.**
-- [ ] **Step 3: Write RED Markdown tests for the accepted AST subset and rejection of HTML, H1, code, thematic breaks, inline images, nested embeds, non-HTTPS URLs, malformed nodes, depth over eight, body under 100 characters, and body over 50,000 characters.**
-- [ ] **Step 4: Run `pnpm --filter @mpp/core test -- content.test.ts`.**
+- [x] **Step 2: Write RED tests for exact enums, strict draft limits, normalized tags, content-cover MIME/size limits, query defaults, and strict unknown-key rejection.**
+- [x] **Step 3: Write RED Markdown tests for the accepted AST subset and rejection of HTML, H1, code, thematic breaks, inline images, nested embeds, non-HTTPS URLs, malformed nodes, depth over eight, body under 100 characters, and body over 50,000 characters.**
+- [x] **Step 4: Run `pnpm --filter @mpp/core test -- content.test.ts`.**
 
 Expected: FAIL because `content.ts` does not exist.
 
-- [ ] **Step 5: Implement schemas and the mdast-to-portable-block conversion without rendering HTML.**
+- [x] **Step 5: Implement schemas and the mdast-to-portable-block conversion without rendering HTML.**
 
 The parser must normalize CRLF, round reading time at 200 words/minute with a minimum of one, and reject unsupported nodes rather than dropping them.
 
-- [ ] **Step 6: Add RED tests for opaque cursor round-trip and malformed, oversized, non-UUID, and non-ISO cursor rejection.**
-- [ ] **Step 7: Implement base64url cursor encoding/decoding with a 512-character input cap and strict Zod validation.**
-- [ ] **Step 8: Export the contracts, run `pnpm --filter @mpp/core test` and `pnpm --filter @mpp/core typecheck`, then run `git diff --check`.**
-- [ ] **Step 9: Commit `feat(core): add educational content contracts`.**
+- [x] **Step 6: Add RED tests for opaque cursor round-trip and malformed, oversized, non-UUID, and non-ISO cursor rejection.**
+- [x] **Step 7: Implement base64url cursor encoding/decoding with a 512-character input cap and strict Zod validation.**
+- [x] **Step 8: Export the contracts, run `pnpm --filter @mpp/core test` and `pnpm --filter @mpp/core typecheck`, then run `git diff --check`.**
+- [x] **Step 9: Commit `feat(core): add educational content contracts`.**
 
 ### Task 2: CMS Persistence, Covers, Editorial Lifecycle, And RBAC
 
@@ -189,8 +189,8 @@ The test must use synthetic admin accounts for all three editorial roles and pro
 
 - [ ] **Step 2: Add RED lifecycle cases for immutable slug, monotonic versions, one draft per publication/locale, stale `updated_at` conflict, submitted-version immutability, author/reviewer separation, required rejection reason, review-before-publish, minimum five-minute scheduling, and global archive.**
 - [ ] **Step 3: Run the SQL test transactionally against staging before migration and confirm the expected missing-relation failure.**
-- [ ] **Step 4: Run `supabase migration new bodyflow_content_cms_domain`.**
-- [ ] **Step 5: Implement the eight tables, foreign keys, checks, indexes, updated-at/immutability triggers, RLS, and explicit grants.**
+- [x] **Step 4: Run `supabase migration new bodyflow_content_cms_domain`.**
+- [x] **Step 5: Implement the eight tables, foreign keys, checks, indexes, updated-at/immutability triggers, RLS, and explicit grants.**
 
 Required database invariants include:
 
@@ -210,11 +210,11 @@ CHECK (reading_time_minutes BETWEEN 1 AND 500)
 
 The database recomputes `body_hash` with `pgcrypto`; it does not trust a hash from the client.
 
-- [ ] **Step 6: Implement the authoring, review, publishing, archive, and asset RPCs with actor-role validation and `audit_log` rows containing IDs, state, schedule, and hash only.**
-- [ ] **Step 7: Implement target replacement inside `save_content_draft`; target tables are keyed by version and accept only existing enum/reference values.**
-- [ ] **Step 8: Prove cover paths are server-shaped as `content/<asset-id>.<ext>`, objects must be uploaded before attachment, and referenced assets cannot be deleted.**
+- [x] **Step 6: Implement the authoring, review, publishing, archive, and asset RPCs with actor-role validation and `audit_log` rows containing IDs, state, schedule, and hash only.**
+- [x] **Step 7: Implement target replacement inside `save_content_draft`; target tables are keyed by version and accept only existing enum/reference values.**
+- [x] **Step 8: Prove cover paths are server-shaped as `content/<asset-id>.<ext>`, objects must be uploaded before attachment, and referenced assets cannot be deleted.**
 - [ ] **Step 9: Execute the migration SQL plus the SQL suite inside one transaction that always rolls back, confirm no schema or synthetic rows remain, then run migration SQL lint/static checks and `git diff --check`.**
-- [ ] **Step 10: Commit `feat(database): add educational content CMS domain`.**
+- [x] **Step 10: Commit `feat(database): add educational content CMS domain`.**
 
 ### Task 3: Deterministic Visibility, Targeting, State, And Metrics
 
@@ -268,15 +268,15 @@ public.set_mobile_content_saved(
 - [ ] **Step 2: Add RED targeting cases for wildcard dimensions, protocol-only, plan-only, personality-only, all-three AND matching, missing patient attributes, expired subscriptions, and non-selectable `balanced`.**
 - [ ] **Step 3: Add RED state/metric cases for impression, opened/click, completed version, saved persistence across revisions, completion reset on a new visible version, stale version conflict, event-key hashing, event retry, and save no-op without a duplicate event.**
 - [ ] **Step 4: Run the SQL test and confirm missing-function failures.**
-- [ ] **Step 5: Run `supabase migration new bodyflow_content_delivery`.**
-- [ ] **Step 6: Implement one canonical eligible-version SQL relation inside each read RPC, using the user's stored locale, profile protocol, active/trial non-expired subscription, and selected coach personality.**
+- [x] **Step 5: Run `supabase migration new bodyflow_content_delivery`.**
+- [x] **Step 6: Implement one canonical eligible-version SQL relation inside each read RPC, using the user's stored locale, profile protocol, active/trial non-expired subscription, and selected coach personality.**
 
 The query chooses the latest row by `publish_at DESC, version DESC`, then pages publications by `publish_at DESC, publication_id DESC`. It never accepts locale or targeting attributes from the client.
 
-- [ ] **Step 7: Implement event/state RPCs with row locks, a SHA-256 event key, a unique patient/event-key constraint, version visibility recheck, and successful replay semantics.**
-- [ ] **Step 8: Ensure RPC results include internal cover bucket/path only for the trusted BFF and contain no signed URL or patient PII.**
+- [x] **Step 7: Implement event/state RPCs with row locks, a SHA-256 event key, a unique patient/event-key constraint, version visibility recheck, and successful replay semantics.**
+- [x] **Step 8: Ensure RPC results include internal cover bucket/path only for the trusted BFF and contain no signed URL or patient PII.**
 - [ ] **Step 9: Execute both migration files plus both CMS SQL suites inside one transaction that always rolls back, and confirm no schema or synthetic rows remain before the final staging rollout.**
-- [ ] **Step 10: Commit `feat(database): add deterministic content delivery`.**
+- [x] **Step 10: Commit `feat(database): add deterministic content delivery`.**
 
 ### Task 4: Authenticated Mobile Content BFF
 
@@ -305,7 +305,11 @@ export interface ContentRepository {
 }
 
 export interface ContentCoverGateway {
-  sign(bucketId: string, objectPath: string, expiresInSeconds: number): Promise<string>
+  issue(input: {
+    userId: string
+    publicationId: string
+    version: number
+  }): Promise<{ token: string; expiresAt: string }>
 }
 
 export interface ContentServiceDependencies {
@@ -326,16 +330,16 @@ export function getContent(
 ): Promise<ContentDetailDto>
 ```
 
-- [ ] **Step 1: Write RED service tests for list/detail DTOs, cursor construction, signed cover expiry, no internal path leakage, no-content `404`, storage signing failure, read/save commands, and stale-version mapping.**
-- [ ] **Step 2: Run `pnpm --filter @mpp/admin test -- content-service.test.ts` and confirm the missing-module failure.**
-- [ ] **Step 3: Implement the service with a 300-second cover capability and no cross-locale fallback.**
-- [ ] **Step 4: Write RED Supabase adapter tests for RPC names/parameters, malformed RPC payloads, null detail, opaque database errors, and signed URL creation against `content-covers`.**
-- [ ] **Step 5: Implement the Supabase repository/gateway with Zod parsing and technical-ID-only error logs.**
-- [ ] **Step 6: Write RED route tests for authenticated list/detail, strict query validation, UUID validation, `404` non-disclosure, required JSON content type, required `Idempotency-Key`, idempotent replay, and `409 content_version_changed`.**
-- [ ] **Step 7: Replace the unavailable placeholder route and add detail/read/save routes using `createMobileRoute`, `createMobileRouteWithContext`, `executeSupabaseIdempotent`, and existing response envelopes.**
-- [ ] **Step 8: Store no signed URL in generic idempotency responses; read/save responses contain only consolidated state.**
-- [ ] **Step 9: Run focused admin tests, admin typecheck, and `git diff --check`.**
-- [ ] **Step 10: Commit `feat(mobile-api): expose eligible educational content`.**
+- [x] **Step 1: Write RED service tests for list/detail DTOs, cursor construction, cover expiry, no internal path leakage, no-content `404`, capability failure, read/save commands, and stale-version mapping.**
+- [x] **Step 2: Run `pnpm --filter @mpp/admin test -- content-service.test.ts` and confirm the missing-module failure.**
+- [x] **Step 3: Implement the service with a 300-second cover capability and no cross-locale fallback.**
+- [x] **Step 4: Write RED Supabase adapter tests for RPC names/parameters, malformed RPC payloads, null detail, opaque database errors, and opaque capability issuance for `content-covers`.**
+- [x] **Step 5: Implement the Supabase repository/gateway with Zod parsing and technical-ID-only error logs.**
+- [x] **Step 6: Write RED route tests for authenticated list/detail, strict query validation, UUID validation, `404` non-disclosure, required JSON content type, required `Idempotency-Key`, idempotent replay, and `409 content_version_changed`.**
+- [x] **Step 7: Replace the unavailable placeholder route and add detail/read/save routes using `createMobileRoute`, `createMobileRouteWithContext`, `executeSupabaseIdempotent`, and existing response envelopes.**
+- [x] **Step 8: Store no cover capability in generic idempotency responses; read/save responses contain only consolidated state.**
+- [x] **Step 9: Run focused admin tests, admin typecheck, and `git diff --check`.**
+- [x] **Step 10: Commit `feat(mobile-api): expose eligible educational content`.**
 
 ### Task 5: Admin Domain Services, Cover Capabilities, And Server Actions
 
@@ -377,15 +381,15 @@ export function executeContentAdminAction(
 ): Promise<unknown>
 ```
 
-- [ ] **Step 1: Add RED role tests proving support/operations roles cannot access the module, content editors cannot review/publish, nutrition admins cannot author/publish, and master admins cannot author/review.**
-- [ ] **Step 2: Add RED service tests for publication listing, draft validation, Markdown normalization, stale preconditions, copy-from-version, audit-safe repository payloads, and lifecycle error mapping.**
-- [ ] **Step 3: Implement the repository/service and preserve the existing broader `CONTENT_ADMIN_ROLES` behavior used by coach-message governance.**
-- [ ] **Step 4: Add RED cover tests for exact MIME/size, server UUID/path generation, signed upload with `upsert: false`, object info verification, mismatch cleanup, attach-only-after-upload, signed URL redaction, and referenced-cover deletion denial.**
-- [ ] **Step 5: Implement cover creation/completion/deletion with the server-only storage client and Task 2 asset RPCs.**
-- [ ] **Step 6: Add RED action tests for fresh authenticated role lookup on every action and for all action-to-role mappings.**
-- [ ] **Step 7: Implement server actions, revalidate `/content` and `/content/[id]` after successful mutations, and return bounded Portuguese admin errors without provider/database details.**
-- [ ] **Step 8: Run `pnpm --filter @mpp/admin test -- admin-service.test.ts actions.test.ts` and admin typecheck.**
-- [ ] **Step 9: Commit `feat(admin): govern educational publications`.**
+- [x] **Step 1: Add RED role tests proving support/operations roles cannot access the module, content editors cannot review/publish, nutrition admins cannot author/publish, and master admins cannot author/review.**
+- [x] **Step 2: Add RED service tests for publication listing, draft validation, Markdown normalization, stale preconditions, copy-from-version, audit-safe repository payloads, and lifecycle error mapping.**
+- [x] **Step 3: Implement the repository/service and preserve the existing broader `CONTENT_ADMIN_ROLES` behavior used by coach-message governance.**
+- [x] **Step 4: Add RED cover tests for exact MIME/size, server UUID/path generation, signed upload with `upsert: false`, object info verification, mismatch cleanup, attach-only-after-upload, signed URL redaction, and referenced-cover deletion denial.**
+- [x] **Step 5: Implement cover creation/completion/deletion with the server-only storage client and Task 2 asset RPCs.**
+- [x] **Step 6: Add RED action tests for fresh authenticated role lookup on every action and for all action-to-role mappings.**
+- [x] **Step 7: Implement server actions, revalidate `/content` and `/content/[id]` after successful mutations, and return bounded Portuguese admin errors without provider/database details.**
+- [x] **Step 8: Run `pnpm --filter @mpp/admin test -- admin-service.test.ts actions.test.ts` and admin typecheck.**
+- [x] **Step 9: Commit `feat(admin): govern educational publications`.**
 
 ### Task 6: Operational Editorial UI
 
@@ -406,17 +410,17 @@ export function executeContentAdminAction(
 
 **Consumes:** Task 1 portable Markdown blocks and Task 5 server actions.
 
-- [ ] **Step 1: Write RED presenter tests for effective status, locale completeness, role-visible commands, schedule labels, active-version selection, and no body/signed-path exposure in list rows.**
-- [ ] **Step 2: Implement pure presentation helpers and run the focused test.**
-- [ ] **Step 3: Build `/content` as a dense table with status, locale, category, author/reviewer, schedule, featured, and text filters plus a clear create command.**
-- [ ] **Step 4: Build `/content/new` with slug creation and explicit locale-draft creation.**
-- [ ] **Step 5: Build the publication editor with separate `pt-BR` and `en-US` tabs, title, excerpt, category, normalized tag input, feature toggle, protocol/plan/personality multiselects, cover upload, stable textarea dimensions, and portable-block preview.**
-- [ ] **Step 6: Render Markdown blocks as React elements without `dangerouslySetInnerHTML`; external HTTPS links use `rel="noopener noreferrer"`.**
-- [ ] **Step 7: Build read-only review controls, required rejection reason, publication/schedule confirmation dialogs, stale-conflict feedback, and global archive confirmation.**
-- [ ] **Step 8: Gate the page and every visible command by the exact role while retaining server-side enforcement.**
-- [ ] **Step 9: Add `Publicacoes` with a `Newspaper` Lucide icon to sidebar and command palette.**
+- [x] **Step 1: Write RED presenter tests for effective status, locale completeness, role-visible commands, schedule labels, active-version selection, and no body/signed-path exposure in list rows.**
+- [x] **Step 2: Implement pure presentation helpers and run the focused test.**
+- [x] **Step 3: Build `/content` as a dense table with status, locale, category, author/reviewer, schedule, featured, and text filters plus a clear create command.**
+- [x] **Step 4: Build `/content/new` with slug creation and explicit locale-draft creation.**
+- [x] **Step 5: Build the publication editor with separate `pt-BR` and `en-US` tabs, title, excerpt, category, normalized tag input, feature toggle, protocol/plan/personality multiselects, cover upload, stable textarea dimensions, and portable-block preview.**
+- [x] **Step 6: Render Markdown blocks as React elements without `dangerouslySetInnerHTML`; external HTTPS links use `rel="noopener noreferrer"`.**
+- [x] **Step 7: Build read-only review controls, required rejection reason, publication/schedule confirmation dialogs, stale-conflict feedback, and global archive confirmation.**
+- [x] **Step 8: Gate the page and every visible command by the exact role while retaining server-side enforcement.**
+- [x] **Step 9: Add `Publicacoes` with a `Newspaper` Lucide icon to sidebar and command palette.**
 - [ ] **Step 10: Run admin tests, admin typecheck, admin build, changed-file Biome, and `git diff --check`.**
-- [ ] **Step 11: Commit `feat(admin-ui): add educational publication workspace`.**
+- [x] **Step 11: Commit `feat(admin-ui): add educational publication workspace`.**
 
 ### Task 7: Contracts, ADR, And Full Local Verification
 
@@ -425,8 +429,8 @@ export function executeContentAdminAction(
 - Create: `docs/adr/015-bodyflow-educational-content-cms.md`
 - Modify: `docs/superpowers/plans/2026-07-21-bodyflow-content-cms.md`
 
-- [ ] **Step 1: Replace the reserved content documentation with exact list/detail/read/save contracts, query/body examples, errors, idempotency, locale isolation, segment matching, cover expiry, and caching behavior.**
-- [ ] **Step 2: Record the architecture decision for immutable localized versions, version-scoped targets, private covers, derived scheduling, separated review, and BFF-only patient access.**
+- [x] **Step 1: Replace the reserved content documentation with exact list/detail/read/save contracts, query/body examples, errors, idempotency, locale isolation, segment matching, cover expiry, and caching behavior.**
+- [x] **Step 2: Record the architecture decision for immutable localized versions, version-scoped targets, private covers, derived scheduling, separated review, and BFF-only patient access.**
 - [ ] **Step 3: Run `pnpm --filter @mpp/core test`, `pnpm --filter @mpp/admin test`, and every CMS SQL suite transactionally.**
 - [ ] **Step 4: Run `pnpm test`, `pnpm typecheck`, `pnpm --filter @mpp/admin build`, changed-file Biome, secret/PII scans, and `git diff --check`.**
 - [ ] **Step 5: Review the full branch diff for spec coverage, SQL injection, RLS/grants, service-role client leakage, unsafe Markdown, stale-write loss, visibility leaks, pagination gaps, idempotency gaps, and object-path exposure.**
@@ -439,13 +443,16 @@ export function executeContentAdminAction(
 - Modify after verified staging schema: `packages/db/src/generated/database.ts`
 - Modify: `docs/superpowers/plans/2026-07-21-bodyflow-content-cms.md`
 
+Toda execução SQL live, incluindo as suites CMS, permanece reservada para esta
+Task 8. Evidência estática ou local anterior não substitui essa validação.
+
 - [ ] **Step 1: Confirm the worktree path/branch and verify `supabase/.temp/project-ref` is exactly `xitugspwfxkcluxvrdeg` and is not `xuxehkhdvjivitduarvb`; stop on ambiguity.**
 - [ ] **Step 2: Confirm staging still has 34 cron jobs and zero active jobs without selecting job commands.**
 - [ ] **Step 3: Run `supabase migration list --linked`, migration dry-run, and review that only the new additive CMS migrations are pending.**
 - [ ] **Step 4: Apply only those migrations to staging. Do not deploy an application or configure any secret/integration.**
 - [ ] **Step 5: Run both SQL suites transactionally, Supabase DB lint, and advisors. Distinguish new findings from pre-existing findings.**
 - [ ] **Step 6: Regenerate `packages/db/src/generated/database.ts` from staging using ref `xitugspwfxkcluxvrdeg`, review the generated diff for unrelated drift, and rerun DB/admin typecheck.**
-- [ ] **Step 7: Execute a synthetic rollback-safe canary for the complete workflow:** author draft, both locales, Markdown rejection, technical approval, immediate publication, future schedule, universal and three-dimension targeting, exact-locale feed/detail, read/save retry, short-lived cover capability, replacement without downtime, and archive.
+- [ ] **Step 7: Execute synthetic rollback-safe canaries for the complete workflow:** author draft, both locales, Markdown rejection, technical approval, immediate publication, future schedule, universal and three-dimension targeting, exact-locale feed/detail, read/save retry, short-lived cover capability, replacement without downtime, archive, e um canário concorrente de duas sessões para o `one-open-workflow`, cobrindo `create/submit/review` concorrendo com outro `create` da mesma publicação e locale.
 - [ ] **Step 8: Confirm aggregate-only staging postconditions: zero retained synthetic publications/assets/events/states, zero active cron jobs, no public/authenticated CMS grants, and no client-executable internal CMS functions.**
 - [ ] **Step 9: Confirm production was not linked, queried, modified, or deployed and no external provider was called.**
 - [ ] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types.**

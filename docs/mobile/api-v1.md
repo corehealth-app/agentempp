@@ -87,8 +87,8 @@ somente ao backend.
 | `PATCH` | `/registrations/:id` | recalcula e edita um pending ainda aberto |
 | `DELETE` | `/registrations/:id` | cancela um pending ainda aberto |
 | `GET` | `/pending` | lista pendings válidos do paciente, sem payload interno |
-| `GET` | `/coach/persona` | estado do módulo; indisponível nesta fase |
-| `PATCH` | `/coach/persona` | reservado para `focus`, `impulse` e `zen`; retorna `501` |
+| `GET` | `/coach/persona` | preferência, personalidade efetiva, opções localizadas e estado do mascote |
+| `PATCH` | `/coach/persona` | altera a preferência futura para `focus`, `impulse` ou `zen` |
 | `GET` | `/content` | lista vazia e estado indisponível nesta fase |
 | `GET` | `/content/:id` | reservado; retorna `404` até o módulo existir |
 | `GET` | `/entitlements` | assinaturas sanitizadas e estado do billing mobile |
@@ -263,6 +263,110 @@ Semântica obrigatória:
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.
 Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
 do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
+
+## Coach, mensagens recorrentes e mascote
+
+### Personalidade
+
+`GET /coach/persona` retorna somente o estado público necessário ao app:
+
+```json
+{
+  "data": {
+    "selected": null,
+    "effective": "balanced",
+    "options": [
+      {
+        "code": "focus",
+        "name": "Focus",
+        "description": "Direta, objetiva e respeitosa."
+      },
+      {
+        "code": "impulse",
+        "name": "Impulse",
+        "description": "Energética, positiva e sem exageros."
+      },
+      {
+        "code": "zen",
+        "name": "Zen",
+        "description": "Calma, clara e sem julgamento."
+      }
+    ],
+    "mascot": {
+      "state": "inactive",
+      "changed_at": null
+    },
+    "contract_version": "bodyflow.coach-persona.v1"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-id"
+  }
+}
+```
+
+`selected` é `focus`, `impulse`, `zen` ou `null`. Quando não há escolha,
+`effective` é `balanced`, o fallback interno neutro. `balanced` nunca aparece em
+`options` e não é aceito em escrita. Nomes e descrições seguem o `locale` do
+perfil (`pt-BR` ou `en-US`); locale sem catálogo retorna
+`409 coach_locale_unsupported`.
+
+`PATCH /coach/persona` exige `Idempotency-Key` e body estrito:
+
+```json
+{
+  "persona": "focus"
+}
+```
+
+A identidade vem exclusivamente do bearer token verificado. Campos extras,
+`balanced` e valores desconhecidos são rejeitados. Retry idêntico reproduz a
+resposta sem escrever novamente. A mudança vale para seleções futuras e não
+reescreve mensagens já escolhidas.
+
+### Seleção determinística
+
+Mensagens recorrentes são escolhidas no PostgreSQL a partir de versões imutáveis
+do pack ativo. A seleção exige o mesmo locale e tenta primeiro a personalidade
+efetiva; se não houver versão elegível, usa `balanced` no mesmo idioma. As três
+variantes elegíveis são rotacionadas por uso menos recente, sob lock transacional,
+com chave de evento idempotente, cooldown e limites locais.
+
+O runtime não chama LLM para completar ausência de catálogo. Resultado
+`suppressed`, falha do claim ou inexistência de versão elegível retorna `null` ao
+caller, que não deve inventar texto alternativo. Se o template escolhido falhar
+na renderização, o uso é marcado como falho sem persistir corpo renderizado ou PII
+e a resposta também é `null`.
+
+O catálogo possui rendições `in_app`, `push` e `email`, mas a policy de `email`
+mantém `delivery_enabled=false`. Push permanece em outbox e não é enviado ao APNs
+nesta fase.
+
+### Governança editorial
+
+O admin expõe `/settings/coach-messages`. `content_editor` e `master_admin` podem
+ler o catálogo, criar versões imutáveis em packs de rascunho, gerar prévias com
+valores sintéticos, comparar versões, validar e clonar o pack ativo. Somente
+`master_admin` pode agendar, ativar, arquivar ou restaurar packs.
+
+Uma sugestão assistida acontece apenas após comando editorial explícito, usa como
+fonte um grupo aprovado do pack ativo, fica limitada a um grupo de três variantes
+e três canais e passa pelo mesmo linter antes de criar versões
+`assisted_draft`. Ela nunca publica diretamente. Ativação valida cobertura,
+linhagem e hash do snapshot para impedir aprovação de conteúdo que mudou entre a
+revisão e o comando.
+
+A rotação mensal significa preparar, revisar e aprovar um novo pack. O scheduler
+apenas ativa um pack completo previamente agendado; ele não gera frases nem toma
+decisão editorial.
+
+### Limites do mascote
+
+O contrato expõe somente `state` (`inactive`, `reactivating`, `active`,
+`evolving` ou `neglected`) e `changed_at`. Sem linha persistida, o estado público
+é `inactive`. Não há avatar, animação, asset visual, progressão automática ou
+transição inferida por tempo, comportamento, peso ou saúde. Mudanças de estado
+dependem de uma operação explícita validada no backend.
 
 ## Devices, lembretes e rotina
 
@@ -456,7 +560,10 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 
 - Não há chat nativo, envio APNs, StoreKit ou app iOS nesta entrega. Os backends de
   mídia, devices, regras e rotina ainda dependem de integração e QA no app nativo.
-- `persona` não persiste seleção até o Prompt correspondente implementar o domínio.
+- `persona` persiste a escolha e seleciona mensagens futuras, mas o app nativo
+  ainda precisa implementar a tela e consumir o contrato.
+- O mascote é somente estado não visual; assets, animações e regras de evolução
+  permanecem fora desta entrega.
 - `content` não consulta frases educativas nem inventa um CMS sobre tabelas legadas.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
 - O catálogo mínimo de suplementos e medicamentos é somente leitura nesta fase.

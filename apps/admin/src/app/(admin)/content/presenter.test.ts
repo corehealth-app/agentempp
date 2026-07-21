@@ -1,3 +1,4 @@
+import type { ContentDraftInput } from '@mpp/core'
 import { describe, expect, it } from 'vitest'
 import type {
   ContentPublicationDetail,
@@ -9,12 +10,16 @@ import {
   canPublishContentVersion,
   canReviewContentVersion,
   contentWorkflowTargetLabel,
+  createDraftEditBaseline,
   directPublicationPage,
+  draftsAreEquivalent,
   effectiveVersionStatus,
   filterPublicationSummaries,
   findDraftVersionBaseline,
   formatOperationalDate,
+  isDraftDirty,
   localeCompleteness,
+  localeSwitchDecision,
   markDraftSaveStale,
   PUBLICATION_DIRECT_MAX_PAGE,
   PUBLICATION_MAX_OFFSET,
@@ -300,6 +305,103 @@ describe('content presenter', () => {
     expect(canCreateContentDraft([detailVersion({ state: 'rejected' })], 'pt-BR', null)).toBe(true)
     expect(canCreateContentDraft([], 'pt-BR', NOW)).toBe(false)
     expect(canCreateContentDraft([approved], 'en-US', null)).toBe(true)
+  })
+
+  it('creates a stable editable baseline for every persisted draft field', () => {
+    const source = detailVersion({
+      versionId: '00000000-0000-0000-0000-000000000632',
+      locale: 'en-US',
+      category: 'sleep',
+      title: 'A better night of sleep',
+      excerpt: 'A practical summary for a calmer and more consistent evening routine.',
+      bodyMarkdown:
+        '## Prepare the evening\n\nKeep a regular wind-down routine before going to bed.',
+      tags: ['sleep', 'evening-routine'],
+      featuredToday: true,
+      cover: {
+        assetId: '00000000-0000-0000-0000-000000000633',
+        mimeType: 'image/webp',
+        sizeBytes: 2048,
+        status: 'uploaded',
+      },
+      targeting: {
+        protocols: ['manutencao'],
+        plans: ['anual'],
+        personalities: ['zen'],
+      },
+    })
+
+    expect(createDraftEditBaseline(source)).toEqual({
+      versionId: source.versionId,
+      draft: {
+        locale: 'en-US',
+        category: 'sleep',
+        title: 'A better night of sleep',
+        excerpt: 'A practical summary for a calmer and more consistent evening routine.',
+        bodyMarkdown:
+          '## Prepare the evening\n\nKeep a regular wind-down routine before going to bed.',
+        tags: ['sleep', 'evening-routine'],
+        featuredToday: true,
+        coverAssetId: '00000000-0000-0000-0000-000000000633',
+        targeting: {
+          protocols: ['manutencao'],
+          plans: ['anual'],
+          personalities: ['zen'],
+        },
+      },
+    })
+  })
+
+  it('compares normalized tags and unordered targeting without false dirty state', () => {
+    const baseline = createDraftEditBaseline(
+      detailVersion({
+        tags: ['agua', 'sono'],
+        targeting: {
+          protocols: ['manutencao', 'recomposicao'],
+          plans: ['anual', 'trial'],
+          personalities: ['zen', 'focus'],
+        },
+      }),
+    )
+    const equivalent: ContentDraftInput = {
+      ...baseline.draft,
+      tags: ['Sono', 'Água', 'sono'],
+      targeting: {
+        protocols: ['recomposicao', 'manutencao'],
+        plans: ['trial', 'anual'],
+        personalities: ['focus', 'zen'],
+      },
+    }
+
+    expect(draftsAreEquivalent(baseline.draft, equivalent)).toBe(true)
+    expect(isDraftDirty(baseline, equivalent, true)).toBe(false)
+  })
+
+  it.each([
+    ['title', { title: 'Outro titulo' }],
+    ['excerpt', { excerpt: 'Outro resumo longo o suficiente para representar uma edicao.' }],
+    ['category', { category: 'sleep' as const }],
+    ['tags', { tags: ['outra-tag'] }],
+    ['featured', { featuredToday: true }],
+    [
+      'targeting',
+      { targeting: { protocols: ['manutencao' as const], plans: [], personalities: [] } },
+    ],
+    ['Markdown', { bodyMarkdown: '## Outro texto\n\nUma alteracao editorial ainda nao salva.' }],
+    ['cover', { coverAssetId: '00000000-0000-0000-0000-000000000634' }],
+  ])('marks %s changes as dirty only for an editable draft', (_field, change) => {
+    const baseline = createDraftEditBaseline(detailVersion())
+    const changed = { ...baseline.draft, ...change }
+
+    expect(isDraftDirty(baseline, changed, true)).toBe(true)
+    expect(isDraftDirty(baseline, changed, false)).toBe(false)
+  })
+
+  it('decides whether a locale change stays, switches, or requires explicit discard', () => {
+    expect(localeSwitchDecision('pt-BR', 'pt-BR', true, false)).toBe('stay')
+    expect(localeSwitchDecision('pt-BR', 'en-US', false, true)).toBe('stay')
+    expect(localeSwitchDecision('pt-BR', 'en-US', true, false)).toBe('confirm_discard')
+    expect(localeSwitchDecision('pt-BR', 'en-US', false, false)).toBe('switch')
   })
 
   it('recovers a stale save only from the same version while preserving local cover state', () => {

@@ -60,6 +60,13 @@ export interface DraftSaveState {
   confirmedCover: { assetId: string; locale: ContentLocale } | null
 }
 
+export interface DraftEditBaseline {
+  versionId: string
+  draft: ContentDraftInput
+}
+
+export type LocaleSwitchDecision = 'stay' | 'switch' | 'confirm_discard'
+
 const LOCALES = ['pt-BR', 'en-US'] as const
 export const PUBLICATION_PAGE_SIZE = 25
 export const PUBLICATION_BATCH_SIZE = 100
@@ -168,6 +175,82 @@ export function contentWorkflowTargetLabel(
 ): string {
   const title = version.title?.trim() || 'Sem titulo'
   return `${version.locale} · v${version.version} · ${title} · ${version.versionId.slice(0, 8)}...${version.versionId.slice(-4)}`
+}
+
+export function normalizeDraftTags(value: string | readonly string[]): string[] {
+  const values = typeof value === 'string' ? value.split(/[,\n]/) : value
+  return [
+    ...new Set(
+      values
+        .map((tag) =>
+          tag
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, ''),
+        )
+        .filter(Boolean),
+    ),
+  ]
+}
+
+export function createDraftEditBaseline(
+  version: ContentPublicationDetail['versions'][number],
+): DraftEditBaseline {
+  return {
+    versionId: version.versionId,
+    draft: {
+      locale: version.locale,
+      category: version.category ?? 'nutrition',
+      title: version.title ?? '',
+      excerpt: version.excerpt ?? '',
+      bodyMarkdown: version.bodyMarkdown ?? '',
+      tags: [...version.tags],
+      featuredToday: version.featuredToday,
+      coverAssetId: version.cover?.assetId ?? null,
+      targeting: {
+        protocols: [...version.targeting.protocols],
+        plans: [...version.targeting.plans],
+        personalities: [...version.targeting.personalities],
+      },
+    },
+  }
+}
+
+export function draftsAreEquivalent(left: ContentDraftInput, right: ContentDraftInput): boolean {
+  return JSON.stringify(comparableDraft(left)) === JSON.stringify(comparableDraft(right))
+}
+
+export function isDraftDirty(
+  baseline: DraftEditBaseline,
+  current: ContentDraftInput,
+  editable: boolean,
+): boolean {
+  return editable && !draftsAreEquivalent(baseline.draft, current)
+}
+
+export function localeSwitchDecision(
+  currentLocale: ContentLocale,
+  nextLocale: ContentLocale,
+  dirty: boolean,
+  blocked: boolean,
+): LocaleSwitchDecision {
+  if (currentLocale === nextLocale || blocked) return 'stay'
+  return dirty ? 'confirm_discard' : 'switch'
+}
+
+function comparableDraft(draft: ContentDraftInput): ContentDraftInput {
+  return {
+    ...draft,
+    tags: normalizeDraftTags(draft.tags).sort(),
+    targeting: {
+      protocols: [...draft.targeting.protocols].sort(),
+      plans: [...draft.targeting.plans].sort(),
+      personalities: [...draft.targeting.personalities].sort(),
+    },
+  }
 }
 
 export function findDraftVersionBaseline(

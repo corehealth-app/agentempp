@@ -3,7 +3,7 @@
 import type { ContentDraftInput } from '@mpp/core'
 import { FilePlus2, Loader2, RefreshCw, Save, Send } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,9 +38,13 @@ import {
   buildDraftSavePayload,
   type ContentLocale,
   canCreateContentDraft,
+  createDraftEditBaseline,
   type DraftSaveState,
   formatOperationalDate,
+  isDraftDirty,
+  localeSwitchDecision,
   markDraftSaveStale,
+  normalizeDraftTags,
   recoverDraftSaveState,
   selectLocaleVersions,
   selectWorkflowContentVersion,
@@ -89,6 +93,8 @@ const STATUS_LABELS: Record<Version['state'], string> = {
   rejected: 'Rejeitado',
 }
 
+const UNSAVED_CHANGES_WARNING = 'Existem alteracoes nao salvas. Deseja descarta-las e continuar?'
+
 export function ContentEditor({
   publication,
   role,
@@ -105,17 +111,42 @@ export function ContentEditor({
     useState<PendingCoverResolution | null>(null)
   const [confirmedDraftCover, setConfirmedDraftCover] = useState<ConfirmedDraftCover | null>(null)
   const [coverBusy, setCoverBusy] = useState(false)
+  const [dirtyLocales, setDirtyLocales] = useState<Record<ContentLocale, boolean>>({
+    'pt-BR': false,
+    'en-US': false,
+  })
   const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy, confirmedDraftCover)
+  const hasUnsavedChanges =
+    confirmedDraftCover !== null || dirtyLocales['pt-BR'] || dirtyLocales['en-US']
   const activeWorkflowVersion = selectWorkflowContentVersion(
     publication.versions,
     activeLocale,
     role,
     publication.archivedAt,
   )
-  useConfirmedCoverNavigationGuard(confirmedDraftCover !== null)
+  useUnsavedChangesNavigationGuard(hasUnsavedChanges)
+
+  const updateLocaleDirty = useCallback((locale: ContentLocale, dirty: boolean) => {
+    setDirtyLocales((current) =>
+      current[locale] === dirty ? current : { ...current, [locale]: dirty },
+    )
+  }, [])
 
   function updateConfirmedDraftCover(event: ConfirmedDraftCoverEvent) {
     setConfirmedDraftCover((current) => transitionConfirmedDraftCover(current, event))
+  }
+
+  function changeLocale(nextLocale: ContentLocale) {
+    const decision = localeSwitchDecision(
+      activeLocale,
+      nextLocale,
+      dirtyLocales[activeLocale],
+      coverLocked,
+    )
+    if (decision === 'stay') return
+    if (decision === 'confirm_discard' && !window.confirm(UNSAVED_CHANGES_WARNING)) return
+    updateLocaleDirty(activeLocale, false)
+    setActiveLocale(nextLocale)
   }
 
   return (
@@ -128,12 +159,7 @@ export function ContentEditor({
           {initialError}
         </p>
       )}
-      <Tabs
-        value={activeLocale}
-        onValueChange={(value) => {
-          if (!coverLocked) setActiveLocale(value as ContentLocale)
-        }}
-      >
+      <Tabs value={activeLocale} onValueChange={(value) => changeLocale(value as ContentLocale)}>
         <TabsList className="grid h-10 w-full max-w-sm grid-cols-2 rounded-lg">
           <TabsTrigger value="pt-BR" disabled={coverLocked}>
             Portugues · pt-BR
@@ -167,6 +193,7 @@ export function ContentEditor({
                 onPendingCoverResolutionChange={setPendingCoverResolution}
                 onConfirmedDraftCoverEvent={updateConfirmedDraftCover}
                 onCoverBusyChange={setCoverBusy}
+                onDirtyChange={updateLocaleDirty}
               />
             </TabsContent>
           )
@@ -198,6 +225,7 @@ function LocaleEditor({
   onPendingCoverResolutionChange,
   onConfirmedDraftCoverEvent,
   onCoverBusyChange,
+  onDirtyChange,
 }: {
   publicationId: string
   locale: ContentLocale
@@ -214,6 +242,7 @@ function LocaleEditor({
   onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
   onConfirmedDraftCoverEvent: (event: ConfirmedDraftCoverEvent) => void
   onCoverBusyChange: (busy: boolean) => void
+  onDirtyChange: (locale: ContentLocale, dirty: boolean) => void
 }) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
@@ -302,6 +331,7 @@ function LocaleEditor({
         onPendingCoverResolutionChange={onPendingCoverResolutionChange}
         onConfirmedDraftCoverEvent={onConfirmedDraftCoverEvent}
         onCoverBusyChange={onCoverBusyChange}
+        onDirtyChange={onDirtyChange}
       />
     </div>
   )
@@ -319,6 +349,7 @@ function DraftForm({
   onPendingCoverResolutionChange,
   onConfirmedDraftCoverEvent,
   onCoverBusyChange,
+  onDirtyChange,
 }: {
   publicationId: string
   version: Version
@@ -331,6 +362,7 @@ function DraftForm({
   onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
   onConfirmedDraftCoverEvent: (event: ConfirmedDraftCoverEvent) => void
   onCoverBusyChange: (busy: boolean) => void
+  onDirtyChange: (locale: ContentLocale, dirty: boolean) => void
 }) {
   const router = useRouter()
   const [title, setTitle] = useState(version.title ?? '')
@@ -343,6 +375,7 @@ function DraftForm({
   const [targeting, setTargeting] = useState<Targeting>(version.targeting)
   const [bodyMarkdown, setBodyMarkdown] = useState(version.bodyMarkdown ?? '')
   const [coverAssetId, setCoverAssetId] = useState<string | null>(version.cover?.assetId ?? null)
+  const [editBaseline, setEditBaseline] = useState(() => createDraftEditBaseline(version))
   const [saveState, setSaveState] = useState<DraftSaveState>({
     versionId: version.versionId,
     expectedUpdatedAt: version.updatedAt,
@@ -352,7 +385,7 @@ function DraftForm({
   const [pending, setPending] = useState<'save' | 'submit' | 'recover' | null>(null)
   const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null)
 
-  function draft(): ContentDraftInput {
+  function currentDraft(): ContentDraftInput {
     const confirmedAssetId = confirmedCoverAssetForLocale(confirmedDraftCover, version.locale)
     return {
       locale: version.locale,
@@ -360,17 +393,23 @@ function DraftForm({
       title,
       excerpt,
       bodyMarkdown,
-      tags: normalizeTags(tagInput),
+      tags: normalizeDraftTags(tagInput),
       featuredToday,
       coverAssetId: confirmedAssetId ?? coverAssetId,
       targeting,
     }
   }
 
+  const dirty = isDraftDirty(editBaseline, currentDraft(), canEdit)
+  useEffect(() => {
+    onDirtyChange(version.locale, dirty)
+    return () => onDirtyChange(version.locale, false)
+  }, [dirty, onDirtyChange, version.locale])
+
   async function persist(andSubmit: boolean) {
     if (coverBusy || pendingCoverResolution || saveState.stale) return
     const attemptState = { ...saveState, confirmedCover: confirmedDraftCover }
-    const payload = buildDraftSavePayload(attemptState, draft())
+    const payload = buildDraftSavePayload(attemptState, currentDraft())
     if (!payload) return
     setPending(andSubmit ? 'submit' : 'save')
     setMessage(null)
@@ -391,7 +430,9 @@ function DraftForm({
     }
     onConfirmedDraftCoverEvent({ type: 'save', locale: version.locale, succeeded: true })
     setSaveState(savedState)
-    setTagInput(normalizeTags(tagInput).join(', '))
+    setEditBaseline({ versionId: version.versionId, draft: payload.draft })
+    onDirtyChange(version.locale, false)
+    setTagInput(normalizeDraftTags(tagInput).join(', '))
     if (andSubmit) {
       const submitResult = await submitContentVersionAction({
         versionId: version.versionId,
@@ -519,7 +560,7 @@ function DraftForm({
                 id={`tags-${version.versionId}`}
                 value={tagInput}
                 onChange={(event) => setTagInput(event.target.value)}
-                onBlur={() => canEdit && setTagInput(normalizeTags(tagInput).join(', '))}
+                onBlur={() => canEdit && setTagInput(normalizeDraftTags(tagInput).join(', '))}
                 disabled={!canEdit}
                 placeholder="habitos, alimentacao-consciente"
               />
@@ -763,11 +804,10 @@ function shortId(value: string): string {
   return `${value.slice(0, 8)}...`
 }
 
-function useConfirmedCoverNavigationGuard(enabled: boolean) {
+function useUnsavedChangesNavigationGuard(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
 
-    const warning = 'A capa confirmada ainda nao foi salva. Deseja sair mesmo assim?'
     let restoringHistory = false
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
@@ -795,7 +835,7 @@ function useConfirmedCoverNavigationGuard(enabled: boolean) {
       ) {
         return
       }
-      if (!window.confirm(warning)) {
+      if (!window.confirm(UNSAVED_CHANGES_WARNING)) {
         event.preventDefault()
         event.stopPropagation()
       }
@@ -805,7 +845,7 @@ function useConfirmedCoverNavigationGuard(enabled: boolean) {
         restoringHistory = false
         return
       }
-      if (!window.confirm(warning)) {
+      if (!window.confirm(UNSAVED_CHANGES_WARNING)) {
         restoringHistory = true
         window.history.forward()
       }
@@ -820,23 +860,4 @@ function useConfirmedCoverNavigationGuard(enabled: boolean) {
       document.removeEventListener('click', handleDocumentClick, true)
     }
   }, [enabled])
-}
-
-function normalizeTags(value: string): string[] {
-  return [
-    ...new Set(
-      value
-        .split(/[,\n]/)
-        .map((tag) =>
-          tag
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
-            .trim()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, ''),
-        )
-        .filter(Boolean),
-    ),
-  ]
 }

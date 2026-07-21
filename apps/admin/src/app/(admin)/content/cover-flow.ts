@@ -10,6 +10,16 @@ export type PendingCoverResolution = {
   assetId: string
 }
 
+export type ConfirmedDraftCover = {
+  assetId: string
+  locale: 'pt-BR' | 'en-US'
+}
+
+export type ConfirmedDraftCoverEvent =
+  | { type: 'confirm'; cover: ConfirmedDraftCover }
+  | { type: 'save'; locale: ConfirmedDraftCover['locale']; succeeded: boolean }
+  | { type: 'discard'; assetId: string; succeeded: boolean }
+
 export type CoverFlowResult =
   | { status: 'completed'; asset: SafeContentAsset; pending: null }
   | { status: 'discarded'; pending: null }
@@ -38,8 +48,26 @@ export function coverAttemptBlocked(pending: PendingCoverResolution | null): boo
 export function coverPublicationLocked(
   pending: PendingCoverResolution | null,
   busy: boolean,
+  confirmed: ConfirmedDraftCover | null = null,
 ): boolean {
-  return busy || coverAttemptBlocked(pending)
+  return busy || coverAttemptBlocked(pending) || confirmed !== null
+}
+
+export function confirmedCoverAssetForLocale(
+  confirmed: ConfirmedDraftCover | null,
+  locale: ConfirmedDraftCover['locale'],
+): string | null {
+  return confirmed?.locale === locale ? confirmed.assetId : null
+}
+
+export function transitionConfirmedDraftCover(
+  current: ConfirmedDraftCover | null,
+  event: ConfirmedDraftCoverEvent,
+): ConfirmedDraftCover | null {
+  if (event.type === 'confirm') return event.cover
+  if (!current || !event.succeeded) return current
+  if (event.type === 'save') return current.locale === event.locale ? null : current
+  return current.assetId === event.assetId ? null : current
 }
 
 export async function beginCoverUpload<FileValue>(

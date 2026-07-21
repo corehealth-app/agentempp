@@ -11,6 +11,7 @@ const PUBLISHER_ID = '00000000-0000-0000-0000-000000000603'
 const PUBLICATION_ID = '00000000-0000-0000-0000-000000000604'
 const VERSION_ID = '00000000-0000-0000-0000-000000000605'
 const SOURCE_VERSION_ID = '00000000-0000-0000-0000-000000000606'
+const ENGLISH_VERSION_ID = '00000000-0000-0000-0000-000000000608'
 const ASSET_ID = '00000000-0000-0000-0000-000000000607'
 const UPDATED_AT = '2026-07-21T12:00:00.000Z'
 const OBJECT_PATH = `content/${ASSET_ID}.jpg`
@@ -160,12 +161,25 @@ function validDraft() {
 }
 
 describe('Supabase content admin repository', () => {
-  it('lists bounded publication summaries without selecting bodies or cover internals', async () => {
+  it('filters through a matching alias while returning every version without sensitive fields', async () => {
     const client = fakeClient({
       tableResults: {
         content_publications: [
           {
-            data: [{ ...publicationRow(), content_versions: [versionSummaryRow()] }],
+            data: [
+              {
+                ...publicationRow(),
+                content_versions: [
+                  versionSummaryRow(),
+                  {
+                    ...versionSummaryRow(),
+                    id: ENGLISH_VERSION_ID,
+                    locale: 'en-US',
+                    title: 'Mindful eating',
+                  },
+                ],
+              },
+            ],
             error: null,
           },
         ],
@@ -206,14 +220,46 @@ describe('Supabase content admin repository', () => {
             publishAt: null,
             updatedAt: UPDATED_AT,
           },
+          {
+            versionId: ENGLISH_VERSION_ID,
+            version: 1,
+            locale: 'en-US',
+            category: 'nutrition',
+            title: 'Mindful eating',
+            state: 'draft',
+            featuredToday: false,
+            authorId: ACTOR_ID,
+            reviewerId: null,
+            publishAt: null,
+            updatedAt: UPDATED_AT,
+          },
         ],
       },
     ])
     const selection = client.queryLog.find(
       (entry) => entry.table === 'content_publications' && entry.method === 'select',
     )?.args[0]
-    expect(selection).toContain('content_versions!inner')
+    expect(selection).toContain('content_versions (')
+    expect(selection).toContain('matching_versions:content_versions!inner ()')
     expect(selection).not.toMatch(/body_markdown|object_path|bucket_id|etag|signed_url|token/)
+    expect(
+      client.queryLog
+        .filter(
+          (entry) =>
+            entry.table === 'content_publications' &&
+            ['eq', 'is', 'gt', 'lte'].includes(entry.method) &&
+            String(entry.args[0]).startsWith('matching_versions.'),
+        )
+        .map(({ method, args }) => ({ method, args })),
+    ).toEqual([
+      { method: 'eq', args: ['matching_versions.state', 'draft'] },
+      { method: 'eq', args: ['matching_versions.locale', 'pt-BR'] },
+      { method: 'eq', args: ['matching_versions.category', 'nutrition'] },
+      { method: 'eq', args: ['matching_versions.authored_by', ACTOR_ID] },
+      { method: 'eq', args: ['matching_versions.reviewed_by', REVIEWER_ID] },
+      { method: 'eq', args: ['matching_versions.featured_today', false] },
+      { method: 'is', args: ['matching_versions.publish_at', null] },
+    ])
     expect(
       client.queryLog
         .filter(

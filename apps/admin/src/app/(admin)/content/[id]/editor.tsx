@@ -3,7 +3,7 @@
 import type { ContentDraftInput } from '@mpp/core'
 import { FilePlus2, Loader2, Save, Send } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +25,14 @@ import {
   saveContentDraftAction,
   submitContentVersionAction,
 } from '../actions'
-import { coverPublicationLocked, type PendingCoverResolution } from '../cover-flow'
+import {
+  type ConfirmedDraftCover,
+  type ConfirmedDraftCoverEvent,
+  confirmedCoverAssetForLocale,
+  coverPublicationLocked,
+  type PendingCoverResolution,
+  transitionConfirmedDraftCover,
+} from '../cover-flow'
 import { type ContentLocale, formatOperationalDate, selectLocaleVersions } from '../presenter'
 import { CoverUploader } from './cover-uploader'
 import { MarkdownPreview } from './markdown-preview'
@@ -85,9 +92,15 @@ export function ContentEditor({
   const [activeLocale, setActiveLocale] = useState<ContentLocale>('pt-BR')
   const [pendingCoverResolution, setPendingCoverResolution] =
     useState<PendingCoverResolution | null>(null)
+  const [confirmedDraftCover, setConfirmedDraftCover] = useState<ConfirmedDraftCover | null>(null)
   const [coverBusy, setCoverBusy] = useState(false)
-  const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy)
+  const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy, confirmedDraftCover)
   const activeSelection = selectLocaleVersions(publication.versions, activeLocale, now)
+  useConfirmedCoverNavigationGuard(confirmedDraftCover !== null)
+
+  function updateConfirmedDraftCover(event: ConfirmedDraftCoverEvent) {
+    setConfirmedDraftCover((current) => transitionConfirmedDraftCover(current, event))
+  }
 
   return (
     <div className="space-y-4">
@@ -127,8 +140,11 @@ export function ContentEditor({
                 role={role}
                 archived={Boolean(publication.archivedAt)}
                 pendingCoverResolution={pendingCoverResolution}
+                confirmedDraftCover={confirmedDraftCover}
+                coverBusy={coverBusy}
                 coverLocked={coverLocked}
                 onPendingCoverResolutionChange={setPendingCoverResolution}
+                onConfirmedDraftCoverEvent={updateConfirmedDraftCover}
                 onCoverBusyChange={setCoverBusy}
               />
             </TabsContent>
@@ -154,8 +170,11 @@ function LocaleEditor({
   role,
   archived,
   pendingCoverResolution,
+  confirmedDraftCover,
+  coverBusy,
   coverLocked,
   onPendingCoverResolutionChange,
+  onConfirmedDraftCoverEvent,
   onCoverBusyChange,
 }: {
   publicationId: string
@@ -166,8 +185,11 @@ function LocaleEditor({
   role: AdminRole
   archived: boolean
   pendingCoverResolution: PendingCoverResolution | null
+  confirmedDraftCover: ConfirmedDraftCover | null
+  coverBusy: boolean
   coverLocked: boolean
   onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
+  onConfirmedDraftCoverEvent: (event: ConfirmedDraftCoverEvent) => void
   onCoverBusyChange: (busy: boolean) => void
 }) {
   const router = useRouter()
@@ -250,8 +272,11 @@ function LocaleEditor({
         canEdit={canEdit}
         role={role}
         pendingCoverResolution={pendingCoverResolution}
+        confirmedDraftCover={confirmedDraftCover}
+        coverBusy={coverBusy}
         coverLocked={coverLocked}
         onPendingCoverResolutionChange={onPendingCoverResolutionChange}
+        onConfirmedDraftCoverEvent={onConfirmedDraftCoverEvent}
         onCoverBusyChange={onCoverBusyChange}
       />
     </div>
@@ -263,16 +288,22 @@ function DraftForm({
   canEdit,
   role,
   pendingCoverResolution,
+  confirmedDraftCover,
+  coverBusy,
   coverLocked,
   onPendingCoverResolutionChange,
+  onConfirmedDraftCoverEvent,
   onCoverBusyChange,
 }: {
   version: Version
   canEdit: boolean
   role: AdminRole
   pendingCoverResolution: PendingCoverResolution | null
+  confirmedDraftCover: ConfirmedDraftCover | null
+  coverBusy: boolean
   coverLocked: boolean
   onPendingCoverResolutionChange: (pending: PendingCoverResolution | null) => void
+  onConfirmedDraftCoverEvent: (event: ConfirmedDraftCoverEvent) => void
   onCoverBusyChange: (busy: boolean) => void
 }) {
   const router = useRouter()
@@ -291,6 +322,7 @@ function DraftForm({
   const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null)
 
   function draft(): ContentDraftInput {
+    const confirmedAssetId = confirmedCoverAssetForLocale(confirmedDraftCover, version.locale)
     return {
       locale: version.locale,
       category,
@@ -299,12 +331,13 @@ function DraftForm({
       bodyMarkdown,
       tags: normalizeTags(tagInput),
       featuredToday,
-      coverAssetId,
+      coverAssetId: confirmedAssetId ?? coverAssetId,
       targeting,
     }
   }
 
   async function persist(andSubmit: boolean) {
+    if (coverBusy || pendingCoverResolution) return
     setPending(andSubmit ? 'submit' : 'save')
     setMessage(null)
     const saveResult = await saveContentDraftAction({
@@ -313,11 +346,13 @@ function DraftForm({
       draft: draft(),
     })
     if (!saveResult.ok) {
+      onConfirmedDraftCoverEvent({ type: 'save', locale: version.locale, succeeded: false })
       setPending(null)
       setMessage({ tone: 'error', text: saveResult.error })
       return
     }
     const saved = saveResult.data as { updatedAt: string }
+    onConfirmedDraftCoverEvent({ type: 'save', locale: version.locale, succeeded: true })
     setExpectedUpdatedAt(saved.updatedAt)
     setTagInput(normalizeTags(tagInput).join(', '))
     if (andSubmit) {
@@ -449,8 +484,12 @@ function DraftForm({
             disabled={!canEdit}
             publicationLocked={coverLocked}
             pendingResolution={pendingCoverResolution}
+            locale={version.locale}
+            confirmedDraftCover={confirmedDraftCover}
+            draftPending={pending !== null}
             onAssetChange={setCoverAssetId}
             onPendingResolutionChange={onPendingCoverResolutionChange}
+            onConfirmedDraftCoverEvent={onConfirmedDraftCoverEvent}
             onBusyChange={onCoverBusyChange}
           />
 
@@ -469,13 +508,16 @@ function DraftForm({
             <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
               <Button
                 variant="outline"
-                disabled={pending !== null}
+                disabled={pending !== null || coverBusy || pendingCoverResolution !== null}
                 onClick={() => void persist(false)}
               >
                 {pending === 'save' ? <Loader2 className="animate-spin" /> : <Save />}Salvar
                 rascunho
               </Button>
-              <Button disabled={pending !== null} onClick={() => void persist(true)}>
+              <Button
+                disabled={pending !== null || coverBusy || pendingCoverResolution !== null}
+                onClick={() => void persist(true)}
+              >
                 {pending === 'submit' ? <Loader2 className="animate-spin" /> : <Send />}Enviar para
                 revisao
               </Button>
@@ -617,6 +659,65 @@ function timestampLabel(value: string | null): string {
 
 function shortId(value: string): string {
   return `${value.slice(0, 8)}...`
+}
+
+function useConfirmedCoverNavigationGuard(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return
+
+    const warning = 'A capa confirmada ainda nao foi salva. Deseja sair mesmo assim?'
+    let restoringHistory = false
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return
+      }
+      const target = event.target instanceof Element ? event.target.closest('a[href]') : null
+      if (!(target instanceof HTMLAnchorElement) || target.target === '_blank' || target.download) {
+        return
+      }
+      const destination = new URL(target.href, window.location.href)
+      if (
+        destination.origin !== window.location.origin ||
+        destination.href === window.location.href
+      ) {
+        return
+      }
+      if (!window.confirm(warning)) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+    const handlePopState = () => {
+      if (restoringHistory) {
+        restoringHistory = false
+        return
+      }
+      if (!window.confirm(warning)) {
+        restoringHistory = true
+        window.history.forward()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+    document.addEventListener('click', handleDocumentClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+      document.removeEventListener('click', handleDocumentClick, true)
+    }
+  }, [enabled])
 }
 
 function normalizeTags(value: string): string[] {

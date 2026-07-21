@@ -11,7 +11,10 @@ import {
 } from '../actions'
 import {
   beginCoverUpload,
+  type ConfirmedDraftCover,
+  type ConfirmedDraftCoverEvent,
   type CoverFlowResult,
+  confirmedCoverAssetForLocale,
   coverAttemptBlocked,
   type PendingCoverResolution,
   resolvePendingCover,
@@ -41,16 +44,24 @@ export function CoverUploader({
   disabled,
   publicationLocked,
   pendingResolution,
+  locale,
+  confirmedDraftCover,
+  draftPending,
   onAssetChange,
   onPendingResolutionChange,
+  onConfirmedDraftCoverEvent,
   onBusyChange,
 }: {
   cover: SafeContentAsset | null
   disabled: boolean
   publicationLocked: boolean
   pendingResolution: PendingCoverResolution | null
+  locale: ConfirmedDraftCover['locale']
+  confirmedDraftCover: ConfirmedDraftCover | null
+  draftPending: boolean
   onAssetChange: (assetId: string | null) => void
   onPendingResolutionChange: (pending: PendingCoverResolution | null) => void
+  onConfirmedDraftCoverEvent: (event: ConfirmedDraftCoverEvent) => void
   onBusyChange: (busy: boolean) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -62,6 +73,7 @@ export function CoverUploader({
     phase === 'completing' ||
     phase === 'discarding'
   const attemptBlocked = coverAttemptBlocked(pendingResolution)
+  const confirmedAssetId = confirmedCoverAssetForLocale(confirmedDraftCover, locale)
 
   function updatePhase(nextPhase: UploadPhase) {
     setPhase(nextPhase)
@@ -74,7 +86,7 @@ export function CoverUploader({
   }
 
   async function upload(file: File) {
-    if (publicationLocked || busy || attemptBlocked) return
+    if (publicationLocked || busy || attemptBlocked || draftPending) return
     setError(null)
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       updatePhase('error')
@@ -123,7 +135,7 @@ export function CoverUploader({
   }
 
   async function retry(command: 'complete' | 'discard') {
-    if (!pendingResolution) return
+    if (!pendingResolution || busy || draftPending) return
     setError(null)
     updatePhase(command === 'complete' ? 'completing' : 'discarding')
     const result = await resolvePendingCover(pendingResolution, command, {
@@ -137,10 +149,42 @@ export function CoverUploader({
     applyResult(result)
   }
 
+  async function discardConfirmedCover() {
+    if (!confirmedAssetId || busy || draftPending) return
+    setError(null)
+    updatePhase('discarding')
+    let succeeded = false
+    let discardError = 'Nao foi possivel descartar a capa confirmada.'
+    try {
+      const result = await discardAsset(confirmedAssetId)
+      succeeded = result.ok
+      if (!result.ok) discardError = result.error
+    } catch {
+      succeeded = false
+    }
+    onConfirmedDraftCoverEvent({
+      type: 'discard',
+      assetId: confirmedAssetId,
+      succeeded,
+    })
+    if (!succeeded) {
+      updatePhase('error')
+      setError(discardError)
+      return
+    }
+    onAssetChange(cover?.assetId ?? null)
+    updatePhase('idle')
+    setError(null)
+  }
+
   function applyResult(result: CoverFlowResult) {
     onPendingResolutionChange(result.pending)
     if (result.status === 'completed') {
       onAssetChange(result.asset.assetId)
+      onConfirmedDraftCoverEvent({
+        type: 'confirm',
+        cover: { assetId: result.asset.assetId, locale },
+      })
       updatePhase('success')
       setError(null)
       return
@@ -163,9 +207,11 @@ export function CoverUploader({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Capa</p>
           <p className="truncate text-xs text-muted-foreground">
-            {cover
-              ? `${cover.mimeType} · ${formatBytes(cover.sizeBytes)} · ${cover.status}`
-              : 'Sem capa vinculada'}
+            {confirmedAssetId
+              ? 'Capa confirmada, aguardando salvamento do rascunho'
+              : cover
+                ? `${cover.mimeType} · ${formatBytes(cover.sizeBytes)} · ${cover.status}`
+                : 'Sem capa vinculada'}
           </p>
         </div>
         {!disabled && (
@@ -173,7 +219,7 @@ export function CoverUploader({
             type="button"
             size="sm"
             variant="outline"
-            disabled={publicationLocked || busy || attemptBlocked}
+            disabled={publicationLocked || busy || attemptBlocked || draftPending}
             onClick={() => inputRef.current?.click()}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Upload />}
@@ -186,7 +232,7 @@ export function CoverUploader({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
-        disabled={disabled || publicationLocked || busy || attemptBlocked}
+        disabled={disabled || publicationLocked || busy || attemptBlocked || draftPending}
         onChange={(event) => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
@@ -204,7 +250,7 @@ export function CoverUploader({
               type="button"
               size="sm"
               variant="outline"
-              disabled={busy}
+              disabled={busy || draftPending}
               onClick={() => void retry('complete')}
             >
               {phase === 'completing' ? <Loader2 className="animate-spin" /> : <Check />}
@@ -215,7 +261,7 @@ export function CoverUploader({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={busy || draftPending}
             onClick={() => void retry('discard')}
           >
             {phase === 'discarding' ? (
@@ -229,12 +275,26 @@ export function CoverUploader({
           </Button>
         </div>
       )}
-      {!disabled && cover && (
+      {!disabled && confirmedAssetId && (
+        <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy || draftPending}
+            onClick={() => void discardConfirmedCover()}
+          >
+            {phase === 'discarding' ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            Descartar capa nao salva
+          </Button>
+        </div>
+      )}
+      {!disabled && cover && !confirmedAssetId && (
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          disabled={publicationLocked}
+          disabled={publicationLocked || draftPending}
           onClick={() => onAssetChange(null)}
         >
           Remover do rascunho

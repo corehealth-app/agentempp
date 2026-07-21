@@ -284,6 +284,10 @@ const LIST_SELECTION = `
     updated_at
   )
 `
+const MATCHING_VERSION_RELATION = 'matching_versions'
+const FILTERED_LIST_SELECTION = `${LIST_SELECTION.trimEnd()},
+  ${MATCHING_VERSION_RELATION}:content_versions!inner ()
+`
 const PUBLICATION_SELECTION =
   'id, slug, created_by, archived_by, archived_at, created_at, updated_at'
 const VERSION_SELECTION =
@@ -389,9 +393,7 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
         filters.reviewerId !== undefined ||
         filters.schedule !== undefined ||
         filters.featuredToday !== undefined
-      const selection = hasVersionFilter
-        ? LIST_SELECTION.replace('content_versions (', 'content_versions!inner (')
-        : LIST_SELECTION
+      const selection = hasVersionFilter ? FILTERED_LIST_SELECTION : LIST_SELECTION
       let query = client
         .from('content_publications')
         .select(selection)
@@ -407,32 +409,40 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
           filters.status &&
           ['draft', 'in_review', 'approved', 'rejected'].includes(filters.status)
         ) {
-          query = query.eq('content_versions.state', filters.status)
+          query = query.eq(`${MATCHING_VERSION_RELATION}.state`, filters.status)
         }
         if (filters.status === 'scheduled') {
           query = query
-            .eq('content_versions.state', 'approved')
-            .gt('content_versions.publish_at', new Date().toISOString())
+            .eq(`${MATCHING_VERSION_RELATION}.state`, 'approved')
+            .gt(`${MATCHING_VERSION_RELATION}.publish_at`, new Date().toISOString())
         }
         if (filters.status === 'published') {
           query = query
-            .eq('content_versions.state', 'approved')
-            .lte('content_versions.publish_at', new Date().toISOString())
+            .eq(`${MATCHING_VERSION_RELATION}.state`, 'approved')
+            .lte(`${MATCHING_VERSION_RELATION}.publish_at`, new Date().toISOString())
         }
       }
-      if (filters.locale) query = query.eq('content_versions.locale', filters.locale)
-      if (filters.category) query = query.eq('content_versions.category', filters.category)
-      if (filters.authorId) query = query.eq('content_versions.authored_by', filters.authorId)
-      if (filters.reviewerId) query = query.eq('content_versions.reviewed_by', filters.reviewerId)
-      if (filters.featuredToday !== undefined) {
-        query = query.eq('content_versions.featured_today', filters.featuredToday)
+      if (filters.locale) query = query.eq(`${MATCHING_VERSION_RELATION}.locale`, filters.locale)
+      if (filters.category) {
+        query = query.eq(`${MATCHING_VERSION_RELATION}.category`, filters.category)
       }
-      if (filters.schedule === 'unscheduled') query = query.is('content_versions.publish_at', null)
+      if (filters.authorId) {
+        query = query.eq(`${MATCHING_VERSION_RELATION}.authored_by`, filters.authorId)
+      }
+      if (filters.reviewerId) {
+        query = query.eq(`${MATCHING_VERSION_RELATION}.reviewed_by`, filters.reviewerId)
+      }
+      if (filters.featuredToday !== undefined) {
+        query = query.eq(`${MATCHING_VERSION_RELATION}.featured_today`, filters.featuredToday)
+      }
+      if (filters.schedule === 'unscheduled') {
+        query = query.is(`${MATCHING_VERSION_RELATION}.publish_at`, null)
+      }
       if (filters.schedule === 'scheduled') {
-        query = query.gt('content_versions.publish_at', new Date().toISOString())
+        query = query.gt(`${MATCHING_VERSION_RELATION}.publish_at`, new Date().toISOString())
       }
       if (filters.schedule === 'published') {
-        query = query.lte('content_versions.publish_at', new Date().toISOString())
+        query = query.lte(`${MATCHING_VERSION_RELATION}.publish_at`, new Date().toISOString())
       }
 
       const rows = parseDatabase(

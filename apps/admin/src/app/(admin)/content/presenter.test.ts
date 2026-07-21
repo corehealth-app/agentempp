@@ -4,6 +4,7 @@ import type {
   ContentPublicationSummary,
 } from '@/lib/content/admin-service'
 import {
+  canPublishContentVersion,
   canReviewContentVersion,
   directPublicationPage,
   effectiveVersionStatus,
@@ -119,6 +120,22 @@ describe('content presenter', () => {
     expect(canReviewContentVersion('nutrition_admin', 'in_review', null)).toBe(true)
     expect(canReviewContentVersion('nutrition_admin', 'in_review', NOW)).toBe(false)
     expect(canReviewContentVersion('content_editor', 'in_review', null)).toBe(false)
+  })
+
+  it('shows publish controls only for an approved version without a publication command', () => {
+    expect(canPublishContentVersion('master_admin', 'approved', null, null)).toBe(true)
+    expect(
+      canPublishContentVersion('master_admin', 'approved', '2026-07-22T12:00:00.000Z', null),
+    ).toBe(false)
+    expect(
+      canPublishContentVersion('master_admin', 'approved', '2026-07-21T11:00:00.000Z', null),
+    ).toBe(false)
+    expect(canPublishContentVersion('master_admin', 'approved', null, NOW)).toBe(false)
+    expect(canPublishContentVersion('content_editor', 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('nutrition_admin', 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('operations_admin', 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('support', 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('master_admin', 'draft', null, null)).toBe(false)
   })
 
   it('labels unscheduled, scheduled, and published timing in Portuguese', () => {

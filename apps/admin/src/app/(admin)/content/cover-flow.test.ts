@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   beginCoverUpload,
+  type ConfirmedDraftCover,
+  confirmedCoverAssetForLocale,
   coverAttemptBlocked,
   coverPublicationLocked,
   type PendingCoverResolution,
   resolvePendingCover,
+  transitionConfirmedDraftCover,
 } from './cover-flow'
 
 const ASSET_ID = '00000000-0000-0000-0000-000000000701'
@@ -126,9 +129,73 @@ describe('cover flow', () => {
   })
 
   it('locks the publication across locales while an upload is busy or resolution is pending', () => {
-    expect(coverPublicationLocked(null, false)).toBe(false)
-    expect(coverPublicationLocked(null, true)).toBe(true)
-    expect(coverPublicationLocked({ kind: 'complete', assetId: ASSET_ID }, false)).toBe(true)
-    expect(coverPublicationLocked({ kind: 'discard', assetId: ASSET_ID }, false)).toBe(true)
+    const confirmed: ConfirmedDraftCover = { assetId: ASSET_ID, locale: 'pt-BR' }
+
+    expect(coverPublicationLocked(null, false, null)).toBe(false)
+    expect(coverPublicationLocked(null, true, null)).toBe(true)
+    expect(coverPublicationLocked({ kind: 'complete', assetId: ASSET_ID }, false, null)).toBe(true)
+    expect(coverPublicationLocked({ kind: 'discard', assetId: ASSET_ID }, false, null)).toBe(true)
+    expect(coverPublicationLocked(null, false, confirmed)).toBe(true)
+  })
+
+  it('exposes a confirmed cover only to its owning locale', () => {
+    const confirmed: ConfirmedDraftCover = { assetId: ASSET_ID, locale: 'pt-BR' }
+
+    expect(confirmedCoverAssetForLocale(confirmed, 'pt-BR')).toBe(ASSET_ID)
+    expect(confirmedCoverAssetForLocale(confirmed, 'en-US')).toBeNull()
+    expect(Object.keys(confirmed)).toEqual(['assetId', 'locale'])
+    expect(JSON.stringify(confirmed)).not.toMatch(/signedUrl|secret-capability/)
+  })
+
+  it('clears a confirmed cover only after a successful save for its locale', () => {
+    const confirmed: ConfirmedDraftCover = { assetId: ASSET_ID, locale: 'pt-BR' }
+
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'save',
+        locale: 'pt-BR',
+        succeeded: false,
+      }),
+    ).toEqual(confirmed)
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'save',
+        locale: 'en-US',
+        succeeded: true,
+      }),
+    ).toEqual(confirmed)
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'save',
+        locale: 'pt-BR',
+        succeeded: true,
+      }),
+    ).toBeNull()
+  })
+
+  it('clears a confirmed cover only after its discard succeeds', () => {
+    const confirmed: ConfirmedDraftCover = { assetId: ASSET_ID, locale: 'pt-BR' }
+
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'discard',
+        assetId: ASSET_ID,
+        succeeded: false,
+      }),
+    ).toEqual(confirmed)
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'discard',
+        assetId: '00000000-0000-0000-0000-000000000702',
+        succeeded: true,
+      }),
+    ).toEqual(confirmed)
+    expect(
+      transitionConfirmedDraftCover(confirmed, {
+        type: 'discard',
+        assetId: ASSET_ID,
+        succeeded: true,
+      }),
+    ).toBeNull()
   })
 })

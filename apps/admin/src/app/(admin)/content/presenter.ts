@@ -115,6 +115,15 @@ export function canReviewContentVersion(
   return role === 'nutrition_admin' && state === 'in_review' && !archivedAt
 }
 
+export function canPublishContentVersion(
+  role: AdminRole,
+  state: ContentPublicationDetail['versions'][number]['state'],
+  publishAt: string | null,
+  archivedAt: string | null,
+): boolean {
+  return role === 'master_admin' && state === 'approved' && publishAt === null && !archivedAt
+}
+
 export function formatOperationalDate(value: string): string {
   const formatted = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',

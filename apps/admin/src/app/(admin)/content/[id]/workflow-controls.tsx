@@ -24,7 +24,11 @@ import {
   publishContentVersionAction,
   reviewContentVersionAction,
 } from '../actions'
-import { canReviewContentVersion, parseUtcDateTimeLocal } from '../presenter'
+import {
+  canPublishContentVersion,
+  canReviewContentVersion,
+  parseUtcDateTimeLocal,
+} from '../presenter'
 
 type Version = ContentPublicationDetail['versions'][number]
 
@@ -111,7 +115,9 @@ export function WorkflowControls({
   }
 
   const canReview = version ? canReviewContentVersion(role, version.state, archivedAt) : false
-  const canPublish = role === 'master_admin' && version?.state === 'approved' && !archivedAt
+  const canPublish = version
+    ? canPublishContentVersion(role, version.state, version.publishAt, archivedAt)
+    : false
   const canArchive = role === 'master_admin' && !archivedAt
   if (!canReview && !canPublish && !canArchive && !message) return null
 

@@ -447,6 +447,110 @@ describe('content admin service', () => {
     })
   })
 
+  it('returns the uploaded asset when a concurrent completion wins the RPC race', async () => {
+    const repo = repository()
+    const coverStorage = storage()
+    vi.mocked(repo.getAssetInternal)
+      .mockResolvedValueOnce({
+        assetId: ASSET_ID,
+        bucketId: 'content-covers',
+        objectPath: ASSET_PATH,
+        mimeType: 'image/jpeg',
+        declaredSizeBytes: 1024,
+        actualSizeBytes: null,
+        etag: null,
+        status: 'pending_upload',
+      })
+      .mockResolvedValueOnce({
+        assetId: ASSET_ID,
+        bucketId: 'content-covers',
+        objectPath: ASSET_PATH,
+        mimeType: 'image/jpeg',
+        declaredSizeBytes: 1024,
+        actualSizeBytes: 1024,
+        etag: 'winning-etag',
+        status: 'uploaded',
+      })
+    vi.mocked(repo.completeAsset).mockRejectedValue(
+      new ContentAdminError('cover_mismatch', 'completeAsset'),
+    )
+    const service = createContentAdminService({ repository: repo, storage: coverStorage })
+
+    await expect(service.completeCover({ actorId: ACTOR_ID, assetId: ASSET_ID })).resolves.toEqual({
+      assetId: ASSET_ID,
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      status: 'uploaded',
+    })
+    expect(repo.getAssetInternal).toHaveBeenCalledTimes(2)
+    expect(repo.deleteAsset).not.toHaveBeenCalled()
+    expect(coverStorage.remove).not.toHaveBeenCalled()
+  })
+
+  it('returns an already uploaded asset without another Storage or RPC operation', async () => {
+    const repo = repository()
+    const coverStorage = storage()
+    vi.mocked(repo.getAssetInternal).mockResolvedValue({
+      assetId: ASSET_ID,
+      bucketId: 'content-covers',
+      objectPath: ASSET_PATH,
+      mimeType: 'image/jpeg',
+      declaredSizeBytes: 1024,
+      actualSizeBytes: 1024,
+      etag: 'persisted-etag',
+      status: 'uploaded',
+    })
+    const service = createContentAdminService({ repository: repo, storage: coverStorage })
+
+    await expect(service.completeCover({ actorId: ACTOR_ID, assetId: ASSET_ID })).resolves.toEqual({
+      assetId: ASSET_ID,
+      mimeType: 'image/jpeg',
+      sizeBytes: 1024,
+      status: 'uploaded',
+    })
+    expect(coverStorage.getObjectInfo).not.toHaveBeenCalled()
+    expect(repo.completeAsset).not.toHaveBeenCalled()
+    expect(repo.deleteAsset).not.toHaveBeenCalled()
+    expect(coverStorage.remove).not.toHaveBeenCalled()
+  })
+
+  it('maps a deleted asset after a completion race to lifecycle without cleanup', async () => {
+    const repo = repository()
+    const coverStorage = storage()
+    vi.mocked(repo.getAssetInternal)
+      .mockResolvedValueOnce({
+        assetId: ASSET_ID,
+        bucketId: 'content-covers',
+        objectPath: ASSET_PATH,
+        mimeType: 'image/jpeg',
+        declaredSizeBytes: 1024,
+        actualSizeBytes: null,
+        etag: null,
+        status: 'pending_upload',
+      })
+      .mockResolvedValueOnce({
+        assetId: ASSET_ID,
+        bucketId: 'content-covers',
+        objectPath: ASSET_PATH,
+        mimeType: 'image/jpeg',
+        declaredSizeBytes: 1024,
+        actualSizeBytes: null,
+        etag: null,
+        status: 'deleted',
+      })
+    vi.mocked(repo.completeAsset).mockRejectedValue(
+      new ContentAdminError('cover_mismatch', 'completeAsset'),
+    )
+    const service = createContentAdminService({ repository: repo, storage: coverStorage })
+
+    await expect(
+      service.completeCover({ actorId: ACTOR_ID, assetId: ASSET_ID }),
+    ).rejects.toMatchObject({ code: 'lifecycle', operation: 'completeCover' })
+    expect(repo.getAssetInternal).toHaveBeenCalledTimes(2)
+    expect(repo.deleteAsset).not.toHaveBeenCalled()
+    expect(coverStorage.remove).not.toHaveBeenCalled()
+  })
+
   it.each([
     { size: 2048, contentType: 'image/jpeg', etag: 'exact-etag' },
     { size: 1024, contentType: 'image/png', etag: 'exact-etag' },
@@ -493,6 +597,7 @@ describe('content admin service', () => {
     await expect(
       service.completeCover({ actorId: ACTOR_ID, assetId: ASSET_ID }),
     ).rejects.toMatchObject({ code: 'cover_mismatch' })
+    expect(repo.getAssetInternal).toHaveBeenCalledTimes(2)
     expect(order).toEqual(['complete-rpc', 'delete-rpc', 'storage-remove'])
   })
 

@@ -830,7 +830,7 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
 function storageStatus(error: unknown): number | null {
   if (typeof error !== 'object' || error === null) return null
   const candidate = error as { status?: unknown; statusCode?: unknown }
-  const value = candidate.statusCode ?? candidate.status
+  const value = candidate.status ?? candidate.statusCode
   if (typeof value === 'number') return value
   if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value)
   return null
@@ -851,10 +851,7 @@ function createStorage(client: ContentSupabaseClient): ContentAdminStorage {
       const { data, error } = await bucket().info(objectPath)
       if (error) {
         const status = storageStatus(error)
-        throw new ContentStorageError(
-          status === 400 || status === 404 ? 'missing' : 'transient',
-          'info',
-        )
+        throw new ContentStorageError(status === 404 ? 'missing' : 'transient', 'info')
       }
       const parsed = z
         .object({
@@ -875,7 +872,7 @@ function createStorage(client: ContentSupabaseClient): ContentAdminStorage {
       const { error } = await bucket().remove([objectPath])
       if (!error) return
       const status = storageStatus(error)
-      if (status === 400 || status === 404) return
+      if (status === 404) return
       throw new ContentStorageError('transient', 'remove')
     },
   }

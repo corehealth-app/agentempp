@@ -765,4 +765,45 @@ describe('Supabase content admin repository', () => {
     expect(consoleError).not.toHaveBeenCalled()
     consoleError.mockRestore()
   })
+
+  it('treats generic Storage 400 info and remove failures as transient', async () => {
+    const client = fakeClient()
+    client.storageBucket.info.mockResolvedValueOnce({
+      data: null,
+      error: {
+        status: 400,
+        statusCode: '400',
+        message: `validation failed ${OBJECT_PATH}?token=secret`,
+      },
+    })
+    client.storageBucket.remove.mockResolvedValueOnce({
+      data: null,
+      error: {
+        status: 400,
+        statusCode: '400',
+        message: `provider rejected ${OBJECT_PATH}?token=secret`,
+      },
+    })
+    const { storage } = createSupabaseContentAdminDependencies(client)
+
+    const infoFailure = await storage.getObjectInfo(OBJECT_PATH).catch((error: unknown) => error)
+    const removeFailure = await storage.remove(OBJECT_PATH).catch((error: unknown) => error)
+
+    expect(infoFailure).toBeInstanceOf(ContentStorageError)
+    expect(infoFailure).toMatchObject({ kind: 'transient', operation: 'info' })
+    expect(removeFailure).toBeInstanceOf(ContentStorageError)
+    expect(removeFailure).toMatchObject({ kind: 'transient', operation: 'remove' })
+    expect(String(infoFailure) + String(removeFailure)).not.toMatch(/token=secret|content\//)
+  })
+
+  it('accepts only Storage 404 as missing during object removal', async () => {
+    const client = fakeClient()
+    client.storageBucket.remove.mockResolvedValueOnce({
+      data: null,
+      error: { status: 404, statusCode: 'NoSuchKey', message: 'Object not found' },
+    })
+    const { storage } = createSupabaseContentAdminDependencies(client)
+
+    await expect(storage.remove(OBJECT_PATH)).resolves.toBeUndefined()
+  })
 })

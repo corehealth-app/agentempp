@@ -462,8 +462,16 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
         })
       } catch (error) {
         if (error instanceof ContentAdminError && error.code === 'cover_mismatch') {
-          await cleanupAsset(command.actorId, asset)
-          throw new ContentAdminError('cover_mismatch', 'completeCover')
+          const current = await repository.getAssetInternal(asset.assetId)
+          if (!current || current.bucketId !== 'content-covers') {
+            throw new ContentAdminError('lifecycle', 'completeCover')
+          }
+          if (current.status === 'uploaded') return safeAsset(current)
+          if (current.status === 'pending_upload') {
+            await cleanupAsset(command.actorId, current)
+            throw new ContentAdminError('cover_mismatch', 'completeCover')
+          }
+          throw new ContentAdminError('lifecycle', 'completeCover')
         }
         throw error
       }

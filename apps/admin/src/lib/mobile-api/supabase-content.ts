@@ -2,6 +2,7 @@ import {
   type ContentListQuery,
   contentCategorySchema,
   contentLocaleSchema,
+  contentVersionSchema,
   decodeContentCursor,
   encodeContentCursor,
 } from '@mpp/core'
@@ -58,7 +59,7 @@ const feedItemSchema = z
     readingTimeMinutes: z.number().int().positive(),
     publishAt: z.string().datetime({ offset: true }),
     featuredToday: z.boolean(),
-    version: z.number().int().positive(),
+    version: contentVersionSchema,
     saved: z.boolean(),
     completed: z.boolean(),
     cover: coverReferenceSchema.nullable(),
@@ -81,7 +82,7 @@ const feedPageSchema = z
 const userStateSchema = z
   .object({
     publicationId: z.string().uuid(),
-    version: z.number().int().positive(),
+    version: contentVersionSchema,
     saved: z.boolean(),
     completed: z.boolean(),
     changed: z.boolean(),
@@ -96,24 +97,31 @@ type RpcResult = Promise<{
 
 type UntypedRpc = (functionName: string, params: Record<string, unknown>) => RpcResult
 
+const SAFE_ERROR_CODES = new Set(['P0002', '40001', 'P4090', 'invalid_response'])
+
 function safeErrorCode(code: string | undefined): string {
-  return code && /^[A-Za-z0-9_]{1,32}$/.test(code) ? code : 'unknown_error'
+  return code && SAFE_ERROR_CODES.has(code) ? code : 'unknown_error'
+}
+
+function safeRequestId(requestId: string | undefined): string {
+  return requestId && /^[A-Za-z0-9._:-]{8,128}$/.test(requestId) ? requestId : 'unknown'
 }
 
 function operationFailure(
+  requestId: string,
   operation: string,
   error?: { code?: string } | null,
-  publicationId?: string,
 ): never {
   const repositoryCode = error?.code ?? 'invalid_response'
   console.error('[mobile-content] operation_failed', {
+    request_id: requestId,
     operation,
-    ...(publicationId ? { publication_id: publicationId } : {}),
     error_code: safeErrorCode(repositoryCode),
   })
 
   if (repositoryCode === 'P0002') throw new ContentRepositoryError('not_found')
   if (repositoryCode === '40001') throw new ContentRepositoryError('version_changed')
+  if (repositoryCode === 'P4090') throw new ContentRepositoryError('idempotency_conflict')
   throw new ContentRepositoryError('internal')
 }
 
@@ -121,10 +129,10 @@ function parseResult<T>(
   schema: z.ZodType<T>,
   value: unknown,
   operation: string,
-  publicationId?: string,
+  requestId: string,
 ): T {
   const parsed = schema.safeParse(value)
-  if (!parsed.success) operationFailure(operation, null, publicationId)
+  if (!parsed.success) operationFailure(requestId, operation)
   return parsed.data
 }
 
@@ -137,7 +145,7 @@ function decodeCursor(query: ContentListQuery) {
   }
 }
 
-function createRepository(supabase: ServiceClient): ContentRepository {
+function createRepository(supabase: ServiceClient, requestId: string): ContentRepository {
   const rpc = supabase.rpc.bind(supabase) as unknown as UntypedRpc
 
   return {
@@ -151,8 +159,8 @@ function createRepository(supabase: ServiceClient): ContentRepository {
         p_cursor_publish_at: cursor?.publishAt ?? null,
         p_cursor_publication_id: cursor?.publicationId ?? null,
       })
-      if (error) operationFailure('list', error)
-      const page = parseResult(feedPageSchema, data, 'parse_list')
+      if (error) operationFailure(requestId, 'list', error)
+      const page = parseResult(feedPageSchema, data, 'parse_list', requestId)
       return {
         items: page.items,
         nextCursor: page.nextCursor ? encodeContentCursor(page.nextCursor) : null,
@@ -165,9 +173,9 @@ function createRepository(supabase: ServiceClient): ContentRepository {
         p_publication_id: publicationId,
       })
       if (error?.code === 'P0002') return null
-      if (error) operationFailure('get', error, publicationId)
+      if (error) operationFailure(requestId, 'get', error)
       if (data === null) return null
-      return parseResult(detailSchema, data, 'parse_detail', publicationId)
+      return parseResult(detailSchema, data, 'parse_detail', requestId)
     },
 
     async recordRead(input) {
@@ -179,8 +187,8 @@ function createRepository(supabase: ServiceClient): ContentRepository {
         p_origin: input.origin,
         p_event_key: input.idempotencyKey,
       })
-      if (error) operationFailure('record_read', error, input.publicationId)
-      return parseResult(userStateSchema, data, 'parse_read_state', input.publicationId)
+      if (error) operationFailure(requestId, 'record_read', error)
+      return parseResult(userStateSchema, data, 'parse_read_state', requestId)
     },
 
     async setSaved(input) {
@@ -192,8 +200,8 @@ function createRepository(supabase: ServiceClient): ContentRepository {
         p_origin: input.origin,
         p_event_key: input.idempotencyKey,
       })
-      if (error) operationFailure('set_saved', error, input.publicationId)
-      return parseResult(userStateSchema, data, 'parse_saved_state', input.publicationId)
+      if (error) operationFailure(requestId, 'set_saved', error)
+      return parseResult(userStateSchema, data, 'parse_saved_state', requestId)
     },
   }
 }
@@ -211,10 +219,13 @@ function createCoverGateway(
 
 export function createSupabaseContentDependencies(
   supabase: ServiceClient,
-  options: { coverCapabilities?: Pick<ContentCoverCapabilityCodec, 'issue'> } = {},
+  options: {
+    requestId?: string
+    coverCapabilities?: Pick<ContentCoverCapabilityCodec, 'issue'>
+  } = {},
 ): ContentServiceDependencies {
   return {
-    repository: createRepository(supabase),
+    repository: createRepository(supabase, safeRequestId(options.requestId)),
     covers: createCoverGateway(options.coverCapabilities),
   }
 }

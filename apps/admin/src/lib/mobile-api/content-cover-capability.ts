@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto'
+import { contentVersionSchema } from '@mpp/core'
 import { z } from 'zod'
 
 const CAPABILITY_VERSION = 1
@@ -12,7 +13,7 @@ const payloadSchema = z
   .object({
     userId: z.string().uuid(),
     publicationId: z.string().uuid(),
-    version: z.number().int().positive(),
+    version: contentVersionSchema,
     issuedAt: z.number().int().nonnegative(),
     expiresAt: z.number().int().positive(),
   })

@@ -16,12 +16,13 @@ export interface ContentSaveRouteContext {
 }
 
 export interface ContentSaveRouteDependencies {
-  createContentDependencies(supabase: ServiceClient): ContentServiceDependencies
+  createContentDependencies(supabase: ServiceClient, requestId: string): ContentServiceDependencies
   executeIdempotent: typeof executeSupabaseIdempotent
 }
 
 const defaultDependencies: ContentSaveRouteDependencies = {
-  createContentDependencies: createSupabaseContentDependencies,
+  createContentDependencies: (supabase, requestId) =>
+    createSupabaseContentDependencies(supabase, { requestId }),
   executeIdempotent: executeSupabaseIdempotent,
 }
 
@@ -40,7 +41,7 @@ export async function handleContentSave(
     async (idempotencyKey) =>
       mobileSuccess(
         await setContentSaved(
-          dependencies.createContentDependencies(context.supabase),
+          dependencies.createContentDependencies(context.supabase, context.requestId),
           context.auth,
           publicationId,
           input,

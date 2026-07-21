@@ -7,6 +7,7 @@ const MIN_CONTENT_BODY_LENGTH = 100
 const MAX_CONTENT_DEPTH = 8
 const MAX_COVER_SIZE_BYTES = 10 * 1024 * 1024
 const MAX_CONTENT_CURSOR_LENGTH = 512
+export const MAX_CONTENT_VERSION = 2_147_483_647
 
 export const contentLocaleSchema = z.enum(['pt-BR', 'en-US'])
 export const contentCategorySchema = z.enum([
@@ -29,6 +30,7 @@ export const contentReadEventSchema = z.enum(['impression', 'opened', 'completed
 const contentProtocolSchema = z.enum(['recomposicao', 'ganho_massa', 'manutencao'])
 const contentPlanSchema = z.enum(['trial', 'mensal', 'anual'])
 const contentPersonalitySchema = z.enum(['focus', 'impulse', 'zen'])
+export const contentVersionSchema = z.number().int().min(1).max(MAX_CONTENT_VERSION)
 
 export interface ContentDraftInput {
   locale: z.infer<typeof contentLocaleSchema>
@@ -84,7 +86,13 @@ const contentTagSchema = z
   .trim()
   .min(1)
   .transform(normalizeTag)
-  .pipe(z.string().min(1).max(40).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/))
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .max(40)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  )
 
 function uniqueValues<T>(values: T[], context: z.RefinementCtx): void {
   if (new Set(values).size !== values.length) {
@@ -130,7 +138,9 @@ export const contentDraftInputSchema = z
     targeting: contentTargetingSchema,
   })
   .strict()
-  .superRefine((value, context) => uniqueValues(value.tags, context)) satisfies z.ZodType<ContentDraftInput>
+  .superRefine((value, context) =>
+    uniqueValues(value.tags, context),
+  ) satisfies z.ZodType<ContentDraftInput>
 
 export const contentListQuerySchema = z
   .object({
@@ -145,14 +155,14 @@ export const contentReadInputSchema = z
   .object({
     event: contentReadEventSchema,
     origin: contentOriginSchema,
-    version: z.number().int().positive(),
+    version: contentVersionSchema,
   })
   .strict() satisfies z.ZodType<ContentReadInput>
 
 export const contentSaveInputSchema = z
   .object({
     saved: z.boolean(),
-    version: z.number().int().positive(),
+    version: contentVersionSchema,
   })
   .strict() satisfies z.ZodType<ContentSaveInput>
 
@@ -198,7 +208,11 @@ function nodeChildren(node: MarkdownNode): MarkdownNode[] {
 }
 
 function isMarkdownNode(value: unknown): value is MarkdownNode {
-  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { type?: unknown }).type === 'string'
+  )
 }
 
 function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline {
@@ -209,7 +223,10 @@ function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline
     case 'strong':
     case 'emphasis':
       if (depth > MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
-      return { type: node.type, children: nodeChildren(node).map((child) => convertInline(child, depth + 1)) }
+      return {
+        type: node.type,
+        children: nodeChildren(node).map((child) => convertInline(child, depth + 1)),
+      }
     case 'link': {
       if (typeof node.url !== 'string' || !isHttpsUrl(node.url)) {
         invalidMarkdown('links must use an absolute HTTPS URL')
@@ -230,9 +247,13 @@ function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline
 function convertBlock(node: MarkdownNode, containerDepth: number): ContentMarkdownBlock {
   switch (node.type) {
     case 'paragraph':
-      return { type: 'paragraph', children: nodeChildren(node).map((child) => convertInline(child, 1)) }
+      return {
+        type: 'paragraph',
+        children: nodeChildren(node).map((child) => convertInline(child, 1)),
+      }
     case 'heading': {
-      if (node.depth !== 2 && node.depth !== 3) invalidMarkdown('only H2 and H3 headings are supported')
+      if (node.depth !== 2 && node.depth !== 3)
+        invalidMarkdown('only H2 and H3 headings are supported')
       return {
         type: 'heading',
         level: node.depth,
@@ -279,16 +300,20 @@ function countWords(blocks: ContentMarkdownBlock[]): number {
     if (value.type === 'blockquote') return value.children.map(block).join(' ')
     return value.children.map(text).join(' ')
   }
-  return blocks
-    .map(block)
-    .join(' ')
-    .match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+  return (
+    blocks
+      .map(block)
+      .join(' ')
+      .match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+  )
 }
 
 export function validateContentMarkdown(value: string): ValidatedContentMarkdown {
   const source = value.replace(/\r\n?/g, '\n')
   if (source.length < MIN_CONTENT_BODY_LENGTH || source.length > MAX_CONTENT_BODY_LENGTH) {
-    invalidMarkdown(`body must be between ${MIN_CONTENT_BODY_LENGTH} and ${MAX_CONTENT_BODY_LENGTH} characters`)
+    invalidMarkdown(
+      `body must be between ${MIN_CONTENT_BODY_LENGTH} and ${MAX_CONTENT_BODY_LENGTH} characters`,
+    )
   }
 
   const root = fromMarkdown(source)

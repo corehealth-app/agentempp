@@ -11,11 +11,12 @@ import {
 import { createSupabaseContentDependencies } from '@/lib/mobile-api/supabase-content'
 
 export interface ContentListRouteDependencies {
-  createContentDependencies(supabase: ServiceClient): ContentServiceDependencies
+  createContentDependencies(supabase: ServiceClient, requestId: string): ContentServiceDependencies
 }
 
 const defaultDependencies: ContentListRouteDependencies = {
-  createContentDependencies: createSupabaseContentDependencies,
+  createContentDependencies: (supabase, requestId) =>
+    createSupabaseContentDependencies(supabase, { requestId }),
 }
 
 function queryRecord(searchParams: URLSearchParams): Record<string, unknown> {
@@ -39,7 +40,7 @@ export async function handleContentList(
   const query = contentListQuerySchema.parse(queryRecord(new URL(context.request.url).searchParams))
   return mobileSuccess(
     await listContent(
-      dependencies.createContentDependencies(context.supabase),
+      dependencies.createContentDependencies(context.supabase, context.requestId),
       context.auth,
       query,
     ),

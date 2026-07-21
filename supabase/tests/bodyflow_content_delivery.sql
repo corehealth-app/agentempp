@@ -1260,7 +1260,7 @@ BEGIN
       v_effective_now
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1281,7 +1281,7 @@ BEGIN
       v_effective_now
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1302,7 +1302,7 @@ BEGIN
       v_effective_now
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1323,7 +1323,7 @@ BEGIN
       v_effective_now
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1344,7 +1344,7 @@ BEGIN
       v_effective_now
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1520,7 +1520,7 @@ BEGIN
       v_effective_now + interval '31 seconds'
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;
@@ -1608,7 +1608,7 @@ BEGIN
       v_effective_now + interval '41 seconds'
     );
   EXCEPTION
-    WHEN invalid_parameter_value THEN
+    WHEN SQLSTATE 'P4090' THEN
       IF SQLERRM = 'content_event_key_conflict' THEN
         v_collision_rejected := true;
       END IF;

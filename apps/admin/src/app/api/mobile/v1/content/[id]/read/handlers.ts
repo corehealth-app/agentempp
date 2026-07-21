@@ -19,12 +19,13 @@ export interface ContentReadRouteContext {
 }
 
 export interface ContentReadRouteDependencies {
-  createContentDependencies(supabase: ServiceClient): ContentServiceDependencies
+  createContentDependencies(supabase: ServiceClient, requestId: string): ContentServiceDependencies
   executeIdempotent: typeof executeSupabaseIdempotent
 }
 
 const defaultDependencies: ContentReadRouteDependencies = {
-  createContentDependencies: createSupabaseContentDependencies,
+  createContentDependencies: (supabase, requestId) =>
+    createSupabaseContentDependencies(supabase, { requestId }),
   executeIdempotent: executeSupabaseIdempotent,
 }
 
@@ -43,7 +44,7 @@ export async function handleContentRead(
     async (idempotencyKey) =>
       mobileSuccess(
         await recordContentRead(
-          dependencies.createContentDependencies(context.supabase),
+          dependencies.createContentDependencies(context.supabase, context.requestId),
           context.auth,
           publicationId,
           input,

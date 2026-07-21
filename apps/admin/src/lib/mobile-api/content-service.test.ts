@@ -329,6 +329,28 @@ describe('mobile educational content service', () => {
     })
   })
 
+  it('maps a repository idempotency conflict to the generic mobile conflict contract', async () => {
+    const deps = dependencies({
+      recordRead: vi.fn(async () => {
+        throw new ContentRepositoryError('idempotency_conflict')
+      }),
+    })
+
+    await expect(
+      recordContentRead(
+        deps,
+        auth,
+        PUBLICATION_ID,
+        { event: 'opened', origin: 'library', version: 3 },
+        'content-read-conflict-401',
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'idempotency_key_conflict',
+      message: 'Idempotency-Key was already used for another request',
+    })
+  })
+
   it('uses the fixed library origin when changing saved state', async () => {
     const deps = dependencies()
     const input: ContentSaveInput = { saved: true, version: 3 }

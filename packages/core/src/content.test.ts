@@ -21,7 +21,8 @@ const LONG_BODY = 'A alimentação consistente apoia decisões graduais e susten
 function nestedList(depth: number): string {
   return Array.from(
     { length: depth },
-    (_, index) => `${'  '.repeat(index)}- ${index === depth - 1 ? LONG_BODY : `Nível ${index + 1}`}`,
+    (_, index) =>
+      `${'  '.repeat(index)}- ${index === depth - 1 ? LONG_BODY : `Nível ${index + 1}`}`,
   ).join('\n')
 }
 
@@ -71,15 +72,21 @@ describe('content contracts', () => {
       'habitos-saudaveis',
     ])
     expect(contentDraftInputSchema.safeParse(validDraft({ title: 'ab' })).success).toBe(false)
-    expect(contentDraftInputSchema.safeParse(validDraft({ title: 'a'.repeat(121) })).success).toBe(false)
-    expect(contentDraftInputSchema.safeParse(validDraft({ excerpt: 'a'.repeat(19) })).success).toBe(false)
-    expect(contentDraftInputSchema.safeParse(validDraft({ excerpt: 'a'.repeat(281) })).success).toBe(false)
-    expect(contentDraftInputSchema.safeParse(validDraft({ tags: ['nutrition', 'nutrition'] })).success).toBe(
+    expect(contentDraftInputSchema.safeParse(validDraft({ title: 'a'.repeat(121) })).success).toBe(
       false,
     )
-    expect(contentDraftInputSchema.safeParse(validDraft({ tags: Array(21).fill('nutrition') })).success).toBe(
+    expect(contentDraftInputSchema.safeParse(validDraft({ excerpt: 'a'.repeat(19) })).success).toBe(
       false,
     )
+    expect(
+      contentDraftInputSchema.safeParse(validDraft({ excerpt: 'a'.repeat(281) })).success,
+    ).toBe(false)
+    expect(
+      contentDraftInputSchema.safeParse(validDraft({ tags: ['nutrition', 'nutrition'] })).success,
+    ).toBe(false)
+    expect(
+      contentDraftInputSchema.safeParse(validDraft({ tags: Array(21).fill('nutrition') })).success,
+    ).toBe(false)
     expect(contentDraftInputSchema.safeParse(validDraft({ unexpected: true })).success).toBe(false)
   })
 
@@ -106,46 +113,70 @@ describe('content contracts', () => {
 
   it('limits cover declarations to approved MIME types and ten MiB', () => {
     for (const mimeType of ['image/jpeg', 'image/png', 'image/webp']) {
-      expect(contentCoverInputSchema.safeParse({ mimeType, sizeBytes: 10 * 1024 * 1024 }).success).toBe(true)
+      expect(
+        contentCoverInputSchema.safeParse({ mimeType, sizeBytes: 10 * 1024 * 1024 }).success,
+      ).toBe(true)
     }
-    expect(contentCoverInputSchema.safeParse({ mimeType: 'image/svg+xml', sizeBytes: 1 }).success).toBe(
-      false,
-    )
     expect(
-      contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 10 * 1024 * 1024 + 1 }).success,
+      contentCoverInputSchema.safeParse({ mimeType: 'image/svg+xml', sizeBytes: 1 }).success,
     ).toBe(false)
-    expect(contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 0 }).success).toBe(false)
-    expect(contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 1, extra: true }).success).toBe(
-      false,
-    )
+    expect(
+      contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 10 * 1024 * 1024 + 1 })
+        .success,
+    ).toBe(false)
+    expect(
+      contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 0 }).success,
+    ).toBe(false)
+    expect(
+      contentCoverInputSchema.safeParse({ mimeType: 'image/jpeg', sizeBytes: 1, extra: true })
+        .success,
+    ).toBe(false)
   })
 
   it('applies list query defaults and rejects unknown query keys', () => {
     expect(contentListQuerySchema.parse({})).toEqual({ surface: 'library', limit: 20 })
-    expect(contentListQuerySchema.parse({ surface: 'today', category: 'sleep', limit: '50' })).toEqual({
+    expect(
+      contentListQuerySchema.parse({ surface: 'today', category: 'sleep', limit: '50' }),
+    ).toEqual({
       surface: 'today',
       category: 'sleep',
       limit: 50,
     })
     expect(contentListQuerySchema.safeParse({ surface: 'library', limit: 0 }).success).toBe(false)
     expect(contentListQuerySchema.safeParse({ surface: 'library', limit: 51 }).success).toBe(false)
-    expect(contentListQuerySchema.safeParse({ surface: 'library', unknown: true }).success).toBe(false)
+    expect(contentListQuerySchema.safeParse({ surface: 'library', unknown: true }).success).toBe(
+      false,
+    )
   })
 
   it('validates strict read and save mutation inputs', () => {
-    expect(contentReadInputSchema.parse({ event: 'opened', origin: 'library', version: 3 })).toEqual({
+    expect(
+      contentReadInputSchema.parse({ event: 'opened', origin: 'library', version: 3 }),
+    ).toEqual({
       event: 'opened',
       origin: 'library',
       version: 3,
     })
-    expect(contentReadInputSchema.safeParse({ event: 'opened', origin: 'email', version: 3 }).success).toBe(
+    expect(
+      contentReadInputSchema.safeParse({ event: 'opened', origin: 'email', version: 3 }).success,
+    ).toBe(false)
+    expect(
+      contentReadInputSchema.safeParse({ event: 'opened', origin: 'library', version: 0 }).success,
+    ).toBe(false)
+    expect(contentSaveInputSchema.parse({ saved: true, version: 3 })).toEqual({
+      saved: true,
+      version: 3,
+    })
+    expect(contentSaveInputSchema.safeParse({ saved: true, version: 3, extra: true }).success).toBe(
       false,
     )
-    expect(contentReadInputSchema.safeParse({ event: 'opened', origin: 'library', version: 0 }).success).toBe(
-      false,
-    )
-    expect(contentSaveInputSchema.parse({ saved: true, version: 3 })).toEqual({ saved: true, version: 3 })
-    expect(contentSaveInputSchema.safeParse({ saved: true, version: 3, extra: true }).success).toBe(false)
+    for (const schema of [contentReadInputSchema, contentSaveInputSchema]) {
+      const base =
+        schema === contentReadInputSchema ? { event: 'opened', origin: 'library' } : { saved: true }
+      expect(schema.safeParse({ ...base, version: 2_147_483_647 }).success).toBe(true)
+      expect(schema.safeParse({ ...base, version: 2_147_483_648 }).success).toBe(false)
+      expect(schema.safeParse({ ...base, version: 1e100 }).success).toBe(false)
+    }
   })
 })
 
@@ -203,8 +234,14 @@ describe('validateContentMarkdown', () => {
   })
 
   it('rounds reading time from 200 words per minute with a one minute minimum', () => {
-    expect(validateContentMarkdown('word '.repeat(200))).toMatchObject({ wordCount: 200, readingTimeMinutes: 1 })
-    expect(validateContentMarkdown('word '.repeat(201))).toMatchObject({ wordCount: 201, readingTimeMinutes: 2 })
+    expect(validateContentMarkdown('word '.repeat(200))).toMatchObject({
+      wordCount: 200,
+      readingTimeMinutes: 1,
+    })
+    expect(validateContentMarkdown('word '.repeat(201))).toMatchObject({
+      wordCount: 201,
+      readingTimeMinutes: 2,
+    })
   })
 
   it.each([
@@ -214,13 +251,19 @@ describe('validateContentMarkdown', () => {
     ['code block', `\`\`\`text\nunsafe\n\`\`\`\n\n${LONG_BODY}`],
     ['thematic break', `${LONG_BODY}\n\n---\n\n${LONG_BODY}`],
     ['inline image', `![cover](https://bodyflow.app/cover.png)\n\n${LONG_BODY}`],
-    ['nested image link', `[![cover](https://bodyflow.app/cover.png)](https://bodyflow.app)\n\n${LONG_BODY}`],
+    [
+      'nested image link',
+      `[![cover](https://bodyflow.app/cover.png)](https://bodyflow.app)\n\n${LONG_BODY}`,
+    ],
     ['HTTP link', `[source](http://bodyflow.app)\n\n${LONG_BODY}`],
     ['data URL', `[source](data:text/plain,unsafe)\n\n${LONG_BODY}`],
     ['JavaScript URL', `[source](javascript:alert(1))\n\n${LONG_BODY}`],
     ['protocol-relative URL', `[source](//bodyflow.app)\n\n${LONG_BODY}`],
     ['definition node', `[source][bodyflow]\n\n[bodyflow]: https://bodyflow.app\n\n${LONG_BODY}`],
-    ['body under 100 characters', 'Texto curto para validar o mínimo de caracteres exigido pelo conteúdo editorial.'],
+    [
+      'body under 100 characters',
+      'Texto curto para validar o mínimo de caracteres exigido pelo conteúdo editorial.',
+    ],
     ['body over 50,000 characters', 'a'.repeat(50_001)],
   ])('rejects %s', (_description, value) => {
     expect(() => validateContentMarkdown(value)).toThrow()
@@ -245,7 +288,9 @@ describe('validateContentMarkdown', () => {
   })
 
   it('rejects titled HTTPS links because link titles are not portable', () => {
-    expect(() => validateContentMarkdown(`[source](https://bodyflow.app "Official site")\n\n${LONG_BODY}`)).toThrow()
+    expect(() =>
+      validateContentMarkdown(`[source](https://bodyflow.app "Official site")\n\n${LONG_BODY}`),
+    ).toThrow()
   })
 
   it('rejects more than eight nested inline nodes', () => {
@@ -257,7 +302,10 @@ describe('validateContentMarkdown', () => {
 
 describe('content cursors', () => {
   it('round-trips an opaque publication cursor', () => {
-    const cursor = encodeContentCursor({ publishAt: '2026-07-21T15:00:00.000Z', publicationId: UUID })
+    const cursor = encodeContentCursor({
+      publishAt: '2026-07-21T15:00:00.000Z',
+      publicationId: UUID,
+    })
 
     expect(cursor).not.toContain('{')
     expect(decodeContentCursor(cursor)).toEqual({
@@ -277,7 +325,9 @@ describe('content cursors', () => {
     ],
     [
       'non ISO date',
-      Buffer.from(JSON.stringify({ publishAt: 'tomorrow', publicationId: UUID })).toString('base64url'),
+      Buffer.from(JSON.stringify({ publishAt: 'tomorrow', publicationId: UUID })).toString(
+        'base64url',
+      ),
     ],
   ])('rejects a %s cursor', (_description, cursor) => {
     expect(() => decodeContentCursor(cursor)).toThrow()

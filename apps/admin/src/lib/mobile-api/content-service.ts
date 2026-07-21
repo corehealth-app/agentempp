@@ -80,6 +80,7 @@ export interface ContentServiceDependencies {
 export type ContentRepositoryErrorReason =
   | 'not_found'
   | 'version_changed'
+  | 'idempotency_conflict'
   | 'invalid_cursor'
   | 'internal'
 
@@ -146,6 +147,12 @@ function mapRepositoryError(error: unknown): MobileApiError {
       return contentNotFound()
     case 'version_changed':
       return new MobileApiError(409, 'content_version_changed', 'Content version changed')
+    case 'idempotency_conflict':
+      return new MobileApiError(
+        409,
+        'idempotency_key_conflict',
+        'Idempotency-Key was already used for another request',
+      )
     case 'invalid_cursor':
       return new MobileApiError(422, 'validation_failed', 'Request validation failed', {
         fields: [{ path: 'cursor', code: 'custom', message: 'Cursor is invalid' }],

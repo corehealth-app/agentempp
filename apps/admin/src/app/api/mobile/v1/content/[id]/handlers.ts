@@ -15,11 +15,12 @@ export interface ContentDetailRouteContext {
 }
 
 export interface ContentDetailRouteDependencies {
-  createContentDependencies(supabase: ServiceClient): ContentServiceDependencies
+  createContentDependencies(supabase: ServiceClient, requestId: string): ContentServiceDependencies
 }
 
 const defaultDependencies: ContentDetailRouteDependencies = {
-  createContentDependencies: createSupabaseContentDependencies,
+  createContentDependencies: (supabase, requestId) =>
+    createSupabaseContentDependencies(supabase, { requestId }),
 }
 
 export async function handleContentDetail(
@@ -31,7 +32,7 @@ export async function handleContentDetail(
   const publicationId = resourceIdSchema.parse(rawId)
   return mobileSuccess(
     await getContent(
-      dependencies.createContentDependencies(context.supabase),
+      dependencies.createContentDependencies(context.supabase, context.requestId),
       context.auth,
       publicationId,
     ),

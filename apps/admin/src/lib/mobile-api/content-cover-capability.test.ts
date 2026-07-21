@@ -86,4 +86,29 @@ describe('content cover capabilities', () => {
     now = (NOW_SECONDS + 300) * 1000
     expect(() => codec.open(valid.token)).toThrowError('Invalid content cover capability')
   })
+
+  it('rejects issuing or opening versions outside the int32 domain', () => {
+    const codec = createContentCoverCapabilityCodec({
+      secret: SECRET,
+      clock: () => NOW_SECONDS * 1000,
+      nonce: () => new Uint8Array(12).fill(5),
+    })
+
+    for (const version of [2_147_483_648, 1e100]) {
+      expect(() =>
+        codec.issue({ userId: USER_ID, publicationId: PUBLICATION_ID, version }),
+      ).toThrow()
+      expect(() =>
+        codec.open(
+          forgeToken({
+            userId: USER_ID,
+            publicationId: PUBLICATION_ID,
+            version,
+            issuedAt: NOW_SECONDS,
+            expiresAt: NOW_SECONDS + 300,
+          }),
+        ),
+      ).toThrowError('Invalid content cover capability')
+    }
+  })
 })

@@ -150,11 +150,40 @@ describe('Supabase educational content adapter', () => {
       new ContentRepositoryError('internal'),
     )
     expect(consoleError).toHaveBeenCalledWith('[mobile-content] operation_failed', {
+      request_id: 'unknown',
       operation: 'parse_list',
       error_code: 'invalid_response',
     })
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('must-not-be-logged')
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(USER_ID)
+  })
+
+  it('rejects out-of-int32 versions in feed and mutation RPC payloads', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    for (const version of [2_147_483_648, 1e100]) {
+      const listRpc = vi.fn().mockResolvedValue({
+        data: { items: [feedItem({ version })], nextCursor: null },
+        error: null,
+      })
+      const listRepository = createSupabaseContentDependencies(serviceClient(listRpc)).repository
+      await expect(listRepository.list(USER_ID, { surface: 'library', limit: 20 })).rejects.toEqual(
+        new ContentRepositoryError('internal'),
+      )
+
+      const stateRpc = vi.fn().mockResolvedValue({ data: state({ version }), error: null })
+      const stateRepository = createSupabaseContentDependencies(serviceClient(stateRpc)).repository
+      await expect(
+        stateRepository.setSaved({
+          userId: USER_ID,
+          publicationId: PUBLICATION_ID,
+          saved: true,
+          version: 4,
+          origin: 'library',
+          idempotencyKey: 'content-save-invalid-response-411',
+        }),
+      ).rejects.toEqual(new ContentRepositoryError('internal'))
+    }
   })
 
   it('returns null for absent or P0002 detail and parses an eligible detail', async () => {
@@ -234,6 +263,30 @@ describe('Supabase educational content adapter', () => {
     )
   })
 
+  it('maps dedicated P4090 failures to idempotency conflict without inspecting provider messages', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: 'P4090',
+        message: 'provider detail that must not drive or enter application logs',
+      },
+    })
+    const repository = createSupabaseContentDependencies(serviceClient(rpc)).repository
+
+    await expect(
+      repository.recordRead({
+        userId: USER_ID,
+        publicationId: PUBLICATION_ID,
+        event: 'opened',
+        origin: 'library',
+        version: 4,
+        idempotencyKey: 'content-read-conflict-411',
+      }),
+    ).rejects.toEqual(new ContentRepositoryError('idempotency_conflict'))
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('provider detail')
+  })
+
   it('calls set_mobile_content_saved with fixed library origin and maps non-visible content', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const rpc = vi
@@ -275,18 +328,21 @@ describe('Supabase educational content adapter', () => {
       data: null,
       error: { code: 'XX999', message: 'secret database detail for a patient' },
     })
-    const repository = createSupabaseContentDependencies(serviceClient(rpc)).repository
+    const repository = createSupabaseContentDependencies(serviceClient(rpc), {
+      requestId: 'request-content-411',
+    }).repository
 
     await expect(repository.get(USER_ID, PUBLICATION_ID)).rejects.toEqual(
       new ContentRepositoryError('internal'),
     )
     expect(consoleError).toHaveBeenCalledWith('[mobile-content] operation_failed', {
+      request_id: 'request-content-411',
       operation: 'get',
-      publication_id: PUBLICATION_ID,
-      error_code: 'XX999',
+      error_code: 'unknown_error',
     })
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secret database detail')
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(USER_ID)
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(PUBLICATION_ID)
   })
 
   it('normalizes malformed provider error codes before logging', async () => {
@@ -304,8 +360,8 @@ describe('Supabase educational content adapter', () => {
       new ContentRepositoryError('internal'),
     )
     expect(consoleError).toHaveBeenCalledWith('[mobile-content] operation_failed', {
+      request_id: 'unknown',
       operation: 'get',
-      publication_id: PUBLICATION_ID,
       error_code: 'unknown_error',
     })
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('synthetic-patient')

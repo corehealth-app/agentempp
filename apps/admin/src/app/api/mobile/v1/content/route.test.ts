@@ -195,13 +195,16 @@ describe('mobile educational content routes', () => {
 
   it('lists only content returned for the authenticated patient with strict defaults', async () => {
     const service = serviceDependencies()
+    const deps = listDependencies(service)
+    const mobileContext = context('https://bodyflow.test/api/mobile/v1/content')
 
-    const response = await handleContentList(
-      context('https://bodyflow.test/api/mobile/v1/content'),
-      listDependencies(service),
-    )
+    const response = await handleContentList(mobileContext, deps)
 
     expect(response.status).toBe(200)
+    expect(deps.createContentDependencies).toHaveBeenCalledWith(
+      mobileContext.supabase,
+      mobileContext.requestId,
+    )
     expect(service.repository.list).toHaveBeenCalledWith(USER_ID, {
       surface: 'library',
       limit: 20,
@@ -234,14 +237,15 @@ describe('mobile educational content routes', () => {
   it('returns eligible detail and validates the route UUID', async () => {
     const service = serviceDependencies()
     const deps = detailDependencies(service)
+    const mobileContext = context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}`)
 
-    const response = await handleContentDetail(
-      context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}`),
-      routeContext(),
-      deps,
-    )
+    const response = await handleContentDetail(mobileContext, routeContext(), deps)
 
     expect(response.status).toBe(200)
+    expect(deps.createContentDependencies).toHaveBeenCalledWith(
+      mobileContext.supabase,
+      mobileContext.requestId,
+    )
     expect(service.repository.get).toHaveBeenCalledWith(USER_ID, PUBLICATION_ID)
     await expect(response.json()).resolves.toMatchObject({
       data: {
@@ -329,19 +333,59 @@ describe('mobile educational content routes', () => {
     expect(service.repository.setSaved).not.toHaveBeenCalled()
   })
 
+  it('rejects out-of-int32 read and save versions before idempotency or repository access', async () => {
+    for (const version of [2_147_483_648, 1e100]) {
+      const readService = serviceDependencies()
+      const readDeps = readDependencies(readService)
+      await expect(
+        handleContentRead(
+          context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/read`, {
+            method: 'POST',
+            body: { event: 'opened', origin: 'library', version },
+            idempotencyKey: 'content-read-invalid-version-421',
+          }),
+          routeContext(),
+          readDeps,
+        ),
+      ).rejects.toThrow()
+      expect(readDeps.executeIdempotent).not.toHaveBeenCalled()
+      expect(readService.repository.recordRead).not.toHaveBeenCalled()
+
+      const saveService = serviceDependencies()
+      const saveDeps = saveDependencies(saveService)
+      await expect(
+        handleContentSave(
+          context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/save`, {
+            method: 'POST',
+            body: { saved: true, version },
+            idempotencyKey: 'content-save-invalid-version-421',
+          }),
+          routeContext(),
+          saveDeps,
+        ),
+      ).rejects.toThrow()
+      expect(saveDeps.executeIdempotent).not.toHaveBeenCalled()
+      expect(saveService.repository.setSaved).not.toHaveBeenCalled()
+    }
+  })
+
   it('passes the same normalized key through generic and database read idempotency', async () => {
     const service = serviceDependencies()
     const deps = readDependencies(service)
-    const response = await handleContentRead(
-      context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/read`, {
+    const mobileContext = context(
+      `https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/read`,
+      {
         method: 'POST',
         body: { event: 'completed', origin: 'today', version: 2 },
         idempotencyKey: 'content-read-normalized-421',
-      }),
-      routeContext(),
-      deps,
+      },
     )
+    const response = await handleContentRead(mobileContext, routeContext(), deps)
 
+    expect(deps.createContentDependencies).toHaveBeenCalledWith(
+      mobileContext.supabase,
+      mobileContext.requestId,
+    )
     expect(deps.executeIdempotent).toHaveBeenCalledWith(
       expect.anything(),
       {
@@ -401,16 +445,21 @@ describe('mobile educational content routes', () => {
 
   it('uses server-owned library origin for save and returns only consolidated state', async () => {
     const service = serviceDependencies()
-    const response = await handleContentSave(
-      context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/save`, {
+    const deps = saveDependencies(service)
+    const mobileContext = context(
+      `https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}/save`,
+      {
         method: 'POST',
         body: { saved: true, version: 2 },
         idempotencyKey: 'content-save-normalized-421',
-      }),
-      routeContext(),
-      saveDependencies(service),
+      },
     )
+    const response = await handleContentSave(mobileContext, routeContext(), deps)
 
+    expect(deps.createContentDependencies).toHaveBeenCalledWith(
+      mobileContext.supabase,
+      mobileContext.requestId,
+    )
     expect(service.repository.setSaved).toHaveBeenCalledWith({
       userId: USER_ID,
       publicationId: PUBLICATION_ID,

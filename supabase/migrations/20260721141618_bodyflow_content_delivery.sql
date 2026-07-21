@@ -601,7 +601,7 @@ BEGIN
       OR v_existing_event_type IS DISTINCT FROM p_event_type
       OR v_existing_desired_saved IS NOT NULL
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
     RETURN v_existing_response;
   END IF;
@@ -777,7 +777,7 @@ BEGIN
       OR v_existing_event_type IS DISTINCT FROM p_event_type
       OR v_existing_desired_saved IS NOT NULL
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
     RETURN v_existing_response;
   END IF;
@@ -803,7 +803,7 @@ BEGIN
       OR v_existing_version IS DISTINCT FROM p_version
       OR v_existing_event_type IS DISTINCT FROM p_event_type
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
 
     SELECT
@@ -876,7 +876,7 @@ BEGIN
       OR v_existing_version IS DISTINCT FROM p_version
       OR v_existing_event_type IS DISTINCT FROM p_event_type
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
 
     SELECT
@@ -1094,7 +1094,7 @@ BEGIN
       OR v_existing_event_type IS NOT NULL
       OR v_existing_desired_saved IS DISTINCT FROM p_saved
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
     RETURN v_existing_response;
   END IF;
@@ -1270,7 +1270,7 @@ BEGIN
       OR v_existing_event_type IS NOT NULL
       OR v_existing_desired_saved IS DISTINCT FROM p_saved
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
     RETURN v_existing_response;
   END IF;
@@ -1296,7 +1296,7 @@ BEGIN
       OR v_existing_version IS DISTINCT FROM p_version
       OR v_existing_event_type IS DISTINCT FROM v_event_type
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
 
     SELECT
@@ -1403,7 +1403,7 @@ BEGIN
       OR v_existing_version IS DISTINCT FROM p_version
       OR v_existing_event_type IS DISTINCT FROM v_event_type
       OR v_existing_origin IS DISTINCT FROM p_origin THEN
-      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = '22023';
+      RAISE EXCEPTION 'content_event_key_conflict' USING ERRCODE = 'P4090';
     END IF;
 
     SELECT

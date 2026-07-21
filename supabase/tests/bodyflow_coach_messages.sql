@@ -227,6 +227,7 @@ BEGIN
     slug,
     label,
     status,
+    parent_pack_id,
     created_by,
     approved_by,
     approved_at
@@ -235,6 +236,7 @@ BEGIN
     'bodyflow-coach-sql-test',
     'BodyFlow coach SQL test',
     'draft',
+    (SELECT pack.id FROM public.coach_content_packs pack WHERE pack.status = 'active'),
     v_actor_id,
     v_actor_id,
     timestamptz '2026-07-20 12:00:00+00'

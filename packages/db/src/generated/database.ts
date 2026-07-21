@@ -3392,6 +3392,19 @@ export type Database = {
         Returns: Json
       }
       agent_kpis: { Args: { days?: number }; Returns: Json }
+      approve_and_activate_coach_content_pack: {
+        Args: {
+          p_actor_id: string
+          p_expected_snapshot_hash: string
+          p_now: string
+          p_pack_id: string
+        }
+        Returns: Json
+      }
+      archive_coach_content_pack: {
+        Args: { p_actor_id: string; p_now: string; p_pack_id: string }
+        Returns: Json
+      }
       attention_cleanup_expired: { Args: never; Returns: number }
       attention_dismiss: {
         Args: { p_kind: string; p_reason?: string; p_user_id: string }
@@ -3498,6 +3511,15 @@ export type Database = {
           p_now?: string
           p_payload: Json
           p_provider_event_id: string
+        }
+        Returns: Json
+      }
+      clone_active_coach_content_pack: {
+        Args: {
+          p_actor_id: string
+          p_label: string
+          p_now: string
+          p_slug: string
         }
         Returns: Json
       }
@@ -3788,6 +3810,35 @@ export type Database = {
         Returns: string
       }
       resume_user: { Args: { p_user_id: string }; Returns: undefined }
+      revise_coach_assisted_draft_entries: {
+        Args: {
+          p_actor_id: string
+          p_completion_tokens: number
+          p_cost_usd: number
+          p_group_key: string
+          p_latency_ms: number
+          p_model: string
+          p_now: string
+          p_pack_id: string
+          p_prompt_tokens: number
+          p_revisions: Json
+        }
+        Returns: Json
+      }
+      revise_coach_draft_entries: {
+        Args: {
+          p_actor_id: string
+          p_now: string
+          p_pack_id: string
+          p_provenance: string
+          p_revisions: Json
+        }
+        Returns: Json
+      }
+      rollback_coach_content_pack: {
+        Args: { p_actor_id: string; p_now: string; p_pack_id: string }
+        Returns: Json
+      }
       save_training_plan_atomic: {
         Args: {
           p_days_per_week: number
@@ -3801,6 +3852,16 @@ export type Database = {
           p_valid_until: string
           p_version: number
           p_weekly_schedule: Json
+        }
+        Returns: Json
+      }
+      schedule_coach_content_pack: {
+        Args: {
+          p_actor_id: string
+          p_effective_at: string
+          p_expected_snapshot_hash: string
+          p_now: string
+          p_pack_id: string
         }
         Returns: Json
       }
@@ -3970,6 +4031,10 @@ export type Database = {
       }
       user_metadata_merge: {
         Args: { p_patch: Json; p_user_id: string }
+        Returns: Json
+      }
+      validate_coach_content_pack: {
+        Args: { p_pack_id: string }
         Returns: Json
       }
     }

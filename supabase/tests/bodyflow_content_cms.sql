@@ -132,7 +132,7 @@ BEGIN
     'public.archive_content_publication(uuid,uuid)',
     'public.create_content_asset(uuid,uuid,text,bigint,text)',
     'public.complete_content_asset(uuid,uuid,bigint,text)',
-    'public.delete_content_asset(uuid,uuid)'
+    'public.delete_content_asset(uuid,uuid,text)'
   ]
   LOOP
     IF to_regprocedure(v_function) IS NULL THEN
@@ -1148,7 +1148,28 @@ BEGIN
   v_expected_updated_at := (v_result->>'updated_at')::timestamptz;
 
   BEGIN
-    PERFORM public.delete_content_asset(v_editor_id, v_asset_id);
+    PERFORM public.delete_content_asset(v_editor_id, v_asset_id, 'pending_upload');
+    RAISE EXCEPTION 'stale pending cleanup deleted an uploaded content cover';
+  EXCEPTION
+    WHEN serialization_failure THEN NULL;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_assets asset
+    WHERE asset.id = v_asset_id
+      AND asset.status = 'uploaded'
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.audit_log audit
+    WHERE audit.action = 'content.asset.delete'
+      AND audit.entity_id = v_asset_id::text
+  ) THEN
+    RAISE EXCEPTION 'stale content cover deletion mutated or audited the uploaded asset';
+  END IF;
+
+  BEGIN
+    PERFORM public.delete_content_asset(v_editor_id, v_asset_id, 'uploaded');
     RAISE EXCEPTION 'referenced content cover was deleted';
   EXCEPTION
     WHEN check_violation THEN NULL;
@@ -1163,33 +1184,47 @@ BEGIN
   );
 
   BEGIN
-    PERFORM public.delete_content_asset(v_reviewer_id, v_deleted_asset_id);
+    PERFORM public.delete_content_asset(
+      v_reviewer_id,
+      v_deleted_asset_id,
+      'pending_upload'
+    );
     RAISE EXCEPTION 'nutrition_admin deleted a content asset';
   EXCEPTION
     WHEN insufficient_privilege THEN NULL;
   END;
 
   BEGIN
-    PERFORM public.delete_content_asset(v_master_id, v_deleted_asset_id);
+    PERFORM public.delete_content_asset(v_master_id, v_deleted_asset_id, 'pending_upload');
     RAISE EXCEPTION 'master_admin deleted a content asset';
   EXCEPTION
     WHEN insufficient_privilege THEN NULL;
   END;
 
   BEGIN
-    PERFORM public.delete_content_asset(v_editor_two_id, v_deleted_asset_id);
+    PERFORM public.delete_content_asset(v_editor_two_id, v_deleted_asset_id, 'pending_upload');
     RAISE EXCEPTION 'non-owner content editor deleted another editor asset';
   EXCEPTION
     WHEN insufficient_privilege THEN NULL;
   END;
 
-  v_result := public.delete_content_asset(v_editor_id, v_deleted_asset_id);
+  v_result := public.delete_content_asset(v_editor_id, v_deleted_asset_id, 'pending_upload');
   IF v_result->>'status' <> 'deleted' OR (
     SELECT status
     FROM public.content_assets
     WHERE id = v_deleted_asset_id
   ) <> 'deleted' THEN
     RAISE EXCEPTION 'unreferenced pending content cover was not deleted';
+  END IF;
+
+  v_result := public.delete_content_asset(v_editor_id, v_deleted_asset_id, 'pending_upload');
+  IF v_result->>'status' <> 'deleted' OR (
+    SELECT count(*)
+    FROM public.audit_log audit
+    WHERE audit.action = 'content.asset.delete'
+      AND audit.entity_id = v_deleted_asset_id::text
+  ) <> 1 THEN
+    RAISE EXCEPTION 'already-deleted content cover retry was not safely idempotent';
   END IF;
 
   v_draft := jsonb_set(v_draft, '{coverAssetId}', to_jsonb(v_deleted_asset_id::text));

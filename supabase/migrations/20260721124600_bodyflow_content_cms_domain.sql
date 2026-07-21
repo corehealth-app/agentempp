@@ -1898,7 +1898,8 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.delete_content_asset(
   p_actor_id uuid,
-  p_asset_id uuid
+  p_asset_id uuid,
+  p_expected_status text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1918,8 +1919,10 @@ BEGIN
     RAISE EXCEPTION 'content_editor actor is required' USING ERRCODE = '42501';
   END IF;
 
-  IF p_asset_id IS NULL THEN
-    RAISE EXCEPTION 'content asset is required' USING ERRCODE = '22023';
+  IF p_asset_id IS NULL
+    OR p_expected_status IS NULL
+    OR p_expected_status NOT IN ('pending_upload', 'uploaded', 'deleted') THEN
+    RAISE EXCEPTION 'content asset and expected status are required' USING ERRCODE = '22023';
   END IF;
 
   SELECT *
@@ -1941,6 +1944,10 @@ BEGIN
       'status', 'deleted',
       'deleted_at', v_asset.deleted_at
     );
+  END IF;
+  IF v_asset.status IS DISTINCT FROM p_expected_status THEN
+    RAISE EXCEPTION 'content asset changed since it was loaded'
+      USING ERRCODE = '40001';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -2020,7 +2027,7 @@ REVOKE ALL ON FUNCTION public.create_content_asset(uuid, uuid, text, bigint, tex
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.complete_content_asset(uuid, uuid, bigint, text)
   FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.delete_content_asset(uuid, uuid)
+REVOKE ALL ON FUNCTION public.delete_content_asset(uuid, uuid, text)
   FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.create_content_publication(uuid, text) TO service_role;
@@ -2032,7 +2039,7 @@ GRANT EXECUTE ON FUNCTION public.publish_content_version(uuid, uuid, timestamptz
 GRANT EXECUTE ON FUNCTION public.archive_content_publication(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.create_content_asset(uuid, uuid, text, bigint, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_content_asset(uuid, uuid, bigint, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.delete_content_asset(uuid, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.delete_content_asset(uuid, uuid, text) TO service_role;
 
 REVOKE ALL ON FUNCTION private.guard_content_publication_mutation()
   FROM PUBLIC, anon, authenticated;

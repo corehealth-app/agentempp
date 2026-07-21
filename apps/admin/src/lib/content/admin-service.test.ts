@@ -601,6 +601,34 @@ describe('content admin service', () => {
     expect(order).toEqual(['complete-rpc', 'delete-rpc', 'storage-remove'])
   })
 
+  it('does not remove Storage when pending cleanup loses to an uploaded asset', async () => {
+    const repo = repository()
+    const coverStorage = storage()
+    let persistedStatus: 'pending_upload' | 'uploaded' = 'pending_upload'
+    vi.mocked(coverStorage.getObjectInfo).mockResolvedValue({
+      size: 2048,
+      contentType: 'image/jpeg',
+      etag: 'changed-object',
+    })
+    vi.mocked(repo.deleteAsset).mockImplementation(async (input) => {
+      persistedStatus = 'uploaded'
+      expect(input).toEqual({
+        actorId: ACTOR_ID,
+        assetId: ASSET_ID,
+        expectedStatus: 'pending_upload',
+      })
+      throw new ContentAdminError('stale', 'deleteAsset')
+    })
+    const service = createContentAdminService({ repository: repo, storage: coverStorage })
+
+    await expect(
+      service.completeCover({ actorId: ACTOR_ID, assetId: ASSET_ID }),
+    ).rejects.toMatchObject({ code: 'stale', operation: 'deleteAsset' })
+    expect(persistedStatus).toBe('uploaded')
+    expect(repo.deleteAsset).toHaveBeenCalledOnce()
+    expect(coverStorage.remove).not.toHaveBeenCalled()
+  })
+
   it('cleans up a missing object but leaves pending state on transient info failures', async () => {
     const repo = repository()
     const coverStorage = storage()
@@ -681,6 +709,11 @@ describe('content admin service', () => {
     await service.deleteCover({ actorId: ACTOR_ID, assetId: ASSET_ID })
 
     expect(order).toEqual(['delete-rpc', 'storage-remove'])
+    expect(repo.deleteAsset).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      assetId: ASSET_ID,
+      expectedStatus: 'deleted',
+    })
   })
 
   it('does not log signed URLs, object paths, or provider details', async () => {

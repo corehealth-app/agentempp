@@ -814,7 +814,11 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
         client,
         'deleteAsset',
         'delete_content_asset',
-        { p_actor_id: input.actorId, p_asset_id: input.assetId },
+        {
+          p_actor_id: input.actorId,
+          p_asset_id: input.assetId,
+          p_expected_status: input.expectedStatus,
+        },
         deletedAssetResultSchema,
       )
       return {

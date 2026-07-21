@@ -516,7 +516,11 @@ describe('Supabase content admin repository', () => {
       actualSizeBytes: 1024,
       etag: 'exact-etag',
     })
-    await repository.deleteAsset({ actorId: ACTOR_ID, assetId: ASSET_ID })
+    await repository.deleteAsset({
+      actorId: ACTOR_ID,
+      assetId: ASSET_ID,
+      expectedStatus: 'uploaded',
+    })
 
     expect(client.rpc.mock.calls).toEqual([
       ['create_content_publication', { p_actor_id: ACTOR_ID, p_slug: 'alimentacao-consciente' }],
@@ -582,7 +586,14 @@ describe('Supabase content admin repository', () => {
           p_etag: 'exact-etag',
         },
       ],
-      ['delete_content_asset', { p_actor_id: ACTOR_ID, p_asset_id: ASSET_ID }],
+      [
+        'delete_content_asset',
+        {
+          p_actor_id: ACTOR_ID,
+          p_asset_id: ASSET_ID,
+          p_expected_status: 'uploaded',
+        },
+      ],
     ])
   })
 
@@ -596,6 +607,7 @@ describe('Supabase content admin repository', () => {
     ['archive', '23514', 'lifecycle'],
     ['completeAsset', '23514', 'cover_mismatch'],
     ['deleteAsset', '23514', 'cover_referenced'],
+    ['deleteAsset', '40001', 'stale'],
     ['createAsset', 'XX000', 'database_unavailable'],
   ] as const)('maps %s SQLSTATE %s to %s without DB messages', async (method, sqlstate, code) => {
     const client = fakeClient({
@@ -643,7 +655,12 @@ describe('Supabase content admin repository', () => {
           actualSizeBytes: 1024,
           etag: 'exact-etag',
         }),
-      deleteAsset: () => repository.deleteAsset({ actorId: ACTOR_ID, assetId: ASSET_ID }),
+      deleteAsset: () =>
+        repository.deleteAsset({
+          actorId: ACTOR_ID,
+          assetId: ASSET_ID,
+          expectedStatus: 'pending_upload',
+        }),
       createAsset: () =>
         repository.createAsset({
           actorId: ACTOR_ID,

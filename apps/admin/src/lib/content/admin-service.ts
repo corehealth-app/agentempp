@@ -253,7 +253,11 @@ export interface ContentAdminRepository {
     actualSizeBytes: number
     etag: string
   }): Promise<unknown>
-  deleteAsset(input: { actorId: string; assetId: string }): Promise<unknown>
+  deleteAsset(input: {
+    actorId: string
+    assetId: string
+    expectedStatus: InternalContentAsset['status']
+  }): Promise<unknown>
 }
 
 export interface ContentAdminStorage {
@@ -314,7 +318,11 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
   }
 
   async function cleanupAsset(actorId: string, asset: InternalContentAsset): Promise<void> {
-    await repository.deleteAsset({ actorId, assetId: asset.assetId })
+    await repository.deleteAsset({
+      actorId,
+      assetId: asset.assetId,
+      expectedStatus: asset.status,
+    })
     try {
       await storage.remove(asset.objectPath)
     } catch (error) {

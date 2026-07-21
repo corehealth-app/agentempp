@@ -10,16 +10,18 @@ import {
   Key,
   LayoutDashboard,
   MessageSquare,
+  Newspaper,
   Search,
   Settings,
   Sparkles,
-  Trophy,
   TrendingUp,
+  Trophy,
   UserCog,
   Users,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
 import { createClient } from '@/lib/supabase/client'
 
 interface UserHit {
@@ -28,10 +30,25 @@ interface UserHit {
   wpp: string
 }
 
-const NAV_ITEMS = [
+interface CommandNavItem {
+  label: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  group: string
+  roles?: readonly AdminRole[]
+}
+
+const NAV_ITEMS: CommandNavItem[] = [
   { label: 'Hoje (dashboard)', href: '/dashboard', icon: LayoutDashboard, group: 'Operação' },
   { label: 'Conversas', href: '/messages', icon: MessageSquare, group: 'Operação' },
   { label: 'Pacientes', href: '/users', icon: Users, group: 'Operação' },
+  {
+    label: 'Publicacoes',
+    href: '/content',
+    icon: Newspaper,
+    group: 'Operação',
+    roles: CONTENT_MODULE_ROLES,
+  },
   { label: 'Conquistas', href: '/crescimento/conquistas', icon: Trophy, group: 'Crescimento' },
   { label: 'Funil & Cohorts', href: '/crescimento/funil', icon: TrendingUp, group: 'Crescimento' },
   { label: 'Receita', href: '/crescimento/receita', icon: CreditCard, group: 'Crescimento' },
@@ -46,7 +63,7 @@ const NAV_ITEMS = [
   { label: 'Admins', href: '/settings/admins', icon: UserCog, group: 'Configuração' },
 ]
 
-export function CommandPalette() {
+export function CommandPalette({ role }: { role: AdminRole }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -109,19 +126,21 @@ export function CommandPalette() {
 
   // Agrupa nav items
   const grouped: Record<string, typeof NAV_ITEMS> = {}
-  for (const item of NAV_ITEMS) {
+  for (const item of NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role))) {
     grouped[item.group] = grouped[item.group] ?? []
-    grouped[item.group]!.push(item)
+    grouped[item.group]?.push(item)
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-background/60 backdrop-blur-sm flex items-start justify-center pt-[12vh] px-4"
-      onClick={() => setOpen(false)}
-    >
+    <div className="fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[12vh]">
+      <button
+        type="button"
+        aria-label="Fechar busca"
+        className="absolute inset-0 bg-background/60 backdrop-blur-sm"
+        onClick={() => setOpen(false)}
+      />
       <Command
-        className="w-full max-w-xl glass-card overflow-hidden shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="glass-card relative z-10 w-full max-w-xl overflow-hidden shadow-2xl"
         loop
         label="Command palette"
       >

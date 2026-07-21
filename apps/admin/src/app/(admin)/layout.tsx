@@ -1,10 +1,11 @@
+import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { CommandPalette } from '@/components/command-palette'
 import { KeyboardShortcuts } from '@/components/keyboard-shortcuts'
 import { Sidebar } from '@/components/sidebar'
 import { StatusBar } from '@/components/status-bar'
+import { isAdminRole } from '@/lib/admin-rbac'
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { Suspense } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('id', user.id)
     .maybeSingle()
 
-  if (!adminRow) {
+  const validatedAdmin = adminRow as {
+    id: string
+    email: string
+    name: string | null
+    role: string
+  } | null
+
+  if (!validatedAdmin || !isAdminRole(validatedAdmin.role)) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="glass-card p-8 max-w-md w-full space-y-6">
@@ -30,7 +38,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <h1 className="font-display text-3xl text-foreground tracking-tight">Não autorizado</h1>
           <p className="text-muted-foreground text-pretty">
             O email <strong className="font-medium text-foreground">{user.email}</strong> não está
-            cadastrado em <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">admin_users</code>.
+            cadastrado em{' '}
+            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">admin_users</code>.
             Peça a um admin atual para te incluir.
           </p>
           <form action="/auth/signout" method="post" className="pt-4">
@@ -50,7 +59,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="h-screen bg-background flex overflow-hidden">
       <Sidebar
         userEmail={user.email ?? ''}
-        userName={(adminRow as { name?: string | null }).name ?? undefined}
+        userName={validatedAdmin.name ?? undefined}
+        role={validatedAdmin.role}
       />
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <Suspense fallback={<div className="h-9 border-b border-border" />}>
@@ -60,7 +70,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {children}
         </main>
       </div>
-      <CommandPalette />
+      <CommandPalette role={validatedAdmin.role} />
       <KeyboardShortcuts />
     </div>
   )

@@ -18,6 +18,7 @@ import {
   Menu,
   MessageSquare,
   MessageSquareText,
+  Newspaper,
   Settings,
   Sparkles,
   TrendingUp,
@@ -37,6 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +47,7 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   badge?: number
+  roles?: readonly AdminRole[]
 }
 
 interface NavCategory {
@@ -59,6 +62,7 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Hoje', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Conversas', href: '/messages', icon: MessageSquare },
       { label: 'Pacientes', href: '/users', icon: Users },
+      { label: 'Publicacoes', href: '/content', icon: Newspaper, roles: CONTENT_MODULE_ROLES },
       { label: 'Crescimento', href: '/crescimento', icon: TrendingUp },
     ],
   },
@@ -93,7 +97,15 @@ const NAV_CATEGORIES: NavCategory[] = [
   },
 ]
 
-export function Sidebar({ userEmail, userName }: { userEmail: string; userName?: string }) {
+export function Sidebar({
+  userEmail,
+  userName,
+  role,
+}: {
+  userEmail: string
+  userName?: string
+  role: AdminRole
+}) {
   const pathname = usePathname()
   const supabase = createClient()
   const [collapsed, setCollapsed] = useState(false)
@@ -149,38 +161,40 @@ export function Sidebar({ userEmail, userName }: { userEmail: string; userName?:
             )}
             {isCollapsed && <div className="my-1.5 mx-2 border-t border-sidebar-border/40" />}
             <div className="flex flex-col gap-0.5">
-              {category.items.map((item) => {
-                const active =
-                  pathname === item.href ||
-                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      'nav-card-glass flex items-center gap-2.5 px-3.5 py-2.5 text-sm relative',
-                      active && 'nav-card-active',
-                      isCollapsed && 'justify-center px-2',
-                    )}
-                    title={isCollapsed ? item.label : undefined}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {!isCollapsed && (
-                      <>
-                        <span className="flex-1 truncate">{item.label}</span>
-                        {item.badge && item.badge > 0 && (
-                          <span className="ml-auto h-5 min-w-[20px] px-1.5 text-[10px] font-mono rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
-                            {item.badge}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </Link>
-                )
-              })}
+              {category.items
+                .filter((item) => !item.roles || item.roles.includes(role))
+                .map((item) => {
+                  const active =
+                    pathname === item.href ||
+                    (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        'nav-card-glass flex items-center gap-2.5 px-3.5 py-2.5 text-sm relative',
+                        active && 'nav-card-active',
+                        isCollapsed && 'justify-center px-2',
+                      )}
+                      title={isCollapsed ? item.label : undefined}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {!isCollapsed && (
+                        <>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          {item.badge && item.badge > 0 && (
+                            <span className="ml-auto h-5 min-w-[20px] px-1.5 text-[10px] font-mono rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Link>
+                  )
+                })}
             </div>
           </div>
         ))}

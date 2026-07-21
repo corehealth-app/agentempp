@@ -226,9 +226,7 @@ function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline
   }
 }
 
-function convertBlock(node: MarkdownNode, depth: number): ContentMarkdownBlock {
-  if (depth > MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
-
+function convertBlock(node: MarkdownNode, containerDepth: number): ContentMarkdownBlock {
   switch (node.type) {
     case 'paragraph':
       return { type: 'paragraph', children: nodeChildren(node).map((child) => convertInline(child, 1)) }
@@ -241,12 +239,20 @@ function convertBlock(node: MarkdownNode, depth: number): ContentMarkdownBlock {
       }
     }
     case 'blockquote':
-      return { type: 'blockquote', children: nodeChildren(node).map((child) => convertBlock(child, depth + 1)) }
+      if (containerDepth >= MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
+      return {
+        type: 'blockquote',
+        children: nodeChildren(node).map((child) => convertBlock(child, containerDepth + 1)),
+      }
     case 'list': {
       if (typeof node.ordered !== 'boolean') invalidMarkdown('list has malformed ordered state')
+      if (node.ordered && node.start !== undefined && node.start !== null && node.start !== 1) {
+        invalidMarkdown('ordered lists must start at one')
+      }
+      if (containerDepth >= MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
       const items = nodeChildren(node).map((item) => {
         if (item.type !== 'listItem') invalidMarkdown('list contains a malformed item')
-        return nodeChildren(item).map((child) => convertBlock(child, depth + 1))
+        return nodeChildren(item).map((child) => convertBlock(child, containerDepth + 1))
       })
       return { type: 'list', ordered: node.ordered, items }
     }
@@ -290,7 +296,7 @@ export function validateContentMarkdown(value: string): ValidatedContentMarkdown
     invalidMarkdown('root has malformed children')
   }
 
-  const blocks = rootChildren.map((child) => convertBlock(child, 1))
+  const blocks = rootChildren.map((child) => convertBlock(child, 0))
   const wordCount = countWords(blocks)
 
   return {

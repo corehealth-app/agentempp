@@ -18,6 +18,13 @@ import {
 const UUID = '9baf14c8-6376-4a47-a9b8-9fcf2e5cefc1'
 const LONG_BODY = 'A alimentação consistente apoia decisões graduais e sustentáveis. '.repeat(3)
 
+function nestedList(depth: number): string {
+  return Array.from(
+    { length: depth },
+    (_, index) => `${'  '.repeat(index)}- ${index === depth - 1 ? LONG_BODY : `Nível ${index + 1}`}`,
+  ).join('\n')
+}
+
 function validDraft(overrides: Record<string, unknown> = {}) {
   return {
     locale: 'pt-BR',
@@ -213,11 +220,28 @@ describe('validateContentMarkdown', () => {
     ['JavaScript URL', `[source](javascript:alert(1))\n\n${LONG_BODY}`],
     ['protocol-relative URL', `[source](//bodyflow.app)\n\n${LONG_BODY}`],
     ['definition node', `[source][bodyflow]\n\n[bodyflow]: https://bodyflow.app\n\n${LONG_BODY}`],
-    ['nine nested block quotes', `${'> '.repeat(9)}${LONG_BODY}`],
     ['body under 100 characters', 'Texto curto para validar o mínimo de caracteres exigido pelo conteúdo editorial.'],
     ['body over 50,000 characters', 'a'.repeat(50_001)],
   ])('rejects %s', (_description, value) => {
     expect(() => validateContentMarkdown(value)).toThrow()
+  })
+
+  it.each([
+    ['blockquotes', `${'> '.repeat(8)}${LONG_BODY}`],
+    ['lists', nestedList(8)],
+  ])('accepts exactly eight nested %s', (_description, value) => {
+    expect(() => validateContentMarkdown(value)).not.toThrow()
+  })
+
+  it.each([
+    ['blockquotes', `${'> '.repeat(9)}${LONG_BODY}`],
+    ['lists', nestedList(9)],
+  ])('rejects nine nested %s', (_description, value) => {
+    expect(() => validateContentMarkdown(value)).toThrow()
+  })
+
+  it('rejects an ordered list that starts after one', () => {
+    expect(() => validateContentMarkdown(`3. Terceiro item\n\n${LONG_BODY}`)).toThrow()
   })
 
   it('rejects more than eight nested inline nodes', () => {

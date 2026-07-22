@@ -276,9 +276,11 @@ publicada no locale exato produz feed vazio ou o mesmo `404` opaco de conteúdo
 inexistente.
 
 Uma publicação arquivada fica invisível globalmente. Entre versões publicadas do
-mesmo locale, vale a mais recente por `publish_at DESC, version DESC` cujo
-`publish_at` já venceu no relógio do banco. Uma substituição em rascunho, revisão
-ou agendada não retira a versão viva atual.
+mesmo locale cujo `publish_at` já venceu no relógio do banco, vale a de maior
+`version`. Assim, uma versão nova publicada imediatamente não volta a ser
+substituída por um agendamento mais antigo quando o horário deste vencer. Uma
+substituição ainda em rascunho, revisão ou antes do próprio agendamento não
+retira a versão viva atual.
 
 ### Listagem
 
@@ -416,7 +418,10 @@ Idempotency-Key: mobile-content-open-0001
 - `version`: inteiro de 1 a 2.147.483.647 e igual à versão localizada visível.
 
 `impression` registra a exibição; `opened` atualiza primeira/última abertura;
-`completed` marca conclusão da versão atual. A resposta consolidada é:
+`completed` marca conclusão da versão atual. Eventos aceitos fora de ordem não
+regredem a última abertura, conclusão, versão ou origem já consolidada; uma
+abertura atrasada pode apenas antecipar `first_opened_at`. A resposta consolidada
+é:
 
 ```json
 {
@@ -451,7 +456,9 @@ extra e falha na validação. A resposta usa o mesmo DTO de estado de leitura:
 `publication_id`, `version`, `saved`, `completed`, `changed` e `replayed`.
 Solicitar o estado já vigente é sucesso com `changed=false`, sem novo evento.
 Salvar persiste entre revisões; `completed` só é verdadeiro quando a conclusão
-se refere à versão localizada atualmente visível.
+se refere à versão localizada atualmente visível. Um save/unsave atrasado é
+aceito no ledger, mas não pode regredir o estado consolidado; nesse caso a
+resposta devolve o valor efetivo com `changed=false`.
 
 ### Elegibilidade e targeting
 

@@ -95,10 +95,11 @@ changing a draft must not alter the currently visible version.
   snapshots of what the reviewers approved;
 - title is 3 to 120 characters;
 - excerpt is 20 to 280 characters;
-- `body_markdown` is 100 to 50,000 characters;
+- normalized `body_markdown` is 100 to 50,000 characters;
 - `body_hash` identifies the validated source;
-- `reading_time_minutes` is derived using 200 words per minute, rounded up with
-  a minimum of one minute;
+- `reading_time_minutes` is derived from the canonical normalized Markdown,
+  using the same alphanumeric-token rule as the database, at 200 words per
+  minute rounded up with a minimum of one minute;
 - an optional uploaded cover asset may be attached;
 - author, technical reviewer, publisher, timestamps, and rejection reason are
   stored explicitly.
@@ -134,8 +135,9 @@ states:
 - an approved version with no `publish_at` is not visible;
 - an approved version with `publish_at > database_now` is scheduled;
 - an approved version with `publish_at <= database_now` is publishable;
-- the visible version is the newest publishable version for the requested
-  publication and locale;
+- the visible version is the highest numbered publishable version for the
+  requested publication and locale; once eligible, a newer immediate version
+  cannot be displaced by an older scheduled version;
 - a globally archived publication is never visible.
 
 This model lets the current version remain live while its replacement is being
@@ -195,6 +197,12 @@ Saved state survives a new publication version. Completion is true only when
 the completed version is the currently visible localized version, so a material
 revision can be read and completed independently.
 
+The consolidated state is monotonic under delayed mobile delivery. An older
+event may backfill an earlier `first_opened_at`, but it cannot regress the last
+open, completion, saved state, corresponding version, or origin already
+established by a newer state-changing event. Impressions stay in the ledger but
+do not become the consolidated origin.
+
 `content_events` is append-only and supports:
 
 - `impression` for a card actually displayed;
@@ -231,7 +239,10 @@ iOS client will later render the same supported subset natively.
 ## Editorial Workflow
 
 1. A `content_editor` creates the publication and one or both locale drafts.
-2. The editor may upload and attach one cover to each localized draft.
+2. Any active `content_editor` may continue an open draft. `authored_by` remains
+   the original attribution, while the audit actor records who saved or
+   submitted each change. An editor may upload and attach one cover to each
+   localized draft.
 3. Preview uses the same Markdown parser and policy as persistence.
 4. Submission validates content, cover status, metadata, and targeting, then
    transitions the draft to `in_review` and freezes it.
@@ -305,7 +316,7 @@ The admin adds a `Publicacoes` destination at `/content`. It is a dense editoria
 workspace rather than a marketing page.
 
 - The list supports status, locale, category, author, reviewer, schedule, and
-  featured filters.
+  featured filters while loading only the newest snapshot for each locale.
 - A publication editor exposes the stable slug and separate `pt-BR` and `en-US`
   draft tabs, each containing the complete metadata snapshot to be reviewed.
 - Draft editing includes title, excerpt, Markdown, preview, cover upload,
@@ -315,6 +326,10 @@ workspace rather than a marketing page.
 - Publication commands show explicit confirmation dialogs and effective time.
 - Unsupported roles see an access-denied state and server actions independently
   reject the command.
+- Publication detail loads at most 50 immutable versions, reserving the newest
+  version of each locale before filling the remaining slots with the newest
+  global history. It reports when older history was omitted, keeping the
+  operational view bounded without hiding an active locale workflow.
 
 No AI generation is added in this phase. Content remains human-authored and
 human-reviewed.

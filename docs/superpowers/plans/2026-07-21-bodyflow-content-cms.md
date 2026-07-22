@@ -271,7 +271,9 @@ public.set_mobile_content_saved(
 - [x] **Step 5: Run `supabase migration new bodyflow_content_delivery`.**
 - [x] **Step 6: Implement one canonical eligible-version SQL relation inside each read RPC, using the user's stored locale, profile protocol, active/trial non-expired subscription, and selected coach personality.**
 
-The query chooses the latest row by `publish_at DESC, version DESC`, then pages publications by `publish_at DESC, publication_id DESC`. It never accepts locale or targeting attributes from the client.
+The query chooses the highest numbered eligible version, then pages publications
+by effective `publish_at DESC, publication_id DESC`. It never accepts locale or
+targeting attributes from the client.
 
 - [x] **Step 7: Implement event/state RPCs with row locks, a SHA-256 event key, a unique patient/event-key constraint, version visibility recheck, and successful replay semantics.**
 - [x] **Step 8: Ensure RPC results include internal cover bucket/path only for the trusted BFF and contain no signed URL or patient PII.**
@@ -419,7 +421,7 @@ export function executeContentAdminAction(
 - [x] **Step 7: Build read-only review controls, required rejection reason, publication/schedule confirmation dialogs, stale-conflict feedback, and global archive confirmation.**
 - [x] **Step 8: Gate the page and every visible command by the exact role while retaining server-side enforcement.**
 - [x] **Step 9: Add `Publicacoes` with a `Newspaper` Lucide icon to sidebar and command palette.**
-- [ ] **Step 10: Run admin tests, admin typecheck, admin build, changed-file Biome, and `git diff --check`.**
+- [x] **Step 10: Run admin tests, admin typecheck, admin build, changed-file Biome, and `git diff --check`.**
 - [x] **Step 11: Commit `feat(admin-ui): add educational publication workspace`.**
 
 ### Task 7: Contracts, ADR, And Full Local Verification
@@ -455,7 +457,7 @@ Task 8. Evidência estática ou local anterior não substitui essa validação.
 - [x] **Step 7: Execute synthetic rollback-safe canaries for the complete workflow:** author draft, both locales, Markdown rejection, technical approval, immediate publication, future schedule, universal and three-dimension targeting, exact-locale feed/detail, read/save retry, short-lived cover capability, replacement without downtime, archive, e um canário concorrente de duas sessões para o `one-open-workflow`, cobrindo `create/submit/review` concorrendo com outro `create` da mesma publicação e locale.
 - [x] **Step 8: Confirm aggregate-only staging postconditions: zero retained synthetic publications/assets/events/states, zero active cron jobs, no public/authenticated CMS grants, and no client-executable internal CMS functions.**
 - [x] **Step 9: Confirm production was not linked, queried, modified, or deployed and no external provider was called.**
-- [x] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types.**
+- [x] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types and independent-review fixes.**
 - [x] **Step 11: Record redacted verification evidence and commit `docs(bodyflow): complete educational CMS validation`.**
 - [ ] **Step 12: Push `codex/bodyflow-content-cms-v1` and open a draft PR with base `codex/bodyflow-personalities-mascot-v1`.**
 
@@ -463,13 +465,18 @@ Task 8. Evidência estática ou local anterior não substitui essa validação.
 
 - Worktree/branch: isolated `codex/bodyflow-content-cms-v1`; linked project ref
   revalidated as staging `xitugspwfxkcluxvrdeg`, distinct from production.
-- Migrations: only `20260721124600_bodyflow_content_cms_domain.sql` and
-  `20260721141618_bodyflow_content_delivery.sql` were applied; the final dry-run
-  reports the remote database as up to date.
+- Migrations: the two CMS domain/delivery migrations and the four additive
+  hardening migrations `20260722123000`, `20260722124500`, `20260722130000`, and
+  `20260722135904` were applied only to staging; the final dry-run reports the
+  remote database as up to date. The definition-rewrite migrations also passed
+  when rerun against the already-correct state, covering fresh replay as well as
+  upgrade paths.
 - Database validation: both CMS SQL suites completed inside rollback
-  transactions; DB lint reports no schema errors. Advisors retain the same seven
-  pre-existing warnings (four extensions in `public` and three legacy callable
-  `SECURITY DEFINER` functions), with no CMS finding.
+  transactions, including superseded schedules, delayed open/complete/save
+  delivery, effective save responses, and editor continuity; DB lint reports no
+  schema errors. Advisors retain the same seven pre-existing warnings (four
+  extensions in `public` and three legacy callable `SECURITY DEFINER` functions),
+  with no CMS finding.
 - Concurrency: eleven two-session cases observed the expected row lock with
   `FOR UPDATE NOWAIT` before validating the outcome: create/create,
   submit/create, approve/create, reject/create, both cover orders,
@@ -484,10 +491,18 @@ Task 8. Evidência estática ou local anterior não substitui essa validação.
   the CMS surface.
 - Generated types: staging added only the eight CMS tables and fourteen CMS
   RPCs. The unrelated generator removal of legacy `graphql_public` was excluded.
-- Local verification: `pnpm test` passed (core 187, providers 18, agent 1,048,
-  Inngest 158, admin 397), `pnpm typecheck` passed all eight tasks, and the admin
-  production build completed. The existing Next.js `typedRoutes` warning remains
-  outside this scope.
+- Local verification: the forced monorepo run passed (core 190, providers 18,
+  agent 1,048, Inngest 158, admin 403), forced typecheck passed all eight tasks,
+  and the admin production build completed. Changed-file Biome passed. The full
+  repository lint still reports pre-existing issues in files unchanged from the
+  base branch; the existing Next.js `typedRoutes` warning also remains outside
+  this scope.
+- Independent review: the final scoped re-review reported zero Critical or
+  Important findings after the logout/unload and per-locale history-anchor
+  regressions were fixed. The remaining legacy unmarked-Forward limitation is
+  confined to browsers without Navigation API because `popstate` exposes no
+  safe traversal direction; URL or exploratory-history heuristics were rejected
+  because they could discard the draft.
 - Scope: no production link/query/mutation, application deployment, external
   provider call, secret configuration, cron activation, Xcode work, or visual
   prompt execution occurred.

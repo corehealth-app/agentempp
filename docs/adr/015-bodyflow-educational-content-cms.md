@@ -27,16 +27,20 @@ paciente depois de emitida.
 2. Categoria, tags, destaque, capa e targeting são snapshots da versão. Targets
    de protocolo, plano e personalidade são version-scoped; ausência de valores
    em uma dimensão significa wildcard e dimensões configuradas combinam com AND.
-3. `content_editor` cria, edita e submete. `nutrition_admin`, diferente do autor,
+3. `content_editor` cria, edita e submete. Qualquer editor ativo pode continuar
+   um rascunho aberto; `authored_by` preserva o autor original e `audit_log`
+   registra o ator real de cada alteração. `nutrition_admin`, diferente do autor,
    aprova ou rejeita. `master_admin` publica imediatamente, agenda e arquiva. As
    RPCs revalidam o papel canônico e registram auditoria na mesma transação.
 4. O estado persistido da versão é `draft`, `in_review`, `approved` ou
    `rejected`. Uma versão aprovada sem `publish_at` não é visível; com horário
    futuro está agendada; com `publish_at` menor ou igual ao relógio do banco pode
    ser exibida. Não existe cron para virar uma versão de agendada para publicada.
-5. A versão visível é a versão aprovada mais recente e já vencida para a
-   publicação e o locale. Enquanto uma substituição está em rascunho, revisão ou
-   aguardando seu horário, a versão viva anterior permanece disponível.
+5. A versão visível é a de maior número entre as versões aprovadas cujo
+   `publish_at` já venceu para a publicação e o locale. Uma versão nova publicada
+   imediatamente supersede uma versão anterior agendada mesmo depois do horário
+   antigo vencer. Enquanto a substituição mais nova está em rascunho, revisão ou
+   aguardando seu próprio horário, a versão viva anterior permanece disponível.
 6. Arquivo é uma ação global na publicação. Ele oculta imediatamente todos os
    locales e versões sem apagar histórico, auditoria, estado ou eventos; assim,
    arquivar uma versão nova nunca revela acidentalmente uma versão antiga.
@@ -50,10 +54,15 @@ paciente depois de emitida.
 9. Eventos de impressão, abertura e conclusão, além de save/unsave, são
    idempotentes. O ledger genérico do BFF protege método, rota e payload, e uma
    event key com hash no banco impede duplicação caso a mutação seja commitada
-   antes da conclusão do claim externo.
+   antes da conclusão do claim externo. A projeção consolidada é monotônica:
+   eventos antigos que chegam atrasados podem antecipar apenas a primeira
+   abertura, sem regredir a última abertura, conclusão, versão, estado salvo ou
+   origem. Impressões permanecem somente no ledger e não alteram a origem do
+   estado.
 10. O corpo canônico é Markdown validado e normalizado. HTML, H1, imagens inline,
     embeds e links não HTTPS são rejeitados antes da persistência; o corpo não é
-    copiado para logs ou auditoria.
+    copiado para logs ou auditoria. Limites, contagem de palavras e tempo de
+    leitura usam o mesmo Markdown normalizado na aplicação e no banco.
 
 ## Consequências
 
@@ -77,9 +86,7 @@ paciente depois de emitida.
 
 ## Validação
 
-Os contratos, guards, DTOs, queries de visibilidade e migrations foram revisados
-localmente nesta etapa. A aplicação das migrations, as SQL suites live, o
-canário concorrente do fluxo editorial único, os canários sintéticos e a
-validação completa na Supabase Branch de staging permanecem pendentes para a
-Task 8. Nenhuma migration foi aplicada, nenhum deploy foi executado e produção
-não foi alterada por esta decisão.
+As migrations e os reforços aditivos foram aplicados exclusivamente na Supabase
+Branch de staging. As duas SQL suites transacionais, os canários sintéticos e
+concorrentes, o lint do banco e os checks locais passaram. Nenhum deploy foi
+executado e produção não foi consultada nem alterada por esta decisão.

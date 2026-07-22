@@ -292,20 +292,8 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
-function countWords(blocks: ContentMarkdownBlock[]): number {
-  const text = (inline: ContentMarkdownInline): string =>
-    inline.type === 'text' ? inline.value : inline.children.map(text).join(' ')
-  const block = (value: ContentMarkdownBlock): string => {
-    if (value.type === 'list') return value.items.flatMap((item) => item.map(block)).join(' ')
-    if (value.type === 'blockquote') return value.children.map(block).join(' ')
-    return value.children.map(text).join(' ')
-  }
-  return (
-    blocks
-      .map(block)
-      .join(' ')
-      .match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0
-  )
+function countWords(value: string): number {
+  return value.match(/[\p{L}\p{N}]+/gu)?.length ?? 0
 }
 
 export function validateContentMarkdown(value: string): ValidatedContentMarkdown {
@@ -323,10 +311,16 @@ export function validateContentMarkdown(value: string): ValidatedContentMarkdown
   }
 
   const blocks = rootChildren.map((child) => convertBlock(child, 0))
-  const wordCount = countWords(blocks)
+  const normalized = toMarkdown(root).replace(/\r\n?/g, '\n')
+  if (normalized.length < MIN_CONTENT_BODY_LENGTH || normalized.length > MAX_CONTENT_BODY_LENGTH) {
+    invalidMarkdown(
+      `normalized body must be between ${MIN_CONTENT_BODY_LENGTH} and ${MAX_CONTENT_BODY_LENGTH} characters`,
+    )
+  }
+  const wordCount = countWords(normalized)
 
   return {
-    normalized: toMarkdown(root).replace(/\r\n?/g, '\n'),
+    normalized,
     blocks,
     wordCount,
     readingTimeMinutes: Math.max(1, Math.ceil(wordCount / 200)),

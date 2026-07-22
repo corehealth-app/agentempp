@@ -244,6 +244,16 @@ describe('validateContentMarkdown', () => {
     })
   })
 
+  it('counts words from canonical Markdown with database-compatible token boundaries', () => {
+    const result = validateContentMarkdown(
+      `## Guia detalhado\n\n[Leia aqui](https://bodyflow.app/health-path) sobre well-being e don't. ${LONG_BODY}`,
+    )
+    const canonicalWordCount = result.normalized.match(/[\p{L}\p{N}]+/gu)?.length ?? 0
+
+    expect(result.wordCount).toBe(canonicalWordCount)
+    expect(result.readingTimeMinutes).toBe(Math.max(1, Math.ceil(canonicalWordCount / 200)))
+  })
+
   it.each([
     ['raw HTML', `<strong>${LONG_BODY}</strong>`],
     ['H1', `# Duplicated title\n\n${LONG_BODY}`],
@@ -264,6 +274,8 @@ describe('validateContentMarkdown', () => {
       'body under 100 characters',
       'Texto curto para validar o mínimo de caracteres exigido pelo conteúdo editorial.',
     ],
+    ['normalized body under 100 characters', `${'palavra'}${' '.repeat(100)}`],
+    ['normalized body over 50,000 characters', 'a'.repeat(50_000)],
     ['body over 50,000 characters', 'a'.repeat(50_001)],
   ])('rejects %s', (_description, value) => {
     expect(() => validateContentMarkdown(value)).toThrow()

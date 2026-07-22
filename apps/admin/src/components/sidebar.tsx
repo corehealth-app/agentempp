@@ -30,6 +30,7 @@ import {
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
+import { attemptContentSignOut } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
@@ -111,9 +113,13 @@ export function Sidebar({
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  async function signOut() {
-    await supabase.auth.signOut()
-    window.location.href = '/login'
+  function signOut() {
+    void attemptContentSignOut({
+      signOut: () => supabase.auth.signOut(),
+      navigate: () => {
+        window.location.href = '/login'
+      },
+    }).catch(() => toast.error('Não foi possível sair. Tente novamente.'))
   }
 
   const initials = (userName || userEmail || 'A').slice(0, 2).toUpperCase()

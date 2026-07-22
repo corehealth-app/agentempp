@@ -5,6 +5,7 @@ import { KeyboardShortcuts } from '@/components/keyboard-shortcuts'
 import { Sidebar } from '@/components/sidebar'
 import { StatusBar } from '@/components/status-bar'
 import { isAdminRole } from '@/lib/admin-rbac'
+import { ContentHistoryTracker } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="h-screen bg-background flex overflow-hidden">
+      <ContentHistoryTracker />
       <Sidebar
         userEmail={user.email ?? ''}
         userName={validatedAdmin.name ?? undefined}

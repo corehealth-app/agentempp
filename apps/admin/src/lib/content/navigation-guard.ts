@@ -10,6 +10,8 @@ type ConfirmNavigation = () => boolean
 const HISTORY_POSITION_KEY = '__bodyflowContentHistoryPosition'
 
 let nextHistoryPosition = 0
+let bypassNextContentBeforeUnload = false
+let bypassedBeforeUnloadEvent: Event | null = null
 
 const navigationGuards = new Set<NavigationGuard>()
 
@@ -35,6 +37,46 @@ export function attemptContentNavigation(
   return true
 }
 
+export async function attemptContentSignOut({
+  signOut,
+  navigate,
+  confirm = () => window.confirm(UNSAVED_CHANGES_WARNING),
+}: {
+  signOut: () => Promise<unknown>
+  navigate: () => void
+  confirm?: ConfirmNavigation
+}): Promise<boolean> {
+  if (!attemptContentNavigation(() => undefined, confirm)) return false
+
+  bypassNextContentBeforeUnload = true
+  bypassedBeforeUnloadEvent = null
+  try {
+    const result = await signOut()
+    const signOutError =
+      typeof result === 'object' && result !== null && 'error' in result
+        ? (result as { error?: unknown }).error
+        : null
+    if (signOutError) {
+      throw signOutError instanceof Error ? signOutError : new Error('Sign-out failed')
+    }
+    navigate()
+    return true
+  } catch (error) {
+    bypassNextContentBeforeUnload = false
+    bypassedBeforeUnloadEvent = null
+    throw error
+  }
+}
+
+export function shouldBlockContentBeforeUnload(event?: Event): boolean {
+  if (event && bypassedBeforeUnloadEvent === event) return false
+  if (!bypassNextContentBeforeUnload) return true
+
+  bypassNextContentBeforeUnload = false
+  bypassedBeforeUnloadEvent = event ?? null
+  return false
+}
+
 export function stampContentHistoryPosition(
   state: unknown,
   position: number,
@@ -49,11 +91,13 @@ export function createContentHistoryNavigationController({
   currentPosition,
   confirm,
   restore,
+  restoreUnmarked,
   positionForPop,
 }: {
   currentPosition: number
   confirm: ConfirmNavigation
   restore: (delta: number) => void
+  restoreUnmarked?: () => void
   positionForPop?: () => number | null
 }): { handlePop(state: unknown): void } {
   let current = currentPosition
@@ -72,8 +116,10 @@ export function createContentHistoryNavigationController({
         return
       }
 
-      // Without an entry index or marker, the browser does not expose a safe direction to undo.
-      if (next === null) return
+      if (next === null) {
+        restoreUnmarked?.()
+        return
+      }
       const delta = current - next
       if (delta === 0) return
       restoringPosition = current
@@ -100,11 +146,13 @@ export function useContentNavigationGuard(blocked: boolean): void {
       currentPosition,
       confirm: () => attemptContentNavigation(() => undefined),
       restore: (delta) => window.history.go(delta),
+      restoreUnmarked: () => window.history.forward(),
       ...(navigationPosition !== null
         ? { positionForPop: () => browserNavigationEntryIndex() }
         : {}),
     })
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldBlockContentBeforeUnload(event)) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -148,6 +196,46 @@ export function useContentNavigationGuard(blocked: boolean): void {
       document.removeEventListener('click', handleDocumentClick, true)
     }
   }, [blocked])
+}
+
+export function ContentHistoryTracker(): null {
+  useEffect(() => {
+    const history = window.history
+    let currentPosition = reserveContentHistoryPosition(history.state)
+    const originalPushState = history.pushState.bind(history)
+    const originalReplaceState = history.replaceState.bind(history)
+
+    originalReplaceState(
+      stampContentHistoryPosition(history.state, currentPosition),
+      '',
+      window.location.href,
+    )
+
+    const trackedPushState: History['pushState'] = (data, unused, url) => {
+      nextHistoryPosition = Math.max(nextHistoryPosition, currentPosition) + 1
+      currentPosition = nextHistoryPosition
+      originalPushState(stampContentHistoryPosition(data, currentPosition), unused, url)
+    }
+    const trackedReplaceState: History['replaceState'] = (data, unused, url) => {
+      originalReplaceState(stampContentHistoryPosition(data, currentPosition), unused, url)
+    }
+    const handlePopState = (event: PopStateEvent) => {
+      const position = contentHistoryPosition(event.state)
+      if (position !== null) currentPosition = position
+    }
+
+    history.pushState = trackedPushState
+    history.replaceState = trackedReplaceState
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      if (history.pushState === trackedPushState) history.pushState = originalPushState
+      if (history.replaceState === trackedReplaceState) history.replaceState = originalReplaceState
+    }
+  }, [])
+
+  return null
 }
 
 function contentHistoryPosition(state: unknown): number | null {

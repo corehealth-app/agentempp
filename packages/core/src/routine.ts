@@ -51,7 +51,9 @@ export interface MedicationDisclaimerAcceptanceInput {
   body_hash: string
 }
 
-const routineOriginSchema = z.enum(['user', 'professional', 'protocol', 'other'])
+export const routineItemTypeSchema = z.enum(['supplement', 'medication'])
+export const routineOriginSchema = z.enum(['user', 'professional', 'protocol', 'other'])
+export const routineStoredStatusSchema = z.enum(['taken', 'snoozed', 'skipped', 'missed'])
 const routineDateTimeSchema = z.string().datetime({ offset: true })
 const routineUuidSchema = z.string().uuid()
 
@@ -111,7 +113,7 @@ export const routineItemPatchInputSchema = z
   })
   .strict() satisfies z.ZodType<RoutineItemPatchInput, z.ZodTypeDef, unknown>
 
-const routineActionStatusSchema = z.enum(['taken', 'snoozed', 'skipped'])
+const routineActionStatusSchema = routineStoredStatusSchema.exclude(['missed'])
 
 export const routineActionInputSchema = z
   .object({
@@ -135,17 +137,6 @@ export const routineActionInputSchema = z
         code: z.ZodIssueCode.custom,
         path: ['snoozed_until'],
         message: 'snoozed_until is only valid for snoozed actions',
-      })
-    }
-    if (
-      value.status === 'snoozed' &&
-      value.snoozed_until !== undefined &&
-      Date.parse(value.snoozed_until) <= Date.parse(value.occurred_at)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['snoozed_until'],
-        message: 'snoozed_until must be after occurred_at',
       })
     }
   }) satisfies z.ZodType<RoutineActionInput, z.ZodTypeDef, unknown>

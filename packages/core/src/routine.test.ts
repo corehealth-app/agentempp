@@ -9,7 +9,10 @@ import {
   routineItemCreateInputSchema,
   routineItemListQuerySchema,
   routineItemPatchInputSchema,
+  routineItemTypeSchema,
+  routineOriginSchema,
   routinePreviewModeSchema,
+  routineStoredStatusSchema,
 } from './routine.js'
 
 const UUID = '9baf14c8-6376-4a47-a9b8-9fcf2e5cefc1'
@@ -47,6 +50,25 @@ function action(
 describe('routine contracts', () => {
   it('exposes the exact public enum values', () => {
     expect(routinePreviewModeSchema.options).toEqual(['private', 'name', 'name_and_dose'])
+  })
+
+  it('covers exact routine item, origin, and stored status enums', () => {
+    expect(routineItemTypeSchema.options).toEqual(['supplement', 'medication'])
+    expect(routineOriginSchema.options).toEqual(['user', 'professional', 'protocol', 'other'])
+    expect(routineStoredStatusSchema.options).toEqual(['taken', 'snoozed', 'skipped', 'missed'])
+
+    for (const value of ['supplement', 'medication']) {
+      expect(routineItemTypeSchema.safeParse(value).success).toBe(true)
+    }
+    for (const value of ['user', 'professional', 'protocol', 'other']) {
+      expect(routineOriginSchema.safeParse(value).success).toBe(true)
+    }
+    for (const value of ['taken', 'snoozed', 'skipped', 'missed']) {
+      expect(routineStoredStatusSchema.safeParse(value).success).toBe(true)
+    }
+    for (const schema of [routineItemTypeSchema, routineOriginSchema, routineStoredStatusSchema]) {
+      expect(schema.safeParse('unsupported').success).toBe(false)
+    }
   })
 
   it('trims text and canonicalizes weekdays in a strict create input', () => {
@@ -202,9 +224,19 @@ describe('routine contracts', () => {
     ).toMatchObject({ status: 'snoozed' })
     expect(routineActionInputSchema.safeParse({ ...base, status: 'snoozed' }).success).toBe(false)
     expect(
-      routineActionInputSchema.safeParse({ ...base, status: 'snoozed', snoozed_until: OCCURRED_AT })
-        .success,
-    ).toBe(false)
+      routineActionInputSchema.parse({
+        ...base,
+        status: 'snoozed',
+        snoozed_until: base.occurred_at,
+      }),
+    ).toMatchObject({ status: 'snoozed', snoozed_until: base.occurred_at })
+    expect(
+      routineActionInputSchema.parse({
+        ...base,
+        status: 'snoozed',
+        snoozed_until: OCCURRED_AT,
+      }),
+    ).toMatchObject({ status: 'snoozed', snoozed_until: OCCURRED_AT })
     for (const status of ['taken', 'skipped'] as const) {
       expect(
         routineActionInputSchema.safeParse({ ...base, status, snoozed_until: OCCURRED_AT }).success,

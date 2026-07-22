@@ -92,6 +92,7 @@ DECLARE
     'private.canonicalize_routine_schedules(jsonb)',
     'private.routine_same_local_date(uuid,timestamp with time zone,timestamp with time zone)',
     'private.derive_routine_occurrence_key(uuid,timestamp with time zone)',
+    'private.derive_routine_occurrence_state(uuid,uuid,text,text,timestamp with time zone,timestamp with time zone)',
     'private.lock_routine_occurrence(uuid,text)',
     'private.lock_routine_item(uuid,uuid,text,boolean)',
     'private.read_routine_mutation_receipt(uuid,text,text,text)',
@@ -471,7 +472,16 @@ BEGIN
       RAISE EXCEPTION 'routine private API helper is missing: %', v_function_signature;
     END IF;
 
-    IF has_function_privilege('anon', v_function, 'EXECUTE')
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
+      WHERE procedure.oid = v_function
+        AND (
+          procedure.prosecdef
+          OR NOT COALESCE(procedure.proconfig, ARRAY[]::text[])
+            @> ARRAY['search_path=pg_catalog, pg_temp']
+        )
+    ) OR has_function_privilege('anon', v_function, 'EXECUTE')
       OR has_function_privilege('authenticated', v_function, 'EXECUTE')
       OR NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
       RAISE EXCEPTION 'routine private API helper security is incorrect: %', v_function_signature;
@@ -2643,6 +2653,30 @@ RESET ROLE;
 
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
+CREATE OR REPLACE FUNCTION private.test_fail_routine_receipt_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF NEW.idempotency_key = 'routine-create-rollback' THEN
+    RAISE EXCEPTION 'synthetic late routine receipt failure'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.test_fail_routine_receipt_insert()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER routine_mutation_receipts_failpoint
+  BEFORE INSERT ON private.routine_mutation_receipts
+  FOR EACH ROW
+  EXECUTE FUNCTION private.test_fail_routine_receipt_insert();
+
 DO $test$
 DECLARE
   v_user_id constant uuid := '00000000-0000-0000-0000-000000000901';
@@ -2650,12 +2684,17 @@ DECLARE
   v_auth_user_id constant uuid := '00000000-0000-0000-0000-000000000911';
   v_other_auth_user_id constant uuid := '00000000-0000-0000-0000-000000000912';
   v_missing_item_id constant uuid := '00000000-0000-0000-0000-000000000999';
+  v_legacy_item_id constant uuid := '00000000-0000-0000-0000-000000000951';
+  v_legacy_rule_id constant uuid := '00000000-0000-0000-0000-000000000952';
   v_result jsonb;
   v_replay jsonb;
   v_list jsonb;
   v_history jsonb;
   v_next_history jsonb;
   v_legal jsonb;
+  v_pt_legal jsonb;
+  v_initial_acceptance jsonb;
+  v_occurrence_state jsonb;
   v_receipt_result jsonb;
   v_crud_item_id uuid;
   v_medication_item_id uuid;
@@ -2674,6 +2713,7 @@ DECLARE
   v_old_missed_occurrence_key text;
   v_missed_scheduled_for timestamptz;
   v_old_missed_scheduled_for timestamptz;
+  v_old_occurrence_day_end timestamptz;
   v_missed_log_id uuid := '00000000-0000-0000-0000-000000000941';
   v_old_missed_log_id uuid := '00000000-0000-0000-0000-000000000942';
   v_cursor_occurred_at timestamptz;
@@ -2682,6 +2722,9 @@ DECLARE
   v_returned_ids jsonb;
   v_count_before bigint;
   v_count_after bigint;
+  v_items_before bigint;
+  v_rules_before bigint;
+  v_events_before bigint;
   v_error_other text;
   v_error_missing text;
   v_error_wrong_type text;
@@ -2753,6 +2796,60 @@ BEGIN
       'America/Sao_Paulo',
       'active'
     );
+
+  SELECT count(*)
+  INTO v_items_before
+  FROM public.routine_items
+  WHERE user_id = v_user_id;
+
+  SELECT count(*)
+  INTO v_rules_before
+  FROM public.reminder_rules
+  WHERE user_id = v_user_id;
+
+  SELECT count(*)
+  INTO v_events_before
+  FROM public.product_events
+  WHERE user_id = v_user_id;
+
+  BEGIN
+    PERFORM public.create_mobile_routine_item(
+      v_user_id,
+      'supplement',
+      jsonb_build_object(
+        'name', 'Synthetic rollback item',
+        'dose_text', 'Synthetic rollback dose',
+        'origin', 'user',
+        'reminders_enabled', true,
+        'schedules', jsonb_build_array(
+          jsonb_build_object('local_time', '07:00', 'weekdays', jsonb_build_array(1, 2, 3))
+        )
+      ),
+      'routine-create-rollback',
+      repeat('0', 64)
+    );
+    RAISE EXCEPTION 'synthetic late receipt failure did not abort routine create';
+  EXCEPTION
+    WHEN check_violation THEN
+      IF SQLERRM <> 'synthetic late routine receipt failure' THEN
+        RAISE;
+      END IF;
+  END;
+
+  EXECUTE 'DROP TRIGGER routine_mutation_receipts_failpoint ON private.routine_mutation_receipts';
+  EXECUTE 'DROP FUNCTION private.test_fail_routine_receipt_insert()';
+
+  IF (SELECT count(*) FROM public.routine_items WHERE user_id = v_user_id) <> v_items_before
+    OR (SELECT count(*) FROM public.reminder_rules WHERE user_id = v_user_id) <> v_rules_before
+    OR (SELECT count(*) FROM public.product_events WHERE user_id = v_user_id) <> v_events_before
+    OR EXISTS (
+      SELECT 1
+      FROM private.routine_mutation_receipts
+      WHERE user_id = v_user_id
+        AND idempotency_key = 'routine-create-rollback'
+    ) THEN
+    RAISE EXCEPTION 'late receipt failure did not roll back item, schedules, event, and receipt atomically';
+  END IF;
 
   v_legal := public.get_mobile_legal_document(
     v_user_id,
@@ -2830,6 +2927,7 @@ BEGIN
     v_legal ->> 'body_hash',
     'legal-acceptance-current'
   );
+  v_initial_acceptance := v_result;
   v_replay := public.accept_mobile_legal_document(
     v_user_id,
     'medication_reminder_disclaimer',
@@ -2885,6 +2983,67 @@ BEGIN
       AND item.item_type = 'medication'
   ) THEN
     RAISE EXCEPTION 'medication was not created after exact current acceptance';
+  END IF;
+
+  UPDATE public.users
+  SET locale = 'pt-BR'
+  WHERE id = v_user_id;
+
+  v_pt_legal := public.get_mobile_legal_document(
+    v_user_id,
+    'medication_reminder_disclaimer'
+  );
+
+  IF v_pt_legal ->> 'locale' <> 'pt-BR'
+    OR v_pt_legal ->> 'version' <> v_legal ->> 'version'
+    OR v_pt_legal ->> 'body_hash' IS NULL
+    OR v_pt_legal ->> 'body_hash' = v_legal ->> 'body_hash' THEN
+    RAISE EXCEPTION 'legal read did not follow the changed stored locale';
+  END IF;
+
+  v_replay := public.accept_mobile_legal_document(
+    v_user_id,
+    'medication_reminder_disclaimer',
+    v_pt_legal ->> 'version',
+    v_pt_legal ->> 'body_hash',
+    'legal-acceptance-after-locale-change'
+  );
+
+  IF v_replay IS DISTINCT FROM v_initial_acceptance
+    OR (
+      SELECT count(*)
+      FROM public.user_legal_acceptances acceptance
+      WHERE acceptance.user_id = v_user_id
+        AND acceptance.document_key = 'medication_reminder_disclaimer'
+        AND acceptance.version = v_pt_legal ->> 'version'
+    ) <> 1 THEN
+    RAISE EXCEPTION 'same-version locale change duplicated or mutated legal acceptance history';
+  END IF;
+
+  v_result := public.create_mobile_routine_item(
+    v_user_id,
+    'medication',
+    jsonb_build_object(
+      'name', 'Synthetic medication after locale change',
+      'dose_text', 'Synthetic dose',
+      'origin', 'professional',
+      'reminders_enabled', true,
+      'schedules', jsonb_build_array(
+        jsonb_build_object('local_time', '10:00', 'weekdays', jsonb_build_array(1, 2, 3))
+      )
+    ),
+    'medication-after-locale-change',
+    repeat('e', 64)
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.routine_items item
+    WHERE item.id = (v_result ->> 'routine_item_id')::uuid
+      AND item.user_id = v_user_id
+      AND item.item_type = 'medication'
+  ) THEN
+    RAISE EXCEPTION 'same-version official acceptance did not authorize medication after locale change';
   END IF;
 
   v_result := public.create_mobile_routine_item(
@@ -3202,6 +3361,46 @@ BEGIN
     WHEN unique_violation THEN NULL;
   END;
 
+  INSERT INTO public.routine_items (
+    id,
+    user_id,
+    item_type,
+    name,
+    dose_text,
+    origin,
+    reminders_enabled,
+    active,
+    archived_at
+  ) VALUES (
+    v_legacy_item_id,
+    v_user_id,
+    'supplement',
+    'Synthetic legacy inactive item',
+    'Synthetic legacy dose',
+    'other',
+    true,
+    false,
+    NULL
+  );
+
+  INSERT INTO public.reminder_rules (
+    id,
+    user_id,
+    routine_item_id,
+    category,
+    local_time,
+    weekdays,
+    active
+  ) VALUES (
+    v_legacy_rule_id,
+    v_user_id,
+    v_legacy_item_id,
+    'supplement',
+    time '06:00',
+    ARRAY[0, 1, 2, 3, 4, 5, 6]::smallint[],
+    true
+  );
+
   v_list := public.list_mobile_routine_items(
     v_user_id,
     'supplement',
@@ -3211,9 +3410,9 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM jsonb_array_elements(v_list -> 'items') item
-    WHERE item ->> 'id' = v_crud_item_id::text
+    WHERE item ->> 'id' IN (v_crud_item_id::text, v_legacy_item_id::text)
   ) THEN
-    RAISE EXCEPTION 'routine list included archived items by default';
+    RAISE EXCEPTION 'routine list included archived or legacy inactive items by default';
   END IF;
 
   v_list := public.list_mobile_routine_items(
@@ -3227,8 +3426,14 @@ BEGIN
     FROM jsonb_array_elements(v_list -> 'items') item
     WHERE item ->> 'id' = v_crud_item_id::text
       AND item ->> 'archived_at' IS NOT NULL
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_list -> 'items') item
+    WHERE item ->> 'id' = v_legacy_item_id::text
+      AND item ->> 'archived_at' IS NULL
+      AND NOT (item ->> 'active')::boolean
   ) THEN
-    RAISE EXCEPTION 'routine list omitted archived items when requested';
+    RAISE EXCEPTION 'routine list omitted archived or legacy inactive history when requested';
   END IF;
 
   v_result := public.create_mobile_routine_item(
@@ -3268,6 +3473,28 @@ BEGIN
   WHERE rule.routine_item_id = v_occurrence_item_id
     AND rule.local_time = time '20:00'
     AND rule.active;
+
+  v_occurrence_key := private.derive_routine_occurrence_key(
+    v_rule_0800,
+    timestamptz '2026-07-20 12:00:00+00'
+  );
+  v_occurrence_state := private.derive_routine_occurrence_state(
+    v_user_id,
+    v_occurrence_item_id,
+    'supplement',
+    v_occurrence_key,
+    timestamptz '2026-07-20 12:00:00+00',
+    timestamptz '2026-07-22 17:00:00+00'
+  );
+
+  IF NOT (
+    v_occurrence_state ?& ARRAY['status', 'last_action_at', 'snoozed_until']::text[]
+  )
+    OR v_occurrence_state ->> 'status' <> 'missed'
+    OR v_occurrence_state ->> 'last_action_at' IS NOT NULL
+    OR v_occurrence_state ->> 'snoozed_until' IS NOT NULL THEN
+    RAISE EXCEPTION 'delayed-finalizer ended occurrence did not derive missed state without a row';
+  END IF;
 
   v_result := public.record_routine_occurrence_action_atomic(
     v_user_id,
@@ -3335,12 +3562,62 @@ BEGIN
         AND schedule ->> 'local_time' = '08:00'
     ) <> 'taken'
     OR (
+      SELECT (schedule #>> '{occurrence,last_action_at}')::timestamptz
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '08:00'
+    ) IS DISTINCT FROM timestamptz '2026-07-22 12:01:00+00'
+    OR (
+      SELECT schedule #>> '{occurrence,snoozed_until}'
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '08:00'
+    ) IS NOT NULL
+    OR (
       SELECT schedule #>> '{occurrence,status}'
       FROM jsonb_array_elements(v_list -> 'items') item
       CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
       WHERE item ->> 'id' = v_occurrence_item_id::text
         AND schedule ->> 'local_time' = '20:00'
     ) <> 'pending'
+    OR (
+      SELECT schedule #>> '{occurrence,last_action_at}'
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '20:00'
+    ) IS NOT NULL
+    OR (
+      SELECT schedule #>> '{occurrence,snoozed_until}'
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '20:00'
+    ) IS NOT NULL
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND jsonb_typeof(schedule -> 'occurrence') = 'object'
+        AND NOT (
+          (schedule -> 'occurrence')
+          ?& ARRAY['status', 'last_action_at', 'snoozed_until']::text[]
+        )
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND jsonb_typeof(schedule -> 'occurrence') = 'object'
+        AND timezone(
+          'America/New_York',
+          (schedule #>> '{occurrence,scheduled_for}')::timestamptz
+        )::date <> date '2026-07-22'
+    )
     OR (
       SELECT jsonb_agg(schedule ->> 'local_time' ORDER BY schedule_ordinality)
       FROM jsonb_array_elements(v_list -> 'items') item
@@ -3369,6 +3646,37 @@ BEGIN
     timestamptz '2026-07-23 00:00:00+00'
   ) THEN
     RAISE EXCEPTION 'snooze changed the original occurrence identity';
+  END IF;
+
+  v_list := public.list_mobile_routine_items(
+    v_user_id,
+    'supplement',
+    false,
+    timestamptz '2026-07-23 00:15:00+00'
+  );
+
+  IF (
+    SELECT schedule #>> '{occurrence,status}'
+    FROM jsonb_array_elements(v_list -> 'items') item
+    CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+    WHERE item ->> 'id' = v_occurrence_item_id::text
+      AND schedule ->> 'local_time' = '20:00'
+  ) <> 'snoozed'
+    OR (
+      SELECT (schedule #>> '{occurrence,last_action_at}')::timestamptz
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '20:00'
+    ) IS DISTINCT FROM timestamptz '2026-07-23 00:01:00+00'
+    OR (
+      SELECT (schedule #>> '{occurrence,snoozed_until}')::timestamptz
+      FROM jsonb_array_elements(v_list -> 'items') item
+      CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
+      WHERE item ->> 'id' = v_occurrence_item_id::text
+        AND schedule ->> 'local_time' = '20:00'
+    ) IS DISTINCT FROM timestamptz '2026-07-23 00:30:00+00' THEN
+    RAISE EXCEPTION 'routine list did not expose snoozed action metadata for today';
   END IF;
 
   BEGIN
@@ -3517,6 +3825,11 @@ BEGIN
     v_rule_0800,
     v_old_missed_scheduled_for
   );
+  v_old_occurrence_day_end := (
+    (
+      timezone('America/New_York', v_old_missed_scheduled_for)::date + 1
+    )::timestamp AT TIME ZONE 'America/New_York'
+  );
 
   INSERT INTO public.routine_adherence_logs (
     id,
@@ -3542,8 +3855,8 @@ BEGIN
     v_old_missed_occurrence_key,
     'system',
     v_old_missed_scheduled_for,
-    clock_timestamp() - interval '8 days',
-    clock_timestamp() - interval '8 days'
+    v_old_occurrence_day_end,
+    clock_timestamp() - interval '1 hour'
   );
 
   BEGIN
@@ -3554,11 +3867,11 @@ BEGIN
       v_rule_0800,
       v_old_missed_scheduled_for,
       'taken',
-      clock_timestamp(),
+      v_old_occurrence_day_end + interval '1 day',
       NULL,
       'routine-missed-correction-expired'
     );
-    RAISE EXCEPTION 'expired missed occurrence correction was accepted';
+    RAISE EXCEPTION 'backdated correction used recent finalizer creation to bypass occurrence deadline';
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;

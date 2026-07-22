@@ -162,6 +162,85 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION private.derive_routine_occurrence_state(
+  p_user_id uuid,
+  p_routine_item_id uuid,
+  p_item_type text,
+  p_occurrence_key text,
+  p_scheduled_for timestamptz,
+  p_as_of timestamptz
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_timezone text;
+  v_occurrence_day_end timestamptz;
+  v_status text;
+  v_last_action_at timestamptz;
+  v_snoozed_until timestamptz;
+BEGIN
+  IF p_user_id IS NULL
+    OR p_routine_item_id IS NULL
+    OR p_item_type IS NULL
+    OR p_item_type NOT IN ('supplement', 'medication')
+    OR p_occurrence_key IS NULL
+    OR p_occurrence_key !~ '^[0-9a-f]{64}$'
+    OR p_scheduled_for IS NULL
+    OR p_as_of IS NULL THEN
+    RAISE EXCEPTION 'invalid_routine_occurrence_state' USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.routine_items item
+    WHERE item.id = p_routine_item_id
+      AND item.user_id = p_user_id
+      AND item.item_type = p_item_type
+  ) THEN
+    RAISE EXCEPTION 'routine_item_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  v_timezone := private.routine_user_timezone(p_user_id);
+  v_occurrence_day_end := (
+    (timezone(v_timezone, p_scheduled_for)::date + 1)::timestamp
+    AT TIME ZONE v_timezone
+  );
+
+  SELECT
+    action.status,
+    action.occurred_at,
+    action.snoozed_until
+  INTO
+    v_status,
+    v_last_action_at,
+    v_snoozed_until
+  FROM public.routine_adherence_logs action
+  WHERE action.user_id = p_user_id
+    AND action.routine_item_id = p_routine_item_id
+    AND action.item_type = p_item_type
+    AND action.occurrence_key = p_occurrence_key
+  ORDER BY action.occurred_at DESC, action.created_at DESC, action.id DESC
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    v_status := CASE
+      WHEN p_as_of >= v_occurrence_day_end THEN 'missed'
+      ELSE 'pending'
+    END;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'status', v_status,
+    'last_action_at', v_last_action_at,
+    'snoozed_until', v_snoozed_until
+  );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION private.lock_routine_occurrence(
   p_user_id uuid,
   p_occurrence_key text
@@ -343,10 +422,8 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_locale text;
-  v_document_id uuid;
   v_document_key constant text := 'medication_reminder_disclaimer';
   v_version text;
-  v_body_hash text;
 BEGIN
   SELECT domain_user.locale
   INTO v_locale
@@ -361,8 +438,8 @@ BEGIN
 
   LOCK TABLE public.legal_documents IN SHARE MODE;
 
-  SELECT document.id, document.version, document.body_hash
-  INTO v_document_id, v_version, v_body_hash
+  SELECT document.version
+  INTO v_version
   FROM public.legal_documents document
   WHERE document.document_key = v_document_key
     AND document.locale = v_locale
@@ -370,15 +447,12 @@ BEGIN
   ORDER BY document.required_from DESC, document.created_at DESC, document.id DESC
   LIMIT 1;
 
-  IF v_document_id IS NULL OR NOT EXISTS (
+  IF v_version IS NULL OR NOT EXISTS (
     SELECT 1
     FROM public.user_legal_acceptances acceptance
     WHERE acceptance.user_id = p_user_id
-      AND acceptance.legal_document_id = v_document_id
       AND acceptance.document_key = v_document_key
       AND acceptance.version = v_version
-      AND acceptance.locale = v_locale
-      AND acceptance.body_hash = v_body_hash
   ) THEN
     RAISE EXCEPTION 'medication_legal_acceptance_required' USING ERRCODE = '23514';
   END IF;
@@ -854,7 +928,6 @@ AS $$
 DECLARE
   v_timezone text;
   v_local_date date;
-  v_local_day_end timestamptz;
   v_result jsonb;
 BEGIN
   PERFORM private.assert_trusted_backend();
@@ -868,14 +941,16 @@ BEGIN
 
   v_timezone := private.routine_user_timezone(p_user_id);
   v_local_date := timezone(v_timezone, p_now)::date;
-  v_local_day_end := ((v_local_date + 1)::timestamp AT TIME ZONE v_timezone);
 
   WITH item_rows AS (
     SELECT item.*
     FROM public.routine_items item
     WHERE item.user_id = p_user_id
       AND item.item_type = p_item_type
-      AND (p_include_archived OR item.archived_at IS NULL)
+      AND (
+        p_include_archived
+        OR (item.active AND item.archived_at IS NULL)
+      )
   ),
   rule_rows AS (
     SELECT
@@ -932,18 +1007,18 @@ BEGIN
   schedule_states AS (
     SELECT
       schedule.*,
-      latest.status AS stored_status
+      CASE
+        WHEN schedule.occurrence_key IS NULL THEN NULL
+        ELSE private.derive_routine_occurrence_state(
+          p_user_id,
+          schedule.routine_item_id,
+          p_item_type,
+          schedule.occurrence_key,
+          schedule.scheduled_for,
+          p_now
+        )
+      END AS occurrence_state
     FROM schedule_rows schedule
-    LEFT JOIN LATERAL (
-      SELECT log.status
-      FROM public.routine_adherence_logs log
-      WHERE log.user_id = p_user_id
-        AND log.routine_item_id = schedule.routine_item_id
-        AND log.item_type = p_item_type
-        AND log.occurrence_key = schedule.occurrence_key
-      ORDER BY log.occurred_at DESC, log.created_at DESC, log.id DESC
-      LIMIT 1
-    ) latest ON schedule.occurrence_key IS NOT NULL
   )
   SELECT jsonb_build_object(
     'local_date', v_local_date,
@@ -972,12 +1047,8 @@ BEGIN
                     WHEN schedule.occurrence_key IS NULL THEN NULL
                     ELSE jsonb_build_object(
                       'occurrence_key', schedule.occurrence_key,
-                      'scheduled_for', schedule.scheduled_for,
-                      'status', COALESCE(
-                        schedule.stored_status,
-                        CASE WHEN p_now >= v_local_day_end THEN 'missed' ELSE 'pending' END
-                      )
-                    )
+                      'scheduled_for', schedule.scheduled_for
+                    ) || schedule.occurrence_state
                   END
                 )
                 ORDER BY schedule.local_time, schedule.weekdays, schedule.id
@@ -1123,6 +1194,7 @@ DECLARE
   v_latest public.routine_adherence_logs%ROWTYPE;
   v_timezone text;
   v_local_scheduled timestamp;
+  v_occurrence_day_end timestamptz;
   v_occurrence_key text;
   v_supersedes_log_id uuid;
   v_log_id uuid;
@@ -1211,6 +1283,10 @@ BEGIN
     RAISE EXCEPTION 'routine_occurrence_schedule_mismatch' USING ERRCODE = '22023';
   END IF;
 
+  v_occurrence_day_end := (
+    (v_local_scheduled::date + 1)::timestamp AT TIME ZONE v_timezone
+  );
+
   IF p_status = 'snoozed' AND (
     p_snoozed_until <= p_occurred_at
     OR NOT private.routine_same_local_date(
@@ -1244,7 +1320,8 @@ BEGIN
       AND v_latest.source = 'system'
       AND p_status = 'taken'
       AND p_occurred_at >= v_latest.occurred_at
-      AND clock_timestamp() <= v_latest.created_at + interval '7 days';
+      AND p_occurred_at <= v_occurrence_day_end + interval '7 days'
+      AND clock_timestamp() <= v_occurrence_day_end + interval '7 days';
 
     IF v_is_correction THEN
       v_supersedes_log_id := v_latest.id;
@@ -1469,11 +1546,8 @@ BEGIN
     INTO v_accepted_at
     FROM public.user_legal_acceptances acceptance
     WHERE acceptance.user_id = p_user_id
-      AND acceptance.legal_document_id = v_document.id
       AND acceptance.document_key = v_document.document_key
-      AND acceptance.version = v_document.version
-      AND acceptance.locale = v_document.locale
-      AND acceptance.body_hash = v_document.body_hash;
+      AND acceptance.version = v_document.version;
 
     IF v_accepted_at IS NULL THEN
       RAISE EXCEPTION 'legal_document_version_mismatch' USING ERRCODE = '22023';
@@ -1499,6 +1573,10 @@ $$;
 
 COMMENT ON FUNCTION private.derive_routine_occurrence_key(uuid, timestamptz) IS
   'Canonical SHA-256 occurrence identity from rule UUID and UTC epoch microseconds.';
+COMMENT ON FUNCTION private.derive_routine_occurrence_state(
+  uuid, uuid, text, text, timestamptz, timestamptz
+) IS
+  'Derives row-backed or delayed-finalizer routine occurrence state at a trusted instant.';
 COMMENT ON FUNCTION public.record_routine_occurrence_action_atomic(
   uuid, uuid, text, uuid, timestamptz, text, timestamptz, timestamptz, text
 ) IS

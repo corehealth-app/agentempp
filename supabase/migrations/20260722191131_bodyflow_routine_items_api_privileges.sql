@@ -6,6 +6,9 @@ REVOKE ALL ON FUNCTION private.routine_same_local_date(uuid, timestamptz, timest
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.derive_routine_occurrence_key(uuid, timestamptz)
   FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.derive_routine_occurrence_state(
+  uuid, uuid, text, text, timestamptz, timestamptz
+) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.lock_routine_occurrence(uuid, text)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.lock_routine_item(uuid, uuid, text, boolean)
@@ -23,6 +26,9 @@ GRANT EXECUTE ON FUNCTION private.routine_same_local_date(uuid, timestamptz, tim
   TO service_role;
 GRANT EXECUTE ON FUNCTION private.derive_routine_occurrence_key(uuid, timestamptz)
   TO service_role;
+GRANT EXECUTE ON FUNCTION private.derive_routine_occurrence_state(
+  uuid, uuid, text, text, timestamptz, timestamptz
+) TO service_role;
 GRANT EXECUTE ON FUNCTION private.lock_routine_occurrence(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION private.lock_routine_item(uuid, uuid, text, boolean)
   TO service_role;

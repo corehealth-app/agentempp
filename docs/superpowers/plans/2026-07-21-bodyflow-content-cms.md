@@ -459,7 +459,7 @@ Task 8. Evidência estática ou local anterior não substitui essa validação.
 - [x] **Step 9: Confirm production was not linked, queried, modified, or deployed and no external provider was called.**
 - [x] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types and independent-review fixes.**
 - [x] **Step 11: Record redacted verification evidence and commit `docs(bodyflow): complete educational CMS validation`.**
-- [ ] **Step 12: Push `codex/bodyflow-content-cms-v1` and open a draft PR with base `codex/bodyflow-personalities-mascot-v1`.**
+- [x] **Step 12: Push `codex/bodyflow-content-cms-v1` and open a draft PR with base `codex/bodyflow-personalities-mascot-v1`.**
 
 #### Redacted staging evidence — 2026-07-22
 
@@ -506,6 +506,9 @@ Task 8. Evidência estática ou local anterior não substitui essa validação.
 - Scope: no production link/query/mutation, application deployment, external
   provider call, secret configuration, cron activation, Xcode work, or visual
   prompt execution occurred.
+- Delivery: branch pushed and draft PR
+  [#10](https://github.com/corehealth-app/agentempp/pull/10) opened against
+  `codex/bodyflow-personalities-mascot-v1`; no merge or deployment was performed.
 
 ## Completion Gate
 

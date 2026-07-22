@@ -17,8 +17,8 @@ ALTER TABLE public.reminder_rules
   ADD COLUMN deactivated_at timestamptz,
   ADD CONSTRAINT reminder_rules_deactivated_state_check
     CHECK (deactivated_at IS NULL OR NOT active),
-  ADD CONSTRAINT reminder_rules_id_user_category_unique
-    UNIQUE (id, user_id, category);
+  ADD CONSTRAINT reminder_rules_occurrence_identity_unique
+    UNIQUE (id, user_id, routine_item_id, category);
 
 ALTER TABLE public.routine_adherence_logs
   ADD COLUMN reminder_rule_id uuid,
@@ -32,8 +32,10 @@ ALTER TABLE public.routine_adherence_logs
     (status = 'snoozed' AND snoozed_until IS NOT NULL)
     OR (status <> 'snoozed' AND snoozed_until IS NULL)
   ),
-  ADD CONSTRAINT routine_adherence_logs_id_user_unique
-    UNIQUE (id, user_id),
+  ADD CONSTRAINT routine_adherence_logs_supersedes_identity_unique
+    UNIQUE (id, user_id, routine_item_id, item_type, occurrence_key),
+  ADD CONSTRAINT routine_adherence_logs_event_identity_unique
+    UNIQUE (id, user_id, reminder_rule_id, occurrence_key),
   ADD CONSTRAINT routine_adherence_logs_source_check
     CHECK (source IS NULL OR source IN ('patient', 'system', 'offline_sync')),
   ADD CONSTRAINT routine_adherence_logs_occurrence_key_check
@@ -50,17 +52,45 @@ ALTER TABLE public.routine_adherence_logs
   ADD CONSTRAINT routine_adherence_logs_supersedes_shape_check
     CHECK (
       supersedes_log_id IS NULL
-      OR (status = 'taken' AND source IN ('patient', 'offline_sync'))
+      OR (
+        occurrence_key IS NOT NULL
+        AND status = 'taken'
+        AND source IN ('patient', 'offline_sync')
+      )
     ),
   ADD CONSTRAINT routine_adherence_logs_missed_source_check
     CHECK (source IS NULL OR status <> 'missed' OR source = 'system'),
+  ADD CONSTRAINT routine_adherence_logs_missed_source_new_rows_check
+    CHECK (
+      status <> 'missed'
+      OR source IS NOT DISTINCT FROM 'system'
+    ) NOT VALID,
+  ADD CONSTRAINT routine_adherence_logs_skipped_source_new_rows_check
+    CHECK (
+      status <> 'skipped'
+      OR (
+        source IS NOT NULL
+        AND source IN ('patient', 'offline_sync')
+      )
+    ) NOT VALID,
   ADD CONSTRAINT routine_adherence_logs_rule_owner_type_fkey
-    FOREIGN KEY (reminder_rule_id, user_id, item_type)
-    REFERENCES public.reminder_rules(id, user_id, category)
+    FOREIGN KEY (reminder_rule_id, user_id, routine_item_id, item_type)
+    REFERENCES public.reminder_rules(id, user_id, routine_item_id, category)
     ON DELETE RESTRICT,
   ADD CONSTRAINT routine_adherence_logs_supersedes_owner_fkey
-    FOREIGN KEY (supersedes_log_id, user_id)
-    REFERENCES public.routine_adherence_logs(id, user_id)
+    FOREIGN KEY (
+      supersedes_log_id,
+      user_id,
+      routine_item_id,
+      item_type,
+      occurrence_key
+    ) REFERENCES public.routine_adherence_logs(
+      id,
+      user_id,
+      routine_item_id,
+      item_type,
+      occurrence_key
+    )
     ON DELETE RESTRICT;
 
 CREATE INDEX routine_adherence_logs_occurrence_state_idx
@@ -87,9 +117,23 @@ ALTER TABLE public.reminder_events
       routine_occurrence_key IS NULL
       OR routine_occurrence_key ~ '^[0-9a-f]{64}$'
     ),
+  ADD CONSTRAINT reminder_events_routine_action_shape_check
+    CHECK (
+      routine_action_log_id IS NULL
+      OR routine_occurrence_key IS NOT NULL
+    ),
   ADD CONSTRAINT reminder_events_routine_action_owner_fkey
-    FOREIGN KEY (routine_action_log_id, user_id)
-    REFERENCES public.routine_adherence_logs(id, user_id)
+    FOREIGN KEY (
+      routine_action_log_id,
+      user_id,
+      reminder_rule_id,
+      routine_occurrence_key
+    ) REFERENCES public.routine_adherence_logs(
+      id,
+      user_id,
+      reminder_rule_id,
+      occurrence_key
+    )
     ON DELETE RESTRICT;
 
 CREATE UNIQUE INDEX reminder_events_routine_action_log_unique
@@ -238,6 +282,43 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION private.enforce_notification_delivery_routine_preview()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_category text;
+BEGIN
+  SELECT rule.category
+  INTO v_category
+  FROM public.reminder_events event
+  JOIN public.reminder_rules rule
+    ON rule.id = event.reminder_rule_id
+    AND rule.user_id = event.user_id
+  WHERE event.id = NEW.reminder_event_id
+    AND event.user_id = NEW.user_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_category IN ('supplement', 'medication') THEN
+    IF NEW.routine_preview_mode IS NULL
+      OR NEW.routine_preview_mode NOT IN ('private', 'name', 'name_and_dose') THEN
+      RAISE EXCEPTION 'routine delivery requires a controlled preview mode'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.routine_preview_mode IS NOT NULL THEN
+    RAISE EXCEPTION 'non-routine delivery cannot store a routine preview mode'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 CREATE TRIGGER legal_documents_immutable
   BEFORE UPDATE OR DELETE ON public.legal_documents
   FOR EACH ROW
@@ -258,6 +339,11 @@ CREATE TRIGGER routine_mutation_receipts_result_keys
   ON private.routine_mutation_receipts
   FOR EACH ROW
   EXECUTE FUNCTION private.enforce_routine_mutation_receipt_result_keys();
+
+CREATE TRIGGER notification_deliveries_routine_preview
+  BEFORE INSERT OR UPDATE ON public.notification_deliveries
+  FOR EACH ROW
+  EXECUTE FUNCTION private.enforce_notification_delivery_routine_preview();
 
 ALTER TABLE public.legal_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_legal_acceptances ENABLE ROW LEVEL SECURITY;

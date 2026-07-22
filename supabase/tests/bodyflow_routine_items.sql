@@ -8,6 +8,7 @@ DECLARE
   v_relation text;
   v_function regprocedure;
   v_function_signature text;
+  v_privilege text;
   v_constraint_definition text;
   v_index_definition text;
   v_required_columns constant text[] := ARRAY[
@@ -43,9 +44,36 @@ DECLARE
     'public.routine_adherence_logs',
     'public.user_legal_acceptances'
   ];
+  v_service_mutable_relations constant text[] := ARRAY[
+    'public.notification_preferences',
+    'public.reminder_rules',
+    'public.routine_items',
+    'public.reminder_events',
+    'public.notification_deliveries'
+  ];
+  v_service_immutable_relations constant text[] := ARRAY[
+    'public.routine_adherence_logs',
+    'public.legal_documents',
+    'public.user_legal_acceptances'
+  ];
+  v_client_forbidden_privileges constant text[] := ARRAY[
+    'INSERT',
+    'UPDATE',
+    'DELETE',
+    'TRUNCATE',
+    'REFERENCES',
+    'TRIGGER'
+  ];
+  v_service_forbidden_privileges constant text[] := ARRAY[
+    'DELETE',
+    'TRUNCATE',
+    'REFERENCES',
+    'TRIGGER'
+  ];
   v_trigger_functions constant text[] := ARRAY[
     'private.reject_bodyflow_routine_immutable_mutation()',
-    'private.enforce_routine_mutation_receipt_result_keys()'
+    'private.enforce_routine_mutation_receipt_result_keys()',
+    'private.enforce_notification_delivery_routine_preview()'
   ];
 BEGIN
   FOREACH v_column IN ARRAY v_required_columns
@@ -152,8 +180,8 @@ BEGIN
     AND constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass;
 
   IF v_constraint_definition IS NULL
-    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (reminder_rule_id, user_id, item_type)%'
-    OR v_constraint_definition NOT LIKE '%REFERENCES reminder_rules(id, user_id, category)%'
+    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (reminder_rule_id, user_id, routine_item_id, item_type)%'
+    OR v_constraint_definition NOT LIKE '%REFERENCES reminder_rules(id, user_id, routine_item_id, category)%'
     OR v_constraint_definition NOT LIKE '%ON DELETE RESTRICT%' THEN
     RAISE EXCEPTION 'occurrence rule ownership foreign key is incomplete';
   END IF;
@@ -165,8 +193,8 @@ BEGIN
     AND constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass;
 
   IF v_constraint_definition IS NULL
-    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (supersedes_log_id, user_id)%'
-    OR v_constraint_definition NOT LIKE '%REFERENCES routine_adherence_logs(id, user_id)%'
+    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (supersedes_log_id, user_id, routine_item_id, item_type, occurrence_key)%'
+    OR v_constraint_definition NOT LIKE '%REFERENCES routine_adherence_logs(id, user_id, routine_item_id, item_type, occurrence_key)%'
     OR v_constraint_definition NOT LIKE '%ON DELETE RESTRICT%' THEN
     RAISE EXCEPTION 'superseding action ownership foreign key is incomplete';
   END IF;
@@ -178,10 +206,26 @@ BEGIN
     AND constraint_definition.conrelid = 'public.reminder_events'::regclass;
 
   IF v_constraint_definition IS NULL
-    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (routine_action_log_id, user_id)%'
-    OR v_constraint_definition NOT LIKE '%REFERENCES routine_adherence_logs(id, user_id)%'
+    OR v_constraint_definition NOT LIKE '%FOREIGN KEY (routine_action_log_id, user_id, reminder_rule_id, routine_occurrence_key)%'
+    OR v_constraint_definition NOT LIKE '%REFERENCES routine_adherence_logs(id, user_id, reminder_rule_id, occurrence_key)%'
     OR v_constraint_definition NOT LIKE '%ON DELETE RESTRICT%' THEN
     RAISE EXCEPTION 'reminder action ownership foreign key is incomplete';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_definition
+    WHERE constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass
+      AND constraint_definition.conname = 'routine_adherence_logs_missed_source_new_rows_check'
+      AND NOT constraint_definition.convalidated
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_definition
+    WHERE constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass
+      AND constraint_definition.conname = 'routine_adherence_logs_skipped_source_new_rows_check'
+      AND NOT constraint_definition.convalidated
+  ) THEN
+    RAISE EXCEPTION 'new-row adherence source constraints are missing or validated';
   END IF;
 
   SELECT indexdef
@@ -233,11 +277,16 @@ BEGIN
       RAISE EXCEPTION 'anon can read routine or legal relation %', v_relation;
     END IF;
 
-    IF has_table_privilege('authenticated', v_relation, 'INSERT')
-      OR has_table_privilege('authenticated', v_relation, 'UPDATE')
-      OR has_table_privilege('authenticated', v_relation, 'DELETE') THEN
-      RAISE EXCEPTION 'authenticated can write routine or legal relation %', v_relation;
-    END IF;
+    FOREACH v_privilege IN ARRAY v_client_forbidden_privileges
+    LOOP
+      IF has_table_privilege('anon', v_relation, v_privilege) THEN
+        RAISE EXCEPTION 'anon has forbidden % on %', v_privilege, v_relation;
+      END IF;
+
+      IF has_table_privilege('authenticated', v_relation, v_privilege) THEN
+        RAISE EXCEPTION 'authenticated has forbidden % on %', v_privilege, v_relation;
+      END IF;
+    END LOOP;
   END LOOP;
 
   FOREACH v_relation IN ARRAY v_patient_read_relations
@@ -249,17 +298,70 @@ BEGIN
 
   IF has_table_privilege('authenticated', 'public.legal_documents', 'SELECT')
     OR has_table_privilege('authenticated', 'public.reminder_events', 'SELECT')
-    OR has_table_privilege('authenticated', 'public.notification_deliveries', 'SELECT')
-    OR has_table_privilege('anon', 'private.routine_mutation_receipts', 'SELECT,INSERT,UPDATE,DELETE')
-    OR has_table_privilege('authenticated', 'private.routine_mutation_receipts', 'SELECT,INSERT,UPDATE,DELETE') THEN
+    OR has_table_privilege('authenticated', 'public.notification_deliveries', 'SELECT') THEN
     RAISE EXCEPTION 'BFF-only routine data is client-accessible';
   END IF;
 
-  IF NOT has_table_privilege('service_role', 'public.legal_documents', 'SELECT,INSERT,UPDATE,DELETE')
-    OR NOT has_table_privilege('service_role', 'public.user_legal_acceptances', 'SELECT,INSERT,UPDATE,DELETE')
-    OR NOT has_table_privilege('service_role', 'private.routine_mutation_receipts', 'SELECT,INSERT,UPDATE,DELETE') THEN
-    RAISE EXCEPTION 'service role is missing routine persistence privileges';
+  FOREACH v_privilege IN ARRAY ARRAY[
+    'SELECT',
+    'INSERT',
+    'UPDATE',
+    'DELETE',
+    'TRUNCATE',
+    'REFERENCES',
+    'TRIGGER'
+  ]
+  LOOP
+    IF has_table_privilege('anon', 'private.routine_mutation_receipts', v_privilege)
+      OR has_table_privilege('authenticated', 'private.routine_mutation_receipts', v_privilege) THEN
+      RAISE EXCEPTION 'client role has forbidden % on private receipts', v_privilege;
+    END IF;
+  END LOOP;
+
+  FOREACH v_relation IN ARRAY v_service_mutable_relations
+  LOOP
+    IF NOT has_table_privilege('service_role', v_relation, 'SELECT')
+      OR NOT has_table_privilege('service_role', v_relation, 'INSERT')
+      OR NOT has_table_privilege('service_role', v_relation, 'UPDATE') THEN
+      RAISE EXCEPTION 'service role is missing mutable-table operations on %', v_relation;
+    END IF;
+
+    FOREACH v_privilege IN ARRAY v_service_forbidden_privileges
+    LOOP
+      IF has_table_privilege('service_role', v_relation, v_privilege) THEN
+        RAISE EXCEPTION 'service role has forbidden % on %', v_privilege, v_relation;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  FOREACH v_relation IN ARRAY v_service_immutable_relations
+  LOOP
+    IF NOT has_table_privilege('service_role', v_relation, 'SELECT')
+      OR NOT has_table_privilege('service_role', v_relation, 'INSERT')
+      OR has_table_privilege('service_role', v_relation, 'UPDATE') THEN
+      RAISE EXCEPTION 'service role immutable-table operations are incorrect on %', v_relation;
+    END IF;
+
+    FOREACH v_privilege IN ARRAY v_service_forbidden_privileges
+    LOOP
+      IF has_table_privilege('service_role', v_relation, v_privilege) THEN
+        RAISE EXCEPTION 'service role has forbidden % on %', v_privilege, v_relation;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  IF NOT has_table_privilege('service_role', 'private.routine_mutation_receipts', 'SELECT')
+    OR NOT has_table_privilege('service_role', 'private.routine_mutation_receipts', 'INSERT')
+    OR NOT has_table_privilege('service_role', 'private.routine_mutation_receipts', 'UPDATE') THEN
+    RAISE EXCEPTION 'service role is missing private receipt operations';
   END IF;
+
+  FOREACH v_privilege IN ARRAY v_service_forbidden_privileges
+  LOOP
+    IF has_table_privilege('service_role', 'private.routine_mutation_receipts', v_privilege) THEN
+      RAISE EXCEPTION 'service role has forbidden % on private receipts', v_privilege;
+    END IF;
+  END LOOP;
 
   IF NOT EXISTS (
     SELECT 1
@@ -326,6 +428,12 @@ BEGIN
     FROM pg_trigger
     WHERE tgrelid = 'private.routine_mutation_receipts'::regclass
       AND tgname = 'routine_mutation_receipts_result_keys'
+      AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.notification_deliveries'::regclass
+      AND tgname = 'notification_deliveries_routine_preview'
       AND NOT tgisinternal
   ) THEN
     RAISE EXCEPTION 'immutable or receipt allowlist trigger is missing';
@@ -408,12 +516,16 @@ DECLARE
   v_item_id constant uuid := '00000000-0000-0000-0000-000000000821';
   v_other_item_id constant uuid := '00000000-0000-0000-0000-000000000822';
   v_supplement_item_id constant uuid := '00000000-0000-0000-0000-000000000823';
+  v_same_owner_item_id constant uuid := '00000000-0000-0000-0000-000000000824';
   v_rule_id constant uuid := '00000000-0000-0000-0000-000000000831';
   v_other_rule_id constant uuid := '00000000-0000-0000-0000-000000000832';
   v_supplement_rule_id constant uuid := '00000000-0000-0000-0000-000000000833';
+  v_same_owner_rule_id constant uuid := '00000000-0000-0000-0000-000000000834';
+  v_hydration_rule_id constant uuid := '00000000-0000-0000-0000-000000000835';
   v_log_id constant uuid := '00000000-0000-0000-0000-000000000841';
   v_other_log_id constant uuid := '00000000-0000-0000-0000-000000000842';
   v_snooze_log_id constant uuid := '00000000-0000-0000-0000-000000000843';
+  v_hydration_event_id constant uuid := '00000000-0000-0000-0000-000000000872';
   v_device_id constant uuid := '00000000-0000-0000-0000-000000000881';
   v_old_document_id constant uuid := '00000000-0000-0000-0000-000000000851';
   v_current_document_id constant uuid := '00000000-0000-0000-0000-000000000852';
@@ -501,7 +613,8 @@ BEGIN
   ) VALUES
     (v_item_id, v_user_id, 'medication', 'Synthetic item A', 'Synthetic dose A', 'user', true, true),
     (v_other_item_id, v_other_user_id, 'medication', 'Synthetic item B', 'Synthetic dose B', 'professional', true, true),
-    (v_supplement_item_id, v_user_id, 'supplement', 'Synthetic item C', 'Synthetic dose C', 'protocol', true, true);
+    (v_supplement_item_id, v_user_id, 'supplement', 'Synthetic item C', 'Synthetic dose C', 'protocol', true, true),
+    (v_same_owner_item_id, v_user_id, 'medication', 'Synthetic item D', 'Synthetic dose D', 'other', true, true);
 
   INSERT INTO public.reminder_rules (
     id,
@@ -513,7 +626,9 @@ BEGIN
   ) VALUES
     (v_rule_id, v_user_id, v_item_id, 'medication', time '08:00', ARRAY[1, 2, 3]),
     (v_other_rule_id, v_other_user_id, v_other_item_id, 'medication', time '09:00', ARRAY[1, 2, 3]),
-    (v_supplement_rule_id, v_user_id, v_supplement_item_id, 'supplement', time '10:00', ARRAY[1, 2, 3]);
+    (v_supplement_rule_id, v_user_id, v_supplement_item_id, 'supplement', time '10:00', ARRAY[1, 2, 3]),
+    (v_same_owner_rule_id, v_user_id, v_same_owner_item_id, 'medication', time '11:00', ARRAY[1, 2, 3]),
+    (v_hydration_rule_id, v_user_id, NULL, 'hydration', time '12:00', ARRAY[1, 2, 3]);
 
   INSERT INTO public.routine_adherence_logs (
     id,
@@ -746,6 +861,84 @@ BEGIN
       item_type,
       status,
       idempotency_key,
+      occurred_at
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'missed',
+      'routine-null-source-missed',
+      clock_timestamp()
+    );
+    RAISE EXCEPTION 'null-source missed action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      source,
+      occurred_at
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'skipped',
+      'routine-system-source-skipped',
+      'system',
+      clock_timestamp()
+    );
+    RAISE EXCEPTION 'system-source skipped action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    occurred_at
+  ) VALUES (
+    v_user_id,
+    v_item_id,
+    'medication',
+    'taken',
+    'routine-legacy-null-source-taken',
+    clock_timestamp()
+  );
+
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    occurred_at,
+    snoozed_until
+  ) VALUES (
+    v_user_id,
+    v_item_id,
+    'medication',
+    'snoozed',
+    'routine-legacy-null-source-snoozed',
+    clock_timestamp(),
+    clock_timestamp()
+  );
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
       source,
       occurred_at
     ) VALUES (
@@ -862,6 +1055,35 @@ BEGIN
       v_item_id,
       'medication',
       'taken',
+      'routine-cross-item-rule',
+      v_same_owner_rule_id,
+      repeat('6', 64),
+      'patient',
+      timestamptz '2026-07-22 14:30:00+00',
+      timestamptz '2026-07-22 14:31:00+00'
+    );
+    RAISE EXCEPTION 'same-owner same-type cross-item rule was accepted';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
       'routine-cross-type-rule',
       v_supplement_rule_id,
       repeat('f', 64),
@@ -870,6 +1092,37 @@ BEGIN
       timestamptz '2026-07-22 15:01:00+00'
     );
     RAISE EXCEPTION 'cross-type occurrence rule was accepted';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      supersedes_log_id
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-cross-occurrence-supersede',
+      v_rule_id,
+      repeat('7', 64),
+      'patient',
+      timestamptz '2026-07-22 19:15:00+00',
+      timestamptz '2026-07-22 19:16:00+00',
+      v_log_id
+    );
+    RAISE EXCEPTION 'cross-occurrence superseding action was accepted';
   EXCEPTION
     WHEN foreign_key_violation THEN NULL;
   END;
@@ -1154,6 +1407,48 @@ BEGIN
       reminder_rule_id,
       scheduled_for,
       status,
+      routine_occurrence_key,
+      routine_action_log_id
+    ) VALUES (
+      v_user_id,
+      v_supplement_rule_id,
+      timestamptz '2026-07-22 18:34:00+00',
+      'queued',
+      v_snooze_occurrence_key,
+      v_snooze_log_id
+    );
+    RAISE EXCEPTION 'event action with a mismatched reminder rule was accepted';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.reminder_events (
+      user_id,
+      reminder_rule_id,
+      scheduled_for,
+      status,
+      routine_occurrence_key,
+      routine_action_log_id
+    ) VALUES (
+      v_user_id,
+      v_rule_id,
+      timestamptz '2026-07-22 18:35:00+00',
+      'queued',
+      repeat('8', 64),
+      v_snooze_log_id
+    );
+    RAISE EXCEPTION 'event action with a mismatched occurrence key was accepted';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.reminder_events (
+      user_id,
+      reminder_rule_id,
+      scheduled_for,
+      status,
       routine_occurrence_key
     ) VALUES (
       v_user_id,
@@ -1166,6 +1461,20 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  INSERT INTO public.reminder_events (
+    id,
+    user_id,
+    reminder_rule_id,
+    scheduled_for,
+    status
+  ) VALUES (
+    v_hydration_event_id,
+    v_user_id,
+    v_hydration_rule_id,
+    timestamptz '2026-07-22 19:00:00+00',
+    'queued'
+  );
 
   INSERT INTO public.notification_preferences (user_id)
   VALUES (v_user_id);
@@ -1211,6 +1520,60 @@ BEGIN
       'invalid'
     );
     RAISE EXCEPTION 'invalid delivery preview mode was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.notification_deliveries (
+      user_id,
+      reminder_event_id,
+      mobile_device_id,
+      channel,
+      provider,
+      template_key,
+      personality,
+      scheduled_for,
+      routine_preview_mode
+    ) VALUES (
+      v_user_id,
+      '00000000-0000-0000-0000-000000000871',
+      v_device_id,
+      'push',
+      'apns',
+      'synthetic.template',
+      'synthetic',
+      timestamptz '2026-07-22 18:30:00+00',
+      NULL
+    );
+    RAISE EXCEPTION 'routine delivery without a preview mode was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.notification_deliveries (
+      user_id,
+      reminder_event_id,
+      mobile_device_id,
+      channel,
+      provider,
+      template_key,
+      personality,
+      scheduled_for,
+      routine_preview_mode
+    ) VALUES (
+      v_user_id,
+      v_hydration_event_id,
+      v_device_id,
+      'push',
+      'apns',
+      'synthetic.template',
+      'synthetic',
+      timestamptz '2026-07-22 19:00:00+00',
+      'private'
+    );
+    RAISE EXCEPTION 'non-routine delivery with a preview mode was accepted';
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;

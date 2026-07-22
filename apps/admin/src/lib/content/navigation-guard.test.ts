@@ -70,12 +70,60 @@ describe('content navigation guard', () => {
     expect(restore).toHaveBeenCalledWith(-1)
   })
 
-  it('preserves unrelated history state and restores an unmarked prior entry conservatively', () => {
+  it('cancels unmarked Back using the real history index without a duplicate confirmation or loop', () => {
+    const confirm = vi.fn(() => false)
+    const restore = vi.fn()
+    let currentEntryIndex: number | null = 19
+    const controller = createContentHistoryNavigationController({
+      currentPosition: 20,
+      confirm,
+      restore,
+      positionForPop: () => currentEntryIndex,
+    } as Parameters<typeof createContentHistoryNavigationController>[0] & {
+      positionForPop: () => number | null
+    })
+
+    controller.handlePop(null)
+    currentEntryIndex = 20
+    controller.handlePop(null)
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledWith(1)
+  })
+
+  it('cancels unmarked Forward using the real history index without a duplicate confirmation or loop', () => {
+    const confirm = vi.fn(() => false)
+    const restore = vi.fn()
+    let currentEntryIndex: number | null = 21
+    const controller = createContentHistoryNavigationController({
+      currentPosition: 20,
+      confirm,
+      restore,
+      positionForPop: () => currentEntryIndex,
+    } as Parameters<typeof createContentHistoryNavigationController>[0] & {
+      positionForPop: () => number | null
+    })
+
+    controller.handlePop(null)
+    currentEntryIndex = 20
+    controller.handlePop(null)
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledWith(-1)
+  })
+
+  it('preserves unrelated history state and does not invent a direction without an index or marker', () => {
+    const confirm = vi.fn(() => false)
     const restore = vi.fn()
     const controller = createContentHistoryNavigationController({
       currentPosition: 20,
-      confirm: () => false,
+      confirm,
       restore,
+      positionForPop: () => null,
+    } as Parameters<typeof createContentHistoryNavigationController>[0] & {
+      positionForPop: () => number | null
     })
 
     expect(stampContentHistoryPosition({ __NA: true, tree: ['keep'] }, 20)).toEqual({
@@ -85,6 +133,7 @@ describe('content navigation guard', () => {
     })
     controller.handlePop(null)
 
-    expect(restore).toHaveBeenCalledWith(1)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(restore).not.toHaveBeenCalled()
   })
 })

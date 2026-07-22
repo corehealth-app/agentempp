@@ -49,17 +49,19 @@ export function createContentHistoryNavigationController({
   currentPosition,
   confirm,
   restore,
+  positionForPop,
 }: {
   currentPosition: number
   confirm: ConfirmNavigation
   restore: (delta: number) => void
+  positionForPop?: () => number | null
 }): { handlePop(state: unknown): void } {
   let current = currentPosition
   let restoringPosition: number | null = null
 
   return {
     handlePop(state) {
-      const next = contentHistoryPosition(state)
+      const next = positionForPop?.() ?? contentHistoryPosition(state)
       if (restoringPosition !== null && next === restoringPosition) {
         restoringPosition = null
         return
@@ -70,8 +72,9 @@ export function createContentHistoryNavigationController({
         return
       }
 
-      // Entries created before this guard has no marker are necessarily restored conservatively.
-      const delta = next === null ? 1 : current - next
+      // Without an entry index or marker, the browser does not expose a safe direction to undo.
+      if (next === null) return
+      const delta = current - next
       if (delta === 0) return
       restoringPosition = current
       restore(delta)
@@ -85,7 +88,9 @@ export function useContentNavigationGuard(blocked: boolean): void {
   useEffect(() => {
     if (!blocked) return
 
-    const currentPosition = reserveContentHistoryPosition(window.history.state)
+    const markerPosition = reserveContentHistoryPosition(window.history.state)
+    const navigationPosition = browserNavigationEntryIndex()
+    const currentPosition = navigationPosition ?? markerPosition
     window.history.replaceState(
       stampContentHistoryPosition(window.history.state, currentPosition),
       '',
@@ -95,6 +100,9 @@ export function useContentNavigationGuard(blocked: boolean): void {
       currentPosition,
       confirm: () => attemptContentNavigation(() => undefined),
       restore: (delta) => window.history.go(delta),
+      ...(navigationPosition !== null
+        ? { positionForPop: () => browserNavigationEntryIndex() }
+        : {}),
     })
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
@@ -156,4 +164,14 @@ function reserveContentHistoryPosition(state: unknown): number {
   }
   nextHistoryPosition += 1
   return nextHistoryPosition
+}
+
+function browserNavigationEntryIndex(): number | null {
+  const navigation = (
+    window as unknown as {
+      navigation?: { currentEntry?: { index?: unknown } }
+    }
+  ).navigation
+  const index = navigation?.currentEntry?.index
+  return typeof index === 'number' && Number.isSafeInteger(index) ? index : null
 }

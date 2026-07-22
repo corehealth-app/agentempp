@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   attemptContentNavigation,
   contentNavigationBlocked,
+  createContentHistoryNavigationController,
   registerContentNavigationGuard,
+  stampContentHistoryPosition,
 } from './navigation-guard'
 
 describe('content navigation guard', () => {
@@ -32,5 +34,57 @@ describe('content navigation guard', () => {
     } finally {
       unregister()
     }
+  })
+
+  it('cancels Back once and restores the draft entry without a duplicate confirmation or loop', () => {
+    const confirm = vi.fn(() => false)
+    const restore = vi.fn()
+    const controller = createContentHistoryNavigationController({
+      currentPosition: 20,
+      confirm,
+      restore,
+    })
+
+    controller.handlePop({ __bodyflowContentHistoryPosition: 19 })
+    controller.handlePop({ __bodyflowContentHistoryPosition: 20 })
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledWith(1)
+  })
+
+  it('cancels Forward once and restores the draft entry without a duplicate confirmation or loop', () => {
+    const confirm = vi.fn(() => false)
+    const restore = vi.fn()
+    const controller = createContentHistoryNavigationController({
+      currentPosition: 20,
+      confirm,
+      restore,
+    })
+
+    controller.handlePop({ __bodyflowContentHistoryPosition: 21 })
+    controller.handlePop({ __bodyflowContentHistoryPosition: 20 })
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledWith(-1)
+  })
+
+  it('preserves unrelated history state and restores an unmarked prior entry conservatively', () => {
+    const restore = vi.fn()
+    const controller = createContentHistoryNavigationController({
+      currentPosition: 20,
+      confirm: () => false,
+      restore,
+    })
+
+    expect(stampContentHistoryPosition({ __NA: true, tree: ['keep'] }, 20)).toEqual({
+      __NA: true,
+      tree: ['keep'],
+      __bodyflowContentHistoryPosition: 20,
+    })
+    controller.handlePop(null)
+
+    expect(restore).toHaveBeenCalledWith(1)
   })
 })

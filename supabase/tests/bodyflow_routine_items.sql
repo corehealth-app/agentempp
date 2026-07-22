@@ -73,7 +73,9 @@ DECLARE
   v_trigger_functions constant text[] := ARRAY[
     'private.reject_bodyflow_routine_immutable_mutation()',
     'private.enforce_routine_mutation_receipt_result_keys()',
-    'private.enforce_notification_delivery_routine_preview()'
+    'private.enforce_notification_delivery_routine_preview()',
+    'private.enforce_routine_adherence_correction()',
+    'private.enforce_reminder_event_routine_action()'
   ];
 BEGIN
   FOREACH v_column IN ARRAY v_required_columns
@@ -197,6 +199,17 @@ BEGIN
     OR v_constraint_definition NOT LIKE '%REFERENCES routine_adherence_logs(id, user_id, routine_item_id, item_type, occurrence_key)%'
     OR v_constraint_definition NOT LIKE '%ON DELETE RESTRICT%' THEN
     RAISE EXCEPTION 'superseding action ownership foreign key is incomplete';
+  END IF;
+
+  SELECT pg_get_constraintdef(constraint_definition.oid)
+  INTO v_constraint_definition
+  FROM pg_constraint constraint_definition
+  WHERE constraint_definition.conname = 'routine_adherence_logs_supersedes_distinct_check'
+    AND constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass;
+
+  IF v_constraint_definition IS NULL
+    OR v_constraint_definition NOT LIKE '%supersedes_log_id <> id%' THEN
+    RAISE EXCEPTION 'superseding action self-reference check is incomplete';
   END IF;
 
   SELECT pg_get_constraintdef(constraint_definition.oid)
@@ -400,7 +413,7 @@ BEGIN
         )
     ) OR has_function_privilege('anon', v_function, 'EXECUTE')
       OR has_function_privilege('authenticated', v_function, 'EXECUTE')
-      OR NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+      OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
       RAISE EXCEPTION 'trusted trigger function security is incorrect';
     END IF;
   END LOOP;
@@ -435,8 +448,20 @@ BEGIN
     WHERE tgrelid = 'public.notification_deliveries'::regclass
       AND tgname = 'notification_deliveries_routine_preview'
       AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.routine_adherence_logs'::regclass
+      AND tgname = 'routine_adherence_logs_correction'
+      AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.reminder_events'::regclass
+      AND tgname = 'reminder_events_routine_action'
+      AND NOT tgisinternal
   ) THEN
-    RAISE EXCEPTION 'immutable or receipt allowlist trigger is missing';
+    RAISE EXCEPTION 'routine integrity trigger is missing';
   END IF;
 END;
 $test$;
@@ -525,8 +550,14 @@ DECLARE
   v_log_id constant uuid := '00000000-0000-0000-0000-000000000841';
   v_other_log_id constant uuid := '00000000-0000-0000-0000-000000000842';
   v_snooze_log_id constant uuid := '00000000-0000-0000-0000-000000000843';
+  v_self_reference_log_id constant uuid := '00000000-0000-0000-0000-000000000844';
+  v_non_system_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000845';
+  v_not_prior_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000846';
+  v_correctable_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000847';
+  v_corrected_log_id constant uuid := '00000000-0000-0000-0000-000000000848';
   v_hydration_event_id constant uuid := '00000000-0000-0000-0000-000000000872';
   v_device_id constant uuid := '00000000-0000-0000-0000-000000000881';
+  v_legacy_delivery_id constant uuid := '00000000-0000-0000-0000-000000000882';
   v_old_document_id constant uuid := '00000000-0000-0000-0000-000000000851';
   v_current_document_id constant uuid := '00000000-0000-0000-0000-000000000852';
   v_future_document_id constant uuid := '00000000-0000-0000-0000-000000000853';
@@ -535,6 +566,9 @@ DECLARE
   v_occurrence_key constant text := repeat('a', 64);
   v_other_occurrence_key constant text := repeat('b', 64);
   v_snooze_occurrence_key constant text := repeat('c', 64);
+  v_non_system_occurrence_key constant text := repeat('9', 64);
+  v_not_prior_occurrence_key constant text := repeat('d', 64);
+  v_correction_occurrence_key constant text := repeat('e', 64);
   v_old_hash text;
   v_current_hash text;
   v_selected_version text;
@@ -1209,6 +1243,301 @@ BEGIN
     WHEN unique_violation THEN NULL;
   END;
 
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      id,
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      created_at,
+      supersedes_log_id
+    ) VALUES (
+      v_self_reference_log_id,
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-self-reference-correction',
+      v_rule_id,
+      repeat('4', 64),
+      'patient',
+      timestamptz '2026-07-22 17:10:00+00',
+      timestamptz '2026-07-22 17:11:00+00',
+      timestamptz '2026-07-22 17:12:00+00',
+      v_self_reference_log_id
+    );
+    RAISE EXCEPTION 'self-referencing correction was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      created_at,
+      supersedes_log_id
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-non-missed-correction',
+      v_rule_id,
+      v_occurrence_key,
+      'patient',
+      timestamptz '2026-07-22 11:00:00+00',
+      timestamptz '2026-07-22 11:02:00+00',
+      timestamptz '2026-07-22 17:13:00+00',
+      v_log_id
+    );
+    RAISE EXCEPTION 'correction of a non-missed action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  ALTER TABLE public.routine_adherence_logs
+    DROP CONSTRAINT routine_adherence_logs_missed_source_check,
+    DROP CONSTRAINT routine_adherence_logs_missed_source_new_rows_check;
+
+  INSERT INTO public.routine_adherence_logs (
+    id,
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    created_at
+  ) VALUES (
+    v_non_system_missed_log_id,
+    v_user_id,
+    v_item_id,
+    'medication',
+    'missed',
+    'routine-legacy-non-system-missed',
+    v_rule_id,
+    v_non_system_occurrence_key,
+    'patient',
+    timestamptz '2026-07-22 17:20:00+00',
+    timestamptz '2026-07-22 17:21:00+00',
+    timestamptz '2026-07-22 17:22:00+00'
+  );
+
+  ALTER TABLE public.routine_adherence_logs
+    ADD CONSTRAINT routine_adherence_logs_missed_source_check
+      CHECK (source IS NULL OR status <> 'missed' OR source = 'system') NOT VALID,
+    ADD CONSTRAINT routine_adherence_logs_missed_source_new_rows_check
+      CHECK (
+        status <> 'missed'
+        OR source IS NOT DISTINCT FROM 'system'
+      ) NOT VALID;
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      created_at,
+      supersedes_log_id
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-non-system-correction',
+      v_rule_id,
+      v_non_system_occurrence_key,
+      'patient',
+      timestamptz '2026-07-22 17:20:00+00',
+      timestamptz '2026-07-22 17:23:00+00',
+      timestamptz '2026-07-22 17:24:00+00',
+      v_non_system_missed_log_id
+    );
+    RAISE EXCEPTION 'correction of a non-system missed action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  ALTER TABLE public.routine_adherence_logs
+    DISABLE TRIGGER routine_adherence_logs_immutable;
+
+  DELETE FROM public.routine_adherence_logs
+  WHERE id = v_non_system_missed_log_id;
+
+  ALTER TABLE public.routine_adherence_logs
+    ENABLE TRIGGER routine_adherence_logs_immutable;
+
+  ALTER TABLE public.routine_adherence_logs
+    DROP CONSTRAINT routine_adherence_logs_missed_source_check,
+    DROP CONSTRAINT routine_adherence_logs_missed_source_new_rows_check,
+    ADD CONSTRAINT routine_adherence_logs_missed_source_check
+      CHECK (source IS NULL OR status <> 'missed' OR source = 'system'),
+    ADD CONSTRAINT routine_adherence_logs_missed_source_new_rows_check
+      CHECK (
+        status <> 'missed'
+        OR source IS NOT DISTINCT FROM 'system'
+      ) NOT VALID;
+
+  INSERT INTO public.routine_adherence_logs (
+    id,
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    created_at
+  ) VALUES (
+    v_not_prior_missed_log_id,
+    v_user_id,
+    v_item_id,
+    'medication',
+    'missed',
+    'routine-not-prior-missed',
+    v_rule_id,
+    v_not_prior_occurrence_key,
+    'system',
+    timestamptz '2026-07-22 17:30:00+00',
+    timestamptz '2026-07-22 17:31:00+00',
+    timestamptz '2026-07-22 17:35:00+00'
+  );
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      created_at,
+      supersedes_log_id
+    ) VALUES (
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-not-prior-correction',
+      v_rule_id,
+      v_not_prior_occurrence_key,
+      'offline_sync',
+      timestamptz '2026-07-22 17:30:00+00',
+      timestamptz '2026-07-22 17:33:00+00',
+      timestamptz '2026-07-22 17:34:00+00',
+      v_not_prior_missed_log_id
+    );
+    RAISE EXCEPTION 'correction older than its missed action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO public.routine_adherence_logs (
+    id,
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    created_at
+  ) VALUES (
+    v_correctable_missed_log_id,
+    v_user_id,
+    v_item_id,
+    'medication',
+    'missed',
+    'routine-correctable-missed',
+    v_rule_id,
+    v_correction_occurrence_key,
+    'system',
+    timestamptz '2026-07-22 17:40:00+00',
+    timestamptz '2026-07-22 17:41:00+00',
+    timestamptz '2026-07-22 17:42:00+00'
+  );
+
+  INSERT INTO public.routine_adherence_logs (
+    id,
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    created_at,
+    supersedes_log_id
+  ) VALUES (
+    v_corrected_log_id,
+    v_user_id,
+    v_item_id,
+    'medication',
+    'taken',
+    'routine-valid-correction',
+    v_rule_id,
+    v_correction_occurrence_key,
+    'patient',
+    timestamptz '2026-07-22 17:40:00+00',
+    timestamptz '2026-07-22 17:43:00+00',
+    timestamptz '2026-07-22 17:44:00+00',
+    v_correctable_missed_log_id
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.routine_adherence_logs correction
+    JOIN public.routine_adherence_logs missed
+      ON missed.id = correction.supersedes_log_id
+    WHERE correction.id = v_corrected_log_id
+      AND missed.id = v_correctable_missed_log_id
+      AND missed.status = 'missed'
+      AND missed.source = 'system'
+      AND missed.created_at < correction.created_at
+  ) THEN
+    RAISE EXCEPTION 'valid two-row correction was not persisted';
+  END IF;
+
   INSERT INTO public.routine_adherence_logs (
     id,
     user_id,
@@ -1341,6 +1670,27 @@ BEGIN
     WHEN check_violation THEN NULL;
   END;
 
+  BEGIN
+    INSERT INTO public.reminder_events (
+      user_id,
+      reminder_rule_id,
+      scheduled_for,
+      status,
+      routine_occurrence_key,
+      routine_action_log_id
+    ) VALUES (
+      v_user_id,
+      v_rule_id,
+      timestamptz '2026-07-22 18:29:00+00',
+      'queued',
+      v_occurrence_key,
+      v_log_id
+    );
+    RAISE EXCEPTION 'follow-up event for a non-snoozed action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   INSERT INTO public.reminder_events (
     id,
     user_id,
@@ -1358,6 +1708,18 @@ BEGIN
     v_snooze_occurrence_key,
     v_snooze_log_id
   );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.reminder_events event
+    JOIN public.routine_adherence_logs action
+      ON action.id = event.routine_action_log_id
+    WHERE event.id = '00000000-0000-0000-0000-000000000871'
+      AND action.id = v_snooze_log_id
+      AND action.status = 'snoozed'
+  ) THEN
+    RAISE EXCEPTION 'valid snoozed follow-up event was not persisted';
+  END IF;
 
   BEGIN
     INSERT INTO public.reminder_events (
@@ -1496,6 +1858,53 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  ALTER TABLE public.notification_deliveries
+    DISABLE TRIGGER notification_deliveries_routine_preview;
+
+  INSERT INTO public.notification_deliveries (
+    id,
+    user_id,
+    reminder_event_id,
+    mobile_device_id,
+    channel,
+    provider,
+    template_key,
+    personality,
+    scheduled_for,
+    routine_preview_mode
+  ) VALUES (
+    v_legacy_delivery_id,
+    v_user_id,
+    '00000000-0000-0000-0000-000000000871',
+    v_device_id,
+    'push',
+    'apns',
+    'synthetic.template',
+    'synthetic',
+    timestamptz '2026-07-22 18:30:00+00',
+    NULL
+  );
+
+  ALTER TABLE public.notification_deliveries
+    ENABLE TRIGGER notification_deliveries_routine_preview;
+
+  UPDATE public.notification_deliveries
+  SET status = 'sent',
+      provider_message_id = 'synthetic-provider-id',
+      updated_at = timestamptz '2026-07-22 18:31:00+00'
+  WHERE id = v_legacy_delivery_id;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.notification_deliveries
+    WHERE id = v_legacy_delivery_id
+      AND status = 'sent'
+      AND provider_message_id = 'synthetic-provider-id'
+      AND routine_preview_mode IS NULL
+  ) THEN
+    RAISE EXCEPTION 'legacy routine delivery metadata update failed';
+  END IF;
 
   BEGIN
     INSERT INTO public.notification_deliveries (

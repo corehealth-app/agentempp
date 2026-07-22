@@ -58,6 +58,8 @@ ALTER TABLE public.routine_adherence_logs
         AND source IN ('patient', 'offline_sync')
       )
     ),
+  ADD CONSTRAINT routine_adherence_logs_supersedes_distinct_check
+    CHECK (supersedes_log_id IS NULL OR supersedes_log_id <> id),
   ADD CONSTRAINT routine_adherence_logs_missed_source_check
     CHECK (source IS NULL OR status <> 'missed' OR source = 'system'),
   ADD CONSTRAINT routine_adherence_logs_missed_source_new_rows_check
@@ -291,6 +293,14 @@ AS $$
 DECLARE
   v_category text;
 BEGIN
+  IF TG_OP = 'UPDATE'
+    AND OLD.routine_preview_mode IS NULL
+    AND NEW.routine_preview_mode IS NULL
+    AND NEW.reminder_event_id IS NOT DISTINCT FROM OLD.reminder_event_id
+    AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id THEN
+    RETURN NEW;
+  END IF;
+
   SELECT rule.category
   INTO v_category
   FROM public.reminder_events event
@@ -319,6 +329,92 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION private.enforce_routine_adherence_correction()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_status text;
+  v_source text;
+  v_created_at timestamptz;
+BEGIN
+  IF NEW.supersedes_log_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.supersedes_log_id = NEW.id THEN
+    RAISE EXCEPTION 'routine correction cannot supersede itself'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT prior_log.status, prior_log.source, prior_log.created_at
+  INTO v_status, v_source, v_created_at
+  FROM public.routine_adherence_logs prior_log
+  WHERE prior_log.id = NEW.supersedes_log_id
+    AND prior_log.user_id = NEW.user_id
+    AND prior_log.routine_item_id = NEW.routine_item_id
+    AND prior_log.item_type = NEW.item_type
+    AND prior_log.occurrence_key = NEW.occurrence_key;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_status IS DISTINCT FROM 'missed' THEN
+    RAISE EXCEPTION 'routine correction must supersede a missed action'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF v_source IS DISTINCT FROM 'system' THEN
+    RAISE EXCEPTION 'routine correction must supersede a system action'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF v_created_at >= NEW.created_at THEN
+    RAISE EXCEPTION 'routine correction must be created after its missed action'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.enforce_reminder_event_routine_action()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_status text;
+BEGIN
+  IF NEW.routine_action_log_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT action_log.status
+  INTO v_status
+  FROM public.routine_adherence_logs action_log
+  WHERE action_log.id = NEW.routine_action_log_id
+    AND action_log.user_id = NEW.user_id
+    AND action_log.reminder_rule_id = NEW.reminder_rule_id
+    AND action_log.occurrence_key = NEW.routine_occurrence_key;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_status IS DISTINCT FROM 'snoozed' THEN
+    RAISE EXCEPTION 'routine follow-up requires a snoozed action'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 CREATE TRIGGER legal_documents_immutable
   BEFORE UPDATE OR DELETE ON public.legal_documents
   FOR EACH ROW
@@ -334,6 +430,11 @@ CREATE TRIGGER routine_adherence_logs_immutable
   FOR EACH ROW
   EXECUTE FUNCTION private.reject_bodyflow_routine_immutable_mutation();
 
+CREATE TRIGGER routine_adherence_logs_correction
+  BEFORE INSERT ON public.routine_adherence_logs
+  FOR EACH ROW
+  EXECUTE FUNCTION private.enforce_routine_adherence_correction();
+
 CREATE TRIGGER routine_mutation_receipts_result_keys
   BEFORE INSERT OR UPDATE OF result_payload
   ON private.routine_mutation_receipts
@@ -344,6 +445,11 @@ CREATE TRIGGER notification_deliveries_routine_preview
   BEFORE INSERT OR UPDATE ON public.notification_deliveries
   FOR EACH ROW
   EXECUTE FUNCTION private.enforce_notification_delivery_routine_preview();
+
+CREATE TRIGGER reminder_events_routine_action
+  BEFORE INSERT OR UPDATE ON public.reminder_events
+  FOR EACH ROW
+  EXECUTE FUNCTION private.enforce_reminder_event_routine_action();
 
 ALTER TABLE public.legal_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_legal_acceptances ENABLE ROW LEVEL SECURITY;

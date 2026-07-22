@@ -89,8 +89,10 @@ somente ao backend.
 | `GET` | `/pending` | lista pendings válidos do paciente, sem payload interno |
 | `GET` | `/coach/persona` | preferência, personalidade efetiva, opções localizadas e estado do mascote |
 | `PATCH` | `/coach/persona` | altera a preferência futura para `focus`, `impulse` ou `zen` |
-| `GET` | `/content` | lista vazia e estado indisponível nesta fase |
-| `GET` | `/content/:id` | reservado; retorna `404` até o módulo existir |
+| `GET` | `/content` | feed elegível em `today`, `library` ou `saved` |
+| `GET` | `/content/:id` | detalhe elegível com Markdown validado |
+| `POST` | `/content/:id/read` | registra impressão, abertura ou conclusão idempotente |
+| `POST` | `/content/:id/save` | salva ou remove dos salvos de forma idempotente |
 | `GET` | `/entitlements` | assinaturas sanitizadas e estado do billing mobile |
 | `POST` | `/media` | cria ativo privado e devolve URL temporária de upload |
 | `POST` | `/media/:id/complete` | verifica tipo/tamanho reais e conclui o upload |
@@ -263,6 +265,267 @@ Semântica obrigatória:
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.
 Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
 do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
+
+## Conteúdo educativo
+
+As quatro rotas exigem o bearer de um paciente ativo e confirmado. O BFF deriva
+`locale`, protocolo, plano e personalidade das fontes canônicas do paciente;
+nenhum desses atributos é aceito na query ou no body. Locales suportados são
+exatamente `pt-BR` e `en-US`, sem fallback entre idiomas. Ausência de uma versão
+publicada no locale exato produz feed vazio ou o mesmo `404` opaco de conteúdo
+inexistente.
+
+Uma publicação arquivada fica invisível globalmente. Entre versões publicadas do
+mesmo locale cujo `publish_at` já venceu no relógio do banco, vale a de maior
+`version`. Assim, uma versão nova publicada imediatamente não volta a ser
+substituída por um agendamento mais antigo quando o horário deste vencer. Uma
+substituição ainda em rascunho, revisão ou antes do próprio agendamento não
+retira a versão viva atual.
+
+### Listagem
+
+`GET /content` aceita somente:
+
+| Query | Valores | Regra |
+|---|---|---|
+| `surface` | `today`, `library`, `saved` | opcional; padrão `library` |
+| `category` | uma categoria do contrato | opcional |
+| `limit` | inteiro de 1 a 50 | opcional; padrão `20` |
+| `cursor` | string opaca de 1 a 512 caracteres | opcional; usar somente valor emitido pelo servidor |
+
+`locale` não é uma query válida. Parâmetros desconhecidos, repetidos ou fora dos
+limites retornam `422 validation_failed`. Um cursor com formato ou payload
+inválido também retorna `422 validation_failed`, com o campo `cursor` nos
+detalhes. A ordem estável é `publish_at DESC, publication_id DESC`; o cursor
+opaco representa esse par.
+
+Semântica das superfícies:
+
+- `today`: somente itens elegíveis com `featured_today=true`;
+- `library`: todos os itens atualmente elegíveis;
+- `saved`: somente itens elegíveis cujo estado salvo está ativo.
+
+O filtro de categoria é aplicado depois da elegibilidade. Categorias válidas:
+`weight_loss`, `hypertrophy`, `nutrition`, `training`, `neuroscience`,
+`habit_formation`, `cardiovascular_health`, `hydration`, `supplementation`,
+`sleep` e `using_bodyflow`.
+
+Exemplo sem dados reais:
+
+```http
+GET /api/mobile/v1/content?surface=library&category=sleep&limit=2 HTTP/1.1
+Authorization: Bearer <supabase_access_token>
+X-Request-Id: mobile-docs-0001
+```
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "publication_id": "00000000-0000-4000-8000-000000000101",
+        "slug": "rotina-de-sono",
+        "locale": "pt-BR",
+        "title": "Rotina de sono",
+        "excerpt": "Um exemplo sintético de resumo educativo para o aplicativo.",
+        "category": "sleep",
+        "tags": ["sono", "rotina"],
+        "reading_time_minutes": 3,
+        "publish_at": "2026-07-21T12:00:00.000Z",
+        "featured_today": false,
+        "version": 4,
+        "saved": true,
+        "completed": false,
+        "cover": {
+          "url": "/api/mobile/v1/content/covers/<capability-opaca>",
+          "expires_at": "2026-07-21T12:05:00.000Z"
+        }
+      }
+    ],
+    "next_cursor": "<cursor-opaco-ou-null>"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "mobile-docs-0001"
+  }
+}
+```
+
+O DTO de item usa somente `snake_case` e contém exatamente os campos mostrados.
+`cover` é `{ "url", "expires_at" }` ou `null`. Bucket e object path nunca saem
+do BFF.
+
+### Detalhe
+
+`GET /content/:id` recebe o UUID de `publication_id`. A resposta repete todos os
+campos do item do feed e acrescenta somente `body_markdown`:
+
+```http
+GET /api/mobile/v1/content/00000000-0000-4000-8000-000000000101 HTTP/1.1
+Authorization: Bearer <supabase_access_token>
+```
+
+```json
+{
+  "data": {
+    "publication_id": "00000000-0000-4000-8000-000000000101",
+    "slug": "rotina-de-sono",
+    "locale": "pt-BR",
+    "title": "Rotina de sono",
+    "excerpt": "Um exemplo sintético de resumo educativo para o aplicativo.",
+    "category": "sleep",
+    "tags": ["sono", "rotina"],
+    "reading_time_minutes": 3,
+    "publish_at": "2026-07-21T12:00:00.000Z",
+    "featured_today": false,
+    "version": 4,
+    "saved": true,
+    "completed": false,
+    "cover": null,
+    "body_markdown": "## Exemplo\n\nEste conteúdo sintético existe apenas para documentar o formato do contrato móvel, sem representar orientação real ou dado de paciente."
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "<request-id>"
+  }
+}
+```
+
+Publicação ausente, arquivada, futura, de outro locale ou inelegível por segmento
+retorna indistintamente `404 content_not_found`. O contrato não revela qual
+condição falhou.
+
+### Eventos de leitura
+
+`POST /content/:id/read` exige `Content-Type: application/json`,
+`Idempotency-Key` e body JSON estrito, sem campos extras ou chaves duplicadas:
+
+```http
+POST /api/mobile/v1/content/00000000-0000-4000-8000-000000000101/read HTTP/1.1
+Authorization: Bearer <supabase_access_token>
+Content-Type: application/json
+Idempotency-Key: mobile-content-open-0001
+
+{
+  "event": "opened",
+  "origin": "library",
+  "version": 4
+}
+```
+
+- `event`: `impression`, `opened` ou `completed`;
+- `origin`: `today`, `library` ou `push`;
+- `version`: inteiro de 1 a 2.147.483.647 e igual à versão localizada visível.
+
+`impression` registra a exibição; `opened` atualiza primeira/última abertura;
+`completed` marca conclusão da versão atual. Eventos aceitos fora de ordem não
+regredem a última abertura, conclusão, versão ou origem já consolidada; uma
+abertura atrasada pode apenas antecipar `first_opened_at`. A resposta consolidada
+é:
+
+```json
+{
+  "data": {
+    "publication_id": "00000000-0000-4000-8000-000000000101",
+    "version": 4,
+    "saved": true,
+    "completed": false,
+    "changed": true,
+    "replayed": false
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "<request-id>"
+  }
+}
+```
+
+### Salvos
+
+`POST /content/:id/save` possui os mesmos headers e usa body JSON estrito:
+
+```json
+{
+  "saved": false,
+  "version": 4
+}
+```
+
+O BFF fixa internamente `origin=library`; `origin` enviado pelo cliente é campo
+extra e falha na validação. A resposta usa o mesmo DTO de estado de leitura:
+`publication_id`, `version`, `saved`, `completed`, `changed` e `replayed`.
+Solicitar o estado já vigente é sucesso com `changed=false`, sem novo evento.
+Salvar persiste entre revisões; `completed` só é verdadeiro quando a conclusão
+se refere à versão localizada atualmente visível. Um save/unsave atrasado é
+aceito no ledger, mas não pode regredir o estado consolidado; nesse caso a
+resposta devolve o valor efetivo com `changed=false`.
+
+### Elegibilidade e targeting
+
+Targeting pertence à versão aprovada. Protocolo, plano e personalidade são três
+dimensões independentes: array vazio na dimensão editorial significa wildcard;
+array não vazio exige uma correspondência. As dimensões configuradas combinam
+com AND. Paciente sem protocolo, assinatura ativa/trial não expirada ou
+personalidade selecionada só corresponde ao wildcard da respectiva dimensão.
+`balanced` não é personalidade selecionável para targeting.
+
+### Idempotência de conteúdo
+
+As mutações têm duas camadas:
+
+1. O wrapper mobile exige `Idempotency-Key` de 8 a 128 caracteres na allowlist
+   `A-Z a-z 0-9 . _ : -`, com escopo `(patient, key)`, hash do método, rota e
+   payload e ledger de 24 horas.
+2. As RPCs de evento/save recebem a mesma chave, armazenam seu hash SHA-256 e
+   deduplicam por paciente no banco. Isso cobre o caso em que a mutação foi
+   commitada, mas o wrapper não conseguiu concluir seu próprio claim.
+
+Retry idêntico no wrapper reproduz status e envelope com o novo `request_id` e
+header `Idempotency-Replayed: true`. O campo `data.replayed` descreve o replay da
+camada de evento no banco e, por isso, pode continuar `false` quando apenas o
+wrapper reproduziu a primeira resposta. Replay reconhecido no banco retorna
+`changed=false` e `replayed=true`. Reutilizar a chave com outra operação,
+publicação, versão, evento, origem ou valor salvo retorna conflito.
+
+### Capas privadas
+
+`cover.url` é uma capability opaca do proxy BFF, vinculada a paciente,
+`publication_id` e `version`, com TTL de 300 segundos. O `GET` dessa URL também
+exige bearer. Antes do download, o proxy revalida o mesmo paciente, a
+elegibilidade atual, o arquivo global, a versão e a presença da capa. Token
+inválido/expirado, troca de usuário, perda de elegibilidade, troca de versão,
+objeto ausente ou MIME não permitido retornam o mesmo `404
+content_cover_not_found`; nenhum bucket ou path é revelado.
+
+JSON continua com `Cache-Control: no-store` e `Vary: Authorization`. A imagem
+válida usa `Cache-Control: private, max-age=<segundos-restantes>`,
+`Vary: Authorization`, `X-Content-Type-Options: nosniff`, `X-Request-Id` e o
+`Content-Type` validado (`image/jpeg`, `image/png` ou `image/webp`).
+
+### Erros
+
+| HTTP | `error.code` | Quando ocorre |
+|---:|---|---|
+| `400` | `missing_idempotency_key` | mutação sem `Idempotency-Key` |
+| `400` | `invalid_idempotency_key` | chave fora de 8..128 ou da allowlist |
+| `400` | `invalid_json` | body ausente, UTF-8/JSON inválido ou chave JSON duplicada |
+| `401` | `missing_access_token`, `invalid_access_token` | bearer ausente ou inválido |
+| `403` | `email_not_confirmed`, `patient_admin_account_conflict`, `patient_profile_unavailable`, `patient_account_inactive` | identidade não autorizada como paciente ativo |
+| `404` | `content_not_found` | detalhe ou mutação não visível, sem divulgar a causa |
+| `404` | `content_cover_not_found` | capability/capa indisponível de forma opaca |
+| `409` | `identity_migration_required` | identidade legada exige migração revisada |
+| `409` | `content_version_changed` | `version` não é mais a versão visível |
+| `409` | `idempotency_key_conflict` | chave reutilizada com semântica diferente |
+| `409` | `idempotency_request_in_progress` | claim idempotente concorrente ainda aberto |
+| `413` | `request_too_large` | body JSON acima de 64 KiB |
+| `415` | `unsupported_media_type` | mutação sem `application/json` estrito |
+| `422` | `validation_failed` | UUID, query, enum, tipo, campo extra, limite ou cursor inválido |
+| `500` | `internal_error` | falha interna opaca |
+
+Falhas de autenticação também podem produzir `500 patient_bootstrap_failed` se
+a inicialização do perfil falhar. Todos os erros usam o envelope padrão com
+`request_id`; detalhes técnicos, artigo, token, path e identidade do paciente
+não aparecem na resposta.
 
 ## Coach, mensagens recorrentes e mascote
 
@@ -457,8 +720,9 @@ Tipos aceitos pelo paciente:
 | `audio_note` | MP3, M4A/MP4, AAC, WAV, OGG | 25 MiB | 30 dias | 300 s |
 
 `content-covers` também existe como bucket privado, limitado a 10 MiB e sem
-expiração automática, mas não faz parte do contrato de upload do paciente. Ele
-fica reservado para o futuro CMS com RBAC próprio. SVG não é aceito.
+expiração automática. Ele pertence ao CMS com RBAC próprio, não ao contrato de
+upload do paciente, e só é lido no mobile pelo proxy de capability descrito em
+“Conteúdo educativo”. SVG não é aceito.
 
 ### Fluxo de upload
 
@@ -564,7 +828,8 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
   ainda precisa implementar a tela e consumir o contrato.
 - O mascote é somente estado não visual; assets, animações e regras de evolução
   permanecem fora desta entrega.
-- `content` não consulta frases educativas nem inventa um CMS sobre tabelas legadas.
+- O CMS educativo não inclui tela iOS, campanhas automáticas, comentários,
+  busca textual, HTML rico, mídia inline ou geração/publicação por IA.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
 - O catálogo mínimo de suplementos e medicamentos é somente leitura nesta fase.
   CRUD, dose, orientação clínica e prescrição permanecem fora do escopo.

@@ -742,6 +742,432 @@ export type Database = {
         }
         Relationships: []
       }
+      content_assets: {
+        Row: {
+          actual_size_bytes: number | null
+          bucket_id: string
+          created_at: string
+          created_by: string
+          declared_size_bytes: number
+          deleted_at: string | null
+          etag: string | null
+          id: string
+          mime_type: string
+          object_path: string
+          status: string
+          updated_at: string
+          uploaded_at: string | null
+        }
+        Insert: {
+          actual_size_bytes?: number | null
+          bucket_id?: string
+          created_at?: string
+          created_by: string
+          declared_size_bytes: number
+          deleted_at?: string | null
+          etag?: string | null
+          id: string
+          mime_type: string
+          object_path: string
+          status?: string
+          updated_at?: string
+          uploaded_at?: string | null
+        }
+        Update: {
+          actual_size_bytes?: number | null
+          bucket_id?: string
+          created_at?: string
+          created_by?: string
+          declared_size_bytes?: number
+          deleted_at?: string | null
+          etag?: string | null
+          id?: string
+          mime_type?: string
+          object_path?: string
+          status?: string
+          updated_at?: string
+          uploaded_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_assets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_events: {
+        Row: {
+          content_version_id: string
+          created_at: string
+          event_key_hash: string
+          event_type: string
+          id: string
+          occurred_at: string
+          origin: string
+          publication_id: string
+          user_id: string
+        }
+        Insert: {
+          content_version_id: string
+          created_at?: string
+          event_key_hash: string
+          event_type: string
+          id?: string
+          occurred_at?: string
+          origin: string
+          publication_id: string
+          user_id: string
+        }
+        Update: {
+          content_version_id?: string
+          created_at?: string
+          event_key_hash?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          origin?: string
+          publication_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_events_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_publications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_events_version_fkey"
+            columns: ["content_version_id", "publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id", "publication_id"]
+          },
+        ]
+      }
+      content_publications: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          slug: string
+          updated_at: string
+          version_counter: number
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          slug: string
+          updated_at?: string
+          version_counter?: number
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          slug?: string
+          updated_at?: string
+          version_counter?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_publications_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_publications_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_user_state: {
+        Row: {
+          completed_at: string | null
+          completed_version_id: string | null
+          created_at: string
+          first_opened_at: string | null
+          last_opened_at: string | null
+          last_opened_version_id: string | null
+          last_origin: string | null
+          publication_id: string
+          saved_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_version_id?: string | null
+          created_at?: string
+          first_opened_at?: string | null
+          last_opened_at?: string | null
+          last_opened_version_id?: string | null
+          last_origin?: string | null
+          publication_id: string
+          saved_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_version_id?: string | null
+          created_at?: string
+          first_opened_at?: string | null
+          last_opened_at?: string | null
+          last_opened_version_id?: string | null
+          last_origin?: string | null
+          publication_id?: string
+          saved_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_user_state_completed_version_fkey"
+            columns: ["completed_version_id", "publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id", "publication_id"]
+          },
+          {
+            foreignKeyName: "content_user_state_last_opened_version_fkey"
+            columns: ["last_opened_version_id", "publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id", "publication_id"]
+          },
+          {
+            foreignKeyName: "content_user_state_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_publications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_user_state_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_version_target_personalities: {
+        Row: {
+          content_version_id: string
+          personality_code: string
+        }
+        Insert: {
+          content_version_id: string
+          personality_code: string
+        }
+        Update: {
+          content_version_id?: string
+          personality_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_version_target_personalities_content_version_id_fkey"
+            columns: ["content_version_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_version_target_personalities_personality_code_fkey"
+            columns: ["personality_code"]
+            isOneToOne: false
+            referencedRelation: "coach_personalities"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      content_version_target_plans: {
+        Row: {
+          content_version_id: string
+          plan: Database["public"]["Enums"]["plan_enum"]
+        }
+        Insert: {
+          content_version_id: string
+          plan: Database["public"]["Enums"]["plan_enum"]
+        }
+        Update: {
+          content_version_id?: string
+          plan?: Database["public"]["Enums"]["plan_enum"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_version_target_plans_content_version_id_fkey"
+            columns: ["content_version_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_version_target_protocols: {
+        Row: {
+          content_version_id: string
+          protocol: Database["public"]["Enums"]["protocol_enum"]
+        }
+        Insert: {
+          content_version_id: string
+          protocol: Database["public"]["Enums"]["protocol_enum"]
+        }
+        Update: {
+          content_version_id?: string
+          protocol?: Database["public"]["Enums"]["protocol_enum"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_version_target_protocols_content_version_id_fkey"
+            columns: ["content_version_id"]
+            isOneToOne: false
+            referencedRelation: "content_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_versions: {
+        Row: {
+          authored_by: string
+          body_hash: string | null
+          body_markdown: string | null
+          category: string | null
+          cover_asset_id: string | null
+          created_at: string
+          excerpt: string | null
+          featured_today: boolean
+          id: string
+          locale: string
+          publication_id: string
+          publish_at: string | null
+          published_at: string | null
+          published_by: string | null
+          reading_time_minutes: number | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          state: string
+          submitted_at: string | null
+          tags: string[]
+          title: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          authored_by: string
+          body_hash?: string | null
+          body_markdown?: string | null
+          category?: string | null
+          cover_asset_id?: string | null
+          created_at?: string
+          excerpt?: string | null
+          featured_today?: boolean
+          id?: string
+          locale: string
+          publication_id: string
+          publish_at?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          reading_time_minutes?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          state?: string
+          submitted_at?: string | null
+          tags?: string[]
+          title?: string | null
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          authored_by?: string
+          body_hash?: string | null
+          body_markdown?: string | null
+          category?: string | null
+          cover_asset_id?: string | null
+          created_at?: string
+          excerpt?: string | null
+          featured_today?: boolean
+          id?: string
+          locale?: string
+          publication_id?: string
+          publish_at?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          reading_time_minutes?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          state?: string
+          submitted_at?: string | null
+          tags?: string[]
+          title?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_versions_authored_by_fkey"
+            columns: ["authored_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_versions_cover_asset_id_fkey"
+            columns: ["cover_asset_id"]
+            isOneToOne: false
+            referencedRelation: "content_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_versions_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_publications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_versions_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_versions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_gap_reminder_attempts: {
         Row: {
           attempt_id: string
@@ -3405,6 +3831,10 @@ export type Database = {
         Args: { p_actor_id: string; p_now: string; p_pack_id: string }
         Returns: Json
       }
+      archive_content_publication: {
+        Args: { p_actor_id: string; p_publication_id: string }
+        Returns: Json
+      }
       attention_cleanup_expired: { Args: never; Returns: number }
       attention_dismiss: {
         Args: { p_kind: string; p_reason?: string; p_user_id: string }
@@ -3523,6 +3953,15 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_content_asset: {
+        Args: {
+          p_actor_id: string
+          p_actual_size_bytes: number
+          p_asset_id: string
+          p_etag: string
+        }
+        Returns: Json
+      }
       complete_media_asset_processing: {
         Args: {
           p_asset_id: string
@@ -3545,6 +3984,29 @@ export type Database = {
         }
         Returns: boolean
       }
+      create_content_asset: {
+        Args: {
+          p_actor_id: string
+          p_asset_id: string
+          p_declared_size_bytes: number
+          p_mime_type: string
+          p_object_path: string
+        }
+        Returns: Json
+      }
+      create_content_draft: {
+        Args: {
+          p_actor_id: string
+          p_locale: string
+          p_publication_id: string
+          p_source_version_id?: string
+        }
+        Returns: Json
+      }
+      create_content_publication: {
+        Args: { p_actor_id: string; p_slug: string }
+        Returns: Json
+      }
       cron_run_now: { Args: { p_jobname: string }; Returns: Json }
       cron_toggle_job: {
         Args: { p_active: boolean; p_jobname: string }
@@ -3557,6 +4019,14 @@ export type Database = {
       deactivate_mobile_device: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: boolean
+      }
+      delete_content_asset: {
+        Args: {
+          p_actor_id: string
+          p_asset_id: string
+          p_expected_status: string
+        }
+        Returns: Json
       }
       detect_country_from_wpp: { Args: { p_wpp: string }; Returns: string }
       dispatch_inngest_event: {
@@ -3671,6 +4141,10 @@ export type Database = {
         Returns: Json
       }
       get_global_config: { Args: { p_key: string }; Returns: Json }
+      get_mobile_content: {
+        Args: { p_now?: string; p_publication_id: string; p_user_id: string }
+        Returns: Json
+      }
       ingest_whatsapp_inbound: {
         Args: {
           p_buffer: boolean
@@ -3700,6 +4174,18 @@ export type Database = {
           scheduled_for: string
         }[]
       }
+      list_mobile_content: {
+        Args: {
+          p_category?: string
+          p_cursor_publication_id?: string
+          p_cursor_publish_at?: string
+          p_limit?: number
+          p_now?: string
+          p_surface?: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       match_food_phrases: {
         Args: {
           match_count: number
@@ -3722,6 +4208,14 @@ export type Database = {
         Returns: undefined
       }
       pending_approvals_expire_old: { Args: never; Returns: number }
+      publish_content_version: {
+        Args: {
+          p_actor_id: string
+          p_publish_at?: string
+          p_version_id: string
+        }
+        Returns: Json
+      }
       record_hydration_atomic: {
         Args: {
           p_amount_ml: number
@@ -3729,6 +4223,18 @@ export type Database = {
           p_local_date: string
           p_occurred_at: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      record_mobile_content_event: {
+        Args: {
+          p_event_key: string
+          p_event_type: string
+          p_now?: string
+          p_origin: string
+          p_publication_id: string
+          p_user_id: string
+          p_version: number
         }
         Returns: Json
       }
@@ -3810,6 +4316,15 @@ export type Database = {
         Returns: string
       }
       resume_user: { Args: { p_user_id: string }; Returns: undefined }
+      review_content_version: {
+        Args: {
+          p_actor_id: string
+          p_decision: string
+          p_rejection_reason?: string
+          p_version_id: string
+        }
+        Returns: Json
+      }
       revise_coach_assisted_draft_entries: {
         Args: {
           p_actor_id: string
@@ -3837,6 +4352,15 @@ export type Database = {
       }
       rollback_coach_content_pack: {
         Args: { p_actor_id: string; p_now: string; p_pack_id: string }
+        Returns: Json
+      }
+      save_content_draft: {
+        Args: {
+          p_actor_id: string
+          p_draft: Json
+          p_expected_updated_at: string
+          p_version_id: string
+        }
         Returns: Json
       }
       save_training_plan_atomic: {
@@ -3902,6 +4426,18 @@ export type Database = {
       set_global_config: {
         Args: { p_key: string; p_value: Json }
         Returns: undefined
+      }
+      set_mobile_content_saved: {
+        Args: {
+          p_event_key: string
+          p_now?: string
+          p_origin: string
+          p_publication_id: string
+          p_saved: boolean
+          p_user_id: string
+          p_version: number
+        }
+        Returns: Json
       }
       set_user_coach_personality: {
         Args: { p_personality: string; p_user_id: string }
@@ -3993,6 +4529,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      submit_content_version: {
+        Args: {
+          p_actor_id: string
+          p_expected_updated_at: string
+          p_version_id: string
+        }
+        Returns: Json
       }
       tag_user: {
         Args: { p_tag: string; p_user_id: string }

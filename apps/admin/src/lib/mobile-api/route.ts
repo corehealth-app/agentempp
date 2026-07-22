@@ -25,6 +25,22 @@ type MobileRouteHandler<RouteContext> = (
 
 type StaticMobileRouteHandler = (context: MobileRouteContext) => Promise<Response>
 
+const SAFE_UNEXPECTED_ERROR_NAMES = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'AggregateError',
+  'AbortError',
+])
+
+function safeUnexpectedErrorName(error: unknown): string {
+  return error instanceof Error && SAFE_UNEXPECTED_ERROR_NAMES.has(error.name)
+    ? error.name
+    : 'UnknownError'
+}
+
 const defaultRuntime: MobileRouteRuntime = {
   authenticate(request, supabase) {
     return authenticatePatient(request, createMobileAuthDependencies(supabase))
@@ -52,8 +68,8 @@ async function runMobileRoute<RouteContext>(
     if (error instanceof ZodError) return mobileErrorResponse(validationError(error), requestId)
     console.error('[mobile-api] unexpected_error', {
       request_id: requestId,
-      path: new URL(request.url).pathname,
-      error_name: error instanceof Error ? error.name : 'UnknownError',
+      scope: 'mobile_api_v1',
+      error_name: safeUnexpectedErrorName(error),
     })
     return mobileErrorResponse(
       new MobileApiError(500, 'internal_error', 'Unexpected server error'),

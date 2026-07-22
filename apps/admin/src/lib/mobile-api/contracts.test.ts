@@ -1,3 +1,9 @@
+import {
+  contentListQuerySchema,
+  contentReadInputSchema,
+  contentSaveInputSchema,
+  encodeContentCursor,
+} from '@mpp/core'
 import { describe, expect, it } from 'vitest'
 import {
   createReminderInputSchema,
@@ -13,9 +19,81 @@ import {
   patchReminderInputSchema,
   personaInputSchema,
   registrationProposalInputSchema,
+  resourceIdSchema,
 } from './contracts'
 
 describe('mobile API v1 contracts', () => {
+  it('reserves strict educational content query, mutation, and resource contracts', () => {
+    expect(contentListQuerySchema.parse({})).toEqual({ surface: 'library', limit: 20 })
+    expect(contentReadInputSchema.parse({ event: 'opened', origin: 'today', version: 3 })).toEqual({
+      event: 'opened',
+      origin: 'today',
+      version: 3,
+    })
+    expect(contentSaveInputSchema.parse({ saved: true, version: 3 })).toEqual({
+      saved: true,
+      version: 3,
+    })
+    expect(resourceIdSchema.parse('00000000-0000-0000-0000-000000000603')).toBe(
+      '00000000-0000-0000-0000-000000000603',
+    )
+
+    expect(() => contentListQuerySchema.parse({ locale: 'pt-BR' })).toThrow()
+    expect(() =>
+      contentReadInputSchema.parse({
+        event: 'opened',
+        origin: 'today',
+        version: 3,
+        user_id: '00000000-0000-0000-0000-000000000601',
+      }),
+    ).toThrow()
+    expect(() =>
+      contentSaveInputSchema.parse({ saved: true, version: 3, origin: 'push' }),
+    ).toThrow()
+  })
+
+  it('uses the shared strict educational content query contract', () => {
+    const cursor = encodeContentCursor({
+      publishAt: '2026-07-21T12:00:00.000Z',
+      publicationId: '00000000-0000-0000-0000-000000000421',
+    })
+
+    expect(contentListQuerySchema.parse({})).toEqual({ surface: 'library', limit: 20 })
+    expect(
+      contentListQuerySchema.parse({
+        surface: 'saved',
+        category: 'nutrition',
+        limit: '50',
+        cursor,
+      }),
+    ).toEqual({ surface: 'saved', category: 'nutrition', limit: 50, cursor })
+    expect(() => contentListQuerySchema.parse({ locale: 'pt-BR' })).toThrow()
+    expect(() => contentListQuerySchema.parse({ limit: 51 })).toThrow()
+  })
+
+  it('keeps content read and save bodies strict and server-owned', () => {
+    expect(contentReadInputSchema.parse({ event: 'opened', origin: 'today', version: 2 })).toEqual({
+      event: 'opened',
+      origin: 'today',
+      version: 2,
+    })
+    expect(contentSaveInputSchema.parse({ saved: true, version: 2 })).toEqual({
+      saved: true,
+      version: 2,
+    })
+    expect(() =>
+      contentReadInputSchema.parse({
+        event: 'opened',
+        origin: 'today',
+        version: 2,
+        user_id: 'forbidden',
+      }),
+    ).toThrow()
+    expect(() =>
+      contentSaveInputSchema.parse({ saved: true, version: 2, origin: 'push' }),
+    ).toThrow()
+  })
+
   it('accepts a structured meal proposal without client supplied macros', () => {
     const parsed = registrationProposalInputSchema.parse({
       kind: 'meal',

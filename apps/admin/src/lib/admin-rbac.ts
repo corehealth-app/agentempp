@@ -13,6 +13,14 @@ export const CONTENT_ADMIN_ROLES = [
   'content_editor',
   'master_admin',
 ] as const satisfies readonly AdminRole[]
+export const CONTENT_AUTHOR_ROLES = ['content_editor'] as const satisfies readonly AdminRole[]
+export const CONTENT_REVIEW_ROLES = ['nutrition_admin'] as const satisfies readonly AdminRole[]
+export const CONTENT_PUBLISH_ROLES = ['master_admin'] as const satisfies readonly AdminRole[]
+export const CONTENT_MODULE_ROLES = [
+  'content_editor',
+  'nutrition_admin',
+  'master_admin',
+] as const satisfies readonly AdminRole[]
 export const PATIENT_SUPPORT_ROLES = [
   'support',
   'nutrition_admin',

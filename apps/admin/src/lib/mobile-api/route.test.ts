@@ -1,5 +1,5 @@
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MobileApiError, mobileSuccess } from './http'
 import { createMobileRoute, type MobileRouteRuntime } from './route'
 
@@ -34,6 +34,10 @@ function runtime(overrides: Partial<MobileRouteRuntime> = {}): MobileRouteRuntim
     ...overrides,
   }
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('mobile route wrapper', () => {
   it('passes authenticated patient context to the handler', async () => {
@@ -90,5 +94,33 @@ describe('mobile route wrapper', () => {
         request_id: 'request-id',
       },
     })
+  })
+
+  it('never logs a capability URL when authentication fails before the handler', async () => {
+    const capability = 'opaque-sensitive-cover-capability'
+    const authenticationError = new Error('private auth lookup detail')
+    authenticationError.name = capability
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const route = createMobileRoute(
+      vi.fn(),
+      runtime({
+        authenticate: vi.fn().mockRejectedValue(authenticationError),
+      }),
+    )
+
+    const response = await route(
+      new Request(`https://example.test/api/mobile/v1/content/covers/${capability}`),
+    )
+
+    expect(response.status).toBe(500)
+    expect(consoleError).toHaveBeenCalledWith('[mobile-api] unexpected_error', {
+      request_id: 'request-id',
+      scope: 'mobile_api_v1',
+      error_name: 'UnknownError',
+    })
+    const serializedLogs = JSON.stringify(consoleError.mock.calls)
+    expect(serializedLogs).not.toContain(capability)
+    expect(serializedLogs).not.toContain('/api/')
+    expect(serializedLogs).not.toContain('private auth lookup detail')
   })
 })

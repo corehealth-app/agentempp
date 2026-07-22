@@ -1,15 +1,5 @@
-import { mobileSuccess } from '@/lib/mobile-api/http'
-import { createMobileRoute } from '@/lib/mobile-api/route'
+import { createContentListRoute } from './handlers'
 
 export const runtime = 'nodejs'
 
-export const GET = createMobileRoute(async (context) =>
-  mobileSuccess(
-    {
-      available: false,
-      items: [],
-      reason: 'content_module_not_configured',
-    },
-    context.requestId,
-  ),
-)
+export const GET = createContentListRoute()

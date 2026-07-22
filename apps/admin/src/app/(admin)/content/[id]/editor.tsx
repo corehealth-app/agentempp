@@ -49,6 +49,7 @@ import {
   recoverDraftSaveState,
   selectLocaleVersions,
   selectWorkflowContentVersion,
+  staleRecoveryDecision,
 } from '../presenter'
 import { CoverUploader } from './cover-uploader'
 import { MarkdownPreview } from './markdown-preview'
@@ -459,6 +460,12 @@ function DraftForm({
 
   async function recoverBaseline() {
     if (!saveState.stale || pending !== null) return
+    const recoveryDecision = staleRecoveryDecision(
+      window.confirm(
+        'Carregar a versão atual descartará todas as edições locais. Apenas a capa já enviada será preservada. Deseja continuar?',
+      ),
+    )
+    if (recoveryDecision === 'cancel') return
     setPending('recover')
     setMessage(null)
     const result = await getContentPublicationAction({ publicationId })
@@ -638,8 +645,8 @@ function DraftForm({
               className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-amber-500 bg-amber-500/5 px-3 py-3"
             >
               <p className="max-w-2xl text-xs text-amber-900 dark:text-amber-200">
-                Conflito detectado. As edições e a capa foram preservadas; atualize somente a
-                baseline antes de uma nova tentativa.
+                Conflito detectado. Carregar a versão atual descartará todas as edições locais.
+                Apenas a capa já enviada será preservada.
               </p>
               <Button
                 size="sm"
@@ -648,7 +655,7 @@ function DraftForm({
                 onClick={() => void recoverBaseline()}
               >
                 {pending === 'recover' ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                Atualizar baseline
+                Carregar versão atual
               </Button>
             </div>
           )}

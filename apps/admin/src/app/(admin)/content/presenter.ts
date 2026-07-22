@@ -67,6 +67,7 @@ export interface DraftEditBaseline {
 }
 
 export type LocaleSwitchDecision = 'stay' | 'switch' | 'confirm_discard'
+export type StaleRecoveryDecision = 'cancel' | 'load_current'
 
 const LOCALES = ['pt-BR', 'en-US'] as const
 export const PUBLICATION_PAGE_SIZE = 25
@@ -240,6 +241,10 @@ export function localeSwitchDecision(
 ): LocaleSwitchDecision {
   if (currentLocale === nextLocale || blocked) return 'stay'
   return dirty ? 'confirm_discard' : 'switch'
+}
+
+export function staleRecoveryDecision(confirmed: boolean): StaleRecoveryDecision {
+  return confirmed ? 'load_current' : 'cancel'
 }
 
 function comparableDraft(draft: ContentDraftInput): ContentDraftInput {

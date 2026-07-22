@@ -31,6 +31,7 @@ import {
   scheduleLabel,
   selectLocaleVersions,
   selectWorkflowContentVersion,
+  staleRecoveryDecision,
   toPublicationListRow,
   visibleContentCommands,
 } from './presenter'
@@ -402,6 +403,11 @@ describe('content presenter', () => {
     expect(localeSwitchDecision('pt-BR', 'en-US', false, true)).toBe('stay')
     expect(localeSwitchDecision('pt-BR', 'en-US', true, false)).toBe('confirm_discard')
     expect(localeSwitchDecision('pt-BR', 'en-US', false, false)).toBe('switch')
+  })
+
+  it('keeps a stale draft unchanged when loading the current version is canceled', () => {
+    expect(staleRecoveryDecision(false)).toBe('cancel')
+    expect(staleRecoveryDecision(true)).toBe('load_current')
   })
 
   it('keeps A remote title when B recovers another local edit and preserves only B confirmed cover', () => {

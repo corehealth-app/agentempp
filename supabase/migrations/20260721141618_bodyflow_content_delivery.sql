@@ -3,7 +3,7 @@
 CREATE INDEX subscriptions_content_delivery_idx
   ON public.subscriptions (
     user_id,
-    current_period_start DESC,
+    current_period_start DESC NULLS LAST,
     updated_at DESC,
     created_at DESC,
     id DESC
@@ -126,7 +126,7 @@ BEGIN
             )
           )
         ORDER BY
-          subscription.current_period_start DESC,
+          subscription.current_period_start DESC NULLS LAST,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -346,7 +346,7 @@ BEGIN
             )
         )
         ORDER BY
-          subscription.current_period_start DESC,
+          subscription.current_period_start DESC NULLS LAST,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -614,7 +614,7 @@ BEGIN
             )
         )
         ORDER BY
-          subscription.current_period_start DESC,
+          subscription.current_period_start DESC NULLS LAST,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -1101,7 +1101,7 @@ BEGIN
             )
         )
         ORDER BY
-          subscription.current_period_start DESC,
+          subscription.current_period_start DESC NULLS LAST,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC

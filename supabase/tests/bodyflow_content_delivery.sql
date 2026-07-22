@@ -423,7 +423,8 @@ BEGIN
     ('00000000-0000-0000-0000-000000002105', NULL, 'null-locale-task3@example.invalid', 'Task 3 Null Locale', NULL, '{}'::jsonb),
     ('00000000-0000-0000-0000-000000002106', NULL, 'unsupported-task3@example.invalid', 'Task 3 Unsupported Locale', 'es-ES', '{}'::jsonb),
     ('00000000-0000-0000-0000-000000002107', NULL, 'duplicate-sub-task3@example.invalid', 'Task 3 Duplicate Subscription', 'pt-BR', '{}'::jsonb),
-    ('00000000-0000-0000-0000-000000002108', NULL, 'elapsed-trial-task3@example.invalid', 'Task 3 Elapsed Trial', 'pt-BR', '{}'::jsonb);
+    ('00000000-0000-0000-0000-000000002108', NULL, 'elapsed-trial-task3@example.invalid', 'Task 3 Elapsed Trial', 'pt-BR', '{}'::jsonb),
+    ('00000000-0000-0000-0000-000000002109', NULL, 'null-start-task3@example.invalid', 'Task 3 Null Period Start', 'pt-BR', '{}'::jsonb);
 
   INSERT INTO public.user_profiles (user_id, current_protocol)
   VALUES
@@ -456,7 +457,9 @@ BEGIN
     ('00000000-0000-0000-0000-000000002202', '00000000-0000-0000-0000-000000002104', 'mensal', 'active', clock_timestamp() - interval '30 days', clock_timestamp() - interval '1 second', NULL, clock_timestamp() - interval '30 days', clock_timestamp()),
     ('00000000-0000-0000-0000-000000002203', '00000000-0000-0000-0000-000000002107', 'mensal', 'active', '2026-07-15 00:00:00+00', '2026-08-15 00:00:00+00', NULL, '2026-07-15 00:00:00+00', '2026-07-20 00:00:00+00'),
     ('00000000-0000-0000-0000-000000002204', '00000000-0000-0000-0000-000000002107', 'anual', 'active', '2025-08-01 00:00:00+00', '2026-10-01 00:00:00+00', NULL, '2025-08-01 00:00:00+00', '2026-07-01 00:00:00+00'),
-    ('00000000-0000-0000-0000-000000002205', '00000000-0000-0000-0000-000000002108', 'trial', 'trial', clock_timestamp() - interval '7 days', clock_timestamp() + interval '7 days', clock_timestamp() - interval '1 second', clock_timestamp() - interval '7 days', clock_timestamp());
+    ('00000000-0000-0000-0000-000000002205', '00000000-0000-0000-0000-000000002108', 'trial', 'trial', clock_timestamp() - interval '7 days', clock_timestamp() + interval '7 days', clock_timestamp() - interval '1 second', clock_timestamp() - interval '7 days', clock_timestamp()),
+    ('00000000-0000-0000-0000-000000002206', '00000000-0000-0000-0000-000000002109', 'mensal', 'active', '2026-07-15 00:00:00+00', '2026-08-15 00:00:00+00', NULL, '2026-07-15 00:00:00+00', '2026-07-20 00:00:00+00'),
+    ('00000000-0000-0000-0000-000000002207', '00000000-0000-0000-0000-000000002109', 'anual', 'active', NULL, '2026-10-01 00:00:00+00', NULL, '2025-08-01 00:00:00+00', '2026-07-21 00:00:00+00');
 END;
 $test$;
 
@@ -592,6 +595,7 @@ DECLARE
   v_unsupported_locale_user_id constant uuid := '00000000-0000-0000-0000-000000002106';
   v_duplicate_sub_user_id constant uuid := '00000000-0000-0000-0000-000000002107';
   v_elapsed_trial_user_id constant uuid := '00000000-0000-0000-0000-000000002108';
+  v_null_start_user_id constant uuid := '00000000-0000-0000-0000-000000002109';
   v_editor_id constant uuid := '00000000-0000-0000-0000-000000002001';
   v_master_id constant uuid := '00000000-0000-0000-0000-000000002003';
   v_asset_id constant uuid := '00000000-0000-0000-0000-000000002301';
@@ -1015,6 +1019,52 @@ BEGIN
   IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id
     OR NOT (v_result->>'saved')::boolean THEN
     RAISE EXCEPTION 'save did not resolve the most recent eligible subscription period';
+  END IF;
+
+  v_list := public.list_mobile_content(
+    v_null_start_user_id, 'library', 'weight_loss', 50, NULL, NULL, '2026-08-01 00:00:00+00'
+  );
+  IF v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_annual_id))
+    OR NOT (v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_monthly_id))) THEN
+    RAISE EXCEPTION 'list selected an eligible subscription with a null period start';
+  END IF;
+
+  v_detail := public.get_mobile_content(
+    v_null_start_user_id, v_duplicate_monthly_id, '2026-08-01 00:00:00+00'
+  );
+  IF v_detail IS NULL
+    OR (v_detail->>'publicationId')::uuid <> v_duplicate_monthly_id
+    OR public.get_mobile_content(
+      v_null_start_user_id, v_duplicate_annual_id, '2026-08-01 00:00:00+00'
+    ) IS NOT NULL THEN
+    RAISE EXCEPTION 'detail selected an eligible subscription with a null period start';
+  END IF;
+
+  v_result := public.record_mobile_content_event(
+    v_null_start_user_id,
+    v_duplicate_monthly_id,
+    v_duplicate_monthly_version,
+    'opened',
+    'library',
+    'task3-null-start-event-key',
+    '2026-08-01 00:00:00+00'
+  );
+  IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id THEN
+    RAISE EXCEPTION 'event selected an eligible subscription with a null period start';
+  END IF;
+
+  v_result := public.set_mobile_content_saved(
+    v_null_start_user_id,
+    v_duplicate_monthly_id,
+    v_duplicate_monthly_version,
+    true,
+    'library',
+    'task3-null-start-save-key',
+    '2026-08-01 00:00:00+00'
+  );
+  IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id
+    OR NOT (v_result->>'saved')::boolean THEN
+    RAISE EXCEPTION 'save selected an eligible subscription with a null period start';
   END IF;
 
   v_list := public.list_mobile_content(

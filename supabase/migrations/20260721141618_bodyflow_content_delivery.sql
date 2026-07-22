@@ -3,12 +3,12 @@
 CREATE INDEX subscriptions_content_delivery_idx
   ON public.subscriptions (
     user_id,
-    current_period_end DESC,
+    current_period_start DESC,
     updated_at DESC,
     created_at DESC,
     id DESC
   )
-  INCLUDE (plan, status, trial_ends_at)
+  INCLUDE (plan, status, current_period_end, trial_ends_at)
   WHERE status IN ('active', 'trial');
 
 CREATE TABLE private.content_mutation_receipts (
@@ -126,13 +126,7 @@ BEGIN
             )
           )
         ORDER BY
-          CASE
-            WHEN subscription.status = 'trial' THEN least(
-              subscription.current_period_end,
-              subscription.trial_ends_at
-            )
-            ELSE subscription.current_period_end
-          END DESC,
+          subscription.current_period_start DESC,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -188,20 +182,20 @@ BEGIN
           SELECT 1
           FROM public.content_version_target_protocols target
           WHERE target.content_version_id = ranked_visible.version_id
-        )
+          )
         OR EXISTS (
           SELECT 1
           FROM public.content_version_target_protocols target
           WHERE target.content_version_id = ranked_visible.version_id
             AND target.protocol = ranked_visible.current_protocol
-        )
+          )
       )
       AND (
         NOT EXISTS (
           SELECT 1
           FROM public.content_version_target_plans target
           WHERE target.content_version_id = ranked_visible.version_id
-        )
+          )
         OR EXISTS (
           SELECT 1
           FROM public.content_version_target_plans target
@@ -350,15 +344,9 @@ BEGIN
               subscription.trial_ends_at IS NOT NULL
               AND subscription.trial_ends_at > p_now
             )
-          )
+        )
         ORDER BY
-          CASE
-            WHEN subscription.status = 'trial' THEN least(
-              subscription.current_period_end,
-              subscription.trial_ends_at
-            )
-            ELSE subscription.current_period_end
-          END DESC,
+          subscription.current_period_start DESC,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -624,15 +612,9 @@ BEGIN
               subscription.trial_ends_at IS NOT NULL
               AND subscription.trial_ends_at > p_now
             )
-          )
+        )
         ORDER BY
-          CASE
-            WHEN subscription.status = 'trial' THEN least(
-              subscription.current_period_end,
-              subscription.trial_ends_at
-            )
-            ELSE subscription.current_period_end
-          END DESC,
+          subscription.current_period_start DESC,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC
@@ -1117,15 +1099,9 @@ BEGIN
               subscription.trial_ends_at IS NOT NULL
               AND subscription.trial_ends_at > p_now
             )
-          )
+        )
         ORDER BY
-          CASE
-            WHEN subscription.status = 'trial' THEN least(
-              subscription.current_period_end,
-              subscription.trial_ends_at
-            )
-            ELSE subscription.current_period_end
-          END DESC,
+          subscription.current_period_start DESC,
           subscription.updated_at DESC,
           subscription.created_at DESC,
           subscription.id DESC

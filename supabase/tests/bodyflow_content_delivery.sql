@@ -454,8 +454,8 @@ BEGIN
   ) VALUES
     ('00000000-0000-0000-0000-000000002201', '00000000-0000-0000-0000-000000002101', 'mensal', 'active', clock_timestamp() - interval '1 day', clock_timestamp() + interval '30 days', NULL, clock_timestamp() - interval '1 day', clock_timestamp()),
     ('00000000-0000-0000-0000-000000002202', '00000000-0000-0000-0000-000000002104', 'mensal', 'active', clock_timestamp() - interval '30 days', clock_timestamp() - interval '1 second', NULL, clock_timestamp() - interval '30 days', clock_timestamp()),
-    ('00000000-0000-0000-0000-000000002203', '00000000-0000-0000-0000-000000002107', 'mensal', 'active', '2026-07-01 00:00:00+00', '2026-09-01 00:00:00+00', NULL, '2026-07-01 00:00:00+00', '2026-07-10 00:00:00+00'),
-    ('00000000-0000-0000-0000-000000002204', '00000000-0000-0000-0000-000000002107', 'anual', 'active', '2026-07-01 00:00:00+00', '2026-09-01 00:00:00+00', NULL, '2026-07-01 00:00:00+00', '2026-07-10 00:00:00+00'),
+    ('00000000-0000-0000-0000-000000002203', '00000000-0000-0000-0000-000000002107', 'mensal', 'active', '2026-07-15 00:00:00+00', '2026-08-15 00:00:00+00', NULL, '2026-07-15 00:00:00+00', '2026-07-20 00:00:00+00'),
+    ('00000000-0000-0000-0000-000000002204', '00000000-0000-0000-0000-000000002107', 'anual', 'active', '2025-08-01 00:00:00+00', '2026-10-01 00:00:00+00', NULL, '2025-08-01 00:00:00+00', '2026-07-01 00:00:00+00'),
     ('00000000-0000-0000-0000-000000002205', '00000000-0000-0000-0000-000000002108', 'trial', 'trial', clock_timestamp() - interval '7 days', clock_timestamp() + interval '7 days', clock_timestamp() - interval '1 second', clock_timestamp() - interval '7 days', clock_timestamp());
 END;
 $test$;
@@ -630,6 +630,7 @@ DECLARE
   v_cover_publication_id uuid;
   v_duplicate_annual_id uuid;
   v_duplicate_monthly_id uuid;
+  v_duplicate_monthly_version integer;
   v_trial_target_id uuid;
   v_state_publication_id uuid;
   v_state_version_id uuid;
@@ -888,6 +889,7 @@ BEGIN
     'task3-duplicate-monthly', 'pt-BR', 'weight_loss', false, '{}'::text[], ARRAY['mensal']
   );
   v_duplicate_monthly_id := (v_result->>'publicationId')::uuid;
+  v_duplicate_monthly_version := (v_result->>'version')::integer;
 
   v_result := pg_temp.task3_publish_publication(
     'task3-trial-target', 'pt-BR', 'weight_loss', false, '{}'::text[], ARRAY['trial']
@@ -972,9 +974,47 @@ BEGIN
   v_list := public.list_mobile_content(
     v_duplicate_sub_user_id, 'library', 'weight_loss', 50, NULL, NULL, '2026-08-01 00:00:00+00'
   );
-  IF NOT (v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_annual_id)))
-    OR v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_monthly_id)) THEN
-    RAISE EXCEPTION 'duplicate eligible subscriptions were not resolved deterministically';
+  IF v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_annual_id))
+    OR NOT (v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_monthly_id))) THEN
+    RAISE EXCEPTION 'list did not resolve the most recent eligible subscription period';
+  END IF;
+
+  v_detail := public.get_mobile_content(
+    v_duplicate_sub_user_id, v_duplicate_monthly_id, '2026-08-01 00:00:00+00'
+  );
+  IF v_detail IS NULL
+    OR (v_detail->>'publicationId')::uuid <> v_duplicate_monthly_id
+    OR public.get_mobile_content(
+      v_duplicate_sub_user_id, v_duplicate_annual_id, '2026-08-01 00:00:00+00'
+    ) IS NOT NULL THEN
+    RAISE EXCEPTION 'detail did not resolve the most recent eligible subscription period';
+  END IF;
+
+  v_result := public.record_mobile_content_event(
+    v_duplicate_sub_user_id,
+    v_duplicate_monthly_id,
+    v_duplicate_monthly_version,
+    'opened',
+    'library',
+    'task3-recency-event-key',
+    '2026-08-01 00:00:00+00'
+  );
+  IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id THEN
+    RAISE EXCEPTION 'event did not resolve the most recent eligible subscription period';
+  END IF;
+
+  v_result := public.set_mobile_content_saved(
+    v_duplicate_sub_user_id,
+    v_duplicate_monthly_id,
+    v_duplicate_monthly_version,
+    true,
+    'library',
+    'task3-recency-save-key',
+    '2026-08-01 00:00:00+00'
+  );
+  IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id
+    OR NOT (v_result->>'saved')::boolean THEN
+    RAISE EXCEPTION 'save did not resolve the most recent eligible subscription period';
   END IF;
 
   v_list := public.list_mobile_content(

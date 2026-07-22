@@ -482,11 +482,23 @@ function DraftForm({
       })
       return
     }
+    const recoveredDraft = recovery.baseline.draft
+    setTitle(recoveredDraft.title)
+    setExcerpt(recoveredDraft.excerpt)
+    setCategory(recoveredDraft.category)
+    setTagInput(recoveredDraft.tags.join(', '))
+    setFeaturedToday(recoveredDraft.featuredToday)
+    setTargeting(recoveredDraft.targeting)
+    setBodyMarkdown(recoveredDraft.bodyMarkdown)
+    setCoverAssetId(recoveredDraft.coverAssetId)
+    setEditBaseline(recovery.baseline)
     setSaveState(recovery.state)
     setPending(null)
     setMessage({
       tone: 'success',
-      text: 'Baseline atualizada. Revise as edições preservadas e salve novamente.',
+      text: recovery.state.confirmedCover
+        ? 'A versão atual foi carregada e as edições locais foram descartadas. A capa enviada permanece pendente de salvar.'
+        : 'A versão atual foi carregada e as edições locais foram descartadas.',
     })
   }
 

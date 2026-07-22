@@ -404,7 +404,7 @@ describe('content presenter', () => {
     expect(localeSwitchDecision('pt-BR', 'en-US', false, false)).toBe('switch')
   })
 
-  it('recovers a stale save only from the same version while preserving local cover state', () => {
+  it('keeps A remote title when B recovers another local edit and preserves only B confirmed cover', () => {
     const confirmedCover = {
       assetId: '00000000-0000-0000-0000-000000000627',
       locale: 'pt-BR' as const,
@@ -419,7 +419,7 @@ describe('content presenter', () => {
     const localDraft = {
       locale: 'pt-BR' as const,
       category: 'nutrition' as const,
-      title: 'Edicao local preservada',
+      title: 'Alimentacao consciente',
       excerpt: 'Uma edicao local longa o suficiente para continuar preservada.',
       bodyMarkdown: '## Edicao local\n\nEste texto ainda nao foi sobrescrito.',
       tags: ['edicao-local'],
@@ -432,6 +432,18 @@ describe('content presenter', () => {
       version: 4,
       state: 'draft',
       updatedAt: '2026-07-21T13:30:00.000Z',
+      title: 'Titulo remoto salvo por A',
+      excerpt:
+        'Um resumo remoto suficientemente longo salvo por outro editor antes da recuperacao.',
+      bodyMarkdown:
+        '## Versao remota\n\nEste corpo remoto substitui integralmente as edicoes locais apos o conflito.',
+      tags: ['remoto', 'atualizado'],
+      featuredToday: true,
+      targeting: {
+        protocols: ['manutencao'],
+        plans: ['mensal'],
+        personalities: ['zen'],
+      },
     })
 
     expect(buildDraftSavePayload(staleState, localDraft)).toBeNull()
@@ -441,19 +453,31 @@ describe('content presenter', () => {
     })
 
     const recovery = recoverDraftSaveState(staleState, [refreshedDraft])
-    expect(recovery).toEqual({
+    expect(recovery).toMatchObject({
       recovered: true,
       state: {
-        ...initialState,
         expectedUpdatedAt: refreshedDraft.updatedAt,
         stale: false,
       },
+      baseline: createDraftEditBaseline(refreshedDraft),
     })
     if (!recovery.recovered) throw new Error('Expected a recovered baseline')
-    expect(buildDraftSavePayload(recovery.state, localDraft)).toEqual({
+    expect(draftsAreEquivalent(recovery.baseline.draft, localDraft)).toBe(false)
+    expect(recovery.state.confirmedCover).toEqual(confirmedCover)
+    expect(JSON.stringify(recovery)).not.toMatch(/signedUrl|secret-capability/)
+
+    const nextDraft = {
+      ...recovery.baseline.draft,
+      coverAssetId: recovery.state.confirmedCover?.assetId ?? recovery.baseline.draft.coverAssetId,
+    }
+    expect(isDraftDirty(recovery.baseline, nextDraft, true)).toBe(true)
+    expect(buildDraftSavePayload(recovery.state, nextDraft)).toEqual({
       versionId: initialState.versionId,
       expectedUpdatedAt: refreshedDraft.updatedAt,
-      draft: localDraft,
+      draft: {
+        ...createDraftEditBaseline(refreshedDraft).draft,
+        coverAssetId: confirmedCover.assetId,
+      },
     })
   })
 

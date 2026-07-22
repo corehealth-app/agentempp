@@ -271,12 +271,17 @@ export function markDraftSaveStale(state: DraftSaveState): DraftSaveState {
 export function recoverDraftSaveState(
   state: DraftSaveState,
   versions: readonly ContentPublicationDetail['versions'][number][],
-): { recovered: true; state: DraftSaveState } | { recovered: false; state: DraftSaveState } {
-  const baseline = findDraftVersionBaseline(versions, state.versionId)
-  if (!baseline) return { recovered: false, state }
+):
+  | { recovered: true; state: DraftSaveState; baseline: DraftEditBaseline }
+  | { recovered: false; state: DraftSaveState } {
+  const version = versions.find(
+    (candidate) => candidate.versionId === state.versionId && candidate.state === 'draft',
+  )
+  if (!version) return { recovered: false, state }
   return {
     recovered: true,
-    state: { ...state, expectedUpdatedAt: baseline.expectedUpdatedAt, stale: false },
+    state: { ...state, expectedUpdatedAt: version.updatedAt, stale: false },
+    baseline: createDraftEditBaseline(version),
   }
 }
 

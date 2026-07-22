@@ -245,7 +245,9 @@ BEGIN
     'content_version_target_personalities_pkey',
     'content_user_state_pkey',
     'content_events_user_event_key_key',
-    'content_events_publication_created_idx'
+    'content_events_publication_created_idx',
+    'content_events_state_order_idx',
+    'content_events_save_order_idx'
   ]
   LOOP
     IF to_regclass('public.' || v_index) IS NULL THEN
@@ -359,26 +361,28 @@ BEGIN
 
   IF (
     SELECT count(*)
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name IN (
-        'content_publications',
-        'content_assets',
-        'content_versions',
-        'content_version_target_protocols',
-        'content_version_target_plans',
-        'content_version_target_personalities',
-        'content_user_state',
-        'content_events'
+    FROM pg_attribute attribute
+    WHERE attribute.attrelid IN (
+        'public.content_publications'::regclass,
+        'public.content_assets'::regclass,
+        'public.content_versions'::regclass,
+        'public.content_version_target_protocols'::regclass,
+        'public.content_version_target_plans'::regclass,
+        'public.content_version_target_personalities'::regclass,
+        'public.content_user_state'::regclass,
+        'public.content_events'::regclass
       )
-      AND column_name ILIKE '%body%'
-  ) <> 2 OR NOT EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'content_versions'
-      AND column_name IN ('body_markdown', 'body_hash')
-  ) THEN
+      AND attribute.attnum > 0
+      AND NOT attribute.attisdropped
+      AND attribute.attname ILIKE '%body%'
+  ) <> 2 OR (
+    SELECT count(*)
+    FROM pg_attribute attribute
+    WHERE attribute.attrelid = 'public.content_versions'::regclass
+      AND attribute.attnum > 0
+      AND NOT attribute.attisdropped
+      AND attribute.attname IN ('body_markdown', 'body_hash')
+  ) <> 2 THEN
     RAISE EXCEPTION 'article body data is not confined to content_versions';
   END IF;
 
@@ -474,11 +478,11 @@ RESET ROLE;
 DO $test$
 DECLARE
   v_editor_id constant uuid := '00000000-0000-0000-0000-000000000981';
+  v_editor_two_id constant uuid := '00000000-0000-0000-0000-000000000986';
   v_reviewer_id constant uuid := '00000000-0000-0000-0000-000000000982';
   v_master_id constant uuid := '00000000-0000-0000-0000-000000000983';
   v_patient_auth_id constant uuid := '00000000-0000-0000-0000-000000000984';
   v_patient_id constant uuid := '00000000-0000-0000-0000-000000000985';
-  v_editor_two_id constant uuid := '00000000-0000-0000-0000-000000000986';
 BEGIN
   INSERT INTO auth.users (
     id,
@@ -517,10 +521,14 @@ SET LOCAL ROLE service_role;
 DO $test$
 DECLARE
   v_editor_id constant uuid := '00000000-0000-0000-0000-000000000981';
+  v_editor_two_id constant uuid := '00000000-0000-0000-0000-000000000986';
   v_reviewer_id constant uuid := '00000000-0000-0000-0000-000000000982';
   v_master_id constant uuid := '00000000-0000-0000-0000-000000000983';
   v_publication_id uuid;
   v_version_id uuid;
+  v_takeover_publication_id uuid;
+  v_takeover_version_id uuid;
+  v_takeover_updated_at timestamptz;
   v_result jsonb;
   v_expected_updated_at timestamptz;
   v_body text := '## Open workflow regression' || E'\n\n' || repeat('word ', 205);
@@ -547,6 +555,49 @@ BEGIN
       'personalities', '[]'::jsonb
     )
   );
+
+  v_result := public.create_content_publication(
+    v_editor_id,
+    'synthetic-editor-takeover'
+  );
+  v_takeover_publication_id := (v_result->>'publication_id')::uuid;
+  v_result := public.create_content_draft(
+    v_editor_id,
+    v_takeover_publication_id,
+    'pt-BR'
+  );
+  v_takeover_version_id := (v_result->>'version_id')::uuid;
+  v_takeover_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_result := public.save_content_draft(
+    v_editor_two_id,
+    v_takeover_version_id,
+    v_takeover_updated_at,
+    v_draft
+  );
+  v_takeover_updated_at := (v_result->>'updated_at')::timestamptz;
+  PERFORM public.submit_content_version(
+    v_editor_two_id,
+    v_takeover_version_id,
+    v_takeover_updated_at
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_versions version
+    WHERE version.id = v_takeover_version_id
+      AND version.authored_by = v_editor_id
+      AND version.state = 'in_review'
+  ) OR (
+    SELECT count(*)
+    FROM public.audit_log audit
+    WHERE audit.entity = 'content_version'
+      AND audit.entity_id = v_takeover_version_id::text
+      AND audit.actor_id = v_editor_two_id
+      AND audit.action IN ('content.version.save', 'content.version.submit')
+  ) <> 2 THEN
+    RAISE EXCEPTION 'a second content editor could not continue an open draft auditably';
+  END IF;
 
   BEGIN
     PERFORM public.create_content_draft(v_editor_id, v_publication_id, 'pt-BR');

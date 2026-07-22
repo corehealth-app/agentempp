@@ -123,6 +123,29 @@ BEGIN
     RAISE EXCEPTION 'public content delivery namespace must contain exactly four signatures';
   END IF;
 
+  IF to_regprocedure('private.enforce_content_user_state_monotonic()') IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger trigger_definition
+      WHERE trigger_definition.tgrelid = 'public.content_user_state'::regclass
+        AND trigger_definition.tgname = 'content_user_state_monotonic_guard'
+        AND NOT trigger_definition.tgisinternal
+        AND trigger_definition.tgfoid =
+          'private.enforce_content_user_state_monotonic()'::regprocedure
+    )
+    OR has_function_privilege(
+      'anon',
+      'private.enforce_content_user_state_monotonic()',
+      'EXECUTE'
+    )
+    OR has_function_privilege(
+      'authenticated',
+      'private.enforce_content_user_state_monotonic()',
+      'EXECUTE'
+    ) THEN
+    RAISE EXCEPTION 'content user-state monotonic trigger is missing or client-executable';
+  END IF;
+
   IF (
     SELECT pronargdefaults
     FROM pg_proc
@@ -623,8 +646,12 @@ DECLARE
   v_future_publication_id uuid;
   v_archived_publication_id uuid;
   v_replacement_publication_id uuid;
+  v_replacement_live_version_id uuid;
   v_replacement_live_version integer;
+  v_replacement_future_version_id uuid;
   v_replacement_future_version integer;
+  v_superseded_schedule_publication_id uuid;
+  v_superseded_schedule_latest_version integer;
   v_due_publication_id uuid;
   v_due_version integer;
   v_target_guard_publication_id uuid;
@@ -807,7 +834,8 @@ BEGIN
     v_replacement_publication_id, 'pt-BR', 'cardiovascular_health', false
   );
   v_replacement_live_version := (v_result->>'version')::integer;
-  v_version_id := (v_result->>'versionId')::uuid;
+  v_replacement_live_version_id := (v_result->>'versionId')::uuid;
+  v_version_id := v_replacement_live_version_id;
   v_result := pg_temp.task3_publish_version(
     v_replacement_publication_id,
     'pt-BR',
@@ -820,6 +848,7 @@ BEGIN
     v_future_at,
     v_version_id
   );
+  v_replacement_future_version_id := (v_result->>'versionId')::uuid;
   v_replacement_future_version := (v_result->>'version')::integer;
   PERFORM public.create_content_draft(
     v_editor_id,
@@ -827,6 +856,42 @@ BEGIN
     'pt-BR',
     (v_result->>'versionId')::uuid
   );
+
+  v_result := public.create_content_publication(v_editor_id, 'task3-superseded-schedule');
+  v_superseded_schedule_publication_id := (v_result->>'publication_id')::uuid;
+  v_result := pg_temp.task3_publish_version(
+    v_superseded_schedule_publication_id,
+    'pt-BR',
+    'nutrition',
+    false
+  );
+  v_version_id := (v_result->>'versionId')::uuid;
+  v_result := pg_temp.task3_publish_version(
+    v_superseded_schedule_publication_id,
+    'pt-BR',
+    'nutrition',
+    false,
+    '{}'::text[],
+    '{}'::text[],
+    '{}'::text[],
+    NULL,
+    v_future_at,
+    v_version_id
+  );
+  v_version_id := (v_result->>'versionId')::uuid;
+  v_result := pg_temp.task3_publish_version(
+    v_superseded_schedule_publication_id,
+    'pt-BR',
+    'nutrition',
+    true,
+    '{}'::text[],
+    '{}'::text[],
+    '{}'::text[],
+    NULL,
+    NULL,
+    v_version_id
+  );
+  v_superseded_schedule_latest_version := (v_result->>'version')::integer;
 
   v_result := public.create_content_publication(v_editor_id, 'task3-newest-due');
   v_due_publication_id := (v_result->>'publication_id')::uuid;
@@ -1104,6 +1169,16 @@ BEGIN
   IF (v_detail->>'version')::integer <> v_replacement_future_version
     OR NOT (v_detail->>'featuredToday')::boolean THEN
     RAISE EXCEPTION 'newest due approved replacement was not selected';
+  END IF;
+
+  v_detail := public.get_mobile_content(
+    v_user_id,
+    v_superseded_schedule_publication_id,
+    v_future_at + interval '1 minute'
+  );
+  IF (v_detail->>'version')::integer <> v_superseded_schedule_latest_version
+    OR NOT (v_detail->>'featuredToday')::boolean THEN
+    RAISE EXCEPTION 'an older scheduled version displaced a newer immediate publication';
   END IF;
 
   v_detail := public.get_mobile_content(v_user_id, v_due_publication_id, v_effective_now);
@@ -1547,6 +1622,107 @@ BEGIN
   );
   IF NOT (v_detail->>'completed')::boolean THEN
     RAISE EXCEPTION 'completed state is not current for its visible version';
+  END IF;
+
+  PERFORM public.record_mobile_content_event(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_future_version,
+    'opened',
+    'push',
+    'task3-newer-opened-key',
+    v_future_at + interval '2 minutes'
+  );
+  PERFORM public.record_mobile_content_event(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_live_version,
+    'opened',
+    'library',
+    'task3-delayed-opened-key',
+    v_effective_now
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_user_state state
+    WHERE state.user_id = v_user_id
+      AND state.publication_id = v_replacement_publication_id
+      AND state.first_opened_at = v_effective_now
+      AND state.last_opened_at = v_future_at + interval '2 minutes'
+      AND state.last_opened_version_id = v_replacement_future_version_id
+      AND state.last_origin = 'push'
+  ) THEN
+    RAISE EXCEPTION 'a delayed opened event regressed consolidated content state';
+  END IF;
+
+  PERFORM public.record_mobile_content_event(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_future_version,
+    'completed',
+    'push',
+    'task3-newer-completed-key',
+    v_future_at + interval '3 minutes'
+  );
+  PERFORM public.record_mobile_content_event(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_live_version,
+    'completed',
+    'library',
+    'task3-delayed-completed-key',
+    v_effective_now + interval '1 second'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.content_user_state state
+    WHERE state.user_id = v_user_id
+      AND state.publication_id = v_replacement_publication_id
+      AND state.completed_at = v_future_at + interval '3 minutes'
+      AND state.completed_version_id = v_replacement_future_version_id
+      AND state.last_origin = 'push'
+  ) THEN
+    RAISE EXCEPTION 'a delayed completed event regressed consolidated content state';
+  END IF;
+
+  PERFORM public.record_mobile_content_event(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_future_version,
+    'impression',
+    'today',
+    'task3-newer-impression-key',
+    v_future_at + interval '5 minutes'
+  );
+  PERFORM public.set_mobile_content_saved(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_future_version,
+    true,
+    'library',
+    'task3-newer-saved-key',
+    v_future_at + interval '2 minutes 30 seconds'
+  );
+  v_result := public.set_mobile_content_saved(
+    v_user_id,
+    v_replacement_publication_id,
+    v_replacement_live_version,
+    false,
+    'library',
+    'task3-delayed-unsaved-key',
+    v_effective_now + interval '2 seconds'
+  );
+  IF NOT (v_result->>'saved')::boolean
+    OR (v_result->>'changed')::boolean
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.content_user_state state
+      WHERE state.user_id = v_user_id
+        AND state.publication_id = v_replacement_publication_id
+        AND state.saved_at = v_future_at + interval '2 minutes 30 seconds'
+        AND state.last_origin = 'push'
+    ) THEN
+    RAISE EXCEPTION 'a delayed save mutation regressed consolidated content state';
   END IF;
 
   v_result := public.set_mobile_content_saved(

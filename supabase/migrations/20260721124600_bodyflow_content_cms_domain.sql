@@ -315,6 +315,25 @@ CREATE INDEX content_events_publication_created_idx
 CREATE INDEX content_events_user_created_idx
   ON public.content_events (user_id, created_at DESC, id);
 
+CREATE INDEX content_events_state_order_idx
+  ON public.content_events (
+    user_id,
+    publication_id,
+    occurred_at DESC,
+    created_at DESC,
+    id DESC
+  );
+
+CREATE INDEX content_events_save_order_idx
+  ON public.content_events (
+    user_id,
+    publication_id,
+    occurred_at DESC,
+    created_at DESC,
+    id DESC
+  )
+  WHERE event_type IN ('saved', 'unsaved');
+
 CREATE OR REPLACE FUNCTION private.guard_content_publication_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -1127,9 +1146,6 @@ BEGIN
   FROM public.content_publications publication
   WHERE publication.id = v_version.publication_id
   FOR UPDATE;
-  IF v_version.authored_by <> p_actor_id THEN
-    RAISE EXCEPTION 'only the content author may save this draft' USING ERRCODE = '42501';
-  END IF;
   IF v_version.state <> 'draft' THEN
     RAISE EXCEPTION 'only draft content can be saved' USING ERRCODE = '23514';
   END IF;
@@ -1372,9 +1388,6 @@ BEGIN
   FROM public.content_publications publication
   WHERE publication.id = v_version.publication_id
   FOR UPDATE;
-  IF v_version.authored_by <> p_actor_id THEN
-    RAISE EXCEPTION 'only the content author may submit this version' USING ERRCODE = '42501';
-  END IF;
   IF v_version.state <> 'draft' THEN
     RAISE EXCEPTION 'only draft content can be submitted' USING ERRCODE = '23514';
   END IF;

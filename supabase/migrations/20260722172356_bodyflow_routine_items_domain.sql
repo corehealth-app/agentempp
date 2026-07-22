@@ -359,7 +359,8 @@ BEGIN
     AND prior_log.occurrence_key = NEW.occurrence_key;
 
   IF NOT FOUND THEN
-    RETURN NEW;
+    RAISE EXCEPTION 'routine correction target must already exist'
+      USING ERRCODE = '23514';
   END IF;
 
   IF v_status IS DISTINCT FROM 'missed' THEN
@@ -403,7 +404,8 @@ BEGIN
     AND action_log.occurrence_key = NEW.routine_occurrence_key;
 
   IF NOT FOUND THEN
-    RETURN NEW;
+    RAISE EXCEPTION 'routine follow-up action must already exist'
+      USING ERRCODE = '23514';
   END IF;
 
   IF v_status IS DISTINCT FROM 'snoozed' THEN

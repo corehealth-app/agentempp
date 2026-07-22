@@ -47,3 +47,9 @@ REVOKE ALL ON FUNCTION private.enforce_routine_adherence_correction()
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.enforce_reminder_event_routine_action()
   FROM PUBLIC, anon, authenticated, service_role;
+
+GRANT EXECUTE ON FUNCTION private.reject_bodyflow_routine_immutable_mutation() TO service_role;
+GRANT EXECUTE ON FUNCTION private.enforce_routine_mutation_receipt_result_keys() TO service_role;
+GRANT EXECUTE ON FUNCTION private.enforce_notification_delivery_routine_preview() TO service_role;
+GRANT EXECUTE ON FUNCTION private.enforce_routine_adherence_correction() TO service_role;
+GRANT EXECUTE ON FUNCTION private.enforce_reminder_event_routine_action() TO service_role;

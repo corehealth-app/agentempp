@@ -413,7 +413,7 @@ BEGIN
         )
     ) OR has_function_privilege('anon', v_function, 'EXECUTE')
       OR has_function_privilege('authenticated', v_function, 'EXECUTE')
-      OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+      OR NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
       RAISE EXCEPTION 'trusted trigger function security is incorrect';
     END IF;
   END LOOP;
@@ -555,7 +555,11 @@ DECLARE
   v_not_prior_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000846';
   v_correctable_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000847';
   v_corrected_log_id constant uuid := '00000000-0000-0000-0000-000000000848';
+  v_same_statement_missed_log_id constant uuid := '00000000-0000-0000-0000-000000000849';
+  v_same_statement_correction_log_id constant uuid := '00000000-0000-0000-0000-000000000850';
+  v_same_statement_snooze_log_id constant uuid := '00000000-0000-0000-0000-000000000891';
   v_hydration_event_id constant uuid := '00000000-0000-0000-0000-000000000872';
+  v_alternate_routine_event_id constant uuid := '00000000-0000-0000-0000-000000000873';
   v_device_id constant uuid := '00000000-0000-0000-0000-000000000881';
   v_legacy_delivery_id constant uuid := '00000000-0000-0000-0000-000000000882';
   v_old_document_id constant uuid := '00000000-0000-0000-0000-000000000851';
@@ -1466,6 +1470,57 @@ BEGIN
     WHEN check_violation THEN NULL;
   END;
 
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      id,
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at,
+      created_at,
+      supersedes_log_id
+    ) VALUES
+      (
+        v_same_statement_correction_log_id,
+        v_user_id,
+        v_item_id,
+        'medication',
+        'taken',
+        'routine-same-statement-correction',
+        v_rule_id,
+        repeat('6', 64),
+        'patient',
+        timestamptz '2026-07-22 17:36:00+00',
+        timestamptz '2026-07-22 17:39:00+00',
+        timestamptz '2026-07-22 17:39:00+00',
+        v_same_statement_missed_log_id
+      ),
+      (
+        v_same_statement_missed_log_id,
+        v_user_id,
+        v_item_id,
+        'medication',
+        'missed',
+        'routine-same-statement-missed',
+        v_rule_id,
+        repeat('6', 64),
+        'system',
+        timestamptz '2026-07-22 17:36:00+00',
+        timestamptz '2026-07-22 17:37:00+00',
+        timestamptz '2026-07-22 17:38:00+00',
+        NULL
+      );
+    RAISE EXCEPTION 'same-statement correction target was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   INSERT INTO public.routine_adherence_logs (
     id,
     user_id,
@@ -1671,6 +1726,60 @@ BEGIN
   END;
 
   BEGIN
+    WITH same_statement_action AS (
+      INSERT INTO public.routine_adherence_logs (
+        id,
+        user_id,
+        routine_item_id,
+        item_type,
+        status,
+        idempotency_key,
+        reminder_rule_id,
+        occurrence_key,
+        source,
+        scheduled_for,
+        occurred_at,
+        snoozed_until,
+        created_at
+      ) VALUES (
+        v_same_statement_snooze_log_id,
+        v_user_id,
+        v_item_id,
+        'medication',
+        'snoozed',
+        'routine-same-statement-snooze',
+        v_rule_id,
+        repeat('7', 64),
+        'patient',
+        timestamptz '2026-07-22 18:25:00+00',
+        timestamptz '2026-07-22 18:26:00+00',
+        timestamptz '2026-07-22 18:27:00+00',
+        timestamptz '2026-07-22 18:26:30+00'
+      )
+      RETURNING id
+    )
+    INSERT INTO public.reminder_events (
+      user_id,
+      reminder_rule_id,
+      scheduled_for,
+      status,
+      routine_occurrence_key,
+      routine_action_log_id
+    )
+    SELECT
+      v_user_id,
+      v_rule_id,
+      timestamptz '2026-07-22 18:28:00+00',
+      'queued',
+      repeat('7', 64),
+      same_statement_action.id
+    FROM same_statement_action;
+    RAISE EXCEPTION 'same-statement follow-up action was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
     INSERT INTO public.reminder_events (
       user_id,
       reminder_rule_id,
@@ -1690,6 +1799,20 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  INSERT INTO public.reminder_events (
+    id,
+    user_id,
+    reminder_rule_id,
+    scheduled_for,
+    status
+  ) VALUES (
+    v_alternate_routine_event_id,
+    v_user_id,
+    v_supplement_rule_id,
+    timestamptz '2026-07-22 19:15:00+00',
+    'queued'
+  );
 
   INSERT INTO public.reminder_events (
     id,
@@ -1905,6 +2028,16 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'legacy routine delivery metadata update failed';
   END IF;
+
+  BEGIN
+    UPDATE public.notification_deliveries
+    SET reminder_event_id = v_alternate_routine_event_id,
+        updated_at = timestamptz '2026-07-22 18:32:00+00'
+    WHERE id = v_legacy_delivery_id;
+    RAISE EXCEPTION 'legacy null-preview association change was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
 
   BEGIN
     INSERT INTO public.notification_deliveries (

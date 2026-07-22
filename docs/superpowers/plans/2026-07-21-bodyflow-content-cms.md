@@ -431,11 +431,11 @@ export function executeContentAdminAction(
 
 - [x] **Step 1: Replace the reserved content documentation with exact list/detail/read/save contracts, query/body examples, errors, idempotency, locale isolation, segment matching, cover expiry, and caching behavior.**
 - [x] **Step 2: Record the architecture decision for immutable localized versions, version-scoped targets, private covers, derived scheduling, separated review, and BFF-only patient access.**
-- [ ] **Step 3: Run `pnpm --filter @mpp/core test`, `pnpm --filter @mpp/admin test`, and every CMS SQL suite transactionally.**
-- [ ] **Step 4: Run `pnpm test`, `pnpm typecheck`, `pnpm --filter @mpp/admin build`, changed-file Biome, secret/PII scans, and `git diff --check`.**
-- [ ] **Step 5: Review the full branch diff for spec coverage, SQL injection, RLS/grants, service-role client leakage, unsafe Markdown, stale-write loss, visibility leaks, pagination gaps, idempotency gaps, and object-path exposure.**
-- [ ] **Step 6: Fix every Critical/Important review finding and repeat its covering tests.**
-- [ ] **Step 7: Commit `docs(bodyflow): document educational content contracts`.**
+- [x] **Step 3: Run `pnpm --filter @mpp/core test`, `pnpm --filter @mpp/admin test`, and every CMS SQL suite transactionally.**
+- [x] **Step 4: Run `pnpm test`, `pnpm typecheck`, `pnpm --filter @mpp/admin build`, changed-file Biome, secret/PII scans, and `git diff --check`.**
+- [x] **Step 5: Review the full branch diff for spec coverage, SQL injection, RLS/grants, service-role client leakage, unsafe Markdown, stale-write loss, visibility leaks, pagination gaps, idempotency gaps, and object-path exposure.**
+- [x] **Step 6: Fix every Critical/Important review finding and repeat its covering tests.**
+- [x] **Step 7: Commit `docs(bodyflow): document educational content contracts`.**
 
 ### Task 8: Staging Migration, Canary, Generated Types, And Draft PR
 
@@ -446,18 +446,51 @@ export function executeContentAdminAction(
 Toda execução SQL live, incluindo as suites CMS, permanece reservada para esta
 Task 8. Evidência estática ou local anterior não substitui essa validação.
 
-- [ ] **Step 1: Confirm the worktree path/branch and verify `supabase/.temp/project-ref` is exactly `xitugspwfxkcluxvrdeg` and is not `xuxehkhdvjivitduarvb`; stop on ambiguity.**
-- [ ] **Step 2: Confirm staging still has 34 cron jobs and zero active jobs without selecting job commands.**
-- [ ] **Step 3: Run `supabase migration list --linked`, migration dry-run, and review that only the new additive CMS migrations are pending.**
-- [ ] **Step 4: Apply only those migrations to staging. Do not deploy an application or configure any secret/integration.**
-- [ ] **Step 5: Run both SQL suites transactionally, Supabase DB lint, and advisors. Distinguish new findings from pre-existing findings.**
-- [ ] **Step 6: Regenerate `packages/db/src/generated/database.ts` from staging using ref `xitugspwfxkcluxvrdeg`, review the generated diff for unrelated drift, and rerun DB/admin typecheck.**
-- [ ] **Step 7: Execute synthetic rollback-safe canaries for the complete workflow:** author draft, both locales, Markdown rejection, technical approval, immediate publication, future schedule, universal and three-dimension targeting, exact-locale feed/detail, read/save retry, short-lived cover capability, replacement without downtime, archive, e um canário concorrente de duas sessões para o `one-open-workflow`, cobrindo `create/submit/review` concorrendo com outro `create` da mesma publicação e locale.
-- [ ] **Step 8: Confirm aggregate-only staging postconditions: zero retained synthetic publications/assets/events/states, zero active cron jobs, no public/authenticated CMS grants, and no client-executable internal CMS functions.**
-- [ ] **Step 9: Confirm production was not linked, queried, modified, or deployed and no external provider was called.**
-- [ ] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types.**
-- [ ] **Step 11: Record redacted verification evidence and commit `docs(bodyflow): complete educational CMS validation`.**
+- [x] **Step 1: Confirm the worktree path/branch and verify `supabase/.temp/project-ref` is exactly `xitugspwfxkcluxvrdeg` and is not `xuxehkhdvjivitduarvb`; stop on ambiguity.**
+- [x] **Step 2: Confirm staging still has 34 cron jobs and zero active jobs without selecting job commands.**
+- [x] **Step 3: Run `supabase migration list --linked`, migration dry-run, and review that only the new additive CMS migrations are pending.**
+- [x] **Step 4: Apply only those migrations to staging. Do not deploy an application or configure any secret/integration.**
+- [x] **Step 5: Run both SQL suites transactionally, Supabase DB lint, and advisors. Distinguish new findings from pre-existing findings.**
+- [x] **Step 6: Regenerate `packages/db/src/generated/database.ts` from staging using ref `xitugspwfxkcluxvrdeg`, review the generated diff for unrelated drift, and rerun DB/admin typecheck.**
+- [x] **Step 7: Execute synthetic rollback-safe canaries for the complete workflow:** author draft, both locales, Markdown rejection, technical approval, immediate publication, future schedule, universal and three-dimension targeting, exact-locale feed/detail, read/save retry, short-lived cover capability, replacement without downtime, archive, e um canário concorrente de duas sessões para o `one-open-workflow`, cobrindo `create/submit/review` concorrendo com outro `create` da mesma publicação e locale.
+- [x] **Step 8: Confirm aggregate-only staging postconditions: zero retained synthetic publications/assets/events/states, zero active cron jobs, no public/authenticated CMS grants, and no client-executable internal CMS functions.**
+- [x] **Step 9: Confirm production was not linked, queried, modified, or deployed and no external provider was called.**
+- [x] **Step 10: Run final `pnpm test`, `pnpm typecheck`, admin build, Biome, and `git diff --check` after generated types.**
+- [x] **Step 11: Record redacted verification evidence and commit `docs(bodyflow): complete educational CMS validation`.**
 - [ ] **Step 12: Push `codex/bodyflow-content-cms-v1` and open a draft PR with base `codex/bodyflow-personalities-mascot-v1`.**
+
+#### Redacted staging evidence — 2026-07-22
+
+- Worktree/branch: isolated `codex/bodyflow-content-cms-v1`; linked project ref
+  revalidated as staging `xitugspwfxkcluxvrdeg`, distinct from production.
+- Migrations: only `20260721124600_bodyflow_content_cms_domain.sql` and
+  `20260721141618_bodyflow_content_delivery.sql` were applied; the final dry-run
+  reports the remote database as up to date.
+- Database validation: both CMS SQL suites completed inside rollback
+  transactions; DB lint reports no schema errors. Advisors retain the same seven
+  pre-existing warnings (four extensions in `public` and three legacy callable
+  `SECURITY DEFINER` functions), with no CMS finding.
+- Concurrency: eleven two-session cases observed the expected row lock with
+  `FOR UPDATE NOWAIT` before validating the outcome: create/create,
+  submit/create, approve/create, reject/create, both cover orders,
+  submit/target DML, both archive-first mobile mutations, and both
+  mutation-first archive orders.
+- Cleanup/postconditions: the canary cleanup asserted zero retained synthetic
+  publications, assets, events, states, receipts, users, admins, Auth rows,
+  Storage objects, audit rows, or helper schema. Staging remains at 34 cron jobs
+  with zero active jobs.
+- Access boundary: all nine CMS/private persistence tables have RLS enabled;
+  `PUBLIC`, `anon`, and `authenticated` have zero table or routine privileges on
+  the CMS surface.
+- Generated types: staging added only the eight CMS tables and fourteen CMS
+  RPCs. The unrelated generator removal of legacy `graphql_public` was excluded.
+- Local verification: `pnpm test` passed (core 187, providers 18, agent 1,048,
+  Inngest 158, admin 397), `pnpm typecheck` passed all eight tasks, and the admin
+  production build completed. The existing Next.js `typedRoutes` warning remains
+  outside this scope.
+- Scope: no production link/query/mutation, application deployment, external
+  provider call, secret configuration, cron activation, Xcode work, or visual
+  prompt execution occurred.
 
 ## Completion Gate
 

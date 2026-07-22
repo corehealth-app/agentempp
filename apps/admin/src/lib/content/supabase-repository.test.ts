@@ -131,12 +131,16 @@ function testUuid(index: number): string {
 function listRow(
   index: number,
   versions: Array<Record<string, unknown>>,
-): ReturnType<typeof publicationRow> & { content_versions: Array<Record<string, unknown>> } {
+): ReturnType<typeof publicationRow> & {
+  pt_versions: Array<Record<string, unknown>>
+  en_versions: Array<Record<string, unknown>>
+} {
   return {
     ...publicationRow(),
     id: testUuid(index),
     slug: `publication-${index}`,
-    content_versions: versions,
+    pt_versions: versions.filter((version) => version.locale !== 'en-US'),
+    en_versions: versions.filter((version) => version.locale === 'en-US'),
   }
 }
 
@@ -309,7 +313,7 @@ describe('Supabase content admin repository', () => {
     }
   })
 
-  it('returns the complete bilingual history after filtering against one latest locale', async () => {
+  it('returns the latest bilingual snapshots after filtering against one locale', async () => {
     const client = fakeClient({
       tableResults: {
         content_publications: [
@@ -317,9 +321,8 @@ describe('Supabase content admin repository', () => {
             data: [
               {
                 ...publicationRow(),
-                content_versions: [
-                  summaryVersion(1, { version: 1, state: 'rejected' }),
-                  summaryVersion(2, { version: 2, state: 'draft' }),
+                pt_versions: [summaryVersion(2, { version: 2, state: 'draft' })],
+                en_versions: [
                   {
                     ...versionSummaryRow(),
                     id: ENGLISH_VERSION_ID,
@@ -354,7 +357,8 @@ describe('Supabase content admin repository', () => {
     const selection = client.queryLog.find(
       (entry) => entry.table === 'content_publications' && entry.method === 'select',
     )?.args[0]
-    expect(selection).toContain('content_versions (')
+    expect(selection).toContain('pt_versions:content_versions (')
+    expect(selection).toContain('en_versions:content_versions (')
     expect(selection).not.toContain('content_versions!inner')
     expect(selection).not.toMatch(/body_markdown|object_path|bucket_id|etag|signed_url|token/)
   })
@@ -538,7 +542,7 @@ describe('Supabase content admin repository', () => {
       tableResults: {
         content_publications: [
           {
-            data: [{ ...publicationRow(), content_versions: [] }],
+            data: [{ ...publicationRow(), pt_versions: [], en_versions: [] }],
             error: null,
           },
         ],
@@ -551,7 +555,8 @@ describe('Supabase content admin repository', () => {
     const selection = client.queryLog.find(
       (entry) => entry.table === 'content_publications' && entry.method === 'select',
     )?.args[0]
-    expect(selection).toContain('content_versions (')
+    expect(selection).toContain('pt_versions:content_versions (')
+    expect(selection).toContain('en_versions:content_versions (')
     expect(selection).not.toContain('content_versions!inner')
     expect(
       client.queryLog
@@ -562,8 +567,61 @@ describe('Supabase content admin repository', () => {
       { method: 'order', args: ['updated_at', { ascending: false }] },
       { method: 'order', args: ['id', { ascending: true }] },
       { method: 'range', args: [0, 9] },
+      { method: 'eq', args: ['pt_versions.locale', 'pt-BR'] },
+      {
+        method: 'order',
+        args: ['version', { ascending: false, referencedTable: 'pt_versions' }],
+      },
+      { method: 'limit', args: [1, { referencedTable: 'pt_versions' }] },
+      { method: 'eq', args: ['en_versions.locale', 'en-US'] },
+      {
+        method: 'order',
+        args: ['version', { ascending: false, referencedTable: 'en_versions' }],
+      },
+      { method: 'limit', args: [1, { referencedTable: 'en_versions' }] },
       { method: 'is', args: ['archived_at', null] },
     ])
+  })
+
+  it('bounds list history to one embedded version per locale', async () => {
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: [{ ...publicationRow(), pt_versions: [], en_versions: [] }],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    await repository.list({ limit: 10, offset: 0 })
+
+    expect(
+      client.queryLog
+        .filter(
+          (entry) =>
+            entry.table === 'content_publications' &&
+            ['eq', 'order', 'limit'].includes(entry.method),
+        )
+        .map(({ method, args }) => ({ method, args })),
+    ).toEqual(
+      expect.arrayContaining([
+        { method: 'eq', args: ['pt_versions.locale', 'pt-BR'] },
+        {
+          method: 'order',
+          args: ['version', { ascending: false, referencedTable: 'pt_versions' }],
+        },
+        { method: 'limit', args: [1, { referencedTable: 'pt_versions' }] },
+        { method: 'eq', args: ['en_versions.locale', 'en-US'] },
+        {
+          method: 'order',
+          args: ['version', { ascending: false, referencedTable: 'en_versions' }],
+        },
+        { method: 'limit', args: [1, { referencedTable: 'en_versions' }] },
+      ]),
+    )
   })
 
   it('strictly parses list rows instead of forwarding malformed unknown data', async () => {
@@ -574,7 +632,8 @@ describe('Supabase content admin repository', () => {
             data: [
               {
                 ...publicationRow(),
-                content_versions: [{ ...versionSummaryRow(), version: 'one' }],
+                pt_versions: [{ ...versionSummaryRow(), version: 'one' }],
+                en_versions: [],
               },
             ],
             error: null,
@@ -666,6 +725,103 @@ describe('Supabase content admin repository', () => {
       (entry) => entry.table === 'content_assets' && entry.method === 'select',
     )?.args[0]
     expect(assetSelection).not.toMatch(/object_path|bucket_id|etag/)
+  })
+
+  it('caps detailed immutable history and reports retained older versions', async () => {
+    const versions = Array.from({ length: 51 }, (_, index) => ({
+      ...versionDetailRow(),
+      id: testUuid(40_000 + index),
+      version: 51 - index,
+      cover_asset_id: null,
+    }))
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: { ...publicationRow(), created_by: ACTOR_ID, archived_by: null },
+            error: null,
+          },
+        ],
+        content_versions: [{ data: versions, error: null }],
+        content_version_target_protocols: [{ data: [], error: null }],
+        content_version_target_plans: [{ data: [], error: null }],
+        content_version_target_personalities: [{ data: [], error: null }],
+        admin_users: [
+          {
+            data: [{ id: ACTOR_ID, name: 'Editora', role: 'content_editor' }],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    const result = await repository.get(PUBLICATION_ID)
+
+    expect(result).toMatchObject({ historyTruncated: true })
+    expect(result?.versions).toHaveLength(50)
+    expect(
+      client.queryLog.find(
+        (entry) => entry.table === 'content_versions' && entry.method === 'limit',
+      )?.args,
+    ).toEqual([51])
+    for (const entry of client.queryLog.filter(
+      (candidate) => candidate.method === 'in' && candidate.args[0] === 'content_version_id',
+    )) {
+      expect(entry.args[1]).toHaveLength(50)
+    }
+  })
+
+  it('reserves the latest version of each locale inside the bounded detail history', async () => {
+    const portugueseVersions = Array.from({ length: 51 }, (_, index) => ({
+      ...versionDetailRow(),
+      id: testUuid(41_000 + index),
+      version: 100 - index,
+      state: 'approved',
+      cover_asset_id: null,
+    }))
+    const englishDraft = {
+      ...versionDetailRow(),
+      id: ENGLISH_VERSION_ID,
+      version: 1,
+      locale: 'en-US',
+      state: 'draft',
+      cover_asset_id: null,
+    }
+    const client = fakeClient({
+      tableResults: {
+        content_publications: [
+          {
+            data: { ...publicationRow(), created_by: ACTOR_ID, archived_by: null },
+            error: null,
+          },
+        ],
+        content_versions: [
+          { data: portugueseVersions, error: null },
+          { data: [portugueseVersions[0]], error: null },
+          { data: [englishDraft], error: null },
+        ],
+        content_version_target_protocols: [{ data: [], error: null }],
+        content_version_target_plans: [{ data: [], error: null }],
+        content_version_target_personalities: [{ data: [], error: null }],
+        admin_users: [
+          {
+            data: [{ id: ACTOR_ID, name: 'Editora', role: 'content_editor' }],
+            error: null,
+          },
+        ],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    const result = await repository.get(PUBLICATION_ID)
+
+    expect(result).toMatchObject({ historyTruncated: true })
+    expect(result?.versions).toHaveLength(50)
+    expect(result?.versions.map((version) => version.versionId)).toContain(ENGLISH_VERSION_ID)
+    expect(result?.versions.map((version) => version.versionId)).toContain(
+      portugueseVersions[0]?.id,
+    )
   })
 
   it('returns null detail and rejects malformed detail payloads', async () => {

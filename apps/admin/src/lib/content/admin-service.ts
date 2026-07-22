@@ -88,6 +88,7 @@ const versionDetailSchema = versionSummarySchema.extend({
 const publicationDetailSchema = publicationSummarySchema.omit({ versions: true }).extend({
   createdBy: adminIdentitySchema,
   archivedBy: adminIdentitySchema.nullable(),
+  historyTruncated: z.boolean().default(false),
   versions: z.array(versionDetailSchema),
 })
 

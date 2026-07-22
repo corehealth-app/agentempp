@@ -46,6 +46,7 @@ function detail(): ContentPublicationDetail {
     ...summary(),
     createdBy: { id: ACTOR_ID, name: 'Editora', role: 'content_editor' },
     archivedBy: null,
+    historyTruncated: false,
     versions: [
       {
         ...summary().versions[0],

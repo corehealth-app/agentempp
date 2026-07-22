@@ -94,7 +94,8 @@ const publicationListRowSchema = z
     archived_at: nullableTimestampSchema,
     created_at: timestampSchema,
     updated_at: timestampSchema,
-    content_versions: z.array(versionSummaryRowSchema),
+    pt_versions: z.array(versionSummaryRowSchema),
+    en_versions: z.array(versionSummaryRowSchema),
   })
   .strict()
 
@@ -265,25 +266,27 @@ const deletedAssetResultSchema = z
   })
   .strict()
 
+const VERSION_SUMMARY_SELECTION = `
+  id,
+  version,
+  locale,
+  category,
+  title,
+  state,
+  featured_today,
+  authored_by,
+  reviewed_by,
+  publish_at,
+  updated_at
+`
 const LIST_SELECTION = `
   id,
   slug,
   archived_at,
   created_at,
   updated_at,
-  content_versions (
-    id,
-    version,
-    locale,
-    category,
-    title,
-    state,
-    featured_today,
-    authored_by,
-    reviewed_by,
-    publish_at,
-    updated_at
-  )
+  pt_versions:content_versions (${VERSION_SUMMARY_SELECTION}),
+  en_versions:content_versions (${VERSION_SUMMARY_SELECTION})
 `
 const PUBLICATION_SELECTION =
   'id, slug, created_by, archived_by, archived_at, created_at, updated_at'
@@ -294,6 +297,7 @@ const INTERNAL_ASSET_SELECTION =
   'id, bucket_id, object_path, mime_type, declared_size_bytes, actual_size_bytes, etag, status'
 const LIST_SCAN_BATCH_SIZE = 100
 const LIST_SCAN_MAX_OFFSET = 10_000
+const DETAIL_VERSION_LIMIT = 50
 
 type Operation =
   | 'list'
@@ -386,8 +390,18 @@ function mapPublicationListRow(row: PublicationListRow) {
     archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    versions: row.content_versions.map(mapSummaryVersion),
+    versions: [...row.pt_versions, ...row.en_versions].map(mapSummaryVersion),
   }
+}
+
+function boundListVersionEmbeds(query: ContentQueryBuilder): ContentQueryBuilder {
+  return query
+    .eq('pt_versions.locale', 'pt-BR')
+    .order('version', { ascending: false, referencedTable: 'pt_versions' })
+    .limit(1, { referencedTable: 'pt_versions' })
+    .eq('en_versions.locale', 'en-US')
+    .order('version', { ascending: false, referencedTable: 'en_versions' })
+    .limit(1, { referencedTable: 'en_versions' })
 }
 
 function uniqueIds(values: Array<string | null>): string[] {
@@ -398,12 +412,14 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
   async function listWithMetadata(filters: ContentAdminFilters) {
     const hasVersionFilter = hasAdminListVersionFilters(filters)
     if (!hasVersionFilter) {
-      let query = client
-        .from('content_publications')
-        .select(LIST_SELECTION)
-        .order('updated_at', { ascending: false })
-        .order('id', { ascending: true })
-        .range(filters.offset, filters.offset + filters.limit - 1)
+      let query = boundListVersionEmbeds(
+        client
+          .from('content_publications')
+          .select(LIST_SELECTION)
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(filters.offset, filters.offset + filters.limit - 1),
+      )
       query =
         filters.status === 'archived'
           ? query.not('archived_at', 'is', null)
@@ -425,12 +441,14 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
     const requiredMatches = filters.offset + filters.limit
 
     for (let rawOffset = 0; rawOffset <= LIST_SCAN_MAX_OFFSET; rawOffset += LIST_SCAN_BATCH_SIZE) {
-      let query = client
-        .from('content_publications')
-        .select(LIST_SELECTION)
-        .order('updated_at', { ascending: false })
-        .order('id', { ascending: true })
-        .range(rawOffset, rawOffset + LIST_SCAN_BATCH_SIZE - 1)
+      let query = boundListVersionEmbeds(
+        client
+          .from('content_publications')
+          .select(LIST_SELECTION)
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(rawOffset, rawOffset + LIST_SCAN_BATCH_SIZE - 1),
+      )
       query =
         filters.status === 'archived'
           ? query.not('archived_at', 'is', null)
@@ -490,18 +508,54 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
       )
       if (publicationData === null) return null
       const publication = parseDatabase(publicationDetailRowSchema, publicationData, 'get')
-      const versions = parseDatabase(
+      const versionRows = parseDatabase(
         z.array(versionDetailRowSchema),
         await queryResult(
           client
             .from('content_versions')
             .select(VERSION_SELECTION)
             .eq('publication_id', publicationId)
-            .order('version', { ascending: false }),
+            .order('version', { ascending: false })
+            .limit(DETAIL_VERSION_LIMIT + 1),
           'get',
         ),
         'get',
       )
+      const localeAnchorRows = (
+        await Promise.all(
+          (['pt-BR', 'en-US'] as const).map(async (locale) =>
+            parseDatabase(
+              z.array(versionDetailRowSchema),
+              await queryResult(
+                client
+                  .from('content_versions')
+                  .select(VERSION_SELECTION)
+                  .eq('publication_id', publicationId)
+                  .eq('locale', locale)
+                  .order('version', { ascending: false })
+                  .limit(1),
+                'get',
+              ),
+              'get',
+            ),
+          ),
+        )
+      ).flat()
+      const versionsById = new Map<string, z.infer<typeof versionDetailRowSchema>>()
+      for (const version of localeAnchorRows) versionsById.set(version.id, version)
+      for (const version of versionRows) {
+        if (versionsById.size >= DETAIL_VERSION_LIMIT) break
+        versionsById.set(version.id, version)
+      }
+      const versions = [...versionsById.values()].sort(
+        (left, right) => right.version - left.version || left.id.localeCompare(right.id),
+      )
+      const availableVersionIds = new Set([
+        ...versionRows.map((version) => version.id),
+        ...localeAnchorRows.map((version) => version.id),
+      ])
+      const historyTruncated =
+        versionRows.length > DETAIL_VERSION_LIMIT || availableVersionIds.size > versions.length
       const versionIds = versions.map((version) => version.id)
       const coverIds = uniqueIds(versions.map((version) => version.cover_asset_id))
       const identityIds = uniqueIds([
@@ -585,6 +639,7 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
         updatedAt: publication.updated_at,
         createdBy: requiredIdentity(publication.created_by),
         archivedBy: identity(publication.archived_by),
+        historyTruncated,
         versions: versions.map((version) => {
           const cover = version.cover_asset_id ? assetById.get(version.cover_asset_id) : null
           if (version.cover_asset_id && !cover) databaseFailure('get')

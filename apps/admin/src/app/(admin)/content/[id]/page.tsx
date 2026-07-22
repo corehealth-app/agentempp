@@ -38,7 +38,7 @@ export default async function ContentDetailPage({
         compact
         breadcrumbs={[{ label: 'Publicacoes', href: '/content' }, { label: publication.slug }]}
         title={publication.slug}
-        description={`Criada por ${publication.createdBy.name ?? publication.createdBy.id.slice(0, 8)} · ${publication.versions.length} versoes`}
+        description={`Criada por ${publication.createdBy.name ?? publication.createdBy.id.slice(0, 8)} · ${publication.versions.length} versoes${publication.historyTruncated ? ' recentes' : ''}`}
         actions={
           <Button asChild size="sm" variant="outline">
             <Link href="/content">

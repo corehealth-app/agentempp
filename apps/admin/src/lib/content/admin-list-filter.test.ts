@@ -113,6 +113,33 @@ describe('admin list version filter', () => {
     ])
   })
 
+  it('requires text to match the exact latest locale candidate selected by structured filters', () => {
+    const publication = summary([
+      version({ versionId: '00000000-0000-4000-8000-000000000103', version: 1, title: 'Legado' }),
+      version({ version: 2, title: 'Titulo atual' }),
+      version({
+        versionId: EN_VERSION_ID,
+        locale: 'en-US',
+        version: 3,
+        category: 'training',
+        title: 'Legacy English',
+      }),
+    ])
+    const filterWithText = filterAdminListPublications as (
+      publications: readonly ContentPublicationSummary[],
+      filters: ContentAdminFilters,
+      now: number,
+      text: string,
+    ) => ContentPublicationSummary[]
+
+    expect(
+      filterWithText([publication], { category: 'nutrition', limit: 25, offset: 0 }, NOW, 'legado'),
+    ).toEqual([])
+    expect(
+      filterWithText([publication], { category: 'nutrition', limit: 25, offset: 0 }, NOW, 'atual'),
+    ).toEqual([expect.objectContaining({ matchedVersionId: PT_VERSION_ID })])
+  })
+
   it('builds raw text batches without version filters and keeps only archived partitioning', () => {
     const filters: ContentAdminFilters = {
       status: 'published',

@@ -89,7 +89,7 @@ function action(type: ContentAdminAction['type']): ContentAdminAction {
 function service(): ContentAdminService {
   const result = { publicationId: PUBLICATION_ID, updatedAt: UPDATED_AT }
   return {
-    list: vi.fn(async () => []),
+    list: vi.fn(async () => ({ publications: [], exhausted: true, truncated: false })),
     get: vi.fn(
       async () => ({ publicationId: PUBLICATION_ID, archivedAt: null, versions: [] }) as never,
     ),

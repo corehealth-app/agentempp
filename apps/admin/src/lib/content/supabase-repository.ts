@@ -395,69 +395,89 @@ function uniqueIds(values: Array<string | null>): string[] {
 }
 
 function createRepository(client: ContentSupabaseClient): ContentAdminRepository {
-  return {
-    async list(filters: ContentAdminFilters) {
-      const hasVersionFilter = hasAdminListVersionFilters(filters)
-      if (!hasVersionFilter) {
-        let query = client
-          .from('content_publications')
-          .select(LIST_SELECTION)
-          .order('updated_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(filters.offset, filters.offset + filters.limit - 1)
-        query =
-          filters.status === 'archived'
-            ? query.not('archived_at', 'is', null)
-            : query.is('archived_at', null)
-        const rows = parseDatabase(
-          z.array(publicationListRowSchema),
-          await queryResult(query, 'list'),
-          'list',
-        )
-        return rows.map(mapPublicationListRow)
+  async function listWithMetadata(filters: ContentAdminFilters) {
+    const hasVersionFilter = hasAdminListVersionFilters(filters)
+    if (!hasVersionFilter) {
+      let query = client
+        .from('content_publications')
+        .select(LIST_SELECTION)
+        .order('updated_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(filters.offset, filters.offset + filters.limit - 1)
+      query =
+        filters.status === 'archived'
+          ? query.not('archived_at', 'is', null)
+          : query.is('archived_at', null)
+      const rows = parseDatabase(
+        z.array(publicationListRowSchema),
+        await queryResult(query, 'list'),
+        'list',
+      )
+      return {
+        publications: rows.map(mapPublicationListRow),
+        exhausted: rows.length < filters.limit,
+        truncated: false,
       }
+    }
 
-      const now = Date.now()
-      const matchingRows = []
-      const requiredMatches = filters.offset + filters.limit
+    const now = Date.now()
+    const matchingRows = []
+    const requiredMatches = filters.offset + filters.limit
 
-      for (
-        let rawOffset = 0;
-        rawOffset <= LIST_SCAN_MAX_OFFSET;
-        rawOffset += LIST_SCAN_BATCH_SIZE
-      ) {
-        let query = client
-          .from('content_publications')
-          .select(LIST_SELECTION)
-          .order('updated_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(rawOffset, rawOffset + LIST_SCAN_BATCH_SIZE - 1)
-        query =
-          filters.status === 'archived'
-            ? query.not('archived_at', 'is', null)
-            : query.is('archived_at', null)
-        const rows = parseDatabase(
-          z.array(publicationListRowSchema),
-          await queryResult(query, 'list'),
-          'list',
-        )
+    for (let rawOffset = 0; rawOffset <= LIST_SCAN_MAX_OFFSET; rawOffset += LIST_SCAN_BATCH_SIZE) {
+      let query = client
+        .from('content_publications')
+        .select(LIST_SELECTION)
+        .order('updated_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(rawOffset, rawOffset + LIST_SCAN_BATCH_SIZE - 1)
+      query =
+        filters.status === 'archived'
+          ? query.not('archived_at', 'is', null)
+          : query.is('archived_at', null)
+      const rows = parseDatabase(
+        z.array(publicationListRowSchema),
+        await queryResult(query, 'list'),
+        'list',
+      )
 
-        const matchingBatch = filterAdminListPublications(
-          rows.map(mapPublicationListRow),
-          filters,
-          now,
-        )
-        for (const row of matchingBatch) {
-          matchingRows.push(row)
-          if (matchingRows.length >= requiredMatches) {
-            return matchingRows.slice(filters.offset, requiredMatches)
+      const matchingBatch = filterAdminListPublications(
+        rows.map(mapPublicationListRow),
+        filters,
+        now,
+      )
+      for (const row of matchingBatch) {
+        matchingRows.push(row)
+        if (matchingRows.length >= requiredMatches) {
+          return {
+            publications: matchingRows.slice(filters.offset, requiredMatches),
+            exhausted: false,
+            truncated: false,
           }
         }
-        if (rows.length < LIST_SCAN_BATCH_SIZE) break
       }
+      if (rows.length < LIST_SCAN_BATCH_SIZE) {
+        return {
+          publications: matchingRows.slice(filters.offset, requiredMatches),
+          exhausted: true,
+          truncated: false,
+        }
+      }
+    }
 
-      return matchingRows.slice(filters.offset, requiredMatches)
+    return {
+      publications: matchingRows.slice(filters.offset, requiredMatches),
+      exhausted: false,
+      truncated: true,
+    }
+  }
+
+  return {
+    async list(filters: ContentAdminFilters) {
+      return (await listWithMetadata(filters)).publications
     },
+
+    listWithMetadata,
 
     async get(publicationId: string) {
       const publicationData = await queryResult(

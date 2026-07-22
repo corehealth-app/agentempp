@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import type { AdminRole } from '@/lib/admin-rbac'
 import type { ContentPublicationDetail } from '@/lib/content/admin-service'
+import { contentNavigationBlocked, useContentNavigationGuard } from '@/lib/content/navigation-guard'
 import {
   createContentDraftAction,
   getContentPublicationAction,
@@ -116,15 +117,18 @@ export function ContentEditor({
     'en-US': false,
   })
   const coverLocked = coverPublicationLocked(pendingCoverResolution, coverBusy, confirmedDraftCover)
-  const hasUnsavedChanges =
-    confirmedDraftCover !== null || dirtyLocales['pt-BR'] || dirtyLocales['en-US']
+  const hasUnsavedChanges = contentNavigationBlocked({
+    dirty: confirmedDraftCover !== null || dirtyLocales['pt-BR'] || dirtyLocales['en-US'],
+    coverBusy,
+    pendingCoverResolution: pendingCoverResolution !== null,
+  })
   const activeWorkflowVersion = selectWorkflowContentVersion(
     publication.versions,
     activeLocale,
     role,
     publication.archivedAt,
   )
-  useUnsavedChangesNavigationGuard(hasUnsavedChanges)
+  useContentNavigationGuard(hasUnsavedChanges)
 
   const updateLocaleDirty = useCallback((locale: ContentLocale, dirty: boolean) => {
     setDirtyLocales((current) =>
@@ -802,62 +806,4 @@ function timestampLabel(value: string | null): string {
 
 function shortId(value: string): string {
   return `${value.slice(0, 8)}...`
-}
-
-function useUnsavedChangesNavigationGuard(enabled: boolean) {
-  useEffect(() => {
-    if (!enabled) return
-
-    let restoringHistory = false
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return
-      }
-      const target = event.target instanceof Element ? event.target.closest('a[href]') : null
-      if (!(target instanceof HTMLAnchorElement) || target.target === '_blank' || target.download) {
-        return
-      }
-      const destination = new URL(target.href, window.location.href)
-      if (
-        destination.origin !== window.location.origin ||
-        destination.href === window.location.href
-      ) {
-        return
-      }
-      if (!window.confirm(UNSAVED_CHANGES_WARNING)) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-    }
-    const handlePopState = () => {
-      if (restoringHistory) {
-        restoringHistory = false
-        return
-      }
-      if (!window.confirm(UNSAVED_CHANGES_WARNING)) {
-        restoringHistory = true
-        window.history.forward()
-      }
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    window.addEventListener('popstate', handlePopState)
-    document.addEventListener('click', handleDocumentClick, true)
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      window.removeEventListener('popstate', handlePopState)
-      document.removeEventListener('click', handleDocumentClick, true)
-    }
-  }, [enabled])
 }

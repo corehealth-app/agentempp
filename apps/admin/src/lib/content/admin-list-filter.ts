@@ -22,6 +22,7 @@ export function selectAdminListMatchedVersion(
   publication: ContentPublicationSummary,
   filters: ContentAdminVersionFilters,
   now: number,
+  text?: string,
 ): SummaryVersion | null {
   const latestByLocale = new Map<SummaryVersion['locale'], SummaryVersion>()
 
@@ -35,7 +36,13 @@ export function selectAdminListMatchedVersion(
 
   for (const locale of LOCALES) {
     const candidate = latestByLocale.get(locale)
-    if (candidate && matchesVersionFilters(candidate, filters, now)) return candidate
+    if (
+      candidate &&
+      matchesVersionFilters(candidate, filters, now) &&
+      matchesTextCandidate(publication.slug, candidate.title, text)
+    ) {
+      return candidate
+    }
   }
   return null
 }
@@ -44,23 +51,35 @@ export function filterAdminListPublications(
   publications: readonly ContentPublicationSummary[],
   filters: ContentAdminVersionFilters,
   now: number,
+  text?: string,
 ): ContentPublicationSummary[] {
   const expectsArchived = filters.status === 'archived'
   const hasVersionFilters = hasAdminListVersionFilters(filters)
+  const hasText = Boolean(text?.trim())
   const matches: ContentPublicationSummary[] = []
 
   for (const publication of publications) {
     if (Boolean(publication.archivedAt) !== expectsArchived) continue
-    if (!hasVersionFilters) {
+    if (!hasVersionFilters && !hasText) {
       matches.push(publication)
       continue
     }
 
-    const matched = selectAdminListMatchedVersion(publication, filters, now)
+    const matched = selectAdminListMatchedVersion(publication, filters, now, text)
     if (matched) matches.push({ ...publication, matchedVersionId: matched.versionId })
   }
 
   return matches
+}
+
+function matchesTextCandidate(
+  slug: string,
+  title: string | null,
+  text: string | undefined,
+): boolean {
+  const normalized = text?.trim().toLocaleLowerCase('pt-BR')
+  if (!normalized) return true
+  return [slug, title ?? ''].join(' ').toLocaleLowerCase('pt-BR').includes(normalized)
 }
 
 export function textAdminListScanFilters(

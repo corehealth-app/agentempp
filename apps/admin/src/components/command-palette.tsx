@@ -22,6 +22,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
+import { attemptContentNavigation } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/client'
 
 interface UserHit {
@@ -118,8 +119,10 @@ export function CommandPalette({ role }: { role: AdminRole }) {
   }, [query, searchUsers])
 
   const go = (href: string) => {
-    setOpen(false)
-    router.push(href)
+    attemptContentNavigation(() => {
+      setOpen(false)
+      router.push(href)
+    })
   }
 
   if (!open) return null

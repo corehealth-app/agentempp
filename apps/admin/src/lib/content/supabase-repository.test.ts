@@ -463,6 +463,30 @@ describe('Supabase content admin repository', () => {
     ])
   })
 
+  it('reports truncation instead of silently exhausting sparse structured matches at the raw ceiling', async () => {
+    const rawBatches = Array.from({ length: 101 }, (_, batchIndex) => ({
+      data: Array.from({ length: 100 }, (_, rowIndex) =>
+        listRow(batchIndex * 100 + rowIndex + 1, [
+          summaryVersion(batchIndex * 100 + rowIndex + 1, { featured_today: false }),
+        ]),
+      ),
+      error: null,
+    }))
+    const client = fakeClient({ tableResults: { content_publications: rawBatches } })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+    const listWithMetadata = repository as typeof repository & {
+      listWithMetadata(filters: ContentAdminFilters): Promise<{
+        publications: unknown[]
+        exhausted: boolean
+        truncated: boolean
+      }>
+    }
+
+    await expect(
+      listWithMetadata.listWithMetadata({ featuredToday: true, limit: 26, offset: 0 }),
+    ).resolves.toEqual({ publications: [], exhausted: false, truncated: true })
+  })
+
   it('reads each raw text batch once before applying version filters in memory', async () => {
     const firstBatch = Array.from({ length: 100 }, (_, index) =>
       listRow(index + 1, [

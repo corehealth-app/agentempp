@@ -381,12 +381,20 @@ export function filterPublicationSummaries(
 ): ContentPublicationSummary[] {
   const normalized = text.trim().toLocaleLowerCase('pt-BR')
   if (!normalized) return [...publications]
-  return publications.filter((publication) =>
-    [publication.slug, ...publication.versions.map((version) => version.title ?? '')]
+  return publications.filter((publication) => {
+    const candidates = publication.matchedVersionId
+      ? publication.versions.filter((version) => version.versionId === publication.matchedVersionId)
+      : LOCALES.flatMap((locale) => {
+          const latest = publication.versions
+            .filter((version) => version.locale === locale)
+            .sort(byNewestVersion)[0]
+          return latest ? [latest] : []
+        })
+    return [publication.slug, ...candidates.map((version) => version.title ?? '')]
       .join(' ')
       .toLocaleLowerCase('pt-BR')
-      .includes(normalized),
-  )
+      .includes(normalized)
+  })
 }
 
 export function paginatePublications(

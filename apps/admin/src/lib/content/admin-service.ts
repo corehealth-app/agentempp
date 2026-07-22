@@ -195,6 +195,11 @@ export type ContentAdminFilters = z.infer<typeof contentAdminFiltersSchema>
 export type ContentPublicationSummary = z.infer<typeof publicationSummarySchema>
 export type ContentPublicationDetail = z.infer<typeof publicationDetailSchema>
 export type SafeContentAsset = z.infer<typeof safeAssetSchema>
+export interface ContentPublicationListResult {
+  publications: ContentPublicationSummary[]
+  exhausted: boolean
+  truncated: boolean
+}
 
 export interface InternalContentAsset {
   assetId: string
@@ -209,6 +214,7 @@ export interface InternalContentAsset {
 
 export interface ContentAdminRepository {
   list(filters: ContentAdminFilters): Promise<ContentPublicationSummary[]>
+  listWithMetadata?(filters: ContentAdminFilters): Promise<ContentPublicationListResult>
   get(publicationId: string): Promise<ContentPublicationDetail | null>
   createPublication(input: { actorId: string; slug: string }): Promise<unknown>
   createDraft(input: {
@@ -334,14 +340,20 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
   }
 
   return {
-    async list(input: unknown): Promise<ContentPublicationSummary[]> {
+    async list(input: unknown): Promise<ContentPublicationListResult> {
       const filters = parseInput(
         contentAdminFiltersSchema as z.ZodType<ContentAdminFilters>,
         input,
         'list',
       )
-      const rows = await repository.list(filters)
-      return z.array(publicationSummarySchema).parse(rows)
+      const result = repository.listWithMetadata
+        ? await repository.listWithMetadata(filters)
+        : { publications: await repository.list(filters), exhausted: false, truncated: false }
+      return {
+        publications: z.array(publicationSummarySchema).parse(result.publications),
+        exhausted: result.exhausted,
+        truncated: result.truncated,
+      }
     },
 
     async get(input: unknown): Promise<ContentPublicationDetail | null> {

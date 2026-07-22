@@ -18,7 +18,6 @@ import { createClient } from '@/lib/supabase/server'
 import { listContentPublicationsAction } from './actions'
 import {
   directPublicationPage,
-  filterPublicationSummaries,
   PUBLICATION_BATCH_SIZE,
   PUBLICATION_MAX_OFFSET,
   PUBLICATION_PAGE_SIZE,
@@ -91,13 +90,22 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
         textAdminListScanFilters(actionFilters, offset, PUBLICATION_BATCH_SIZE),
       )
       if (!result.ok) return <PageFailure message={result.error} />
-      const batch = result.data as ContentPublicationSummary[]
+      const batchResult = result.data as {
+        publications: ContentPublicationSummary[]
+        exhausted: boolean
+        truncated: boolean
+      }
+      const batch = batchResult.publications
       summaries.push(...batch)
       if (batch.length < PUBLICATION_BATCH_SIZE) break
-      if (offset === PUBLICATION_MAX_OFFSET) truncated = true
+      if (batchResult.truncated || offset === PUBLICATION_MAX_OFFSET) truncated = true
     }
-    const versionFiltered = filterAdminListPublications(summaries, actionFilters, Date.parse(now))
-    const filtered = filterPublicationSummaries(versionFiltered, filters.text)
+    const filtered = filterAdminListPublications(
+      summaries,
+      actionFilters,
+      Date.parse(now),
+      filters.text,
+    )
     const pagination = paginatePublications(filtered, page)
     summaries = pagination.rows
     hasPrevious = pagination.hasPrevious
@@ -110,12 +118,16 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
       offset: (page - 1) * PUBLICATION_PAGE_SIZE,
     })
     if (!result.ok) return <PageFailure message={result.error} />
-    const pageWithProbe = result.data as ContentPublicationSummary[]
-    const pagination = directPublicationPage(pageWithProbe, page)
+    const listResult = result.data as {
+      publications: ContentPublicationSummary[]
+      exhausted: boolean
+      truncated: boolean
+    }
+    const pagination = directPublicationPage(listResult.publications, page)
     summaries = pagination.rows
     hasPrevious = pagination.hasPrevious
     hasNext = pagination.hasNext
-    truncated = pagination.truncated
+    truncated = listResult.truncated || pagination.truncated
   }
 
   const rows = summaries.map((publication) => toPublicationListRow(publication, now))

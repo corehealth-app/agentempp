@@ -243,7 +243,11 @@ describe('content admin service', () => {
       limit: 25,
       offset: 5,
     })
-    expect(result).toEqual([summary()])
+    expect(result).toEqual({
+      publications: [summary()],
+      exhausted: false,
+      truncated: false,
+    })
     expect(JSON.stringify(result)).not.toMatch(/bodyMarkdown|objectPath|bucketId|etag|signedUrl/)
 
     await expect(service.list({ limit: 101 })).rejects.toBeInstanceOf(ContentAdminError)

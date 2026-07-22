@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { attemptContentNavigation } from '@/lib/content/navigation-guard'
 
 /**
  * Atalhos globais estilo Vim/Linear:
@@ -76,7 +77,7 @@ export function KeyboardShortcuts() {
         const path = PATH_BY_KEY[e.key]
         if (path) {
           e.preventDefault()
-          router.push(path)
+          attemptContentNavigation(() => router.push(path))
         }
         prefix.current = null
         if (timer.current) clearTimeout(timer.current)
@@ -90,7 +91,8 @@ export function KeyboardShortcuts() {
   if (!helpOpen) return null
 
   return (
-    <div
+    <button
+      type="button"
       className="fixed bottom-6 right-6 z-[200] glass-card p-4 max-w-xs shadow-2xl"
       onClick={() => setHelpOpen(false)}
     >
@@ -112,6 +114,6 @@ export function KeyboardShortcuts() {
       <div className="mt-3 text-[10px] font-mono text-muted-foreground/60">
         Clique fora ou ESC pra fechar.
       </div>
-    </div>
+    </button>
   )
 }

@@ -194,33 +194,12 @@ function validateOccurrenceTarget(input: RoutineActionInput, now: Date): void {
   }
 }
 
-function localDateAt(timestamp: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(timestamp))
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${values.year}-${values.month}-${values.day}`
-}
-
-function validateSnooze(input: RoutineActionInput, timezone: string | null): void {
+function validateSnooze(input: RoutineActionInput): void {
   if (input.status !== 'snoozed') return
 
   const occurredAt = Date.parse(input.occurred_at)
   const snoozedUntil = Date.parse(input.snoozed_until as string)
-  try {
-    if (
-      !timezone ||
-      !Number.isFinite(snoozedUntil) ||
-      snoozedUntil <= occurredAt ||
-      localDateAt(input.scheduled_for, timezone) !==
-        localDateAt(input.snoozed_until as string, timezone)
-    ) {
-      throw new Error('invalid snooze')
-    }
-  } catch {
+  if (!Number.isFinite(snoozedUntil) || snoozedUntil <= occurredAt) {
     throw new MobileApiError(422, 'routine_snooze_invalid', 'Routine snooze is invalid')
   }
 }
@@ -245,7 +224,7 @@ export async function recordRoutineAction(
 ): Promise<RoutineActionDto> {
   validateOccurredAt(input.occurred_at, now)
   validateOccurrenceTarget(input, now)
-  validateSnooze(input, auth.patient.timezone)
+  validateSnooze(input)
   return actionDto(
     await repositoryCall(() =>
       dependencies.repository.record({

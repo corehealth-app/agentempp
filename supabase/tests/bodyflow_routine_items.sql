@@ -11,6 +11,12 @@ DECLARE
   v_privilege text;
   v_constraint_definition text;
   v_index_definition text;
+  v_function_definition text;
+  v_snapshot_lock_token text;
+  v_item_lock_position integer;
+  v_rule_lock_position integer;
+  v_snapshot_lock_position integer;
+  v_occurrence_lock_position integer;
   v_required_columns constant text[] := ARRAY[
     'routine_items.dose_text',
     'routine_items.origin',
@@ -597,6 +603,8 @@ BEGIN
   IF pg_get_functiondef(v_function) NOT LIKE '%due_snoozes AS%'
     OR pg_get_functiondef(v_function) NOT LIKE '%action.snoozed_until BETWEEN lookup.starts_at AND lookup.ends_at%'
     OR pg_get_functiondef(v_function) NOT LIKE '%NOT EXISTS (%later.user_id = action.user_id%'
+    OR pg_get_functiondef(v_function) NOT LIKE '%later.created_at,%later.id%action.created_at,%action.id%'
+    OR pg_get_functiondef(v_function) LIKE '%later.occurred_at,%later.created_at%'
     OR pg_get_functiondef(v_function) LIKE '%latest_actions AS%' THEN
     RAISE EXCEPTION 'routine snooze discovery is not driven by indexed due actions';
   END IF;
@@ -637,7 +645,9 @@ BEGIN
   END IF;
 
   FOREACH v_function_signature IN ARRAY ARRAY[
+    'private.lock_routine_occurrence_rule(uuid,uuid,text,uuid)',
     'private.resolve_routine_occurrence_snapshot_id(uuid,uuid,text,uuid,text,timestamp with time zone,uuid)',
+    'private.lock_routine_occurrence_snapshot_row(uuid,uuid,text,uuid,uuid)',
     'private.lock_routine_occurrence_snapshot(uuid,uuid,text,uuid,text,timestamp with time zone,uuid)',
     'private.ensure_routine_occurrence_missed(uuid,uuid,text,uuid,text,timestamp with time zone,timestamp with time zone)'
   ]::text[]
@@ -650,6 +660,76 @@ BEGIN
       RAISE EXCEPTION 'internal occurrence helper ACL is incorrect: %', v_function_signature;
     END IF;
   END LOOP;
+
+  FOREACH v_function_signature IN ARRAY ARRAY[
+    'public.record_routine_occurrence_action_atomic(uuid,uuid,text,uuid,timestamp with time zone,text,timestamp with time zone,timestamp with time zone,text)',
+    'private.claim_routine_notification_event(uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone,uuid)',
+    'private.materialize_due_routine_occurrences(timestamp with time zone,integer)',
+    'public.finalize_due_routine_occurrences(timestamp with time zone,integer,timestamp with time zone,uuid,uuid)'
+  ]::text[]
+  LOOP
+    v_function := to_regprocedure(v_function_signature);
+    v_function_definition := pg_get_functiondef(v_function);
+    v_item_lock_position := strpos(
+      v_function_definition,
+      'private.lock_routine_item('
+    );
+    v_rule_lock_position := strpos(
+      v_function_definition,
+      'private.lock_routine_occurrence_rule('
+    );
+    v_snapshot_lock_token := CASE
+      WHEN v_function_signature LIKE 'private.materialize_due_routine_occurrences(%'
+        THEN 'private.lock_routine_occurrence_snapshot_row('
+      ELSE 'private.lock_routine_occurrence_snapshot('
+    END;
+    v_snapshot_lock_position := strpos(
+      v_function_definition,
+      v_snapshot_lock_token
+    );
+    v_occurrence_lock_position := strpos(
+      v_function_definition,
+      'private.lock_routine_occurrence('
+    );
+
+    IF v_function IS NULL
+      OR v_item_lock_position = 0
+      OR v_rule_lock_position <= v_item_lock_position
+      OR v_snapshot_lock_position <= v_rule_lock_position
+      OR v_occurrence_lock_position <= v_snapshot_lock_position THEN
+      RAISE EXCEPTION 'routine lock order is not item -> rule -> snapshot -> occurrence: %',
+        v_function_signature;
+    END IF;
+  END LOOP;
+
+  v_function := to_regprocedure(
+    'private.derive_routine_occurrence_state(uuid,uuid,text,text,timestamp with time zone,timestamp with time zone)'
+  );
+  v_function_definition := pg_get_functiondef(v_function);
+  IF v_function_definition NOT LIKE '%ORDER BY action.created_at DESC, action.id DESC%'
+    OR v_function_definition LIKE '%ORDER BY action.occurred_at DESC%' THEN
+    RAISE EXCEPTION 'derived routine state is ordered by reported event time instead of append order';
+  END IF;
+
+  v_function := to_regprocedure(
+    'public.record_routine_occurrence_action_atomic(uuid,uuid,text,uuid,timestamp with time zone,text,timestamp with time zone,timestamp with time zone,text)'
+  );
+  v_function_definition := pg_get_functiondef(v_function);
+  IF v_function_definition NOT LIKE '%v_arrived_after_day_end := v_now >= v_occurrence_day_end%'
+    OR v_function_definition NOT LIKE '%ORDER BY action.created_at DESC, action.id DESC%'
+    OR v_function_definition NOT LIKE '%timezone(v_snapshot.timezone_name, p_snoozed_until)::date%'
+    OR v_function_definition NOT LIKE '%v_latest.source = ''system''%AND p_status = ''taken''%AND v_arrived_after_day_end%'
+    OR v_function_definition LIKE '%p_occurred_at >= v_latest.occurred_at%' THEN
+    RAISE EXCEPTION 'routine action does not use arrival time, append order, and snapshot-local snooze validation';
+  END IF;
+
+  v_function := to_regprocedure(
+    'private.claim_routine_notification_event(uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone,uuid)'
+  );
+  IF pg_get_functiondef(v_function)
+      NOT LIKE '%ORDER BY action.created_at DESC, action.id DESC%' THEN
+    RAISE EXCEPTION 'routine claim latest transition is ordered by reported event time';
+  END IF;
 
   v_function := to_regprocedure(
     'private.routine_occurrence_timezone(uuid,uuid,text,text,timestamp with time zone)'
@@ -3804,9 +3884,10 @@ BEGIN
     v_occurrence_state ?& ARRAY['status', 'last_action_at', 'snoozed_until']::text[]
   )
     OR v_occurrence_state ->> 'status' <> 'missed'
-    OR v_occurrence_state ->> 'last_action_at' IS NOT NULL
+    OR (v_occurrence_state ->> 'last_action_at')::timestamptz
+      IS DISTINCT FROM timestamptz '2026-07-21 04:00:00+00'
     OR v_occurrence_state ->> 'snoozed_until' IS NOT NULL THEN
-    RAISE EXCEPTION 'delayed-finalizer ended occurrence did not derive missed state without a row';
+    RAISE EXCEPTION 'derived missed state did not expose its snapshot-local day end';
   END IF;
 
   v_result := public.record_routine_occurrence_action_atomic(
@@ -5259,6 +5340,9 @@ DECLARE
   v_rule_0800 constant uuid := '00000000-0000-0000-0000-000000001505';
   v_rule_2000 constant uuid := '00000000-0000-0000-0000-000000001506';
   v_rule_preactivation constant uuid := '00000000-0000-0000-0000-000000001507';
+  v_archive_item_id constant uuid := '00000000-0000-0000-0000-000000001508';
+  v_archive_rule_id constant uuid := '00000000-0000-0000-0000-000000001509';
+  v_rule_snooze constant uuid := '00000000-0000-0000-0000-000000001510';
   v_now timestamptz := clock_timestamp();
   v_occurrence_date date := timezone('UTC', clock_timestamp())::date - 2;
   v_ordinary_scheduled_for timestamptz := (
@@ -5268,15 +5352,23 @@ DECLARE
   v_scheduled_2000 timestamptz;
   v_preactivation_scheduled_for timestamptz;
   v_future_scheduled_for timestamptz;
+  v_snapshot_snooze_scheduled_for timestamptz;
+  v_snapshot_snoozed_until timestamptz;
+  v_archive_scheduled_for timestamptz;
   v_occurrence_day_end timestamptz;
   v_occurrence_key_0800 text;
   v_occurrence_key_2000 text;
   v_snapshot_0800 uuid;
   v_snapshot_2000 uuid;
+  v_snapshot_snooze uuid;
+  v_ordinary_action jsonb;
+  v_snooze_action jsonb;
   v_action_0800 jsonb;
   v_action_2000 jsonb;
   v_replay jsonb;
   v_finalizer jsonb;
+  v_claim jsonb;
+  v_occurrence_state jsonb;
   v_missed_0800 uuid;
   v_missed_2000 uuid;
 BEGIN
@@ -5287,6 +5379,15 @@ BEGIN
   ) AT TIME ZONE 'UTC';
   v_future_scheduled_for := (
     timezone('UTC', v_now)::date + 1 + time '08:00'
+  ) AT TIME ZONE 'UTC';
+  v_snapshot_snooze_scheduled_for := (
+    timezone('UTC', v_now)::date + time '00:00'
+  ) AT TIME ZONE 'UTC';
+  v_snapshot_snoozed_until := (
+    timezone('UTC', v_now)::date + time '01:00'
+  ) AT TIME ZONE 'UTC';
+  v_archive_scheduled_for := (
+    timezone('UTC', v_now)::date + time '00:00'
   ) AT TIME ZONE 'UTC';
   v_occurrence_day_end := (
     (v_occurrence_date + 1)::timestamp AT TIME ZONE 'UTC'
@@ -5368,6 +5469,28 @@ BEGIN
     v_scheduled_0800 - interval '1 day'
   );
 
+  INSERT INTO public.routine_items (
+    id,
+    user_id,
+    item_type,
+    name,
+    dose_text,
+    origin,
+    active,
+    reminders_enabled,
+    created_at
+  ) VALUES (
+    v_archive_item_id,
+    v_user_id,
+    'supplement',
+    'Synthetic archive lock item',
+    'Synthetic archive lock dose',
+    'user',
+    true,
+    true,
+    v_archive_scheduled_for - interval '1 day'
+  );
+
   INSERT INTO public.reminder_rules (
     id,
     user_id,
@@ -5417,22 +5540,50 @@ BEGIN
       ARRAY[0, 1, 2, 3, 4, 5, 6],
       true,
       v_preactivation_scheduled_for + interval '30 minutes'
+    ),
+    (
+      v_rule_snooze,
+      v_user_id,
+      v_item_id,
+      'supplement',
+      time '00:00',
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_scheduled_0800 - interval '1 day'
+    ),
+    (
+      v_archive_rule_id,
+      v_user_id,
+      v_archive_item_id,
+      'supplement',
+      time '00:00',
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_archive_scheduled_for - interval '1 day'
     );
 
   UPDATE private.routine_occurrence_finalizer_rules snapshot
-  SET active_from = CASE
+      SET active_from = CASE
         WHEN snapshot.reminder_rule_id = v_rule_preactivation
           THEN v_preactivation_scheduled_for + interval '30 minutes'
+        WHEN snapshot.reminder_rule_id = v_archive_rule_id
+          THEN v_archive_scheduled_for - interval '1 day'
         ELSE v_scheduled_0800 - interval '1 day'
       END,
-      next_local_date = v_occurrence_date,
+      next_local_date = CASE
+        WHEN snapshot.reminder_rule_id = v_archive_rule_id
+          THEN timezone('UTC', v_archive_scheduled_for)::date
+        ELSE v_occurrence_date
+      END,
       exhausted = false,
       touched_at = v_scheduled_0800 - interval '1 day'
   WHERE snapshot.reminder_rule_id IN (
     v_rule_ordinary,
     v_rule_0800,
     v_rule_2000,
-    v_rule_preactivation
+    v_rule_preactivation,
+    v_rule_snooze,
+    v_archive_rule_id
   )
     AND snapshot.active_until IS NULL;
 
@@ -5477,7 +5628,7 @@ BEGIN
   END;
 
   UPDATE public.users
-  SET timezone = 'America/New_York'
+  SET timezone = 'Etc/GMT+1'
   WHERE id = v_user_id;
 
   IF (SELECT count(*)
@@ -5495,7 +5646,46 @@ BEGIN
     RAISE EXCEPTION 'timezone mutation did not retain the historical occurrence epoch';
   END IF;
 
-  PERFORM public.record_routine_occurrence_action_atomic(
+  SELECT snapshot.snapshot_id
+  INTO v_snapshot_snooze
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_rule_snooze
+    AND snapshot.timezone_name = 'UTC'
+    AND v_snapshot_snooze_scheduled_for >= snapshot.active_from
+    AND v_snapshot_snooze_scheduled_for < snapshot.active_until;
+
+  IF v_snapshot_snooze IS NULL
+    OR timezone('UTC', v_snapshot_snooze_scheduled_for)::date
+      IS DISTINCT FROM timezone('UTC', v_snapshot_snoozed_until)::date
+    OR timezone('Etc/GMT+1', v_snapshot_snooze_scheduled_for)::date
+      IS NOT DISTINCT FROM timezone('Etc/GMT+1', v_snapshot_snoozed_until)::date THEN
+    RAISE EXCEPTION 'historical snooze fixture does not distinguish snapshot and current local days';
+  END IF;
+
+  v_snooze_action := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_snooze,
+    v_snapshot_snooze_scheduled_for,
+    'snoozed',
+    v_snapshot_snooze_scheduled_for,
+    v_snapshot_snoozed_until,
+    'routine-snapshot-timezone-snooze'
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.routine_adherence_logs action
+    WHERE action.id = (v_snooze_action ->> 'adherence_log_id')::uuid
+      AND action.status = 'snoozed'
+      AND action.scheduled_for = v_snapshot_snooze_scheduled_for
+      AND action.snoozed_until = v_snapshot_snoozed_until
+  ) THEN
+    RAISE EXCEPTION 'historical snooze did not use its immutable snapshot local day';
+  END IF;
+
+  v_ordinary_action := public.record_routine_occurrence_action_atomic(
     v_user_id,
     v_item_id,
     'supplement',
@@ -5529,6 +5719,45 @@ BEGIN
     RAISE EXCEPTION 'ordinary action did not use its pre-mutation timezone snapshot';
   END IF;
 
+  PERFORM public.archive_mobile_routine_item(
+    v_user_id,
+    v_archive_item_id,
+    'routine-archive-lock-order',
+    repeat('d', 64)
+  );
+
+  v_claim := public.claim_reminder_event(
+    v_archive_rule_id,
+    v_archive_scheduled_for,
+    v_now
+  );
+
+  IF v_claim ->> 'status' <> 'suppressed'
+    OR v_claim ->> 'suppression_reason' <> 'routine_rule_inactive' THEN
+    RAISE EXCEPTION 'archived routine claim did not revalidate item/rule after canonical locks: %',
+      v_claim;
+  END IF;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      v_user_id,
+      v_archive_item_id,
+      'supplement',
+      v_archive_rule_id,
+      v_archive_scheduled_for,
+      'taken',
+      v_archive_scheduled_for,
+      NULL,
+      'routine-archive-ordinary-reject'
+    );
+    RAISE EXCEPTION 'same-day ordinary action was accepted after archive';
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM <> 'routine_occurrence_not_found' THEN
+        RAISE;
+      END IF;
+  END;
+
   UPDATE public.reminder_rules
   SET active = false,
       deactivated_at = clock_timestamp()
@@ -5536,7 +5765,8 @@ BEGIN
     v_rule_ordinary,
     v_rule_0800,
     v_rule_2000,
-    v_rule_preactivation
+    v_rule_preactivation,
+    v_rule_snooze
   );
 
   UPDATE public.routine_items
@@ -5544,6 +5774,22 @@ BEGIN
       reminders_enabled = false,
       archived_at = clock_timestamp()
   WHERE id = v_item_id;
+
+  v_replay := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_ordinary,
+    v_ordinary_scheduled_for,
+    'taken',
+    v_ordinary_scheduled_for,
+    NULL,
+    'routine-old-timezone-ordinary'
+  );
+
+  IF v_replay IS DISTINCT FROM v_ordinary_action THEN
+    RAISE EXCEPTION 'exact action replay changed after item/rule deactivation';
+  END IF;
 
   SELECT snapshot.snapshot_id
   INTO v_snapshot_0800
@@ -5588,7 +5834,7 @@ BEGIN
     v_rule_0800,
     v_scheduled_0800,
     'taken',
-    v_occurrence_day_end + interval '1 hour',
+    v_occurrence_day_end - interval '1 hour',
     NULL,
     'routine-late-action-first'
   );
@@ -5599,7 +5845,7 @@ BEGIN
     v_rule_0800,
     v_scheduled_0800,
     'taken',
-    v_occurrence_day_end + interval '1 hour',
+    v_occurrence_day_end - interval '1 hour',
     NULL,
     'routine-late-action-first'
   );
@@ -5623,6 +5869,7 @@ BEGIN
       WHERE correction.id = (v_action_0800 ->> 'adherence_log_id')::uuid
         AND correction.status = 'taken'
         AND correction.source = 'patient'
+        AND correction.occurred_at = v_occurrence_day_end - interval '1 hour'
         AND correction.supersedes_log_id = v_missed_0800
         AND correction.created_at > (
           SELECT missed.created_at
@@ -5633,6 +5880,22 @@ BEGIN
     RAISE EXCEPTION 'late action-first path did not persist singleton missed plus correction';
   END IF;
 
+  v_occurrence_state := private.derive_routine_occurrence_state(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_0800,
+    v_scheduled_0800,
+    v_now
+  );
+
+  IF v_occurrence_state ->> 'status' <> 'taken'
+    OR (v_occurrence_state ->> 'last_action_at')::timestamptz
+      IS DISTINCT FROM v_occurrence_day_end - interval '1 hour' THEN
+    RAISE EXCEPTION 'backdated action-first correction was not authoritative: %',
+      v_occurrence_state;
+  END IF;
+
   BEGIN
     PERFORM public.record_routine_occurrence_action_atomic(
       v_user_id,
@@ -5641,7 +5904,7 @@ BEGIN
       v_rule_0800,
       v_scheduled_0800,
       'skipped',
-      v_occurrence_day_end + interval '1 hour',
+      v_occurrence_day_end - interval '1 hour',
       NULL,
       'routine-late-action-first'
     );
@@ -5658,6 +5921,15 @@ BEGIN
     v_rule_0800
   );
 
+  v_occurrence_state := private.derive_routine_occurrence_state(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_0800,
+    v_scheduled_0800,
+    v_now
+  );
+
   IF (v_finalizer ->> 'processed_count')::integer <> 1
     OR (v_finalizer ->> 'finalized_count')::integer <> 0
     OR EXISTS (
@@ -5671,7 +5943,10 @@ BEGIN
         WHERE missed.user_id = v_user_id
           AND missed.occurrence_key = v_occurrence_key_0800
           AND missed.status = 'missed'
-          AND missed.source = 'system') <> 1 THEN
+          AND missed.source = 'system') <> 1
+    OR v_occurrence_state ->> 'status' <> 'taken'
+    OR (v_occurrence_state ->> 'last_action_at')::timestamptz
+      IS DISTINCT FROM v_occurrence_day_end - interval '1 hour' THEN
     RAISE EXCEPTION 'action-first finalizer convergence duplicated or retained the occurrence: %',
       v_finalizer;
   END IF;
@@ -5697,7 +5972,7 @@ BEGIN
       v_rule_2000,
       v_scheduled_2000,
       'skipped',
-      v_occurrence_day_end + interval '1 hour',
+      v_occurrence_day_end - interval '30 minutes',
       NULL,
       'routine-late-skipped-reject'
     );
@@ -5745,6 +6020,15 @@ BEGIN
     AND missed.status = 'missed'
     AND missed.source = 'system';
 
+  v_occurrence_state := private.derive_routine_occurrence_state(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_2000,
+    v_scheduled_2000,
+    v_now
+  );
+
   IF (v_finalizer ->> 'processed_count')::integer <> 1
     OR (v_finalizer ->> 'finalized_count')::integer <> 1
     OR v_missed_2000 IS NULL
@@ -5754,7 +6038,10 @@ BEGIN
       WHERE action.user_id = v_user_id
         AND action.occurrence_key = v_occurrence_key_0800
         AND action.id = v_missed_2000
-    ) THEN
+    )
+    OR v_occurrence_state ->> 'status' <> 'missed'
+    OR (v_occurrence_state ->> 'last_action_at')::timestamptz
+      IS DISTINCT FROM v_occurrence_day_end THEN
     RAISE EXCEPTION 'finalizer-first path did not persist an independent singleton missed row';
   END IF;
 
@@ -5765,7 +6052,7 @@ BEGIN
     v_rule_2000,
     v_scheduled_2000,
     'taken',
-    v_occurrence_day_end + interval '2 hours',
+    v_occurrence_day_end - interval '30 minutes',
     NULL,
     'routine-finalizer-first-action'
   );
@@ -5776,7 +6063,7 @@ BEGIN
     v_rule_2000,
     v_scheduled_2000,
     'taken',
-    v_occurrence_day_end + interval '2 hours',
+    v_occurrence_day_end - interval '30 minutes',
     NULL,
     'routine-finalizer-first-action'
   );
@@ -5792,6 +6079,7 @@ BEGIN
       WHERE correction.id = (v_action_2000 ->> 'adherence_log_id')::uuid
         AND correction.status = 'taken'
         AND correction.source = 'patient'
+        AND correction.occurred_at = v_occurrence_day_end - interval '30 minutes'
         AND correction.supersedes_log_id = v_missed_2000
         AND correction.created_at > (
           SELECT missed.created_at
@@ -5803,6 +6091,22 @@ BEGIN
     RAISE EXCEPTION 'finalizer-first correction, replay, or 08:00/20:00 independence failed';
   END IF;
 
+  v_occurrence_state := private.derive_routine_occurrence_state(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_2000,
+    v_scheduled_2000,
+    v_now
+  );
+
+  IF v_occurrence_state ->> 'status' <> 'taken'
+    OR (v_occurrence_state ->> 'last_action_at')::timestamptz
+      IS DISTINCT FROM v_occurrence_day_end - interval '30 minutes' THEN
+    RAISE EXCEPTION 'backdated finalizer-first correction was not authoritative: %',
+      v_occurrence_state;
+  END IF;
+
   BEGIN
     PERFORM public.record_routine_occurrence_action_atomic(
       '00000000-0000-0000-0000-000000001599'::uuid,
@@ -5811,7 +6115,7 @@ BEGIN
       v_rule_2000,
       v_scheduled_2000,
       'taken',
-      v_occurrence_day_end + interval '2 hours',
+      v_occurrence_day_end - interval '30 minutes',
       NULL,
       'routine-cross-user-opacity'
     );

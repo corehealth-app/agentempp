@@ -223,10 +223,33 @@ describe('routine adherence service', () => {
     expect(record).toHaveBeenCalledOnce()
   })
 
-  it.each([
-    ['2026-07-23T11:03:00.000Z', 'not_future'],
-    ['2026-07-24T03:00:00.000Z', 'next_local_day'],
-  ])('rejects an invalid snooze time (%s, %s)', async (snoozedUntil) => {
+  it('defers historical snooze day validation when the current timezone changed', async () => {
+    const record = vi.fn(async () => ({ ...actionResult, status: 'snoozed' as const }))
+    const input = action({
+      status: 'snoozed',
+      scheduled_for: '2026-07-23T02:30:00.000Z',
+      occurred_at: '2026-07-23T02:31:00.000Z',
+      snoozed_until: '2026-07-23T03:30:00.000Z',
+    })
+
+    await recordRoutineAction(
+      dependencies({ record }),
+      auth,
+      'supplement',
+      ITEM_ID,
+      input,
+      'routine-snooze-historical-timezone-0801',
+      NOW,
+    )
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input,
+      }),
+    )
+  })
+
+  it('rejects a snooze that is not after occurred_at', async () => {
     const record = vi.fn()
 
     await expect(
@@ -235,7 +258,7 @@ describe('routine adherence service', () => {
         auth,
         'supplement',
         ITEM_ID,
-        action({ status: 'snoozed', snoozed_until: snoozedUntil }),
+        action({ status: 'snoozed', snoozed_until: '2026-07-23T11:03:00.000Z' }),
         'routine-snooze-invalid-0801',
         NOW,
       ),

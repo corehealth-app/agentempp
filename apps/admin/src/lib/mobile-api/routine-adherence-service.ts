@@ -186,6 +186,14 @@ function validateOccurredAt(occurredAt: string, now: Date): void {
   }
 }
 
+function validateOccurrenceTarget(input: RoutineActionInput, now: Date): void {
+  const scheduledFor = Date.parse(input.scheduled_for)
+  const effectiveOccurredAt = Math.min(Date.parse(input.occurred_at), now.getTime())
+  if (!Number.isFinite(scheduledFor) || scheduledFor > effectiveOccurredAt) {
+    throw itemNotFound()
+  }
+}
+
 function localDateAt(timestamp: string, timezone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -236,6 +244,7 @@ export async function recordRoutineAction(
   now = new Date(),
 ): Promise<RoutineActionDto> {
   validateOccurredAt(input.occurred_at, now)
+  validateOccurrenceTarget(input, now)
   validateSnooze(input, auth.patient.timezone)
   return actionDto(
     await repositoryCall(() =>

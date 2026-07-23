@@ -248,6 +248,17 @@ describe('routine contracts', () => {
     ).toBe(false)
   })
 
+  it('rejects an action timestamp before its scheduled occurrence', () => {
+    expect(
+      routineActionInputSchema.safeParse({
+        status: 'taken',
+        reminder_rule_id: UUID,
+        scheduled_for: '2026-07-23T15:01:00.000Z',
+        occurred_at: '2026-07-23T15:00:00.000Z',
+      }).success,
+    ).toBe(false)
+  })
+
   it('defaults and validates history query pagination', () => {
     expect(routineHistoryQuerySchema.parse({})).toEqual({ limit: 20 })
     expect(routineHistoryQuerySchema.parse({ limit: '10' })).toEqual({ limit: 10 })

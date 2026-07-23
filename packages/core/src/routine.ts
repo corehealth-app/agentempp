@@ -128,6 +128,13 @@ export const routineActionInputSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (Date.parse(value.scheduled_for) > Date.parse(value.occurred_at)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scheduled_for'],
+        message: 'scheduled_for cannot be after occurred_at',
+      })
+    }
     if (value.status === 'snoozed' && value.snoozed_until === undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

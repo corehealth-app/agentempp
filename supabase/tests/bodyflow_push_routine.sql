@@ -963,16 +963,31 @@ BEGIN
   WHERE routine_item_id = v_exact_item_id
     AND local_time = time '20:00';
 
-  PERFORM public.record_routine_occurrence_action_atomic(
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at
+  ) VALUES (
     v_user_id,
     v_exact_item_id,
     'medication',
-    v_routine_rule_id,
-    timestamptz '2026-07-24 11:00:00+00',
     'taken',
-    timestamptz '2026-07-24 11:01:00+00',
-    NULL,
-    'exact-taken-0800'
+    'exact-taken-0800',
+    v_routine_rule_id,
+    private.derive_routine_occurrence_key(
+      v_routine_rule_id,
+      timestamptz '2026-07-24 11:00:00+00'
+    ),
+    'patient',
+    timestamptz '2026-07-24 11:00:00+00',
+    timestamptz '2026-07-24 11:01:00+00'
   );
 
   v_event_first := public.claim_reminder_event(
@@ -1146,16 +1161,33 @@ BEGIN
   WHERE routine_item_id = v_snooze_item_id
     AND local_time = time '20:00';
 
-  PERFORM public.record_routine_occurrence_action_atomic(
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    snoozed_until
+  ) VALUES (
     v_user_id,
     v_snooze_item_id,
     'supplement',
-    v_snooze_rule_id,
-    timestamptz '2026-07-24 11:00:00+00',
     'snoozed',
+    'exact-snooze-08',
+    v_snooze_rule_id,
+    private.derive_routine_occurrence_key(
+      v_snooze_rule_id,
+      timestamptz '2026-07-24 11:00:00+00'
+    ),
+    'patient',
+    timestamptz '2026-07-24 11:00:00+00',
     timestamptz '2026-07-24 11:01:00+00',
-    timestamptz '2026-07-24 11:15:00+00',
-    'exact-snooze-08'
+    timestamptz '2026-07-24 11:15:00+00'
   );
 
   v_event_first := public.claim_reminder_event(

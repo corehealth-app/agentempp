@@ -127,7 +127,10 @@ describe('routine adherence service', () => {
       auth,
       'supplement',
       ITEM_ID,
-      action({ occurred_at: '2026-07-16T15:00:00.000Z' }),
+      action({
+        scheduled_for: '2026-07-16T11:00:00.000Z',
+        occurred_at: '2026-07-16T15:00:00.000Z',
+      }),
       'routine-boundary-past-0801',
       NOW,
     )
@@ -136,7 +139,10 @@ describe('routine adherence service', () => {
       auth,
       'supplement',
       ITEM_ID,
-      action({ occurred_at: '2026-07-23T15:05:00.000Z' }),
+      action({
+        scheduled_for: '2026-07-23T15:00:00.000Z',
+        occurred_at: '2026-07-23T15:05:00.000Z',
+      }),
       'routine-boundary-future-0801',
       NOW,
     )
@@ -160,6 +166,26 @@ describe('routine adherence service', () => {
         NOW,
       ),
     ).rejects.toMatchObject({ status: 422, code: 'occurred_at_out_of_range' })
+    expect(record).not.toHaveBeenCalled()
+  })
+
+  it('rejects a future occurrence even when occurred_at is within clock-skew tolerance', async () => {
+    const record = vi.fn()
+
+    await expect(
+      recordRoutineAction(
+        dependencies({ record }),
+        auth,
+        'supplement',
+        ITEM_ID,
+        action({
+          scheduled_for: '2026-07-23T15:01:00.000Z',
+          occurred_at: '2026-07-23T15:02:00.000Z',
+        }),
+        'routine-future-target-0801',
+        NOW,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: 'routine_item_not_found' })
     expect(record).not.toHaveBeenCalled()
   })
 

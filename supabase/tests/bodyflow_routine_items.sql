@@ -615,7 +615,12 @@ BEGIN
   END IF;
 
   IF pg_get_functiondef(v_function)
-      NOT LIKE '%ON CONFLICT (user_id, occurrence_key) WHERE%status = ''missed''%source = ''system''%DO NOTHING%'
+      NOT LIKE '%private.ensure_routine_occurrence_missed(%'
+    OR pg_get_functiondef(
+      to_regprocedure(
+        'private.ensure_routine_occurrence_missed(uuid,uuid,text,uuid,text,timestamp with time zone,timestamp with time zone)'
+      )
+    ) NOT LIKE '%ON CONFLICT (user_id, occurrence_key) WHERE%status = ''missed''%source = ''system''%DO NOTHING%'
     OR pg_get_functiondef(v_function)
       LIKE '%ON CONFLICT (user_id, idempotency_key) DO NOTHING%' THEN
     RAISE EXCEPTION 'routine finalizer does not target system occurrence idempotency';
@@ -627,15 +632,24 @@ BEGIN
 
   IF v_function IS NULL
     OR pg_get_functiondef(v_function)
-      NOT LIKE '%private.routine_occurrence_finalizer_rules%'
-    OR pg_get_functiondef(v_function)
-      NOT LIKE '%snapshot.timezone_name%'
-    OR pg_get_functiondef(v_function)
-      NOT LIKE '%snapshot.local_time%'
-    OR pg_get_functiondef(v_function)
-      NOT LIKE '%snapshot.weekdays%' THEN
+      NOT LIKE '%private.lock_routine_occurrence_snapshot(%' THEN
     RAISE EXCEPTION 'routine claims do not validate against their immutable occurrence snapshot';
   END IF;
+
+  FOREACH v_function_signature IN ARRAY ARRAY[
+    'private.resolve_routine_occurrence_snapshot_id(uuid,uuid,text,uuid,text,timestamp with time zone,uuid)',
+    'private.lock_routine_occurrence_snapshot(uuid,uuid,text,uuid,text,timestamp with time zone,uuid)',
+    'private.ensure_routine_occurrence_missed(uuid,uuid,text,uuid,text,timestamp with time zone,timestamp with time zone)'
+  ]::text[]
+  LOOP
+    v_function := to_regprocedure(v_function_signature);
+    IF v_function IS NULL
+      OR has_function_privilege('anon', v_function, 'EXECUTE')
+      OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+      OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+      RAISE EXCEPTION 'internal occurrence helper ACL is incorrect: %', v_function_signature;
+    END IF;
+  END LOOP;
 
   v_function := to_regprocedure(
     'private.routine_occurrence_timezone(uuid,uuid,text,text,timestamp with time zone)'
@@ -3767,6 +3781,12 @@ BEGIN
     AND rule.local_time = time '20:00'
     AND rule.active;
 
+  UPDATE private.routine_occurrence_finalizer_rules snapshot
+  SET active_from = clock_timestamp() - interval '10 days',
+      next_local_date = timezone(snapshot.timezone_name, clock_timestamp())::date - 10
+  WHERE snapshot.reminder_rule_id IN (v_rule_0800, v_rule_2000)
+    AND snapshot.active_until IS NULL;
+
   v_occurrence_key := private.derive_routine_occurrence_key(
     v_rule_0800,
     timestamptz '2026-07-20 12:00:00+00'
@@ -4207,51 +4227,56 @@ BEGIN
   ORDER BY created_at DESC, id DESC
   LIMIT 1;
 
-  PERFORM public.record_routine_occurrence_action_atomic(
-    v_user_id,
-    v_occurrence_item_id,
-    'supplement',
-    v_rule_0130,
-    timestamptz '2026-11-01 06:30:00+00',
-    'taken',
-    timestamptz '2026-11-01 06:31:00+00',
-    NULL,
-    'routine-dst-fall-canonical'
-  );
+  UPDATE private.routine_occurrence_finalizer_rules snapshot
+  SET active_from = timestamptz '2026-01-01 00:00:00+00',
+      next_local_date = date '2026-01-01'
+  WHERE snapshot.reminder_rule_id IN (v_rule_0130, v_rule_0230)
+    AND snapshot.active_until IS NULL;
 
-  BEGIN
-    PERFORM public.record_routine_occurrence_action_atomic(
+  IF private.resolve_routine_occurrence_snapshot_id(
       v_user_id,
       v_occurrence_item_id,
       'supplement',
       v_rule_0130,
-      timestamptz '2026-11-01 05:30:00+00',
-      'taken',
-      timestamptz '2026-11-01 05:31:00+00',
-      NULL,
-      'routine-dst-fall-noncanonical'
-    );
-    RAISE EXCEPTION 'noncanonical ambiguous DST instant was accepted';
-  EXCEPTION
-    WHEN invalid_parameter_value THEN NULL;
-  END;
+      private.derive_routine_occurrence_key(
+        v_rule_0130,
+        timestamptz '2026-11-01 06:30:00+00'
+      ),
+      timestamptz '2026-11-01 06:30:00+00',
+      NULL
+    ) IS NULL THEN
+    RAISE EXCEPTION 'canonical fall-back occurrence snapshot was not resolved';
+  END IF;
 
-  BEGIN
-    PERFORM public.record_routine_occurrence_action_atomic(
+  IF private.resolve_routine_occurrence_snapshot_id(
+      v_user_id,
+      v_occurrence_item_id,
+      'supplement',
+      v_rule_0130,
+      private.derive_routine_occurrence_key(
+        v_rule_0130,
+        timestamptz '2026-11-01 05:30:00+00'
+      ),
+      timestamptz '2026-11-01 05:30:00+00',
+      NULL
+    ) IS NOT NULL THEN
+    RAISE EXCEPTION 'noncanonical ambiguous DST instant was accepted';
+  END IF;
+
+  IF private.resolve_routine_occurrence_snapshot_id(
       v_user_id,
       v_occurrence_item_id,
       'supplement',
       v_rule_0230,
+      private.derive_routine_occurrence_key(
+        v_rule_0230,
+        timestamptz '2026-03-08 07:30:00+00'
+      ),
       timestamptz '2026-03-08 07:30:00+00',
-      'taken',
-      timestamptz '2026-03-08 07:31:00+00',
-      NULL,
-      'routine-dst-spring-nonexistent'
-    );
+      NULL
+    ) IS NOT NULL THEN
     RAISE EXCEPTION 'nonexistent DST local schedule instant was accepted';
-  EXCEPTION
-    WHEN invalid_parameter_value THEN NULL;
-  END;
+  END IF;
 
   v_result := public.create_mobile_routine_item(
     v_other_user_id,
@@ -5222,6 +5247,581 @@ BEGIN
     RAISE EXCEPTION 'system missed occurrence did not finalize after collision removal: %',
       v_final_retry;
   END IF;
+END;
+$test$;
+
+DO $test$
+DECLARE
+  v_auth_user_id constant uuid := '00000000-0000-0000-0000-000000001501';
+  v_user_id constant uuid := '00000000-0000-0000-0000-000000001502';
+  v_item_id constant uuid := '00000000-0000-0000-0000-000000001503';
+  v_rule_ordinary constant uuid := '00000000-0000-0000-0000-000000001504';
+  v_rule_0800 constant uuid := '00000000-0000-0000-0000-000000001505';
+  v_rule_2000 constant uuid := '00000000-0000-0000-0000-000000001506';
+  v_rule_preactivation constant uuid := '00000000-0000-0000-0000-000000001507';
+  v_now timestamptz := clock_timestamp();
+  v_occurrence_date date := timezone('UTC', clock_timestamp())::date - 2;
+  v_ordinary_scheduled_for timestamptz := (
+    timezone('UTC', clock_timestamp())::date + time '00:00'
+  ) AT TIME ZONE 'UTC';
+  v_scheduled_0800 timestamptz;
+  v_scheduled_2000 timestamptz;
+  v_preactivation_scheduled_for timestamptz;
+  v_future_scheduled_for timestamptz;
+  v_occurrence_day_end timestamptz;
+  v_occurrence_key_0800 text;
+  v_occurrence_key_2000 text;
+  v_snapshot_0800 uuid;
+  v_snapshot_2000 uuid;
+  v_action_0800 jsonb;
+  v_action_2000 jsonb;
+  v_replay jsonb;
+  v_finalizer jsonb;
+  v_missed_0800 uuid;
+  v_missed_2000 uuid;
+BEGIN
+  v_scheduled_0800 := (v_occurrence_date + time '08:00') AT TIME ZONE 'UTC';
+  v_scheduled_2000 := (v_occurrence_date + time '20:00') AT TIME ZONE 'UTC';
+  v_preactivation_scheduled_for := (
+    v_occurrence_date + time '12:00'
+  ) AT TIME ZONE 'UTC';
+  v_future_scheduled_for := (
+    timezone('UTC', v_now)::date + 1 + time '08:00'
+  ) AT TIME ZONE 'UTC';
+  v_occurrence_day_end := (
+    (v_occurrence_date + 1)::timestamp AT TIME ZONE 'UTC'
+  );
+  v_occurrence_key_0800 := private.derive_routine_occurrence_key(
+    v_rule_0800,
+    v_scheduled_0800
+  );
+  v_occurrence_key_2000 := private.derive_routine_occurrence_key(
+    v_rule_2000,
+    v_scheduled_2000
+  );
+
+  DELETE FROM private.routine_occurrence_finalizer_queue;
+  UPDATE private.routine_occurrence_finalizer_rules
+  SET exhausted = true;
+
+  INSERT INTO auth.users (
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    is_sso_user,
+    is_anonymous
+  ) VALUES (
+    v_auth_user_id,
+    'authenticated',
+    'authenticated',
+    'routine-temporal-auth@example.invalid',
+    '',
+    now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb,
+    now(),
+    now(),
+    false,
+    false
+  );
+
+  INSERT INTO public.users (
+    id,
+    auth_user_id,
+    email,
+    timezone,
+    status
+  ) VALUES (
+    v_user_id,
+    v_auth_user_id,
+    'routine-temporal@example.invalid',
+    'UTC',
+    'active'
+  );
+
+  INSERT INTO public.routine_items (
+    id,
+    user_id,
+    item_type,
+    name,
+    dose_text,
+    origin,
+    active,
+    reminders_enabled,
+    created_at
+  ) VALUES (
+    v_item_id,
+    v_user_id,
+    'supplement',
+    'Synthetic temporal item',
+    'Synthetic temporal dose',
+    'user',
+    true,
+    true,
+    v_scheduled_0800 - interval '1 day'
+  );
+
+  INSERT INTO public.reminder_rules (
+    id,
+    user_id,
+    routine_item_id,
+    category,
+    local_time,
+    weekdays,
+    active,
+    created_at
+  ) VALUES
+    (
+      v_rule_ordinary,
+      v_user_id,
+      v_item_id,
+      'supplement',
+      timezone('UTC', v_ordinary_scheduled_for)::time,
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_scheduled_0800 - interval '1 day'
+    ),
+    (
+      v_rule_0800,
+      v_user_id,
+      v_item_id,
+      'supplement',
+      time '08:00',
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_scheduled_0800 - interval '1 day'
+    ),
+    (
+      v_rule_2000,
+      v_user_id,
+      v_item_id,
+      'supplement',
+      time '20:00',
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_scheduled_0800 - interval '1 day'
+    ),
+    (
+      v_rule_preactivation,
+      v_user_id,
+      v_item_id,
+      'supplement',
+      time '12:00',
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      true,
+      v_preactivation_scheduled_for + interval '30 minutes'
+    );
+
+  UPDATE private.routine_occurrence_finalizer_rules snapshot
+  SET active_from = CASE
+        WHEN snapshot.reminder_rule_id = v_rule_preactivation
+          THEN v_preactivation_scheduled_for + interval '30 minutes'
+        ELSE v_scheduled_0800 - interval '1 day'
+      END,
+      next_local_date = v_occurrence_date,
+      exhausted = false,
+      touched_at = v_scheduled_0800 - interval '1 day'
+  WHERE snapshot.reminder_rule_id IN (
+    v_rule_ordinary,
+    v_rule_0800,
+    v_rule_2000,
+    v_rule_preactivation
+  )
+    AND snapshot.active_until IS NULL;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      v_user_id,
+      v_item_id,
+      'supplement',
+      v_rule_preactivation,
+      v_preactivation_scheduled_for,
+      'taken',
+      v_preactivation_scheduled_for + interval '1 minute',
+      NULL,
+      'routine-preactivation-reject'
+    );
+    RAISE EXCEPTION 'pre-activation routine occurrence was accepted';
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM <> 'routine_occurrence_not_found' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      v_user_id,
+      v_item_id,
+      'supplement',
+      v_rule_0800,
+      v_future_scheduled_for,
+      'taken',
+      v_future_scheduled_for + interval '1 minute',
+      NULL,
+      'routine-future-target-reject'
+    );
+    RAISE EXCEPTION 'future routine occurrence was accepted';
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM <> 'routine_occurrence_not_found' THEN
+        RAISE;
+      END IF;
+  END;
+
+  UPDATE public.users
+  SET timezone = 'America/New_York'
+  WHERE id = v_user_id;
+
+  IF (SELECT count(*)
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_rule_0800) <> 2
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_rule_0800
+        AND snapshot.timezone_name = 'UTC'
+        AND snapshot.active_until IS NOT NULL
+        AND v_scheduled_0800 >= snapshot.active_from
+        AND v_scheduled_0800 < snapshot.active_until
+    ) THEN
+    RAISE EXCEPTION 'timezone mutation did not retain the historical occurrence epoch';
+  END IF;
+
+  PERFORM public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_ordinary,
+    v_ordinary_scheduled_for,
+    'taken',
+    v_ordinary_scheduled_for,
+    NULL,
+    'routine-old-timezone-ordinary'
+  );
+
+  IF (SELECT count(*)
+      FROM public.routine_adherence_logs action
+      WHERE action.user_id = v_user_id
+        AND action.occurrence_key = private.derive_routine_occurrence_key(
+          v_rule_ordinary,
+          v_ordinary_scheduled_for
+        )
+        AND action.status = 'taken'
+        AND action.supersedes_log_id IS NULL) <> 1
+    OR EXISTS (
+      SELECT 1
+      FROM public.routine_adherence_logs action
+      WHERE action.user_id = v_user_id
+        AND action.occurrence_key = private.derive_routine_occurrence_key(
+          v_rule_ordinary,
+          v_ordinary_scheduled_for
+        )
+        AND action.status = 'missed'
+    ) THEN
+    RAISE EXCEPTION 'ordinary action did not use its pre-mutation timezone snapshot';
+  END IF;
+
+  UPDATE public.reminder_rules
+  SET active = false,
+      deactivated_at = clock_timestamp()
+  WHERE id IN (
+    v_rule_ordinary,
+    v_rule_0800,
+    v_rule_2000,
+    v_rule_preactivation
+  );
+
+  UPDATE public.routine_items
+  SET active = false,
+      reminders_enabled = false,
+      archived_at = clock_timestamp()
+  WHERE id = v_item_id;
+
+  SELECT snapshot.snapshot_id
+  INTO v_snapshot_0800
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_rule_0800
+    AND snapshot.timezone_name = 'UTC'
+    AND v_scheduled_0800 >= snapshot.active_from
+    AND v_scheduled_0800 < snapshot.active_until;
+
+  SELECT snapshot.snapshot_id
+  INTO v_snapshot_2000
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_rule_2000
+    AND snapshot.timezone_name = 'UTC'
+    AND v_scheduled_2000 >= snapshot.active_from
+    AND v_scheduled_2000 < snapshot.active_until;
+
+  INSERT INTO private.routine_occurrence_finalizer_queue (
+    snapshot_id,
+    scheduled_for,
+    user_id,
+    reminder_rule_id,
+    routine_item_id,
+    item_type,
+    occurrence_key,
+    occurrence_day_end
+  ) VALUES (
+    v_snapshot_0800,
+    v_scheduled_0800,
+    v_user_id,
+    v_rule_0800,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_0800,
+    v_occurrence_day_end
+  );
+
+  v_action_0800 := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_0800,
+    v_scheduled_0800,
+    'taken',
+    v_occurrence_day_end + interval '1 hour',
+    NULL,
+    'routine-late-action-first'
+  );
+  v_replay := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_0800,
+    v_scheduled_0800,
+    'taken',
+    v_occurrence_day_end + interval '1 hour',
+    NULL,
+    'routine-late-action-first'
+  );
+
+  SELECT missed.id
+  INTO v_missed_0800
+  FROM public.routine_adherence_logs missed
+  WHERE missed.user_id = v_user_id
+    AND missed.occurrence_key = v_occurrence_key_0800
+    AND missed.status = 'missed'
+    AND missed.source = 'system';
+
+  IF v_replay IS DISTINCT FROM v_action_0800
+    OR (SELECT count(*)
+        FROM public.routine_adherence_logs action
+        WHERE action.user_id = v_user_id
+          AND action.occurrence_key = v_occurrence_key_0800) <> 2
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.routine_adherence_logs correction
+      WHERE correction.id = (v_action_0800 ->> 'adherence_log_id')::uuid
+        AND correction.status = 'taken'
+        AND correction.source = 'patient'
+        AND correction.supersedes_log_id = v_missed_0800
+        AND correction.created_at > (
+          SELECT missed.created_at
+          FROM public.routine_adherence_logs missed
+          WHERE missed.id = v_missed_0800
+        )
+    ) THEN
+    RAISE EXCEPTION 'late action-first path did not persist singleton missed plus correction';
+  END IF;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      v_user_id,
+      v_item_id,
+      'supplement',
+      v_rule_0800,
+      v_scheduled_0800,
+      'skipped',
+      v_occurrence_day_end + interval '1 hour',
+      NULL,
+      'routine-late-action-first'
+    );
+    RAISE EXCEPTION 'late action idempotency key accepted a conflicting payload';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  v_finalizer := public.finalize_due_routine_occurrences(
+    v_now,
+    10,
+    v_scheduled_0800 - interval '1 microsecond',
+    v_user_id,
+    v_rule_0800
+  );
+
+  IF (v_finalizer ->> 'processed_count')::integer <> 1
+    OR (v_finalizer ->> 'finalized_count')::integer <> 0
+    OR EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_queue candidate
+      WHERE candidate.user_id = v_user_id
+        AND candidate.occurrence_key = v_occurrence_key_0800
+    )
+    OR (SELECT count(*)
+        FROM public.routine_adherence_logs missed
+        WHERE missed.user_id = v_user_id
+          AND missed.occurrence_key = v_occurrence_key_0800
+          AND missed.status = 'missed'
+          AND missed.source = 'system') <> 1 THEN
+    RAISE EXCEPTION 'action-first finalizer convergence duplicated or retained the occurrence: %',
+      v_finalizer;
+  END IF;
+
+  v_finalizer := public.finalize_due_routine_occurrences(
+    v_now,
+    10,
+    v_scheduled_0800 - interval '1 microsecond',
+    v_user_id,
+    v_rule_0800
+  );
+
+  IF (v_finalizer ->> 'processed_count')::integer <> 0
+    OR (v_finalizer ->> 'finalized_count')::integer <> 0 THEN
+    RAISE EXCEPTION 'action-first finalizer retry was not idempotent: %', v_finalizer;
+  END IF;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      v_user_id,
+      v_item_id,
+      'supplement',
+      v_rule_2000,
+      v_scheduled_2000,
+      'skipped',
+      v_occurrence_day_end + interval '1 hour',
+      NULL,
+      'routine-late-skipped-reject'
+    );
+    RAISE EXCEPTION 'late unresolved occurrence accepted a non-taken action';
+  EXCEPTION
+    WHEN check_violation THEN
+      IF SQLERRM <> 'routine_occurrence_terminal' THEN
+        RAISE;
+      END IF;
+  END;
+
+  INSERT INTO private.routine_occurrence_finalizer_queue (
+    snapshot_id,
+    scheduled_for,
+    user_id,
+    reminder_rule_id,
+    routine_item_id,
+    item_type,
+    occurrence_key,
+    occurrence_day_end
+  ) VALUES (
+    v_snapshot_2000,
+    v_scheduled_2000,
+    v_user_id,
+    v_rule_2000,
+    v_item_id,
+    'supplement',
+    v_occurrence_key_2000,
+    v_occurrence_day_end
+  );
+
+  v_finalizer := public.finalize_due_routine_occurrences(
+    v_now,
+    10,
+    v_scheduled_2000 - interval '1 microsecond',
+    v_user_id,
+    v_rule_2000
+  );
+
+  SELECT missed.id
+  INTO v_missed_2000
+  FROM public.routine_adherence_logs missed
+  WHERE missed.user_id = v_user_id
+    AND missed.occurrence_key = v_occurrence_key_2000
+    AND missed.status = 'missed'
+    AND missed.source = 'system';
+
+  IF (v_finalizer ->> 'processed_count')::integer <> 1
+    OR (v_finalizer ->> 'finalized_count')::integer <> 1
+    OR v_missed_2000 IS NULL
+    OR EXISTS (
+      SELECT 1
+      FROM public.routine_adherence_logs action
+      WHERE action.user_id = v_user_id
+        AND action.occurrence_key = v_occurrence_key_0800
+        AND action.id = v_missed_2000
+    ) THEN
+    RAISE EXCEPTION 'finalizer-first path did not persist an independent singleton missed row';
+  END IF;
+
+  v_action_2000 := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_2000,
+    v_scheduled_2000,
+    'taken',
+    v_occurrence_day_end + interval '2 hours',
+    NULL,
+    'routine-finalizer-first-action'
+  );
+  v_replay := public.record_routine_occurrence_action_atomic(
+    v_user_id,
+    v_item_id,
+    'supplement',
+    v_rule_2000,
+    v_scheduled_2000,
+    'taken',
+    v_occurrence_day_end + interval '2 hours',
+    NULL,
+    'routine-finalizer-first-action'
+  );
+
+  IF v_replay IS DISTINCT FROM v_action_2000
+    OR (SELECT count(*)
+        FROM public.routine_adherence_logs action
+        WHERE action.user_id = v_user_id
+          AND action.occurrence_key = v_occurrence_key_2000) <> 2
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.routine_adherence_logs correction
+      WHERE correction.id = (v_action_2000 ->> 'adherence_log_id')::uuid
+        AND correction.status = 'taken'
+        AND correction.source = 'patient'
+        AND correction.supersedes_log_id = v_missed_2000
+        AND correction.created_at > (
+          SELECT missed.created_at
+          FROM public.routine_adherence_logs missed
+          WHERE missed.id = v_missed_2000
+        )
+    )
+    OR v_occurrence_key_0800 = v_occurrence_key_2000 THEN
+    RAISE EXCEPTION 'finalizer-first correction, replay, or 08:00/20:00 independence failed';
+  END IF;
+
+  BEGIN
+    PERFORM public.record_routine_occurrence_action_atomic(
+      '00000000-0000-0000-0000-000000001599'::uuid,
+      v_item_id,
+      'supplement',
+      v_rule_2000,
+      v_scheduled_2000,
+      'taken',
+      v_occurrence_day_end + interval '2 hours',
+      NULL,
+      'routine-cross-user-opacity'
+    );
+    RAISE EXCEPTION 'cross-user snapshot lookup disclosed or accepted an occurrence';
+  EXCEPTION
+    WHEN no_data_found THEN
+      IF SQLERRM <> 'routine_occurrence_not_found' THEN
+        RAISE;
+      END IF;
+  END;
 END;
 $test$;
 

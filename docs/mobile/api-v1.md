@@ -729,12 +729,14 @@ Regras da ação:
 - o cliente pode enviar somente `taken`, `snoozed` ou `skipped`;
 - `occurred_at` aceita a janela offline de sete dias anteriores e até cinco
   minutos no futuro em relação ao servidor;
+- `scheduled_for` não pode estar depois do `occurred_at` efetivo nem apontar
+  para uma ocorrência futura ou anterior à ativação histórica da regra;
 - `snoozed_until` é obrigatório somente para `snoozed`, deve ser posterior a
   `occurred_at` e cair na mesma data local da ocorrência original;
 - os presets de produto são 15, 30 e 60 minutos; horário customizado é aceito se
   cumprir a mesma restrição de data local;
-- item, tipo, ownership, regra, weekday, hora local e round-trip DST do
-  `scheduled_for` são revalidados no backend;
+- item, tipo, ownership, regra, weekday, hora local, round-trip DST e intervalo
+  de ativação do `scheduled_for` são revalidados contra o snapshot histórico;
 - `source`, `occurrence_key`, `missed` e `supersedes_log_id` não são campos de
   entrada;
 - a mesma chave e o mesmo payload devolvem o log original; a mesma chave com
@@ -773,7 +775,10 @@ público derivado.
 O paciente pode corrigir um `missed` automático para `taken` até sete dias após
 o fim do dia da ocorrência. A correção cria outro log apontando para o `missed`;
 nenhuma linha anterior é alterada ou excluída. O cliente não pode criar
-`missed`.
+`missed`. Se um `taken` elegível chega depois do fim do dia antes do finalizador,
+o backend cria ou reutiliza atomicamente o `missed` singleton e grava o `taken`
+como correção vinculada. Mudanças posteriores de timezone, archive ou desativação
+não invalidam uma ocorrência que pertencia ao snapshot histórico.
 
 ### Histórico por cursor
 

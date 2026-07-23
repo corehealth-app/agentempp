@@ -117,28 +117,49 @@ REVOKE ALL ON TABLE private.routine_occurrence_finalizer_rules
 REVOKE ALL ON TABLE private.routine_occurrence_finalizer_queue
   FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION private.routine_occurrence_timezone(
+CREATE FUNCTION private.resolve_routine_occurrence_snapshot_id(
   p_user_id uuid,
   p_routine_item_id uuid,
   p_item_type text,
+  p_reminder_rule_id uuid,
   p_occurrence_key text,
-  p_scheduled_for timestamptz
+  p_scheduled_for timestamptz,
+  p_snapshot_id uuid
 )
-RETURNS text
+RETURNS uuid
 LANGUAGE plpgsql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = pg_catalog, private, pg_temp
 AS $$
 DECLARE
-  v_timezone text;
+  v_snapshot_id uuid;
 BEGIN
-  SELECT snapshot.timezone_name
-  INTO v_timezone
+  IF p_user_id IS NULL
+    OR p_routine_item_id IS NULL
+    OR p_item_type IS NULL
+    OR p_item_type NOT IN ('supplement', 'medication')
+    OR p_occurrence_key IS NULL
+    OR p_occurrence_key !~ '^[0-9a-f]{64}$'
+    OR p_scheduled_for IS NULL
+    OR NOT isfinite(p_scheduled_for) THEN
+    RAISE EXCEPTION 'invalid_routine_occurrence_identity' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT snapshot.snapshot_id
+  INTO v_snapshot_id
   FROM private.routine_occurrence_finalizer_rules snapshot
   WHERE snapshot.user_id = p_user_id
     AND snapshot.routine_item_id = p_routine_item_id
     AND snapshot.item_type = p_item_type
+    AND (
+      p_reminder_rule_id IS NULL
+      OR snapshot.reminder_rule_id = p_reminder_rule_id
+    )
+    AND (
+      p_snapshot_id IS NULL
+      OR snapshot.snapshot_id = p_snapshot_id
+    )
     AND p_scheduled_for >= snapshot.active_from
     AND (
       snapshot.active_until IS NULL
@@ -159,6 +180,218 @@ BEGIN
     ) = p_scheduled_for
   ORDER BY snapshot.active_from DESC, snapshot.snapshot_id
   LIMIT 1;
+
+  RETURN v_snapshot_id;
+END;
+$$;
+
+CREATE FUNCTION private.lock_routine_occurrence_snapshot(
+  p_user_id uuid,
+  p_routine_item_id uuid,
+  p_item_type text,
+  p_reminder_rule_id uuid,
+  p_occurrence_key text,
+  p_scheduled_for timestamptz,
+  p_snapshot_id uuid
+)
+RETURNS private.routine_occurrence_finalizer_rules
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, private, pg_temp
+AS $$
+DECLARE
+  v_snapshot private.routine_occurrence_finalizer_rules%ROWTYPE;
+  v_snapshot_id uuid;
+BEGIN
+  v_snapshot_id := private.resolve_routine_occurrence_snapshot_id(
+    p_user_id,
+    p_routine_item_id,
+    p_item_type,
+    p_reminder_rule_id,
+    p_occurrence_key,
+    p_scheduled_for,
+    p_snapshot_id
+  );
+
+  IF v_snapshot_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT snapshot.*
+  INTO v_snapshot
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.snapshot_id = v_snapshot_id
+  FOR UPDATE;
+
+  IF v_snapshot.snapshot_id IS NULL
+    OR v_snapshot.user_id IS DISTINCT FROM p_user_id
+    OR v_snapshot.routine_item_id IS DISTINCT FROM p_routine_item_id
+    OR v_snapshot.item_type IS DISTINCT FROM p_item_type
+    OR (
+      p_reminder_rule_id IS NOT NULL
+      AND v_snapshot.reminder_rule_id IS DISTINCT FROM p_reminder_rule_id
+    )
+    OR (
+      p_snapshot_id IS NOT NULL
+      AND v_snapshot.snapshot_id IS DISTINCT FROM p_snapshot_id
+    )
+    OR p_scheduled_for < v_snapshot.active_from
+    OR (
+      v_snapshot.active_until IS NOT NULL
+      AND p_scheduled_for >= v_snapshot.active_until
+    )
+    OR private.derive_routine_occurrence_key(
+      v_snapshot.reminder_rule_id,
+      p_scheduled_for
+    ) IS DISTINCT FROM p_occurrence_key
+    OR extract(
+      dow FROM timezone(v_snapshot.timezone_name, p_scheduled_for)
+    )::smallint <> ALL(v_snapshot.weekdays)
+    OR timezone(v_snapshot.timezone_name, p_scheduled_for)::time
+      IS DISTINCT FROM v_snapshot.local_time
+    OR (
+      timezone(v_snapshot.timezone_name, p_scheduled_for)
+        AT TIME ZONE v_snapshot.timezone_name
+    ) IS DISTINCT FROM p_scheduled_for THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN v_snapshot;
+END;
+$$;
+
+CREATE FUNCTION private.ensure_routine_occurrence_missed(
+  p_user_id uuid,
+  p_routine_item_id uuid,
+  p_item_type text,
+  p_reminder_rule_id uuid,
+  p_occurrence_key text,
+  p_scheduled_for timestamptz,
+  p_occurrence_day_end timestamptz
+)
+RETURNS TABLE (
+  missed_log_id uuid,
+  inserted boolean
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, public, private, pg_temp
+AS $$
+DECLARE
+  v_missed_log_id uuid;
+  v_inserted boolean := false;
+BEGIN
+  IF p_user_id IS NULL
+    OR p_routine_item_id IS NULL
+    OR p_item_type IS NULL
+    OR p_item_type NOT IN ('supplement', 'medication')
+    OR p_reminder_rule_id IS NULL
+    OR p_occurrence_key IS NULL
+    OR p_occurrence_key !~ '^[0-9a-f]{64}$'
+    OR p_scheduled_for IS NULL
+    OR NOT isfinite(p_scheduled_for)
+    OR p_occurrence_day_end IS NULL
+    OR NOT isfinite(p_occurrence_day_end)
+    OR p_occurrence_day_end <= p_scheduled_for
+    OR private.derive_routine_occurrence_key(
+      p_reminder_rule_id,
+      p_scheduled_for
+    ) <> p_occurrence_key THEN
+    RAISE EXCEPTION 'invalid_routine_occurrence_identity' USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at,
+    snoozed_until
+  ) VALUES (
+    p_user_id,
+    p_routine_item_id,
+    p_item_type,
+    'missed',
+    'routine-missed:' || p_occurrence_key,
+    p_reminder_rule_id,
+    p_occurrence_key,
+    'system',
+    p_scheduled_for,
+    p_occurrence_day_end,
+    NULL
+  )
+  ON CONFLICT (user_id, occurrence_key)
+    WHERE occurrence_key IS NOT NULL
+      AND status = 'missed'
+      AND source = 'system'
+    DO NOTHING
+  RETURNING id INTO v_missed_log_id;
+
+  v_inserted := FOUND;
+
+  IF NOT v_inserted THEN
+    SELECT missed.id
+    INTO v_missed_log_id
+    FROM public.routine_adherence_logs missed
+    WHERE missed.user_id = p_user_id
+      AND missed.routine_item_id = p_routine_item_id
+      AND missed.item_type = p_item_type
+      AND missed.reminder_rule_id = p_reminder_rule_id
+      AND missed.occurrence_key = p_occurrence_key
+      AND missed.scheduled_for = p_scheduled_for
+      AND missed.occurred_at = p_occurrence_day_end
+      AND missed.status = 'missed'
+      AND missed.source = 'system';
+
+    IF v_missed_log_id IS NULL THEN
+      RAISE EXCEPTION 'routine_occurrence_identity_conflict' USING ERRCODE = '23505';
+    END IF;
+  END IF;
+
+  missed_log_id := v_missed_log_id;
+  inserted := v_inserted;
+  RETURN NEXT;
+END;
+$$;
+
+CREATE FUNCTION private.routine_occurrence_timezone(
+  p_user_id uuid,
+  p_routine_item_id uuid,
+  p_item_type text,
+  p_occurrence_key text,
+  p_scheduled_for timestamptz
+)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, private, pg_temp
+AS $$
+DECLARE
+  v_timezone text;
+  v_snapshot_id uuid;
+BEGIN
+  v_snapshot_id := private.resolve_routine_occurrence_snapshot_id(
+    p_user_id,
+    p_routine_item_id,
+    p_item_type,
+    NULL,
+    p_occurrence_key,
+    p_scheduled_for,
+    NULL
+  );
+
+  SELECT snapshot.timezone_name
+  INTO v_timezone
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.snapshot_id = v_snapshot_id;
 
   RETURN COALESCE(v_timezone, private.routine_user_timezone(p_user_id));
 END;
@@ -251,6 +484,245 @@ BEGIN
     'status', v_status,
     'last_action_at', v_last_action_at,
     'snoozed_until', v_snoozed_until
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_routine_occurrence_action_atomic(
+  p_user_id uuid,
+  p_item_id uuid,
+  p_expected_item_type text,
+  p_reminder_rule_id uuid,
+  p_scheduled_for timestamptz,
+  p_status text,
+  p_occurred_at timestamptz,
+  p_snoozed_until timestamptz,
+  p_idempotency_key text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, private, pg_temp
+AS $$
+DECLARE
+  v_existing public.routine_adherence_logs%ROWTYPE;
+  v_latest public.routine_adherence_logs%ROWTYPE;
+  v_snapshot private.routine_occurrence_finalizer_rules%ROWTYPE;
+  v_local_scheduled timestamp;
+  v_occurrence_day_end timestamptz;
+  v_occurrence_key text;
+  v_supersedes_log_id uuid;
+  v_superseded_created_at timestamptz;
+  v_log_id uuid;
+  v_now timestamptz;
+  v_effective_occurred_at timestamptz;
+  v_has_latest boolean := false;
+  v_is_correction boolean := false;
+BEGIN
+  PERFORM private.assert_trusted_backend();
+
+  IF p_user_id IS NULL
+    OR p_item_id IS NULL
+    OR p_expected_item_type IS NULL
+    OR p_expected_item_type NOT IN ('supplement', 'medication')
+    OR p_reminder_rule_id IS NULL
+    OR p_scheduled_for IS NULL
+    OR NOT isfinite(p_scheduled_for)
+    OR p_status IS NULL
+    OR p_status NOT IN ('taken', 'snoozed', 'skipped')
+    OR p_occurred_at IS NULL
+    OR NOT isfinite(p_occurred_at)
+    OR p_idempotency_key IS NULL
+    OR char_length(p_idempotency_key) NOT BETWEEN 8 AND 128
+    OR p_idempotency_key !~ '^[A-Za-z0-9._:-]+$'
+    OR (p_status = 'snoozed' AND p_snoozed_until IS NULL)
+    OR (p_status <> 'snoozed' AND p_snoozed_until IS NOT NULL)
+    OR (p_snoozed_until IS NOT NULL AND NOT isfinite(p_snoozed_until)) THEN
+    RAISE EXCEPTION 'invalid_routine_occurrence_action' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(
+      p_user_id::text || ':routine-action:' || p_idempotency_key,
+      0
+    )
+  );
+
+  SELECT action.*
+  INTO v_existing
+  FROM public.routine_adherence_logs action
+  WHERE action.user_id = p_user_id
+    AND action.idempotency_key = p_idempotency_key;
+
+  IF FOUND THEN
+    IF v_existing.routine_item_id IS DISTINCT FROM p_item_id
+      OR v_existing.item_type IS DISTINCT FROM p_expected_item_type
+      OR v_existing.reminder_rule_id IS DISTINCT FROM p_reminder_rule_id
+      OR v_existing.scheduled_for IS DISTINCT FROM p_scheduled_for
+      OR v_existing.status IS DISTINCT FROM p_status
+      OR v_existing.occurred_at IS DISTINCT FROM p_occurred_at
+      OR v_existing.snoozed_until IS DISTINCT FROM p_snoozed_until
+      OR v_existing.source IS DISTINCT FROM 'patient' THEN
+      RAISE EXCEPTION 'routine_action_idempotency_conflict' USING ERRCODE = '23505';
+    END IF;
+
+    RETURN jsonb_build_object(
+      'adherence_log_id', v_existing.id,
+      'occurrence_key', v_existing.occurrence_key,
+      'item_type', v_existing.item_type,
+      'status', v_existing.status
+    );
+  END IF;
+
+  v_occurrence_key := private.derive_routine_occurrence_key(
+    p_reminder_rule_id,
+    p_scheduled_for
+  );
+  v_snapshot := private.lock_routine_occurrence_snapshot(
+    p_user_id,
+    p_item_id,
+    p_expected_item_type,
+    p_reminder_rule_id,
+    v_occurrence_key,
+    p_scheduled_for,
+    NULL
+  );
+
+  IF v_snapshot.snapshot_id IS NULL THEN
+    RAISE EXCEPTION 'routine_occurrence_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  PERFORM private.lock_routine_occurrence(p_user_id, v_occurrence_key);
+
+  v_now := clock_timestamp();
+  v_effective_occurred_at := least(p_occurred_at, v_now);
+  v_local_scheduled := timezone(v_snapshot.timezone_name, p_scheduled_for);
+  v_occurrence_day_end := (
+    (v_local_scheduled::date + 1)::timestamp
+      AT TIME ZONE v_snapshot.timezone_name
+  );
+
+  IF p_scheduled_for > v_effective_occurred_at THEN
+    RAISE EXCEPTION 'routine_occurrence_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF p_occurred_at < p_scheduled_for
+    OR p_occurred_at < v_now - interval '7 days'
+    OR p_occurred_at > v_now + interval '5 minutes'
+    OR p_occurred_at > v_occurrence_day_end + interval '7 days'
+    OR v_now > v_occurrence_day_end + interval '7 days' THEN
+    RAISE EXCEPTION 'routine_occurrence_action_out_of_order' USING ERRCODE = '23514';
+  END IF;
+
+  IF p_status = 'snoozed' AND (
+    p_snoozed_until <= p_occurred_at
+    OR timezone(v_snapshot.timezone_name, p_snoozed_until)::date
+      IS DISTINCT FROM v_local_scheduled::date
+  ) THEN
+    RAISE EXCEPTION 'invalid_routine_snooze_time' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT action.*
+  INTO v_latest
+  FROM public.routine_adherence_logs action
+  WHERE action.user_id = p_user_id
+    AND action.routine_item_id = p_item_id
+    AND action.item_type = p_expected_item_type
+    AND action.occurrence_key = v_occurrence_key
+  ORDER BY action.occurred_at DESC, action.created_at DESC, action.id DESC
+  LIMIT 1;
+  v_has_latest := FOUND;
+
+  IF v_has_latest THEN
+    v_is_correction := v_latest.status = 'missed'
+      AND v_latest.source = 'system'
+      AND p_status = 'taken'
+      AND p_occurred_at >= v_latest.occurred_at;
+
+    IF v_is_correction THEN
+      v_supersedes_log_id := v_latest.id;
+    ELSIF v_latest.status IN ('taken', 'skipped', 'missed') THEN
+      RAISE EXCEPTION 'routine_occurrence_terminal' USING ERRCODE = '23514';
+    ELSIF p_occurred_at < v_latest.occurred_at THEN
+      RAISE EXCEPTION 'routine_occurrence_action_out_of_order' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF v_effective_occurred_at >= v_occurrence_day_end
+    AND NOT v_is_correction THEN
+    IF p_status <> 'taken' THEN
+      RAISE EXCEPTION 'routine_occurrence_terminal' USING ERRCODE = '23514';
+    END IF;
+
+    SELECT ensured.missed_log_id
+    INTO v_supersedes_log_id
+    FROM private.ensure_routine_occurrence_missed(
+      p_user_id,
+      p_item_id,
+      p_expected_item_type,
+      p_reminder_rule_id,
+      v_occurrence_key,
+      p_scheduled_for,
+      v_occurrence_day_end
+    ) ensured;
+    v_is_correction := true;
+  END IF;
+
+  IF v_supersedes_log_id IS NOT NULL THEN
+    SELECT superseded.created_at
+    INTO v_superseded_created_at
+    FROM public.routine_adherence_logs superseded
+    WHERE superseded.id = v_supersedes_log_id
+      AND superseded.user_id = p_user_id
+      AND superseded.occurrence_key = v_occurrence_key;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'routine_occurrence_terminal' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  INSERT INTO public.routine_adherence_logs (
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    created_at,
+    scheduled_for,
+    occurred_at,
+    snoozed_until,
+    supersedes_log_id
+  ) VALUES (
+    p_user_id,
+    p_item_id,
+    p_expected_item_type,
+    p_status,
+    p_idempotency_key,
+    p_reminder_rule_id,
+    v_occurrence_key,
+    'patient',
+    CASE
+      WHEN v_superseded_created_at IS NULL THEN clock_timestamp()
+      ELSE greatest(
+        clock_timestamp(),
+        v_superseded_created_at + interval '1 microsecond'
+      )
+    END,
+    p_scheduled_for,
+    p_occurred_at,
+    p_snoozed_until,
+    v_supersedes_log_id
+  )
+  RETURNING id INTO v_log_id;
+
+  RETURN jsonb_build_object(
+    'adherence_log_id', v_log_id,
+    'occurrence_key', v_occurrence_key,
+    'item_type', p_expected_item_type,
+    'status', p_status
   );
 END;
 $$;
@@ -382,31 +854,17 @@ BEGIN
     p_original_scheduled_for
   );
 
-  SELECT snapshot.*
-  INTO v_occurrence_snapshot
-  FROM private.routine_occurrence_finalizer_rules snapshot
-  WHERE snapshot.reminder_rule_id = v_rule.id
-    AND snapshot.user_id = v_rule.user_id
-    AND snapshot.routine_item_id = v_rule.routine_item_id
-    AND snapshot.item_type = v_rule.category
-    AND p_original_scheduled_for >= snapshot.active_from
-    AND (
-      snapshot.active_until IS NULL
-      OR p_original_scheduled_for < snapshot.active_until
-    )
-    AND extract(
-      dow FROM timezone(snapshot.timezone_name, p_original_scheduled_for)
-    )::smallint = ANY(snapshot.weekdays)
-    AND timezone(snapshot.timezone_name, p_original_scheduled_for)::time
-      = snapshot.local_time
-    AND (
-      timezone(snapshot.timezone_name, p_original_scheduled_for)
-        AT TIME ZONE snapshot.timezone_name
-    ) = p_original_scheduled_for
-  ORDER BY snapshot.active_from DESC, snapshot.snapshot_id
-  LIMIT 1;
+  v_occurrence_snapshot := private.lock_routine_occurrence_snapshot(
+    v_rule.user_id,
+    v_rule.routine_item_id,
+    v_rule.category,
+    v_rule.id,
+    v_occurrence_key,
+    p_original_scheduled_for,
+    NULL
+  );
 
-  IF NOT FOUND THEN
+  IF v_occurrence_snapshot.snapshot_id IS NULL THEN
     RAISE EXCEPTION 'scheduled reminder does not match its exact routine occurrence'
       USING ERRCODE = '22023';
   END IF;
@@ -1463,6 +1921,7 @@ SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 DECLARE
   v_candidate record;
+  v_snapshot private.routine_occurrence_finalizer_rules%ROWTYPE;
   v_occurrence_state jsonb;
   v_seen_count integer := 0;
   v_processed_count integer := 0;
@@ -1472,6 +1931,7 @@ DECLARE
   v_last_scheduled_for timestamptz;
   v_last_user_id uuid;
   v_last_rule_id uuid;
+  v_missed_inserted boolean;
 BEGIN
   PERFORM private.assert_trusted_backend();
 
@@ -1539,20 +1999,17 @@ BEGIN
     v_last_user_id := v_candidate.user_id;
     v_last_rule_id := v_candidate.rule_id;
 
-    IF NOT EXISTS (
-      SELECT 1
-      FROM private.routine_occurrence_finalizer_rules snapshot
-      WHERE snapshot.snapshot_id = v_candidate.snapshot_id
-        AND snapshot.reminder_rule_id = v_candidate.rule_id
-        AND snapshot.user_id = v_candidate.user_id
-        AND snapshot.routine_item_id = v_candidate.routine_item_id
-        AND snapshot.item_type = v_candidate.item_type
-        AND v_candidate.scheduled_for >= snapshot.active_from
-        AND (
-          snapshot.active_until IS NULL
-          OR v_candidate.scheduled_for < snapshot.active_until
-        )
-    ) THEN
+    v_snapshot := private.lock_routine_occurrence_snapshot(
+      v_candidate.user_id,
+      v_candidate.routine_item_id,
+      v_candidate.item_type,
+      v_candidate.rule_id,
+      v_candidate.occurrence_key,
+      v_candidate.scheduled_for,
+      v_candidate.snapshot_id
+    );
+
+    IF v_snapshot.snapshot_id IS NULL THEN
       DELETE FROM private.routine_occurrence_finalizer_queue candidate
       WHERE candidate.scheduled_for = v_candidate.scheduled_for
         AND candidate.user_id = v_candidate.user_id
@@ -1583,38 +2040,19 @@ BEGIN
           AND missed.status = 'missed'
           AND missed.source = 'system'
       ) THEN
-      INSERT INTO public.routine_adherence_logs (
-        user_id,
-        routine_item_id,
-        item_type,
-        status,
-        idempotency_key,
-        reminder_rule_id,
-        occurrence_key,
-        source,
-        scheduled_for,
-        occurred_at,
-        snoozed_until
-      ) VALUES (
+      SELECT ensured.inserted
+      INTO v_missed_inserted
+      FROM private.ensure_routine_occurrence_missed(
         v_candidate.user_id,
         v_candidate.routine_item_id,
         v_candidate.item_type,
-        'missed',
-        'routine-missed:' || v_candidate.occurrence_key,
         v_candidate.rule_id,
         v_candidate.occurrence_key,
-        'system',
         v_candidate.scheduled_for,
-        v_candidate.occurrence_day_end,
-        NULL
-      )
-      ON CONFLICT (user_id, occurrence_key)
-        WHERE occurrence_key IS NOT NULL
-          AND status = 'missed'
-          AND source = 'system'
-        DO NOTHING;
+        v_candidate.occurrence_day_end
+      ) ensured;
 
-      GET DIAGNOSTICS v_inserted_count = ROW_COUNT;
+      v_inserted_count := CASE WHEN v_missed_inserted THEN 1 ELSE 0 END;
       v_finalized_count := v_finalized_count + v_inserted_count;
     END IF;
 
@@ -1638,6 +2076,34 @@ BEGIN
   );
 END;
 $$;
+
+REVOKE ALL ON FUNCTION private.resolve_routine_occurrence_snapshot_id(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  text,
+  timestamptz,
+  uuid
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.lock_routine_occurrence_snapshot(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  text,
+  timestamptz,
+  uuid
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.ensure_routine_occurrence_missed(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  text,
+  timestamptz,
+  timestamptz
+) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION private.derive_routine_occurrence_state(
   uuid,
@@ -1669,6 +2135,29 @@ GRANT EXECUTE ON FUNCTION private.routine_occurrence_timezone(
   text,
   text,
   timestamptz
+) TO service_role;
+
+REVOKE ALL ON FUNCTION public.record_routine_occurrence_action_atomic(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  timestamptz,
+  text,
+  timestamptz,
+  timestamptz,
+  text
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_routine_occurrence_action_atomic(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  timestamptz,
+  text,
+  timestamptz,
+  timestamptz,
+  text
 ) TO service_role;
 
 REVOKE ALL ON FUNCTION private.capture_routine_occurrence_finalizer_rule()

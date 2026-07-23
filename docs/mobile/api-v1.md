@@ -902,16 +902,16 @@ replay atendido pelo ledger HTTP vigente.
 | `404` | `routine_item_not_found` | item/ocorrência inacessível, inativo, de outro tipo ou de outro paciente |
 | `404` | `legal_document_not_available` | não existe texto legal vigente para o locale do paciente |
 | `409` | `routine_item_version_conflict` | `expected_version` ficou desatualizado |
-| `409` | `routine_schedule_conflict` | horário lógico conflita ou uma agenda de rotina foi enviada à rota genérica `/reminders` |
+| `409` | `routine_schedule_conflict` | `POST /reminders` tentou criar, ou `PATCH /reminders/:id` tentou alterar, uma regra de suplemento/medicamento; use o CRUD versionado do item |
 | `409` | `routine_occurrence_ambiguous` | wrapper legado encontrou mais de uma ocorrência elegível |
 | `409` | `routine_transition_invalid` | ação terminal ou fora de ordem seria reescrita |
 | `409` | `idempotency_key_conflict` | chave reutilizada com outra operação ou payload |
 | `409` | `idempotency_request_in_progress` | mesma chave ainda está em processamento |
 | `409` | `medication_disclaimer_version_stale` | aceite não corresponde à versão/hash legal vigente |
 | `415` | `unsupported_media_type` | rota com body sem JSON |
-| `422` | `validation_failed` | body/query/cursor estrito inválido |
+| `422` | `validation_failed` | body/query/cursor estrito inválido, inclusive horários lógicos duplicados detectados pelo schema do item |
 | `422` | `occurred_at_out_of_range` | instante fora da janela offline/futuro |
-| `422` | `routine_schedule_invalid` | regra de horário rejeitada pela validação de domínio |
+| `422` | `routine_schedule_invalid` | horário inválido ou duplicado do item alcançou e foi rejeitado pela validação defensiva de domínio/storage |
 | `422` | `routine_snooze_invalid` | snooze não futuro ou fora da data local original |
 | `428` | `medication_disclaimer_required` | criação exige aceite da chave/versão retornadas em `details` |
 
@@ -1488,5 +1488,6 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 - O CMS educativo não inclui tela iOS, campanhas automáticas, comentários,
   busca textual, HTML rico, mídia inline ou geração/publicação por IA.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
-- O catálogo mínimo de suplementos e medicamentos é somente leitura nesta fase.
-  CRUD, dose, orientação clínica e prescrição permanecem fora do escopo.
+- Suplementos e medicamentos têm CRUD versionado, `dose_text` controlado pelo
+  paciente, múltiplos horários e histórico de adesão. Orientação clínica,
+  recomendação de dose e prescrição permanecem fora do escopo.

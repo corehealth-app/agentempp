@@ -892,6 +892,34 @@ Do not waive findings. Record remaining lower-risk limitations in the plan evide
   SQL-runtime steps remain exclusively in Task 9; no production/staging,
   provider, cron, deploy, Inngest sync or Xcode action occurred in Task 8.
 
+#### Task review fixes — 2026-07-23
+
+- Removed the stale phase-limit statement that called supplements/medications
+  read-only and put CRUD/dose out of scope. The limit now reflects the shipped
+  versioned CRUD while keeping clinical guidance, recommended dosing and
+  prescribing excluded.
+- Clarified schedule errors without changing behavior: item request-schema
+  duplicates are `422 validation_failed`; defensive domain/storage rejection of
+  invalid or duplicate item schedules is `422 routine_schedule_invalid`; only
+  routine-category writes through generic `/reminders` use
+  `409 routine_schedule_conflict`.
+- Remaining Minor: the medication collection regression asserts the
+  service-level `MobileApiError` thrown by the handler, not the final route HTTP
+  envelope. Existing route-wrapper tests cover generic envelope serialization,
+  but this exact 428 envelope is not asserted end to end.
+- Remaining Minor: generic reminder PATCH finds the owned target by listing
+  reminders, and `findRoutineItem` remains unused after routine schedule writes
+  were reserved to item CRUD. This is an internal efficiency/cleanup limitation,
+  not a correctness defect; no repository refactor was included in this review
+  fix.
+- Review-fix verification passed: the API document's 31 JSON examples, legal
+  SHA-256 and canonical history cursor; the focused stale-contract search;
+  `pnpm --filter @mpp/core test -- routine.test.ts` (16 files/204 tests); and
+  `pnpm --filter @mpp/admin test -- routine-item-service.test.ts
+  supabase-routine-items.test.ts routine-service.test.ts
+  medications/route.test.ts` (49 files/546 tests). No TypeScript or TSX changed
+  after Task 8 commit `5f1e1d2`, so this review fix did not require scoped Biome.
+
 ### Task 9: Staging Migrations, Synthetic Canary, Generated Types And Draft PR
 
 **Files:**

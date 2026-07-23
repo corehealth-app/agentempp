@@ -902,7 +902,7 @@ replay atendido pelo ledger HTTP vigente.
 | `404` | `routine_item_not_found` | item/ocorrência inacessível, inativo, de outro tipo ou de outro paciente |
 | `404` | `legal_document_not_available` | não existe texto legal vigente para o locale do paciente |
 | `409` | `routine_item_version_conflict` | `expected_version` ficou desatualizado |
-| `409` | `routine_schedule_conflict` | `POST /reminders` tentou criar, ou `PATCH /reminders/:id` tentou alterar, uma regra de suplemento/medicamento; use o CRUD versionado do item |
+| `409` | `routine_schedule_conflict` | rota genérica tentou criar/alterar regra de suplemento/medicamento, ou o repositório/RPC de CRUD do item detectou conflito real de agenda após a validação do request, como concorrência ou conflito de negócio |
 | `409` | `routine_occurrence_ambiguous` | wrapper legado encontrou mais de uma ocorrência elegível |
 | `409` | `routine_transition_invalid` | ação terminal ou fora de ordem seria reescrita |
 | `409` | `idempotency_key_conflict` | chave reutilizada com outra operação ou payload |

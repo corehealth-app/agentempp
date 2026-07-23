@@ -900,9 +900,10 @@ Do not waive findings. Record remaining lower-risk limitations in the plan evide
   prescribing excluded.
 - Clarified schedule errors without changing behavior: item request-schema
   duplicates are `422 validation_failed`; defensive domain/storage rejection of
-  invalid or duplicate item schedules is `422 routine_schedule_invalid`; only
-  routine-category writes through generic `/reminders` use
-  `409 routine_schedule_conflict`.
+  invalid or duplicate item schedules is `422 routine_schedule_invalid`;
+  `409 routine_schedule_conflict` covers both blocked routine-category writes
+  through generic `/reminders` and true concurrency/business schedule conflicts
+  reported by the item CRUD repository/RPC after request validation.
 - Remaining Minor: the medication collection regression asserts the
   service-level `MobileApiError` thrown by the handler, not the final route HTTP
   envelope. Existing route-wrapper tests cover generic envelope serialization,

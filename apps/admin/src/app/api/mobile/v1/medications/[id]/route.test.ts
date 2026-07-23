@@ -78,10 +78,9 @@ function repository(): RoutineItemRepository {
 function dependencies(routineRepository: RoutineItemRepository): RoutineRouteDependencies {
   return {
     createRoutineItemDependencies: vi.fn(() => ({ repository: routineRepository })),
-    executeIdempotent: vi.fn(async (_context, payload, operation) => {
-      expect(payload).toMatchObject({ item_type: 'medication', routine_item_id: ITEM_ID })
-      return operation('routine-medication-item-0761')
-    }),
+    executeIdempotent: vi.fn(async (_context, _payload, operation) =>
+      operation('routine-medication-item-0761'),
+    ),
     now: vi.fn(() => new Date('2026-07-22T14:30:00.000Z')),
   }
 }
@@ -128,6 +127,15 @@ describe('mobile medication item route', () => {
     )
     await handleRoutineItemArchive(context('DELETE', {}), routeContext, 'medication', deps)
 
+    expect(vi.mocked(deps.executeIdempotent).mock.calls[0]?.[1]).toEqual({
+      item_type: 'medication',
+      routine_item_id: ITEM_ID,
+      expected_version: 2,
+      reminders_enabled: false,
+    })
+    expect(vi.mocked(deps.executeIdempotent).mock.calls[1]?.[1]).toEqual({
+      routine_item_id: ITEM_ID,
+    })
     expect(routineRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({ itemType: 'medication', routineItemId: ITEM_ID }),
     )

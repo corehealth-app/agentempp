@@ -193,10 +193,10 @@ describe('mobile supplement item route', () => {
     expect(routineRepository.archive).not.toHaveBeenCalled()
   })
 
-  it('archives with 200 and hashes only the typed route identity after an empty JSON body', async () => {
+  it('archives with 200 and hashes only the route identity after an empty JSON body', async () => {
     const routineRepository = repository()
     const execute = vi.fn(async (_context, payload, operation) => {
-      expect(payload).toEqual({ item_type: 'supplement', routine_item_id: ITEM_ID })
+      expect(payload).toEqual({ routine_item_id: ITEM_ID })
       return operation('routine-delete-0731')
     }) as RoutineRouteDependencies['executeIdempotent']
 

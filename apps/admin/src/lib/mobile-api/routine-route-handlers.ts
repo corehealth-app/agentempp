@@ -148,7 +148,7 @@ export async function handleRoutineItemArchive(
   const { id: rawId } = await routeContext.params
   const routineItemId = resourceIdSchema.parse(rawId)
   emptyJsonBodySchema.parse(await readJsonBody(context.request))
-  const hashInput = { item_type: itemType, routine_item_id: routineItemId }
+  const hashInput = { routine_item_id: routineItemId }
   return dependencies.executeIdempotent(context, hashInput, async (idempotencyKey) =>
     mobileSuccess(
       await archiveRoutineItem(

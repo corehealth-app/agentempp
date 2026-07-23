@@ -126,7 +126,10 @@ describe('mobile medication collection route', () => {
   it('surfaces current medication disclaimer requirements as 428 without clinical copy', async () => {
     const routineRepository = repository({
       create: vi.fn(async () => {
-        throw new RoutineItemRepositoryError('medication_disclaimer_required')
+        throw new RoutineItemRepositoryError('medication_disclaimer_required', {
+          documentKey: 'medication_reminder_disclaimer',
+          version: '2026-07-22.1',
+        })
       }),
     })
 
@@ -142,7 +145,15 @@ describe('mobile medication collection route', () => {
       dependencies(routineRepository),
     ).catch((caught: unknown) => caught)
 
-    expect(error).toMatchObject({ status: 428, code: 'medication_disclaimer_required' })
+    expect(error).toMatchObject({
+      status: 428,
+      code: 'medication_disclaimer_required',
+      details: {
+        document_key: 'medication_reminder_disclaimer',
+        version: '2026-07-22.1',
+      },
+    })
     expect((error as Error).message).not.toMatch(/take|stop|dose|treat|recommend/i)
+    expect(JSON.stringify(error)).not.toContain('body')
   })
 })

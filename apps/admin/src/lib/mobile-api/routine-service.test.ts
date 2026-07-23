@@ -3,6 +3,7 @@ import {
   createReminderRule,
   deactivateMobileDevice,
   getNotificationPreferences,
+  patchReminderRule,
   type RoutineRepository,
   type RoutineServiceDependencies,
   recordHydration,
@@ -102,30 +103,92 @@ describe('mobile routine service', () => {
     })
   })
 
-  it('requires an active owned routine item with the same reminder category', async () => {
+  it.each([
+    'supplement',
+    'medication',
+  ] as const)('reserves %s schedules for versioned routine item CRUD', async (category) => {
     const routineItemId = '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c90'
     const createReminder = vi.fn()
-    const deps = dependencies({
-      findRoutineItem: vi.fn().mockResolvedValue({
-        id: routineItemId,
-        item_type: 'medication',
-        active: true,
-      }),
-      createReminder,
-    })
+    const findRoutineItem = vi.fn()
+    const deps = dependencies({ createReminder, findRoutineItem })
 
     await expect(
       createReminderRule(deps, 'patient-1', {
-        category: 'supplement',
+        category,
         routine_item_id: routineItemId,
         local_time: '08:00',
         weekdays: [1, 2, 3, 4, 5],
       }),
     ).rejects.toMatchObject({
-      status: 422,
-      code: 'routine_item_type_mismatch',
+      status: 409,
+      code: 'routine_schedule_conflict',
     })
+    expect(findRoutineItem).not.toHaveBeenCalled()
     expect(createReminder).not.toHaveBeenCalled()
+  })
+
+  it('reserves existing routine schedules for versioned routine item PATCH', async () => {
+    const routineItemId = '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c90'
+    const updateReminder = vi.fn()
+    const deps = dependencies({
+      listReminders: vi.fn().mockResolvedValue([
+        {
+          id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c92',
+          category: 'supplement',
+          meal_type: null,
+          routine_item_id: routineItemId,
+          local_time: '08:00:00',
+          weekdays: [1, 2, 3, 4, 5],
+          active: true,
+          created_at: '2026-07-20T12:00:00.000Z',
+          updated_at: '2026-07-20T12:00:00.000Z',
+        },
+      ]),
+      updateReminder,
+    })
+
+    await expect(
+      patchReminderRule(deps, 'patient-1', '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c92', {
+        active: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'routine_schedule_conflict',
+    })
+    expect(updateReminder).not.toHaveBeenCalled()
+  })
+
+  it('keeps non-routine reminder PATCH behavior unchanged', async () => {
+    const reminderId = '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c93'
+    const existing = {
+      id: reminderId,
+      category: 'hydration' as const,
+      meal_type: null,
+      routine_item_id: null,
+      local_time: '08:00:00',
+      weekdays: [1, 2, 3, 4, 5],
+      active: true,
+      created_at: '2026-07-20T12:00:00.000Z',
+      updated_at: '2026-07-20T12:00:00.000Z',
+    }
+    const updateReminder = vi.fn().mockResolvedValue({
+      ...existing,
+      local_time: '09:00:00',
+      updated_at: '2026-07-20T12:05:00.000Z',
+    })
+    const deps = dependencies({
+      listReminders: vi.fn().mockResolvedValue([existing]),
+      updateReminder,
+    })
+
+    await expect(
+      patchReminderRule(deps, 'patient-1', reminderId, { local_time: '09:00' }),
+    ).resolves.toMatchObject({ id: reminderId, category: 'hydration', local_time: '09:00' })
+    expect(updateReminder).toHaveBeenCalledWith({
+      userId: 'patient-1',
+      reminderId,
+      local_time: '09:00',
+    })
   })
 
   it('derives hydration local_date from the authenticated patient timezone', async () => {

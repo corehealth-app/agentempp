@@ -18,6 +18,7 @@ const uuidSchema = z.string().uuid()
 const dateTimeSchema = z.string().datetime({ offset: true })
 const occurrenceKeySchema = z.string().regex(/^[0-9a-f]{64}$/)
 const localTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+const medicationDisclaimerKey = 'medication_reminder_disclaimer' as const
 
 const occurrenceSchema = z
   .object({
@@ -157,6 +158,16 @@ const historyPageSchema = z
   })
   .strict()
 
+const medicationDisclaimerRequirementSchema = z
+  .object({
+    document_key: z.literal(medicationDisclaimerKey),
+    version: z.string().min(1).max(64),
+  })
+  .transform((value) => ({
+    documentKey: value.document_key,
+    version: value.version,
+  }))
+
 type RpcResult = Promise<{
   data: unknown
   error: { code?: string; message?: string } | null
@@ -260,6 +271,26 @@ function parseResult<T>(
   return parsed.data
 }
 
+async function medicationDisclaimerError(
+  rpc: UntypedRpc,
+  userId: string,
+  reason: 'medication_disclaimer_required' | 'medication_disclaimer_version_stale',
+  requestId: string,
+): Promise<RoutineItemRepositoryError> {
+  const { data, error } = await rpc('get_mobile_legal_document', {
+    p_user_id: userId,
+    p_document_key: medicationDisclaimerKey,
+  })
+  if (error) return new RoutineItemRepositoryError(reason)
+  const requirement = parseResult(
+    medicationDisclaimerRequirementSchema,
+    data,
+    'parse_create',
+    requestId,
+  )
+  return new RoutineItemRepositoryError(reason, requirement)
+}
+
 function createRepository(supabase: ServiceClient, requestId: string): RoutineItemRepository {
   const rpc = supabase.rpc.bind(supabase) as unknown as UntypedRpc
 
@@ -283,7 +314,17 @@ function createRepository(supabase: ServiceClient, requestId: string): RoutineIt
         p_idempotency_key: input.idempotencyKey,
         p_request_hash: input.requestHash,
       })
-      if (error) operationFailure(requestId, 'create', error)
+      if (error) {
+        const reason = databaseReason(error)
+        if (
+          input.itemType === 'medication' &&
+          (reason === 'medication_disclaimer_required' ||
+            reason === 'medication_disclaimer_version_stale')
+        ) {
+          throw await medicationDisclaimerError(rpc, input.userId, reason, requestId)
+        }
+        operationFailure(requestId, 'create', error)
+      }
       return parseResult(mutationSchema, data, 'parse_create', requestId)
     },
 

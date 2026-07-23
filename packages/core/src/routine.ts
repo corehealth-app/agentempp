@@ -111,7 +111,10 @@ export const routineItemPatchInputSchema = z
     reminders_enabled: z.boolean().optional(),
     schedules: routineSchedulesSchema.optional(),
   })
-  .strict() satisfies z.ZodType<RoutineItemPatchInput, z.ZodTypeDef, unknown>
+  .strict()
+  .refine((value) => Object.keys(value).some((key) => key !== 'expected_version'), {
+    message: 'At least one mutable field is required',
+  }) satisfies z.ZodType<RoutineItemPatchInput, z.ZodTypeDef, unknown>
 
 const routineActionStatusSchema = routineStoredStatusSchema.exclude(['missed'])
 

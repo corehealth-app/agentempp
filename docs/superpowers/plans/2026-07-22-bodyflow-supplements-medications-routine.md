@@ -817,15 +817,15 @@ Expected: PASS.
 - Create: `docs/adr/016-bodyflow-routine-adherence.md`
 - Modify: `docs/superpowers/plans/2026-07-22-bodyflow-supplements-medications-routine.md`
 
-- [ ] **Step 1: Document every public contract.**
+- [x] **Step 1: Document every public contract.**
 
 Include CRUD, history cursor, log actions, disclaimer GET/accept, status semantics, snooze constraints, preview modes, idempotency, optimistic version, archive behavior, stable errors and complete JSON examples for supplement and medication.
 
-- [ ] **Step 2: Record the architecture decision.**
+- [x] **Step 2: Record the architecture decision.**
 
 Document why shared normalized items/rules/logs beat separate tables and JSON, why pending is derived, why missed is persisted redundantly, why schedule occurrence identity is rule plus original instant, and why medication notifications default to private neutral copy.
 
-- [ ] **Step 3: Run complete local verification.**
+- [x] **Step 3: Run complete local verification.**
 
 ```bash
 pnpm --filter @mpp/core test
@@ -840,7 +840,7 @@ git diff --check
 
 Expected: every command exits zero.
 
-- [ ] **Step 4: Run changed-file quality and privacy scans.**
+- [x] **Step 4: Run changed-file quality and privacy scans.**
 
 Run Biome on changed TypeScript/TSX. Scan only added production lines under `apps`, `packages` and `supabase` for token-like values, real emails/phones, medication names in telemetry calls, new WhatsApp dependencies/routes/copy, direct authenticated DML grants, unrestricted SECURITY DEFINER functions and raw payload logging; documentation is excluded because it records the prohibition itself. Use:
 
@@ -850,15 +850,47 @@ git diff --unified=0 eddf055b92ebac6f91c1541e72bda1e9ac1033cd -- apps packages s
 
 Review every match in context; `SECURITY DEFINER` is acceptable only with the fixed-path/revocation/grant controls above. Test fixtures use `.invalid` email domains and synthetic UUIDs only.
 
-- [ ] **Step 5: Review the full branch diff against the specification.**
+- [x] **Step 5: Review the full branch diff against the specification.**
 
 Check exact-occurrence resolution, DST/local-day behavior, schedule history, append-only logs, legal hash/version coupling, stale PATCH behavior, partial-failure retries, RLS/grants, cross-user 404 behavior, cursor stability, outbox privacy and no formula regressions.
 
-- [ ] **Step 6: Fix every Critical or Important finding and rerun its covering tests.**
+- [x] **Step 6: Fix every Critical or Important finding and rerun its covering tests.**
 
 Do not waive findings. Record remaining lower-risk limitations in the plan evidence without presenting them as fixed.
 
-- [ ] **Step 7: Commit `docs(bodyflow): document routine item contracts`.**
+- [x] **Step 7: Commit `docs(bodyflow): document routine item contracts`.**
+
+#### Task 8 local evidence — 2026-07-23
+
+- `docs/mobile/api-v1.md` now records CRUD, exact actions, keyset history,
+  disclaimer GET/accept, state transitions, snooze/local-day constraints,
+  preview modes, two-layer idempotency, optimistic versioning, archive replay,
+  stable errors and complete supplement/medication JSON examples.
+- ADR 016 selects normalized shared items/rules/logs, derived `pending`,
+  redundantly persisted `missed`, rule plus original UTC instant identity and
+  neutral private-by-default medication notifications.
+- The complete diff from `eddf055b92ebac6f91c1541e72bda1e9ac1033cd` was
+  reviewed for exact occurrence/DST, immutable schedule history and logs, legal
+  coupling, stale writes, retry receipts, RLS/grants, opaque cross-user 404s,
+  cursor tuples, outbox privacy and formula regressions. Calorie, macro,
+  hydration and bloco 7700 calculations are unchanged.
+- Three Important findings were fixed and covered: PATCH with only
+  `expected_version` now fails validation; medication create `428` now includes
+  only the current legal key/version; generic `/reminders` writes can no longer
+  bypass versioned supplement/medication schedule history. No Critical finding
+  remained.
+- Verification passed: core 204 tests; admin 546; agent 1,053; Inngest 167;
+  monorepo 6/6 tasks; typecheck 8/8 tasks; admin production build; 49-file
+  Biome; JSON/hash validation; and `git diff --check`.
+- The required added-line scan produced only synthetic UUID/date/hash matches,
+  `.invalid` e-mails, five authenticated `SELECT` grants protected by RLS and 16
+  fixed-path `SECURITY DEFINER` functions with explicit backend-only controls.
+  It found no new WhatsApp surface, bearer token, real contact, raw payload or
+  unrestricted privileged function.
+- Remaining limitation: migrations were not applied or executed, generated
+  database types were not refreshed, and no staging canary ran. Those guarded
+  SQL-runtime steps remain exclusively in Task 9; no production/staging,
+  provider, cron, deploy, Inngest sync or Xcode action occurred in Task 8.
 
 ### Task 9: Staging Migrations, Synthetic Canary, Generated Types And Draft PR
 

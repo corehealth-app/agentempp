@@ -161,6 +161,53 @@ describe('Supabase routine item adapter', () => {
     expect(from).not.toHaveBeenCalled()
   })
 
+  it('loads only the current legal identity after medication creation is gated', async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23514', message: 'medication_legal_acceptance_required' },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          document_key: 'medication_reminder_disclaimer',
+          version: '2026-07-22.1',
+          locale: 'en-US',
+          body: 'Private legal copy',
+          body_hash: 'a'.repeat(64),
+          required_from: '2026-07-22T00:00:00.000Z',
+        },
+        error: null,
+      })
+    const repository = createSupabaseRoutineItemDependencies(serviceClient(rpc)).repository
+
+    await expect(
+      repository.create({
+        userId: USER_ID,
+        itemType: 'medication',
+        input: {
+          name: 'Medication',
+          dose_text: '1 unit',
+          origin: 'professional',
+          reminders_enabled: true,
+          schedules: [{ local_time: '08:00', weekdays: [1] }],
+        },
+        idempotencyKey: 'routine-create-legal-0711',
+        requestHash: 'f'.repeat(64),
+      }),
+    ).rejects.toMatchObject({
+      reason: 'medication_disclaimer_required',
+      disclaimerRequirement: {
+        documentKey: 'medication_reminder_disclaimer',
+        version: '2026-07-22.1',
+      },
+    })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'get_mobile_legal_document', {
+      p_user_id: USER_ID,
+      p_document_key: 'medication_reminder_disclaimer',
+    })
+  })
+
   it('updates with expected_version outside the exact patch and returns the RPC result directly', async () => {
     const from = vi.fn()
     const rpc = vi.fn().mockResolvedValue({

@@ -140,8 +140,16 @@ export type RoutineItemRepositoryErrorReason =
   | 'invalid_cursor'
   | 'internal'
 
+export interface MedicationDisclaimerRequirement {
+  documentKey: 'medication_reminder_disclaimer'
+  version: string
+}
+
 export class RoutineItemRepositoryError extends Error {
-  constructor(readonly reason: RoutineItemRepositoryErrorReason) {
+  constructor(
+    readonly reason: RoutineItemRepositoryErrorReason,
+    readonly disclaimerRequirement?: MedicationDisclaimerRequirement,
+  ) {
     super(reason)
     this.name = 'RoutineItemRepositoryError'
   }
@@ -255,10 +263,15 @@ function mapRepositoryError(error: unknown): MobileApiError {
       return new MobileApiError(422, 'routine_snooze_invalid', 'Routine snooze is invalid')
     case 'medication_disclaimer_required':
     case 'medication_disclaimer_version_stale':
+      if (!error.disclaimerRequirement) return internalError()
       return new MobileApiError(
         428,
         'medication_disclaimer_required',
         'Medication disclaimer acceptance is required',
+        {
+          document_key: error.disclaimerRequirement.documentKey,
+          version: error.disclaimerRequirement.version,
+        },
       )
     case 'invalid_cursor':
       return new MobileApiError(422, 'validation_failed', 'Request validation failed', {

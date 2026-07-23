@@ -418,8 +418,6 @@ describe('mobile routine item service', () => {
     ['routine_idempotency_conflict', 409, 'idempotency_key_conflict'],
     ['routine_schedule_invalid', 422, 'routine_schedule_invalid'],
     ['routine_snooze_invalid', 422, 'routine_snooze_invalid'],
-    ['medication_disclaimer_required', 428, 'medication_disclaimer_required'],
-    ['medication_disclaimer_version_stale', 428, 'medication_disclaimer_required'],
   ] as const)('maps repository code %s to %i without leaking repository details', async (reason, status, code) => {
     const deps = dependencies({
       create: vi.fn(async () => {
@@ -445,5 +443,47 @@ describe('mobile routine item service', () => {
     expect(error).toMatchObject({ status, code })
     expect((error as { details?: unknown }).details).toBeUndefined()
     expect((error as Error).message).not.toBe(reason)
+  })
+
+  it.each([
+    'medication_disclaimer_required',
+    'medication_disclaimer_version_stale',
+  ] as const)('returns the current legal identity for %s without exposing legal copy', async (reason) => {
+    const repositoryError = Object.assign(new RoutineItemRepositoryError(reason), {
+      disclaimerRequirement: {
+        documentKey: 'medication_reminder_disclaimer',
+        version: '2026-07-22.1',
+      },
+    })
+    const deps = dependencies({
+      create: vi.fn(async () => {
+        throw repositoryError
+      }),
+    })
+
+    const error = await createRoutineItem(
+      deps,
+      auth,
+      'medication',
+      {
+        name: 'Medication',
+        dose_text: '1 unit',
+        origin: 'professional',
+        reminders_enabled: true,
+        schedules: [{ local_time: '08:00', weekdays: [1] }],
+      },
+      'routine-create-legal-0701',
+      '1'.repeat(64),
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({
+      status: 428,
+      code: 'medication_disclaimer_required',
+      details: {
+        document_key: 'medication_reminder_disclaimer',
+        version: '2026-07-22.1',
+      },
+    })
+    expect(JSON.stringify(error)).not.toContain('body')
   })
 })

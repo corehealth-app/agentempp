@@ -167,25 +167,14 @@ function reminderDto(reminder: ReminderRecord) {
   }
 }
 
-async function requireRoutineItem(
-  deps: RoutineServiceDependencies,
-  userId: string,
-  routineItemId: string,
-  expectedType: RoutineItemType,
-): Promise<RoutineItemRecord> {
-  const item = await deps.repository.findRoutineItem(userId, routineItemId)
-  if (!item) throw new MobileApiError(404, 'routine_item_not_found', 'Routine item not found')
-  if (item.item_type !== expectedType) {
+function rejectRoutineSchedule(category: ReminderCategory): void {
+  if (category === 'supplement' || category === 'medication') {
     throw new MobileApiError(
-      422,
-      'routine_item_type_mismatch',
-      'Routine item type does not match the requested operation',
+      409,
+      'routine_schedule_conflict',
+      'Routine schedules must be updated through the item contract',
     )
   }
-  if (!item.active) {
-    throw new MobileApiError(409, 'routine_item_inactive', 'Routine item is inactive')
-  }
-  return item
 }
 
 function localDateAt(isoTimestamp: string, timezone: string): string {
@@ -263,9 +252,7 @@ export async function createReminderRule(
   userId: string,
   input: CreateReminderInput,
 ) {
-  if (input.category === 'supplement' || input.category === 'medication') {
-    await requireRoutineItem(deps, userId, input.routine_item_id as string, input.category)
-  }
+  rejectRoutineSchedule(input.category)
   return reminderDto(await deps.repository.createReminder({ ...input, userId }))
 }
 
@@ -275,13 +262,19 @@ export async function patchReminderRule(
   reminderId: string,
   patch: PatchReminderInput,
 ) {
-  const reminder = await deps.repository.updateReminder({
+  const existing = (await deps.repository.listReminders(userId)).find(
+    (reminder) => reminder.id === reminderId,
+  )
+  if (!existing) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
+  rejectRoutineSchedule(existing.category)
+
+  const updated = await deps.repository.updateReminder({
     ...patch,
     userId,
     reminderId,
   })
-  if (!reminder) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
-  return reminderDto(reminder)
+  if (!updated) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
+  return reminderDto(updated)
 }
 
 export async function recordHydration(

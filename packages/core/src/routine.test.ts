@@ -157,6 +157,7 @@ describe('routine contracts', () => {
     for (const expected_version of [0, -1, 1.5]) {
       expect(routineItemPatchInputSchema.safeParse({ expected_version }).success).toBe(false)
     }
+    expect(routineItemPatchInputSchema.safeParse({ expected_version: 1 }).success).toBe(false)
     expect(
       routineItemPatchInputSchema.safeParse({ expected_version: 1, unexpected: true }).success,
     ).toBe(false)

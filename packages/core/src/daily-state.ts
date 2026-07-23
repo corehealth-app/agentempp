@@ -1,9 +1,10 @@
 import { eatingBalance, netBalance } from './engine/balance.js'
 import type { DailyTargets } from './engine/targets.js'
 import { KCAL_BLOCK } from './progress-calc.js'
+import type { RoutineItemType, RoutineOrigin, RoutinePublicStatus } from './routine.js'
 import type { Protocol } from './types.js'
 
-export const DAILY_STATE_CALCULATION_VERSION = 'bodyflow.daily-state.v1' as const
+export const DAILY_STATE_CALCULATION_VERSION = 'bodyflow.daily-state.v2' as const
 
 export type DailyStateMealType = 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
 export type DailyStateDayStatus =
@@ -78,21 +79,23 @@ export interface DailyStateHydrationTargetInput {
   updatedAt: string | null
 }
 
-export type DailyStateRoutineItemType = 'supplement' | 'medication'
-export type DailyStateRoutineAdherenceStatus =
-  | 'taken'
-  | 'snoozed'
-  | 'skipped'
-  | 'missed'
-  | 'not_recorded'
+export interface DailyStateRoutineOccurrenceInput {
+  reminderRuleId: string
+  scheduledFor: string
+  status: RoutinePublicStatus
+  lastActionAt: string | null
+  snoozedUntil: string | null
+}
 
 export interface DailyStateRoutineItemInput {
   id: string
-  itemType: DailyStateRoutineItemType
+  itemType: RoutineItemType
   name: string
-  adherenceStatus: DailyStateRoutineAdherenceStatus
-  occurredAt: string | null
-  snoozedUntil: string | null
+  doseText: string | null
+  origin: RoutineOrigin | null
+  remindersEnabled: boolean
+  schedules: Array<{ id: string; localTime: string; weekdays: number[] }>
+  occurrences: DailyStateRoutineOccurrenceInput[]
   updatedAt: string | null
 }
 
@@ -182,15 +185,27 @@ function completionStatus(
   return { status: 'open', day_closed: false, has_sufficient_data: null }
 }
 
-function routineSection(items: DailyStateRoutineItemInput[], itemType: DailyStateRoutineItemType) {
+function routineSection(items: DailyStateRoutineItemInput[], itemType: RoutineItemType) {
   const publicItems = items
     .filter((item) => item.itemType === itemType)
     .map((item) => ({
       id: item.id,
       name: item.name,
-      status: item.adherenceStatus,
-      occurred_at: item.occurredAt,
-      snoozed_until: item.snoozedUntil,
+      dose_text: item.doseText,
+      origin: item.origin,
+      reminders_enabled: item.remindersEnabled,
+      schedules: item.schedules.map((schedule) => ({
+        id: schedule.id,
+        local_time: schedule.localTime,
+        weekdays: schedule.weekdays,
+      })),
+      occurrences: item.occurrences.map((occurrence) => ({
+        reminder_rule_id: occurrence.reminderRuleId,
+        scheduled_for: occurrence.scheduledFor,
+        status: occurrence.status,
+        last_action_at: occurrence.lastActionAt,
+        snoozed_until: occurrence.snoozedUntil,
+      })),
     }))
 
   return {
@@ -366,7 +381,10 @@ export function buildDailyState(input: DailyStateInput) {
       snapshot?.updatedAt,
       input.progress?.updatedAt,
       input.hydrationTarget?.updatedAt,
-      ...input.routineItems.flatMap((item) => [item.updatedAt, item.occurredAt]),
+      ...input.routineItems.flatMap((item) => [
+        item.updatedAt,
+        ...item.occurrences.map((occurrence) => occurrence.lastActionAt),
+      ]),
       ...input.pendingRegistrations.map((registration) => registration.created_at),
     ]),
     generated_at: input.generatedAt,

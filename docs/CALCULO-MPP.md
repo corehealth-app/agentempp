@@ -5,7 +5,7 @@
 > (1) o código, (2) o teste que a trava, (3) este documento — na mesma PR.
 > Nunca mude uma fórmula "no susto" por um print de paciente sem checar aqui.
 
-Última revisão: 2026-07-20.
+Última revisão: 2026-07-23.
 
 ---
 
@@ -128,12 +128,18 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
 - Hidratação usa somente `daily_snapshots.water_consumed_ml`; meta, quando
   configurada, vem de `notification_preferences.hydration_target_ml`. Percentual
   e restante não existem sem essa meta explícita.
-- Suplementos e medicamentos expõem itens ativos de `routine_items` e a ação mais
-  recente do dia local em `routine_adherence_logs`. O estado não calcula dose,
-  prescrição nem recomendação.
-- A versão inicial da semântica é `bodyflow.daily-state.v1`. Mudança futura de
-  fórmula exige incrementar `calculation_version`, atualizar testes e este
-  documento na mesma PR. O app nunca replica estas fórmulas.
+- Suplementos e medicamentos são lidos exclusivamente por
+  `list_mobile_routine_items`, que usa o fuso armazenado do usuário e o `now` do
+  servidor para definir a data local. Itens arquivados não entram na leitura.
+- Cada item expõe `dose_text`, `origin`, `reminders_enabled`, a lista ordenada de
+  horários e todas as ocorrências exatas do dia. Cada ocorrência mantém
+  `reminder_rule_id`, `scheduled_for`, `status`, `last_action_at` e
+  `snoozed_until`; horários do mesmo item são independentes. A chave interna da
+  ocorrência não faz parte do estado público.
+- A versão da semântica é `bodyflow.daily-state.v2`. A v2 muda somente o contrato
+  de suplementos e medicamentos: cálculos de calorias, macros, hidratação,
+  exercício e bloco 7700 permanecem idênticos à v1. O estado não calcula dose,
+  prescrição nem recomendação, e o app nunca replica estas fórmulas.
 
 ## 5. Defesas anti-erro (não remover)
 

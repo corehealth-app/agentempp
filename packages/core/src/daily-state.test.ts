@@ -167,7 +167,7 @@ describe('buildDailyState', () => {
     expect(state.updated_at).toBe('2026-07-20T14:05:00.000Z')
   })
 
-  it('exposes configured routine items with today adherence and no invented dose data', () => {
+  it('exposes exact routine occurrences independently with stable metadata and ordering', () => {
     const state = buildDailyState(
       input({
         routineItems: [
@@ -175,19 +175,59 @@ describe('buildDailyState', () => {
             id: 'supplement-1',
             itemType: 'supplement',
             name: 'Creatina',
-            adherenceStatus: 'taken',
-            occurredAt: '2026-07-20T12:00:00.000Z',
-            snoozedUntil: null,
-            updatedAt: '2026-07-20T12:00:00.000Z',
+            doseText: '3 g',
+            origin: 'professional',
+            remindersEnabled: true,
+            schedules: [
+              { id: 'rule-08', localTime: '08:00', weekdays: [1, 3, 5] },
+              { id: 'rule-20', localTime: '20:00', weekdays: [1, 3, 5] },
+            ],
+            occurrences: [
+              {
+                reminderRuleId: 'rule-08',
+                scheduledFor: '2026-07-20T12:00:00.000Z',
+                status: 'taken',
+                lastActionAt: '2026-07-20T12:05:00.000Z',
+                snoozedUntil: null,
+              },
+              {
+                reminderRuleId: 'rule-20',
+                scheduledFor: '2026-07-21T00:00:00.000Z',
+                status: 'pending',
+                lastActionAt: null,
+                snoozedUntil: null,
+              },
+            ],
+            updatedAt: '2026-07-20T12:05:00.000Z',
           },
           {
             id: 'medication-1',
             itemType: 'medication',
             name: 'Item cadastrado',
-            adherenceStatus: 'not_recorded',
-            occurredAt: null,
-            snoozedUntil: null,
-            updatedAt: '2026-07-20T11:00:00.000Z',
+            doseText: null,
+            origin: null,
+            remindersEnabled: false,
+            schedules: [
+              { id: 'rule-missed', localTime: '07:00', weekdays: [1] },
+              { id: 'rule-snoozed', localTime: '09:00', weekdays: [1] },
+            ],
+            occurrences: [
+              {
+                reminderRuleId: 'rule-missed',
+                scheduledFor: '2026-07-20T11:00:00.000Z',
+                status: 'missed',
+                lastActionAt: '2026-07-21T04:05:00.000Z',
+                snoozedUntil: null,
+              },
+              {
+                reminderRuleId: 'rule-snoozed',
+                scheduledFor: '2026-07-20T13:00:00.000Z',
+                status: 'snoozed',
+                lastActionAt: '2026-07-20T13:02:00.000Z',
+                snoozedUntil: '2026-07-20T13:32:00.000Z',
+              },
+            ],
+            updatedAt: '2026-07-21T04:05:00.000Z',
           },
         ],
       }),
@@ -199,9 +239,29 @@ describe('buildDailyState', () => {
         {
           id: 'supplement-1',
           name: 'Creatina',
-          status: 'taken',
-          occurred_at: '2026-07-20T12:00:00.000Z',
-          snoozed_until: null,
+          dose_text: '3 g',
+          origin: 'professional',
+          reminders_enabled: true,
+          schedules: [
+            { id: 'rule-08', local_time: '08:00', weekdays: [1, 3, 5] },
+            { id: 'rule-20', local_time: '20:00', weekdays: [1, 3, 5] },
+          ],
+          occurrences: [
+            {
+              reminder_rule_id: 'rule-08',
+              scheduled_for: '2026-07-20T12:00:00.000Z',
+              status: 'taken',
+              last_action_at: '2026-07-20T12:05:00.000Z',
+              snoozed_until: null,
+            },
+            {
+              reminder_rule_id: 'rule-20',
+              scheduled_for: '2026-07-21T00:00:00.000Z',
+              status: 'pending',
+              last_action_at: null,
+              snoozed_until: null,
+            },
+          ],
         },
       ],
     })
@@ -211,13 +271,34 @@ describe('buildDailyState', () => {
         {
           id: 'medication-1',
           name: 'Item cadastrado',
-          status: 'not_recorded',
-          occurred_at: null,
-          snoozed_until: null,
+          dose_text: null,
+          origin: null,
+          reminders_enabled: false,
+          schedules: [
+            { id: 'rule-missed', local_time: '07:00', weekdays: [1] },
+            { id: 'rule-snoozed', local_time: '09:00', weekdays: [1] },
+          ],
+          occurrences: [
+            {
+              reminder_rule_id: 'rule-missed',
+              scheduled_for: '2026-07-20T11:00:00.000Z',
+              status: 'missed',
+              last_action_at: '2026-07-21T04:05:00.000Z',
+              snoozed_until: null,
+            },
+            {
+              reminder_rule_id: 'rule-snoozed',
+              scheduled_for: '2026-07-20T13:00:00.000Z',
+              status: 'snoozed',
+              last_action_at: '2026-07-20T13:02:00.000Z',
+              snoozed_until: '2026-07-20T13:32:00.000Z',
+            },
+          ],
         },
       ],
     })
-    expect(JSON.stringify(state)).not.toContain('dose')
+    expect(state.calculation_version).toBe('bodyflow.daily-state.v2')
+    expect(JSON.stringify(state)).not.toContain('occurrence_key')
   })
 
   it('marks a reliable open gap as pending information without treating it as failure', () => {

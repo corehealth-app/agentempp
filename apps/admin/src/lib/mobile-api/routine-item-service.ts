@@ -323,18 +323,19 @@ function mapMutation(record: RoutineItemRecord): RoutineItemMutationDto {
   }
 }
 
-async function requireTypedActiveItem(
+async function requireTypedItem(
   dependencies: RoutineItemServiceDependencies,
   auth: MobileAuthContext,
   itemType: RoutineItemType,
   routineItemId: string,
+  includeArchived: boolean,
   now: Date,
 ): Promise<void> {
   const page = await repositoryCall(() =>
     dependencies.repository.list({
       userId: auth.userId,
       itemType,
-      includeArchived: false,
+      includeArchived,
       now: now.toISOString(),
     }),
   )
@@ -390,7 +391,7 @@ export async function updateRoutineItem(
   requestHash: string,
   now = new Date(),
 ): Promise<RoutineItemMutationDto> {
-  await requireTypedActiveItem(dependencies, auth, itemType, routineItemId, now)
+  await requireTypedItem(dependencies, auth, itemType, routineItemId, false, now)
   return mapMutation(
     await repositoryCall(() =>
       dependencies.repository.update({
@@ -414,7 +415,7 @@ export async function archiveRoutineItem(
   requestHash: string,
   now = new Date(),
 ): Promise<RoutineItemMutationDto> {
-  await requireTypedActiveItem(dependencies, auth, itemType, routineItemId, now)
+  await requireTypedItem(dependencies, auth, itemType, routineItemId, true, now)
   return mapMutation(
     await repositoryCall(() =>
       dependencies.repository.archive({

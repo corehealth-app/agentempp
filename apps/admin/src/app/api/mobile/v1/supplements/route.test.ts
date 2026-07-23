@@ -13,7 +13,6 @@ import {
   handleRoutineCollectionPost,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { GET, POST } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000721'
 const AUTH_USER_ID = '00000000-0000-0000-0000-000000000722'
@@ -91,9 +90,32 @@ function dependencies(
 }
 
 describe('mobile supplement collection route', () => {
-  it('exports thin authenticated GET and POST routes', () => {
-    expect(GET).toBeTypeOf('function')
-    expect(POST).toBeTypeOf('function')
+  it('invokes exported GET and POST routes closed over supplement', async () => {
+    vi.resetModules()
+    const get = vi.fn(async () => new Response(null, { status: 204 }))
+    const post = vi.fn(async () => new Response(null, { status: 201 }))
+    const createGet = vi.fn(() => get)
+    const createPost = vi.fn(() => post)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineCollectionGetRoute: createGet,
+      createRoutineCollectionPostRoute: createPost,
+    }))
+
+    try {
+      const routes = await import('./route')
+      await routes.GET(new Request('https://bodyflow.test/api/mobile/v1/supplements'))
+      await routes.POST(
+        new Request('https://bodyflow.test/api/mobile/v1/supplements', { method: 'POST' }),
+      )
+
+      expect(createGet).toHaveBeenCalledWith('supplement')
+      expect(createPost).toHaveBeenCalledWith('supplement')
+      expect(get).toHaveBeenCalledOnce()
+      expect(post).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
   })
 
   it('authenticates before creating dependencies or reading the repository', async () => {

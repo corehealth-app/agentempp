@@ -8,7 +8,6 @@ import {
   handleRoutineCollectionPost,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { GET, POST } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000751'
 const ITEM_ID = '00000000-0000-0000-0000-000000000752'
@@ -71,9 +70,35 @@ function dependencies(routineRepository: RoutineItemRepository): RoutineRouteDep
 }
 
 describe('mobile medication collection route', () => {
-  it('exports thin routes and closes both operations over medication', async () => {
-    expect(GET).toBeTypeOf('function')
-    expect(POST).toBeTypeOf('function')
+  it('invokes exported GET and POST routes closed over medication', async () => {
+    vi.resetModules()
+    const get = vi.fn(async () => new Response(null, { status: 204 }))
+    const post = vi.fn(async () => new Response(null, { status: 201 }))
+    const createGet = vi.fn(() => get)
+    const createPost = vi.fn(() => post)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineCollectionGetRoute: createGet,
+      createRoutineCollectionPostRoute: createPost,
+    }))
+
+    try {
+      const routes = await import('./route')
+      await routes.GET(new Request('https://bodyflow.test/api/mobile/v1/medications'))
+      await routes.POST(
+        new Request('https://bodyflow.test/api/mobile/v1/medications', { method: 'POST' }),
+      )
+
+      expect(createGet).toHaveBeenCalledWith('medication')
+      expect(createPost).toHaveBeenCalledWith('medication')
+      expect(get).toHaveBeenCalledOnce()
+      expect(post).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
+  })
+
+  it('forwards medication through both collection handlers', async () => {
     const routineRepository = repository()
     const deps = dependencies(routineRepository)
 

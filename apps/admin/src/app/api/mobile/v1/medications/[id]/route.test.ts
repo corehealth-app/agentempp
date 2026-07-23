@@ -7,7 +7,6 @@ import {
   handleRoutineItemPatch,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { DELETE, PATCH } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000761'
 const ITEM_ID = '00000000-0000-0000-0000-000000000762'
@@ -88,9 +87,35 @@ function dependencies(routineRepository: RoutineItemRepository): RoutineRouteDep
 }
 
 describe('mobile medication item route', () => {
-  it('exports thin routes and forwards medication for patch and archive', async () => {
-    expect(PATCH).toBeTypeOf('function')
-    expect(DELETE).toBeTypeOf('function')
+  it('invokes exported PATCH and DELETE routes closed over medication', async () => {
+    vi.resetModules()
+    const patch = vi.fn(async () => new Response(null, { status: 200 }))
+    const archive = vi.fn(async () => new Response(null, { status: 200 }))
+    const createPatch = vi.fn(() => patch)
+    const createArchive = vi.fn(() => archive)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineItemArchiveRoute: createArchive,
+      createRoutineItemPatchRoute: createPatch,
+    }))
+
+    try {
+      const routes = await import('./route')
+      const request = new Request(`https://bodyflow.test/api/mobile/v1/medications/${ITEM_ID}`)
+      const params = { params: Promise.resolve({ id: ITEM_ID }) }
+      await routes.PATCH(request, params)
+      await routes.DELETE(request, params)
+
+      expect(createPatch).toHaveBeenCalledWith('medication')
+      expect(createArchive).toHaveBeenCalledWith('medication')
+      expect(patch).toHaveBeenCalledOnce()
+      expect(archive).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
+  })
+
+  it('forwards medication through patch and archive handlers', async () => {
     const routineRepository = repository()
     const deps = dependencies(routineRepository)
     const routeContext = { params: Promise.resolve({ id: ITEM_ID }) }

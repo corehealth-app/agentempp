@@ -7,7 +7,6 @@ import {
   handleRoutineItemHistory,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { GET } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000741'
 const ITEM_ID = '00000000-0000-0000-0000-000000000742'
@@ -79,8 +78,27 @@ function dependencies(routineRepository: RoutineItemRepository): RoutineRouteDep
 }
 
 describe('mobile supplement history route', () => {
-  it('exports a thin GET route and forwards strict pagination', async () => {
-    expect(GET).toBeTypeOf('function')
+  it('invokes the exported GET route closed over supplement', async () => {
+    vi.resetModules()
+    const get = vi.fn(async () => new Response(null, { status: 200 }))
+    const createGet = vi.fn(() => get)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineItemHistoryRoute: createGet,
+    }))
+
+    try {
+      const routes = await import('./route')
+      await routes.GET(context().request, { params: Promise.resolve({ id: ITEM_ID }) })
+
+      expect(createGet).toHaveBeenCalledWith('supplement')
+      expect(get).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
+  })
+
+  it('forwards strict history pagination', async () => {
     const routineRepository = repository()
     const response = await handleRoutineItemHistory(
       context('?limit=10'),

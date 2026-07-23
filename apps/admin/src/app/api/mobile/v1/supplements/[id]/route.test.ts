@@ -11,7 +11,6 @@ import {
   handleRoutineItemPatch,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { DELETE, PATCH } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000731'
 const AUTH_USER_ID = '00000000-0000-0000-0000-000000000732'
@@ -96,9 +95,32 @@ function dependencies(
 const routeContext = (id = ITEM_ID) => ({ params: Promise.resolve({ id }) })
 
 describe('mobile supplement item route', () => {
-  it('exports thin PATCH and DELETE routes', () => {
-    expect(PATCH).toBeTypeOf('function')
-    expect(DELETE).toBeTypeOf('function')
+  it('invokes exported PATCH and DELETE routes closed over supplement', async () => {
+    vi.resetModules()
+    const patch = vi.fn(async () => new Response(null, { status: 200 }))
+    const archive = vi.fn(async () => new Response(null, { status: 200 }))
+    const createPatch = vi.fn(() => patch)
+    const createArchive = vi.fn(() => archive)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineItemArchiveRoute: createArchive,
+      createRoutineItemPatchRoute: createPatch,
+    }))
+
+    try {
+      const routes = await import('./route')
+      const request = new Request(`https://bodyflow.test/api/mobile/v1/supplements/${ITEM_ID}`)
+      const params = { params: Promise.resolve({ id: ITEM_ID }) }
+      await routes.PATCH(request, params)
+      await routes.DELETE(request, params)
+
+      expect(createPatch).toHaveBeenCalledWith('supplement')
+      expect(createArchive).toHaveBeenCalledWith('supplement')
+      expect(patch).toHaveBeenCalledOnce()
+      expect(archive).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
   })
 
   it('validates the UUID and strict PATCH body before repository access', async () => {

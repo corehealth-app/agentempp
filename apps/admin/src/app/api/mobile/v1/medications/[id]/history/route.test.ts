@@ -6,7 +6,6 @@ import {
   handleRoutineItemHistory,
   type RoutineRouteDependencies,
 } from '@/lib/mobile-api/routine-route-handlers'
-import { GET } from './route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000771'
 const ITEM_ID = '00000000-0000-0000-0000-000000000772'
@@ -39,8 +38,27 @@ function context(query = ''): MobileRouteContext {
 }
 
 describe('mobile medication history route', () => {
-  it('exports a thin route and forwards medication with opaque pagination', async () => {
-    expect(GET).toBeTypeOf('function')
+  it('invokes the exported GET route closed over medication', async () => {
+    vi.resetModules()
+    const get = vi.fn(async () => new Response(null, { status: 200 }))
+    const createGet = vi.fn(() => get)
+    vi.doMock('@/lib/mobile-api/routine-route-handlers', () => ({
+      createRoutineItemHistoryRoute: createGet,
+    }))
+
+    try {
+      const routes = await import('./route')
+      await routes.GET(context().request, { params: Promise.resolve({ id: ITEM_ID }) })
+
+      expect(createGet).toHaveBeenCalledWith('medication')
+      expect(get).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('@/lib/mobile-api/routine-route-handlers')
+      vi.resetModules()
+    }
+  })
+
+  it('forwards medication with opaque pagination', async () => {
     const history = vi.fn(async () => ({ items: [], nextCursor: 'opaque-medication-cursor' }))
     const routineRepository: RoutineItemRepository = {
       list: vi.fn(),

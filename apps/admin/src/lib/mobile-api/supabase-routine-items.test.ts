@@ -375,6 +375,24 @@ describe('Supabase routine item adapter', () => {
     ).rejects.toEqual(new RoutineItemRepositoryError('routine_item_not_found'))
   })
 
+  it('maps an inaccessible archive RPC to the same non-disclosing repository reason', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'P0002', message: 'private archive ownership detail' },
+    })
+    const repository = createSupabaseRoutineItemDependencies(serviceClient(rpc)).repository
+
+    await expect(
+      repository.archive({
+        userId: USER_ID,
+        itemType: 'medication',
+        routineItemId: ITEM_ID,
+        idempotencyKey: 'routine-archive-hidden-0711',
+        requestHash: '4'.repeat(64),
+      }),
+    ).rejects.toEqual(new RoutineItemRepositoryError('routine_item_not_found'))
+  })
+
   it.each([
     ['list', listPayload({ unexpected: true })],
     ['create', { routine_item_id: ITEM_ID, version: 0 }],
@@ -427,6 +445,51 @@ describe('Supabase routine item adapter', () => {
       operation: `parse_${operation}`,
       database_code: 'invalid_response',
     })
+  })
+
+  it.each([
+    ['update', null],
+    ['update', { routine_item_id: ITEM_ID, version: 0 }],
+    ['archive', null],
+    ['archive', { routine_item_id: ITEM_ID, version: 6 }],
+  ] as const)('fails closed for %s payload %j with technical-only logging', async (operation, data) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const rpc = vi.fn().mockResolvedValue({ data, error: null })
+    const repository = createSupabaseRoutineItemDependencies(serviceClient(rpc), {
+      requestId: 'request-routine-mutation-parse-0711',
+    }).repository
+
+    if (operation === 'update') {
+      await expect(
+        repository.update({
+          userId: USER_ID,
+          itemType: 'supplement',
+          routineItemId: ITEM_ID,
+          input: { expected_version: 5, dose_text: '5 g' },
+          idempotencyKey: 'routine-update-parse-0711',
+          requestHash: '2'.repeat(64),
+        }),
+      ).rejects.toEqual(new RoutineItemRepositoryError('internal'))
+    } else {
+      await expect(
+        repository.archive({
+          userId: USER_ID,
+          itemType: 'supplement',
+          routineItemId: ITEM_ID,
+          idempotencyKey: 'routine-archive-parse-0711',
+          requestHash: '3'.repeat(64),
+        }),
+      ).rejects.toEqual(new RoutineItemRepositoryError('internal'))
+    }
+
+    expect(consoleError).toHaveBeenCalledWith('[mobile-routine-items] operation_failed', {
+      request_id: 'request-routine-mutation-parse-0711',
+      operation: `parse_${operation}`,
+      database_code: 'invalid_response',
+    })
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(USER_ID)
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(ITEM_ID)
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('5 g')
   })
 
   it('logs only request_id, safe operation, and a normalized database code for unknown failures', async () => {

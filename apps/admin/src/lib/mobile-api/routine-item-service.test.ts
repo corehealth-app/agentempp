@@ -206,7 +206,7 @@ describe('mobile routine item service', () => {
     })
   })
 
-  it('preflights typed active ownership before update and archive', async () => {
+  it('preflights active updates and retryable archives with the exact type', async () => {
     const deps = dependencies()
     const patch = { expected_version: 4, dose_text: '5 g' }
 
@@ -243,6 +243,12 @@ describe('mobile routine item service', () => {
       includeArchived: false,
       now: NOW.toISOString(),
     })
+    expect(deps.repository.list).toHaveBeenNthCalledWith(2, {
+      userId: USER_ID,
+      itemType: 'supplement',
+      includeArchived: true,
+      now: NOW.toISOString(),
+    })
     expect(deps.repository.update).toHaveBeenCalledWith({
       userId: USER_ID,
       itemType: 'supplement',
@@ -276,6 +282,88 @@ describe('mobile routine item service', () => {
       ),
     ).rejects.toMatchObject({ status: 404, code: 'routine_item_not_found' })
     expect(deps.repository.update).not.toHaveBeenCalled()
+  })
+
+  it('reaches the durable archive receipt when the outer completion failed after commit', async () => {
+    let archived = false
+    const routineItem = itemPage().items[0]
+    if (!routineItem) throw new Error('Routine item fixture is required')
+    const archiveResult = {
+      routineItemId: ITEM_ID,
+      version: 5,
+      archivedAt: '2026-07-22T15:00:00.000Z',
+    }
+    const list = vi.fn(async (input: { includeArchived: boolean }) => ({
+      localDate: '2026-07-22',
+      items:
+        !archived || input.includeArchived
+          ? [
+              {
+                ...routineItem,
+                active: !archived,
+                archivedAt: archived ? archiveResult.archivedAt : null,
+              },
+            ]
+          : [],
+    }))
+    const archive = vi.fn(async () => {
+      archived = true
+      return archiveResult
+    })
+    const deps = dependencies({ list, archive })
+
+    let committedResult: Awaited<ReturnType<typeof archiveRoutineItem>> | undefined
+    await expect(
+      (async () => {
+        committedResult = await archiveRoutineItem(
+          deps,
+          auth,
+          'supplement',
+          ITEM_ID,
+          'routine-archive-replay-0701',
+          'e'.repeat(64),
+          NOW,
+        )
+        throw new Error('Outer idempotency completion failed')
+      })(),
+    ).rejects.toThrow('Outer idempotency completion failed')
+    const retry = await archiveRoutineItem(
+      deps,
+      auth,
+      'supplement',
+      ITEM_ID,
+      'routine-archive-replay-0701',
+      'e'.repeat(64),
+      NOW,
+    )
+
+    expect(retry).toEqual(committedResult)
+    expect(archive).toHaveBeenCalledTimes(2)
+    expect(list).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ itemType: 'supplement', includeArchived: true }),
+    )
+  })
+
+  it('keeps wrong-type archive targets non-disclosing', async () => {
+    const archive = vi.fn()
+    const deps = dependencies({
+      list: vi.fn(async () => ({ localDate: '2026-07-22', items: [] })),
+      archive,
+    })
+
+    await expect(
+      archiveRoutineItem(
+        deps,
+        auth,
+        'medication',
+        ITEM_ID,
+        'routine-archive-hidden-0701',
+        'f'.repeat(64),
+        NOW,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: 'routine_item_not_found' })
+    expect(archive).not.toHaveBeenCalled()
   })
 
   it('maps history without exposing occurrence keys and preserves its opaque cursor', async () => {

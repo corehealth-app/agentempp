@@ -984,9 +984,11 @@ Run full tests, full typecheck, admin build, changed-file Biome and `git diff --
 
 Write aggregate-only results in this plan. Commit generated types and evidence as `docs(bodyflow): complete routine staging validation`.
 
-- [ ] **Step 12: Push and open a stacked draft PR.**
+- [x] **Step 12: Push and open a stacked draft PR.**
 
 Push `codex/bodyflow-routine-medications-v1` and open a draft PR with base `codex/bodyflow-content-cms-v1`. Do not merge or deploy.
+
+Draft PR: `https://github.com/corehealth-app/agentempp/pull/11`.
 
 #### Task 9 staging evidence — 2026-07-23
 

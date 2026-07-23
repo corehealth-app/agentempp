@@ -105,7 +105,8 @@ DECLARE
     'private.lock_routine_item(uuid,uuid,text,boolean)',
     'private.read_routine_mutation_receipt(uuid,text,text,text)',
     'private.write_routine_mutation_receipt(uuid,text,text,text,jsonb)',
-    'private.assert_current_medication_legal_acceptance(uuid)'
+    'private.assert_current_medication_legal_acceptance(uuid)',
+    'private.routine_clock_timestamp()'
   ];
 BEGIN
   FOREACH v_column IN ARRAY v_required_columns
@@ -539,6 +540,18 @@ BEGIN
     END IF;
   END LOOP;
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc procedure
+    WHERE procedure.oid IN (
+      'private.enforce_routine_adherence_correction()'::regprocedure,
+      'private.enforce_reminder_event_routine_action()'::regprocedure
+    )
+      AND procedure.provolatile <> 's'
+  ) THEN
+    RAISE EXCEPTION 'routine reference triggers do not use the statement-start snapshot';
+  END IF;
+
   FOREACH v_function_signature IN ARRAY v_public_api_functions
   LOOP
     v_function := to_regprocedure(v_function_signature);
@@ -562,6 +575,17 @@ BEGIN
       RAISE EXCEPTION 'routine public API function security is incorrect: %', v_function_signature;
     END IF;
   END LOOP;
+
+  v_function := to_regprocedure(
+    'public.record_routine_occurrence_action_atomic(uuid,uuid,text,uuid,timestamp with time zone,text,timestamp with time zone,timestamp with time zone,text)'
+  );
+  v_function_definition := pg_get_functiondef(v_function);
+
+  IF v_function_definition
+      NOT LIKE '%v_now := private.routine_clock_timestamp();%'
+    OR v_function_definition LIKE '%v_now := clock_timestamp();%' THEN
+    RAISE EXCEPTION 'routine action RPC does not use the authoritative private clock';
+  END IF;
 
   FOREACH v_function_signature IN ARRAY v_private_api_functions
   LOOP
@@ -640,7 +664,7 @@ BEGIN
       to_regprocedure(
         'private.ensure_routine_occurrence_missed(uuid,uuid,text,uuid,text,timestamp with time zone,timestamp with time zone)'
       )
-    ) NOT LIKE '%ON CONFLICT (user_id, occurrence_key) WHERE%status = ''missed''%source = ''system''%DO NOTHING%'
+    ) NOT LIKE '%ON CONFLICT (user_id, occurrence_key)%WHERE%status = ''missed''%source = ''system''%DO NOTHING%'
     OR pg_get_functiondef(v_function)
       LIKE '%ON CONFLICT (user_id, idempotency_key) DO NOTHING%' THEN
     RAISE EXCEPTION 'routine finalizer does not target system occurrence idempotency';
@@ -1653,7 +1677,7 @@ BEGIN
     );
     RAISE EXCEPTION 'cross-occurrence superseding action was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
 
   BEGIN
@@ -1962,6 +1986,38 @@ BEGIN
   END;
 
   BEGIN
+    WITH same_statement_missed AS (
+      INSERT INTO public.routine_adherence_logs (
+        id,
+        user_id,
+        routine_item_id,
+        item_type,
+        status,
+        idempotency_key,
+        reminder_rule_id,
+        occurrence_key,
+        source,
+        scheduled_for,
+        occurred_at,
+        created_at,
+        supersedes_log_id
+      ) VALUES (
+        v_same_statement_missed_log_id,
+        v_user_id,
+        v_item_id,
+        'medication',
+        'missed',
+        'routine-same-statement-missed',
+        v_rule_id,
+        repeat('6', 64),
+        'system',
+        timestamptz '2026-07-22 17:36:00+00',
+        timestamptz '2026-07-22 17:37:00+00',
+        timestamptz '2026-07-22 17:38:00+00',
+        NULL
+      )
+      RETURNING id
+    )
     INSERT INTO public.routine_adherence_logs (
       id,
       user_id,
@@ -1976,37 +2032,22 @@ BEGIN
       occurred_at,
       created_at,
       supersedes_log_id
-    ) VALUES
-      (
-        v_same_statement_correction_log_id,
-        v_user_id,
-        v_item_id,
-        'medication',
-        'taken',
-        'routine-same-statement-correction',
-        v_rule_id,
-        repeat('6', 64),
-        'patient',
-        timestamptz '2026-07-22 17:36:00+00',
-        timestamptz '2026-07-22 17:39:00+00',
-        timestamptz '2026-07-22 17:39:00+00',
-        v_same_statement_missed_log_id
-      ),
-      (
-        v_same_statement_missed_log_id,
-        v_user_id,
-        v_item_id,
-        'medication',
-        'missed',
-        'routine-same-statement-missed',
-        v_rule_id,
-        repeat('6', 64),
-        'system',
-        timestamptz '2026-07-22 17:36:00+00',
-        timestamptz '2026-07-22 17:37:00+00',
-        timestamptz '2026-07-22 17:38:00+00',
-        NULL
-      );
+    )
+    SELECT
+      v_same_statement_correction_log_id,
+      v_user_id,
+      v_item_id,
+      'medication',
+      'taken',
+      'routine-same-statement-correction',
+      v_rule_id,
+      repeat('6', 64),
+      'patient',
+      timestamptz '2026-07-22 17:36:00+00',
+      timestamptz '2026-07-22 17:39:00+00',
+      timestamptz '2026-07-22 17:39:00+00',
+      same_statement_missed.id
+    FROM same_statement_missed;
     RAISE EXCEPTION 'same-statement correction target was accepted';
   EXCEPTION
     WHEN check_violation THEN NULL;
@@ -2166,7 +2207,7 @@ BEGIN
     );
     RAISE EXCEPTION 'cross-user superseding action was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
 
   BEGIN
@@ -2374,7 +2415,7 @@ BEGIN
     );
     RAISE EXCEPTION 'cross-user reminder action reference was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
 
   BEGIN
@@ -2395,7 +2436,7 @@ BEGIN
     );
     RAISE EXCEPTION 'event action with a mismatched reminder rule was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
 
   BEGIN
@@ -2416,7 +2457,7 @@ BEGIN
     );
     RAISE EXCEPTION 'event action with a mismatched occurrence key was accepted';
   EXCEPTION
-    WHEN foreign_key_violation THEN NULL;
+    WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
 
   BEGIN
@@ -2495,7 +2536,7 @@ BEGIN
     'push',
     'apns',
     'synthetic.template',
-    'synthetic',
+    'default',
     timestamptz '2026-07-22 18:30:00+00',
     NULL
   );
@@ -2548,7 +2589,7 @@ BEGIN
       'push',
       'apns',
       'synthetic.template',
-      'synthetic',
+      'default',
       timestamptz '2026-07-22 18:30:00+00',
       'invalid'
     );
@@ -2575,7 +2616,7 @@ BEGIN
       'push',
       'apns',
       'synthetic.template',
-      'synthetic',
+      'default',
       timestamptz '2026-07-22 18:30:00+00',
       NULL
     );
@@ -2602,7 +2643,7 @@ BEGIN
       'push',
       'apns',
       'synthetic.template',
-      'synthetic',
+      'default',
       timestamptz '2026-07-22 19:00:00+00',
       'private'
     );
@@ -3076,6 +3117,19 @@ CREATE TRIGGER routine_mutation_receipts_failpoint
   FOR EACH ROW
   EXECUTE FUNCTION private.test_fail_routine_receipt_insert();
 
+CREATE OR REPLACE FUNCTION private.routine_clock_timestamp()
+RETURNS timestamptz
+LANGUAGE sql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT (
+    timezone('America/New_York', pg_catalog.clock_timestamp())::date
+      + time '21:00'
+  ) AT TIME ZONE 'America/New_York';
+$$;
+
 DO $test$
 DECLARE
   v_user_id constant uuid := '00000000-0000-0000-0000-000000000901';
@@ -3113,6 +3167,23 @@ DECLARE
   v_missed_scheduled_for timestamptz;
   v_old_missed_scheduled_for timestamptz;
   v_old_occurrence_day_end timestamptz;
+  v_test_now timestamptz := private.routine_clock_timestamp();
+  v_test_local_date date := timezone('America/New_York', v_test_now)::date;
+  v_scheduled_0800 timestamptz := (
+    v_test_local_date + time '08:00'
+  ) AT TIME ZONE 'America/New_York';
+  v_scheduled_2000 timestamptz := (
+    v_test_local_date + time '20:00'
+  ) AT TIME ZONE 'America/New_York';
+  v_test_day_end timestamptz := (
+    (v_test_local_date + 1)::timestamp AT TIME ZONE 'America/New_York'
+  );
+  v_derived_missed_scheduled timestamptz := (
+    (v_test_local_date - 2) + time '08:00'
+  ) AT TIME ZONE 'America/New_York';
+  v_derived_missed_day_end timestamptz := (
+    (v_test_local_date - 1)::timestamp AT TIME ZONE 'America/New_York'
+  );
   v_missed_log_id uuid := '00000000-0000-0000-0000-000000000941';
   v_old_missed_log_id uuid := '00000000-0000-0000-0000-000000000942';
   v_cursor_occurred_at timestamptz;
@@ -3782,6 +3853,9 @@ BEGIN
     NULL
   );
 
+  ALTER TABLE public.reminder_rules
+    DISABLE TRIGGER reminder_rules_normalize_and_validate;
+
   INSERT INTO public.reminder_rules (
     id,
     user_id,
@@ -3799,6 +3873,17 @@ BEGIN
     ARRAY[0, 1, 2, 3, 4, 5, 6]::smallint[],
     true
   );
+
+  ALTER TABLE public.reminder_rules
+    ENABLE TRIGGER reminder_rules_normalize_and_validate;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.routine_occurrence_finalizer_rules snapshot
+    WHERE snapshot.reminder_rule_id = v_legacy_rule_id
+  ) THEN
+    RAISE EXCEPTION 'legacy active rule on an inactive item entered finalizer discovery';
+  END IF;
 
   v_list := public.list_mobile_routine_items(
     v_user_id,
@@ -3874,22 +3959,25 @@ BEGIN
     AND rule.active;
 
   UPDATE private.routine_occurrence_finalizer_rules snapshot
-  SET active_from = clock_timestamp() - interval '10 days',
-      next_local_date = timezone(snapshot.timezone_name, clock_timestamp())::date - 10
+  SET active_from = private.routine_clock_timestamp() - interval '10 days',
+      next_local_date = timezone(
+        snapshot.timezone_name,
+        private.routine_clock_timestamp()
+      )::date - 10
   WHERE snapshot.reminder_rule_id IN (v_rule_0800, v_rule_2000)
     AND snapshot.active_until IS NULL;
 
   v_occurrence_key := private.derive_routine_occurrence_key(
     v_rule_0800,
-    timestamptz '2026-07-20 12:00:00+00'
+    v_derived_missed_scheduled
   );
   v_occurrence_state := private.derive_routine_occurrence_state(
     v_user_id,
     v_occurrence_item_id,
     'supplement',
     v_occurrence_key,
-    timestamptz '2026-07-20 12:00:00+00',
-    timestamptz '2026-07-22 17:00:00+00'
+    v_derived_missed_scheduled,
+    v_test_now
   );
 
   IF NOT (
@@ -3897,7 +3985,7 @@ BEGIN
   )
     OR v_occurrence_state ->> 'status' <> 'missed'
     OR (v_occurrence_state ->> 'last_action_at')::timestamptz
-      IS DISTINCT FROM timestamptz '2026-07-21 04:00:00+00'
+      IS DISTINCT FROM v_derived_missed_day_end
     OR v_occurrence_state ->> 'snoozed_until' IS NOT NULL THEN
     RAISE EXCEPTION 'derived missed state did not expose its snapshot-local day end';
   END IF;
@@ -3907,9 +3995,9 @@ BEGIN
     v_occurrence_item_id,
     'supplement',
     v_rule_0800,
-    timestamptz '2026-07-22 12:00:00+00',
+    v_scheduled_0800,
     'taken',
-    timestamptz '2026-07-22 12:01:00+00',
+    v_scheduled_0800 + interval '1 minute',
     NULL,
     'routine-occurrence-0800-taken'
   );
@@ -3919,9 +4007,9 @@ BEGIN
     v_occurrence_item_id,
     'supplement',
     v_rule_0800,
-    timestamptz '2026-07-22 12:00:00+00',
+    v_scheduled_0800,
     'taken',
-    timestamptz '2026-07-22 12:01:00+00',
+    v_scheduled_0800 + interval '1 minute',
     NULL,
     'routine-occurrence-0800-taken'
   );
@@ -3929,7 +4017,7 @@ BEGIN
   IF v_replay IS DISTINCT FROM v_result
     OR v_occurrence_key <> private.derive_routine_occurrence_key(
       v_rule_0800,
-      timestamptz '2026-07-22 12:00:00+00'
+      v_scheduled_0800
     )
     OR char_length(v_occurrence_key) <> 64 THEN
     RAISE EXCEPTION 'exact occurrence action did not derive or replay its database identity';
@@ -3941,9 +4029,9 @@ BEGIN
       v_occurrence_item_id,
       'supplement',
       v_rule_0800,
-      timestamptz '2026-07-22 12:00:00+00',
+      v_scheduled_0800,
       'skipped',
-      timestamptz '2026-07-22 12:02:00+00',
+      v_scheduled_0800 + interval '2 minutes',
       NULL,
       'routine-occurrence-0800-taken'
     );
@@ -3956,10 +4044,10 @@ BEGIN
     v_user_id,
     'supplement',
     false,
-    timestamptz '2026-07-22 17:00:00+00'
+    v_test_now
   );
 
-  IF v_list ->> 'local_date' <> '2026-07-22'
+  IF (v_list ->> 'local_date')::date IS DISTINCT FROM v_test_local_date
     OR (
       SELECT schedule #>> '{occurrence,status}'
       FROM jsonb_array_elements(v_list -> 'items') item
@@ -3973,7 +4061,7 @@ BEGIN
       CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
       WHERE item ->> 'id' = v_occurrence_item_id::text
         AND schedule ->> 'local_time' = '08:00'
-    ) IS DISTINCT FROM timestamptz '2026-07-22 12:01:00+00'
+    ) IS DISTINCT FROM v_scheduled_0800 + interval '1 minute'
     OR (
       SELECT schedule #>> '{occurrence,snoozed_until}'
       FROM jsonb_array_elements(v_list -> 'items') item
@@ -4022,7 +4110,7 @@ BEGIN
         AND timezone(
           'America/New_York',
           (schedule #>> '{occurrence,scheduled_for}')::timestamptz
-        )::date <> date '2026-07-22'
+        )::date <> v_test_local_date
     )
     OR (
       SELECT jsonb_agg(schedule ->> 'local_time' ORDER BY schedule_ordinality)
@@ -4039,17 +4127,17 @@ BEGIN
     v_occurrence_item_id,
     'supplement',
     v_rule_2000,
-    timestamptz '2026-07-23 00:00:00+00',
+    v_scheduled_2000,
     'snoozed',
-    timestamptz '2026-07-23 00:01:00+00',
-    timestamptz '2026-07-23 00:30:00+00',
+    v_scheduled_2000 + interval '1 minute',
+    v_scheduled_2000 + interval '30 minutes',
     'routine-occurrence-2000-snooze'
   );
   v_snooze_occurrence_key := v_result ->> 'occurrence_key';
 
   IF v_snooze_occurrence_key <> private.derive_routine_occurrence_key(
     v_rule_2000,
-    timestamptz '2026-07-23 00:00:00+00'
+    v_scheduled_2000
   ) THEN
     RAISE EXCEPTION 'snooze changed the original occurrence identity';
   END IF;
@@ -4058,7 +4146,7 @@ BEGIN
     v_user_id,
     'supplement',
     false,
-    timestamptz '2026-07-23 00:15:00+00'
+    v_scheduled_2000 + interval '15 minutes'
   );
 
   IF (
@@ -4074,14 +4162,14 @@ BEGIN
       CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
       WHERE item ->> 'id' = v_occurrence_item_id::text
         AND schedule ->> 'local_time' = '20:00'
-    ) IS DISTINCT FROM timestamptz '2026-07-23 00:01:00+00'
+    ) IS DISTINCT FROM v_scheduled_2000 + interval '1 minute'
     OR (
       SELECT (schedule #>> '{occurrence,snoozed_until}')::timestamptz
       FROM jsonb_array_elements(v_list -> 'items') item
       CROSS JOIN LATERAL jsonb_array_elements(item -> 'schedules') schedule
       WHERE item ->> 'id' = v_occurrence_item_id::text
         AND schedule ->> 'local_time' = '20:00'
-    ) IS DISTINCT FROM timestamptz '2026-07-23 00:30:00+00' THEN
+    ) IS DISTINCT FROM v_scheduled_2000 + interval '30 minutes' THEN
     RAISE EXCEPTION 'routine list did not expose snoozed action metadata for today';
   END IF;
 
@@ -4091,10 +4179,10 @@ BEGIN
       v_occurrence_item_id,
       'supplement',
       v_rule_2000,
-      timestamptz '2026-07-23 00:00:00+00',
+      v_scheduled_2000,
       'snoozed',
-      timestamptz '2026-07-23 00:02:00+00',
-      timestamptz '2026-07-23 04:00:00+00',
+      v_scheduled_2000 + interval '2 minutes',
+      v_test_day_end,
       'routine-occurrence-cross-day-snooze'
     );
     RAISE EXCEPTION 'snooze crossed the stored-timezone local day';
@@ -4108,9 +4196,9 @@ BEGIN
       v_occurrence_item_id,
       'supplement',
       v_rule_0800,
-      timestamptz '2026-07-23 12:00:00+00',
+      v_scheduled_0800 + interval '1 day',
       'missed',
-      timestamptz '2026-07-23 12:01:00+00',
+      v_scheduled_0800 + interval '1 day 1 minute',
       NULL,
       'routine-occurrence-client-missed'
     );
@@ -4125,9 +4213,9 @@ BEGIN
       v_occurrence_item_id,
       'supplement',
       v_rule_0800,
-      timestamptz '2026-07-22 12:00:00+00',
+      v_scheduled_0800,
       'skipped',
-      timestamptz '2026-07-22 12:02:00+00',
+      v_scheduled_0800 + interval '2 minutes',
       NULL,
       'routine-occurrence-terminal-rewrite'
     );
@@ -4138,7 +4226,10 @@ BEGIN
 
   v_missed_scheduled_for := (
     (
-      (timezone('America/New_York', clock_timestamp())::date - 6)
+      (timezone(
+        'America/New_York',
+        private.routine_clock_timestamp()
+      )::date - 6)
       + time '08:00'
     ) AT TIME ZONE 'America/New_York'
   );
@@ -4171,8 +4262,8 @@ BEGIN
     v_missed_occurrence_key,
     'system',
     v_missed_scheduled_for,
-    clock_timestamp() - interval '6 days',
-    clock_timestamp() - interval '6 days'
+    private.routine_clock_timestamp() - interval '6 days',
+    private.routine_clock_timestamp() - interval '6 days'
   );
 
   PERFORM public.record_routine_occurrence_action_atomic(
@@ -4182,7 +4273,7 @@ BEGIN
     v_rule_0800,
     v_missed_scheduled_for,
     'taken',
-    clock_timestamp(),
+    private.routine_clock_timestamp(),
     NULL,
     'routine-missed-correction-once'
   );
@@ -4212,7 +4303,7 @@ BEGIN
       v_rule_0800,
       v_missed_scheduled_for,
       'taken',
-      clock_timestamp(),
+      private.routine_clock_timestamp(),
       NULL,
       'routine-missed-correction-twice'
     );
@@ -4223,7 +4314,10 @@ BEGIN
 
   v_old_missed_scheduled_for := (
     (
-      (timezone('America/New_York', clock_timestamp())::date - 8)
+      (timezone(
+        'America/New_York',
+        private.routine_clock_timestamp()
+      )::date - 8)
       + time '08:00'
     ) AT TIME ZONE 'America/New_York'
   );
@@ -4262,7 +4356,7 @@ BEGIN
     'system',
     v_old_missed_scheduled_for,
     v_old_occurrence_day_end,
-    clock_timestamp() - interval '1 hour'
+    private.routine_clock_timestamp() - interval '1 hour'
   );
 
   BEGIN
@@ -4517,6 +4611,16 @@ BEGIN
 END;
 $test$;
 
+CREATE OR REPLACE FUNCTION private.routine_clock_timestamp()
+RETURNS timestamptz
+LANGUAGE sql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT pg_catalog.clock_timestamp();
+$$;
+
 RESET ROLE;
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -4626,11 +4730,31 @@ BEGIN
     (v_spring_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '02:30', ARRAY[0], false, timestamptz '2027-03-14 08:00:00+00', timestamptz '2027-03-14 05:00:00+00'),
     (v_fall_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '01:30', ARRAY[0], false, timestamptz '2026-11-01 08:00:00+00', timestamptz '2026-11-01 04:00:00+00'),
     (v_unbounded_rule_state, v_finalizer_user_id, v_finalizer_item_id, 'supplement', time '11:00', ARRAY[0,1,2,3,4,5,6], false, NULL, timestamptz '2026-07-23 17:00:00+00'),
-    (v_unbounded_item_state, v_finalizer_user_id, v_unbounded_item_id, 'supplement', time '12:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 17:00:00+00'),
     (v_timezone_rule, v_timezone_user_id, v_timezone_item_id, 'supplement', timezone('UTC', v_timezone_old_scheduled_for)::time, ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
     (v_observed_rule_state, v_timezone_user_id, v_observed_rule_item_id, 'supplement', time '13:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
     (v_observed_item_rule, v_timezone_user_id, v_observed_item_id, 'supplement', time '14:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
     (v_reactivation_rule, v_timezone_user_id, v_timezone_item_id, 'supplement', time '08:00', ARRAY[0,1,2,3,4,5,6], false, NULL, timestamptz '2026-07-23 13:13:21+00');
+
+  ALTER TABLE public.reminder_rules
+    DISABLE TRIGGER reminder_rules_normalize_and_validate;
+
+  INSERT INTO public.reminder_rules (
+    id, user_id, routine_item_id, category, local_time, weekdays,
+    active, deactivated_at, created_at
+  ) VALUES (
+    v_unbounded_item_state,
+    v_finalizer_user_id,
+    v_unbounded_item_id,
+    'supplement',
+    time '12:00',
+    ARRAY[0,1,2,3,4,5,6],
+    true,
+    NULL,
+    timestamptz '2026-07-23 17:00:00+00'
+  );
+
+  ALTER TABLE public.reminder_rules
+    ENABLE TRIGGER reminder_rules_normalize_and_validate;
 
   IF EXISTS (
     SELECT 1
@@ -4937,6 +5061,10 @@ BEGIN
   SET active = false,
       deactivated_at = timestamptz '2026-07-25 00:00:00+00'
   WHERE id IN (v_snooze_rule_a, v_snooze_rule_b);
+
+  UPDATE private.routine_occurrence_finalizer_rules
+  SET exhausted = true
+  WHERE reminder_rule_id IN (v_snooze_rule_a, v_snooze_rule_b);
 
   INSERT INTO public.routine_adherence_logs (
     user_id, routine_item_id, item_type, status, idempotency_key,
@@ -5358,7 +5486,7 @@ DECLARE
   v_now timestamptz := clock_timestamp();
   v_occurrence_date date := timezone('UTC', clock_timestamp())::date - 2;
   v_ordinary_scheduled_for timestamptz := (
-    timezone('UTC', clock_timestamp())::date + time '00:00'
+    timezone('UTC', clock_timestamp())::date + time '00:01'
   ) AT TIME ZONE 'UTC';
   v_scheduled_0800 timestamptz;
   v_scheduled_2000 timestamptz;

@@ -929,35 +929,35 @@ Do not waive findings. Record remaining lower-risk limitations in the plan evide
 
 All persistent live SQL is reserved for this task and requires the staging safety gate below. Production is never a fallback.
 
-- [ ] **Step 1: Revalidate worktree and Supabase link.**
+- [x] **Step 1: Revalidate worktree and Supabase link.**
 
 Confirm the path and branch are exact, worktree is clean, `supabase/.temp/project-ref` equals `xitugspwfxkcluxvrdeg`, and it does not equal production `xuxehkhdvjivitduarvb`. Stop on missing ref, mismatch or ambiguity.
 
-- [ ] **Step 2: Revalidate staging isolation.**
+- [x] **Step 2: Revalidate staging isolation.**
 
 Query only safe cron metadata and aggregate counts. Confirm exactly 34 jobs and zero active jobs. Confirm no real patient data is used and no external integration secret is configured or read.
 
-- [ ] **Step 3: Inspect migration scope before applying.**
+- [x] **Step 3: Inspect migration scope before applying.**
 
 Run migration list and dry-run. Review that only migrations created by Tasks 2, 3 and 7 are pending and all changes are additive. Stop if any unrelated migration appears.
 
-- [ ] **Step 4: Execute and record the transactional RED database test.**
+- [x] **Step 4: Execute and record the transactional RED database test.**
 
 Run `supabase/tests/bodyflow_routine_items.sql` against staging before migration application. It must roll back and fail specifically because `public.routine_items.dose_text` is absent. Stop if it passes, changes a persistent row or fails for connectivity, permissions, stale base migrations or another unexpected reason.
 
-- [ ] **Step 5: Apply only the reviewed routine migrations to staging.**
+- [x] **Step 5: Apply only the reviewed routine migrations to staging.**
 
 Do not deploy an application, activate a cron, configure APNs, sync Inngest or change production.
 
-- [ ] **Step 6: Run SQL suites transactionally.**
+- [x] **Step 6: Run SQL suites transactionally.**
 
 Execute `supabase/tests/bodyflow_routine_items.sql` and `supabase/tests/bodyflow_push_routine.sql` in transactions that roll back synthetic users and rows. Run DB lint and advisors, separating new findings from pre-existing findings.
 
-- [ ] **Step 7: Regenerate database types from staging.**
+- [x] **Step 7: Regenerate database types from staging.**
 
 Generate `packages/db/src/generated/database.ts` using staging ref `xitugspwfxkcluxvrdeg`. Keep only expected routine/legal columns, tables and RPCs; discard unrelated generator drift. Run DB/admin/agent/Inngest typechecks.
 
-- [ ] **Step 8: Execute the complete synthetic canary.**
+- [x] **Step 8: Execute the complete synthetic canary.**
 
 With two synthetic patients and no external send:
 
@@ -972,21 +972,75 @@ With two synthetic patients and no external send:
 9. A seven-day-bounded correction appends taken and preserves missed.
 10. Notification preview defaults private and no technical event contains name/dose.
 
-- [ ] **Step 9: Clean and prove postconditions.**
+- [x] **Step 9: Clean and prove postconditions.**
 
 Delete synthetic Auth/domain rows through the approved cleanup path and assert aggregate zero retained synthetic items, rules, logs, acceptances, receipts, reminder events and deliveries. Confirm 34 cron jobs remain present and zero active.
 
-- [ ] **Step 10: Run final application verification after generated types.**
+- [x] **Step 10: Run final application verification after generated types.**
 
 Run full tests, full typecheck, admin build, changed-file Biome and `git diff --check`. Repeat the privacy/security scan.
 
-- [ ] **Step 11: Record redacted evidence and commit.**
+- [x] **Step 11: Record redacted evidence and commit.**
 
 Write aggregate-only results in this plan. Commit generated types and evidence as `docs(bodyflow): complete routine staging validation`.
 
 - [ ] **Step 12: Push and open a stacked draft PR.**
 
 Push `codex/bodyflow-routine-medications-v1` and open a draft PR with base `codex/bodyflow-content-cms-v1`. Do not merge or deploy.
+
+#### Task 9 staging evidence — 2026-07-23
+
+- Safety gates passed from the exact isolated worktree and branch. The linked
+  Supabase ref matched staging and differed from production before every live
+  command. Production, Vercel deploys, APNs, Xcode, Inngest invocation and
+  external providers were not touched.
+- Official Supabase CLI 2.109.1 applied only the reviewed routine migrations.
+  After the SQL review fixes, additive migration
+  `20260723221500_bodyflow_routine_statement_snapshot_clock.sql` was applied
+  separately. A final dry-run reported the remote database up to date; no
+  migration history repair or applied-file edit was used.
+- Both rollback-only SQL suites passed against staging after the final schema:
+  `bodyflow_routine_items.sql` and `bodyflow_push_routine.sql`. Their coverage
+  includes RLS/grants, cross-user opacity, exact occurrence identity,
+  append-only corrections, same-statement finalization, snooze behavior,
+  archive convergence, DST and private notification payloads.
+- Database lint exited zero with five warnings: two volatility families and
+  three unread local variables. Advisors returned the same seven pre-existing
+  warnings: four extensions in `public` and three legacy authenticated-callable
+  `SECURITY DEFINER` functions. No warning names a routine table, routine API or
+  migration from this slice.
+- Types regenerated directly from staging added 291 expected lines for routine,
+  legal, preview and RPC contracts. The DB, admin, agent and Inngest scoped
+  typechecks passed before the full monorepo typecheck.
+- The complete no-send canary persisted exactly two synthetic patients, six
+  routine items, four adherence logs and one private queued delivery. It proved
+  exact disclaimer acceptance, patient ownership, cross-user non-disclosure,
+  independent 08:00/20:00 states, snooze idempotency, archive/history behavior,
+  derived missed state, bounded append-only correction and absence of item
+  name/dose in technical rows.
+- Ordered interleavings passed for duplicate create, action/finalizer in both
+  orders, archive/claim in both orders and two materializer/finalizer workers.
+  The final invariant suite proved singleton receipts/events/corrections and
+  private unsent outbox state. A true overlapping two-session run could not be
+  evidenced because both authorized SQL transports serialize calls and the
+  staging pooler credential is not locally available. No password was read,
+  requested or reset. A transient `dblink` probe ran in a failed transaction;
+  final metadata proves the extension was not installed. Statement-level SQL
+  coverage and both deterministic orders remain the available concurrency
+  evidence; this transport limitation is not presented as a successful race.
+- Cleanup removed every reserved synthetic Auth and domain row. Aggregate
+  postconditions were zero across users, devices, preferences, legal
+  acceptances, items, rules, logs, receipts, finalizer state/queue, product
+  events, reminder events and deliveries. Staging remained at 34 cron jobs,
+  zero active jobs and zero Vault secrets.
+- Final verification passed: Core 208 tests, Admin 547, Agent 1,053, Inngest
+  167, monorepo test 6/6 tasks, typecheck 8/8 tasks, admin production build with
+  31 static pages, changed-file Biome and `git diff --check`.
+- Added-line privacy review found zero bearer-token candidates, real e-mail
+  domains, WhatsApp additions, raw request bodies or raw payload logging. All 23
+  test e-mail domains are `.invalid`; the five authenticated table grants are
+  read-only and covered by patient-owned RLS. Privileged routine functions use
+  fixed search paths and explicit revoke/backend-only grant controls.
 
 ## Specification Traceability
 

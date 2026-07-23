@@ -322,9 +322,21 @@ BEGIN
     AND indexname = 'routine_adherence_logs_occurrence_state_idx';
 
   IF v_index_definition IS NULL
-    OR v_index_definition NOT LIKE '%(user_id, occurrence_key, occurred_at DESC, created_at DESC, id DESC)%'
+    OR v_index_definition NOT LIKE '%(user_id, occurrence_key, created_at DESC, id DESC)%'
+    OR v_index_definition LIKE '%(user_id, occurrence_key, occurred_at DESC%'
     OR v_index_definition NOT LIKE '%WHERE (occurrence_key IS NOT NULL)%' THEN
     RAISE EXCEPTION 'occurrence state index is missing or incorrectly ordered';
+  END IF;
+
+  SELECT indexdef
+  INTO v_index_definition
+  FROM pg_indexes
+  WHERE schemaname = 'public'
+    AND indexname = 'routine_adherence_logs_item_occurred_idx';
+
+  IF v_index_definition IS NULL
+    OR v_index_definition NOT LIKE '%(routine_item_id, occurred_at DESC)%' THEN
+    RAISE EXCEPTION 'routine history occurred-at index was not preserved';
   END IF;
 
   SELECT indexdef

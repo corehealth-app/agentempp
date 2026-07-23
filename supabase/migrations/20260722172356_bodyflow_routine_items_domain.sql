@@ -99,7 +99,6 @@ CREATE INDEX routine_adherence_logs_occurrence_state_idx
   ON public.routine_adherence_logs (
     user_id,
     occurrence_key,
-    occurred_at DESC,
     created_at DESC,
     id DESC
   )

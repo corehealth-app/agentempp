@@ -309,28 +309,76 @@ describe('deriveRoutineOccurrenceStatus', () => {
     ).toBe('missed')
   })
 
-  it('returns the latest stored status and supports corrective actions after missed', () => {
+  it('retains an open snooze and stored terminal statuses', () => {
     expect(deriveRoutineOccurrenceStatus({ actions: [action('snoozed')], ...base })).toBe('snoozed')
-    expect(
-      deriveRoutineOccurrenceStatus({
-        actions: [action('snoozed'), action('taken', { occurredAt: '2026-07-22T09:00:00.000Z' })],
-        ...base,
-      }),
-    ).toBe('taken')
+    expect(deriveRoutineOccurrenceStatus({ actions: [action('taken')], ...base })).toBe('taken')
     expect(deriveRoutineOccurrenceStatus({ actions: [action('skipped')], ...base })).toBe('skipped')
     expect(deriveRoutineOccurrenceStatus({ actions: [action('missed')], ...base })).toBe('missed')
+  })
+
+  it('uses append order so a backdated correction supersedes missed', () => {
+    const missed = action('missed', {
+      occurredAt: base.localDayEndExclusive,
+      createdAt: '2026-07-23T00:00:01.000Z',
+      id: '00000000-0000-4000-8000-000000000001',
+    })
+    const correction = action('taken', {
+      occurredAt: '2026-07-22T23:00:00.000Z',
+      createdAt: '2026-07-23T00:00:02.000Z',
+      id: '00000000-0000-4000-8000-000000000002',
+    })
+
     expect(
       deriveRoutineOccurrenceStatus({
-        actions: [action('missed'), action('taken', { occurredAt: '2026-07-23T00:01:00.000Z' })],
+        actions: [missed, correction],
         ...base,
+        now: '2026-07-23T00:05:00.000Z',
       }),
     ).toBe('taken')
   })
 
-  it('uses occurredAt, createdAt, then descending id to break ties without mutation', () => {
+  it('derives missed when the append-latest snooze reaches local day end', () => {
+    expect(deriveRoutineOccurrenceStatus({ actions: [action('snoozed')], ...base })).toBe('snoozed')
+    expect(
+      deriveRoutineOccurrenceStatus({
+        actions: [action('snoozed')],
+        ...base,
+        now: base.localDayEndExclusive,
+      }),
+    ).toBe('missed')
+    expect(
+      deriveRoutineOccurrenceStatus({
+        actions: [action('snoozed')],
+        ...base,
+        now: '2026-07-23T00:05:00.000Z',
+      }),
+    ).toBe('missed')
+  })
+
+  it('keeps terminal state and 08:00/20:00 occurrences independent', () => {
+    const ended = { ...base, now: base.localDayEndExclusive }
+    expect(deriveRoutineOccurrenceStatus({ actions: [action('taken')], ...ended })).toBe('taken')
+    expect(deriveRoutineOccurrenceStatus({ actions: [action('skipped')], ...ended })).toBe(
+      'skipped',
+    )
+
+    const morning0800 = deriveRoutineOccurrenceStatus({ actions: [action('taken')], ...base })
+    const evening2000 = deriveRoutineOccurrenceStatus({ actions: [], ...base })
+    expect([morning0800, evening2000]).toEqual(['taken', 'pending'])
+  })
+
+  it('uses createdAt then descending id to break ties without mutation', () => {
     const actions = [
-      action('skipped', { id: '00000000-0000-4000-8000-000000000001' }),
-      action('taken', { id: '00000000-0000-4000-8000-000000000002' }),
+      action('skipped', {
+        occurredAt: '2026-07-22T09:00:00.000Z',
+        createdAt: '2026-07-22T08:02:00.000Z',
+        id: '00000000-0000-4000-8000-000000000002',
+      }),
+      action('taken', {
+        occurredAt: '2026-07-22T07:00:00.000Z',
+        createdAt: '2026-07-22T08:03:00.000Z',
+        id: '00000000-0000-4000-8000-000000000001',
+      }),
     ]
     const copy = structuredClone(actions)
     expect(deriveRoutineOccurrenceStatus({ actions, ...base })).toBe('taken')
@@ -338,12 +386,10 @@ describe('deriveRoutineOccurrenceStatus', () => {
 
     const createdTie = [
       action('skipped', {
-        createdAt: '2026-07-22T08:02:00.000Z',
-        id: '00000000-0000-4000-8000-000000000002',
+        id: '00000000-0000-4000-8000-000000000001',
       }),
       action('taken', {
-        createdAt: '2026-07-22T08:03:00.000Z',
-        id: '00000000-0000-4000-8000-000000000001',
+        id: '00000000-0000-4000-8000-000000000002',
       }),
     ]
     expect(deriveRoutineOccurrenceStatus({ actions: createdTie, ...base })).toBe('taken')

@@ -753,8 +753,9 @@ primeira silenciosamente. Clientes novos usam `/:id/log`.
 ### Estados e transições
 
 `pending` é derivado de um horário elegível sem ação e nunca é persistido como
-evento falso. A ação append-only mais recente, ordenada por `occurred_at`,
-`created_at` e ID, determina o estado:
+evento falso. A ação append-only mais recente, ordenada por `created_at` e ID,
+determina o estado. `occurred_at` preserva o instante reportado para auditoria e
+ordenação do histórico, mas não decide qual transição foi anexada por último:
 
 ```text
 pending -> taken
@@ -768,9 +769,11 @@ pending -> missed -> taken
 `skipped` exige ação explícita do paciente; silêncio nunca vira skip. `taken` e
 `skipped` são terminais para pedidos ordinários. Depois do fim da data local,
 uma ocorrência sem resolução, inclusive um snooze ainda aberto, é lida como
-`missed`. Um finalizador backend persiste redundantemente um único log `missed`
-idempotente para auditoria e operação; atraso desse worker não muda o estado
-público derivado.
+`missed`: nesse estado derivado, `last_action_at` é o fim exato do dia no
+timezone do snapshot e `snoozed_until` é `null`. Um finalizador backend persiste
+redundantemente um único log `missed` idempotente para auditoria e operação;
+atraso desse worker não muda o estado público derivado. Um `taken` ou `skipped`
+terminal anexado antes do fim do dia continua terminal depois dele.
 
 O paciente pode corrigir um `missed` automático para `taken` até sete dias após
 o fim do dia da ocorrência. A correção cria outro log apontando para o `missed`;

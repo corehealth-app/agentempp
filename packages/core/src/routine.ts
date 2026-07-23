@@ -256,14 +256,13 @@ export function deriveRoutineOccurrenceStatus(input: {
 }): RoutinePublicStatus {
   const latest = [...input.actions].sort((left, right) => {
     return (
-      compareDescendingTimestamp(left.occurredAt, right.occurredAt) ||
       compareDescendingTimestamp(left.createdAt, right.createdAt) ||
       compareDescendingString(left.id, right.id)
     )
   })[0]
+  const localDayEnded = compareAscendingTimestamp(input.now, input.localDayEndExclusive) >= 0
 
+  if (latest?.status === 'snoozed' && localDayEnded) return 'missed'
   if (latest) return latest.status
-  return compareAscendingTimestamp(input.now, input.localDayEndExclusive) >= 0
-    ? 'missed'
-    : 'pending'
+  return localDayEnded ? 'missed' : 'pending'
 }

@@ -125,6 +125,34 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'private'
+      AND table_name = 'routine_occurrence_finalizer_rules'
+      AND column_name = 'snapshot_id'
+      AND data_type = 'uuid'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'private'
+      AND table_name = 'routine_occurrence_finalizer_queue'
+      AND column_name = 'snapshot_id'
+      AND data_type = 'uuid'
+  ) THEN
+    RAISE EXCEPTION 'routine finalizer persistence is not versioned by snapshot';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'private'
+      AND tablename = 'routine_occurrence_finalizer_rules'
+      AND indexdef LIKE 'CREATE UNIQUE INDEX%reminder_rule_id%WHERE (active_until IS NULL)%'
+  ) THEN
+    RAISE EXCEPTION 'routine finalizer permits several open snapshots per rule';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
     FROM pg_class relation
     WHERE relation.oid = 'private.routine_occurrence_finalizer_rules'::regclass
       AND relation.relrowsecurity
@@ -580,7 +608,8 @@ BEGIN
 
   FOREACH v_function_signature IN ARRAY ARRAY[
     'private.capture_routine_occurrence_finalizer_rule()',
-    'private.capture_routine_occurrence_finalizer_item()'
+    'private.capture_routine_occurrence_finalizer_item()',
+    'private.capture_routine_occurrence_finalizer_user()'
   ]
   LOOP
     v_function := to_regprocedure(v_function_signature);
@@ -691,6 +720,12 @@ BEGIN
     FROM pg_trigger
     WHERE tgrelid = 'public.routine_items'::regclass
       AND tgname = 'routine_items_capture_occurrence_finalizer'
+      AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.users'::regclass
+      AND tgname = 'users_capture_occurrence_finalizer_timezone'
       AND NOT tgisinternal
   ) THEN
     RAISE EXCEPTION 'routine integrity trigger is missing';
@@ -4296,13 +4331,18 @@ DECLARE
   v_snooze_user_id constant uuid := '00000000-0000-0000-0000-000000001001';
   v_finalizer_user_id constant uuid := '00000000-0000-0000-0000-000000001002';
   v_dst_user_id constant uuid := '00000000-0000-0000-0000-000000001003';
+  v_timezone_user_id constant uuid := '00000000-0000-0000-0000-000000001004';
   v_snooze_auth_id constant uuid := '00000000-0000-0000-0000-000000001101';
   v_finalizer_auth_id constant uuid := '00000000-0000-0000-0000-000000001102';
   v_dst_auth_id constant uuid := '00000000-0000-0000-0000-000000001103';
+  v_timezone_auth_id constant uuid := '00000000-0000-0000-0000-000000001104';
   v_snooze_item_id constant uuid := '00000000-0000-0000-0000-000000001201';
   v_finalizer_item_id constant uuid := '00000000-0000-0000-0000-000000001202';
   v_dst_item_id constant uuid := '00000000-0000-0000-0000-000000001203';
   v_unbounded_item_id constant uuid := '00000000-0000-0000-0000-000000001204';
+  v_timezone_item_id constant uuid := '00000000-0000-0000-0000-000000001205';
+  v_observed_rule_item_id constant uuid := '00000000-0000-0000-0000-000000001206';
+  v_observed_item_id constant uuid := '00000000-0000-0000-0000-000000001207';
   v_snooze_rule_a constant uuid := '00000000-0000-0000-0000-000000001301';
   v_snooze_rule_b constant uuid := '00000000-0000-0000-0000-000000001302';
   v_finalizer_rule_a constant uuid := '00000000-0000-0000-0000-000000001303';
@@ -4312,6 +4352,9 @@ DECLARE
   v_finalizer_rule_c constant uuid := '00000000-0000-0000-0000-000000001307';
   v_unbounded_rule_state constant uuid := '00000000-0000-0000-0000-000000001308';
   v_unbounded_item_state constant uuid := '00000000-0000-0000-0000-000000001309';
+  v_timezone_rule constant uuid := '00000000-0000-0000-0000-000000001310';
+  v_observed_rule_state constant uuid := '00000000-0000-0000-0000-000000001311';
+  v_observed_item_rule constant uuid := '00000000-0000-0000-0000-000000001312';
   v_old_snooze_log constant uuid := '00000000-0000-0000-0000-000000001401';
   v_latest_snooze_log constant uuid := '00000000-0000-0000-0000-000000001402';
   v_second_snooze_log constant uuid := '00000000-0000-0000-0000-000000001403';
@@ -4334,7 +4377,14 @@ DECLARE
   v_watermark_before date;
   v_watermark_after date;
   v_watermark_retry date;
+  v_timezone_change_at timestamptz;
+  v_timezone_old_scheduled_for timestamptz;
+  v_timezone_new_scheduled_for timestamptz;
 BEGIN
+  v_timezone_change_at := statement_timestamp();
+  v_timezone_old_scheduled_for := date_trunc('minute', v_timezone_change_at)
+    - interval '1 minute';
+
   INSERT INTO auth.users (
     id, aud, role, email, encrypted_password, email_confirmed_at,
     raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -4342,13 +4392,15 @@ BEGIN
   ) VALUES
     (v_snooze_auth_id, 'authenticated', 'authenticated', 'routine-snooze-auth@example.invalid', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
     (v_finalizer_auth_id, 'authenticated', 'authenticated', 'routine-finalizer-auth@example.invalid', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
-    (v_dst_auth_id, 'authenticated', 'authenticated', 'routine-dst-auth@example.invalid', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false);
+    (v_dst_auth_id, 'authenticated', 'authenticated', 'routine-dst-auth@example.invalid', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false),
+    (v_timezone_auth_id, 'authenticated', 'authenticated', 'routine-timezone-auth@example.invalid', '', now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), false, false);
 
   INSERT INTO public.users (id, auth_user_id, email, timezone)
   VALUES
     (v_snooze_user_id, v_snooze_auth_id, 'routine-snooze@example.invalid', 'UTC'),
     (v_finalizer_user_id, v_finalizer_auth_id, 'routine-finalizer@example.invalid', 'Pacific/Kiritimati'),
-    (v_dst_user_id, v_dst_auth_id, 'routine-dst@example.invalid', 'America/New_York');
+    (v_dst_user_id, v_dst_auth_id, 'routine-dst@example.invalid', 'America/New_York'),
+    (v_timezone_user_id, v_timezone_auth_id, 'routine-timezone@example.invalid', 'UTC');
 
   INSERT INTO public.routine_items (
     id, user_id, item_type, name, dose_text, active, reminders_enabled, created_at
@@ -4356,7 +4408,10 @@ BEGIN
     (v_snooze_item_id, v_snooze_user_id, 'medication', 'Private synthetic medicine', '77 mg private', true, true, timestamptz '2026-07-20 07:00:00+00'),
     (v_finalizer_item_id, v_finalizer_user_id, 'supplement', 'Finalizer synthetic item', NULL, true, true, timestamptz '2026-07-23 17:00:00+00'),
     (v_dst_item_id, v_dst_user_id, 'supplement', 'DST synthetic item', NULL, true, true, timestamptz '2026-03-08 04:00:00+00'),
-    (v_unbounded_item_id, v_finalizer_user_id, 'supplement', 'Unbounded inactive item', NULL, false, true, timestamptz '2026-07-23 17:00:00+00');
+    (v_unbounded_item_id, v_finalizer_user_id, 'supplement', 'Unbounded inactive item', NULL, false, true, timestamptz '2026-07-23 17:00:00+00'),
+    (v_timezone_item_id, v_timezone_user_id, 'supplement', 'Timezone synthetic item', NULL, true, true, timestamptz '2026-07-23 13:13:21+00'),
+    (v_observed_rule_item_id, v_timezone_user_id, 'supplement', 'Observed rule item', NULL, true, true, timestamptz '2026-07-23 13:13:21+00'),
+    (v_observed_item_id, v_timezone_user_id, 'supplement', 'Observed item interval', NULL, true, true, timestamptz '2026-07-23 13:13:21+00');
 
   INSERT INTO public.reminder_rules (
     id, user_id, routine_item_id, category, local_time, weekdays,
@@ -4370,7 +4425,10 @@ BEGIN
     (v_spring_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '02:30', ARRAY[0], false, timestamptz '2027-03-14 08:00:00+00', timestamptz '2027-03-14 05:00:00+00'),
     (v_fall_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '01:30', ARRAY[0], false, timestamptz '2026-11-01 08:00:00+00', timestamptz '2026-11-01 04:00:00+00'),
     (v_unbounded_rule_state, v_finalizer_user_id, v_finalizer_item_id, 'supplement', time '11:00', ARRAY[0,1,2,3,4,5,6], false, NULL, timestamptz '2026-07-23 17:00:00+00'),
-    (v_unbounded_item_state, v_finalizer_user_id, v_unbounded_item_id, 'supplement', time '12:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 17:00:00+00');
+    (v_unbounded_item_state, v_finalizer_user_id, v_unbounded_item_id, 'supplement', time '12:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 17:00:00+00'),
+    (v_timezone_rule, v_timezone_user_id, v_timezone_item_id, 'supplement', timezone('UTC', v_timezone_old_scheduled_for)::time, ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
+    (v_observed_rule_state, v_timezone_user_id, v_observed_rule_item_id, 'supplement', time '13:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
+    (v_observed_item_rule, v_timezone_user_id, v_observed_item_id, 'supplement', time '14:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00');
 
   IF EXISTS (
     SELECT 1
@@ -4378,6 +4436,104 @@ BEGIN
     WHERE snapshot.reminder_rule_id IN (v_unbounded_rule_state, v_unbounded_item_state)
   ) THEN
     RAISE EXCEPTION 'unbounded inactive routine state entered finalizer discovery';
+  END IF;
+
+  UPDATE public.users
+  SET timezone = 'America/New_York'
+  WHERE id = v_timezone_user_id;
+
+  SELECT snapshot.active_until
+  INTO v_timezone_change_at
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_timezone_rule
+    AND snapshot.timezone_name = 'UTC';
+
+  v_timezone_new_scheduled_for := (
+    timezone('America/New_York', v_timezone_change_at)::date
+    + 1
+    + timezone('UTC', v_timezone_old_scheduled_for)::time
+  ) AT TIME ZONE 'America/New_York';
+
+  IF (SELECT count(*)
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_timezone_rule) <> 2
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_timezone_rule
+        AND snapshot.timezone_name = 'UTC'
+        AND snapshot.active_until IS NOT NULL
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_timezone_rule
+        AND snapshot.timezone_name = 'America/New_York'
+        AND snapshot.active_from = v_timezone_change_at
+        AND snapshot.active_until IS NULL
+    )
+    OR private.routine_occurrence_timezone(
+      v_timezone_user_id,
+      v_timezone_item_id,
+      'supplement',
+      private.derive_routine_occurrence_key(
+        v_timezone_rule,
+        v_timezone_old_scheduled_for
+      ),
+      v_timezone_old_scheduled_for
+    ) <> 'UTC'
+    OR private.routine_occurrence_timezone(
+      v_timezone_user_id,
+      v_timezone_item_id,
+      'supplement',
+      private.derive_routine_occurrence_key(
+        v_timezone_rule,
+        v_timezone_new_scheduled_for
+      ),
+      v_timezone_new_scheduled_for
+    ) <> 'America/New_York' THEN
+    RAISE EXCEPTION 'routine finalizer did not preserve old and current timezone epochs';
+  END IF;
+
+  UPDATE public.reminder_rules
+  SET active = false
+  WHERE id = v_observed_rule_state;
+  UPDATE public.reminder_rules
+  SET active = false
+  WHERE id = v_observed_rule_state;
+
+  UPDATE public.routine_items
+  SET active = false
+  WHERE id = v_observed_item_id;
+  UPDATE public.routine_items
+  SET active = false
+  WHERE id = v_observed_item_id;
+
+  IF NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_observed_rule_state
+        AND snapshot.active_until IS NOT NULL
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_observed_rule_state
+        AND snapshot.active_until IS NULL
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_observed_item_rule
+        AND snapshot.active_until IS NOT NULL
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = v_observed_item_rule
+        AND snapshot.active_until IS NULL
+    ) THEN
+    RAISE EXCEPTION 'observed null-timestamp lifecycle bounds were not durable';
   END IF;
 
   UPDATE private.routine_occurrence_finalizer_rules snapshot

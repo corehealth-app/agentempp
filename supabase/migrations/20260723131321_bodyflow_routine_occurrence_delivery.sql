@@ -1,5 +1,6 @@
 CREATE TABLE private.routine_occurrence_finalizer_rules (
-  reminder_rule_id uuid PRIMARY KEY,
+  snapshot_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reminder_rule_id uuid NOT NULL,
   user_id uuid NOT NULL,
   routine_item_id uuid NOT NULL,
   item_type text NOT NULL,
@@ -30,19 +31,34 @@ CREATE TABLE private.routine_occurrence_finalizer_rules (
   )
 );
 
+CREATE UNIQUE INDEX routine_occurrence_finalizer_rules_open_unique
+  ON private.routine_occurrence_finalizer_rules (reminder_rule_id)
+  WHERE active_until IS NULL;
+
 CREATE INDEX routine_occurrence_finalizer_rules_work_idx
   ON private.routine_occurrence_finalizer_rules (
     exhausted,
     touched_at,
-    reminder_rule_id
+    snapshot_id
+  );
+
+CREATE INDEX routine_occurrence_finalizer_rules_identity_idx
+  ON private.routine_occurrence_finalizer_rules (
+    user_id,
+    routine_item_id,
+    item_type,
+    reminder_rule_id,
+    active_from,
+    active_until
   );
 
 CREATE TABLE private.routine_occurrence_finalizer_queue (
+  snapshot_id uuid NOT NULL
+    REFERENCES private.routine_occurrence_finalizer_rules(snapshot_id)
+    ON DELETE CASCADE,
   scheduled_for timestamptz NOT NULL,
   user_id uuid NOT NULL,
-  reminder_rule_id uuid NOT NULL
-    REFERENCES private.routine_occurrence_finalizer_rules(reminder_rule_id)
-    ON DELETE CASCADE,
+  reminder_rule_id uuid NOT NULL,
   routine_item_id uuid NOT NULL,
   item_type text NOT NULL,
   occurrence_key text NOT NULL,
@@ -95,10 +111,25 @@ BEGIN
   WHERE snapshot.user_id = p_user_id
     AND snapshot.routine_item_id = p_routine_item_id
     AND snapshot.item_type = p_item_type
+    AND p_scheduled_for >= snapshot.active_from
+    AND (
+      snapshot.active_until IS NULL
+      OR p_scheduled_for < snapshot.active_until
+    )
     AND private.derive_routine_occurrence_key(
       snapshot.reminder_rule_id,
       p_scheduled_for
     ) = p_occurrence_key
+    AND extract(
+      dow FROM timezone(snapshot.timezone_name, p_scheduled_for)
+    )::smallint = ANY(snapshot.weekdays)
+    AND timezone(snapshot.timezone_name, p_scheduled_for)::time
+      = snapshot.local_time
+    AND (
+      timezone(snapshot.timezone_name, p_scheduled_for)
+        AT TIME ZONE snapshot.timezone_name
+    ) = p_scheduled_for
+  ORDER BY snapshot.active_from DESC, snapshot.snapshot_id
   LIMIT 1;
 
   RETURN COALESCE(v_timezone, private.routine_user_timezone(p_user_id));
@@ -614,15 +645,27 @@ SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 DECLARE
   v_item public.routine_items%ROWTYPE;
+  v_open_snapshot private.routine_occurrence_finalizer_rules%ROWTYPE;
   v_timezone text;
   v_active_from timestamptz;
   v_active_until timestamptz;
-  v_observed_at timestamptz := statement_timestamp();
+  v_previous_until timestamptz;
+  v_observed_at timestamptz := clock_timestamp();
 BEGIN
+  SELECT snapshot.*
+  INTO v_open_snapshot
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = NEW.id
+    AND snapshot.active_until IS NULL
+  FOR UPDATE;
+
   IF NEW.category NOT IN ('supplement', 'medication') THEN
-    IF TG_OP = 'UPDATE' THEN
-      DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-      WHERE snapshot.reminder_rule_id = NEW.id;
+    IF v_open_snapshot.snapshot_id IS NOT NULL THEN
+      UPDATE private.routine_occurrence_finalizer_rules snapshot
+      SET active_until = greatest(snapshot.active_from, v_observed_at),
+          exhausted = true,
+          touched_at = clock_timestamp()
+      WHERE snapshot.snapshot_id = v_open_snapshot.snapshot_id;
     END IF;
     RETURN NEW;
   END IF;
@@ -643,8 +686,13 @@ BEGIN
     AND domain_user.status = 'active';
 
   IF v_item.id IS NULL OR v_timezone IS NULL THEN
-    DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-    WHERE snapshot.reminder_rule_id = NEW.id;
+    IF v_open_snapshot.snapshot_id IS NOT NULL THEN
+      UPDATE private.routine_occurrence_finalizer_rules snapshot
+      SET active_until = greatest(snapshot.active_from, v_observed_at),
+          exhausted = true,
+          touched_at = clock_timestamp()
+      WHERE snapshot.snapshot_id = v_open_snapshot.snapshot_id;
+    END IF;
     RETURN NEW;
   END IF;
 
@@ -654,85 +702,130 @@ BEGIN
     timestamptz '2026-07-23 13:13:21+00'
   );
 
-  IF NOT NEW.active AND NEW.deactivated_at IS NULL THEN
-    IF TG_OP = 'UPDATE' THEN
-      IF OLD.active THEN
-        v_active_until := v_observed_at;
-      ELSE
-        DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-        WHERE snapshot.reminder_rule_id = NEW.id;
-        RETURN NEW;
-      END IF;
-    ELSE
-      DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-      WHERE snapshot.reminder_rule_id = NEW.id;
+  IF NEW.active AND v_item.active THEN
+    IF v_open_snapshot.snapshot_id IS NOT NULL
+      AND v_open_snapshot.timezone_name = v_timezone
+      AND v_open_snapshot.local_time = NEW.local_time
+      AND v_open_snapshot.weekdays = NEW.weekdays THEN
       RETURN NEW;
     END IF;
-  ELSIF NOT NEW.active THEN
-    v_active_until := NEW.deactivated_at;
+
+    IF v_open_snapshot.snapshot_id IS NOT NULL THEN
+      UPDATE private.routine_occurrence_finalizer_rules snapshot
+      SET active_until = greatest(snapshot.active_from, v_observed_at),
+          exhausted = snapshot.exhausted OR (
+            (snapshot.next_local_date + snapshot.local_time)
+              AT TIME ZONE snapshot.timezone_name >= v_observed_at
+          ),
+          touched_at = clock_timestamp()
+      WHERE snapshot.snapshot_id = v_open_snapshot.snapshot_id;
+    END IF;
+
+    SELECT max(snapshot.active_until)
+    INTO v_previous_until
+    FROM private.routine_occurrence_finalizer_rules snapshot
+    WHERE snapshot.reminder_rule_id = NEW.id;
+
+    v_active_from := greatest(
+      v_active_from,
+      COALESCE(v_previous_until, v_active_from)
+    );
+
+    INSERT INTO private.routine_occurrence_finalizer_rules (
+      reminder_rule_id,
+      user_id,
+      routine_item_id,
+      item_type,
+      timezone_name,
+      local_time,
+      weekdays,
+      active_from,
+      active_until,
+      next_local_date
+    ) VALUES (
+      NEW.id,
+      NEW.user_id,
+      NEW.routine_item_id,
+      NEW.category,
+      v_timezone,
+      NEW.local_time,
+      NEW.weekdays,
+      v_active_from,
+      NULL,
+      timezone(v_timezone, v_active_from)::date
+    );
+
+    RETURN NEW;
   END IF;
 
-  IF NOT v_item.active AND v_item.archived_at IS NULL THEN
-    DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-    WHERE snapshot.reminder_rule_id = NEW.id;
+  IF NOT NEW.active THEN
+    v_active_until := NEW.deactivated_at;
+    IF v_active_until IS NULL
+      AND TG_OP = 'UPDATE'
+      AND OLD.active THEN
+      v_active_until := v_observed_at;
+    END IF;
+  END IF;
+
+  IF NOT v_item.active AND v_item.archived_at IS NOT NULL THEN
+    v_active_until := CASE
+      WHEN v_active_until IS NULL THEN v_item.archived_at
+      ELSE least(v_active_until, v_item.archived_at)
+    END;
+  ELSIF NOT v_item.active
+    AND v_open_snapshot.snapshot_id IS NOT NULL THEN
+    v_active_until := CASE
+      WHEN v_active_until IS NULL THEN v_observed_at
+      ELSE least(v_active_until, v_observed_at)
+    END;
+  END IF;
+
+  IF v_active_until IS NULL THEN
+    -- An already-inactive null-timestamp row has no new trustworthy bound.
     RETURN NEW;
-  ELSIF NOT v_item.active THEN
-    v_active_until := least(
-      COALESCE(v_active_until, 'infinity'::timestamptz),
-      v_item.archived_at
+  END IF;
+
+  IF v_open_snapshot.snapshot_id IS NOT NULL THEN
+    UPDATE private.routine_occurrence_finalizer_rules snapshot
+    SET active_until = greatest(snapshot.active_from, v_active_until),
+        exhausted = snapshot.exhausted OR (
+          (snapshot.next_local_date + snapshot.local_time)
+            AT TIME ZONE snapshot.timezone_name >= v_active_until
+        ),
+        touched_at = clock_timestamp()
+    WHERE snapshot.snapshot_id = v_open_snapshot.snapshot_id;
+  ELSIF v_active_until > v_active_from
+    AND NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = NEW.id
+        AND snapshot.active_from = v_active_from
+        AND snapshot.active_until = v_active_until
+    ) THEN
+    INSERT INTO private.routine_occurrence_finalizer_rules (
+      reminder_rule_id,
+      user_id,
+      routine_item_id,
+      item_type,
+      timezone_name,
+      local_time,
+      weekdays,
+      active_from,
+      active_until,
+      next_local_date
+    ) VALUES (
+      NEW.id,
+      NEW.user_id,
+      NEW.routine_item_id,
+      NEW.category,
+      v_timezone,
+      NEW.local_time,
+      NEW.weekdays,
+      v_active_from,
+      v_active_until,
+      timezone(v_timezone, v_active_from)::date
     );
   END IF;
-
-  IF v_active_until IS NOT NULL AND v_active_until <= v_active_from THEN
-    DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-    WHERE snapshot.reminder_rule_id = NEW.id;
-    RETURN NEW;
-  END IF;
-
-  INSERT INTO private.routine_occurrence_finalizer_rules (
-    reminder_rule_id,
-    user_id,
-    routine_item_id,
-    item_type,
-    timezone_name,
-    local_time,
-    weekdays,
-    active_from,
-    active_until,
-    next_local_date
-  ) VALUES (
-    NEW.id,
-    NEW.user_id,
-    NEW.routine_item_id,
-    NEW.category,
-    v_timezone,
-    NEW.local_time,
-    NEW.weekdays,
-    v_active_from,
-    v_active_until,
-    timezone(v_timezone, v_active_from)::date
-  )
-  ON CONFLICT (reminder_rule_id) DO UPDATE
-  SET active_until = CASE
-        WHEN EXCLUDED.active_until IS NULL THEN
-          private.routine_occurrence_finalizer_rules.active_until
-        ELSE least(
-          COALESCE(
-            private.routine_occurrence_finalizer_rules.active_until,
-            'infinity'::timestamptz
-          ),
-          EXCLUDED.active_until
-        )
-      END,
-      exhausted = private.routine_occurrence_finalizer_rules.exhausted OR (
-        EXCLUDED.active_until IS NOT NULL
-        AND (
-          private.routine_occurrence_finalizer_rules.next_local_date
-          + private.routine_occurrence_finalizer_rules.local_time
-        ) AT TIME ZONE private.routine_occurrence_finalizer_rules.timezone_name
-          >= EXCLUDED.active_until
-      ),
-      touched_at = clock_timestamp();
 
   RETURN NEW;
 END;
@@ -746,22 +839,63 @@ SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 DECLARE
   v_active_until timestamptz;
+  v_observed_at timestamptz := clock_timestamp();
 BEGIN
   IF NEW.active AND NEW.archived_at IS NULL THEN
+    IF NOT OLD.active THEN
+      INSERT INTO private.routine_occurrence_finalizer_rules (
+        reminder_rule_id,
+        user_id,
+        routine_item_id,
+        item_type,
+        timezone_name,
+        local_time,
+        weekdays,
+        active_from,
+        active_until,
+        next_local_date
+      )
+      SELECT
+        rule.id,
+        rule.user_id,
+        rule.routine_item_id,
+        rule.category,
+        timezone_name.name,
+        rule.local_time,
+        rule.weekdays,
+        v_observed_at,
+        NULL,
+        timezone(timezone_name.name, v_observed_at)::date
+      FROM public.reminder_rules rule
+      JOIN public.users domain_user
+        ON domain_user.id = rule.user_id
+        AND domain_user.status = 'active'
+      JOIN pg_catalog.pg_timezone_names timezone_name
+        ON timezone_name.name = domain_user.timezone
+      WHERE rule.routine_item_id = NEW.id
+        AND rule.user_id = NEW.user_id
+        AND rule.category = NEW.item_type
+        AND rule.category IN ('supplement', 'medication')
+        AND rule.active
+        AND NOT EXISTS (
+          SELECT 1
+          FROM private.routine_occurrence_finalizer_rules snapshot
+          WHERE snapshot.reminder_rule_id = rule.id
+            AND snapshot.active_until IS NULL
+        )
+      ON CONFLICT DO NOTHING;
+    END IF;
     RETURN NEW;
   END IF;
 
   v_active_until := CASE
     WHEN NEW.archived_at IS NOT NULL THEN NEW.archived_at
-    WHEN OLD.active AND NOT NEW.active THEN statement_timestamp()
+    WHEN OLD.active AND NOT NEW.active THEN v_observed_at
     ELSE NULL
   END;
 
   IF v_active_until IS NULL THEN
-    DELETE FROM private.routine_occurrence_finalizer_rules snapshot
-    WHERE snapshot.routine_item_id = NEW.id
-      AND snapshot.user_id = NEW.user_id
-      AND snapshot.item_type = NEW.item_type;
+    -- Preserve any interval bounded by an earlier observed transition.
     RETURN NEW;
   END IF;
 
@@ -780,7 +914,90 @@ BEGIN
       touched_at = clock_timestamp()
   WHERE snapshot.routine_item_id = NEW.id
     AND snapshot.user_id = NEW.user_id
-    AND snapshot.item_type = NEW.item_type;
+    AND snapshot.item_type = NEW.item_type
+    AND snapshot.active_until IS NULL;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION private.capture_routine_occurrence_finalizer_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, private, pg_temp
+AS $$
+DECLARE
+  v_observed_at timestamptz := clock_timestamp();
+  v_timezone text;
+BEGIN
+  IF NEW.timezone IS NOT DISTINCT FROM OLD.timezone
+    AND NEW.status IS NOT DISTINCT FROM OLD.status THEN
+    RETURN NEW;
+  END IF;
+
+  UPDATE private.routine_occurrence_finalizer_rules snapshot
+  SET active_until = greatest(snapshot.active_from, v_observed_at),
+      exhausted = snapshot.exhausted OR (
+        (snapshot.next_local_date + snapshot.local_time)
+          AT TIME ZONE snapshot.timezone_name >= v_observed_at
+      ),
+      touched_at = clock_timestamp()
+  WHERE snapshot.user_id = NEW.id
+    AND snapshot.active_until IS NULL;
+
+  IF NEW.status <> 'active' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT timezone_name.name
+  INTO v_timezone
+  FROM pg_catalog.pg_timezone_names timezone_name
+  WHERE timezone_name.name = NEW.timezone;
+
+  IF v_timezone IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO private.routine_occurrence_finalizer_rules (
+    reminder_rule_id,
+    user_id,
+    routine_item_id,
+    item_type,
+    timezone_name,
+    local_time,
+    weekdays,
+    active_from,
+    active_until,
+    next_local_date
+  )
+  SELECT
+    rule.id,
+    rule.user_id,
+    rule.routine_item_id,
+    rule.category,
+    v_timezone,
+    rule.local_time,
+    rule.weekdays,
+    v_observed_at,
+    NULL,
+    timezone(v_timezone, v_observed_at)::date
+  FROM public.reminder_rules rule
+  JOIN public.routine_items item
+    ON item.id = rule.routine_item_id
+    AND item.user_id = rule.user_id
+    AND item.item_type = rule.category
+    AND item.active
+  WHERE rule.user_id = NEW.id
+    AND rule.category IN ('supplement', 'medication')
+    AND rule.active
+    AND NOT EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_rules snapshot
+      WHERE snapshot.reminder_rule_id = rule.id
+        AND snapshot.active_until IS NULL
+    )
+  ON CONFLICT DO NOTHING;
 
   RETURN NEW;
 END;
@@ -854,7 +1071,11 @@ CREATE TRIGGER reminder_rules_capture_occurrence_finalizer_insert
   EXECUTE FUNCTION private.capture_routine_occurrence_finalizer_rule();
 
 CREATE TRIGGER reminder_rules_capture_occurrence_finalizer_update
-  AFTER UPDATE OF active, deactivated_at
+  AFTER UPDATE OF
+    active,
+    deactivated_at,
+    local_time,
+    weekdays
   ON public.reminder_rules
   FOR EACH ROW
   EXECUTE FUNCTION private.capture_routine_occurrence_finalizer_rule();
@@ -864,6 +1085,12 @@ CREATE TRIGGER routine_items_capture_occurrence_finalizer
   ON public.routine_items
   FOR EACH ROW
   EXECUTE FUNCTION private.capture_routine_occurrence_finalizer_item();
+
+CREATE TRIGGER users_capture_occurrence_finalizer_timezone
+  AFTER UPDATE OF timezone, status
+  ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION private.capture_routine_occurrence_finalizer_user();
 
 CREATE FUNCTION private.materialize_due_routine_occurrences(
   p_now timestamptz,
@@ -909,7 +1136,7 @@ BEGIN
             AT TIME ZONE snapshot.timezone_name <= p_now
         )
       )
-    ORDER BY snapshot.touched_at, snapshot.reminder_rule_id
+    ORDER BY snapshot.touched_at, snapshot.snapshot_id
     FOR UPDATE OF snapshot SKIP LOCKED
     LIMIT 1;
 
@@ -925,7 +1152,7 @@ BEGIN
       UPDATE private.routine_occurrence_finalizer_rules snapshot
       SET exhausted = true,
           touched_at = clock_timestamp()
-      WHERE snapshot.reminder_rule_id = v_snapshot.reminder_rule_id;
+      WHERE snapshot.snapshot_id = v_snapshot.snapshot_id;
 
       v_steps := v_steps + 1;
       CONTINUE;
@@ -938,7 +1165,7 @@ BEGIN
             AT TIME ZONE snapshot.timezone_name >= snapshot.active_until
         ),
         touched_at = clock_timestamp()
-    WHERE snapshot.reminder_rule_id = v_snapshot.reminder_rule_id;
+    WHERE snapshot.snapshot_id = v_snapshot.snapshot_id;
 
     v_steps := v_steps + 1;
 
@@ -976,6 +1203,7 @@ BEGIN
           AND missed.source = 'system'
       ) THEN
       INSERT INTO private.routine_occurrence_finalizer_queue (
+        snapshot_id,
         scheduled_for,
         user_id,
         reminder_rule_id,
@@ -984,6 +1212,7 @@ BEGIN
         occurrence_key,
         occurrence_day_end
       ) VALUES (
+        v_snapshot.snapshot_id,
         v_scheduled_for,
         v_snapshot.user_id,
         v_snapshot.reminder_rule_id,
@@ -1203,6 +1432,7 @@ BEGIN
 
   FOR v_candidate IN
     SELECT
+      candidate.snapshot_id,
       candidate.scheduled_for,
       candidate.user_id,
       candidate.reminder_rule_id AS rule_id,
@@ -1242,7 +1472,8 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1
       FROM private.routine_occurrence_finalizer_rules snapshot
-      WHERE snapshot.reminder_rule_id = v_candidate.rule_id
+      WHERE snapshot.snapshot_id = v_candidate.snapshot_id
+        AND snapshot.reminder_rule_id = v_candidate.rule_id
         AND snapshot.user_id = v_candidate.user_id
         AND snapshot.routine_item_id = v_candidate.routine_item_id
         AND snapshot.item_type = v_candidate.item_type
@@ -1369,6 +1600,8 @@ GRANT EXECUTE ON FUNCTION private.routine_occurrence_timezone(
 REVOKE ALL ON FUNCTION private.capture_routine_occurrence_finalizer_rule()
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.capture_routine_occurrence_finalizer_item()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.capture_routine_occurrence_finalizer_user()
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.materialize_due_routine_occurrences(
   timestamptz,

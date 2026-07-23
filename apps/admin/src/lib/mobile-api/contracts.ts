@@ -1,4 +1,4 @@
-import { selectableCoachPersonalitySchema } from '@mpp/core'
+import { routinePreviewModeSchema, selectableCoachPersonalitySchema } from '@mpp/core'
 import { z } from 'zod'
 
 const localeSchema = z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/)
@@ -180,6 +180,7 @@ export const notificationPreferencesPatchSchema = z
     quiet_hours: quietHoursSchema.nullable().optional(),
     daily_push_limit: z.number().int().min(0).max(20).optional(),
     hydration_target_ml: z.number().int().min(250).max(10_000).nullable().optional(),
+    routine_preview_mode: routinePreviewModeSchema.optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required')

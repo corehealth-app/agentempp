@@ -3,7 +3,6 @@ import {
   createReminderRule,
   deactivateMobileDevice,
   getNotificationPreferences,
-  markRoutineTaken,
   type RoutineRepository,
   type RoutineServiceDependencies,
   recordHydration,
@@ -26,6 +25,7 @@ const preferencesRecord = {
   quiet_hours_end: '07:00:00',
   daily_push_limit: 8,
   hydration_target_ml: 2400,
+  routine_preview_mode: 'name' as const,
   created_at: '2026-07-20T12:00:00.000Z',
   updated_at: '2026-07-20T12:00:00.000Z',
 }
@@ -43,7 +43,6 @@ function dependencies(overrides: Partial<RoutineRepository> = {}): RoutineServic
       updateReminder: vi.fn(),
       findRoutineItem: vi.fn(),
       recordHydration: vi.fn(),
-      recordTaken: vi.fn(),
       ...overrides,
     },
   }
@@ -79,9 +78,19 @@ describe('mobile routine service', () => {
       quiet_hours: null,
       daily_push_limit: 8,
       hydration_target_ml: null,
+      routine_preview_mode: 'private',
       created_at: null,
       updated_at: null,
     })
+  })
+
+  it('returns only controlled preference data without routine item content', async () => {
+    const result = await getNotificationPreferences(dependencies(), 'patient-1')
+
+    expect(result).toMatchObject({ routine_preview_mode: 'name' })
+    expect(JSON.stringify(result)).not.toMatch(
+      /item_name|dose_text|supplement_name|medication_name/,
+    )
   })
 
   it('does not expose another user through device deactivation', async () => {
@@ -144,34 +153,6 @@ describe('mobile routine service', () => {
       idempotencyKey: 'hydration-request-1',
       occurredAt: '2026-07-21T03:30:00.000Z',
     })
-  })
-
-  it('rejects marking a supplement through the medication endpoint', async () => {
-    const itemId = '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c92'
-    const recordTaken = vi.fn()
-    const deps = dependencies({
-      findRoutineItem: vi.fn().mockResolvedValue({
-        id: itemId,
-        item_type: 'supplement',
-        active: true,
-      }),
-      recordTaken,
-    })
-
-    await expect(
-      markRoutineTaken(
-        deps,
-        'patient-1',
-        itemId,
-        'medication',
-        { occurred_at: '2026-07-20T12:00:00.000Z' },
-        'taken-request-1',
-      ),
-    ).rejects.toMatchObject({
-      status: 422,
-      code: 'routine_item_type_mismatch',
-    })
-    expect(recordTaken).not.toHaveBeenCalled()
   })
 
   it('rejects routine timestamps outside the bounded offline window', async () => {

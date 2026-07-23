@@ -1,7 +1,7 @@
+import type { RoutinePreviewMode } from '@mpp/core'
 import type {
   CreateReminderInput,
   HydrationInput,
-  MarkRoutineTakenInput,
   MobileDeviceInput,
   NotificationPreferencesPatch,
   PatchReminderInput,
@@ -34,6 +34,7 @@ export interface NotificationPreferencesRecord {
   quiet_hours_end: string | null
   daily_push_limit: number
   hydration_target_ml: number | null
+  routine_preview_mode: RoutinePreviewMode
   created_at: string
   updated_at: string
 }
@@ -80,23 +81,10 @@ interface RecordHydrationRepositoryInput {
   occurredAt: string
 }
 
-interface RecordTakenRepositoryInput {
-  userId: string
-  routineItemId: string
-  itemType: RoutineItemType
-  idempotencyKey: string
-  occurredAt: string
-}
-
 export interface HydrationRecordResult {
   hydration_log_id: string
   inserted: boolean
   water_consumed_ml: number
-}
-
-export interface RoutineTakenResult {
-  adherence_log_id: string
-  inserted: boolean
 }
 
 export interface RoutineRepository {
@@ -113,7 +101,6 @@ export interface RoutineRepository {
   updateReminder(input: UpdateReminderRepositoryInput): Promise<ReminderRecord | null>
   findRoutineItem(userId: string, routineItemId: string): Promise<RoutineItemRecord | null>
   recordHydration(input: RecordHydrationRepositoryInput): Promise<HydrationRecordResult>
-  recordTaken(input: RecordTakenRepositoryInput): Promise<RoutineTakenResult>
 }
 
 export interface RoutineServiceDependencies {
@@ -143,6 +130,7 @@ function preferencesDto(preferences: NotificationPreferencesRecord | null) {
       quiet_hours: null,
       daily_push_limit: 8,
       hydration_target_ml: null,
+      routine_preview_mode: 'private',
       created_at: null,
       updated_at: null,
     }
@@ -159,6 +147,7 @@ function preferencesDto(preferences: NotificationPreferencesRecord | null) {
         : null,
     daily_push_limit: preferences.daily_push_limit,
     hydration_target_ml: preferences.hydration_target_ml,
+    routine_preview_mode: preferences.routine_preview_mode,
     created_at: preferences.created_at,
     updated_at: preferences.updated_at,
   }
@@ -311,25 +300,5 @@ export async function recordHydration(
     amountMl: input.amount_ml,
     idempotencyKey,
     occurredAt,
-  })
-}
-
-export async function markRoutineTaken(
-  deps: RoutineServiceDependencies,
-  userId: string,
-  routineItemId: string,
-  itemType: RoutineItemType,
-  input: MarkRoutineTakenInput,
-  idempotencyKey: string,
-  now = new Date(),
-) {
-  validateOccurredAt(input.occurred_at, now)
-  await requireRoutineItem(deps, userId, routineItemId, itemType)
-  return deps.repository.recordTaken({
-    userId,
-    routineItemId,
-    itemType,
-    idempotencyKey,
-    occurredAt: input.occurred_at,
   })
 }

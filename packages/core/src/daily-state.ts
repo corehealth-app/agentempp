@@ -185,8 +185,32 @@ function completionStatus(
   return { status: 'open', day_closed: false, has_sufficient_data: null }
 }
 
+const ROUTINE_ITEM_TYPE_ORDER: Record<RoutineItemType, number> = {
+  supplement: 0,
+  medication: 1,
+}
+
+function compareAscendingString(left: string, right: string): number {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
+
+function compareScheduledFor(left: string, right: string): number {
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime === rightTime ? 0 : leftTime - rightTime
+  }
+  return compareAscendingString(left, right)
+}
+
 function routineSection(items: DailyStateRoutineItemInput[], itemType: RoutineItemType) {
-  const publicItems = items
+  const publicItems = [...items]
+    .sort(
+      (left, right) =>
+        ROUTINE_ITEM_TYPE_ORDER[left.itemType] - ROUTINE_ITEM_TYPE_ORDER[right.itemType] ||
+        compareAscendingString(left.id, right.id),
+    )
     .filter((item) => item.itemType === itemType)
     .map((item) => ({
       id: item.id,
@@ -194,18 +218,30 @@ function routineSection(items: DailyStateRoutineItemInput[], itemType: RoutineIt
       dose_text: item.doseText,
       origin: item.origin,
       reminders_enabled: item.remindersEnabled,
-      schedules: item.schedules.map((schedule) => ({
-        id: schedule.id,
-        local_time: schedule.localTime,
-        weekdays: schedule.weekdays,
-      })),
-      occurrences: item.occurrences.map((occurrence) => ({
-        reminder_rule_id: occurrence.reminderRuleId,
-        scheduled_for: occurrence.scheduledFor,
-        status: occurrence.status,
-        last_action_at: occurrence.lastActionAt,
-        snoozed_until: occurrence.snoozedUntil,
-      })),
+      schedules: [...item.schedules]
+        .sort(
+          (left, right) =>
+            compareAscendingString(left.localTime, right.localTime) ||
+            compareAscendingString(left.id, right.id),
+        )
+        .map((schedule) => ({
+          id: schedule.id,
+          local_time: schedule.localTime,
+          weekdays: schedule.weekdays,
+        })),
+      occurrences: [...item.occurrences]
+        .sort(
+          (left, right) =>
+            compareScheduledFor(left.scheduledFor, right.scheduledFor) ||
+            compareAscendingString(left.reminderRuleId, right.reminderRuleId),
+        )
+        .map((occurrence) => ({
+          reminder_rule_id: occurrence.reminderRuleId,
+          scheduled_for: occurrence.scheduledFor,
+          status: occurrence.status,
+          last_action_at: occurrence.lastActionAt,
+          snoozed_until: occurrence.snoozedUntil,
+        })),
     }))
 
   return {

@@ -213,6 +213,15 @@ function parseRoutinePage(
   }
 }
 
+function assertRoutinePageLocalDates(
+  officialLocalDate: string,
+  ...pages: Array<{ localDate: string }>
+): void {
+  if (pages.some((page) => page.localDate !== officialLocalDate)) {
+    throw new DailyStateLoadError('daily state routine items lookup')
+  }
+}
+
 function sourceFingerprint(value: unknown): string {
   return JSON.stringify(value ?? null)
 }
@@ -351,6 +360,7 @@ async function loadOfficialDailyStateAttempt(
     'medication',
     'daily state routine items lookup',
   )
+  assertRoutinePageLocalDates(localDate, supplementRoutinePage, medicationRoutinePage)
   const snapshot = snapshotResult.data
   const meals: Array<{
     id: string
@@ -477,6 +487,7 @@ async function loadOfficialDailyStateAttempt(
     'medication',
     'daily state routine consistency lookup',
   )
+  assertRoutinePageLocalDates(localDate, currentSupplementRoutinePage, currentMedicationRoutinePage)
   if (
     snapshotFingerprint(snapshot) !== snapshotFingerprint(currentSnapshotResult.data) ||
     sourceFingerprint(hydrationTargetResult.data) !==

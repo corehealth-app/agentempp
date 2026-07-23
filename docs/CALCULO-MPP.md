@@ -130,12 +130,17 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   e restante não existem sem essa meta explícita.
 - Suplementos e medicamentos são lidos exclusivamente por
   `list_mobile_routine_items`, que usa o fuso armazenado do usuário e o `now` do
-  servidor para definir a data local. Itens arquivados não entram na leitura.
+  servidor para definir a data local. O `local_date` das duas leituras deve ser
+  idêntico à data oficial do estado; qualquer divergência falha sem publicar um
+  dia híbrido. Itens arquivados não entram na leitura.
 - Cada item expõe `dose_text`, `origin`, `reminders_enabled`, a lista ordenada de
   horários e todas as ocorrências exatas do dia. Cada ocorrência mantém
   `reminder_rule_id`, `scheduled_for`, `status`, `last_action_at` e
   `snoozed_until`; horários do mesmo item são independentes. A chave interna da
-  ocorrência não faz parte do estado público.
+  ocorrência não faz parte do estado público. A ordem técnica é determinística:
+  tipo (`supplement` antes de `medication`) e ID do item; `local_time` e ID do
+  horário; `scheduled_for` e `reminder_rule_id` da ocorrência. A serialização
+  ordena cópias e não altera os arrays recebidos.
 - A versão da semântica é `bodyflow.daily-state.v2`. A v2 muda somente o contrato
   de suplementos e medicamentos: cálculos de calorias, macros, hidratação,
   exercício e bloco 7700 permanecem idênticos à v1. O estado não calcula dose,

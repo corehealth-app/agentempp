@@ -168,74 +168,100 @@ describe('buildDailyState', () => {
   })
 
   it('exposes exact routine occurrences independently with stable metadata and ordering', () => {
-    const state = buildDailyState(
-      input({
-        routineItems: [
+    const routineItems: DailyStateInput['routineItems'] = [
+      {
+        id: 'medication-1',
+        itemType: 'medication',
+        name: 'Item cadastrado',
+        doseText: null,
+        origin: null,
+        remindersEnabled: false,
+        schedules: [
+          { id: 'rule-snoozed', localTime: '09:00', weekdays: [1] },
+          { id: 'rule-missed', localTime: '07:00', weekdays: [1] },
+        ],
+        occurrences: [
           {
-            id: 'supplement-1',
-            itemType: 'supplement',
-            name: 'Creatina',
-            doseText: '3 g',
-            origin: 'professional',
-            remindersEnabled: true,
-            schedules: [
-              { id: 'rule-08', localTime: '08:00', weekdays: [1, 3, 5] },
-              { id: 'rule-20', localTime: '20:00', weekdays: [1, 3, 5] },
-            ],
-            occurrences: [
-              {
-                reminderRuleId: 'rule-08',
-                scheduledFor: '2026-07-20T12:00:00.000Z',
-                status: 'taken',
-                lastActionAt: '2026-07-20T12:05:00.000Z',
-                snoozedUntil: null,
-              },
-              {
-                reminderRuleId: 'rule-20',
-                scheduledFor: '2026-07-21T00:00:00.000Z',
-                status: 'pending',
-                lastActionAt: null,
-                snoozedUntil: null,
-              },
-            ],
-            updatedAt: '2026-07-20T12:05:00.000Z',
+            reminderRuleId: 'rule-snoozed',
+            scheduledFor: '2026-07-20T13:00:00.000Z',
+            status: 'snoozed',
+            lastActionAt: '2026-07-20T13:02:00.000Z',
+            snoozedUntil: '2026-07-20T13:32:00.000Z',
           },
           {
-            id: 'medication-1',
-            itemType: 'medication',
-            name: 'Item cadastrado',
-            doseText: null,
-            origin: null,
-            remindersEnabled: false,
-            schedules: [
-              { id: 'rule-missed', localTime: '07:00', weekdays: [1] },
-              { id: 'rule-snoozed', localTime: '09:00', weekdays: [1] },
-            ],
-            occurrences: [
-              {
-                reminderRuleId: 'rule-missed',
-                scheduledFor: '2026-07-20T11:00:00.000Z',
-                status: 'missed',
-                lastActionAt: '2026-07-21T04:05:00.000Z',
-                snoozedUntil: null,
-              },
-              {
-                reminderRuleId: 'rule-snoozed',
-                scheduledFor: '2026-07-20T13:00:00.000Z',
-                status: 'snoozed',
-                lastActionAt: '2026-07-20T13:02:00.000Z',
-                snoozedUntil: '2026-07-20T13:32:00.000Z',
-              },
-            ],
-            updatedAt: '2026-07-21T04:05:00.000Z',
+            reminderRuleId: 'rule-missed',
+            scheduledFor: '2026-07-20T11:00:00.000Z',
+            status: 'missed',
+            lastActionAt: null,
+            snoozedUntil: null,
           },
         ],
-      }),
-    )
+        updatedAt: '2026-07-21T04:05:00.000Z',
+      },
+      {
+        id: 'supplement-1',
+        itemType: 'supplement',
+        name: 'Creatina',
+        doseText: '3 g',
+        origin: 'professional',
+        remindersEnabled: true,
+        schedules: [
+          { id: 'rule-08-z', localTime: '08:00', weekdays: [1, 3, 5] },
+          { id: 'rule-20', localTime: '20:00', weekdays: [1, 3, 5] },
+          { id: 'rule-08-a', localTime: '08:00', weekdays: [1, 3, 5] },
+        ],
+        occurrences: [
+          {
+            reminderRuleId: 'rule-08-z',
+            scheduledFor: '2026-07-20T08:00:00.000-04:00',
+            status: 'taken',
+            lastActionAt: '2026-07-20T12:05:00.000Z',
+            snoozedUntil: null,
+          },
+          {
+            reminderRuleId: 'rule-20',
+            scheduledFor: '2026-07-21T00:00:00.000Z',
+            status: 'pending',
+            lastActionAt: null,
+            snoozedUntil: null,
+          },
+          {
+            reminderRuleId: 'rule-08-a',
+            scheduledFor: '2026-07-20T12:00:00.000Z',
+            status: 'pending',
+            lastActionAt: null,
+            snoozedUntil: null,
+          },
+        ],
+        updatedAt: '2026-07-20T12:05:00.000Z',
+      },
+      {
+        id: 'supplement-0',
+        itemType: 'supplement',
+        name: 'Sem horários',
+        doseText: null,
+        origin: 'user',
+        remindersEnabled: false,
+        schedules: [],
+        occurrences: [],
+        updatedAt: '2026-07-20T10:00:00.000Z',
+      },
+    ]
+
+    const state = buildDailyState(input({ routineItems }))
 
     expect(state.supplements).toEqual({
       availability: 'available',
       items: [
+        {
+          id: 'supplement-0',
+          name: 'Sem horários',
+          dose_text: null,
+          origin: 'user',
+          reminders_enabled: false,
+          schedules: [],
+          occurrences: [],
+        },
         {
           id: 'supplement-1',
           name: 'Creatina',
@@ -243,13 +269,21 @@ describe('buildDailyState', () => {
           origin: 'professional',
           reminders_enabled: true,
           schedules: [
-            { id: 'rule-08', local_time: '08:00', weekdays: [1, 3, 5] },
+            { id: 'rule-08-a', local_time: '08:00', weekdays: [1, 3, 5] },
+            { id: 'rule-08-z', local_time: '08:00', weekdays: [1, 3, 5] },
             { id: 'rule-20', local_time: '20:00', weekdays: [1, 3, 5] },
           ],
           occurrences: [
             {
-              reminder_rule_id: 'rule-08',
+              reminder_rule_id: 'rule-08-a',
               scheduled_for: '2026-07-20T12:00:00.000Z',
+              status: 'pending',
+              last_action_at: null,
+              snoozed_until: null,
+            },
+            {
+              reminder_rule_id: 'rule-08-z',
+              scheduled_for: '2026-07-20T08:00:00.000-04:00',
               status: 'taken',
               last_action_at: '2026-07-20T12:05:00.000Z',
               snoozed_until: null,
@@ -283,7 +317,7 @@ describe('buildDailyState', () => {
               reminder_rule_id: 'rule-missed',
               scheduled_for: '2026-07-20T11:00:00.000Z',
               status: 'missed',
-              last_action_at: '2026-07-21T04:05:00.000Z',
+              last_action_at: null,
               snoozed_until: null,
             },
             {
@@ -299,6 +333,29 @@ describe('buildDailyState', () => {
     })
     expect(state.calculation_version).toBe('bodyflow.daily-state.v2')
     expect(JSON.stringify(state)).not.toContain('occurrence_key')
+    expect(routineItems.map((item) => item.id)).toEqual([
+      'medication-1',
+      'supplement-1',
+      'supplement-0',
+    ])
+    expect(routineItems[0]?.schedules.map((schedule) => schedule.id)).toEqual([
+      'rule-snoozed',
+      'rule-missed',
+    ])
+    expect(routineItems[0]?.occurrences.map((occurrence) => occurrence.reminderRuleId)).toEqual([
+      'rule-snoozed',
+      'rule-missed',
+    ])
+    expect(routineItems[1]?.schedules.map((schedule) => schedule.id)).toEqual([
+      'rule-08-z',
+      'rule-20',
+      'rule-08-a',
+    ])
+    expect(routineItems[1]?.occurrences.map((occurrence) => occurrence.reminderRuleId)).toEqual([
+      'rule-08-z',
+      'rule-20',
+      'rule-08-a',
+    ])
   })
 
   it('marks a reliable open gap as pending information without treating it as failure', () => {

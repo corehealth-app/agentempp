@@ -179,7 +179,7 @@ function routineSchedule(input: {
 describe('loadOfficialDailyState', () => {
   it('loads exact occurrences for both literal types from the canonical stored-timezone read model', async () => {
     const supplementPage = {
-      local_date: '2026-07-19',
+      local_date: '2026-07-20',
       items: [
         routineItem({
           id: SUPPLEMENT_ID,
@@ -206,7 +206,7 @@ describe('loadOfficialDailyState', () => {
       ],
     }
     const medicationPage = {
-      local_date: '2026-07-19',
+      local_date: '2026-07-20',
       items: [
         routineItem({
           id: MEDICATION_ID,
@@ -220,7 +220,6 @@ describe('loadOfficialDailyState', () => {
               localTime: '07:00',
               scheduledFor: '2026-07-19T11:00:00.000Z',
               status: 'missed',
-              lastActionAt: '2026-07-20T04:05:00.000Z',
             }),
           ],
         }),
@@ -252,6 +251,7 @@ describe('loadOfficialDailyState', () => {
       dependencies,
     )
 
+    expect(state.local_date).toBe('2026-07-20')
     expect(db.queries).not.toContain('routine_items')
     expect(db.queries).not.toContain('routine_adherence_logs')
     expect(db.rpcCalls).toEqual([
@@ -326,11 +326,43 @@ describe('loadOfficialDailyState', () => {
         reminder_rule_id: MEDICATION_RULE_ID,
         scheduled_for: '2026-07-19T11:00:00.000Z',
         status: 'missed',
-        last_action_at: '2026-07-20T04:05:00.000Z',
+        last_action_at: null,
         snoozed_until: null,
       },
     ])
     expect(JSON.stringify(state)).not.toContain('occurrence_key')
+  })
+
+  it.each([
+    ['supplement and medication RPC dates disagree', '2026-07-20', '2026-07-19'],
+    ['both RPC dates disagree with the official date', '2026-07-19', '2026-07-19'],
+  ])('fails closed when %s', async (_name, supplementDate, medicationDate) => {
+    const db = fakeSupabase(
+      {
+        user_profiles: { single: null },
+        daily_snapshots: { single: null },
+        user_progress: { single: null },
+        pending_registrations: { rows: [] },
+      },
+      {
+        'list_mobile_routine_items:supplement': {
+          results: [{ data: { local_date: supplementDate, items: [] }, error: null }],
+        },
+        'list_mobile_routine_items:medication': {
+          results: [{ data: { local_date: medicationDate, items: [] }, error: null }],
+        },
+      },
+    )
+
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-20T15:00:00.000Z'),
+        dependencies,
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state routine items lookup'))
   })
 
   it.each([

@@ -73,6 +73,12 @@ type Events = {
       scheduledFor: string
     }
   }
+  'routine.snooze.due': {
+    data: {
+      adherenceLogId: string
+      snoozedUntil: string
+    }
+  }
   /** Roberto 2026-05-28 (Fase A botões #4) — paciente tocou em botão interativo
    *  ([Sim, registrar]/[Editar]). Webhook dispara imediato (sem buffer). */
   'interactive.button.tapped': {

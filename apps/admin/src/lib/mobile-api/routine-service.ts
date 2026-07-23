@@ -1,7 +1,7 @@
+import type { RoutinePreviewMode } from '@mpp/core'
 import type {
   CreateReminderInput,
   HydrationInput,
-  MarkRoutineTakenInput,
   MobileDeviceInput,
   NotificationPreferencesPatch,
   PatchReminderInput,
@@ -34,6 +34,7 @@ export interface NotificationPreferencesRecord {
   quiet_hours_end: string | null
   daily_push_limit: number
   hydration_target_ml: number | null
+  routine_preview_mode: RoutinePreviewMode
   created_at: string
   updated_at: string
 }
@@ -80,23 +81,10 @@ interface RecordHydrationRepositoryInput {
   occurredAt: string
 }
 
-interface RecordTakenRepositoryInput {
-  userId: string
-  routineItemId: string
-  itemType: RoutineItemType
-  idempotencyKey: string
-  occurredAt: string
-}
-
 export interface HydrationRecordResult {
   hydration_log_id: string
   inserted: boolean
   water_consumed_ml: number
-}
-
-export interface RoutineTakenResult {
-  adherence_log_id: string
-  inserted: boolean
 }
 
 export interface RoutineRepository {
@@ -113,7 +101,6 @@ export interface RoutineRepository {
   updateReminder(input: UpdateReminderRepositoryInput): Promise<ReminderRecord | null>
   findRoutineItem(userId: string, routineItemId: string): Promise<RoutineItemRecord | null>
   recordHydration(input: RecordHydrationRepositoryInput): Promise<HydrationRecordResult>
-  recordTaken(input: RecordTakenRepositoryInput): Promise<RoutineTakenResult>
 }
 
 export interface RoutineServiceDependencies {
@@ -143,6 +130,7 @@ function preferencesDto(preferences: NotificationPreferencesRecord | null) {
       quiet_hours: null,
       daily_push_limit: 8,
       hydration_target_ml: null,
+      routine_preview_mode: 'private',
       created_at: null,
       updated_at: null,
     }
@@ -159,6 +147,7 @@ function preferencesDto(preferences: NotificationPreferencesRecord | null) {
         : null,
     daily_push_limit: preferences.daily_push_limit,
     hydration_target_ml: preferences.hydration_target_ml,
+    routine_preview_mode: preferences.routine_preview_mode,
     created_at: preferences.created_at,
     updated_at: preferences.updated_at,
   }
@@ -178,25 +167,14 @@ function reminderDto(reminder: ReminderRecord) {
   }
 }
 
-async function requireRoutineItem(
-  deps: RoutineServiceDependencies,
-  userId: string,
-  routineItemId: string,
-  expectedType: RoutineItemType,
-): Promise<RoutineItemRecord> {
-  const item = await deps.repository.findRoutineItem(userId, routineItemId)
-  if (!item) throw new MobileApiError(404, 'routine_item_not_found', 'Routine item not found')
-  if (item.item_type !== expectedType) {
+function rejectRoutineSchedule(category: ReminderCategory): void {
+  if (category === 'supplement' || category === 'medication') {
     throw new MobileApiError(
-      422,
-      'routine_item_type_mismatch',
-      'Routine item type does not match the requested operation',
+      409,
+      'routine_schedule_conflict',
+      'Routine schedules must be updated through the item contract',
     )
   }
-  if (!item.active) {
-    throw new MobileApiError(409, 'routine_item_inactive', 'Routine item is inactive')
-  }
-  return item
 }
 
 function localDateAt(isoTimestamp: string, timezone: string): string {
@@ -274,9 +252,7 @@ export async function createReminderRule(
   userId: string,
   input: CreateReminderInput,
 ) {
-  if (input.category === 'supplement' || input.category === 'medication') {
-    await requireRoutineItem(deps, userId, input.routine_item_id as string, input.category)
-  }
+  rejectRoutineSchedule(input.category)
   return reminderDto(await deps.repository.createReminder({ ...input, userId }))
 }
 
@@ -286,13 +262,19 @@ export async function patchReminderRule(
   reminderId: string,
   patch: PatchReminderInput,
 ) {
-  const reminder = await deps.repository.updateReminder({
+  const existing = (await deps.repository.listReminders(userId)).find(
+    (reminder) => reminder.id === reminderId,
+  )
+  if (!existing) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
+  rejectRoutineSchedule(existing.category)
+
+  const updated = await deps.repository.updateReminder({
     ...patch,
     userId,
     reminderId,
   })
-  if (!reminder) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
-  return reminderDto(reminder)
+  if (!updated) throw new MobileApiError(404, 'reminder_not_found', 'Reminder not found')
+  return reminderDto(updated)
 }
 
 export async function recordHydration(
@@ -311,25 +293,5 @@ export async function recordHydration(
     amountMl: input.amount_ml,
     idempotencyKey,
     occurredAt,
-  })
-}
-
-export async function markRoutineTaken(
-  deps: RoutineServiceDependencies,
-  userId: string,
-  routineItemId: string,
-  itemType: RoutineItemType,
-  input: MarkRoutineTakenInput,
-  idempotencyKey: string,
-  now = new Date(),
-) {
-  validateOccurredAt(input.occurred_at, now)
-  await requireRoutineItem(deps, userId, routineItemId, itemType)
-  return deps.repository.recordTaken({
-    userId,
-    routineItemId,
-    itemType,
-    idempotencyKey,
-    occurredAt: input.occurred_at,
   })
 }

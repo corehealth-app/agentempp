@@ -1,3 +1,4 @@
+import { routinePreviewModeSchema } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { MobileApiError } from './http'
@@ -9,7 +10,6 @@ import type {
   RoutineItemRecord,
   RoutineRepository,
   RoutineServiceDependencies,
-  RoutineTakenResult,
 } from './routine-service'
 
 const deviceRowSchema = z.object({
@@ -28,6 +28,7 @@ const preferencesRowSchema = z.object({
   quiet_hours_end: z.string().nullable(),
   daily_push_limit: z.number().int(),
   hydration_target_ml: z.number().int().nullable(),
+  routine_preview_mode: routinePreviewModeSchema,
   created_at: z.string().datetime({ offset: true }),
   updated_at: z.string().datetime({ offset: true }),
 })
@@ -65,11 +66,6 @@ const hydrationResultSchema = z.object({
   water_consumed_ml: z.number().int().nonnegative(),
 })
 
-const routineTakenResultSchema = z.object({
-  adherence_log_id: z.string().uuid(),
-  inserted: z.boolean(),
-})
-
 const deviceSelection = [
   'id',
   'installation_id',
@@ -86,6 +82,7 @@ const preferencesSelection = [
   'quiet_hours_end',
   'daily_push_limit',
   'hydration_target_ml',
+  'routine_preview_mode',
   'created_at',
   'updated_at',
 ].join(', ')
@@ -132,6 +129,26 @@ function databaseFailure(action: string, error: { code?: string; message: string
     error_code: error?.code ?? 'empty_result',
   })
   throw new MobileApiError(500, 'routine_storage_failed', 'Routine operation failed')
+}
+
+type UntypedPreferencesTable = {
+  upsert(
+    values: Record<string, unknown>,
+    options: { ignoreDuplicates: boolean; onConflict: string },
+  ): Promise<{ error: { code?: string; message: string } | null }>
+  update(values: Record<string, unknown>): {
+    eq(
+      column: string,
+      value: string,
+    ): {
+      select(selection: string): {
+        maybeSingle(): Promise<{
+          data: unknown
+          error: { code?: string; message: string } | null
+        }>
+      }
+    }
+  }
 }
 
 function createRepository(supabase: ServiceClient): RoutineRepository {
@@ -188,12 +205,55 @@ function createRepository(supabase: ServiceClient): RoutineRepository {
       return data ? parsePreferences(data) : null
     },
     async updatePreferences(userId, patch) {
+      if (patch.routine_preview_mode !== undefined) {
+        const table = supabase.from(
+          'notification_preferences',
+        ) as unknown as UntypedPreferencesTable
+        const { error: ensureError } = await table.upsert(
+          { user_id: userId },
+          { ignoreDuplicates: true, onConflict: 'user_id' },
+        )
+        if (ensureError) databaseFailure('ensure_preferences', ensureError)
+
+        const update = {
+          ...(patch.push_enabled === undefined ? {} : { push_enabled: patch.push_enabled }),
+          ...(patch.quiet_hours === undefined
+            ? {}
+            : {
+                quiet_hours_start: patch.quiet_hours?.start ?? null,
+                quiet_hours_end: patch.quiet_hours?.end ?? null,
+              }),
+          ...(patch.daily_push_limit === undefined
+            ? {}
+            : { daily_push_limit: patch.daily_push_limit }),
+          ...(patch.hydration_target_ml === undefined
+            ? {}
+            : { hydration_target_ml: patch.hydration_target_ml }),
+          routine_preview_mode: patch.routine_preview_mode,
+          updated_at: new Date().toISOString(),
+        }
+        const { data, error } = await table
+          .update(update)
+          .eq('user_id', userId)
+          .select(preferencesSelection)
+          .maybeSingle()
+        if (error || !data) databaseFailure('update_preferences', error)
+        return parsePreferences(data)
+      }
+
       const { data, error } = await supabase.rpc('update_notification_preferences_atomic', {
         p_user_id: userId,
         p_patch: patch,
       })
       if (error || !data) databaseFailure('update_preferences', error)
-      return parsePreferences(data)
+
+      const { data: preferences, error: readError } = await supabase
+        .from('notification_preferences')
+        .select(preferencesSelection)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (readError || !preferences) databaseFailure('read_updated_preferences', readError)
+      return parsePreferences(preferences)
     },
     async listReminders(userId) {
       const { data, error } = await supabase
@@ -294,19 +354,6 @@ function createRepository(supabase: ServiceClient): RoutineRepository {
       const parsed = hydrationResultSchema.safeParse(data)
       if (!parsed.success) databaseFailure('parse_hydration_result', null)
       return parsed.data as HydrationRecordResult
-    },
-    async recordTaken(input) {
-      const { data, error } = await supabase.rpc('record_routine_adherence_atomic', {
-        p_user_id: input.userId,
-        p_routine_item_id: input.routineItemId,
-        p_expected_item_type: input.itemType,
-        p_idempotency_key: input.idempotencyKey,
-        p_taken_at: input.occurredAt,
-      })
-      if (error || !data) databaseFailure('record_taken', error)
-      const parsed = routineTakenResultSchema.safeParse(data)
-      if (!parsed.success) databaseFailure('parse_taken_result', null)
-      return parsed.data as RoutineTakenResult
     },
   }
 }

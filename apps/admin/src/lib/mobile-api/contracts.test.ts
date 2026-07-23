@@ -291,6 +291,27 @@ describe('mobile API v1 contracts', () => {
     ).toThrow()
   })
 
+  it('accepts only controlled routine notification preview modes', () => {
+    expect(notificationPreferencesPatchSchema.parse({ routine_preview_mode: 'private' })).toEqual({
+      routine_preview_mode: 'private',
+    })
+    expect(notificationPreferencesPatchSchema.parse({ routine_preview_mode: 'name' })).toEqual({
+      routine_preview_mode: 'name',
+    })
+    expect(
+      notificationPreferencesPatchSchema.parse({ routine_preview_mode: 'name_and_dose' }),
+    ).toEqual({ routine_preview_mode: 'name_and_dose' })
+    expect(() =>
+      notificationPreferencesPatchSchema.parse({ routine_preview_mode: 'full' }),
+    ).toThrow()
+    expect(() =>
+      notificationPreferencesPatchSchema.parse({
+        routine_preview_mode: 'private',
+        item_name: 'Private supplement',
+      }),
+    ).toThrow()
+  })
+
   it('validates reminder ownership references and unique weekdays', () => {
     expect(
       createReminderInputSchema.parse({

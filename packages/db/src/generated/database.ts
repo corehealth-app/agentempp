@@ -1596,6 +1596,39 @@ export type Database = {
           },
         ]
       }
+      legal_documents: {
+        Row: {
+          body: string
+          body_hash: string | null
+          created_at: string
+          document_key: string
+          id: string
+          locale: string
+          required_from: string
+          version: string
+        }
+        Insert: {
+          body: string
+          body_hash?: string | null
+          created_at?: string
+          document_key: string
+          id?: string
+          locale: string
+          required_from: string
+          version: string
+        }
+        Update: {
+          body?: string
+          body_hash?: string | null
+          created_at?: string
+          document_key?: string
+          id?: string
+          locale?: string
+          required_from?: string
+          version?: string
+        }
+        Relationships: []
+      }
       llm_evaluations: {
         Row: {
           agent_name: string | null
@@ -2161,6 +2194,7 @@ export type Database = {
           provider: string
           provider_message_id: string | null
           reminder_event_id: string
+          routine_preview_mode: string | null
           scheduled_for: string
           status: string
           template_key: string
@@ -2181,6 +2215,7 @@ export type Database = {
           provider: string
           provider_message_id?: string | null
           reminder_event_id: string
+          routine_preview_mode?: string | null
           scheduled_for: string
           status?: string
           template_key: string
@@ -2201,6 +2236,7 @@ export type Database = {
           provider?: string
           provider_message_id?: string | null
           reminder_event_id?: string
+          routine_preview_mode?: string | null
           scheduled_for?: string
           status?: string
           template_key?: string
@@ -2257,6 +2293,7 @@ export type Database = {
           push_enabled: boolean
           quiet_hours_end: string | null
           quiet_hours_start: string | null
+          routine_preview_mode: string
           updated_at: string
           user_id: string
         }
@@ -2267,6 +2304,7 @@ export type Database = {
           push_enabled?: boolean
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          routine_preview_mode?: string
           updated_at?: string
           user_id: string
         }
@@ -2277,6 +2315,7 @@ export type Database = {
           push_enabled?: boolean
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          routine_preview_mode?: string
           updated_at?: string
           user_id?: string
         }
@@ -2536,6 +2575,8 @@ export type Database = {
           id: string
           reminder_rule_id: string
           resolved_at: string | null
+          routine_action_log_id: string | null
+          routine_occurrence_key: string | null
           scheduled_for: string
           status: string
           suppression_reason: string | null
@@ -2547,6 +2588,8 @@ export type Database = {
           id?: string
           reminder_rule_id: string
           resolved_at?: string | null
+          routine_action_log_id?: string | null
+          routine_occurrence_key?: string | null
           scheduled_for: string
           status: string
           suppression_reason?: string | null
@@ -2558,6 +2601,8 @@ export type Database = {
           id?: string
           reminder_rule_id?: string
           resolved_at?: string | null
+          routine_action_log_id?: string | null
+          routine_occurrence_key?: string | null
           scheduled_for?: string
           status?: string
           suppression_reason?: string | null
@@ -2565,6 +2610,23 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "reminder_events_routine_action_owner_fkey"
+            columns: [
+              "routine_action_log_id",
+              "user_id",
+              "reminder_rule_id",
+              "routine_occurrence_key",
+            ]
+            isOneToOne: false
+            referencedRelation: "routine_adherence_logs"
+            referencedColumns: [
+              "id",
+              "user_id",
+              "reminder_rule_id",
+              "occurrence_key",
+            ]
+          },
           {
             foreignKeyName: "reminder_events_rule_owner_fkey"
             columns: ["reminder_rule_id", "user_id"]
@@ -2586,6 +2648,7 @@ export type Database = {
           active: boolean
           category: string
           created_at: string
+          deactivated_at: string | null
           id: string
           local_time: string
           meal_type: string | null
@@ -2599,6 +2662,7 @@ export type Database = {
           active?: boolean
           category: string
           created_at?: string
+          deactivated_at?: string | null
           id?: string
           local_time: string
           meal_type?: string | null
@@ -2612,6 +2676,7 @@ export type Database = {
           active?: boolean
           category?: string
           created_at?: string
+          deactivated_at?: string | null
           id?: string
           local_time?: string
           meal_type?: string | null
@@ -2645,10 +2710,14 @@ export type Database = {
           idempotency_key: string
           item_type: string
           occurred_at: string
+          occurrence_key: string | null
+          reminder_rule_id: string | null
           routine_item_id: string
           scheduled_for: string | null
           snoozed_until: string | null
+          source: string | null
           status: string
+          supersedes_log_id: string | null
           user_id: string
         }
         Insert: {
@@ -2657,10 +2726,14 @@ export type Database = {
           idempotency_key: string
           item_type: string
           occurred_at: string
+          occurrence_key?: string | null
+          reminder_rule_id?: string | null
           routine_item_id: string
           scheduled_for?: string | null
           snoozed_until?: string | null
+          source?: string | null
           status?: string
+          supersedes_log_id?: string | null
           user_id: string
         }
         Update: {
@@ -2669,10 +2742,14 @@ export type Database = {
           idempotency_key?: string
           item_type?: string
           occurred_at?: string
+          occurrence_key?: string | null
+          reminder_rule_id?: string | null
           routine_item_id?: string
           scheduled_for?: string | null
           snoozed_until?: string | null
+          source?: string | null
           status?: string
+          supersedes_log_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -2682,6 +2759,37 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "routine_items"
             referencedColumns: ["id", "user_id", "item_type"]
+          },
+          {
+            foreignKeyName: "routine_adherence_logs_rule_owner_type_fkey"
+            columns: [
+              "reminder_rule_id",
+              "user_id",
+              "routine_item_id",
+              "item_type",
+            ]
+            isOneToOne: false
+            referencedRelation: "reminder_rules"
+            referencedColumns: ["id", "user_id", "routine_item_id", "category"]
+          },
+          {
+            foreignKeyName: "routine_adherence_logs_supersedes_owner_fkey"
+            columns: [
+              "supersedes_log_id",
+              "user_id",
+              "routine_item_id",
+              "item_type",
+              "occurrence_key",
+            ]
+            isOneToOne: false
+            referencedRelation: "routine_adherence_logs"
+            referencedColumns: [
+              "id",
+              "user_id",
+              "routine_item_id",
+              "item_type",
+              "occurrence_key",
+            ]
           },
           {
             foreignKeyName: "routine_adherence_logs_user_id_fkey"
@@ -2695,30 +2803,45 @@ export type Database = {
       routine_items: {
         Row: {
           active: boolean
+          archived_at: string | null
           created_at: string
+          dose_text: string | null
           id: string
           item_type: string
           name: string
+          origin: string | null
+          reminders_enabled: boolean
           updated_at: string
           user_id: string
+          version: number
         }
         Insert: {
           active?: boolean
+          archived_at?: string | null
           created_at?: string
+          dose_text?: string | null
           id?: string
           item_type: string
           name: string
+          origin?: string | null
+          reminders_enabled?: boolean
           updated_at?: string
           user_id: string
+          version?: number
         }
         Update: {
           active?: boolean
+          archived_at?: string | null
           created_at?: string
+          dose_text?: string | null
           id?: string
           item_type?: string
           name?: string
+          origin?: string | null
+          reminders_enabled?: boolean
           updated_at?: string
           user_id?: string
+          version?: number
         }
         Relationships: [
           {
@@ -3128,6 +3251,69 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_food_corrections_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_legal_acceptances: {
+        Row: {
+          accepted_at: string
+          body_hash: string
+          created_at: string
+          document_key: string
+          id: string
+          legal_document_id: string
+          locale: string
+          user_id: string
+          version: string
+        }
+        Insert: {
+          accepted_at?: string
+          body_hash: string
+          created_at?: string
+          document_key: string
+          id?: string
+          legal_document_id: string
+          locale: string
+          user_id: string
+          version: string
+        }
+        Update: {
+          accepted_at?: string
+          body_hash?: string
+          created_at?: string
+          document_key?: string
+          id?: string
+          legal_document_id?: string
+          locale?: string
+          user_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_legal_acceptances_document_fkey"
+            columns: [
+              "legal_document_id",
+              "document_key",
+              "version",
+              "locale",
+              "body_hash",
+            ]
+            isOneToOne: false
+            referencedRelation: "legal_documents"
+            referencedColumns: [
+              "id",
+              "document_key",
+              "version",
+              "locale",
+              "body_hash",
+            ]
+          },
+          {
+            foreignKeyName: "user_legal_acceptances_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -3804,6 +3990,16 @@ export type Database = {
       }
     }
     Functions: {
+      accept_mobile_legal_document: {
+        Args: {
+          p_body_hash: string
+          p_document_key: string
+          p_idempotency_key: string
+          p_user_id: string
+          p_version: string
+        }
+        Returns: Json
+      }
       activate_coach_content_pack: {
         Args: { p_activated_by: string; p_now: string; p_pack_id: string }
         Returns: Json
@@ -3833,6 +4029,15 @@ export type Database = {
       }
       archive_content_publication: {
         Args: { p_actor_id: string; p_publication_id: string }
+        Returns: Json
+      }
+      archive_mobile_routine_item: {
+        Args: {
+          p_idempotency_key: string
+          p_item_id: string
+          p_request_hash: string
+          p_user_id: string
+        }
         Returns: Json
       }
       attention_cleanup_expired: { Args: never; Returns: number }
@@ -3935,6 +4140,10 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_routine_snooze_event: {
+        Args: { p_adherence_log_id: string; p_claimed_at: string }
+        Returns: Json
+      }
       claim_subscription_event: {
         Args: {
           p_event_type: string
@@ -4005,6 +4214,16 @@ export type Database = {
       }
       create_content_publication: {
         Args: { p_actor_id: string; p_slug: string }
+        Returns: Json
+      }
+      create_mobile_routine_item: {
+        Args: {
+          p_idempotency_key: string
+          p_item_type: string
+          p_payload: Json
+          p_request_hash: string
+          p_user_id: string
+        }
         Returns: Json
       }
       cron_run_now: { Args: { p_jobname: string }; Returns: Json }
@@ -4111,6 +4330,16 @@ export type Database = {
         }
         Returns: Json
       }
+      finalize_due_routine_occurrences: {
+        Args: {
+          p_after_rule_id?: string
+          p_after_scheduled_for?: string
+          p_after_user_id?: string
+          p_limit: number
+          p_now: string
+        }
+        Returns: Json
+      }
       finalize_engagement_delivery: {
         Args: {
           p_attempt_id: string
@@ -4145,6 +4374,10 @@ export type Database = {
         Args: { p_now?: string; p_publication_id: string; p_user_id: string }
         Returns: Json
       }
+      get_mobile_legal_document: {
+        Args: { p_document_key: string; p_user_id: string }
+        Returns: Json
+      }
       ingest_whatsapp_inbound: {
         Args: {
           p_buffer: boolean
@@ -4174,6 +4407,19 @@ export type Database = {
           scheduled_for: string
         }[]
       }
+      list_due_routine_snoozes: {
+        Args: {
+          p_after_log_id?: string
+          p_after_snoozed_until?: string
+          p_fired_at: string
+          p_limit: number
+          p_lookback_minutes: number
+        }
+        Returns: {
+          adherence_log_id: string
+          snoozed_until: string
+        }[]
+      }
       list_mobile_content: {
         Args: {
           p_category?: string
@@ -4182,6 +4428,26 @@ export type Database = {
           p_limit?: number
           p_now?: string
           p_surface?: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      list_mobile_routine_history: {
+        Args: {
+          p_before_log_id?: string
+          p_before_occurred_at?: string
+          p_item_id: string
+          p_item_type: string
+          p_limit: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      list_mobile_routine_items: {
+        Args: {
+          p_include_archived?: boolean
+          p_item_type: string
+          p_now?: string
           p_user_id: string
         }
         Returns: Json
@@ -4244,6 +4510,20 @@ export type Database = {
           p_idempotency_key: string
           p_routine_item_id: string
           p_taken_at: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      record_routine_occurrence_action_atomic: {
+        Args: {
+          p_expected_item_type: string
+          p_idempotency_key: string
+          p_item_id: string
+          p_occurred_at: string
+          p_reminder_rule_id: string
+          p_scheduled_for: string
+          p_snoozed_until: string
+          p_status: string
           p_user_id: string
         }
         Returns: Json
@@ -4555,6 +4835,17 @@ export type Database = {
       untag_user: {
         Args: { p_tag: string; p_user_id: string }
         Returns: string[]
+      }
+      update_mobile_routine_item: {
+        Args: {
+          p_expected_version: number
+          p_idempotency_key: string
+          p_item_id: string
+          p_patch: Json
+          p_request_hash: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       update_notification_preferences_atomic: {
         Args: { p_patch: Json; p_user_id: string }

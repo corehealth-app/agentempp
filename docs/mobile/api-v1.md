@@ -60,7 +60,9 @@ Idempotency-Key: mobile-<uuid-ou-id-opaco>
 ```
 
 Rotas com body exigem também `Content-Type: application/json`. Confirmação e
-cancelamento não precisam de JSON, mas continuam exigindo `Idempotency-Key`.
+cancelamento sem body continuam exigindo `Idempotency-Key`. O archive de um item
+de rotina é uma exceção explícita: `DELETE /supplements/:id` e
+`DELETE /medications/:id` exigem o objeto JSON estrito `{}`.
 A chave aceita 8 a 128 caracteres em
 `A-Z a-z 0-9 . _ : -`.
 
@@ -107,9 +109,23 @@ somente ao backend.
 | `GET` | `/reminders` | lista regras próprias em horário local e dias da semana |
 | `POST` | `/reminders` | cria uma regra simples; não aceita cron arbitrário |
 | `PATCH` | `/reminders/:id` | altera ou desativa uma regra própria |
+| `GET` | `/supplements` | lista suplementos próprios, horários e ocorrências exatas do dia |
+| `POST` | `/supplements` | cria suplemento e um ou mais horários atomicamente |
+| `PATCH` | `/supplements/:id` | altera item e horários com versão otimista |
+| `DELETE` | `/supplements/:id` | arquiva item e desativa lembretes sem apagar histórico |
+| `POST` | `/supplements/:id/log` | registra `taken`, `snoozed` ou `skipped` na ocorrência exata |
+| `GET` | `/supplements/:id/history` | pagina o histórico append-only por cursor opaco |
+| `GET` | `/medications` | lista medicamentos próprios, horários e ocorrências exatas do dia |
+| `POST` | `/medications` | cria medicamento após aceite legal da versão vigente |
+| `PATCH` | `/medications/:id` | altera item e horários com versão otimista |
+| `DELETE` | `/medications/:id` | arquiva item e desativa lembretes sem apagar histórico |
+| `POST` | `/medications/:id/log` | registra `taken`, `snoozed` ou `skipped` na ocorrência exata |
+| `GET` | `/medications/:id/history` | pagina o histórico append-only por cursor opaco |
+| `GET` | `/legal/medication-reminder-disclaimer` | lê a versão legal localizada atualmente exigida |
+| `POST` | `/legal/medication-reminder-disclaimer/accept` | aceita exatamente a versão e o hash exibidos |
 | `POST` | `/routine/hydration` | soma água atomicamente ao dia local correto |
-| `POST` | `/routine/supplements/:id/taken` | registra adesão de suplemento próprio e ativo |
-| `POST` | `/routine/medications/:id/taken` | registra adesão de medicamento próprio e ativo |
+| `POST` | `/routine/supplements/:id/taken` | wrapper legado; registra somente quando há uma ocorrência elegível única |
+| `POST` | `/routine/medications/:id/taken` | wrapper legado; registra somente quando há uma ocorrência elegível única |
 
 Todos os caminhos acima têm o prefixo `/api/mobile/v1`.
 
@@ -170,11 +186,27 @@ Estrutura resumida:
     "availability": "available",
     "items": [
       {
-        "id": "supplement-id",
+        "id": "11111111-1111-4111-8111-111111111111",
         "name": "Creatina",
-        "status": "taken",
-        "occurred_at": "2026-07-20T14:05:00.000Z",
-        "snoozed_until": null
+        "dose_text": "3 g",
+        "origin": "professional",
+        "reminders_enabled": true,
+        "schedules": [
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "local_time": "08:00",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6]
+          }
+        ],
+        "occurrences": [
+          {
+            "reminder_rule_id": "11111111-1111-4111-8111-111111111112",
+            "scheduled_for": "2026-07-20T11:00:00.000Z",
+            "status": "taken",
+            "last_action_at": "2026-07-20T11:05:00.000Z",
+            "snoozed_until": null
+          }
+        ]
       }
     ]
   },
@@ -222,7 +254,7 @@ Estrutura resumida:
     "pending_actions": "pending_registrations_and_meal_pattern",
     "block_7700": "user_progress"
   },
-  "calculation_version": "bodyflow.daily-state.v1",
+  "calculation_version": "bodyflow.daily-state.v2",
   "updated_at": "2026-07-20T14:05:00.000Z",
   "generated_at": "2026-07-20T15:00:00.000Z"
 }
@@ -251,10 +283,11 @@ Semântica obrigatória:
   `notification_preferences`. Sem meta, percentual e restante são `null`, e o
   estado é `not_recorded` ou `tracked_without_target`. Com meta, os estados são
   `not_started`, `in_progress` ou `target_reached`.
-- Suplementos e medicamentos mostram somente itens ativos do próprio paciente e
-  a ação oficial mais recente do dia local: `taken`, `snoozed`, `skipped`,
-  `missed` ou `not_recorded`. Ausência de item é `not_configured`; dose,
-  prescrição e recomendação não são inferidas.
+- Suplementos e medicamentos mostram somente itens ativos do próprio paciente,
+  horários e todas as ocorrências exatas do dia local. Cada ocorrência é
+  independente e usa `pending`, `taken`, `snoozed`, `skipped` ou `missed`;
+  ausência de item é `not_configured`. A chave interna da ocorrência não é
+  exposta, e dose, prescrição ou recomendação não são inferidas.
 - Snapshot, refeições e treinos são lidos em uma única consulta relacional. O
   backend revalida a versão escalar do snapshot e também as fontes de meta de
   hidratação, itens de rotina e adesão diária. Se uma escrita concorrente alterar
@@ -265,6 +298,634 @@ Semântica obrigatória:
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.
 Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
 do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
+
+## Suplementos, medicamentos e adesão de rotina
+
+Estas rotas são app-first e apenas organizam lembretes e registros informados
+pelo paciente. Elas não prescrevem, recomendam, interpretam nem alteram
+medicamentos ou doses, e não fazem alegações clínicas sobre suplementos.
+
+### Contrato comum de item e horário
+
+`POST /supplements` e `POST /medications` aceitam o mesmo body estrito:
+
+| Campo | Contrato |
+|---|---|
+| `name` | texto informado pelo paciente, trim, 1..200 caracteres |
+| `dose_text` | texto informado pelo paciente, trim, 1..120 caracteres; não é interpretado |
+| `origin` | `user`, `professional`, `protocol` ou `other` |
+| `reminders_enabled` | habilita ou suprime push sem remover horários ou adesão manual |
+| `schedules` | 1..16 horários lógicos únicos |
+| `schedules[].local_time` | `HH:MM` no timezone armazenado do paciente |
+| `schedules[].weekdays` | 1..7 dias entre 0 (domingo) e 6 (sábado) |
+
+O servidor ordena e remove repetições dentro de `weekdays`; depois dessa
+normalização, dois horários com o mesmo `local_time` e os mesmos dias são
+rejeitados. Campos desconhecidos são rejeitados. O timezone e a data local vêm
+do perfil autenticado e do relógio do servidor, nunca do body ou da query.
+`origin=professional` é apenas metadado descritivo informado pelo paciente; não
+comprova autoria ou revisão profissional.
+
+Exemplo completo de criação de suplemento:
+
+```http
+POST /api/mobile/v1/supplements
+Content-Type: application/json
+Idempotency-Key: routine-supplement-create-0001
+```
+
+```json
+{
+  "name": "Creatina",
+  "dose_text": "3 g",
+  "origin": "professional",
+  "reminders_enabled": true,
+  "schedules": [
+    {
+      "local_time": "08:00",
+      "weekdays": [0, 1, 2, 3, 4, 5, 6]
+    },
+    {
+      "local_time": "20:00",
+      "weekdays": [0, 1, 2, 3, 4, 5, 6]
+    }
+  ]
+}
+```
+
+Resposta `201`:
+
+```json
+{
+  "data": {
+    "routine_item_id": "11111111-1111-4111-8111-111111111111",
+    "version": 1
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-supplement-0001"
+  }
+}
+```
+
+Item, horários, evento técnico de criação e recibo idempotente são gravados na
+mesma transação. Nome e dose não entram no evento técnico nem no recibo.
+
+### Listagem e exemplo completo de suplemento
+
+`GET /supplements` e `GET /medications` aceitam somente
+`include_archived=true|false`, com padrão `false`. A resposta é ordenada por
+`updated_at DESC, id DESC`; horários são ordenados por hora, dias e ID.
+`frequency_summary.times_per_week` é a soma dos dias dos horários ativos, não
+uma frequência persistida em paralelo.
+
+Cada horário aplicável ao dia tem uma única `occurrence`. Em dia fora de
+`weekdays`, ou quando o horário local não existe numa transição de DST,
+`occurrence` é `null`. A identidade interna da ocorrência não é exposta nessa
+listagem.
+
+Exemplo completo de `GET /supplements`:
+
+```json
+{
+  "data": {
+    "local_date": "2026-07-22",
+    "items": [
+      {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "item_type": "supplement",
+        "name": "Creatina",
+        "dose_text": "3 g",
+        "origin": "professional",
+        "reminders_enabled": true,
+        "active": true,
+        "archived_at": null,
+        "version": 1,
+        "created_at": "2026-07-22T10:00:00.000Z",
+        "updated_at": "2026-07-22T10:00:00.000Z",
+        "frequency_summary": {
+          "times_per_week": 14
+        },
+        "schedules": [
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "local_time": "08:00",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "occurrence": {
+              "scheduled_for": "2026-07-22T11:00:00.000Z",
+              "status": "taken",
+              "last_action_at": "2026-07-22T11:03:00.000Z",
+              "snoozed_until": null
+            }
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111113",
+            "local_time": "20:00",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "occurrence": {
+              "scheduled_for": "2026-07-22T23:00:00.000Z",
+              "status": "pending",
+              "last_action_at": null,
+              "snoozed_until": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-supplement-list-0001"
+  }
+}
+```
+
+### Aceite legal e exemplo completo de medicamento
+
+Antes de criar qualquer medicamento, o app lê o texto localizado da versão
+vigente:
+
+```http
+GET /api/mobile/v1/legal/medication-reminder-disclaimer
+```
+
+```json
+{
+  "data": {
+    "document_key": "medication_reminder_disclaimer",
+    "version": "2026-07-22.1",
+    "locale": "pt-BR",
+    "body": "O BodyFlow apenas organiza lembretes e registros. Ele não prescreve, recomenda nem altera medicamentos ou doses. Siga a orientação do profissional de saúde responsável.",
+    "body_hash": "c7990a57fc61c29aa7025c77d4db489caf6f6d780913afeccc79811a287dd5f4",
+    "required_from": "2026-07-22T00:00:00.000Z"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-medication-legal-get-0001"
+  }
+}
+```
+
+O aceite envia exatamente a versão e o hash exibidos:
+
+```http
+POST /api/mobile/v1/legal/medication-reminder-disclaimer/accept
+Content-Type: application/json
+Idempotency-Key: medication-legal-accept-0001
+```
+
+```json
+{
+  "accepted": true,
+  "version": "2026-07-22.1",
+  "body_hash": "c7990a57fc61c29aa7025c77d4db489caf6f6d780913afeccc79811a287dd5f4"
+}
+```
+
+Resposta `200`:
+
+```json
+{
+  "data": {
+    "document_key": "medication_reminder_disclaimer",
+    "version": "2026-07-22.1",
+    "accepted_at": "2026-07-22T10:10:00.000Z"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-medication-legal-accept-0001"
+  }
+}
+```
+
+Aceites são append-only e não podem ser editados ou excluídos pela API do
+paciente. Versão ou hash que deixou de ser vigente retorna
+`409 medication_disclaimer_version_stale`. A criação do medicamento verifica o
+aceite vigente dentro da mesma transação que cria item e horários.
+
+Sem aceite, `POST /medications` retorna `428` apenas com a identidade necessária
+para recarregar a rota legal, sem texto ou hash:
+
+```json
+{
+  "error": {
+    "code": "medication_disclaimer_required",
+    "message": "Medication disclaimer acceptance is required",
+    "request_id": "request-medication-create-0001",
+    "details": {
+      "document_key": "medication_reminder_disclaimer",
+      "version": "2026-07-22.1"
+    }
+  }
+}
+```
+
+Depois do aceite, exemplo completo de criação:
+
+```http
+POST /api/mobile/v1/medications
+Content-Type: application/json
+Idempotency-Key: routine-medication-create-0001
+```
+
+```json
+{
+  "name": "Medicamento cadastrado",
+  "dose_text": "1 comprimido",
+  "origin": "professional",
+  "reminders_enabled": true,
+  "schedules": [
+    {
+      "local_time": "09:00",
+      "weekdays": [0, 1, 2, 3, 4, 5, 6]
+    }
+  ]
+}
+```
+
+Resposta `201`:
+
+```json
+{
+  "data": {
+    "routine_item_id": "22222222-2222-4222-8222-222222222221",
+    "version": 1
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-medication-0001"
+  }
+}
+```
+
+Exemplo completo de `GET /medications`:
+
+```json
+{
+  "data": {
+    "local_date": "2026-07-22",
+    "items": [
+      {
+        "id": "22222222-2222-4222-8222-222222222221",
+        "item_type": "medication",
+        "name": "Medicamento cadastrado",
+        "dose_text": "1 comprimido",
+        "origin": "professional",
+        "reminders_enabled": true,
+        "active": true,
+        "archived_at": null,
+        "version": 1,
+        "created_at": "2026-07-22T10:15:00.000Z",
+        "updated_at": "2026-07-22T10:15:00.000Z",
+        "frequency_summary": {
+          "times_per_week": 7
+        },
+        "schedules": [
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "local_time": "09:00",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "occurrence": {
+              "scheduled_for": "2026-07-22T12:00:00.000Z",
+              "status": "pending",
+              "last_action_at": null,
+              "snoozed_until": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-medication-list-0001"
+  }
+}
+```
+
+Nome e dose nos exemplos são dados controlados pelo paciente, não instruções do
+BodyFlow.
+
+### Atualização otimista e histórico de horários
+
+`PATCH /supplements/:id` e `PATCH /medications/:id` exigem `expected_version`
+positivo e pelo menos um campo mutável entre `name`, `dose_text`, `origin`,
+`reminders_enabled` e `schedules`:
+
+```json
+{
+  "expected_version": 1,
+  "reminders_enabled": false,
+  "schedules": [
+    {
+      "local_time": "08:30",
+      "weekdays": [1, 2, 3, 4, 5]
+    }
+  ]
+}
+```
+
+Resposta `200`:
+
+```json
+{
+  "data": {
+    "routine_item_id": "11111111-1111-4111-8111-111111111111",
+    "version": 2
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-patch-0001"
+  }
+}
+```
+
+Versão divergente retorna `409 routine_item_version_conflict` sem alterar item,
+horários ou versão. Cada mutação aceita incrementa `version` exatamente uma vez.
+Horário lógico inalterado conserva seu ID; horário alterado é desativado e um
+novo registro recebe outro ID. A API nunca reescreve a hora ou os dias de uma
+regra histórica, de modo que logs antigos continuam referenciando a identidade
+original.
+
+### Archive
+
+`DELETE` não remove linhas. Ele exige body `{}`, arquiva item, define
+`active=false`, define `reminders_enabled=false`, incrementa a versão e desativa
+todos os horários ativos na mesma transação:
+
+```http
+DELETE /api/mobile/v1/supplements/11111111-1111-4111-8111-111111111111
+Content-Type: application/json
+Idempotency-Key: routine-supplement-archive-0001
+```
+
+```json
+{}
+```
+
+Resposta `200`:
+
+```json
+{
+  "data": {
+    "routine_item_id": "11111111-1111-4111-8111-111111111111",
+    "version": 3,
+    "archived_at": "2026-07-22T18:00:00.000Z"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-archive-0001"
+  }
+}
+```
+
+Itens arquivados somem da listagem padrão; `include_archived=true` os inclui para
+telas históricas. Logs, regras desativadas, aceite legal, eventos e entregas
+permanecem. Nenhum novo lembrete ou ação ordinária é aceito. O retry da mesma
+operação deve reutilizar a mesma `Idempotency-Key` e devolve o resultado original,
+inclusive quando a transação de domínio concluiu e o ledger HTTP falhou depois.
+Uma chave diferente representa outra mutação; um item já arquivado fica
+inacessível e retorna o mesmo `404` opaco.
+
+### Ocorrência exata e ações
+
+Uma ocorrência é identificada internamente por paciente, item/tipo,
+`reminder_rule_id` e o instante UTC original `scheduled_for`. O banco deriva uma
+chave estável SHA-256 da regra e desse instante. O cliente informa a regra e o
+instante original, mas nunca envia `occurrence_key`. Snooze não muda essa
+identidade: o follow-up continua ligado ao `scheduled_for` original.
+
+`POST /supplements/:id/log` e `POST /medications/:id/log` aceitam exatamente:
+
+```json
+{
+  "status": "snoozed",
+  "reminder_rule_id": "11111111-1111-4111-8111-111111111113",
+  "scheduled_for": "2026-07-22T23:00:00.000Z",
+  "occurred_at": "2026-07-22T23:01:00.000Z",
+  "snoozed_until": "2026-07-22T23:31:00.000Z"
+}
+```
+
+Resposta `200`:
+
+```json
+{
+  "data": {
+    "adherence_log_id": "11111111-1111-4111-8111-111111111114",
+    "occurrence_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "item_type": "supplement",
+    "status": "snoozed"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-log-0001"
+  }
+}
+```
+
+Regras da ação:
+
+- o cliente pode enviar somente `taken`, `snoozed` ou `skipped`;
+- `occurred_at` aceita a janela offline de sete dias anteriores e até cinco
+  minutos no futuro em relação ao servidor;
+- `scheduled_for` não pode estar depois do `occurred_at` efetivo nem apontar
+  para uma ocorrência futura ou anterior à ativação histórica da regra;
+- `snoozed_until` é obrigatório somente para `snoozed`, deve ser posterior a
+  `occurred_at` e cair na mesma data local da ocorrência original;
+- os presets de produto são 15, 30 e 60 minutos; horário customizado é aceito se
+  cumprir a mesma restrição de data local;
+- item, tipo, ownership, regra, weekday, hora local, round-trip DST e intervalo
+  de ativação do `scheduled_for` são revalidados contra o snapshot histórico;
+- `source`, `occurrence_key`, `missed` e `supersedes_log_id` não são campos de
+  entrada;
+- a mesma chave e o mesmo payload devolvem o log original; a mesma chave com
+  qualquer identidade, status ou instante diferente retorna conflito;
+- uma ação em 08:00 nunca resolve a ocorrência das 20:00 do mesmo item.
+
+Os wrappers legados `/routine/supplements/:id/taken` e
+`/routine/medications/:id/taken` mantêm o body `{ "occurred_at": "..." }`.
+Eles resolvem somente quando existe exatamente uma ocorrência elegível. Zero
+candidatos retorna `404`; dois ou mais retornam
+`409 routine_occurrence_ambiguous`. O servidor nunca escolhe a mais próxima ou a
+primeira silenciosamente. Clientes novos usam `/:id/log`.
+
+### Estados e transições
+
+`pending` é derivado de um horário elegível sem ação e nunca é persistido como
+evento falso. A ação append-only mais recente, ordenada por `created_at` e ID,
+determina o estado. `occurred_at` preserva o instante reportado para auditoria e
+ordenação do histórico, mas não decide qual transição foi anexada por último:
+
+```text
+pending -> taken
+pending -> skipped
+pending -> snoozed -> taken
+pending -> snoozed -> skipped
+pending -> snoozed -> snoozed
+pending -> missed -> taken
+```
+
+`skipped` exige ação explícita do paciente; silêncio nunca vira skip. `taken` e
+`skipped` são terminais para pedidos ordinários. Depois do fim da data local,
+uma ocorrência sem resolução, inclusive um snooze ainda aberto, é lida como
+`missed`: nesse estado derivado, `last_action_at` é o fim exato do dia no
+timezone do snapshot e `snoozed_until` é `null`. Um finalizador backend persiste
+redundantemente um único log `missed` idempotente para auditoria e operação;
+atraso desse worker não muda o estado público derivado. Um `taken` ou `skipped`
+terminal anexado antes do fim do dia continua terminal depois dele.
+
+O paciente pode corrigir um `missed` automático para `taken` até sete dias após
+o fim do dia da ocorrência. A correção cria outro log apontando para o `missed`;
+nenhuma linha anterior é alterada ou excluída. O cliente não pode criar
+`missed`. Se um `taken` elegível chega depois do fim do dia antes do finalizador,
+o backend cria ou reutiliza atomicamente o `missed` singleton e grava o `taken`
+como correção vinculada. Mudanças posteriores de timezone, archive ou desativação
+não invalidam uma ocorrência que pertencia ao snapshot histórico.
+
+### Histórico por cursor
+
+`GET /supplements/:id/history` e `GET /medications/:id/history` aceitam:
+
+| Query | Regra |
+|---|---|
+| `limit` | inteiro 1..50; padrão 20 |
+| `cursor` | base64url opaco, canônico e limitado a 512 caracteres |
+
+A ordenação keyset é `(occurred_at DESC, id DESC)`. `next_cursor` representa o
+último log devolvido somente quando existe outra página. O cliente deve tratar o
+cursor como opaco; cursor malformado retorna `422 validation_failed`. A
+paginação permanece estável para empates de timestamp pelo ID único.
+
+Exemplo com `missed` e correção append-only:
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "11111111-1111-4111-8111-111111111116",
+        "routine_item_id": "11111111-1111-4111-8111-111111111111",
+        "item_type": "supplement",
+        "status": "taken",
+        "reminder_rule_id": "11111111-1111-4111-8111-111111111112",
+        "scheduled_for": "2026-07-22T11:00:00.000Z",
+        "occurred_at": "2026-07-23T12:00:00.000Z",
+        "snoozed_until": null,
+        "source": "patient",
+        "supersedes_log_id": "11111111-1111-4111-8111-111111111115",
+        "created_at": "2026-07-23T12:00:01.000Z"
+      },
+      {
+        "id": "11111111-1111-4111-8111-111111111115",
+        "routine_item_id": "11111111-1111-4111-8111-111111111111",
+        "item_type": "supplement",
+        "status": "missed",
+        "reminder_rule_id": "11111111-1111-4111-8111-111111111112",
+        "scheduled_for": "2026-07-22T11:00:00.000Z",
+        "occurred_at": "2026-07-23T03:00:00.000Z",
+        "snoozed_until": null,
+        "source": "system",
+        "supersedes_log_id": null,
+        "created_at": "2026-07-23T03:00:01.000Z"
+      }
+    ],
+    "next_cursor": "eyJvY2N1cnJlZEF0IjoiMjAyNi0wNy0yM1QwMzowMDowMC4wMDBaIiwibG9nSWQiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTUifQ"
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-routine-history-0001"
+  }
+}
+```
+
+Histórico de item de outro paciente, ID inexistente e tipo da rota divergente
+retornam o mesmo `404 routine_item_not_found`, sem revelar existência.
+
+### Preview privado de push
+
+`GET /notification-preferences` inclui `routine_preview_mode`. Sem linha
+persistida, o padrão é `private`:
+
+```json
+{
+  "data": {
+    "push_enabled": true,
+    "quiet_hours": null,
+    "daily_push_limit": 8,
+    "hydration_target_ml": null,
+    "routine_preview_mode": "private",
+    "created_at": null,
+    "updated_at": null
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "request-notification-preferences-0001"
+  }
+}
+```
+
+`PATCH /notification-preferences` aceita um dos modos:
+
+| Modo | Conteúdo permitido no preview |
+|---|---|
+| `private` | lembrete genérico de rotina; padrão |
+| `name` | somente o nome informado pelo paciente |
+| `name_and_dose` | nome e dose textual informados pelo paciente |
+
+Exemplo de patch estrito:
+
+```json
+{
+  "routine_preview_mode": "name"
+}
+```
+
+O modo afeta apenas a futura renderização do push. Eventos Inngest e métricas
+carregam IDs e timestamps técnicos; a outbox guarda somente o modo controlado,
+nunca nome ou dose. Lembretes de medicamento usam template neutro e
+`personality=default`, independentemente da persona do coach. Nesta fase,
+`queued` significa apenas linha na outbox: não existe envio real ao APNs.
+
+### Idempotência e falhas parciais
+
+Além do ledger HTTP de 24 horas, create/update/archive/aceite mantêm recibo
+técnico transacional e ações mantêm unicidade append-only por paciente/chave.
+Assim, retry com a mesma chave e payload recupera o resultado mesmo quando a
+transação de domínio concluiu mas a finalização do ledger HTTP falhou. O recibo
+armazena somente IDs, versão, timestamps de resultado e hash técnico; nunca body
+bruto, nome, dose, texto legal ou token.
+
+O cliente deve manter a mesma chave até receber resposta conclusiva. Reutilizar
+a chave para método, rota ou payload diferente retorna
+`409 idempotency_key_conflict`; pedido simultâneo ainda aberto retorna
+`409 idempotency_request_in_progress`. `Idempotency-Replayed: true` identifica
+replay atendido pelo ledger HTTP vigente.
+
+### Erros estáveis da rotina
+
+| HTTP | `error.code` | Quando |
+|---|---|---|
+| `400` | `missing_idempotency_key` | mutação sem header obrigatório |
+| `404` | `routine_item_not_found` | item/ocorrência inacessível, inativo, de outro tipo ou de outro paciente |
+| `404` | `legal_document_not_available` | não existe texto legal vigente para o locale do paciente |
+| `409` | `routine_item_version_conflict` | `expected_version` ficou desatualizado |
+| `409` | `routine_schedule_conflict` | rota genérica tentou criar/alterar regra de suplemento/medicamento, ou o repositório/RPC de CRUD do item detectou conflito real de agenda após a validação do request, como concorrência ou conflito de negócio |
+| `409` | `routine_occurrence_ambiguous` | wrapper legado encontrou mais de uma ocorrência elegível |
+| `409` | `routine_transition_invalid` | ação terminal ou fora de ordem seria reescrita |
+| `409` | `idempotency_key_conflict` | chave reutilizada com outra operação ou payload |
+| `409` | `idempotency_request_in_progress` | mesma chave ainda está em processamento |
+| `409` | `medication_disclaimer_version_stale` | aceite não corresponde à versão/hash legal vigente |
+| `415` | `unsupported_media_type` | rota com body sem JSON |
+| `422` | `validation_failed` | body/query/cursor estrito inválido, inclusive horários lógicos duplicados detectados pelo schema do item |
+| `422` | `occurred_at_out_of_range` | instante fora da janela offline/futuro |
+| `422` | `routine_schedule_invalid` | horário inválido ou duplicado do item alcançou e foi rejeitado pela validação defensiva de domínio/storage |
+| `422` | `routine_snooze_invalid` | snooze não futuro ou fora da data local original |
+| `428` | `medication_disclaimer_required` | criação exige aceite da chave/versão retornadas em `details` |
+
+Razões internas mais específicas de item inativo, tipo divergente e ocorrência
+inválida são normalizadas para o `404` acima. O BFF não devolve mensagem SQL,
+nome de RPC, existência cross-user, texto legal, nome do item ou dose em erros.
 
 ## Conteúdo educativo
 
@@ -646,11 +1307,15 @@ Preferências suportam opt-in global, início/fim de horário silencioso, limite
 e fim do horário silencioso devem ser ambos nulos ou ambos presentes. O timezone
 canônico vem do perfil do paciente.
 
-Regras aceitam `local_time` no formato `HH:MM`, dias únicos entre 0 (domingo) e 6
-(sábado) e uma das categorias: `meal`, `hydration`, `supplement`, `medication`,
-`workout`, `reevaluation`, `content` ou `reengagement`. Refeição exige
-`meal_type`; suplemento e medicamento exigem item de rotina próprio, ativo e do
-tipo correspondente. Os demais tipos rejeitam essas referências.
+Regras genéricas aceitam `local_time` no formato `HH:MM`, dias únicos entre 0
+(domingo) e 6 (sábado) e uma das categorias: `meal`, `hydration`, `workout`,
+`reevaluation`, `content` ou `reengagement`. Refeição exige `meal_type`; as
+demais rejeitam `meal_type` e `routine_item_id`. `GET /reminders` ainda pode
+listar regras históricas de categoria `supplement` ou `medication`, mas elas são
+somente leitura por esse contrato. `POST /reminders` e `PATCH /reminders/:id`
+retornam `409 routine_schedule_conflict` para essas categorias; horários de
+suplemento e medicamento são criados e substituídos somente pelos endpoints
+versionados do respectivo item.
 
 Hidratação exige `amount_ml` entre 1 e 5.000 e `occurred_at` explícito. A ação
 `taken` também exige `occurred_at`. O servidor recusa instantes mais de cinco
@@ -831,5 +1496,6 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 - O CMS educativo não inclui tela iOS, campanhas automáticas, comentários,
   busca textual, HTML rico, mídia inline ou geração/publicação por IA.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
-- O catálogo mínimo de suplementos e medicamentos é somente leitura nesta fase.
-  CRUD, dose, orientação clínica e prescrição permanecem fora do escopo.
+- Suplementos e medicamentos têm CRUD versionado, `dose_text` controlado pelo
+  paciente, múltiplos horários e histórico de adesão. Orientação clínica,
+  recomendação de dose e prescrição permanecem fora do escopo.

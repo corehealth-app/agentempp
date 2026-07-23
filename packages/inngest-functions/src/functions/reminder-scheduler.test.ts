@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { InngestEvents } from '../client.js'
 import * as reminderSchedulerModule from './reminder-scheduler.js'
 import {
   buildReminderDueEvents,
@@ -26,6 +27,20 @@ function claimResult(overrides: Partial<ReminderClaimResult> = {}): ReminderClai
 }
 
 describe('reminder scheduler', () => {
+  it('keeps regular and routine snooze event contracts separate and technical', () => {
+    const regular: InngestEvents['reminder.rule.due']['data'] = {
+      reminderRuleId: RULE_ID,
+      scheduledFor: SCHEDULED_FOR,
+    }
+    const snooze: InngestEvents['routine.snooze.due']['data'] = {
+      adherenceLogId: EVENT_ID,
+      snoozedUntil: SCHEDULED_FOR,
+    }
+
+    expect(Object.keys(regular).sort()).toEqual(['reminderRuleId', 'scheduledFor'])
+    expect(Object.keys(snooze).sort()).toEqual(['adherenceLogId', 'snoozedUntil'])
+  })
+
   it('builds deterministic events containing only a rule id and scheduled instant', () => {
     const events = buildReminderDueEvents(
       [{ reminder_rule_id: RULE_ID, scheduled_for: SCHEDULED_FOR }],

@@ -12,6 +12,11 @@ interface FakeTable {
   error?: { message: string } | null
 }
 
+interface FakeRpc {
+  results: Array<{ data: unknown; error: { message: string } | null }>
+  reads?: number
+}
+
 class FakeQuery {
   constructor(private readonly table: FakeTable) {}
 
@@ -74,8 +79,9 @@ class FakeQuery {
   }
 }
 
-function fakeSupabase(tables: Record<string, FakeTable>) {
+function fakeSupabase(tables: Record<string, FakeTable>, rpcs: Record<string, FakeRpc> = {}) {
   const queries: string[] = []
+  const rpcCalls: Array<{ functionName: string; params: Record<string, unknown> }> = []
   const optionalTables: Record<string, FakeTable> = {
     notification_preferences: { single: null },
     routine_items: { rows: [] },
@@ -83,12 +89,24 @@ function fakeSupabase(tables: Record<string, FakeTable>) {
   }
   return {
     queries,
+    rpcCalls,
     client: {
       from(table: string) {
         queries.push(table)
         const config = tables[table] ?? optionalTables[table]
         if (!config) throw new Error(`unexpected table: ${table}`)
         return new FakeQuery(config)
+      },
+      async rpc(functionName: string, params: Record<string, unknown>) {
+        rpcCalls.push({ functionName, params })
+        const key = `${functionName}:${String(params.p_item_type ?? '')}`
+        const config = rpcs[key]
+        if (!config) {
+          return { data: { local_date: '2026-07-20', items: [] }, error: null }
+        }
+        const read = config.reads ?? 0
+        config.reads = read + 1
+        return config.results[Math.min(read, config.results.length - 1)]
       },
     },
   }
@@ -106,7 +124,290 @@ const dependencies = {
   loadSkippedMeals: async () => new Set<'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'>(),
 }
 
+const SUPPLEMENT_ID = '00000000-0000-0000-0000-000000000601'
+const MEDICATION_ID = '00000000-0000-0000-0000-000000000602'
+const MORNING_RULE_ID = '00000000-0000-0000-0000-000000000611'
+const EVENING_RULE_ID = '00000000-0000-0000-0000-000000000612'
+const MEDICATION_RULE_ID = '00000000-0000-0000-0000-000000000613'
+
+function routineItem(input: {
+  id: string
+  itemType: 'supplement' | 'medication'
+  name: string
+  doseText: string
+  origin: 'user' | 'professional' | 'protocol' | 'other'
+  schedules: unknown[]
+}) {
+  return {
+    id: input.id,
+    item_type: input.itemType,
+    name: input.name,
+    dose_text: input.doseText,
+    origin: input.origin,
+    reminders_enabled: true,
+    active: true,
+    archived_at: null,
+    version: 2,
+    created_at: '2026-07-18T10:00:00.000Z',
+    updated_at: '2026-07-19T10:00:00.000Z',
+    schedules: input.schedules,
+  }
+}
+
+function routineSchedule(input: {
+  id: string
+  localTime: string
+  scheduledFor: string
+  status: 'pending' | 'taken' | 'snoozed' | 'skipped' | 'missed'
+  lastActionAt?: string | null
+  snoozedUntil?: string | null
+}) {
+  return {
+    id: input.id,
+    local_time: input.localTime,
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    occurrence: {
+      occurrence_key: input.id.endsWith('11') ? 'a'.repeat(64) : 'b'.repeat(64),
+      scheduled_for: input.scheduledFor,
+      status: input.status,
+      last_action_at: input.lastActionAt ?? null,
+      snoozed_until: input.snoozedUntil ?? null,
+    },
+  }
+}
+
 describe('loadOfficialDailyState', () => {
+  it('loads exact occurrences for both literal types from the canonical stored-timezone read model', async () => {
+    const supplementPage = {
+      local_date: '2026-07-20',
+      items: [
+        routineItem({
+          id: SUPPLEMENT_ID,
+          itemType: 'supplement',
+          name: 'Creatina',
+          doseText: '3 g',
+          origin: 'professional',
+          schedules: [
+            routineSchedule({
+              id: MORNING_RULE_ID,
+              localTime: '08:00',
+              scheduledFor: '2026-07-19T12:00:00.000Z',
+              status: 'taken',
+              lastActionAt: '2026-07-19T12:04:00.000Z',
+            }),
+            routineSchedule({
+              id: EVENING_RULE_ID,
+              localTime: '20:00',
+              scheduledFor: '2026-07-20T00:00:00.000Z',
+              status: 'pending',
+            }),
+          ],
+        }),
+      ],
+    }
+    const medicationPage = {
+      local_date: '2026-07-20',
+      items: [
+        routineItem({
+          id: MEDICATION_ID,
+          itemType: 'medication',
+          name: 'Item cadastrado',
+          doseText: '1 unidade',
+          origin: 'user',
+          schedules: [
+            routineSchedule({
+              id: MEDICATION_RULE_ID,
+              localTime: '07:00',
+              scheduledFor: '2026-07-19T11:00:00.000Z',
+              status: 'missed',
+            }),
+          ],
+        }),
+      ],
+    }
+    const db = fakeSupabase(
+      {
+        user_profiles: { single: null },
+        daily_snapshots: { single: null },
+        user_progress: { single: null },
+        pending_registrations: { rows: [] },
+      },
+      {
+        'list_mobile_routine_items:supplement': {
+          results: [{ data: supplementPage, error: null }],
+        },
+        'list_mobile_routine_items:medication': {
+          results: [{ data: medicationPage, error: null }],
+        },
+      },
+    )
+    const now = new Date('2026-07-20T01:00:00.000Z')
+
+    const state = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'Pacific/Kiritimati',
+      now,
+      dependencies,
+    )
+
+    expect(state.local_date).toBe('2026-07-20')
+    expect(db.queries).not.toContain('routine_items')
+    expect(db.queries).not.toContain('routine_adherence_logs')
+    expect(db.rpcCalls).toEqual([
+      {
+        functionName: 'list_mobile_routine_items',
+        params: {
+          p_user_id: 'user-1',
+          p_item_type: 'supplement',
+          p_include_archived: false,
+          p_now: now.toISOString(),
+        },
+      },
+      {
+        functionName: 'list_mobile_routine_items',
+        params: {
+          p_user_id: 'user-1',
+          p_item_type: 'medication',
+          p_include_archived: false,
+          p_now: now.toISOString(),
+        },
+      },
+      {
+        functionName: 'list_mobile_routine_items',
+        params: {
+          p_user_id: 'user-1',
+          p_item_type: 'supplement',
+          p_include_archived: false,
+          p_now: now.toISOString(),
+        },
+      },
+      {
+        functionName: 'list_mobile_routine_items',
+        params: {
+          p_user_id: 'user-1',
+          p_item_type: 'medication',
+          p_include_archived: false,
+          p_now: now.toISOString(),
+        },
+      },
+    ])
+    expect(state.supplements.items).toEqual([
+      {
+        id: SUPPLEMENT_ID,
+        name: 'Creatina',
+        dose_text: '3 g',
+        origin: 'professional',
+        reminders_enabled: true,
+        schedules: [
+          { id: MORNING_RULE_ID, local_time: '08:00', weekdays: [0, 1, 2, 3, 4, 5, 6] },
+          { id: EVENING_RULE_ID, local_time: '20:00', weekdays: [0, 1, 2, 3, 4, 5, 6] },
+        ],
+        occurrences: [
+          {
+            reminder_rule_id: MORNING_RULE_ID,
+            scheduled_for: '2026-07-19T12:00:00.000Z',
+            status: 'taken',
+            last_action_at: '2026-07-19T12:04:00.000Z',
+            snoozed_until: null,
+          },
+          {
+            reminder_rule_id: EVENING_RULE_ID,
+            scheduled_for: '2026-07-20T00:00:00.000Z',
+            status: 'pending',
+            last_action_at: null,
+            snoozed_until: null,
+          },
+        ],
+      },
+    ])
+    expect(state.medications.items[0]?.occurrences).toEqual([
+      {
+        reminder_rule_id: MEDICATION_RULE_ID,
+        scheduled_for: '2026-07-19T11:00:00.000Z',
+        status: 'missed',
+        last_action_at: null,
+        snoozed_until: null,
+      },
+    ])
+    expect(JSON.stringify(state)).not.toContain('occurrence_key')
+  })
+
+  it.each([
+    ['supplement and medication RPC dates disagree', '2026-07-20', '2026-07-19'],
+    ['both RPC dates disagree with the official date', '2026-07-19', '2026-07-19'],
+  ])('fails closed when %s', async (_name, supplementDate, medicationDate) => {
+    const db = fakeSupabase(
+      {
+        user_profiles: { single: null },
+        daily_snapshots: { single: null },
+        user_progress: { single: null },
+        pending_registrations: { rows: [] },
+      },
+      {
+        'list_mobile_routine_items:supplement': {
+          results: [{ data: { local_date: supplementDate, items: [] }, error: null }],
+        },
+        'list_mobile_routine_items:medication': {
+          results: [{ data: { local_date: medicationDate, items: [] }, error: null }],
+        },
+      },
+    )
+
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-20T15:00:00.000Z'),
+        dependencies,
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state routine items lookup'))
+  })
+
+  it.each([
+    [
+      'malformed supplement payload',
+      { data: { local_date: '2026-07-19', items: [{}] }, error: null },
+    ],
+    ['failed medication RPC', { data: null, error: { message: 'private database detail' } }],
+  ])('fails closed on a %s', async (_name, failedResult) => {
+    const db = fakeSupabase(
+      {
+        user_profiles: { single: null },
+        daily_snapshots: { single: null },
+        user_progress: { single: null },
+        pending_registrations: { rows: [] },
+      },
+      {
+        'list_mobile_routine_items:supplement': {
+          results: [
+            failedResult.error
+              ? { data: { local_date: '2026-07-19', items: [] }, error: null }
+              : failedResult,
+          ],
+        },
+        'list_mobile_routine_items:medication': {
+          results: [
+            failedResult.error
+              ? failedResult
+              : { data: { local_date: '2026-07-19', items: [] }, error: null },
+          ],
+        },
+      },
+    )
+
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-19T15:00:00.000Z'),
+        dependencies,
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state routine items lookup'))
+  })
+
   it('assembles the official state and exposes only safe pending metadata', async () => {
     const db = fakeSupabase({
       user_profiles: {
@@ -218,33 +519,6 @@ describe('loadOfficialDailyState', () => {
           updated_at: '2026-07-20T14:03:00.000Z',
         },
       },
-      routine_items: {
-        rows: [
-          {
-            id: 'supplement-1',
-            item_type: 'supplement',
-            name: 'Creatina',
-            updated_at: '2026-07-20T14:04:00.000Z',
-          },
-          {
-            id: 'medication-1',
-            item_type: 'medication',
-            name: 'Item cadastrado',
-            updated_at: '2026-07-20T14:04:30.000Z',
-          },
-        ],
-      },
-      routine_adherence_logs: {
-        rows: [
-          {
-            routine_item_id: 'supplement-1',
-            status: 'taken',
-            occurred_at: '2026-07-20T14:05:00.000Z',
-            snoozed_until: null,
-            created_at: '2026-07-20T14:06:00.000Z',
-          },
-        ],
-      },
     })
 
     const state = await loadOfficialDailyState(
@@ -292,25 +566,9 @@ describe('loadOfficialDailyState', () => {
       percentage: 68,
       status: 'in_progress',
     })
-    expect(state.supplements.items).toEqual([
-      {
-        id: 'supplement-1',
-        name: 'Creatina',
-        status: 'taken',
-        occurred_at: '2026-07-20T14:05:00.000Z',
-        snoozed_until: null,
-      },
-    ])
-    expect(state.medications.items).toEqual([
-      {
-        id: 'medication-1',
-        name: 'Item cadastrado',
-        status: 'not_recorded',
-        occurred_at: null,
-        snoozed_until: null,
-      },
-    ])
-    expect(state.updated_at).toBe('2026-07-20T14:06:00.000Z')
+    expect(state.supplements).toEqual({ availability: 'not_configured', items: [] })
+    expect(state.medications).toEqual({ availability: 'not_configured', items: [] })
+    expect(state.updated_at).toBe('2026-07-20T14:03:00.000Z')
   })
 
   it('does not query item logs when no snapshot exists', async () => {
@@ -414,7 +672,7 @@ describe('loadOfficialDailyState', () => {
     expect(db.queries.filter((table) => table === 'daily_snapshots')).toHaveLength(4)
   })
 
-  it('retries instead of returning routine items mixed with adherence from another write', async () => {
+  it('retries instead of returning a routine page that changes during the state read', async () => {
     const snapshot = {
       id: 'snapshot-1',
       calories_consumed: 0,
@@ -432,25 +690,41 @@ describe('loadOfficialDailyState', () => {
       meal_logs: [],
       workout_logs: [],
     }
-    const oldItem = {
-      id: 'supplement-1',
-      item_type: 'supplement',
-      name: 'Nome antigo',
-      updated_at: '2026-07-20T13:00:00.000Z',
+    const item = (name: string) =>
+      routineItem({
+        id: SUPPLEMENT_ID,
+        itemType: 'supplement',
+        name,
+        doseText: '3 g',
+        origin: 'user',
+        schedules: [],
+      })
+    const oldPage = {
+      local_date: '2026-07-20',
+      items: [{ ...item('Nome antigo'), updated_at: '2026-07-20T13:00:00.000Z' }],
     }
-    const newItem = {
-      ...oldItem,
-      name: 'Nome atual',
-      updated_at: '2026-07-20T14:01:00.000Z',
+    const newPage = {
+      local_date: '2026-07-20',
+      items: [{ ...item('Nome atual'), updated_at: '2026-07-20T14:01:00.000Z' }],
     }
-    const db = fakeSupabase({
-      user_profiles: { single: null },
-      daily_snapshots: { single: snapshot },
-      user_progress: { single: null },
-      pending_registrations: { rows: [] },
-      routine_items: { rowsSequence: [[oldItem], [newItem], [newItem], [newItem]] },
-      routine_adherence_logs: { rows: [] },
-    })
+    const db = fakeSupabase(
+      {
+        user_profiles: { single: null },
+        daily_snapshots: { single: snapshot },
+        user_progress: { single: null },
+        pending_registrations: { rows: [] },
+      },
+      {
+        'list_mobile_routine_items:supplement': {
+          results: [
+            { data: oldPage, error: null },
+            { data: newPage, error: null },
+            { data: newPage, error: null },
+            { data: newPage, error: null },
+          ],
+        },
+      },
+    )
 
     const state = await loadOfficialDailyState(
       db.client as never,
@@ -462,14 +736,16 @@ describe('loadOfficialDailyState', () => {
 
     expect(state.supplements.items).toEqual([
       {
-        id: 'supplement-1',
+        id: SUPPLEMENT_ID,
         name: 'Nome atual',
-        status: 'not_recorded',
-        occurred_at: null,
-        snoozed_until: null,
+        dose_text: '3 g',
+        origin: 'user',
+        reminders_enabled: true,
+        schedules: [],
+        occurrences: [],
       },
     ])
-    expect(db.queries.filter((table) => table === 'routine_items')).toHaveLength(4)
+    expect(db.rpcCalls.filter((call) => call.params.p_item_type === 'supplement')).toHaveLength(4)
   })
 
   it('fails closed when the snapshot changes during both consistency attempts', async () => {

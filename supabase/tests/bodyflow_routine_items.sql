@@ -335,6 +335,41 @@ BEGIN
     RAISE EXCEPTION 'system missed occurrence uniqueness index is incomplete';
   END IF;
 
+  SELECT pg_get_constraintdef(constraint_definition.oid)
+  INTO v_constraint_definition
+  FROM pg_constraint constraint_definition
+  WHERE constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass
+    AND constraint_definition.conname = 'routine_adherence_logs_system_idempotency_prefix_check';
+
+  IF v_constraint_definition IS NULL
+    OR v_constraint_definition NOT LIKE '%routine-missed:%'
+    OR v_constraint_definition NOT LIKE '%status = ''missed''%'
+    OR v_constraint_definition NOT LIKE '%source = ''system''%'
+    OR v_constraint_definition NOT LIKE '%idempotency_key = (''routine-missed:''%occurrence_key)%'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint constraint_definition
+      WHERE constraint_definition.conrelid = 'public.routine_adherence_logs'::regclass
+        AND constraint_definition.conname = 'routine_adherence_logs_system_idempotency_prefix_check'
+        AND NOT constraint_definition.convalidated
+    ) THEN
+    RAISE EXCEPTION 'system missed idempotency prefix is not reserved for exact system occurrences';
+  END IF;
+
+  SELECT indexdef
+  INTO v_index_definition
+  FROM pg_indexes
+  WHERE schemaname = 'public'
+    AND indexname = 'routine_adherence_logs_due_snoozes_idx';
+
+  IF v_index_definition IS NULL
+    OR v_index_definition NOT LIKE '%(snoozed_until, id)%'
+    OR v_index_definition NOT LIKE '%status = ''snoozed''%'
+    OR v_index_definition NOT LIKE '%snoozed_until IS NOT NULL%'
+    OR v_index_definition NOT LIKE '%occurrence_key IS NOT NULL%' THEN
+    RAISE EXCEPTION 'due routine snooze discovery index is missing or incorrectly ordered';
+  END IF;
+
   SELECT indexdef
   INTO v_index_definition
   FROM pg_indexes
@@ -559,6 +594,13 @@ BEGIN
     RAISE EXCEPTION 'routine snooze discovery function security is incorrect';
   END IF;
 
+  IF pg_get_functiondef(v_function) NOT LIKE '%due_snoozes AS%'
+    OR pg_get_functiondef(v_function) NOT LIKE '%action.snoozed_until BETWEEN lookup.starts_at AND lookup.ends_at%'
+    OR pg_get_functiondef(v_function) NOT LIKE '%NOT EXISTS (%later.user_id = action.user_id%'
+    OR pg_get_functiondef(v_function) LIKE '%latest_actions AS%' THEN
+    RAISE EXCEPTION 'routine snooze discovery is not driven by indexed due actions';
+  END IF;
+
   v_function := to_regprocedure(
     'public.finalize_due_routine_occurrences(timestamp with time zone,integer,timestamp with time zone,uuid,uuid)'
   );
@@ -570,6 +612,29 @@ BEGIN
       'private.materialize_due_routine_occurrences(timestamp with time zone,integer)'
     ) IS NULL THEN
     RAISE EXCEPTION 'routine finalizer discovery is not persistently bounded';
+  END IF;
+
+  IF pg_get_functiondef(v_function)
+      NOT LIKE '%ON CONFLICT (user_id, occurrence_key) WHERE%status = ''missed''%source = ''system''%DO NOTHING%'
+    OR pg_get_functiondef(v_function)
+      LIKE '%ON CONFLICT (user_id, idempotency_key) DO NOTHING%' THEN
+    RAISE EXCEPTION 'routine finalizer does not target system occurrence idempotency';
+  END IF;
+
+  v_function := to_regprocedure(
+    'private.claim_routine_notification_event(uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone,uuid)'
+  );
+
+  IF v_function IS NULL
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%private.routine_occurrence_finalizer_rules%'
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%snapshot.timezone_name%'
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%snapshot.local_time%'
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%snapshot.weekdays%' THEN
+    RAISE EXCEPTION 'routine claims do not validate against their immutable occurrence snapshot';
   END IF;
 
   v_function := to_regprocedure(
@@ -627,6 +692,17 @@ BEGIN
       RAISE EXCEPTION 'routine finalizer capture trigger security is incorrect';
     END IF;
   END LOOP;
+
+  v_function := to_regprocedure(
+    'private.capture_routine_occurrence_finalizer_rule()'
+  );
+
+  IF pg_get_functiondef(v_function)
+      NOT LIKE '%IF TG_OP = ''UPDATE'' AND NOT OLD.active AND NEW.active THEN%'
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%v_active_from := greatest(%v_active_from,%v_observed_at%);%' THEN
+    RAISE EXCEPTION 'routine rule reactivation does not begin at its observed epoch';
+  END IF;
 
   FOREACH v_relation IN ARRAY ARRAY[
     'private.routine_occurrence_finalizer_rules',
@@ -4355,12 +4431,15 @@ DECLARE
   v_timezone_rule constant uuid := '00000000-0000-0000-0000-000000001310';
   v_observed_rule_state constant uuid := '00000000-0000-0000-0000-000000001311';
   v_observed_item_rule constant uuid := '00000000-0000-0000-0000-000000001312';
+  v_reactivation_rule constant uuid := '00000000-0000-0000-0000-000000001313';
   v_old_snooze_log constant uuid := '00000000-0000-0000-0000-000000001401';
   v_latest_snooze_log constant uuid := '00000000-0000-0000-0000-000000001402';
   v_second_snooze_log constant uuid := '00000000-0000-0000-0000-000000001403';
   v_terminal_snooze_log constant uuid := '00000000-0000-0000-0000-000000001404';
   v_terminal_taken_log constant uuid := '00000000-0000-0000-0000-000000001405';
   v_stale_snooze_log constant uuid := '00000000-0000-0000-0000-000000001406';
+  v_timezone_snooze_log constant uuid := '00000000-0000-0000-0000-000000001407';
+  v_collision_log constant uuid := '00000000-0000-0000-0000-000000001408';
   v_first_due record;
   v_page_count integer;
   v_claim_first jsonb;
@@ -4380,6 +4459,10 @@ DECLARE
   v_timezone_change_at timestamptz;
   v_timezone_old_scheduled_for timestamptz;
   v_timezone_new_scheduled_for timestamptz;
+  v_reactivation_observed_at timestamptz;
+  v_reactivation_active_from timestamptz;
+  v_collision_scheduled_for constant timestamptz := timestamptz '2026-07-27 08:00:00+00';
+  v_collision_occurrence_key text;
 BEGIN
   v_timezone_change_at := statement_timestamp();
   v_timezone_old_scheduled_for := date_trunc('minute', v_timezone_change_at)
@@ -4428,7 +4511,8 @@ BEGIN
     (v_unbounded_item_state, v_finalizer_user_id, v_unbounded_item_id, 'supplement', time '12:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 17:00:00+00'),
     (v_timezone_rule, v_timezone_user_id, v_timezone_item_id, 'supplement', timezone('UTC', v_timezone_old_scheduled_for)::time, ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
     (v_observed_rule_state, v_timezone_user_id, v_observed_rule_item_id, 'supplement', time '13:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
-    (v_observed_item_rule, v_timezone_user_id, v_observed_item_id, 'supplement', time '14:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00');
+    (v_observed_item_rule, v_timezone_user_id, v_observed_item_id, 'supplement', time '14:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 13:13:21+00'),
+    (v_reactivation_rule, v_timezone_user_id, v_timezone_item_id, 'supplement', time '08:00', ARRAY[0,1,2,3,4,5,6], false, NULL, timestamptz '2026-07-23 13:13:21+00');
 
   IF EXISTS (
     SELECT 1
@@ -4436,6 +4520,41 @@ BEGIN
     WHERE snapshot.reminder_rule_id IN (v_unbounded_rule_state, v_unbounded_item_state)
   ) THEN
     RAISE EXCEPTION 'unbounded inactive routine state entered finalizer discovery';
+  END IF;
+
+  INSERT INTO public.routine_adherence_logs (
+    id, user_id, routine_item_id, item_type, status, idempotency_key,
+    reminder_rule_id, occurrence_key, source, scheduled_for, occurred_at,
+    snoozed_until, created_at
+  ) VALUES (
+    v_timezone_snooze_log,
+    v_timezone_user_id,
+    v_timezone_item_id,
+    'supplement',
+    'snoozed',
+    'timezone-snooze-claim',
+    v_timezone_rule,
+    private.derive_routine_occurrence_key(v_timezone_rule, v_timezone_old_scheduled_for),
+    'patient',
+    v_timezone_old_scheduled_for,
+    v_timezone_old_scheduled_for + interval '30 seconds',
+    v_timezone_old_scheduled_for + interval '5 minutes',
+    v_timezone_old_scheduled_for + interval '30 seconds'
+  );
+
+  SELECT count(*)
+  INTO v_page_count
+  FROM public.list_due_routine_snoozes(
+    v_timezone_old_scheduled_for + interval '5 minutes 42 seconds',
+    15,
+    100,
+    NULL,
+    NULL
+  ) due
+  WHERE due.adherence_log_id = v_timezone_snooze_log;
+
+  IF v_page_count <> 1 THEN
+    RAISE EXCEPTION 'routine snooze was not discoverable before timezone mutation';
   END IF;
 
   UPDATE public.users
@@ -4560,33 +4679,65 @@ BEGIN
     repeat('b', 64)
   );
 
+  INSERT INTO public.notification_preferences (user_id, routine_preview_mode)
+  VALUES (v_timezone_user_id, 'private');
+
+  INSERT INTO public.mobile_devices (
+    user_id, installation_id, apns_environment, apns_token
+  ) VALUES (
+    v_timezone_user_id,
+    'routine-timezone-installation',
+    'sandbox',
+    repeat('c', 64)
+  );
+
+  v_claim_first := public.claim_routine_snooze_event(
+    v_timezone_snooze_log,
+    v_timezone_old_scheduled_for + interval '5 minutes'
+  );
+
+  IF v_claim_first ->> 'status' <> 'queued'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.reminder_events event
+      WHERE event.id = (v_claim_first ->> 'event_id')::uuid
+        AND event.routine_action_log_id = v_timezone_snooze_log
+        AND event.routine_occurrence_key = private.derive_routine_occurrence_key(
+          v_timezone_rule,
+          v_timezone_old_scheduled_for
+        )
+    ) THEN
+    RAISE EXCEPTION 'routine snooze claim lost its discovered timezone snapshot: %',
+      v_claim_first;
+  END IF;
+
   INSERT INTO public.routine_adherence_logs (
     id, user_id, routine_item_id, item_type, status, idempotency_key,
     reminder_rule_id, occurrence_key, source, scheduled_for, occurred_at,
     snoozed_until, created_at
   ) VALUES
-    (v_old_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-old-0001', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-20 08:00:00+00'), 'patient', timestamptz '2026-07-20 08:00:00+00', timestamptz '2026-07-20 08:05:00+00', timestamptz '2026-07-20 14:50:00+00', timestamptz '2026-07-20 08:05:00+00'),
-    (v_latest_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-latest-1', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-20 08:00:00+00'), 'patient', timestamptz '2026-07-20 08:00:00+00', timestamptz '2026-07-20 08:10:00+00', timestamptz '2026-07-20 15:00:00+00', timestamptz '2026-07-20 08:10:00+00'),
-    (v_second_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-second-1', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-20 09:00:00+00'), 'patient', timestamptz '2026-07-20 09:00:00+00', timestamptz '2026-07-20 09:05:00+00', timestamptz '2026-07-20 14:55:00+00', timestamptz '2026-07-20 09:05:00+00'),
-    (v_terminal_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-terminal', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-19 09:00:00+00'), 'patient', timestamptz '2026-07-19 09:00:00+00', timestamptz '2026-07-19 09:05:00+00', timestamptz '2026-07-20 14:59:00+00', timestamptz '2026-07-19 09:05:00+00'),
-    (v_terminal_taken_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'taken', 'terminal-taken-1', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-19 09:00:00+00'), 'patient', timestamptz '2026-07-19 09:00:00+00', timestamptz '2026-07-20 14:30:00+00', NULL, timestamptz '2026-07-20 14:30:00+00'),
-    (v_stale_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-stale-01', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-19 08:00:00+00'), 'patient', timestamptz '2026-07-19 08:00:00+00', timestamptz '2026-07-19 08:05:00+00', timestamptz '2026-07-20 14:44:00+00', timestamptz '2026-07-19 08:05:00+00');
+    (v_old_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-old-0001', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-24 08:00:00+00'), 'patient', timestamptz '2026-07-24 08:00:00+00', timestamptz '2026-07-24 08:05:00+00', timestamptz '2026-07-24 14:50:00+00', timestamptz '2026-07-24 08:05:00+00'),
+    (v_latest_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-latest-1', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-24 08:00:00+00'), 'patient', timestamptz '2026-07-24 08:00:00+00', timestamptz '2026-07-24 08:10:00+00', timestamptz '2026-07-24 15:00:00+00', timestamptz '2026-07-24 08:10:00+00'),
+    (v_second_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-second-1', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-24 09:00:00+00'), 'patient', timestamptz '2026-07-24 09:00:00+00', timestamptz '2026-07-24 09:05:00+00', timestamptz '2026-07-24 14:55:00+00', timestamptz '2026-07-24 09:05:00+00'),
+    (v_terminal_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-terminal', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-23 09:00:00+00'), 'patient', timestamptz '2026-07-23 09:00:00+00', timestamptz '2026-07-23 09:05:00+00', timestamptz '2026-07-24 14:59:00+00', timestamptz '2026-07-23 09:05:00+00'),
+    (v_terminal_taken_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'taken', 'terminal-taken-1', v_snooze_rule_b, private.derive_routine_occurrence_key(v_snooze_rule_b, timestamptz '2026-07-23 09:00:00+00'), 'patient', timestamptz '2026-07-23 09:00:00+00', timestamptz '2026-07-24 14:30:00+00', NULL, timestamptz '2026-07-24 14:30:00+00'),
+    (v_stale_snooze_log, v_snooze_user_id, v_snooze_item_id, 'medication', 'snoozed', 'snooze-stale-01', v_snooze_rule_a, private.derive_routine_occurrence_key(v_snooze_rule_a, timestamptz '2026-07-23 08:00:00+00'), 'patient', timestamptz '2026-07-23 08:00:00+00', timestamptz '2026-07-23 08:05:00+00', timestamptz '2026-07-24 14:44:00+00', timestamptz '2026-07-23 08:05:00+00');
 
   SELECT due.*
   INTO v_first_due
   FROM public.list_due_routine_snoozes(
-    timestamptz '2026-07-20 15:00:42+00', 15, 1, NULL, NULL
+    timestamptz '2026-07-24 15:00:42+00', 15, 1, NULL, NULL
   ) due;
 
   IF v_first_due.adherence_log_id IS DISTINCT FROM v_second_snooze_log
-    OR v_first_due.snoozed_until IS DISTINCT FROM timestamptz '2026-07-20 14:55:00+00' THEN
+    OR v_first_due.snoozed_until IS DISTINCT FROM timestamptz '2026-07-24 14:55:00+00' THEN
     RAISE EXCEPTION 'routine snooze discovery did not return the first stable tuple';
   END IF;
 
   SELECT count(*)
   INTO v_page_count
   FROM public.list_due_routine_snoozes(
-    timestamptz '2026-07-20 15:00:42+00',
+    timestamptz '2026-07-24 15:00:42+00',
     15,
     10,
     v_first_due.snoozed_until,
@@ -4596,12 +4747,12 @@ BEGIN
 
   IF v_page_count <> 1
     OR (SELECT count(*) FROM public.list_due_routine_snoozes(
-      timestamptz '2026-07-20 15:00:42+00', 15, 100, NULL, NULL
+      timestamptz '2026-07-24 15:00:42+00', 15, 100, NULL, NULL
     )) <> 2
     OR EXISTS (
       SELECT 1
       FROM public.list_due_routine_snoozes(
-        timestamptz '2026-07-20 15:00:42+00', 15, 100, NULL, NULL
+        timestamptz '2026-07-24 15:00:42+00', 15, 100, NULL, NULL
       ) due
       WHERE due.adherence_log_id IN (
         v_old_snooze_log,
@@ -4614,11 +4765,11 @@ BEGIN
 
   v_claim_first := public.claim_routine_snooze_event(
     v_latest_snooze_log,
-    timestamptz '2026-07-20 15:00:42+00'
+    timestamptz '2026-07-24 15:00:42+00'
   );
   v_claim_retry := public.claim_routine_snooze_event(
     v_latest_snooze_log,
-    timestamptz '2026-07-20 15:01:00+00'
+    timestamptz '2026-07-24 15:01:00+00'
   );
 
   IF v_claim_first ->> 'status' <> 'queued'
@@ -4638,9 +4789,9 @@ BEGIN
         AND event.routine_action_log_id = v_latest_snooze_log
         AND event.routine_occurrence_key = private.derive_routine_occurrence_key(
           v_snooze_rule_a,
-          timestamptz '2026-07-20 08:00:00+00'
+          timestamptz '2026-07-24 08:00:00+00'
         )
-        AND event.scheduled_for = timestamptz '2026-07-20 15:00:00+00'
+        AND event.scheduled_for = timestamptz '2026-07-24 15:00:00+00'
         AND delivery.template_key = 'bodyflow.routine.medication.snooze'
         AND delivery.personality = 'default'
         AND delivery.routine_preview_mode = 'name_and_dose'
@@ -4666,7 +4817,7 @@ BEGIN
 
   UPDATE public.reminder_rules
   SET active = false,
-      deactivated_at = timestamptz '2026-07-21 00:00:00+00'
+      deactivated_at = timestamptz '2026-07-25 00:00:00+00'
   WHERE id IN (v_snooze_rule_a, v_snooze_rule_b);
 
   INSERT INTO public.routine_adherence_logs (
@@ -4852,6 +5003,224 @@ BEGIN
     OR v_watermark_retry IS DISTINCT FROM v_watermark_after + 2 THEN
     RAISE EXCEPTION 'routine finalizer watermark did not advance by bounded persistent work: %, %, %',
       v_watermark_before, v_watermark_after, v_watermark_retry;
+  END IF;
+
+  v_reactivation_observed_at := clock_timestamp();
+
+  UPDATE public.reminder_rules
+  SET active = true,
+      deactivated_at = NULL
+  WHERE id = v_reactivation_rule;
+
+  SELECT snapshot.active_from
+  INTO v_reactivation_active_from
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_reactivation_rule
+    AND snapshot.active_until IS NULL;
+
+  IF v_reactivation_active_from < v_reactivation_observed_at THEN
+    RAISE EXCEPTION 'reactivated rule epoch predates the observed reactivation: %, %',
+      v_reactivation_active_from, v_reactivation_observed_at;
+  END IF;
+
+  DELETE FROM private.routine_occurrence_finalizer_queue;
+  UPDATE private.routine_occurrence_finalizer_rules
+  SET exhausted = true;
+  DELETE FROM private.routine_occurrence_finalizer_rules
+  WHERE reminder_rule_id = v_reactivation_rule;
+
+  INSERT INTO private.routine_occurrence_finalizer_rules (
+    reminder_rule_id,
+    user_id,
+    routine_item_id,
+    item_type,
+    timezone_name,
+    local_time,
+    weekdays,
+    active_from,
+    active_until,
+    next_local_date
+  ) VALUES
+    (
+      v_reactivation_rule,
+      v_timezone_user_id,
+      v_timezone_item_id,
+      'supplement',
+      'UTC',
+      time '08:00',
+      ARRAY[0,1,2,3,4,5,6],
+      timestamptz '2026-07-23 13:13:21+00',
+      timestamptz '2026-07-24 00:00:00+00',
+      date '2026-07-23'
+    ),
+    (
+      v_reactivation_rule,
+      v_timezone_user_id,
+      v_timezone_item_id,
+      'supplement',
+      'UTC',
+      time '08:00',
+      ARRAY[0,1,2,3,4,5,6],
+      timestamptz '2026-07-27 00:00:00+00',
+      NULL,
+      date '2026-07-27'
+    );
+
+  PERFORM private.materialize_due_routine_occurrences(
+    timestamptz '2026-07-29 12:00:00+00',
+    16
+  );
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.routine_occurrence_finalizer_queue candidate
+    WHERE candidate.reminder_rule_id = v_reactivation_rule
+      AND candidate.scheduled_for >= timestamptz '2026-07-24 00:00:00+00'
+      AND candidate.scheduled_for < timestamptz '2026-07-27 00:00:00+00'
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.routine_adherence_logs action
+    WHERE action.reminder_rule_id = v_reactivation_rule
+      AND action.status = 'missed'
+      AND action.source = 'system'
+      AND action.scheduled_for >= timestamptz '2026-07-24 00:00:00+00'
+      AND action.scheduled_for < timestamptz '2026-07-27 00:00:00+00'
+  ) THEN
+    RAISE EXCEPTION 'inactive multi-day rule gap produced a false missed candidate';
+  END IF;
+
+  v_collision_occurrence_key := private.derive_routine_occurrence_key(
+    v_reactivation_rule,
+    v_collision_scheduled_for
+  );
+
+  BEGIN
+    INSERT INTO public.routine_adherence_logs (
+      user_id,
+      routine_item_id,
+      item_type,
+      status,
+      idempotency_key,
+      reminder_rule_id,
+      occurrence_key,
+      source,
+      scheduled_for,
+      occurred_at
+    ) VALUES (
+      v_timezone_user_id,
+      v_timezone_item_id,
+      'supplement',
+      'taken',
+      'routine-missed:' || v_collision_occurrence_key,
+      v_reactivation_rule,
+      private.derive_routine_occurrence_key(
+        v_reactivation_rule,
+        v_collision_scheduled_for + interval '1 hour'
+      ),
+      'patient',
+      v_collision_scheduled_for + interval '1 hour',
+      v_collision_scheduled_for + interval '1 hour 5 minutes'
+    );
+    RAISE EXCEPTION 'caller used the reserved system missed idempotency prefix';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  ALTER TABLE public.routine_adherence_logs
+    DROP CONSTRAINT routine_adherence_logs_system_idempotency_prefix_check;
+
+  INSERT INTO public.routine_adherence_logs (
+    id,
+    user_id,
+    routine_item_id,
+    item_type,
+    status,
+    idempotency_key,
+    reminder_rule_id,
+    occurrence_key,
+    source,
+    scheduled_for,
+    occurred_at
+  ) VALUES (
+    v_collision_log,
+    v_timezone_user_id,
+    v_timezone_item_id,
+    'supplement',
+    'taken',
+    'routine-missed:' || v_collision_occurrence_key,
+    v_reactivation_rule,
+    private.derive_routine_occurrence_key(
+      v_reactivation_rule,
+      v_collision_scheduled_for + interval '1 hour'
+    ),
+    'patient',
+    v_collision_scheduled_for + interval '1 hour',
+    v_collision_scheduled_for + interval '1 hour 5 minutes'
+  );
+
+  ALTER TABLE public.routine_adherence_logs
+    ADD CONSTRAINT routine_adherence_logs_system_idempotency_prefix_check
+    CHECK (
+      idempotency_key !~ '^routine-missed:'
+      OR (
+        status = 'missed'
+        AND source = 'system'
+        AND occurrence_key IS NOT NULL
+        AND idempotency_key = 'routine-missed:' || occurrence_key
+      )
+    ) NOT VALID;
+
+  BEGIN
+    PERFORM public.finalize_due_routine_occurrences(
+      timestamptz '2026-07-29 12:00:00+00', 1, NULL, NULL, NULL
+    );
+    RAISE EXCEPTION 'caller idempotency collision suppressed system missed finalization';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM private.routine_occurrence_finalizer_queue candidate
+    WHERE candidate.user_id = v_timezone_user_id
+      AND candidate.occurrence_key = v_collision_occurrence_key
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.routine_adherence_logs action
+    WHERE action.user_id = v_timezone_user_id
+      AND action.occurrence_key = v_collision_occurrence_key
+      AND action.status = 'missed'
+      AND action.source = 'system'
+  ) THEN
+    RAISE EXCEPTION 'failed system missed collision consumed its queue candidate';
+  END IF;
+
+  ALTER TABLE public.routine_adherence_logs
+    DISABLE TRIGGER routine_adherence_logs_immutable;
+  DELETE FROM public.routine_adherence_logs
+  WHERE id = v_collision_log;
+  ALTER TABLE public.routine_adherence_logs
+    ENABLE TRIGGER routine_adherence_logs_immutable;
+
+  v_final_retry := public.finalize_due_routine_occurrences(
+    timestamptz '2026-07-29 12:00:00+00', 1, NULL, NULL, NULL
+  );
+
+  IF (v_final_retry ->> 'finalized_count')::integer <> 1
+    OR EXISTS (
+      SELECT 1
+      FROM private.routine_occurrence_finalizer_queue candidate
+      WHERE candidate.user_id = v_timezone_user_id
+        AND candidate.occurrence_key = v_collision_occurrence_key
+    )
+    OR (SELECT count(*)
+        FROM public.routine_adherence_logs action
+        WHERE action.user_id = v_timezone_user_id
+          AND action.occurrence_key = v_collision_occurrence_key
+          AND action.status = 'missed'
+          AND action.source = 'system') <> 1 THEN
+    RAISE EXCEPTION 'system missed occurrence did not finalize after collision removal: %',
+      v_final_retry;
   END IF;
 END;
 $test$;

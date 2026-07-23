@@ -27,6 +27,9 @@ DECLARE
   v_resolved_rule_id uuid;
   v_routine_rule_id uuid;
   v_routine_evening_rule_id uuid;
+  v_timezone_claim_item_id uuid;
+  v_timezone_claim_rule_id uuid;
+  v_timezone_claim_scheduled_for timestamptz;
   v_snooze_item_id uuid;
   v_snooze_rule_id uuid;
   v_snooze_evening_rule_id uuid;
@@ -34,6 +37,7 @@ DECLARE
   v_exact_item_id uuid;
   v_inactive_item_id uuid;
   v_inactive_rule_id uuid;
+  v_inactive_scheduled_for timestamptz;
   v_dst_rule_id uuid;
   v_stale_rule_id uuid;
   v_page_rule_id_a uuid;
@@ -964,22 +968,22 @@ BEGIN
     v_exact_item_id,
     'medication',
     v_routine_rule_id,
-    timestamptz '2026-07-20 11:00:00+00',
+    timestamptz '2026-07-24 11:00:00+00',
     'taken',
-    timestamptz '2026-07-20 11:01:00+00',
+    timestamptz '2026-07-24 11:01:00+00',
     NULL,
     'exact-taken-0800'
   );
 
   v_event_first := public.claim_reminder_event(
     v_routine_rule_id,
-    timestamptz '2026-07-20 11:00:00+00',
-    timestamptz '2026-07-20 11:02:00+00'
+    timestamptz '2026-07-24 11:00:00+00',
+    timestamptz '2026-07-24 11:02:00+00'
   );
   v_event_retry := public.claim_reminder_event(
     v_routine_evening_rule_id,
-    timestamptz '2026-07-20 23:00:00+00',
-    timestamptz '2026-07-20 23:00:00+00'
+    timestamptz '2026-07-24 23:00:00+00',
+    timestamptz '2026-07-24 23:00:00+00'
   );
 
   IF v_event_first ->> 'status' <> 'resolved'
@@ -993,7 +997,7 @@ BEGIN
         AND event.reminder_rule_id = v_routine_evening_rule_id
         AND event.routine_occurrence_key = private.derive_routine_occurrence_key(
           v_routine_evening_rule_id,
-          timestamptz '2026-07-20 23:00:00+00'
+          timestamptz '2026-07-24 23:00:00+00'
         )
         AND delivery.template_key = 'bodyflow.routine.medication.reminder'
         AND delivery.personality = 'default'
@@ -1017,6 +1021,85 @@ BEGIN
     RAISE EXCEPTION 'exact routine claim resolved another schedule or leaked private copy: morning %, evening %',
       v_event_first, v_event_retry;
   END IF;
+
+  v_timezone_claim_scheduled_for := date_trunc('minute', statement_timestamp())
+    - interval '1 minute';
+
+  INSERT INTO public.routine_items (
+    user_id,
+    item_type,
+    name,
+    active,
+    reminders_enabled,
+    created_at
+  ) VALUES (
+    v_user_id,
+    'supplement',
+    'Timezone claim fixture',
+    true,
+    true,
+    timestamptz '2026-07-23 13:13:21+00'
+  ) RETURNING id INTO v_timezone_claim_item_id;
+
+  INSERT INTO public.reminder_rules (
+    user_id,
+    routine_item_id,
+    category,
+    local_time,
+    weekdays,
+    created_at
+  ) VALUES (
+    v_user_id,
+    v_timezone_claim_item_id,
+    'supplement',
+    timezone('America/Sao_Paulo', v_timezone_claim_scheduled_for)::time,
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    timestamptz '2026-07-23 13:13:21+00'
+  ) RETURNING id INTO v_timezone_claim_rule_id;
+
+  SELECT count(*)
+  INTO v_due_count
+  FROM public.list_due_reminder_rules(
+    v_timezone_claim_scheduled_for + interval '1 minute 42 seconds',
+    5,
+    100
+  ) due
+  WHERE due.reminder_rule_id = v_timezone_claim_rule_id
+    AND due.scheduled_for = v_timezone_claim_scheduled_for;
+
+  IF v_due_count <> 1 THEN
+    RAISE EXCEPTION 'regular routine occurrence was not discoverable before timezone mutation';
+  END IF;
+
+  UPDATE public.users
+  SET timezone = 'UTC'
+  WHERE id = v_user_id;
+
+  v_event_first := public.claim_reminder_event(
+    v_timezone_claim_rule_id,
+    v_timezone_claim_scheduled_for,
+    v_timezone_claim_scheduled_for + interval '2 minutes'
+  );
+
+  IF v_event_first ->> 'status' <> 'queued'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.reminder_events event
+      WHERE event.id = (v_event_first ->> 'event_id')::uuid
+        AND event.reminder_rule_id = v_timezone_claim_rule_id
+        AND event.scheduled_for = v_timezone_claim_scheduled_for
+        AND event.routine_occurrence_key = private.derive_routine_occurrence_key(
+          v_timezone_claim_rule_id,
+          v_timezone_claim_scheduled_for
+        )
+    ) THEN
+    RAISE EXCEPTION 'regular routine claim lost its discovered timezone snapshot: %',
+      v_event_first;
+  END IF;
+
+  UPDATE public.users
+  SET timezone = 'America/Sao_Paulo'
+  WHERE id = v_user_id;
 
   INSERT INTO public.routine_items (
     user_id,
@@ -1068,22 +1151,22 @@ BEGIN
     v_snooze_item_id,
     'supplement',
     v_snooze_rule_id,
-    timestamptz '2026-07-20 11:00:00+00',
+    timestamptz '2026-07-24 11:00:00+00',
     'snoozed',
-    timestamptz '2026-07-20 11:01:00+00',
-    timestamptz '2026-07-20 11:15:00+00',
+    timestamptz '2026-07-24 11:01:00+00',
+    timestamptz '2026-07-24 11:15:00+00',
     'exact-snooze-08'
   );
 
   v_event_first := public.claim_reminder_event(
     v_snooze_rule_id,
-    timestamptz '2026-07-20 11:00:00+00',
-    timestamptz '2026-07-20 11:02:00+00'
+    timestamptz '2026-07-24 11:00:00+00',
+    timestamptz '2026-07-24 11:02:00+00'
   );
   v_event_retry := public.claim_reminder_event(
     v_snooze_evening_rule_id,
-    timestamptz '2026-07-20 23:00:00+00',
-    timestamptz '2026-07-20 23:00:00+00'
+    timestamptz '2026-07-24 23:00:00+00',
+    timestamptz '2026-07-24 23:00:00+00'
   );
 
   IF v_event_first ->> 'status' <> 'suppressed'
@@ -1099,8 +1182,8 @@ BEGIN
 
   v_event_first := public.claim_reminder_event(
     v_routine_rule_id,
-    timestamptz '2026-07-21 11:00:00+00',
-    timestamptz '2026-07-21 11:00:00+00'
+    timestamptz '2026-07-25 11:00:00+00',
+    timestamptz '2026-07-25 11:00:00+00'
   );
 
   IF v_event_first ->> 'status' <> 'suppressed'
@@ -1108,28 +1191,39 @@ BEGIN
     RAISE EXCEPTION 'disabled routine item still queued an exact reminder: %', v_event_first;
   END IF;
 
-  INSERT INTO public.routine_items (user_id, item_type, name, active)
-  VALUES (v_user_id, 'medication', 'Synthetic medication', true)
+  v_inactive_scheduled_for := date_trunc('minute', statement_timestamp())
+    - interval '1 minute';
+
+  INSERT INTO public.routine_items (user_id, item_type, name, active, created_at)
+  VALUES (
+    v_user_id,
+    'medication',
+    'Synthetic medication',
+    true,
+    timestamptz '2026-07-23 13:13:21+00'
+  )
   RETURNING id INTO v_inactive_item_id;
   INSERT INTO public.reminder_rules (
     user_id,
     routine_item_id,
     category,
     local_time,
-    weekdays
+    weekdays,
+    created_at
   ) VALUES (
     v_user_id,
     v_inactive_item_id,
     'medication',
-    time '19:00',
-    ARRAY[0, 1, 2, 3, 4, 5, 6]
+    timezone('America/Sao_Paulo', v_inactive_scheduled_for)::time,
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    timestamptz '2026-07-23 13:13:21+00'
   ) RETURNING id INTO v_inactive_rule_id;
   UPDATE public.routine_items SET active = false WHERE id = v_inactive_item_id;
 
   v_event_first := public.claim_reminder_event(
     v_inactive_rule_id,
-    timestamptz '2026-07-20 22:00:00+00',
-    timestamptz '2026-07-20 22:00:00+00'
+    v_inactive_scheduled_for,
+    v_inactive_scheduled_for + interval '1 minute'
   );
   IF v_event_first ->> 'status' <> 'suppressed'
     OR v_event_first ->> 'suppression_reason' <> 'routine_item_inactive' THEN

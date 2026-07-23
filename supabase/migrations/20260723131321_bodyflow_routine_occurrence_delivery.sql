@@ -52,6 +52,34 @@ CREATE INDEX routine_occurrence_finalizer_rules_identity_idx
     active_until
   );
 
+ALTER TABLE public.routine_adherence_logs
+  ADD CONSTRAINT routine_adherence_logs_system_idempotency_prefix_check
+  CHECK (
+    idempotency_key !~ '^routine-missed:'
+    OR (
+      status = 'missed'
+      AND source = 'system'
+      AND occurrence_key IS NOT NULL
+      AND idempotency_key = 'routine-missed:' || occurrence_key
+    )
+  ) NOT VALID;
+
+CREATE INDEX routine_adherence_logs_due_snoozes_idx
+  ON public.routine_adherence_logs (snoozed_until, id)
+  INCLUDE (
+    user_id,
+    routine_item_id,
+    item_type,
+    reminder_rule_id,
+    occurrence_key,
+    scheduled_for,
+    occurred_at,
+    created_at
+  )
+  WHERE status = 'snoozed'
+    AND snoozed_until IS NOT NULL
+    AND occurrence_key IS NOT NULL;
+
 CREATE TABLE private.routine_occurrence_finalizer_queue (
   snapshot_id uuid NOT NULL
     REFERENCES private.routine_occurrence_finalizer_rules(snapshot_id)
@@ -243,11 +271,11 @@ DECLARE
   v_rule public.reminder_rules%ROWTYPE;
   v_item public.routine_items%ROWTYPE;
   v_action public.routine_adherence_logs%ROWTYPE;
+  v_occurrence_snapshot private.routine_occurrence_finalizer_rules%ROWTYPE;
   v_latest_action_id uuid;
   v_preferences public.notification_preferences%ROWTYPE;
-  v_timezone text;
+  v_delivery_timezone text;
   v_locale text;
-  v_local_timestamp timestamp;
   v_claim_local_timestamp timestamp;
   v_occurrence_key text;
   v_occurrence_state jsonb;
@@ -337,31 +365,59 @@ BEGIN
     RAISE EXCEPTION 'routine item is missing' USING ERRCODE = '22023';
   END IF;
 
-  SELECT domain_user.timezone, COALESCE(NULLIF(domain_user.locale, ''), 'pt-BR')
-  INTO v_timezone, v_locale
+  SELECT timezone_name.name, COALESCE(NULLIF(domain_user.locale, ''), 'pt-BR')
+  INTO v_delivery_timezone, v_locale
   FROM public.users domain_user
+  JOIN pg_catalog.pg_timezone_names timezone_name
+    ON timezone_name.name = domain_user.timezone
   WHERE domain_user.id = v_rule.user_id
     AND domain_user.status = 'active';
 
-  IF v_timezone IS NULL THEN
+  IF v_delivery_timezone IS NULL THEN
     RAISE EXCEPTION 'active reminder user timezone is required' USING ERRCODE = '22023';
-  END IF;
-
-  v_local_timestamp := timezone(v_timezone, p_original_scheduled_for);
-  v_claim_local_timestamp := timezone(v_timezone, p_claimed_at);
-
-  IF (v_local_timestamp AT TIME ZONE v_timezone) IS DISTINCT FROM p_original_scheduled_for
-    OR extract(dow FROM v_local_timestamp)::smallint <> ALL(v_rule.weekdays)
-    OR v_local_timestamp::time IS DISTINCT FROM v_rule.local_time
-    OR p_event_scheduled_for > p_claimed_at + interval '5 minutes' THEN
-    RAISE EXCEPTION 'scheduled reminder does not match its exact routine occurrence'
-      USING ERRCODE = '22023';
   END IF;
 
   v_occurrence_key := private.derive_routine_occurrence_key(
     v_rule.id,
     p_original_scheduled_for
   );
+
+  SELECT snapshot.*
+  INTO v_occurrence_snapshot
+  FROM private.routine_occurrence_finalizer_rules snapshot
+  WHERE snapshot.reminder_rule_id = v_rule.id
+    AND snapshot.user_id = v_rule.user_id
+    AND snapshot.routine_item_id = v_rule.routine_item_id
+    AND snapshot.item_type = v_rule.category
+    AND p_original_scheduled_for >= snapshot.active_from
+    AND (
+      snapshot.active_until IS NULL
+      OR p_original_scheduled_for < snapshot.active_until
+    )
+    AND extract(
+      dow FROM timezone(snapshot.timezone_name, p_original_scheduled_for)
+    )::smallint = ANY(snapshot.weekdays)
+    AND timezone(snapshot.timezone_name, p_original_scheduled_for)::time
+      = snapshot.local_time
+    AND (
+      timezone(snapshot.timezone_name, p_original_scheduled_for)
+        AT TIME ZONE snapshot.timezone_name
+    ) = p_original_scheduled_for
+  ORDER BY snapshot.active_from DESC, snapshot.snapshot_id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'scheduled reminder does not match its exact routine occurrence'
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_claim_local_timestamp := timezone(v_delivery_timezone, p_claimed_at);
+
+  IF p_event_scheduled_for > p_claimed_at + interval '5 minutes' THEN
+    RAISE EXCEPTION 'scheduled reminder does not match its exact routine occurrence'
+      USING ERRCODE = '22023';
+  END IF;
+
   PERFORM private.lock_routine_occurrence(v_rule.user_id, v_occurrence_key);
 
   IF p_routine_action_log_id IS NOT NULL THEN
@@ -479,8 +535,8 @@ BEGIN
       FROM public.reminder_events event
       WHERE event.user_id = v_rule.user_id
         AND event.status = 'queued'
-        AND (event.scheduled_for AT TIME ZONE v_timezone)::date
-          = (p_event_scheduled_for AT TIME ZONE v_timezone)::date;
+        AND (event.scheduled_for AT TIME ZONE v_delivery_timezone)::date
+          = (p_event_scheduled_for AT TIME ZONE v_delivery_timezone)::date;
 
       IF v_events_today >= v_preferences.daily_push_limit THEN
         v_status := 'suppressed';
@@ -701,6 +757,10 @@ BEGIN
     v_item.created_at,
     timestamptz '2026-07-23 13:13:21+00'
   );
+
+  IF TG_OP = 'UPDATE' AND NOT OLD.active AND NEW.active THEN
+    v_active_from := greatest(v_active_from, v_observed_at);
+  END IF;
 
   IF NEW.active AND v_item.active THEN
     IF v_open_snapshot.snapshot_id IS NOT NULL
@@ -1270,8 +1330,8 @@ BEGIN
         AS starts_at,
       date_trunc('minute', p_fired_at) AS ends_at
   ),
-  latest_actions AS (
-    SELECT DISTINCT ON (action.user_id, action.occurrence_key)
+  due_snoozes AS (
+    SELECT
       action.id,
       action.user_id,
       action.routine_item_id,
@@ -1280,15 +1340,19 @@ BEGIN
       action.occurrence_key,
       action.scheduled_for,
       action.snoozed_until,
-      action.status
+      action.occurred_at,
+      action.created_at
     FROM public.routine_adherence_logs action
-    WHERE action.occurrence_key IS NOT NULL
-    ORDER BY
-      action.user_id,
-      action.occurrence_key,
-      action.occurred_at DESC,
-      action.created_at DESC,
-      action.id DESC
+    CROSS JOIN lookup_window lookup
+    WHERE action.status = 'snoozed'
+      AND action.snoozed_until IS NOT NULL
+      AND action.occurrence_key IS NOT NULL
+      AND action.snoozed_until BETWEEN lookup.starts_at AND lookup.ends_at
+      AND (
+        p_after_snoozed_until IS NULL
+        OR (action.snoozed_until, action.id)
+          > (p_after_snoozed_until, p_after_log_id)
+      )
   ),
   eligible AS (
     SELECT
@@ -1302,7 +1366,7 @@ BEGIN
         action.scheduled_for,
         p_fired_at
       ) AS occurrence_state
-    FROM latest_actions action
+    FROM due_snoozes action
     JOIN public.routine_items item
       ON item.id = action.routine_item_id
       AND item.user_id = action.user_id
@@ -1317,19 +1381,25 @@ BEGIN
       AND rule.category = action.item_type
       AND rule.active
       AND rule.deactivated_at IS NULL
-    WHERE action.status = 'snoozed'
-      AND action.snoozed_until IS NOT NULL
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.routine_adherence_logs later
+      WHERE later.user_id = action.user_id
+        AND later.occurrence_key = action.occurrence_key
+        AND (
+          later.occurred_at,
+          later.created_at,
+          later.id
+        ) > (
+          action.occurred_at,
+          action.created_at,
+          action.id
+        )
+    )
   )
   SELECT candidate.adherence_log_id, candidate.snoozed_until
   FROM eligible candidate
-  CROSS JOIN lookup_window lookup
   WHERE candidate.occurrence_state ->> 'status' = 'snoozed'
-    AND candidate.snoozed_until BETWEEN lookup.starts_at AND lookup.ends_at
-    AND (
-      p_after_snoozed_until IS NULL
-      OR (candidate.snoozed_until, candidate.adherence_log_id)
-        > (p_after_snoozed_until, p_after_log_id)
-    )
   ORDER BY candidate.snoozed_until, candidate.adherence_log_id
   LIMIT p_limit;
 END;
@@ -1538,7 +1608,11 @@ BEGIN
         v_candidate.occurrence_day_end,
         NULL
       )
-      ON CONFLICT (user_id, idempotency_key) DO NOTHING;
+      ON CONFLICT (user_id, occurrence_key)
+        WHERE occurrence_key IS NOT NULL
+          AND status = 'missed'
+          AND source = 'system'
+        DO NOTHING;
 
       GET DIAGNOSTICS v_inserted_count = ROW_COUNT;
       v_finalized_count := v_finalized_count + v_inserted_count;

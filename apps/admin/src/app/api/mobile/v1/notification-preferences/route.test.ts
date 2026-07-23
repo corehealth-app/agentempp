@@ -98,6 +98,60 @@ afterEach(() => {
 })
 
 describe('notification preferences route', () => {
+  it.each([
+    {
+      label: 'push enabled',
+      patch: { push_enabled: false },
+      routinePreviewMode: 'name' as const,
+    },
+    {
+      label: 'quiet hours',
+      patch: { quiet_hours: { start: '22:00', end: '07:00' } },
+      routinePreviewMode: 'name_and_dose' as const,
+    },
+    {
+      label: 'daily push limit',
+      patch: { daily_push_limit: 4 },
+      routinePreviewMode: 'name' as const,
+    },
+  ])('returns the persisted preview mode after a $label-only RPC patch', async ({
+    patch,
+    routinePreviewMode,
+  }) => {
+    const legacyRpcRow = {
+      push_enabled: patch.push_enabled ?? true,
+      quiet_hours_start: patch.quiet_hours?.start ?? null,
+      quiet_hours_end: patch.quiet_hours?.end ?? null,
+      daily_push_limit: patch.daily_push_limit ?? 8,
+      hydration_target_ml: null,
+      created_at: '2026-07-23T12:00:00.000Z',
+      updated_at: '2026-07-23T12:01:00.000Z',
+    }
+    const canonicalRow = {
+      ...legacyRpcRow,
+      routine_preview_mode: routinePreviewMode,
+    }
+    const maybeSingle = vi.fn(async () => ({ data: canonicalRow, error: null }))
+    const eq = vi.fn(() => ({ maybeSingle }))
+    const select = vi.fn((_selection: string) => ({ eq }))
+    const from = vi.fn(() => ({ select }))
+    const rpc = vi.fn(async () => ({ data: legacyRpcRow, error: null }))
+    const dependencies = createSupabaseRoutineDependencies({
+      from,
+      rpc,
+    } as unknown as ServiceClient)
+
+    await expect(dependencies.repository.updatePreferences(USER_ID, patch)).resolves.toEqual(
+      canonicalRow,
+    )
+    expect(rpc).toHaveBeenCalledWith('update_notification_preferences_atomic', {
+      p_user_id: USER_ID,
+      p_patch: patch,
+    })
+    expect(select.mock.calls[0]?.[0]).toContain('routine_preview_mode')
+    expect(eq).toHaveBeenCalledWith('user_id', USER_ID)
+  })
+
   it('persists preview mode through the Supabase preference adapter', async () => {
     const row = {
       push_enabled: true,

@@ -56,7 +56,10 @@ const medicationDisclaimerSchema = z
     document_key: z.literal(MEDICATION_DISCLAIMER_KEY),
     version: z.string().min(1).max(64),
     locale: z.enum(['pt-BR', 'en-US']),
-    body: z.string().trim().min(1).max(4000),
+    body: z.string().refine((value) => {
+      const trimmedLength = value.trim().length
+      return trimmedLength >= 1 && trimmedLength <= 4000
+    }),
     body_hash: bodyHashSchema,
     required_from: dateTimeSchema,
   })
@@ -120,6 +123,7 @@ const databaseMessageAliases: Readonly<Record<string, RoutineAdherenceRepository
   invalid_routine_snooze_time: 'routine_snooze_invalid',
   routine_action_idempotency_conflict: 'routine_idempotency_conflict',
   legal_document_version_mismatch: 'medication_disclaimer_version_stale',
+  invalid_legal_acceptance: 'medication_disclaimer_version_stale',
 }
 
 const safeDatabaseCodes = new Set(['22023', '23505', '23514', '40001', 'P0002'])
@@ -214,7 +218,8 @@ function createRepository(supabase: ServiceClient, requestId: string): RoutineAd
           (schedule) =>
             schedule.occurrence &&
             schedule.occurrence.status !== 'taken' &&
-            schedule.occurrence.status !== 'skipped',
+            schedule.occurrence.status !== 'skipped' &&
+            schedule.occurrence.status !== 'missed',
         )
 
       if (eligible.length === 0) return { action: 'not_found' }

@@ -190,13 +190,97 @@ describe('Supabase routine adherence adapter', () => {
     ).resolves.toEqual(expected)
   })
 
+  it('does not resolve a missed occurrence through the legacy taken path', async () => {
+    const rpc = vi.fn(async () => ({
+      data: {
+        local_date: '2026-07-23',
+        items: [
+          {
+            id: ITEM_ID,
+            item_type: 'supplement',
+            schedules: [
+              {
+                id: RULE_ID,
+                occurrence: {
+                  scheduled_for: '2026-07-23T11:00:00.000Z',
+                  status: 'missed',
+                },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+    }))
+    const repository = createSupabaseRoutineAdherenceDependencies({
+      rpc,
+    } as unknown as ServiceClient).repository
+
+    await expect(
+      repository.resolveLegacyOccurrence({
+        userId: USER_ID,
+        routineItemId: ITEM_ID,
+        itemType: 'supplement',
+        occurredAt: '2026-07-23T15:00:00.000Z',
+      }),
+    ).resolves.toEqual({ action: 'not_found' })
+  })
+
+  it('ignores a missed occurrence when one pending legacy occurrence is eligible', async () => {
+    const rpc = vi.fn(async () => ({
+      data: {
+        local_date: '2026-07-23',
+        items: [
+          {
+            id: ITEM_ID,
+            item_type: 'supplement',
+            schedules: [
+              {
+                id: RULE_ID,
+                occurrence: {
+                  scheduled_for: '2026-07-23T11:00:00.000Z',
+                  status: 'missed',
+                },
+              },
+              {
+                id: SECOND_RULE_ID,
+                occurrence: {
+                  scheduled_for: '2026-07-23T14:00:00.000Z',
+                  status: 'pending',
+                },
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+    }))
+    const repository = createSupabaseRoutineAdherenceDependencies({
+      rpc,
+    } as unknown as ServiceClient).repository
+
+    await expect(
+      repository.resolveLegacyOccurrence({
+        userId: USER_ID,
+        routineItemId: ITEM_ID,
+        itemType: 'supplement',
+        occurredAt: '2026-07-23T15:00:00.000Z',
+      }),
+    ).resolves.toEqual({
+      action: 'resolved',
+      reminderRuleId: SECOND_RULE_ID,
+      scheduledFor: '2026-07-23T14:00:00.000Z',
+    })
+  })
+
   it('gets the exact stored-locale medication disclaimer', async () => {
+    const exactBody = '  Informational reminder text.\n'
     const rpc = vi.fn(async () => ({
       data: {
         document_key: 'medication_reminder_disclaimer',
         version: '2026-07-22.1',
         locale: 'en-US',
-        body: 'Informational reminder text.',
+        body: exactBody,
         body_hash: BODY_HASH,
         required_from: '2026-07-22T00:00:00.000Z',
       },
@@ -210,7 +294,7 @@ describe('Supabase routine adherence adapter', () => {
       documentKey: 'medication_reminder_disclaimer',
       version: '2026-07-22.1',
       locale: 'en-US',
-      body: 'Informational reminder text.',
+      body: exactBody,
       bodyHash: BODY_HASH,
       requiredFrom: '2026-07-22T00:00:00.000Z',
     })
@@ -253,6 +337,27 @@ describe('Supabase routine adherence adapter', () => {
       p_body_hash: BODY_HASH,
       p_idempotency_key: 'legal-accept-0811',
     })
+  })
+
+  it('maps a schema-valid but SQL-invalid acceptance version to stale without SQL text', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const repository = createSupabaseRoutineAdherenceDependencies({
+      rpc: vi.fn(async () => ({
+        data: null,
+        error: { code: '22023', message: 'invalid_legal_acceptance' },
+      })),
+    } as unknown as ServiceClient).repository
+
+    await expect(
+      repository.acceptMedicationDisclaimer({
+        userId: USER_ID,
+        documentKey: 'medication_reminder_disclaimer',
+        version: 'version with spaces',
+        bodyHash: BODY_HASH,
+        idempotencyKey: 'legal-invalid-0811',
+      }),
+    ).rejects.toEqual(new RoutineAdherenceRepositoryError('medication_disclaimer_version_stale'))
+    expect(consoleError).not.toHaveBeenCalled()
   })
 
   it.each([

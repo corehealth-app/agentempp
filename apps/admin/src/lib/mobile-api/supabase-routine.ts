@@ -246,7 +246,14 @@ function createRepository(supabase: ServiceClient): RoutineRepository {
         p_patch: patch,
       })
       if (error || !data) databaseFailure('update_preferences', error)
-      return parsePreferences(data)
+
+      const { data: preferences, error: readError } = await supabase
+        .from('notification_preferences')
+        .select(preferencesSelection)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (readError || !preferences) databaseFailure('read_updated_preferences', readError)
+      return parsePreferences(preferences)
     },
     async listReminders(userId) {
       const { data, error } = await supabase

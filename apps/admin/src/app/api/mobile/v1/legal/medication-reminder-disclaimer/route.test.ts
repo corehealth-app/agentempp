@@ -4,6 +4,7 @@ import type { MobileRouteContext } from '@/lib/mobile-api/route'
 
 const USER_ID = '00000000-0000-0000-0000-000000000841'
 const BODY_HASH = 'd'.repeat(64)
+const EXACT_BODY = '  Texto juridico armazenado.\n'
 
 function context(): MobileRouteContext {
   return {
@@ -41,7 +42,7 @@ async function loadRoute() {
     document_key: 'medication_reminder_disclaimer',
     version: '2026-07-22.1',
     locale: 'pt-BR',
-    body: 'Texto juridico armazenado.',
+    body: EXACT_BODY,
     body_hash: BODY_HASH,
     required_from: '2026-07-22T00:00:00.000Z',
   }))
@@ -79,7 +80,7 @@ describe('medication reminder disclaimer GET route', () => {
         document_key: 'medication_reminder_disclaimer',
         version: '2026-07-22.1',
         locale: 'pt-BR',
-        body: 'Texto juridico armazenado.',
+        body: EXACT_BODY,
         body_hash: BODY_HASH,
         required_from: '2026-07-22T00:00:00.000Z',
       },

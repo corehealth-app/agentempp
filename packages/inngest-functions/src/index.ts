@@ -18,6 +18,10 @@ import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { processMessageFn } from './functions/process-message.js'
 import { regressionBeaconFn } from './functions/regression-beacon.js'
 import { reminderClaimFn, reminderSchedulerFn } from './functions/reminder-scheduler.js'
+import {
+  routineOccurrenceSchedulerFn,
+  routineSnoozeClaimFn,
+} from './functions/routine-occurrence-scheduler.js'
 import { sampleJudgeFn } from './functions/sample-judge.js'
 import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 import { userDeletionPurgerFn } from './functions/user-deletion-purger.js'
@@ -45,6 +49,8 @@ export const allFunctions = [
   mediaRetentionCleanupFn,
   reminderSchedulerFn,
   reminderClaimFn,
+  routineOccurrenceSchedulerFn,
+  routineSnoozeClaimFn,
   coachContentPackActivationFn,
 ]
 
@@ -66,6 +72,8 @@ export {
   processMessageFn,
   reminderClaimFn,
   reminderSchedulerFn,
+  routineOccurrenceSchedulerFn,
+  routineSnoozeClaimFn,
   sampleJudgeFn,
   trainingDailyDeliveryFn,
   userDeletionPurgerFn,

@@ -117,8 +117,24 @@ BEGIN
 
   IF to_regclass('public.legal_documents') IS NULL
     OR to_regclass('public.user_legal_acceptances') IS NULL
-    OR to_regclass('private.routine_mutation_receipts') IS NULL THEN
+    OR to_regclass('private.routine_mutation_receipts') IS NULL
+    OR to_regclass('private.routine_occurrence_finalizer_rules') IS NULL
+    OR to_regclass('private.routine_occurrence_finalizer_queue') IS NULL THEN
     RAISE EXCEPTION 'missing routine legal or receipt relation';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class relation
+    WHERE relation.oid = 'private.routine_occurrence_finalizer_rules'::regclass
+      AND relation.relrowsecurity
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_class relation
+    WHERE relation.oid = 'private.routine_occurrence_finalizer_queue'::regclass
+      AND relation.relrowsecurity
+  ) THEN
+    RAISE EXCEPTION 'private finalizer persistence is missing RLS';
   END IF;
 
   IF to_regclass('public.routine_mutation_receipts') IS NOT NULL THEN
@@ -503,7 +519,7 @@ BEGIN
     FROM pg_proc procedure
     WHERE procedure.oid = v_function
       AND (
-        procedure.prosecdef
+        NOT procedure.prosecdef
         OR NOT COALESCE(procedure.proconfig, ARRAY[]::text[])
           @> ARRAY['search_path=pg_catalog, public, private, pg_temp']
         OR pg_get_functiondef(procedure.oid)
@@ -514,6 +530,92 @@ BEGIN
     OR NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
     RAISE EXCEPTION 'routine snooze discovery function security is incorrect';
   END IF;
+
+  v_function := to_regprocedure(
+    'public.finalize_due_routine_occurrences(timestamp with time zone,integer,timestamp with time zone,uuid,uuid)'
+  );
+
+  IF pg_get_functiondef(v_function) LIKE '%generate_series%'
+    OR pg_get_functiondef(v_function)
+      NOT LIKE '%private.materialize_due_routine_occurrences(%'
+    OR to_regprocedure(
+      'private.materialize_due_routine_occurrences(timestamp with time zone,integer)'
+    ) IS NULL THEN
+    RAISE EXCEPTION 'routine finalizer discovery is not persistently bounded';
+  END IF;
+
+  v_function := to_regprocedure(
+    'private.routine_occurrence_timezone(uuid,uuid,text,text,timestamp with time zone)'
+  );
+
+  IF v_function IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM pg_proc procedure
+    WHERE procedure.oid = v_function
+      AND procedure.prosecdef
+      AND COALESCE(procedure.proconfig, ARRAY[]::text[])
+        @> ARRAY['search_path=pg_catalog, private, pg_temp']
+  ) OR has_function_privilege('anon', v_function, 'EXECUTE')
+    OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+    OR NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+    RAISE EXCEPTION 'routine occurrence timezone resolver security is incorrect';
+  END IF;
+
+  v_function := to_regprocedure(
+    'private.materialize_due_routine_occurrences(timestamp with time zone,integer)'
+  );
+
+  IF v_function IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM pg_proc procedure
+    WHERE procedure.oid = v_function
+      AND NOT procedure.prosecdef
+      AND COALESCE(procedure.proconfig, ARRAY[]::text[])
+        @> ARRAY['search_path=pg_catalog, public, private, pg_temp']
+  ) OR has_function_privilege('anon', v_function, 'EXECUTE')
+    OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+    OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+    RAISE EXCEPTION 'routine occurrence materializer security is incorrect';
+  END IF;
+
+  FOREACH v_function_signature IN ARRAY ARRAY[
+    'private.capture_routine_occurrence_finalizer_rule()',
+    'private.capture_routine_occurrence_finalizer_item()'
+  ]
+  LOOP
+    v_function := to_regprocedure(v_function_signature);
+
+    IF v_function IS NULL OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
+      WHERE procedure.oid = v_function
+        AND procedure.prosecdef
+        AND COALESCE(procedure.proconfig, ARRAY[]::text[])
+          @> ARRAY['search_path=pg_catalog, public, private, pg_temp']
+    ) OR has_function_privilege('anon', v_function, 'EXECUTE')
+      OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+      OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+      RAISE EXCEPTION 'routine finalizer capture trigger security is incorrect';
+    END IF;
+  END LOOP;
+
+  FOREACH v_relation IN ARRAY ARRAY[
+    'private.routine_occurrence_finalizer_rules',
+    'private.routine_occurrence_finalizer_queue'
+  ]
+  LOOP
+    FOREACH v_privilege IN ARRAY ARRAY[
+      'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ]
+    LOOP
+      IF has_table_privilege('anon', v_relation, v_privilege)
+        OR has_table_privilege('authenticated', v_relation, v_privilege)
+        OR has_table_privilege('service_role', v_relation, v_privilege) THEN
+        RAISE EXCEPTION 'untrusted role has % on private finalizer relation %',
+          v_privilege, v_relation;
+      END IF;
+    END LOOP;
+  END LOOP;
 
   IF EXISTS (
     SELECT 1
@@ -572,16 +674,58 @@ BEGIN
     WHERE tgrelid = 'public.reminder_events'::regclass
       AND tgname = 'reminder_events_routine_action'
       AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.reminder_rules'::regclass
+      AND tgname = 'reminder_rules_capture_occurrence_finalizer_insert'
+      AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.reminder_rules'::regclass
+      AND tgname = 'reminder_rules_capture_occurrence_finalizer_update'
+      AND NOT tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'public.routine_items'::regclass
+      AND tgname = 'routine_items_capture_occurrence_finalizer'
+      AND NOT tgisinternal
   ) THEN
     RAISE EXCEPTION 'routine integrity trigger is missing';
   END IF;
 END;
 $test$;
 
-SET LOCAL ROLE anon;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 DO $test$
 BEGIN
+  PERFORM count(*)
+  FROM public.list_due_routine_snoozes(
+    timestamptz '2026-07-23 13:13:21+00', 0, 1, NULL, NULL
+  );
+END;
+$test$;
+
+RESET ROLE;
+SET LOCAL ROLE anon;
+SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
+
+DO $test$
+BEGIN
+  BEGIN
+    PERFORM count(*)
+    FROM public.list_due_routine_snoozes(
+      timestamptz '2026-07-23 13:13:21+00', 0, 1, NULL, NULL
+    );
+    RAISE EXCEPTION 'anon executed routine snooze discovery';
+  EXCEPTION
+    WHEN insufficient_privilege THEN NULL;
+  END;
+
   BEGIN
     PERFORM 1 FROM public.routine_items LIMIT 1;
     RAISE EXCEPTION 'anon read a routine relation';
@@ -607,9 +751,20 @@ $test$;
 
 RESET ROLE;
 SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 
 DO $test$
 BEGIN
+  BEGIN
+    PERFORM count(*)
+    FROM public.list_due_routine_snoozes(
+      timestamptz '2026-07-23 13:13:21+00', 0, 1, NULL, NULL
+    );
+    RAISE EXCEPTION 'authenticated executed routine snooze discovery';
+  EXCEPTION
+    WHEN insufficient_privilege THEN NULL;
+  END;
+
   BEGIN
     INSERT INTO public.routine_items (user_id, item_type, name)
     VALUES ('00000000-0000-0000-0000-000000000801', 'medication', 'Synthetic item');
@@ -4147,6 +4302,7 @@ DECLARE
   v_snooze_item_id constant uuid := '00000000-0000-0000-0000-000000001201';
   v_finalizer_item_id constant uuid := '00000000-0000-0000-0000-000000001202';
   v_dst_item_id constant uuid := '00000000-0000-0000-0000-000000001203';
+  v_unbounded_item_id constant uuid := '00000000-0000-0000-0000-000000001204';
   v_snooze_rule_a constant uuid := '00000000-0000-0000-0000-000000001301';
   v_snooze_rule_b constant uuid := '00000000-0000-0000-0000-000000001302';
   v_finalizer_rule_a constant uuid := '00000000-0000-0000-0000-000000001303';
@@ -4154,6 +4310,8 @@ DECLARE
   v_spring_rule constant uuid := '00000000-0000-0000-0000-000000001305';
   v_fall_rule constant uuid := '00000000-0000-0000-0000-000000001306';
   v_finalizer_rule_c constant uuid := '00000000-0000-0000-0000-000000001307';
+  v_unbounded_rule_state constant uuid := '00000000-0000-0000-0000-000000001308';
+  v_unbounded_item_state constant uuid := '00000000-0000-0000-0000-000000001309';
   v_old_snooze_log constant uuid := '00000000-0000-0000-0000-000000001401';
   v_latest_snooze_log constant uuid := '00000000-0000-0000-0000-000000001402';
   v_second_snooze_log constant uuid := '00000000-0000-0000-0000-000000001403';
@@ -4173,6 +4331,9 @@ DECLARE
   v_finalizer_schedule_a_skipped timestamptz := timestamptz '2026-07-24 18:00:00+00';
   v_finalizer_schedule_c_snoozed timestamptz := timestamptz '2026-07-24 20:00:00+00';
   v_fall_occurrence_key text;
+  v_watermark_before date;
+  v_watermark_after date;
+  v_watermark_retry date;
 BEGIN
   INSERT INTO auth.users (
     id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -4194,7 +4355,8 @@ BEGIN
   ) VALUES
     (v_snooze_item_id, v_snooze_user_id, 'medication', 'Private synthetic medicine', '77 mg private', true, true, timestamptz '2026-07-20 07:00:00+00'),
     (v_finalizer_item_id, v_finalizer_user_id, 'supplement', 'Finalizer synthetic item', NULL, true, true, timestamptz '2026-07-23 17:00:00+00'),
-    (v_dst_item_id, v_dst_user_id, 'supplement', 'DST synthetic item', NULL, true, true, timestamptz '2026-03-08 04:00:00+00');
+    (v_dst_item_id, v_dst_user_id, 'supplement', 'DST synthetic item', NULL, true, true, timestamptz '2026-03-08 04:00:00+00'),
+    (v_unbounded_item_id, v_finalizer_user_id, 'supplement', 'Unbounded inactive item', NULL, false, true, timestamptz '2026-07-23 17:00:00+00');
 
   INSERT INTO public.reminder_rules (
     id, user_id, routine_item_id, category, local_time, weekdays,
@@ -4206,7 +4368,29 @@ BEGIN
     (v_finalizer_rule_b, v_finalizer_user_id, v_finalizer_item_id, 'supplement', time '08:00', ARRAY[0,1,2,3,4,5,6], false, timestamptz '2026-07-26 10:00:00+00', timestamptz '2026-07-25 17:00:00+00'),
     (v_finalizer_rule_c, v_finalizer_user_id, v_finalizer_item_id, 'supplement', time '10:00', ARRAY[0,1,2,3,4,5,6], false, timestamptz '2026-07-26 10:00:00+00', timestamptz '2026-07-24 19:00:00+00'),
     (v_spring_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '02:30', ARRAY[0], false, timestamptz '2027-03-14 08:00:00+00', timestamptz '2027-03-14 05:00:00+00'),
-    (v_fall_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '01:30', ARRAY[0], false, timestamptz '2026-11-01 08:00:00+00', timestamptz '2026-11-01 04:00:00+00');
+    (v_fall_rule, v_dst_user_id, v_dst_item_id, 'supplement', time '01:30', ARRAY[0], false, timestamptz '2026-11-01 08:00:00+00', timestamptz '2026-11-01 04:00:00+00'),
+    (v_unbounded_rule_state, v_finalizer_user_id, v_finalizer_item_id, 'supplement', time '11:00', ARRAY[0,1,2,3,4,5,6], false, NULL, timestamptz '2026-07-23 17:00:00+00'),
+    (v_unbounded_item_state, v_finalizer_user_id, v_unbounded_item_id, 'supplement', time '12:00', ARRAY[0,1,2,3,4,5,6], true, NULL, timestamptz '2026-07-23 17:00:00+00');
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.routine_occurrence_finalizer_rules snapshot
+    WHERE snapshot.reminder_rule_id IN (v_unbounded_rule_state, v_unbounded_item_state)
+  ) THEN
+    RAISE EXCEPTION 'unbounded inactive routine state entered finalizer discovery';
+  END IF;
+
+  UPDATE private.routine_occurrence_finalizer_rules snapshot
+  SET exhausted = true
+  WHERE snapshot.reminder_rule_id <> ALL(ARRAY[
+    v_snooze_rule_a,
+    v_snooze_rule_b,
+    v_finalizer_rule_a,
+    v_finalizer_rule_b,
+    v_finalizer_rule_c,
+    v_spring_rule,
+    v_fall_rule
+  ]);
 
   INSERT INTO public.notification_preferences (user_id, routine_preview_mode)
   VALUES (v_snooze_user_id, 'name_and_dose');
@@ -4338,6 +4522,19 @@ BEGIN
     (v_finalizer_user_id, v_finalizer_item_id, 'supplement', 'skipped', 'final-skipped-1', v_finalizer_rule_a, private.derive_routine_occurrence_key(v_finalizer_rule_a, v_finalizer_schedule_a_skipped), 'patient', v_finalizer_schedule_a_skipped, v_finalizer_schedule_a_skipped + interval '5 minutes', NULL, v_finalizer_schedule_a_skipped + interval '5 minutes'),
     (v_finalizer_user_id, v_finalizer_item_id, 'supplement', 'snoozed', 'final-snooze-01', v_finalizer_rule_c, private.derive_routine_occurrence_key(v_finalizer_rule_c, v_finalizer_schedule_c_snoozed), 'patient', v_finalizer_schedule_c_snoozed, v_finalizer_schedule_c_snoozed + interval '5 minutes', v_finalizer_schedule_c_snoozed + interval '30 minutes', v_finalizer_schedule_c_snoozed + interval '5 minutes');
 
+  UPDATE public.users
+  SET timezone = 'America/Los_Angeles'
+  WHERE id = v_finalizer_user_id;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM private.routine_occurrence_finalizer_rules snapshot
+    WHERE snapshot.reminder_rule_id = v_finalizer_rule_a
+      AND snapshot.timezone_name = 'Pacific/Kiritimati'
+  ) THEN
+    RAISE EXCEPTION 'routine finalizer timezone was not snapshotted before user mutation';
+  END IF;
+
   v_before_state := private.derive_routine_occurrence_state(
     v_finalizer_user_id,
     v_finalizer_item_id,
@@ -4392,6 +4589,23 @@ BEGIN
         WHERE log.user_id = v_finalizer_user_id
           AND log.status = 'missed'
           AND log.source = 'system') <> 4
+    OR (
+      SELECT count(*)
+      FROM public.routine_adherence_logs log
+      JOIN (
+        VALUES
+          (v_finalizer_rule_a, timestamptz '2026-07-25 18:00:00+00', timestamptz '2026-07-26 10:00:00+00'),
+          (v_finalizer_rule_b, timestamptz '2026-07-25 18:00:00+00', timestamptz '2026-07-26 10:00:00+00'),
+          (v_finalizer_rule_c, timestamptz '2026-07-24 20:00:00+00', timestamptz '2026-07-25 10:00:00+00'),
+          (v_finalizer_rule_c, timestamptz '2026-07-25 20:00:00+00', timestamptz '2026-07-26 10:00:00+00')
+      ) expected(rule_id, scheduled_for, occurred_at)
+        ON expected.rule_id = log.reminder_rule_id
+        AND expected.scheduled_for = log.scheduled_for
+        AND expected.occurred_at = log.occurred_at
+      WHERE log.user_id = v_finalizer_user_id
+        AND log.status = 'missed'
+        AND log.source = 'system'
+    ) <> 4
     OR EXISTS (
       SELECT 1
       FROM public.routine_adherence_logs log
@@ -4433,6 +4647,55 @@ BEGIN
         AND log.status = 'missed'
         AND log.source = 'system') <> 1 THEN
     RAISE EXCEPTION 'fall-back occurrence was not deterministic and singleton';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.routine_adherence_logs log
+    WHERE log.reminder_rule_id IN (v_unbounded_rule_state, v_unbounded_item_state)
+      AND log.status = 'missed'
+      AND log.source = 'system'
+  ) THEN
+    RAISE EXCEPTION 'unbounded inactive routine state synthesized missed occurrences';
+  END IF;
+
+  DELETE FROM private.routine_occurrence_finalizer_queue;
+  UPDATE private.routine_occurrence_finalizer_rules
+  SET exhausted = true;
+  UPDATE private.routine_occurrence_finalizer_rules
+  SET active_until = NULL,
+      next_local_date = date '2026-07-23',
+      exhausted = false,
+      touched_at = timestamptz '2026-07-23 13:13:21+00'
+  WHERE reminder_rule_id = v_finalizer_rule_b;
+
+  SELECT next_local_date
+  INTO v_watermark_before
+  FROM private.routine_occurrence_finalizer_rules
+  WHERE reminder_rule_id = v_finalizer_rule_b;
+
+  PERFORM private.materialize_due_routine_occurrences(
+    timestamptz '2030-01-01 00:00:00+00', 3
+  );
+
+  SELECT next_local_date
+  INTO v_watermark_after
+  FROM private.routine_occurrence_finalizer_rules
+  WHERE reminder_rule_id = v_finalizer_rule_b;
+
+  PERFORM private.materialize_due_routine_occurrences(
+    timestamptz '2030-01-01 00:00:00+00', 2
+  );
+
+  SELECT next_local_date
+  INTO v_watermark_retry
+  FROM private.routine_occurrence_finalizer_rules
+  WHERE reminder_rule_id = v_finalizer_rule_b;
+
+  IF v_watermark_after IS DISTINCT FROM v_watermark_before + 3
+    OR v_watermark_retry IS DISTINCT FROM v_watermark_after + 2 THEN
+    RAISE EXCEPTION 'routine finalizer watermark did not advance by bounded persistent work: %, %, %',
+      v_watermark_before, v_watermark_after, v_watermark_retry;
   END IF;
 END;
 $test$;

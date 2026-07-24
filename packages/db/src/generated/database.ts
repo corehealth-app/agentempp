@@ -1396,6 +1396,69 @@ export type Database = {
         }
         Relationships: []
       }
+      entitlement_events: {
+        Row: {
+          created_at: string
+          entitlement_id: string | null
+          entitlement_key: string
+          environment: string
+          event_type: string
+          id: string
+          occurred_at: string
+          processed_at: string | null
+          processing_result: string
+          provider_event_id: string
+          source: string
+          source_reference: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          entitlement_id?: string | null
+          entitlement_key: string
+          environment: string
+          event_type: string
+          id?: string
+          occurred_at: string
+          processed_at?: string | null
+          processing_result?: string
+          provider_event_id: string
+          source: string
+          source_reference: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          entitlement_id?: string | null
+          entitlement_key?: string
+          environment?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          processed_at?: string | null
+          processing_result?: string
+          provider_event_id?: string
+          source?: string
+          source_reference?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entitlement_events_entitlement_id_fkey"
+            columns: ["entitlement_id"]
+            isOneToOne: false
+            referencedRelation: "user_entitlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entitlement_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feature_flags: {
         Row: {
           description: string | null
@@ -3202,6 +3265,77 @@ export type Database = {
           },
         ]
       }
+      user_entitlements: {
+        Row: {
+          access_expires_at: string | null
+          actor_id: string | null
+          cancel_at_period_end: boolean
+          created_at: string
+          entitlement_key: string
+          environment: string
+          grace_expires_at: string | null
+          id: string
+          last_provider_event_at: string
+          last_provider_event_id: string
+          plan: Database["public"]["Enums"]["plan_enum"] | null
+          reason_code: string | null
+          source: string
+          source_reference: string
+          starts_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_expires_at?: string | null
+          actor_id?: string | null
+          cancel_at_period_end?: boolean
+          created_at?: string
+          entitlement_key?: string
+          environment: string
+          grace_expires_at?: string | null
+          id?: string
+          last_provider_event_at: string
+          last_provider_event_id: string
+          plan?: Database["public"]["Enums"]["plan_enum"] | null
+          reason_code?: string | null
+          source: string
+          source_reference: string
+          starts_at?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_expires_at?: string | null
+          actor_id?: string | null
+          cancel_at_period_end?: boolean
+          created_at?: string
+          entitlement_key?: string
+          environment?: string
+          grace_expires_at?: string | null
+          id?: string
+          last_provider_event_at?: string
+          last_provider_event_id?: string
+          plan?: Database["public"]["Enums"]["plan_enum"] | null
+          reason_code?: string | null
+          source?: string
+          source_reference?: string
+          starts_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_entitlements_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_food_corrections: {
         Row: {
           confirmed_count: number
@@ -4014,6 +4148,27 @@ export type Database = {
         Returns: Json
       }
       agent_kpis: { Args: { days?: number }; Returns: Json }
+      apply_entitlement_event: {
+        Args: {
+          p_access_expires_at: string
+          p_actor_id?: string
+          p_cancel_at_period_end: boolean
+          p_entitlement_key: string
+          p_environment: string
+          p_event_type: string
+          p_grace_expires_at: string
+          p_occurred_at: string
+          p_plan: Database["public"]["Enums"]["plan_enum"]
+          p_provider_event_id: string
+          p_reason_code?: string
+          p_source: string
+          p_source_reference: string
+          p_starts_at: string
+          p_status: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       approve_and_activate_coach_content_pack: {
         Args: {
           p_actor_id: string
@@ -4595,6 +4750,10 @@ export type Database = {
         Args: { p_language?: string; p_stage: string }
         Returns: string
       }
+      resolve_user_entitlement: {
+        Args: { p_entitlement_key?: string; p_now?: string; p_user_id: string }
+        Returns: Json
+      }
       resume_user: { Args: { p_user_id: string }; Returns: undefined }
       review_content_version: {
         Args: {
@@ -4815,6 +4974,15 @@ export type Database = {
           p_actor_id: string
           p_expected_updated_at: string
           p_version_id: string
+        }
+        Returns: Json
+      }
+      sync_stripe_subscription_entitlement: {
+        Args: {
+          p_environment?: string
+          p_occurred_at: string
+          p_provider_event_id: string
+          p_subscription_id: string
         }
         Returns: Json
       }

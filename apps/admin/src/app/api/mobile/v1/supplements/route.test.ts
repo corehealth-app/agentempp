@@ -127,6 +127,7 @@ describe('mobile supplement collection route', () => {
         .mockRejectedValue(
           new MobileApiError(401, 'missing_access_token', 'Authentication required'),
         ),
+      authorizeEntitlement: vi.fn().mockResolvedValue(undefined),
       createServiceClient: vi.fn(() => ({ rpc: vi.fn() }) as unknown as ServiceClient),
       createRequestId: vi.fn(() => 'request-routine-auth-0721'),
     }

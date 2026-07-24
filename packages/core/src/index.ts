@@ -15,6 +15,7 @@ export {
 } from './engine/bloco.js'
 export * from './engine/protocols.js'
 export * from './engine/targets.js'
+export * from './entitlements.js'
 export * from './nutrition.js'
 export * from './progress-calc.js'
 export * from './protocol-router.js'

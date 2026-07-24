@@ -27,6 +27,7 @@ const patientContext = {
 function runtime(overrides: Partial<MobileRouteRuntime> = {}): MobileRouteRuntime {
   return {
     authenticate: vi.fn().mockResolvedValue(patientContext),
+    authorizeEntitlement: vi.fn().mockResolvedValue(undefined),
     createServiceClient: vi
       .fn()
       .mockReturnValue({ kind: 'service-client' } as unknown as ServiceClient),
@@ -56,6 +57,47 @@ describe('mobile route wrapper', () => {
         supabase: { kind: 'service-client' },
       }),
     )
+  })
+
+  it('authorizes product access after authentication and before the handler', async () => {
+    const order: string[] = []
+    const authorizeEntitlement = vi.fn(async () => {
+      order.push('authorize')
+    })
+    const handler = vi.fn(async (_context) => {
+      order.push('handler')
+      return mobileSuccess({ ok: true }, 'request-id')
+    })
+    const route = createMobileRoute(handler, runtime({ authorizeEntitlement }))
+
+    const response = await route(new Request('https://example.test/api/mobile/v1/today'))
+
+    expect(response.status).toBe(200)
+    expect(order).toEqual(['authorize', 'handler'])
+    expect(authorizeEntitlement).toHaveBeenCalledWith(
+      patientContext,
+      expect.objectContaining({ url: 'https://example.test/api/mobile/v1/today' }),
+      { kind: 'service-client' },
+    )
+  })
+
+  it('does not execute a protected handler when entitlement authorization fails', async () => {
+    const handler = vi.fn()
+    const route = createMobileRoute(
+      handler,
+      runtime({
+        authorizeEntitlement: vi
+          .fn()
+          .mockRejectedValue(
+            new MobileApiError(402, 'subscription_required', 'An active subscription is required'),
+          ),
+      }),
+    )
+
+    const response = await route(new Request('https://example.test/api/mobile/v1/today'))
+
+    expect(response.status).toBe(402)
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('maps expected API errors to the public error envelope', async () => {

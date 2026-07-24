@@ -110,8 +110,9 @@ phase does not expose or backfill it.
 ## Trusted Database Interfaces
 
 `resolve_user_entitlement` is the only read decision used by the mobile BFF.
-It is callable by `service_role` and by an authenticated patient only for their
-own domain user ID. It is not callable by `anon` or unrestricted `PUBLIC`.
+It is callable only by `service_role`; the authenticated mobile route resolves
+the patient identity before invoking it. It is not callable by `anon`, direct
+`authenticated` clients or unrestricted `PUBLIC`.
 
 `apply_entitlement_event` validates and atomically applies one normalized event.
 It is service-role only, uses a fixed search path, verifies the trusted backend
@@ -136,6 +137,12 @@ The webhook route is disabled when its signing secret is absent. It must:
 - normalize only known event types;
 - use provider event ID and timestamp for idempotency/order;
 - never log request bodies, product receipts, aliases or customer attributes.
+
+The future sandbox configuration names are
+`REVENUECAT_WEBHOOK_SIGNING_SECRET`, `REVENUECAT_WEBHOOK_ENVIRONMENT` and
+`REVENUECAT_PRODUCT_PLAN_MAP`. They remain unset in this phase. Product-change,
+pause and test events do not mutate access. Billing issues mutate access only
+when the provider includes an explicit grace-period expiry.
 
 Events that cannot be safely reduced from their own payload, including transfer
 reconciliation, must fail closed for backend mutation and remain retryable.
@@ -203,8 +210,8 @@ and verified.
 - Provider/manual identifiers are not directly selectable by patients.
 - Trusted mutation functions are revoked from `PUBLIC`, `anon` and
   `authenticated`, and granted only to `service_role`.
-- The patient-safe resolver authorizes self-read and returns a bounded JSON
-  projection.
+- The patient-safe resolver is service-role only and returns a bounded JSON
+  projection through the authenticated BFF.
 - No secret or raw provider payload is stored in the central entitlement
   tables, test fixtures or logs.
 

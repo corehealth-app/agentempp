@@ -46,7 +46,11 @@ export const entitlementDecisionSchema = z
     access_expires_at: nullableDateTimeSchema,
     grace_expires_at: nullableDateTimeSchema,
     cancel_at_period_end: z.boolean(),
-    reason: z.string().min(1).max(64).regex(/^[a-z][a-z0-9_]*$/),
+    reason: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z][a-z0-9_]*$/),
     decision_at: dateTimeSchema,
   })
   .strict()
@@ -73,8 +77,7 @@ export const normalizedEntitlementEventSchema = z
   .strict()
   .superRefine((event, context) => {
     const startsAt = event.starts_at === null ? null : Date.parse(event.starts_at)
-    const expiresAt =
-      event.access_expires_at === null ? null : Date.parse(event.access_expires_at)
+    const expiresAt = event.access_expires_at === null ? null : Date.parse(event.access_expires_at)
     const graceAt = event.grace_expires_at === null ? null : Date.parse(event.grace_expires_at)
 
     if (startsAt !== null && expiresAt !== null && startsAt > expiresAt) {

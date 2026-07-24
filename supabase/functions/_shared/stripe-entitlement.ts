@@ -15,8 +15,7 @@ export type StripeEntitlementSyncInput = {
   p_environment: 'sandbox' | 'production'
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PROVIDER_EVENT_PATTERN = /^[A-Za-z0-9._:/-]{1,200}$/
 
 export function buildStripeEntitlementSyncInput(

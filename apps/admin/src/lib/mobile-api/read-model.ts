@@ -215,23 +215,3 @@ export async function loadPending(supabase: ServiceClient, userId: string) {
     proposal: sanitizePendingProposal(row.proposal),
   }))
 }
-
-export async function loadEntitlements(supabase: ServiceClient, userId: string) {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .select(
-      'id, provider, plan, status, current_period_start, current_period_end, trial_ends_at, cancel_at_period_end, updated_at',
-    )
-    .eq('user_id', userId)
-    .order('updated_at', { ascending: false })
-    .limit(10)
-  throwQueryError(error, 'Entitlement lookup')
-  const subscriptions = data ?? []
-  return {
-    has_active_access: subscriptions.some(
-      (subscription) => subscription.status === 'active' || subscription.status === 'trial',
-    ),
-    subscriptions,
-    mobile_billing: { available: false, reason: 'storekit_not_configured' as const },
-  }
-}

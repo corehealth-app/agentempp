@@ -7,7 +7,7 @@ const NOW = new Date('2026-07-24T10:00:00.000Z')
 const SECRET = 'sandbox-signing-secret-with-enough-entropy'
 const USER_ID = '00000000-0000-4000-8000-000000000001'
 
-function body(): string {
+function body(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     api_version: '1.0',
     event: {
@@ -23,6 +23,7 @@ function body(): string {
       original_transaction_id: 'original-transaction-001',
       period_type: 'NORMAL',
       store: 'APP_STORE',
+      ...overrides,
     },
   })
 }
@@ -95,6 +96,17 @@ describe('RevenueCat webhook route', () => {
     const response = await createRevenueCatWebhookHandler(testRuntime.value)(signedRequest())
 
     expect(response.status).toBe(503)
+    expect(testRuntime.rpc).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges state-neutral provider events without retrying them', async () => {
+    const testRuntime = runtime()
+    const rawBody = body({ type: 'PRODUCT_CHANGE' })
+
+    const response = await createRevenueCatWebhookHandler(testRuntime.value)(signedRequest(rawBody))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, result: 'ignored' })
     expect(testRuntime.rpc).not.toHaveBeenCalled()
   })
 

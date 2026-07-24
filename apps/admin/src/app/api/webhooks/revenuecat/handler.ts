@@ -120,7 +120,7 @@ export function createRevenueCatWebhookHandler(runtimeValue = defaultRuntime) {
 
       const normalized = normalizeRevenueCatEvent(payload, configuration)
       if (normalized.kind === 'ignored') {
-        return jsonResponse({ ok: true, result: 'ignored' }, 202)
+        return jsonResponse({ ok: true, result: 'ignored' }, 200)
       }
 
       const event = normalized.event

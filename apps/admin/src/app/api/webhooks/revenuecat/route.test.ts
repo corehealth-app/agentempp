@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
-import { createRevenueCatWebhookHandler } from './route'
+import { createRevenueCatWebhookHandler } from './handler'
 
 const NOW = new Date('2026-07-24T10:00:00.000Z')
 const SECRET = 'sandbox-signing-secret-with-enough-entropy'

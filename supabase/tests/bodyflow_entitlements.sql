@@ -102,6 +102,16 @@ BEGIN
     RAISE EXCEPTION 'provider entitlement events are not idempotent';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND tablename = 'entitlement_events'
+      AND indexdef LIKE '%(entitlement_id)%'
+  ) THEN
+    RAISE EXCEPTION 'entitlement event foreign key is not indexed';
+  END IF;
+
   FOREACH v_relation IN ARRAY v_functions
   LOOP
     v_function := to_regprocedure(v_relation);

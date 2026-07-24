@@ -431,6 +431,94 @@ BEGIN
     OR v_decision->>'reason' <> 'valid_entitlement' THEN
     RAISE EXCEPTION 'projected Stripe entitlement was not canonical: %', v_decision;
   END IF;
+
+  UPDATE public.subscriptions
+  SET status = 'trial',
+      plan = 'trial',
+      trial_ends_at = '2026-08-01T00:00:00Z',
+      current_period_end = '2026-08-01T00:00:00Z'
+  WHERE id = v_subscription_id;
+  PERFORM public.sync_stripe_subscription_entitlement(
+    v_subscription_id,
+    'stripe-event-002',
+    '2026-07-24T10:03:00Z',
+    'internal'
+  );
+  v_decision := public.resolve_user_entitlement(
+    v_user_id,
+    'bodyflow_full',
+    '2026-07-24T10:03:01Z'
+  );
+  IF v_decision->>'status' <> 'trialing'
+    OR v_decision->>'has_active_access' <> 'true' THEN
+    RAISE EXCEPTION 'Stripe trial projection failed: %', v_decision;
+  END IF;
+
+  UPDATE public.subscriptions
+  SET status = 'past_due',
+      plan = 'mensal',
+      trial_ends_at = NULL,
+      current_period_end = '2026-07-30T00:00:00Z'
+  WHERE id = v_subscription_id;
+  PERFORM public.sync_stripe_subscription_entitlement(
+    v_subscription_id,
+    'stripe-event-003',
+    '2026-07-24T10:04:00Z',
+    'internal'
+  );
+  v_decision := public.resolve_user_entitlement(
+    v_user_id,
+    'bodyflow_full',
+    '2026-07-24T10:04:01Z'
+  );
+  IF v_decision->>'status' <> 'grace_period'
+    OR v_decision->>'has_active_access' <> 'true'
+    OR v_decision->>'grace_expires_at' IS NULL THEN
+    RAISE EXCEPTION 'Stripe grace-period projection failed: %', v_decision;
+  END IF;
+
+  UPDATE public.subscriptions
+  SET status = 'canceled',
+      current_period_end = '2026-07-30T00:00:00Z',
+      cancel_at_period_end = true
+  WHERE id = v_subscription_id;
+  PERFORM public.sync_stripe_subscription_entitlement(
+    v_subscription_id,
+    'stripe-event-004',
+    '2026-07-24T10:05:00Z',
+    'internal'
+  );
+  v_decision := public.resolve_user_entitlement(
+    v_user_id,
+    'bodyflow_full',
+    '2026-07-24T10:05:01Z'
+  );
+  IF v_decision->>'status' <> 'canceled'
+    OR v_decision->>'has_active_access' <> 'true'
+    OR v_decision->>'cancel_at_period_end' <> 'true' THEN
+    RAISE EXCEPTION 'Stripe canceled paid-through projection failed: %', v_decision;
+  END IF;
+
+  UPDATE public.subscriptions
+  SET status = 'expired',
+      current_period_end = '2026-07-24T09:00:00Z',
+      cancel_at_period_end = false
+  WHERE id = v_subscription_id;
+  PERFORM public.sync_stripe_subscription_entitlement(
+    v_subscription_id,
+    'stripe-event-005',
+    '2026-07-24T10:06:00Z',
+    'internal'
+  );
+  v_decision := public.resolve_user_entitlement(
+    v_user_id,
+    'bodyflow_full',
+    '2026-07-24T10:06:01Z'
+  );
+  IF v_decision->>'status' <> 'expired'
+    OR v_decision->>'has_active_access' <> 'false' THEN
+    RAISE EXCEPTION 'Stripe expiry projection failed: %', v_decision;
+  END IF;
 END;
 $test$;
 

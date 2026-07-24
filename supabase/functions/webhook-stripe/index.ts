@@ -16,6 +16,7 @@
  */
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@17?target=deno'
+import { buildStripeEntitlementSyncInput } from '../_shared/stripe-entitlement.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -99,6 +100,22 @@ async function finishSubscriptionEvent(
     p_error: errorMessage ?? null,
   })
   if (error) throw new Error(`subscription event finalization failed: ${error.message}`)
+}
+
+async function syncCentralEntitlement(
+  event: Stripe.Event,
+  context: BillingEventContext,
+): Promise<void> {
+  const input = buildStripeEntitlementSyncInput(event, context)
+  if (!input) return
+
+  const { data, error } = await supabase.rpc('sync_stripe_subscription_entitlement', input)
+  if (error) throw new Error(`central entitlement projection failed: ${error.message}`)
+
+  const result = (data as { result?: string } | null)?.result
+  if (result !== 'applied' && result !== 'duplicate' && result !== 'stale') {
+    throw new Error(`invalid central entitlement projection result: ${result ?? 'missing'}`)
+  }
 }
 
 Deno.serve(async (req) => {
@@ -200,6 +217,7 @@ Deno.serve(async (req) => {
       default:
         console.log('unhandled event type:', event.type)
     }
+    await syncCentralEntitlement(event, eventContext)
     await finishSubscriptionEvent(event.id, true, eventContext)
     return new Response('ok', { status: 200 })
   } catch (err) {

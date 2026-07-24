@@ -1,6 +1,6 @@
 # BodyFlow Central Entitlements Design
 
-**Status:** approved for implementation in the isolated staging worktree on
+**Status:** implemented and staging-validated in the isolated worktree on
 2026-07-24. Production charging, paywall activation, real-user migration and
 provider configuration remain excluded.
 
@@ -11,8 +11,8 @@ app and trusted admin/backend surfaces. RevenueCat will simplify App Store
 purchase lifecycle handling, while the BodyFlow database remains the final
 authority for product access.
 
-This flow has no WhatsApp dependency. Existing WhatsApp and agent billing code
-is frozen legacy code and is not a consumer of the new entitlement service.
+This flow is app-first. Frozen legacy messaging and agent billing code is not a
+consumer of the new entitlement service.
 
 ## Evidence And Current State
 
@@ -114,6 +114,15 @@ It is callable only by `service_role`; the authenticated mobile route resolves
 the patient identity before invoking it. It is not callable by `anon`, direct
 `authenticated` clients or unrestricted `PUBLIC`.
 
+The shared mobile route wrapper enforces that decision after patient
+authentication and before invoking the product handler. Account recovery and
+configuration surfaces remain reachable without a paid grant: `/me`,
+`/profile`, `/onboarding`, `/entitlements`, `/coach/persona`, `/devices` and
+`/notification-preferences`, including their true child paths. Every other
+`/api/mobile/v1` route fails closed with `subscription_required`. Exact
+path-boundary matching prevents a similarly prefixed route from inheriting an
+exemption.
+
 `apply_entitlement_event` validates and atomically applies one normalized event.
 It is service-role only, uses a fixed search path, verifies the trusted backend
 role and rejects unknown states, sources, environments, invalid time ranges and
@@ -141,8 +150,16 @@ The webhook route is disabled when its signing secret is absent. It must:
 The future sandbox configuration names are
 `REVENUECAT_WEBHOOK_SIGNING_SECRET`, `REVENUECAT_WEBHOOK_ENVIRONMENT` and
 `REVENUECAT_PRODUCT_PLAN_MAP`. They remain unset in this phase. Product-change,
-pause and test events do not mutate access. Billing issues mutate access only
-when the provider includes an explicit grace-period expiry.
+pause and test events are acknowledged without mutating access. Billing issues
+mutate access only when the provider includes an explicit grace-period expiry;
+a related `BILLING_ERROR` cancellation is ignored so it cannot overwrite that
+explicit grace state.
+
+Voluntary, developer-initiated and price-increase cancellations retain access
+only until the explicit provider expiry. A customer-support refund denies
+access immediately. `REFUND_REVERSED` restores active state. A cancellation
+without one of those understood reasons remains retryable for reconciliation
+instead of guessing whether access should continue.
 
 Events that cannot be safely reduced from their own payload, including transfer
 reconciliation, must fail closed for backend mutation and remain retryable.
@@ -164,7 +181,7 @@ legacy migration requires a separate aggregate audit and explicit approval.
 
 - New app-first patients without a valid entitlement receive access denied.
 - No production user is migrated or revoked in this phase.
-- No implicit entitlement is inferred from account age, WhatsApp identity,
+- No implicit entitlement is inferred from account age, legacy messaging identity,
   email, role or historical messages.
 - Grandfathered and manual-comp access require explicit service-side records
   with an audit reason and actor reference in non-sensitive metadata.
@@ -203,6 +220,10 @@ The route never returns raw subscription rows or provider references. Billing
 availability remains false until sandbox configuration is separately approved
 and verified.
 
+The same decision is also a server-side gate for protected mobile routes. A
+client cannot bypass it by omitting the entitlement endpoint or by relying on a
+cached SDK purchase state.
+
 ## Security And Privacy
 
 - RLS is enabled on both new tables.
@@ -215,6 +236,21 @@ and verified.
 - No secret or raw provider payload is stored in the central entitlement
   tables, test fixtures or logs.
 
+## Known Bounded Follow-Up
+
+The content-delivery database functions still derive the optional editorial
+`plan` targeting dimension from legacy `subscriptions`. They do not decide
+product access: the authenticated BFF gate now denies protected content routes
+unless the central resolver grants access. However, a RevenueCat-only or manual
+entitlement may not receive content whose eligibility is additionally narrowed
+by a legacy plan value.
+
+Before enabling a plan-specific content catalog, those functions must consume
+a patient-safe plan resolved from the central entitlement service. Creating
+mirror `subscriptions` rows is intentionally rejected because it would restore
+two mutable sources of truth. This follow-up does not block the initial catalog
+while content is not segmented by plan.
+
 ## Out Of Scope
 
 - Production migrations, deploys, charging and paywall activation.
@@ -222,15 +258,18 @@ and verified.
 - Real-user backfill, grandfathering or subscription repair.
 - Product identifiers, prices, offers and trial commercial policy.
 - SwiftUI purchase UI or SDK installation; that starts in the iOS prompts.
-- Any WhatsApp integration or compatibility work.
+- Any legacy messaging integration or compatibility work.
 
 ## Acceptance
 
 - The same database resolver decides access for the app and trusted admin/BFF
   consumers.
+- Every protected mobile route enforces the resolver after authentication and
+  before product data is read or mutated.
 - Multiple sources cannot destructively overwrite each other.
 - Old or duplicate provider events cannot regress a newer decision.
-- Cancellation retains access only through an explicit future expiry.
+- Ordinary cancellation retains access only through an explicit future expiry;
+  a confirmed customer-support refund denies access immediately.
 - Explicit block overrides every valid grant.
 - New users with no record fail closed.
 - Stripe remains compatible without a production backfill.

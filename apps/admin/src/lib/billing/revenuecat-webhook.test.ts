@@ -108,10 +108,30 @@ describe('RevenueCat event normalization', () => {
       kind: 'apply',
       event: { status: 'trialing' },
     })
-    expect(normalizeRevenueCatEvent(event({ type: 'CANCELLATION' }), configuration)).toMatchObject({
+    expect(
+      normalizeRevenueCatEvent(
+        event({ type: 'CANCELLATION', cancel_reason: 'UNSUBSCRIBE' }),
+        configuration,
+      ),
+    ).toMatchObject({
       kind: 'apply',
       event: { status: 'canceled', cancel_at_period_end: true },
     })
+    expect(
+      normalizeRevenueCatEvent(
+        event({ type: 'CANCELLATION', cancel_reason: 'CUSTOMER_SUPPORT' }),
+        configuration,
+      ),
+    ).toMatchObject({
+      kind: 'apply',
+      event: { status: 'expired', cancel_at_period_end: false },
+    })
+    expect(
+      normalizeRevenueCatEvent(
+        event({ type: 'CANCELLATION', cancel_reason: 'BILLING_ERROR' }),
+        configuration,
+      ),
+    ).toEqual({ kind: 'ignored', reason: 'billing_error_cancellation' })
     expect(normalizeRevenueCatEvent(event({ type: 'EXPIRATION' }), configuration)).toMatchObject({
       kind: 'apply',
       event: { status: 'expired', cancel_at_period_end: false },
@@ -131,6 +151,24 @@ describe('RevenueCat event normalization', () => {
         grace_expires_at: '2026-08-27T10:00:00.000Z',
       },
     })
+    expect(
+      normalizeRevenueCatEvent(event({ type: 'REFUND_REVERSED' }), configuration),
+    ).toMatchObject({
+      kind: 'apply',
+      event: { status: 'active', cancel_at_period_end: false },
+    })
+  })
+
+  it('requires reconciliation for ambiguous cancellation reasons', () => {
+    expect(() => normalizeRevenueCatEvent(event({ type: 'CANCELLATION' }), configuration)).toThrow(
+      /reconciliation/i,
+    )
+    expect(() =>
+      normalizeRevenueCatEvent(
+        event({ type: 'CANCELLATION', cancel_reason: 'UNKNOWN' }),
+        configuration,
+      ),
+    ).toThrow(/reconciliation/i)
   })
 
   it('ignores state-neutral events and requires reconciliation for transfers', () => {

@@ -125,6 +125,7 @@ const revenueCatEnvelopeSchema = z.object({
     original_transaction_id: z.string().min(1).max(200),
     period_type: z.enum(['TRIAL', 'INTRO', 'NORMAL', 'PROMOTIONAL', 'PREPAID']),
     store: z.string().min(1).max(50),
+    cancel_reason: z.string().min(1).max(100).nullable().optional(),
   }),
 })
 
@@ -136,7 +137,10 @@ export type RevenueCatNormalizationConfiguration = {
 
 export type RevenueCatNormalizationResult =
   | { kind: 'apply'; event: NormalizedEntitlementEvent }
-  | { kind: 'ignored'; reason: 'state_neutral_event' | 'billing_issue_without_grace' }
+  | {
+      kind: 'ignored'
+      reason: 'state_neutral_event' | 'billing_issue_without_grace' | 'billing_error_cancellation'
+    }
 
 function fromEpochMilliseconds(value: number, field: string): string {
   const date = new Date(value)
@@ -190,6 +194,9 @@ export function normalizeRevenueCatEvent(
   if (event.type === 'BILLING_ISSUE' && !event.grace_period_expiration_at_ms) {
     return { kind: 'ignored', reason: 'billing_issue_without_grace' }
   }
+  if (event.type === 'CANCELLATION' && event.cancel_reason === 'BILLING_ERROR') {
+    return { kind: 'ignored', reason: 'billing_error_cancellation' }
+  }
 
   let status: NormalizedEntitlementEvent['status']
   let cancelAtPeriodEnd = false
@@ -200,11 +207,26 @@ export function normalizeRevenueCatEvent(
     case 'RENEWAL':
     case 'UNCANCELLATION':
     case 'SUBSCRIPTION_EXTENDED':
+    case 'REFUND_REVERSED':
       status = 'active'
       break
     case 'CANCELLATION':
-      status = 'canceled'
-      cancelAtPeriodEnd = true
+      if (event.cancel_reason === 'CUSTOMER_SUPPORT') {
+        status = 'expired'
+      } else if (
+        event.cancel_reason === 'UNSUBSCRIBE' ||
+        event.cancel_reason === 'DEVELOPER_INITIATED' ||
+        event.cancel_reason === 'PRICE_INCREASE'
+      ) {
+        status = 'canceled'
+        cancelAtPeriodEnd = true
+      } else {
+        throw new RevenueCatWebhookError(
+          503,
+          'reconciliation_required',
+          'RevenueCat cancellation requires reconciliation',
+        )
+      }
       break
     case 'EXPIRATION':
       status = 'expired'

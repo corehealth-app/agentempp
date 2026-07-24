@@ -181,6 +181,7 @@ describe('mobile educational content routes', () => {
         .mockRejectedValue(
           new MobileApiError(401, 'missing_access_token', 'Authentication required'),
         ),
+      authorizeEntitlement: vi.fn().mockResolvedValue(undefined),
       createServiceClient: vi.fn(() => ({ rpc: vi.fn() }) as unknown as ServiceClient),
       createRequestId: vi.fn(() => 'request-content-auth-421'),
     }

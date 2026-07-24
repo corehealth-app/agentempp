@@ -2,6 +2,7 @@ import type { ServiceClient } from '@mpp/db'
 import { ZodError } from 'zod'
 import { createServiceClient } from '../supabase/server'
 import { authenticatePatient, type MobileAuthContext } from './auth'
+import { authorizeMobileEntitlement } from './entitlement-service'
 import { MobileApiError, mobileErrorResponse, validationError } from './http'
 import { createMobileAuthDependencies } from './supabase-auth'
 
@@ -14,6 +15,11 @@ export interface MobileRouteContext {
 
 export interface MobileRouteRuntime {
   authenticate(request: Request, supabase: ServiceClient): Promise<MobileAuthContext>
+  authorizeEntitlement(
+    auth: MobileAuthContext,
+    request: Request,
+    supabase: ServiceClient,
+  ): Promise<void>
   createServiceClient(): ServiceClient
   createRequestId(request: Request): string
 }
@@ -45,6 +51,9 @@ const defaultRuntime: MobileRouteRuntime = {
   authenticate(request, supabase) {
     return authenticatePatient(request, createMobileAuthDependencies(supabase))
   },
+  authorizeEntitlement(auth, request, supabase) {
+    return authorizeMobileEntitlement(supabase, auth.userId, new URL(request.url).pathname)
+  },
   createServiceClient,
   createRequestId(request) {
     const supplied = request.headers.get('x-request-id')
@@ -62,6 +71,7 @@ async function runMobileRoute<RouteContext>(
   try {
     const supabase = runtime.createServiceClient()
     const auth = await runtime.authenticate(request, supabase)
+    await runtime.authorizeEntitlement(auth, request, supabase)
     return await handler({ auth, request, requestId, supabase }, routeContext)
   } catch (error) {
     if (error instanceof MobileApiError) return mobileErrorResponse(error, requestId)

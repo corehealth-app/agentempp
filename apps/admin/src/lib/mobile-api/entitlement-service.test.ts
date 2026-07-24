@@ -1,6 +1,10 @@
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
-import { loadMobileEntitlement } from './entitlement-service'
+import {
+  authorizeMobileEntitlement,
+  loadMobileEntitlement,
+  mobilePathRequiresEntitlement,
+} from './entitlement-service'
 
 const USER_ID = '00000000-0000-4000-8000-000000000001'
 
@@ -76,5 +80,62 @@ describe('mobile entitlement service', () => {
       code: 'data_access_failed',
       message: 'Entitlement lookup failed',
     })
+  })
+
+  it('requires entitlement for product data while preserving the acquisition flow', () => {
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/today')).toBe(true)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/content/article-id')).toBe(true)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/registrations/propose')).toBe(true)
+
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/me')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/profile')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/onboarding')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/entitlements')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/coach/persona')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/devices/device-id')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/notification-preferences')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/me-not-really')).toBe(true)
+  })
+
+  it('blocks a protected route when the central decision denies access', async () => {
+    const supabase = serviceClient({
+      data: {
+        ...activeDecision,
+        has_active_access: false,
+        status: 'expired',
+        source: null,
+        plan: null,
+        access_expires_at: null,
+        reason: 'no_entitlement',
+      },
+      error: null,
+    })
+
+    await expect(
+      authorizeMobileEntitlement(
+        supabase,
+        USER_ID,
+        '/api/mobile/v1/today',
+        new Date('2026-07-24T00:00:00.000Z'),
+      ),
+    ).rejects.toMatchObject({
+      status: 402,
+      code: 'subscription_required',
+      message: 'An active subscription is required',
+    })
+  })
+
+  it('does not query billing for an acquisition-flow route', async () => {
+    const supabase = serviceClient({ data: activeDecision, error: null })
+
+    await expect(
+      authorizeMobileEntitlement(
+        supabase,
+        USER_ID,
+        '/api/mobile/v1/entitlements',
+        new Date('2026-07-24T00:00:00.000Z'),
+      ),
+    ).resolves.toBeUndefined()
+    expect(supabase.rpc).not.toHaveBeenCalled()
   })
 })

@@ -91,6 +91,7 @@ function patientContext(userId = USER_ID) {
 function runtime(overrides: Partial<MobileRouteRuntime> = {}): MobileRouteRuntime {
   return {
     authenticate: vi.fn().mockResolvedValue(patientContext()),
+    authorizeEntitlement: vi.fn().mockResolvedValue(undefined),
     createServiceClient: vi.fn().mockReturnValue({}),
     createRequestId: vi.fn().mockReturnValue(REQUEST_ID),
     ...overrides,

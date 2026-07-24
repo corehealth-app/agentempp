@@ -72,11 +72,17 @@ BEGIN
   LOOP
     IF NOT EXISTS (
       SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = split_part(v_relation, '.', 1)
-        AND column_name = split_part(v_relation, '.', 2)
-        AND is_nullable = 'NO'
+      FROM pg_catalog.pg_attribute attribute
+      JOIN pg_catalog.pg_class relation
+        ON relation.oid = attribute.attrelid
+      JOIN pg_catalog.pg_namespace namespace
+        ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'public'
+        AND relation.relname = split_part(v_relation, '.', 1)
+        AND attribute.attname = split_part(v_relation, '.', 2)
+        AND attribute.attnum > 0
+        AND NOT attribute.attisdropped
+        AND attribute.attnotnull
     ) THEN
       RAISE EXCEPTION 'missing required non-null entitlement column public.%', v_relation;
     END IF;

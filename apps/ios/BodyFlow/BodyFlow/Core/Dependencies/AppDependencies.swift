@@ -26,6 +26,13 @@ private struct AppDependenciesKey: EnvironmentKey {
     static let defaultValue: AppDependencies? = nil
 }
 
+private extension EnvironmentValues {
+    var installedAppDependencies: AppDependencies? {
+        get { self[AppDependenciesKey.self] }
+        set { self[AppDependenciesKey.self] = newValue }
+    }
+}
+
 extension EnvironmentValues {
     var appDependencies: AppDependencies {
         get {
@@ -39,5 +46,11 @@ extension EnvironmentValues {
         set {
             self[AppDependenciesKey.self] = newValue
         }
+    }
+}
+
+extension View {
+    func installAppDependencies(_ dependencies: AppDependencies) -> some View {
+        environment(\.installedAppDependencies, dependencies)
     }
 }

@@ -28,4 +28,39 @@ struct AppRouterTests {
         router.presentedSheet = .registration(.meal)
         #expect(router.presentedSheet?.id == "sheet.registrar.refeicao")
     }
+
+    @Test("detail routes expose stable accessibility identifiers")
+    func detailIdentifiers() {
+        let routes: [AppRoute] = [
+            .detail(tab: .today, id: "daily-summary"),
+            .detail(tab: .plan, id: "weekly-plan"),
+            .detail(tab: .progress, id: "progress-snapshot"),
+            .detail(tab: .profile, id: "profile-preferences"),
+        ]
+
+        #expect(routes.map(\.accessibilityIdentifier) == [
+            "route.hoje.detalhe",
+            "route.plano.detalhe",
+            "route.progresso.detalhe",
+            "route.perfil.detalhe",
+        ])
+    }
+
+    @Test("registration kinds keep copy, symbols, and command identifiers aligned")
+    func registrationContract() {
+        #expect(RegistrationKind.allCases.map(\.title) == [
+            "Refeição", "Treino", "Peso", "Hidratação",
+        ])
+        #expect(RegistrationKind.allCases.map(\.systemImage) == [
+            "fork.knife", "figure.run", "scalemass", "drop",
+        ])
+        #expect(RegistrationKind.allCases.map(\.commandAccessibilityIdentifier) == [
+            "register.refeicao", "register.treino",
+            "register.peso", "register.hidratacao",
+        ])
+        #expect(RegistrationKind.allCases.map { AppSheet.registration($0).id } == [
+            "sheet.registrar.refeicao", "sheet.registrar.treino",
+            "sheet.registrar.peso", "sheet.registrar.hidratacao",
+        ])
+    }
 }

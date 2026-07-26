@@ -1,0 +1,140 @@
+import Observation
+
+enum AuthDestination: Equatable, Sendable {
+    case signIn
+    case signUp
+    case passwordRecovery
+}
+
+enum AppFlowState: Equatable, Sendable {
+    case launching
+    case signedOut(AuthDestination)
+    case awaitingEmailConfirmation(email: String)
+    case onboarding(userID: String, step: OnboardingStep)
+    case authenticated(userID: String)
+}
+
+enum AppPresentationError: Equatable, Sendable {
+    case invalidInput
+    case invalidCredentials
+    case confirmationRequired
+    case operationUnavailable
+    case serviceUnavailable
+    case storageUnavailable
+}
+
+@MainActor
+@Observable
+final class AppFlowModel {
+    private let authentication: any AuthenticationService
+    private let onboarding: any OnboardingRepository
+    private let persona: any CoachPersonaRepository
+    private let telemetry: any TelemetryClient
+
+    private(set) var state: AppFlowState = .launching
+    private(set) var currentSession: AuthSession?
+    private(set) var presentationError: AppPresentationError?
+
+    init(
+        authentication: any AuthenticationService,
+        onboarding: any OnboardingRepository,
+        persona: any CoachPersonaRepository,
+        telemetry: any TelemetryClient
+    ) {
+        self.authentication = authentication
+        self.onboarding = onboarding
+        self.persona = persona
+        self.telemetry = telemetry
+    }
+
+    func start() async {
+        presentationError = nil
+
+        do {
+            let restoredSession = try await authentication.restoreSession()
+            guard !Task.isCancelled else { return }
+
+            guard let restoredSession else {
+                transitionToSignedOut()
+                return
+            }
+
+            await restore(restoredSession)
+        } catch {
+            guard !Task.isCancelled else { return }
+            transitionToSignedOut(error: presentationError(for: error))
+        }
+    }
+
+    func signOut() async {
+        do {
+            try await authentication.signOut()
+            guard !Task.isCancelled else { return }
+            transitionToSignedOut()
+        } catch {
+            guard !Task.isCancelled else { return }
+            transitionToSignedOut(error: presentationError(for: error))
+        }
+    }
+
+    private func restore(_ session: AuthSession) async {
+        guard session.isEmailConfirmed else {
+            currentSession = session
+            state = .awaitingEmailConfirmation(email: session.email)
+            return
+        }
+
+        guard !session.isOnboardingCompleted else {
+            currentSession = session
+            state = .authenticated(userID: session.userID)
+            return
+        }
+
+        do {
+            let draft = try await onboarding.loadDraft(for: session.userID)
+            guard !Task.isCancelled else { return }
+
+            currentSession = session
+            state = .onboarding(
+                userID: session.userID,
+                step: draft?.currentStep ?? .welcome
+            )
+        } catch {
+            guard !Task.isCancelled else { return }
+
+            currentSession = session
+            state = .onboarding(userID: session.userID, step: .welcome)
+            presentationError = presentationError(for: error)
+        }
+    }
+
+    private func transitionToSignedOut(error: AppPresentationError? = nil) {
+        currentSession = nil
+        state = .signedOut(.signIn)
+        presentationError = error
+    }
+
+    private func presentationError(for error: Error) -> AppPresentationError {
+        switch error {
+        case AuthenticationError.invalidInput, OnboardingRepositoryError.invalidDraft:
+            .invalidInput
+        case AuthenticationError.invalidCredentials:
+            .invalidCredentials
+        case AuthenticationError.confirmationRequired:
+            .confirmationRequired
+        case AuthenticationError.operationUnavailable,
+             OnboardingRepositoryError.developmentConsentForbidden:
+            .operationUnavailable
+        case AuthenticationError.serviceUnavailable,
+             OnboardingRepositoryError.serviceUnavailable,
+             CoachPersonaRepositoryError.serviceUnavailable:
+            .serviceUnavailable
+        case AuthenticationError.storageUnavailable,
+             OnboardingRepositoryError.storageUnavailable,
+             CoachPersonaRepositoryError.storageUnavailable:
+            .storageUnavailable
+        default:
+            .operationUnavailable
+        }
+    }
+}

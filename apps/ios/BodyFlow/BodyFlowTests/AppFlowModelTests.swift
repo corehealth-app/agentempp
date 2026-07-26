@@ -121,6 +121,30 @@ struct AppFlowModelTests {
         #expect(model.state == .signedOut(.signIn))
         #expect(model.currentSession == nil)
     }
+
+    @Test("cancelled restoration never publishes an authenticated destination")
+    func cancelledRestorationDoesNotNavigate() async {
+        let cancellation = CancellationCheckSpy()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: AuthSession(
+                    userID: "fixture-user",
+                    email: "fixture@example.invalid",
+                    isEmailConfirmed: true,
+                    isOnboardingCompleted: true
+                )
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient(),
+            cancellationCheck: cancellation.isCancelled
+        )
+
+        await model.start()
+
+        #expect(model.state == .launching)
+        #expect(model.currentSession == nil)
+    }
 }
 
 private struct AuthenticationServiceSpy: AuthenticationService {
@@ -185,4 +209,14 @@ private struct CoachPersonaRepositorySpy: CoachPersonaRepository {
     }
 
     func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
+}
+
+@MainActor
+private final class CancellationCheckSpy {
+    private var callCount = 0
+
+    func isCancelled() -> Bool {
+        defer { callCount += 1 }
+        return callCount > 0
+    }
 }

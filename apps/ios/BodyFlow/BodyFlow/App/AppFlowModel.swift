@@ -30,6 +30,7 @@ final class AppFlowModel {
     private let onboarding: any OnboardingRepository
     private let persona: any CoachPersonaRepository
     private let telemetry: any TelemetryClient
+    private let cancellationCheck: @MainActor () -> Bool
 
     private(set) var state: AppFlowState = .launching
     private(set) var currentSession: AuthSession?
@@ -39,12 +40,14 @@ final class AppFlowModel {
         authentication: any AuthenticationService,
         onboarding: any OnboardingRepository,
         persona: any CoachPersonaRepository,
-        telemetry: any TelemetryClient
+        telemetry: any TelemetryClient,
+        cancellationCheck: @escaping @MainActor () -> Bool = { false }
     ) {
         self.authentication = authentication
         self.onboarding = onboarding
         self.persona = persona
         self.telemetry = telemetry
+        self.cancellationCheck = cancellationCheck
     }
 
     func start() async {
@@ -52,7 +55,7 @@ final class AppFlowModel {
 
         do {
             let restoredSession = try await authentication.restoreSession()
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
 
             guard let restoredSession else {
                 transitionToSignedOut()
@@ -61,7 +64,7 @@ final class AppFlowModel {
 
             await restore(restoredSession)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
             transitionToSignedOut(error: presentationError(for: error))
         }
     }
@@ -69,49 +72,74 @@ final class AppFlowModel {
     func signOut() async {
         do {
             try await authentication.signOut()
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
             transitionToSignedOut()
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
             transitionToSignedOut(error: presentationError(for: error))
         }
     }
 
     private func restore(_ session: AuthSession) async {
+        guard !isCancellationRequested else { return }
+
         guard session.isEmailConfirmed else {
+            guard !isCancellationRequested else { return }
             currentSession = session
+            guard !isCancellationRequested else {
+                currentSession = nil
+                return
+            }
             state = .awaitingEmailConfirmation(email: session.email)
             return
         }
 
         guard !session.isOnboardingCompleted else {
+            guard !isCancellationRequested else { return }
             currentSession = session
+            guard !isCancellationRequested else {
+                currentSession = nil
+                return
+            }
             state = .authenticated(userID: session.userID)
             return
         }
 
         do {
             let draft = try await onboarding.loadDraft(for: session.userID)
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
 
             currentSession = session
+            guard !isCancellationRequested else {
+                currentSession = nil
+                return
+            }
             state = .onboarding(
                 userID: session.userID,
                 step: draft?.currentStep ?? .welcome
             )
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !isCancellationRequested else { return }
 
             currentSession = session
+            guard !isCancellationRequested else {
+                currentSession = nil
+                return
+            }
             state = .onboarding(userID: session.userID, step: .welcome)
             presentationError = presentationError(for: error)
         }
     }
 
     private func transitionToSignedOut(error: AppPresentationError? = nil) {
+        guard !isCancellationRequested else { return }
         currentSession = nil
         state = .signedOut(.signIn)
         presentationError = error
+    }
+
+    private var isCancellationRequested: Bool {
+        Task.isCancelled || cancellationCheck()
     }
 
     private func presentationError(for error: Error) -> AppPresentationError {

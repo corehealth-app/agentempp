@@ -13,7 +13,7 @@ enum DemoUser {
 actor DemoAuthenticationService: AuthenticationService {
     private enum InitialResetState {
         case pending
-        case inFlight(Task<Void, Error>)
+        case inFlight(UUID, Task<Void, Error>)
         case complete
     }
 
@@ -151,9 +151,9 @@ actor DemoAuthenticationService: AuthenticationService {
         switch initialResetState {
         case .complete:
             return
-        case .inFlight(let task):
+        case .inFlight(let generation, let task):
             try Task.checkCancellation()
-            try await waitForInitialReset(task)
+            try await waitForInitialReset(task, generation: generation)
         case .pending:
             try Task.checkCancellation()
             let stateStore = self.stateStore
@@ -161,22 +161,37 @@ actor DemoAuthenticationService: AuthenticationService {
                 try Task.checkCancellation()
                 try await stateStore.clearAll(for: DemoUser.id)
             }
-            initialResetState = .inFlight(task)
-            try await waitForInitialReset(task)
+            let generation = UUID()
+            initialResetState = .inFlight(generation, task)
+            try await waitForInitialReset(task, generation: generation)
         }
     }
 
-    private func waitForInitialReset(_ task: Task<Void, Error>) async throws {
+    private func waitForInitialReset(
+        _ task: Task<Void, Error>,
+        generation: UUID
+    ) async throws {
         do {
             try await task.value
-            initialResetState = .complete
+            updateInitialResetState(.complete, for: generation)
         } catch is CancellationError {
-            initialResetState = .pending
+            updateInitialResetState(.pending, for: generation)
             throw CancellationError()
         } catch {
-            initialResetState = .pending
+            updateInitialResetState(.pending, for: generation)
             throw AuthenticationError.storageUnavailable
         }
+    }
+
+    private func updateInitialResetState(
+        _ state: InitialResetState,
+        for generation: UUID
+    ) {
+        guard case .inFlight(let currentGeneration, _) = initialResetState,
+              currentGeneration == generation else {
+            return
+        }
+        initialResetState = state
     }
 
     private func apply(

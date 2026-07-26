@@ -24,7 +24,7 @@
 - Implement every non-generated behavior test-first and observe the expected RED result before production code.
 - Keep each task in its own Conventional Commit checkpoint. Do not squash the checkpoints.
 - Do not merge, deploy, run migrations, configure environments, sign for a physical device, archive or upload to TestFlight.
-- Push and create a draft PR only after the final local verification gate passes.
+- A planning-only publication of this branch is allowed before implementation solely so the approved specification and plan can be fetched on the Mac. After that handoff, do not push application commits or create a draft PR until the final local verification gate passes.
 
 ---
 

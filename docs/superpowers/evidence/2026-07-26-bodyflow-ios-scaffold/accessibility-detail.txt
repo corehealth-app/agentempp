@@ -1,0 +1,77 @@
+Attributes: Application, 0x118599cc0, pid: 75955, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x118599cc0, pid: 75955, label: 'BodyFlow'
+    Window (Main), 0x118599e00, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11859a6c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11859a800, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x118599f40, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x11859a080, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x11859a1c0, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x11859a300, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x11859a440, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11859a580, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x10b3ff840, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x10b3ff980, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x10b3ffac0, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x10b3ffc00, {{0.0, 0.0}, {402.0, 874.0}}
+                            NavigationBar, 0x10b3ffd40, {{0.0, 62.0}, {402.0, 54.0}}, identifier: 'Detalhes'
+                              Button, 0x10b3ffe80, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Hoje'
+                              StaticText, 0x10b3fdf40, {{165.7, 73.7}, {70.3, 20.7}}, label: 'Detalhes'
+                            Other, 0x10b3fe080, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x10b3fe1c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                Other, 0x10b3fe300, {{0.0, 0.0}, {402.0, 874.0}}
+                                  Other, 0x10b3fe580, {{0.0, 0.0}, {402.0, 874.0}}
+                                    ScrollView, 0x10b3fe6c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'route.hoje.detalhe'
+                                      Other, 0x10b3fe940, {{0.0, 0.0}, {402.0, 874.0}}
+                                        Other, 0x10b3fea80, {{0.0, 0.0}, {402.0, 170.8}}
+                                        Other, 0x10b3febc0, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x10b3fed00, {{0.0, 0.0}, {402.0, 874.0}}
+                                      Other, 0x10b3fee40, {{0.0, 116.0}, {402.0, 204.3}}
+                                        StaticText, 0x10b3fde00, {{32.0, 203.7}, {46.0, 26.3}}, label: 'Hoje'
+                                        StaticText, 0x118511cc0, {{32.0, 246.0}, {338.0, 42.3}}, label: 'Conteúdo local de demonstração. Nenhuma operação foi executada.'
+                                      Other, 0x118510dc0, {{369.0, 116.0}, {30.0, 675.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x118510f00, {{396.0, 589.7}, {3.0, 198.3}}
+                                      Other, 0x118511040, {{369.0, 116.0}, {30.0, 675.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x118511180, {{396.0, 589.7}, {3.0, 198.3}}
+                            Other, 0x1185112c0, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x118511400, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x118511540, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x118511680, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x1185117c0, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x118511900, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x118511a40, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x118511b80, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x118511e00, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje', Selected
+                            Image, 0x1185103c0, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x118510500, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x118510640, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x118510b40, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x118510c80, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x118510780, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x1185108c0, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x118510a00, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x118510140, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x118510280, {{25.0, 795.0}, {74.0, 54.0}}
+                          Other, 0x118510000, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x118458000, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x118458140, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x118458280, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x1184583c0, {{25.0, 795.0}, {74.0, 54.0}}
+                                  Other, 0x118458500, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x118458640, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x118458780, {{25.0, 795.0}, {74.0, 54.0}}
+                  Other, 0x1184588c0, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x118458a00, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x118458b40, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x118458c80, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x118458dc0, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x118458f00, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x118459040, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x118459180, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x118599cc0, pid: 75955, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x1184592c0, pid: 75955, label: 'BodyFlow'
+  }

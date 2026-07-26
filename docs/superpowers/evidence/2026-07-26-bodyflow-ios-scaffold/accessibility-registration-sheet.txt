@@ -1,0 +1,138 @@
+Attributes: Application, 0x10b3fdf40, pid: 75935, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x10b3fdf40, pid: 75935, label: 'BodyFlow'
+    Window (Main), 0x10b3fe080, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x10b3fe1c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x10b3fe300, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x10b3fe440, {{-402.0, -874.0}, {1206.0, 2622.0}}, identifier: 'PopoverDismissRegion', label: 'fechar popup'
+          Other, 0x10b3fe580, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x10b3fe6c0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x10b3fe800, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x10b3fe940, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x10b3fea80, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10b3febc0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x10b3fed00, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x10b3fee40, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x10b3fde00, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x10b3fef80, {{0.0, 0.0}, {402.0, 874.0}}
+                            NavigationBar, 0x10b3ff0c0, {{0.0, 62.0}, {402.0, 111.7}}, identifier: 'Registrar'
+                              StaticText, 0x10b3ff200, {{16.0, 119.7}, {145.0, 46.3}}, label: 'Registrar'
+                            Other, 0x10b3ff340, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x10b3ff480, {{0.0, 0.0}, {402.0, 874.0}}
+                                Other, 0x10b3ff5c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                  Other, 0x118436580, {{0.0, 0.0}, {402.0, 874.0}}
+                                    ScrollView, 0x1184366c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'screen.registrar'
+                                      Other, 0x118437c00, {{0.0, 0.0}, {402.0, 874.0}}
+                                        Other, 0x118437d40, {{0.0, 0.0}, {402.0, 170.8}}
+                                        Other, 0x118437e80, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x118436300, {{0.0, 0.0}, {402.0, 874.0}}
+                                      Other, 0x118436440, {{0.0, 173.7}, {402.0, 559.3}}
+                                        StaticText, 0x118436800, {{16.0, 189.7}, {111.3, 14.3}}, label: 'REGISTRO RÁPIDO'
+                                        StaticText, 0x118436940, {{16.0, 212.0}, {270.7, 26.3}}, label: 'O que você quer registrar?'
+                                        StaticText, 0x118436a80, {{16.0, 246.3}, {267.0, 42.3}}, label: 'Escolha uma opção para abrir uma demonstração local.'
+                                        Button, 0x118436bc0, {{15.5, 312.2}, {371.0, 77.0}}, identifier: 'register.refeicao', label: 'Refeição, Abrir demonstração'
+                                          Image, 0x118436d00, {{46.7, 338.0}, {15.0, 25.0}}, identifier: 'fork.knife', label: 'Comida'
+                                          StaticText, 0x118436e40, {{92.0, 328.8}, {69.0, 20.3}}, label: 'Refeição'
+                                          StaticText, 0x118436f80, {{92.0, 353.2}, {143.7, 19.3}}, label: 'Abrir demonstração'
+                                          Image, 0x1184370c0, {{363.3, 345.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                        Button, 0x118437200, {{15.5, 400.2}, {371.0, 77.0}}, identifier: 'register.treino', label: 'Treino, Abrir demonstração'
+                                          Image, 0x118437340, {{44.7, 426.7}, {18.3, 24.0}}, identifier: 'figure.run', label: 'Corrida'
+                                          StaticText, 0x118437480, {{92.0, 416.8}, {49.7, 20.3}}, label: 'Treino'
+                                          StaticText, 0x1184375c0, {{92.0, 441.2}, {143.7, 19.3}}, label: 'Abrir demonstração'
+                                          Image, 0x118437700, {{363.3, 433.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                        Button, 0x118437840, {{15.5, 488.2}, {371.0, 77.0}}, identifier: 'register.peso', label: 'Peso, Abrir demonstração'
+                                          Image, 0x118437980, {{43.0, 515.3}, {22.3, 23.0}}, identifier: 'scalemass', label: 'scalemass'
+                                          StaticText, 0x118437ac0, {{92.0, 504.8}, {39.0, 20.3}}, label: 'Peso'
+                                          StaticText, 0x118454000, {{92.0, 529.2}, {143.7, 19.3}}, label: 'Abrir demonstração'
+                                          Image, 0x118454140, {{363.3, 521.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                        Button, 0x118454280, {{15.5, 576.2}, {371.0, 77.0}}, identifier: 'register.hidratacao', label: 'Hidratação, Abrir demonstração'
+                                          Image, 0x1184543c0, {{46.7, 603.7}, {15.0, 22.0}}, identifier: 'drop', label: 'drop'
+                                          StaticText, 0x118454500, {{92.0, 592.8}, {87.7, 20.3}}, label: 'Hidratação'
+                                          StaticText, 0x118454640, {{92.0, 617.2}, {143.7, 19.3}}, label: 'Abrir demonstração'
+                                          Image, 0x118454780, {{363.3, 609.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                        StaticText, 0x1184548c0, {{25.3, 676.7}, {303.3, 40.3}}, label: 'Demonstração local. Nenhum registro foi salvo.'
+                                      Other, 0x118454a00, {{369.0, 116.0}, {30.0, 675.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x118454b40, {{396.0, 177.0}, {3.0, 611.0}}
+                                      Other, 0x118454c80, {{369.0, 116.0}, {30.0, 675.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x118454dc0, {{396.0, 177.0}, {3.0, 611.0}}
+                            Other, 0x118454f00, {{0.0, 0.0}, {402.0, 874.0}}
+                              Other, 0x118455040, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x118455180, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x1184552c0, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x118455400, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x118455540, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x118455680, {{21.0, 791.0}, {77.3, 54.0}}
+                        Other, 0x1184557c0, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x118455900, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje'
+                            Image, 0x118455a40, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x118455b80, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar', Selected
+                            Image, 0x118455cc0, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x118455e00, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x118455f40, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x118456080, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x1184561c0, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x118456300, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x118456440, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x118456580, {{91.6, 795.0}, {77.3, 54.0}}
+                          Other, 0x1184566c0, {{91.6, 795.0}, {77.3, 54.0}}
+                            Other, 0x118456800, {{91.6, 795.0}, {77.3, 54.0}}
+                            Other, 0x118456940, {{91.6, 795.0}, {77.3, 54.0}}
+                              Other, 0x118456a80, {{91.6, 795.0}, {77.3, 54.0}}
+                                Other, 0x118456bc0, {{91.6, 795.0}, {77.3, 54.0}}
+                                  Other, 0x118456d00, {{91.6, 795.0}, {77.3, 54.0}}
+                                Other, 0x118456e40, {{91.6, 795.0}, {77.3, 54.0}}
+                              Other, 0x118456f80, {{91.6, 795.0}, {77.3, 54.0}}
+                  Other, 0x1184570c0, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x118457200, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x118457340, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x118457480, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x1184575c0, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x118457700, {{0.0, 791.0}, {402.0, 83.0}}
+      Other, 0x118457840, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x118457980, {{-402.0, -874.0}, {1206.0, 2622.0}}, identifier: 'PopoverDismissRegion', label: 'fechar popup'
+        Other, 0x118457ac0, {{8.0, 415.0}, {386.0, 451.0}}
+          Button, 0x118457c00, {{164.5, 410.2}, {73.0, 24.0}}, label: 'Capturador de Folhas', value: Metade da tela
+          Other, 0x118457d40, {{8.0, 415.0}, {386.0, 451.0}}
+            Other, 0x118457e80, {{8.0, 415.0}, {386.0, 451.0}}
+              Other, 0x118458000, {{8.0, 415.0}, {386.0, 451.0}}
+                Other, 0x118458140, {{8.0, 415.0}, {386.0, 451.0}}
+                  Other, 0x118458280, {{8.0, 415.0}, {386.0, 451.0}}
+                    NavigationBar, 0x1184583c0, {{8.0, 430.4}, {386.0, 51.9}}, identifier: 'Demonstração'
+                      Other, 0x118458500, {{27.2, 434.2}, {80.7, 34.6}}, identifier: 'sheet.fechar', label: 'Fechar'
+                        Other, 0x118458640, {{27.2, 434.2}, {80.7, 34.6}}
+                          Button, 0x118458780, {{32.0, 416.0}, {71.1, 71.1}}, identifier: 'sheet.fechar', label: 'Fechar'
+                      StaticText, 0x1184588c0, {{145.0, 441.6}, {112.0, 19.8}}, label: 'Demonstração'
+                    Other, 0x118458a00, {{8.0, 415.0}, {386.0, 451.0}}
+                      Other, 0x118458b40, {{8.0, 415.0}, {386.0, 451.0}}
+                        Other, 0x118458c80, {{8.0, 415.0}, {386.0, 451.0}}
+                          Other, 0x118458dc0, {{8.0, 415.0}, {386.0, 451.0}}
+                            ScrollView, 0x118458f00, {{8.0, 415.0}, {386.0, 451.0}}
+                              Other, 0x118459040, {{8.0, 415.0}, {386.0, 451.0}}
+                                Other, 0x118459180, {{8.0, 415.0}, {386.0, 119.8}}
+                              Other, 0x1184592c0, {{8.0, 415.0}, {386.0, 451.0}}
+                              Other, 0x118459400, {{8.0, 482.2}, {386.0, 351.1}}
+                                Other, 0x118459540, {{61.0, 583.4}, {280.1, 151.2}}, identifier: 'sheet.registrar.refeicao'
+                                  Image, 0x118459680, {{189.8, 583.4}, {22.1, 37.1}}, identifier: 'fork.knife', label: 'Comida'
+                                  StaticText, 0x1184597c0, {{159.2, 645.6}, {83.5, 25.3}}, label: 'Refeição'
+                                  StaticText, 0x118459900, {{61.0, 694.0}, {280.1, 40.6}}, label: 'Demonstração local. Nenhum registro foi salvo.'
+                              Other, 0x118459a40, {{362.3, 482.2}, {28.8, 329.8}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                Other, 0x118459b80, {{388.2, 485.1}, {2.9, 331.9}}
+                              Other, 0x118459cc0, {{362.3, 482.2}, {28.8, 329.8}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                Other, 0x118459e00, {{388.2, 485.1}, {2.9, 331.9}}
+                    Other, 0x118459f40, {{8.0, 415.0}, {386.0, 451.0}}
+                      Other, 0x11845a080, {{8.0, 415.0}, {386.0, 451.0}}
+          Other, 0x11845a1c0, {{8.0, 415.0}, {386.0, 451.0}}
+            Other, 0x11845a300, {{8.0, 415.0}, {386.0, 451.0}}
+              Other, 0x11845a440, {{8.0, 415.0}, {386.0, 451.0}}
+                Other, 0x11845a580, {{8.0, 415.0}, {386.0, 451.0}}
+                  Other, 0x11845a6c0, {{8.0, 415.0}, {386.0, 451.0}}
+                    Other, 0x11845a800, {{8.0, 415.0}, {386.0, 451.0}}
+                Other, 0x11845a940, {{8.0, 415.0}, {386.0, 451.0}}
+                  Other, 0x11845aa80, {{8.0, 415.0}, {386.0, 451.0}}
+Path to element:
+ →Application, 0x10b3fdf40, pid: 75935, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x11845abc0, pid: 75935, label: 'BodyFlow'
+  }

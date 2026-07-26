@@ -20,9 +20,18 @@ final class BodyFlowUITests: XCTestCase {
             let tab = app.tabBars.buttons[tabID]
             XCTAssertTrue(tab.waitForExistence(timeout: 3), "A aba \(tabID) deve existir")
             tab.tap()
+            XCTAssertTrue(
+                waitForSelected(tab),
+                "A aba \(tabID) deve concluir a seleção"
+            )
 
             let screen = element(screenID, in: app)
             XCTAssertTrue(screen.waitForExistence(timeout: 3), "A tela \(screenID) deve existir")
+            XCTAssertTrue(
+                waitForHorizontallySettled(screen, in: app),
+                "A tela \(screenID) deve concluir a transição"
+            )
+            XCTAssertTrue(waitForVisualStability())
 
             let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             attachment.name = attachmentName
@@ -50,6 +59,8 @@ final class BodyFlowUITests: XCTestCase {
 
         app.tabBars.buttons["tab.hoje"].tap()
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForHorizontallySettled(detail, in: app))
+        XCTAssertTrue(waitForVisualStability())
         capture("06-hoje-detalhe-restaurado", app: app)
     }
 
@@ -62,17 +73,24 @@ final class BodyFlowUITests: XCTestCase {
         XCTAssertTrue(meal.waitForExistence(timeout: 3))
         meal.tap()
 
-        XCTAssertTrue(
-            element("sheet.registrar.refeicao", in: app)
-                .waitForExistence(timeout: 3)
-        )
+        let sheet = element("sheet.registrar.refeicao", in: app)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForHorizontallySettled(sheet, in: app))
+        XCTAssertTrue(waitForVisualStability())
         XCTAssertTrue(
             app.staticTexts["Demonstração local. Nenhum registro foi salvo."]
                 .waitForExistence(timeout: 3)
         )
 
         capture("07-registro-refeicao", app: app)
-        app.buttons["sheet.fechar"].tap()
+        let closeButton = app.buttons["sheet.fechar"]
+        XCTAssertEqual(closeButton.label, "Fechar")
+        XCTAssertGreaterThanOrEqual(
+            closeButton.frame.height,
+            44,
+            "Fechar deve preservar um alvo de toque de pelo menos 44 pt"
+        )
+        closeButton.tap()
         XCTAssertFalse(
             element("sheet.registrar.refeicao", in: app)
                 .waitForExistence(timeout: 1)
@@ -101,6 +119,60 @@ final class BodyFlowUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
         attachHierarchy(of: app, name: name)
+    }
+
+    @MainActor
+    private func waitForSelected(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                (object as? XCUIElement)?.isSelected == true
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForHorizontallySettled(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let window = app.windows.firstMatch
+        guard window.waitForExistence(timeout: timeout) else {
+            return false
+        }
+
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                guard let element = object as? XCUIElement,
+                      element.exists else {
+                    return false
+                }
+
+                let elementFrame = element.frame
+                let windowFrame = window.frame
+                return abs(elementFrame.midX - windowFrame.midX) <= 1
+                    && elementFrame.width > 0
+                    && elementFrame.height > 0
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForVisualStability(
+        timeout: TimeInterval = 1.5
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(0.4)
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in Date() >= deadline },
+            object: NSObject()
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor

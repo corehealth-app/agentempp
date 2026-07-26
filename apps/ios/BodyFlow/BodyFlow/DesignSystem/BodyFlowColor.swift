@@ -15,6 +15,7 @@ enum BodyFlowColor {
     static let accent = dynamicColor(light: tealGreen, dark: softGold)
     static let warning = mutedCoral
     static let achievement = softGold
+    static let onAchievement = charcoal
 
     private static func brandColor(_ hexadecimal: UInt32) -> Color {
         let divisor = Double(255)

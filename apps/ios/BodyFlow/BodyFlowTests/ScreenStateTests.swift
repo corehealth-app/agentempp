@@ -107,6 +107,7 @@ struct ScreenStateTests {
         try expectRGB(BodyFlowColor.accent, style: .light, rgb: (0, 109, 103))
         try expectRGB(BodyFlowColor.warning, style: .light, rgb: (255, 127, 107))
         try expectRGB(BodyFlowColor.achievement, style: .light, rgb: (212, 175, 122))
+        try expectRGB(BodyFlowColor.onAchievement, style: .light, rgb: (34, 37, 40))
     }
 
     @Test("semantic brand colors resolve correctly in dark appearance")
@@ -116,6 +117,7 @@ struct ScreenStateTests {
         try expectRGB(BodyFlowColor.accent, style: .dark, rgb: (212, 175, 122))
         try expectRGB(BodyFlowColor.warning, style: .dark, rgb: (255, 127, 107))
         try expectRGB(BodyFlowColor.achievement, style: .dark, rgb: (212, 175, 122))
+        try expectRGB(BodyFlowColor.onAchievement, style: .dark, rgb: (34, 37, 40))
     }
 
     @Test("surface and secondary text preserve native semantic contrast")
@@ -129,6 +131,23 @@ struct ScreenStateTests {
 
             #expect(surface.isEqual(expectedSurface))
             #expect(secondaryText.isEqual(expectedSecondaryText))
+        }
+    }
+
+    @Test("achievement foreground keeps text contrast on the gold token")
+    func achievementContrast() throws {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let foreground = UIColor(BodyFlowColor.onAchievement)
+                .resolvedColor(with: traits)
+            let background = UIColor(BodyFlowColor.achievement)
+                .resolvedColor(with: traits)
+
+            let ratio = try contrastRatio(
+                foreground: foreground,
+                background: background
+            )
+            #expect(ratio >= 4.5)
         }
     }
 
@@ -163,5 +182,34 @@ struct ScreenStateTests {
         #expect(abs(green - expectedGreen) < tolerance, sourceLocation: sourceLocation)
         #expect(abs(blue - expectedBlue) < tolerance, sourceLocation: sourceLocation)
         #expect(abs(alpha - 1) < tolerance, sourceLocation: sourceLocation)
+    }
+
+    private func contrastRatio(
+        foreground: UIColor,
+        background: UIColor
+    ) throws -> CGFloat {
+        let foregroundLuminance = try relativeLuminance(of: foreground)
+        let backgroundLuminance = try relativeLuminance(of: background)
+        let lighter = max(foregroundLuminance, backgroundLuminance)
+        let darker = min(foregroundLuminance, backgroundLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private func relativeLuminance(of color: UIColor) throws -> CGFloat {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        try #require(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+
+        func linearize(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+
+        return (0.2126 * linearize(red))
+            + (0.7152 * linearize(green))
+            + (0.0722 * linearize(blue))
     }
 }

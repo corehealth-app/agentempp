@@ -83,28 +83,37 @@ struct ScreenStateView: View {
     }
 
     var body: some View {
-        VStack(spacing: BodyFlowSpacing.md) {
-            stateGraphic
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: BodyFlowSpacing.md) {
+                    stateGraphic
 
-            Text(state.descriptor.title)
-                .font(BodyFlowTypography.title)
-                .fontWeight(.semibold)
-                .foregroundStyle(BodyFlowColor.primaryText)
+                    Text(state.descriptor.title)
+                        .font(BodyFlowTypography.title)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(BodyFlowColor.primaryText)
 
-            Text(state.descriptor.message)
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.secondaryText)
+                    Text(state.descriptor.message)
+                        .font(BodyFlowTypography.body)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
 
-            if state.descriptor.showsRetry {
-                Button("Tentar novamente", action: triggerRetry)
-                    .font(BodyFlowTypography.headline)
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                    .accessibilityIdentifier("state.retry")
+                    if state.descriptor.showsRetry {
+                        Button("Tentar novamente", action: triggerRetry)
+                            .font(BodyFlowTypography.headline)
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                            .accessibilityIdentifier("state.retry")
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, BodyFlowSpacing.lg)
+                .padding(.vertical, BodyFlowSpacing.xl)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: geometry.size.height
+                )
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, BodyFlowSpacing.lg)
-        .padding(.vertical, BodyFlowSpacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
     }

@@ -62,7 +62,8 @@ struct ProfileRootView: View {
                     FeatureActionLabel(
                         title: "Ver preferências",
                         detail: "Abrir destino local de demonstração",
-                        systemImage: "slider.horizontal.3"
+                        systemImage: "slider.horizontal.3",
+                        showsDisclosureIndicator: false
                     )
                 }
                 .accessibilityIdentifier("profile.detail")

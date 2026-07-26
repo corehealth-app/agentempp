@@ -79,6 +79,23 @@ struct FeatureActionLabel: View {
     let title: String
     let detail: String
     let systemImage: String
+    let showsDisclosureIndicator: Bool
+
+    init(
+        title: String,
+        detail: String,
+        systemImage: String,
+        showsDisclosureIndicator: Bool = true
+    ) {
+        self.title = title
+        self.detail = detail
+        self.systemImage = systemImage
+        self.showsDisclosureIndicator = showsDisclosureIndicator
+    }
+
+    var disclosureSystemImage: String? {
+        showsDisclosureIndicator ? "chevron.right" : nil
+    }
 
     var body: some View {
         Group {
@@ -88,7 +105,7 @@ struct FeatureActionLabel: View {
                         actionIcon
                         actionTitle
                         Spacer(minLength: BodyFlowSpacing.xs)
-                        chevron
+                        disclosureIndicator
                     }
                     actionDetail
                 }
@@ -102,7 +119,7 @@ struct FeatureActionLabel: View {
                     }
 
                     Spacer(minLength: BodyFlowSpacing.xs)
-                    chevron
+                    disclosureIndicator
                 }
             }
         }
@@ -130,10 +147,13 @@ struct FeatureActionLabel: View {
             .foregroundStyle(BodyFlowColor.secondaryText)
     }
 
-    private var chevron: some View {
-        Image(systemName: "chevron.right")
-            .font(BodyFlowTypography.caption)
-            .foregroundStyle(BodyFlowColor.secondaryText)
-            .accessibilityHidden(true)
+    @ViewBuilder
+    private var disclosureIndicator: some View {
+        if let disclosureSystemImage {
+            Image(systemName: disclosureSystemImage)
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+                .accessibilityHidden(true)
+        }
     }
 }

@@ -83,7 +83,13 @@ struct TodayRootView: View {
                         Text(fixture.routine.statusLabel)
                             .font(BodyFlowTypography.title)
                             .fontWeight(.semibold)
-                            .foregroundStyle(BodyFlowColor.achievement)
+                            .foregroundStyle(BodyFlowColor.onAchievement)
+                            .padding(.horizontal, BodyFlowSpacing.sm)
+                            .padding(.vertical, BodyFlowSpacing.xs)
+                            .background(
+                                BodyFlowColor.achievement,
+                                in: Capsule(style: .continuous)
+                            )
 
                         Label(
                             fixture.routine.nextItemLabel,

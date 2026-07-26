@@ -1,0 +1,189 @@
+import XCTest
+
+final class BodyFlowUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    @MainActor
+    func testFiveTabsAreReachableAndCaptured() {
+        let app = launchApp()
+        let tabs = [
+            ("tab.hoje", "screen.hoje", "01-hoje"),
+            ("tab.registrar", "screen.registrar", "02-registrar"),
+            ("tab.plano", "screen.plano", "03-plano"),
+            ("tab.progresso", "screen.progresso", "04-progresso"),
+            ("tab.perfil", "screen.perfil", "05-perfil"),
+        ]
+
+        for (tabID, screenID, attachmentName) in tabs {
+            let tab = app.tabBars.buttons[tabID]
+            XCTAssertTrue(tab.waitForExistence(timeout: 3), "A aba \(tabID) deve existir")
+            tab.tap()
+            XCTAssertTrue(
+                waitForSelected(tab),
+                "A aba \(tabID) deve concluir a seleção"
+            )
+
+            let screen = element(screenID, in: app)
+            XCTAssertTrue(screen.waitForExistence(timeout: 3), "A tela \(screenID) deve existir")
+            XCTAssertTrue(
+                waitForHorizontallySettled(screen, in: app),
+                "A tela \(screenID) deve concluir a transição"
+            )
+            XCTAssertTrue(waitForVisualStability())
+
+            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            attachment.name = attachmentName
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        attachHierarchy(of: app, name: "five-tabs")
+    }
+
+    @MainActor
+    func testTodayNavigationPersistsAcrossTabSwitch() {
+        let app = launchApp()
+        let nextAction = app.buttons["today.next-action"]
+        XCTAssertTrue(nextAction.waitForExistence(timeout: 3))
+        nextAction.tap()
+
+        let detail = element("route.hoje.detalhe", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+
+        app.tabBars.buttons["tab.registrar"].tap()
+        XCTAssertTrue(
+            element("screen.registrar", in: app).waitForExistence(timeout: 3)
+        )
+
+        app.tabBars.buttons["tab.hoje"].tap()
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForHorizontallySettled(detail, in: app))
+        XCTAssertTrue(waitForVisualStability())
+        capture("06-hoje-detalhe-restaurado", app: app)
+    }
+
+    @MainActor
+    func testRegistrationSheetExplainsNothingWasSaved() {
+        let app = launchApp()
+        app.tabBars.buttons["tab.registrar"].tap()
+
+        let meal = app.buttons["register.refeicao"]
+        XCTAssertTrue(meal.waitForExistence(timeout: 3))
+        meal.tap()
+
+        let sheet = element("sheet.registrar.refeicao", in: app)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForHorizontallySettled(sheet, in: app))
+        XCTAssertTrue(waitForVisualStability())
+        XCTAssertTrue(
+            app.staticTexts["Demonstração local. Nenhum registro foi salvo."]
+                .waitForExistence(timeout: 3)
+        )
+
+        capture("07-registro-refeicao", app: app)
+        let closeButton = app.buttons["sheet.fechar"]
+        XCTAssertEqual(closeButton.label, "Fechar")
+        XCTAssertGreaterThanOrEqual(
+            closeButton.frame.height,
+            44,
+            "Fechar deve preservar um alvo de toque de pelo menos 44 pt"
+        )
+        closeButton.tap()
+        XCTAssertFalse(
+            element("sheet.registrar.refeicao", in: app)
+                .waitForExistence(timeout: 1)
+        )
+    }
+
+    @MainActor
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+    }
+
+    @MainActor
+    private func capture(_ name: String, app: XCUIApplication) {
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        attachHierarchy(of: app, name: name)
+    }
+
+    @MainActor
+    private func waitForSelected(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                (object as? XCUIElement)?.isSelected == true
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForHorizontallySettled(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let window = app.windows.firstMatch
+        guard window.waitForExistence(timeout: timeout) else {
+            return false
+        }
+
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                guard let element = object as? XCUIElement,
+                      element.exists else {
+                    return false
+                }
+
+                let elementFrame = element.frame
+                let windowFrame = window.frame
+                return abs(elementFrame.midX - windowFrame.midX) <= 1
+                    && elementFrame.width > 0
+                    && elementFrame.height > 0
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForVisualStability(
+        timeout: TimeInterval = 1.5
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(0.4)
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in Date() >= deadline },
+            object: NSObject()
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func attachHierarchy(of app: XCUIApplication, name: String) {
+        let description = app.debugDescription
+        let hierarchy = XCTAttachment(string: description)
+        hierarchy.name = "\(name)-accessibility"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        print("BODYFLOW_UI_TREE_BEGIN \(name)")
+        print(description)
+        print("BODYFLOW_UI_TREE_END \(name)")
+    }
+}

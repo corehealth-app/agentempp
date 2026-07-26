@@ -36,12 +36,30 @@ struct DemoStateStore: Sendable {
         try await save(persona, forKey: DemoStateKey.coachPersona)
     }
 
+    func loadCoachPersona(for userID: String) async throws -> CoachPersona? {
+        try await load(
+            CoachPersona.self,
+            forKey: DemoStateKey.coachPersona(for: userID)
+        )
+    }
+
+    func saveCoachPersona(
+        _ persona: CoachPersona,
+        for userID: String
+    ) async throws {
+        try await save(persona, forKey: DemoStateKey.coachPersona(for: userID))
+    }
+
     func clearSession() async throws {
         try await removeData(forKey: DemoStateKey.session)
     }
 
     func clearOnboardingDraft() async throws {
         try await removeData(forKey: DemoStateKey.onboardingDraft)
+    }
+
+    func clearCoachPersona(for userID: String) async throws {
+        try await removeData(forKey: DemoStateKey.coachPersona(for: userID))
     }
 
     func clearAll() async throws {
@@ -117,4 +135,8 @@ private enum DemoStateKey {
     static let session = "bodyflow.demo.session.v1"
     static let onboardingDraft = "bodyflow.demo.onboarding-draft.v1"
     static let coachPersona = "bodyflow.demo.coach-persona.v1"
+
+    static func coachPersona(for userID: String) -> String {
+        "\(coachPersona).\(userID)"
+    }
 }

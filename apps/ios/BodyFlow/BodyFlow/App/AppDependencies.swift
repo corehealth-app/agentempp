@@ -2,21 +2,43 @@ import SwiftUI
 
 struct AppDependencies: Sendable {
     let apiClient: any APIClient
-    let authSession: any AuthSessionProviding
+    let authentication: any AuthenticationService
+    let onboarding: any OnboardingRepository
+    let coachPersona: any CoachPersonaRepository
     let secureStore: any SecureStoring
     let telemetry: any TelemetryClient
 
     static func scaffold() -> AppDependencies {
+        demo(configuration: AppLaunchConfiguration(
+            mode: .demo,
+            shouldResetDemoState: true,
+            startsWithCompletedFixture: true,
+            preloadsSyntheticOnboardingValues: true,
+            authBehavior: .succeed(after: nil)
+        ))
+    }
+
+    static func demo(configuration: AppLaunchConfiguration) -> AppDependencies {
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
+        let secureStore = InMemorySecureStore()
+        let stateStore = DemoStateStore(secureStore: secureStore)
+        let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
 
         return AppDependencies(
             apiClient: MockAPIClient(
                 payloads: [todayRequest.key: AppFixtures.todayPayload]
             ),
-            authSession: MockAuthSessionProvider(
-                state: .authenticated(userID: "fixture-user")
+            authentication: DemoAuthenticationService(
+                stateStore: stateStore,
+                configuration: configuration
             ),
-            secureStore: InMemorySecureStore(),
+            onboarding: DemoOnboardingRepository(
+                stateStore: stateStore,
+                buildFlavor: buildFlavor,
+                preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues
+            ),
+            coachPersona: DemoCoachPersonaRepository(stateStore: stateStore),
+            secureStore: secureStore,
             telemetry: InMemoryTelemetryClient()
         )
     }

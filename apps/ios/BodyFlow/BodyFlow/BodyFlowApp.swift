@@ -9,7 +9,9 @@ import SwiftUI
 
 @main
 struct BodyFlowApp: App {
-    private let dependencies = AppDependencies.scaffold()
+    private let dependencies = AppDependencies.demo(
+        configuration: .current()
+    )
 
     var body: some Scene {
         WindowGroup {

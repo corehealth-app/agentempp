@@ -4,24 +4,17 @@ import Testing
 
 @Suite("App Dependencies")
 struct AppDependenciesTests {
-    @Test("mock auth exposes its configured fixture session")
-    func mockAuthExposesConfiguredState() {
-        let provider = MockAuthSessionProvider(
-            state: .authenticated(userID: "fixture-user")
-        )
-
-        #expect(provider.state == .authenticated(userID: "fixture-user"))
-    }
-
-    @Test("scaffold graph decodes the same deterministic Today fixture")
+    @Test("scaffold graph has a completed deterministic demo session")
     func scaffoldGraphDecodesTodayFixture() async throws {
         let dependencies = AppDependencies.scaffold()
         let request = APIRequest<TodaySummary>(method: .get, path: "/today")
 
-        #expect(
-            dependencies.authSession.state
-                == .authenticated(userID: "fixture-user")
-        )
+        #expect(try await dependencies.authentication.restoreSession() == AuthSession(
+            userID: "demo-user-v1",
+            email: "demo-user@fixture.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: true
+        ))
 
         let summary = try await dependencies.apiClient.send(request)
         #expect(summary == AppFixtures.today)

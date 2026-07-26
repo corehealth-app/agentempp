@@ -1,6 +1,6 @@
 # BodyFlow iOS Auth, Onboarding And Coach Persona Design
 
-**Status:** approved for specification on 2026-07-26.
+**Status:** approved for implementation planning on 2026-07-26.
 
 ## Objective
 
@@ -107,6 +107,7 @@ health outcomes. Those values remain backend responsibilities.
 The draft contains only the fields represented by the screens:
 
 - display name;
+- supported app locale, confirmed country and IANA timezone;
 - biological sex used by the existing calculation contract;
 - birth date;
 - height, weight and optional body-fat percentage;
@@ -206,13 +207,19 @@ form state and writes a validated value into the shared draft before advancing.
 
 The ordered steps are:
 
-1. welcome and display name;
+1. welcome, display name and local-day context;
 2. body data;
 3. objective;
 4. routine;
 5. coach persona;
 6. development consent;
 7. completion.
+
+The first step suggests locale, country and timezone from the device, but the
+country and timezone remain visible and explicitly confirmable. This is required
+because the mobile API blocks nutrition proposals until country is confirmed,
+and all daily state must use the patient's IANA timezone rather than a server
+timezone.
 
 The user can move backward without losing entered values. Completion is one
 idempotent repository operation; repeated taps cannot create multiple sessions
@@ -312,6 +319,7 @@ Unit and component tests cover:
 - password mismatch and structural email validation;
 - deterministic loading and typed failure behavior;
 - onboarding step order, back navigation and draft preservation;
+- country confirmation and IANA timezone validation;
 - field bounds matching the existing mobile contract;
 - objective and persona selection;
 - idempotent onboarding completion;
@@ -347,11 +355,13 @@ and verified:
 6. configure staging email templates and a non-production email delivery path;
 7. add the missing objective persistence contract;
 8. add approved versioned legal documents and auditable consent persistence;
-9. implement bearer-token injection and refresh behavior for the mobile BFF;
-10. run account creation, confirmation, recovery, onboarding and persona tests
+9. map the confirmed country, supported locale and IANA timezone through
+   `PATCH /me` before nutrition registration becomes available;
+10. implement bearer-token injection and refresh behavior for the mobile BFF;
+11. run account creation, confirmation, recovery, onboarding and persona tests
     against synthetic staging identities only;
-11. verify Keychain behavior, logout revocation expectations and error mapping;
-12. complete security review before any TestFlight build.
+12. verify Keychain behavior, logout revocation expectations and error mapping;
+13. complete security review before any TestFlight build.
 
 ## Deliberately Out Of Scope
 

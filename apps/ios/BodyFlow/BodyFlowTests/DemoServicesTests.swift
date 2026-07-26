@@ -33,6 +33,28 @@ struct DemoServicesTests {
         #expect(try await store.loadSession() == nil)
     }
 
+    @Test("cancelled sign up without delay does not retain a pending email")
+    func cancelledSignUpWithoutDelayDoesNotRetainPendingEmail() async {
+        let service = DemoAuthenticationService(
+            stateStore: DemoStateStore(secureStore: InMemorySecureStore()),
+            configuration: .resolve(arguments: [], buildFlavor: .debug)
+        )
+        let cancelledSignUp = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await service.signUp(
+                email: "Demo-User@fixture.invalid",
+                password: "not-persisted"
+            )
+        }
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await cancelledSignUp.value
+        }
+        await #expect(throws: AuthenticationError.invalidInput) {
+            _ = try await service.confirmEmailForDevelopment()
+        }
+    }
+
     @Test("development confirmation creates an incomplete confirmed session")
     func developmentConfirmationCreatesIncompleteConfirmedSession() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())
@@ -49,7 +71,7 @@ struct DemoServicesTests {
 
         #expect(session == AuthSession(
             userID: "demo-user-v1",
-            email: "demo-user@fixture.invalid",
+            email: "Demo-User@fixture.invalid",
             isEmailConfirmed: true,
             isOnboardingCompleted: false
         ))
@@ -95,7 +117,7 @@ struct DemoServicesTests {
 
         try await store.saveSession(existingSession)
         try await store.saveOnboardingDraft(draft)
-        try await store.saveCoachPersona(.zen)
+        try await store.saveCoachPersona(.zen, for: "demo-user-v1")
 
         let service = DemoAuthenticationService(
             stateStore: store,
@@ -105,7 +127,7 @@ struct DemoServicesTests {
 
         #expect(try await store.loadSession() == nil)
         #expect(try await store.loadOnboardingDraft() == draft)
-        #expect(try await store.loadCoachPersona() == .zen)
+        #expect(try await store.loadCoachPersona(for: "demo-user-v1") == .zen)
     }
 
     @Test("configured delay can be cancelled before a session write")
@@ -194,6 +216,38 @@ struct DemoServicesTests {
         #expect(try await service.restoreSession() == replacement)
     }
 
+    @Test("cancelled initial restore does not consume the pending reset")
+    func cancelledInitialRestoreDoesNotConsumePendingReset() async throws {
+        let store = DemoStateStore(secureStore: InMemorySecureStore())
+        let staleSession = AuthSession(
+            userID: "previous-user",
+            email: "previous@fixture.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        try await store.saveSession(staleSession)
+        let service = DemoAuthenticationService(
+            stateStore: store,
+            configuration: AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: true,
+                startsWithCompletedFixture: false,
+                preloadsSyntheticOnboardingValues: false,
+                authBehavior: .succeed(after: nil)
+            )
+        )
+        let cancelledRestore = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await service.restoreSession()
+        }
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await cancelledRestore.value
+        }
+        #expect(try await store.loadSession() == staleSession)
+        #expect(try await service.restoreSession() == nil)
+    }
+
     @Test("initial reset also removes the scoped demo persona")
     func initialResetRemovesScopedDemoPersona() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())
@@ -229,6 +283,33 @@ struct DemoServicesTests {
         #expect(try await repository.loadDraft(for: "demo-user-v1") == draft)
     }
 
+    @Test("regular debug launch supplies only injected locale suggestions")
+    func regularDebugLaunchSuppliesOnlyInjectedLocaleSuggestions() async throws {
+        let repository = DemoOnboardingRepository(
+            stateStore: DemoStateStore(secureStore: InMemorySecureStore()),
+            buildFlavor: .debug,
+            suggestions: DemoOnboardingSuggestions(
+                localeIdentifier: "en-US",
+                countryCode: "CA",
+                timeZoneIdentifier: "America/Toronto"
+            )
+        )
+
+        let draft = try #require(
+            try await repository.loadDraft(for: "demo-user-v1")
+        )
+
+        #expect(draft.localeIdentifier == "en-US")
+        #expect(draft.countryCode == "CA")
+        #expect(draft.timeZoneIdentifier == "America/Toronto")
+        #expect(draft.displayName == nil)
+        #expect(draft.biologicalSex == nil)
+        #expect(draft.objective == nil)
+        #expect(draft.persona == nil)
+        #expect(draft.consent == nil)
+        #expect(draft.currentStep == .welcome)
+    }
+
     @Test("UI-test onboarding preload appears only after email confirmation")
     func uiTestingOnboardingPreloadRequiresConfirmedSession() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())
@@ -238,7 +319,12 @@ struct DemoServicesTests {
             preloadsSyntheticOnboardingValues: true
         )
 
-        #expect(try await repository.loadDraft(for: "demo-user-v1") == nil)
+        let initialDraft = try #require(
+            try await repository.loadDraft(for: "demo-user-v1")
+        )
+        #expect(initialDraft.biologicalSex == nil)
+        #expect(initialDraft.activityLevel == nil)
+        #expect(initialDraft.objective == nil)
 
         try await store.saveSession(AuthSession(
             userID: "demo-user-v1",

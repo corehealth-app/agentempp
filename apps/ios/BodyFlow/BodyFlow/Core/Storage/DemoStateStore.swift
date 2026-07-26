@@ -28,14 +28,6 @@ struct DemoStateStore: Sendable {
         try await save(draft, forKey: DemoStateKey.onboardingDraft)
     }
 
-    func loadCoachPersona() async throws -> CoachPersona? {
-        try await load(CoachPersona.self, forKey: DemoStateKey.coachPersona)
-    }
-
-    func saveCoachPersona(_ persona: CoachPersona) async throws {
-        try await save(persona, forKey: DemoStateKey.coachPersona)
-    }
-
     func loadCoachPersona(for userID: String) async throws -> CoachPersona? {
         try await load(
             CoachPersona.self,
@@ -58,14 +50,10 @@ struct DemoStateStore: Sendable {
         try await removeData(forKey: DemoStateKey.onboardingDraft)
     }
 
-    func clearCoachPersona(for userID: String) async throws {
-        try await removeData(forKey: DemoStateKey.coachPersona(for: userID))
-    }
-
-    func clearAll() async throws {
+    func clearAll(for userID: String) async throws {
         try await removeData(forKey: DemoStateKey.session)
         try await removeData(forKey: DemoStateKey.onboardingDraft)
-        try await removeData(forKey: DemoStateKey.coachPersona)
+        try await removeData(forKey: DemoStateKey.coachPersona(for: userID))
     }
 
     private func load<Value: Decodable>(
@@ -134,9 +122,7 @@ struct DemoStateStore: Sendable {
 private enum DemoStateKey {
     static let session = "bodyflow.demo.session.v1"
     static let onboardingDraft = "bodyflow.demo.onboarding-draft.v1"
-    static let coachPersona = "bodyflow.demo.coach-persona.v1"
-
     static func coachPersona(for userID: String) -> String {
-        "\(coachPersona).\(userID)"
+        "bodyflow.demo.coach-persona.v1.\(userID)"
     }
 }

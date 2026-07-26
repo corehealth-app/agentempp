@@ -11,9 +11,15 @@ enum DemoUser {
 }
 
 actor DemoAuthenticationService: AuthenticationService {
+    private enum InitialResetState {
+        case pending
+        case inFlight(Task<Void, Error>)
+        case complete
+    }
+
     private let stateStore: DemoStateStore
     private let configuration: AppLaunchConfiguration
-    private var hasAppliedInitialReset = false
+    private var initialResetState: InitialResetState = .pending
     private var pendingEmail: String?
 
     init(
@@ -25,7 +31,9 @@ actor DemoAuthenticationService: AuthenticationService {
     }
 
     func restoreSession() async throws -> AuthSession? {
+        try Task.checkCancellation()
         try await applyInitialResetIfNeeded()
+        try Task.checkCancellation()
 
         if configuration.startsWithCompletedFixture {
             return completedFixtureSession
@@ -54,7 +62,7 @@ actor DemoAuthenticationService: AuthenticationService {
 
         let session = AuthSession(
             userID: DemoUser.id,
-            email: normalized(email),
+            email: presentationEmail(email),
             isEmailConfirmed: true,
             isOnboardingCompleted: completed
         )
@@ -75,9 +83,10 @@ actor DemoAuthenticationService: AuthenticationService {
         }
 
         try await apply(configuration.authBehavior)
-        let normalizedEmail = normalized(email)
-        pendingEmail = normalizedEmail
-        return .confirmationRequired(email: normalizedEmail)
+        try Task.checkCancellation()
+        let presentedEmail = presentationEmail(email)
+        pendingEmail = presentedEmail
+        return .confirmationRequired(email: presentedEmail)
     }
 
     func confirmEmailForDevelopment() async throws -> AuthSession {
@@ -135,21 +144,37 @@ actor DemoAuthenticationService: AuthenticationService {
     }
 
     private func applyInitialResetIfNeeded() async throws {
-        guard !hasAppliedInitialReset else {
-            return
-        }
-
-        hasAppliedInitialReset = true
         guard configuration.shouldResetDemoState else {
             return
         }
 
-        try Task.checkCancellation()
-        do {
-            try await stateStore.clearAll()
+        switch initialResetState {
+        case .complete:
+            return
+        case .inFlight(let task):
             try Task.checkCancellation()
-            try await stateStore.clearCoachPersona(for: DemoUser.id)
+            try await waitForInitialReset(task)
+        case .pending:
+            try Task.checkCancellation()
+            let stateStore = self.stateStore
+            let task = Task.detached {
+                try Task.checkCancellation()
+                try await stateStore.clearAll(for: DemoUser.id)
+            }
+            initialResetState = .inFlight(task)
+            try await waitForInitialReset(task)
+        }
+    }
+
+    private func waitForInitialReset(_ task: Task<Void, Error>) async throws {
+        do {
+            try await task.value
+            initialResetState = .complete
+        } catch is CancellationError {
+            initialResetState = .pending
+            throw CancellationError()
         } catch {
+            initialResetState = .pending
             throw AuthenticationError.storageUnavailable
         }
     }
@@ -173,6 +198,10 @@ actor DemoAuthenticationService: AuthenticationService {
     }
 
     private func normalized(_ email: String) -> String {
-        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        presentationEmail(email).lowercased()
+    }
+
+    private func presentationEmail(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

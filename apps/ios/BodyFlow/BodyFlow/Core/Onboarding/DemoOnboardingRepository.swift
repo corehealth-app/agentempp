@@ -1,20 +1,38 @@
 import Foundation
 
+struct DemoOnboardingSuggestions: Sendable {
+    let localeIdentifier: String
+    let countryCode: String
+    let timeZoneIdentifier: String
+
+    static var currentDevice: DemoOnboardingSuggestions {
+        let languageCode = Locale.current.language.languageCode?.identifier
+        return DemoOnboardingSuggestions(
+            localeIdentifier: languageCode == "pt" ? "pt-BR" : "en-US",
+            countryCode: Locale.current.region?.identifier ?? "US",
+            timeZoneIdentifier: TimeZone.current.identifier
+        )
+    }
+}
+
 actor DemoOnboardingRepository: OnboardingRepository {
     private let stateStore: DemoStateStore
     private let buildFlavor: AppBuildFlavor
     private let preloadsSyntheticOnboardingValues: Bool
+    private let suggestions: DemoOnboardingSuggestions
     private let behavior: DemoOperationBehavior<OnboardingRepositoryError>
 
     init(
         stateStore: DemoStateStore,
         buildFlavor: AppBuildFlavor,
         preloadsSyntheticOnboardingValues: Bool = false,
+        suggestions: DemoOnboardingSuggestions = .currentDevice,
         behavior: DemoOperationBehavior<OnboardingRepositoryError> = .succeed(after: nil)
     ) {
         self.stateStore = stateStore
         self.buildFlavor = buildFlavor
         self.preloadsSyntheticOnboardingValues = preloadsSyntheticOnboardingValues
+        self.suggestions = suggestions
         self.behavior = behavior
     }
 
@@ -24,13 +42,17 @@ actor DemoOnboardingRepository: OnboardingRepository {
             if let draft = try await stateStore.loadOnboardingDraft() {
                 return draft
             }
-            guard preloadsSyntheticOnboardingValues,
-                  let session = try await stateStore.loadSession(),
-                  session.userID == userID,
-                  session.isEmailConfirmed else {
+            if preloadsSyntheticOnboardingValues,
+               let session = try await stateStore.loadSession(),
+               session.userID == userID,
+               session.isEmailConfirmed {
+                return syntheticPreloadedDraft
+            }
+
+            guard buildFlavor == .debug else {
                 return nil
             }
-            return syntheticPreloadedDraft
+            return suggestedEmptyDraft
         } catch {
             throw OnboardingRepositoryError.storageUnavailable
         }
@@ -164,6 +186,31 @@ actor DemoOnboardingRepository: OnboardingRepository {
             persona: nil,
             consent: nil,
             currentStep: .bodyData
+        )
+    }
+
+    private var suggestedEmptyDraft: OnboardingDraft {
+        OnboardingDraft(
+            displayName: nil,
+            localeIdentifier: suggestions.localeIdentifier,
+            countryCode: suggestions.countryCode,
+            timeZoneIdentifier: suggestions.timeZoneIdentifier,
+            biologicalSex: nil,
+            birthDate: nil,
+            heightCM: nil,
+            weightKG: nil,
+            bodyFatPercent: nil,
+            objective: nil,
+            activityLevel: nil,
+            trainingFrequency: nil,
+            waterIntake: nil,
+            hungerLevel: nil,
+            wakeTime: nil,
+            bedtime: nil,
+            foodOrganization: nil,
+            persona: nil,
+            consent: nil,
+            currentStep: .welcome
         )
     }
 }

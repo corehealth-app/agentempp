@@ -58,9 +58,9 @@ struct DemoStateStoreTests {
     func coachPersonaRoundTrip() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())
 
-        try await store.saveCoachPersona(.zen)
+        try await store.saveCoachPersona(.zen, for: "demo-user-v1")
 
-        #expect(try await store.loadCoachPersona() == .zen)
+        #expect(try await store.loadCoachPersona(for: "demo-user-v1") == .zen)
     }
 
     @Test("reports corrupted session JSON as an invalid payload")
@@ -90,13 +90,13 @@ struct DemoStateStoreTests {
 
         try await store.saveSession(session)
         try await store.saveOnboardingDraft(draft)
-        try await store.saveCoachPersona(.impulse)
+        try await store.saveCoachPersona(.impulse, for: "demo-user-v1")
 
-        try await store.clearAll()
+        try await store.clearAll(for: "demo-user-v1")
 
         #expect(try await store.loadSession() == nil)
         #expect(try await store.loadOnboardingDraft() == nil)
-        #expect(try await store.loadCoachPersona() == nil)
+        #expect(try await store.loadCoachPersona(for: "demo-user-v1") == nil)
     }
 
     @Test("maps secure storage errors to demo state availability")

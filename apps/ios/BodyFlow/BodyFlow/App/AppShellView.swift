@@ -5,6 +5,11 @@ struct AppShellView: View {
     @Environment(\.appDependencies) private var dependencies
     @State private var selectedTab = AppTab.today
     @State private var router = AppRouter()
+    let userID: String
+
+    init(userID: String = "fixture-user") {
+        self.userID = userID
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -73,7 +78,7 @@ struct AppShellView: View {
         case .progress:
             ProgressRootView()
         case .profile:
-            ProfileRootView()
+            ProfileRootView(userID: userID)
         }
     }
 }

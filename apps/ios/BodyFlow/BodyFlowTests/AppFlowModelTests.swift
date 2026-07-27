@@ -145,18 +145,244 @@ struct AppFlowModelTests {
         #expect(model.state == .launching)
         #expect(model.currentSession == nil)
     }
+
+    @Test("authentication destinations are driven by explicit commands")
+    func authenticationDestinations() async {
+        let model = makeModel()
+        await model.start()
+
+        model.showSignUp()
+        #expect(model.state == .signedOut(.signUp))
+
+        model.showPasswordRecovery()
+        #expect(model.state == .signedOut(.passwordRecovery))
+
+        model.showSignIn()
+        #expect(model.state == .signedOut(.signIn))
+    }
+
+    @Test("sign in resumes onboarding for an incomplete session")
+    func signInResumesOnboarding() async {
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                signedInSession: session
+            ),
+            onboarding: OnboardingRepositorySpy(
+                loadedDraft: BodyFlowTestFixtures.onboardingDraft(
+                    currentStep: .routine
+                )
+            ),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.signIn(
+            email: "fixture@example.invalid",
+            password: "local-pass"
+        )
+
+        #expect(model.state == .onboarding(userID: "fixture-user", step: .routine))
+        #expect(model.currentSession == session)
+        #expect(model.authOperationState == .idle)
+    }
+
+    @Test("sign in opens the shell for a completed session")
+    func signInOpensAuthenticatedShell() async {
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: true
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                signedInSession: session
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.signIn(
+            email: "fixture@example.invalid",
+            password: "local-pass"
+        )
+
+        #expect(model.state == .authenticated(userID: "fixture-user"))
+        #expect(model.currentSession == session)
+        #expect(model.authOperationState == .idle)
+    }
+
+    @Test("sign up success waits for email confirmation")
+    func signUpAwaitsConfirmation() async {
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                signUpResult: .confirmationRequired(
+                    email: "fixture@example.invalid"
+                )
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.signUp(
+            email: "fixture@example.invalid",
+            password: "local-pass"
+        )
+
+        #expect(
+            model.state == .awaitingEmailConfirmation(
+                email: "fixture@example.invalid"
+            )
+        )
+        #expect(model.currentSession == nil)
+        #expect(model.authOperationState == .idle)
+    }
+
+    @Test("development confirmation enters onboarding")
+    func developmentConfirmationEntersOnboarding() async {
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                confirmedSession: session
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.confirmEmailForDevelopment()
+
+        #expect(model.state == .onboarding(userID: "fixture-user", step: .welcome))
+        #expect(model.currentSession == session)
+        #expect(model.authOperationState == .idle)
+    }
+
+    @Test("recovery success discloses no account state")
+    func recoveryUsesNeutralConfirmation() async {
+        let model = makeModel()
+        await model.start()
+        model.showPasswordRecovery()
+
+        await model.requestPasswordRecovery(
+            email: "fixture@example.invalid"
+        )
+
+        #expect(model.state == .signedOut(.passwordRecovery))
+        #expect(model.currentSession == nil)
+        #expect(model.presentationError == nil)
+        #expect(model.authOperationState == .recoveryConfirmation)
+    }
+
+    @Test("a second submit is suppressed while sign in is in flight")
+    func suppressesDoubleTap() async {
+        let authentication = SuspendedAuthenticationService()
+        let model = AppFlowModel(
+            authentication: authentication,
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+        await model.start()
+
+        let firstSubmission = Task {
+            await model.signIn(
+                email: "fixture@example.invalid",
+                password: "local-pass"
+            )
+        }
+        await authentication.waitUntilSignInSuspends()
+
+        await model.signIn(
+            email: "fixture@example.invalid",
+            password: "local-pass"
+        )
+
+        #expect(await authentication.signInCount() == 1)
+        #expect(model.authOperationState == .submitting)
+
+        await authentication.resumeSignIn(returning: .completedFixture)
+        await firstSubmission.value
+
+        #expect(model.state == .authenticated(userID: "fixture-user"))
+    }
+
+    @Test("cancelled submission ignores a late successful response")
+    func cancellationPreventsLateTransition() async {
+        let authentication = SuspendedAuthenticationService()
+        let model = AppFlowModel(
+            authentication: authentication,
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+        await model.start()
+
+        let submission = Task {
+            await model.signIn(
+                email: "fixture@example.invalid",
+                password: "local-pass"
+            )
+        }
+        await authentication.waitUntilSignInSuspends()
+
+        submission.cancel()
+        await authentication.resumeSignIn(returning: .completedFixture)
+        await submission.value
+
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.currentSession == nil)
+        #expect(model.authOperationState == .idle)
+    }
+
+    private func makeModel() -> AppFlowModel {
+        AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: nil),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+    }
 }
 
 private struct AuthenticationServiceSpy: AuthenticationService {
     let restoredSession: AuthSession?
     let restoreError: AuthenticationError?
+    let signedInSession: AuthSession?
+    let signUpResult: AuthSignUpResult?
+    let confirmedSession: AuthSession?
+    let recoveryError: AuthenticationError?
 
     init(
         restoredSession: AuthSession?,
-        restoreError: AuthenticationError? = nil
+        restoreError: AuthenticationError? = nil,
+        signedInSession: AuthSession? = nil,
+        signUpResult: AuthSignUpResult? = nil,
+        confirmedSession: AuthSession? = nil,
+        recoveryError: AuthenticationError? = nil
     ) {
         self.restoredSession = restoredSession
         self.restoreError = restoreError
+        self.signedInSession = signedInSession
+        self.signUpResult = signUpResult
+        self.confirmedSession = confirmedSession
+        self.recoveryError = recoveryError
     }
 
     func restoreSession() async throws -> AuthSession? {
@@ -167,7 +393,48 @@ private struct AuthenticationServiceSpy: AuthenticationService {
     }
 
     func signIn(email: String, password: String) async throws -> AuthSession {
-        throw AuthenticationError.operationUnavailable
+        guard let signedInSession else {
+            throw AuthenticationError.operationUnavailable
+        }
+        return signedInSession
+    }
+
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        guard let signUpResult else {
+            throw AuthenticationError.operationUnavailable
+        }
+        return signUpResult
+    }
+
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        guard let confirmedSession else {
+            throw AuthenticationError.operationUnavailable
+        }
+        return confirmedSession
+    }
+
+    func requestPasswordRecovery(email: String) async throws {
+        if let recoveryError {
+            throw recoveryError
+        }
+    }
+
+    func signOut() async throws {}
+}
+
+private actor SuspendedAuthenticationService: AuthenticationService {
+    private var continuation: CheckedContinuation<AuthSession, any Error>?
+    private var count = 0
+
+    func restoreSession() async throws -> AuthSession? {
+        nil
+    }
+
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        count += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
     }
 
     func signUp(email: String, password: String) async throws -> AuthSignUpResult {
@@ -183,6 +450,30 @@ private struct AuthenticationServiceSpy: AuthenticationService {
     }
 
     func signOut() async throws {}
+
+    func waitUntilSignInSuspends() async {
+        while continuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func signInCount() -> Int {
+        count
+    }
+
+    func resumeSignIn(returning session: AuthSession) {
+        continuation?.resume(returning: session)
+        continuation = nil
+    }
+}
+
+private extension AuthSession {
+    static let completedFixture = AuthSession(
+        userID: "fixture-user",
+        email: "fixture@example.invalid",
+        isEmailConfirmed: true,
+        isOnboardingCompleted: true
+    )
 }
 
 private struct OnboardingRepositorySpy: OnboardingRepository {

@@ -2,15 +2,18 @@ import SwiftUI
 
 @MainActor
 struct ProfileRootView: View {
+    let userID: String
     let fixture: ProfileFixture
     let state: ScreenContentState
     private let retryAction: @MainActor () -> Void
 
     init(
+        userID: String = "fixture-user",
         fixture: ProfileFixture = AppFixtures.profile,
         state: ScreenContentState = .loaded,
         retryAction: @escaping @MainActor () -> Void = {}
     ) {
+        self.userID = userID
         self.fixture = fixture
         self.state = state
         self.retryAction = retryAction

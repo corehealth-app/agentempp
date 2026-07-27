@@ -125,3 +125,40 @@ Essas superfícies serão enriquecidas, não substituídas, pela Task 6. Nesta t
 
 - Task 6 ainda deve fazer persistência final ordenada/idempotente, usar o persona repository, chamar `complete`, ligar `onCompleted` e só então autenticar/transicionar.
 - A inspeção visual individual dos previews deve ser repetida em Xcode Canvas ou em host compatível assim que disponível; build e previews compilados não substituem essa evidência visual.
+
+## Fix round 1
+
+### Correções
+
+- O branch de onboarding do `AppRootView` consulta `OnboardingRootLoadState.canRender` com o userID do modelo e o userID ativo. Um modelo retido do usuário A nunca é entregue ao container enquanto o root já está no usuário B; nesse intervalo aparece loading.
+- Cada `synchronizeOnboardingModel()` ativo abre um token monotônico com userID e geração. Limpeza inicial, sucesso, draft ausente e erro só publicam quando o token ainda é atual, a identidade continua ativa e a task não foi cancelada. Uma tentativa nova do mesmo usuário invalida deterministicamente a anterior.
+- Os campos decimais usam `OnboardingDecimalFieldDescriptor`. Gordura corporal agora tem prompt `Opcional`, label AX `Gordura corporal` e value AX com estado/unidade; altura e peso preservam prompt, label e unidades coerentes.
+
+### RED
+
+Os cinco testes de apresentação foram escritos antes dos helpers e do wiring de produção:
+
+```sh
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj -scheme BodyFlow -destination 'platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9' -only-testing:BodyFlowTests/OnboardingPresentationTests test
+```
+
+Resultado observado: `** TEST FAILED **`, com os erros esperados:
+
+```text
+cannot find 'OnboardingRootLoadState' in scope
+cannot find 'OnboardingDecimalFieldDescriptor' in scope
+```
+
+Os diagnósticos `nil requires a contextual type` foram cascata direta da ausência do descriptor.
+
+### GREEN focado
+
+Depois da implementação mínima e uso dos helpers pela produção, o mesmo comando retornou `** TEST SUCCEEDED **`. Passaram cinco testes lógicos, cobrindo identidade de render, substituição de geração, cancelamento/identidade e descritores de body fat, altura e peso.
+
+Também passaram em conjunto `OnboardingPresentationTests`, `OnboardingFlowModelTests` e `AppFlowModelTests` no mesmo iPhone 17 Pro/iOS 26.5.
+
+### Verificação final do round
+
+- `BodyFlowTests`: `** TEST SUCCEEDED **`; 110 testes lógicos, 128 execuções incluindo argumentos dinâmicos, zero falhas e zero skips.
+- Build Debug no iPhone 17 Pro/iOS 26.5: `** BUILD SUCCEEDED **`.
+- `git diff --check`: sem saída.

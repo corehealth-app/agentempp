@@ -47,22 +47,19 @@ struct BodyDataStepView: View {
             }
 
             decimalField(
-                title: "Altura",
-                unit: "cm",
+                descriptor: .height,
                 value: height,
                 identifier: "onboarding.height",
                 issues: [.heightOutOfRange]
             )
             decimalField(
-                title: "Peso",
-                unit: "kg",
+                descriptor: .weight,
                 value: weight,
                 identifier: "onboarding.weight",
                 issues: [.weightOutOfRange]
             )
             decimalField(
-                title: "Gordura corporal (opcional)",
-                unit: "%",
+                descriptor: .bodyFat,
                 value: bodyFat,
                 identifier: "onboarding.body-fat",
                 issues: [.bodyFatOutOfRange]
@@ -96,25 +93,67 @@ struct BodyDataStepView: View {
     }
 
     private func decimalField(
-        title: String,
-        unit: String,
+        descriptor: OnboardingDecimalFieldDescriptor,
         value: Binding<Double?>,
         identifier: String,
         issues: [OnboardingValidationIssue]
     ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text(title).font(BodyFlowTypography.headline)
+            Text(descriptor.title).font(BodyFlowTypography.headline)
             HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
-                TextField("0", value: value, format: .number.precision(.fractionLength(0...2)))
+                TextField(
+                    descriptor.accessibilityLabel,
+                    value: value,
+                    format: .number.precision(.fractionLength(0...2)),
+                    prompt: Text(descriptor.prompt)
+                )
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(descriptor.accessibilityLabel)
+                    .accessibilityValue(descriptor.accessibilityValue(for: value.wrappedValue))
                     .accessibilityIdentifier(identifier)
-                Text(unit)
+                Text(descriptor.unit)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                     .accessibilityHidden(true)
             }
             OnboardingFieldIssue(model: model, candidates: issues)
         }
+    }
+}
+
+struct OnboardingDecimalFieldDescriptor: Equatable {
+    let title: String
+    let prompt: String
+    let accessibilityLabel: String
+    let unit: String
+
+    static let height = OnboardingDecimalFieldDescriptor(
+        title: "Altura",
+        prompt: "0",
+        accessibilityLabel: "Altura",
+        unit: "cm"
+    )
+    static let weight = OnboardingDecimalFieldDescriptor(
+        title: "Peso",
+        prompt: "0",
+        accessibilityLabel: "Peso",
+        unit: "kg"
+    )
+    static let bodyFat = OnboardingDecimalFieldDescriptor(
+        title: "Gordura corporal (opcional)",
+        prompt: "Opcional",
+        accessibilityLabel: "Gordura corporal",
+        unit: "%"
+    )
+
+    func accessibilityValue(for value: Double?) -> String {
+        guard let value else { return "Não informado, \(unit)" }
+        let formatted = value.formatted(
+            .number
+                .locale(Locale(identifier: "pt_BR"))
+                .precision(.fractionLength(0...2))
+        )
+        return "\(formatted) \(unit)"
     }
 }
 

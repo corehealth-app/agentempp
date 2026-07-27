@@ -8,6 +8,7 @@ struct AppRootView: View {
     @State private var onboardingFlowModel: OnboardingFlowModel?
     @State private var onboardingLoadFailed = false
     @State private var onboardingRetryID = 0
+    @State private var onboardingRootLoadState = OnboardingRootLoadState()
 
     var body: some View {
         Group {
@@ -39,10 +40,14 @@ struct AppRootView: View {
                 allowsDevelopmentConfirmation: configuration.mode == .demo,
                 model: model
             )
-        case .onboarding:
-            if let onboardingFlowModel {
+        case .onboarding(let userID, _):
+            if let onboardingFlowModel,
+               OnboardingRootLoadState.canRender(
+                   modelUserID: onboardingFlowModel.userID,
+                   activeUserID: userID
+               ) {
                 OnboardingContainerView(model: onboardingFlowModel)
-            } else if onboardingLoadFailed {
+            } else if onboardingFlowModel == nil, onboardingLoadFailed {
                 onboardingLoadError
             } else {
                 ProgressView("Carregando onboarding")
@@ -81,21 +86,30 @@ struct AppRootView: View {
 
     private func synchronizeOnboardingModel() async {
         guard let userID = onboardingUserID else {
+            onboardingRootLoadState.invalidate()
             onboardingFlowModel = nil
             onboardingLoadFailed = false
             return
         }
+        let loadToken = onboardingRootLoadState.begin(for: userID)
+        guard onboardingRootLoadState.canPublish(
+            loadToken,
+            activeUserID: onboardingUserID,
+            isCancelled: Task.isCancelled
+        ) else { return }
         guard onboardingFlowModel?.userID != userID else { return }
 
         onboardingFlowModel = nil
         onboardingLoadFailed = false
         do {
-            guard let draft = try await dependencies.onboarding.loadDraft(for: userID),
-                  !Task.isCancelled,
-                  onboardingUserID == userID else {
-                if !Task.isCancelled, onboardingUserID == userID {
-                    onboardingLoadFailed = true
-                }
+            let draft = try await dependencies.onboarding.loadDraft(for: userID)
+            guard onboardingRootLoadState.canPublish(
+                loadToken,
+                activeUserID: onboardingUserID,
+                isCancelled: Task.isCancelled
+            ) else { return }
+            guard let draft else {
+                onboardingLoadFailed = true
                 return
             }
             onboardingFlowModel = OnboardingFlowModel(
@@ -113,7 +127,11 @@ struct AppRootView: View {
         } catch is CancellationError {
             return
         } catch {
-            guard onboardingUserID == userID else { return }
+            guard onboardingRootLoadState.canPublish(
+                loadToken,
+                activeUserID: onboardingUserID,
+                isCancelled: Task.isCancelled
+            ) else { return }
             onboardingLoadFailed = true
         }
     }
@@ -122,4 +140,37 @@ struct AppRootView: View {
 private struct OnboardingRootTaskID: Equatable {
     let userID: String?
     let retryID: Int
+}
+
+struct OnboardingRootLoadState: Equatable {
+    struct Token: Equatable {
+        let userID: String
+        let generation: Int
+    }
+
+    private var generation = 0
+    private(set) var activeToken: Token?
+
+    mutating func begin(for userID: String) -> Token {
+        generation += 1
+        let token = Token(userID: userID, generation: generation)
+        activeToken = token
+        return token
+    }
+
+    mutating func invalidate() {
+        activeToken = nil
+    }
+
+    func canPublish(
+        _ token: Token,
+        activeUserID: String?,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled && activeToken == token && activeUserID == token.userID
+    }
+
+    static func canRender(modelUserID: String, activeUserID: String) -> Bool {
+        modelUserID == activeUserID
+    }
 }

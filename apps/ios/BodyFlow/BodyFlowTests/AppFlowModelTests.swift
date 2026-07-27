@@ -11,13 +11,16 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: nil),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            initialAuthOperationState: .failed(.operationUnavailable)
         )
 
         await model.start()
 
         #expect(model.state == .signedOut(.signIn))
         #expect(model.currentSession == nil)
+        #expect(model.presentationError == nil)
+        #expect(model.authOperationState == .idle)
     }
 
     @Test("confirmed incomplete session resumes its saved onboarding step")
@@ -104,6 +107,7 @@ struct AppFlowModelTests {
 
         #expect(model.state == .signedOut(.signIn))
         #expect(model.presentationError == .serviceUnavailable)
+        #expect(model.authOperationState == .failed(.serviceUnavailable))
         #expect(model.currentSession == nil)
     }
 

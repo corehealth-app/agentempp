@@ -251,7 +251,13 @@ final class AppFlowModel {
         guard !isCancellationRequested else { return }
         currentSession = nil
         state = .signedOut(.signIn)
-        presentationError = error
+        if let error {
+            presentationError = error
+            authOperationState = .failed(error)
+        } else {
+            presentationError = nil
+            authOperationState = .idle
+        }
     }
 
     private func navigate(to destination: AuthDestination) {

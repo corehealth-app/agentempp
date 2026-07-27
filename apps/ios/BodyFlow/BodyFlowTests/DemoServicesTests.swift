@@ -5,6 +5,18 @@ import Testing
 
 @Suite("Deterministic demo services")
 struct DemoServicesTests {
+    @Test("late generation A failure cannot replace in-flight generation B")
+    func lateGenerationFailureCannotReplaceNewerGeneration() {
+        var gate = DemoInitialResetGate()
+        let generationA = gate.begin()
+
+        gate.fail(generationA)
+        let generationB = gate.begin()
+        gate.fail(generationA)
+
+        #expect(gate.phase == .inFlight(generationB))
+    }
+
     @Test("fresh restore returns no session")
     func freshRestoreReturnsNoSession() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())

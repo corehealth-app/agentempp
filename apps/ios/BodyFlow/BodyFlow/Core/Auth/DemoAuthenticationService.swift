@@ -10,16 +10,50 @@ enum DemoUser {
     static let email = "demo-user@fixture.invalid"
 }
 
-actor DemoAuthenticationService: AuthenticationService {
-    private enum InitialResetState {
+struct DemoInitialResetGate: Sendable {
+    enum Phase: Equatable, Sendable {
         case pending
-        case inFlight(UUID, Task<Void, Error>)
+        case inFlight(UUID)
         case complete
     }
 
+    private(set) var phase: Phase = .pending
+
+    mutating func begin() -> UUID {
+        precondition(phase == .pending)
+        let generation = UUID()
+        phase = .inFlight(generation)
+        return generation
+    }
+
+    @discardableResult
+    mutating func succeed(_ generation: UUID) -> Bool {
+        transition(to: .complete, for: generation)
+    }
+
+    @discardableResult
+    mutating func fail(_ generation: UUID) -> Bool {
+        transition(to: .pending, for: generation)
+    }
+
+    private mutating func transition(
+        to phase: Phase,
+        for generation: UUID
+    ) -> Bool {
+        guard case .inFlight(let currentGeneration) = self.phase,
+              currentGeneration == generation else {
+            return false
+        }
+        self.phase = phase
+        return true
+    }
+}
+
+actor DemoAuthenticationService: AuthenticationService {
     private let stateStore: DemoStateStore
     private let configuration: AppLaunchConfiguration
-    private var initialResetState: InitialResetState = .pending
+    private var initialResetGate = DemoInitialResetGate()
+    private var initialResetTask: Task<Void, Error>?
     private var pendingEmail: String?
 
     init(
@@ -148,11 +182,14 @@ actor DemoAuthenticationService: AuthenticationService {
             return
         }
 
-        switch initialResetState {
+        switch initialResetGate.phase {
         case .complete:
             return
-        case .inFlight(let generation, let task):
+        case .inFlight(let generation):
             try Task.checkCancellation()
+            guard let task = initialResetTask else {
+                preconditionFailure("An in-flight reset must retain its task")
+            }
             try await waitForInitialReset(task, generation: generation)
         case .pending:
             try Task.checkCancellation()
@@ -161,8 +198,8 @@ actor DemoAuthenticationService: AuthenticationService {
                 try Task.checkCancellation()
                 try await stateStore.clearAll(for: DemoUser.id)
             }
-            let generation = UUID()
-            initialResetState = .inFlight(generation, task)
+            let generation = initialResetGate.begin()
+            initialResetTask = task
             try await waitForInitialReset(task, generation: generation)
         }
     }
@@ -173,25 +210,20 @@ actor DemoAuthenticationService: AuthenticationService {
     ) async throws {
         do {
             try await task.value
-            updateInitialResetState(.complete, for: generation)
+            if initialResetGate.succeed(generation) {
+                initialResetTask = nil
+            }
         } catch is CancellationError {
-            updateInitialResetState(.pending, for: generation)
+            if initialResetGate.fail(generation) {
+                initialResetTask = nil
+            }
             throw CancellationError()
         } catch {
-            updateInitialResetState(.pending, for: generation)
+            if initialResetGate.fail(generation) {
+                initialResetTask = nil
+            }
             throw AuthenticationError.storageUnavailable
         }
-    }
-
-    private func updateInitialResetState(
-        _ state: InitialResetState,
-        for generation: UUID
-    ) {
-        guard case .inFlight(let currentGeneration, _) = initialResetState,
-              currentGeneration == generation else {
-            return
-        }
-        initialResetState = state
     }
 
     private func apply(

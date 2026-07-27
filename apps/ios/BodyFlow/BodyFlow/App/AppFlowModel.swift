@@ -97,6 +97,11 @@ final class AppFlowModel {
         navigate(to: .signIn)
     }
 
+    func updateOnboardingStep(_ step: OnboardingStep) {
+        guard case .onboarding(let userID, _) = state else { return }
+        state = .onboarding(userID: userID, step: step)
+    }
+
     func signIn(email: String, password: String) async {
         guard beginAuthOperation() else { return }
 

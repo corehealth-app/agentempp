@@ -278,6 +278,24 @@ struct AppFlowModelTests {
         #expect(model.authOperationState == .idle)
     }
 
+    @Test("a persisted onboarding step updates the root state for the same user")
+    func updatesPersistedOnboardingStep() {
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: nil),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient(),
+            initialState: .onboarding(userID: "fixture-user", step: .welcome)
+        )
+
+        model.updateOnboardingStep(.bodyData)
+
+        #expect(model.state == .onboarding(
+            userID: "fixture-user",
+            step: .bodyData
+        ))
+    }
+
     @Test("recovery success discloses no account state")
     func recoveryUsesNeutralConfirmation() async {
         let model = makeModel()

@@ -101,6 +101,18 @@ private actor PreviewOnboardingRepository: OnboardingRepository {
     func clear(for userID: String) async throws {}
 }
 
+private actor PreviewCoachPersonaRepository: CoachPersonaRepository {
+    private var selected: CoachPersona?
+
+    func selectedPersona(for userID: String) async throws -> CoachPersona? {
+        selected
+    }
+
+    func setPersona(_ persona: CoachPersona, for userID: String) async throws {
+        selected = persona
+    }
+}
+
 extension OnboardingFlowModel {
     static func preview(
         step: OnboardingStep,
@@ -129,12 +141,13 @@ extension OnboardingFlowModel {
                 foodOrganization: .yes,
                 persona: .focus,
                 consent: DevelopmentConsentAcceptance(
-                    documentIDs: ["development-privacy", "development-terms"],
+                    documentIDs: [.terms, .privacy],
                     acceptedAt: Date(timeIntervalSince1970: 946_684_800)
                 ),
                 currentStep: step
             ),
             repository: PreviewOnboardingRepository(),
+            personaRepository: PreviewCoachPersonaRepository(),
             onStepChanged: { _ in },
             onCompleted: {},
             initialOperationState: operationState,

@@ -57,7 +57,7 @@ struct OnboardingContainerView: View {
         case .consent:
             ConsentStepView(model: model)
         case .completion:
-            OnboardingCompletionView(model: model)
+            OnboardingCompletionView(model: model, onComplete: submitCompletion)
         }
     }
 
@@ -76,15 +76,18 @@ struct OnboardingContainerView: View {
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.operationState == .saving)
+                .disabled(
+                    model.operationState == .saving
+                        || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
+                )
                 .accessibilityIdentifier("onboarding.continue")
-            }
 
-            if model.step != .welcome {
-                Button("Voltar", action: model.back)
-                    .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
-                    .disabled(model.operationState == .saving)
-                    .accessibilityIdentifier("onboarding.back")
+                if model.step != .welcome {
+                    Button("Voltar", action: model.back)
+                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .disabled(model.operationState == .saving)
+                        .accessibilityIdentifier("onboarding.back")
+                }
             }
         }
     }
@@ -105,9 +108,18 @@ struct OnboardingContainerView: View {
         }
     }
 
+    private func submitCompletion() {
+        guard submissionTask == nil else { return }
+        submissionTask = Task {
+            await model.complete()
+            submissionTask = nil
+        }
+    }
+
     private func cancelSubmission() {
         submissionTask?.cancel()
         submissionTask = nil
+        model.cancelActiveSubmission()
     }
 }
 

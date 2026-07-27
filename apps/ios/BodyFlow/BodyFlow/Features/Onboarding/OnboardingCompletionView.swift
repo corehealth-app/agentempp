@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct OnboardingCompletionView: View {
     let model: OnboardingFlowModel
+    let onComplete: @MainActor () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -24,12 +25,29 @@ struct OnboardingCompletionView: View {
             .background(BodyFlowColor.surface, in: RoundedRectangle(cornerRadius: 16))
 
             Label(
-                "Nenhum perfil foi concluído e nenhuma sessão autenticada foi aberta nesta etapa.",
+                "Seu perfil só será concluído depois que todas as escolhas forem salvas com sucesso.",
                 systemImage: "lock.shield"
             )
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onComplete) {
+                HStack {
+                    Spacer()
+                    if model.operationState == .saving {
+                        ProgressView()
+                            .tint(.white)
+                            .accessibilityHidden(true)
+                    }
+                    Text("Ir para Hoje")
+                    Spacer()
+                }
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.operationState == .saving)
+            .accessibilityIdentifier("onboarding.go-to-today")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.completion")
@@ -48,8 +66,17 @@ struct OnboardingCompletionView: View {
     OnboardingContainerView(model: .preview(step: .completion))
 }
 
-#Preview("Revisão · Texto de acessibilidade") {
-    OnboardingContainerView(model: .preview(step: .completion))
-        .dynamicTypeSize(.accessibility3)
+#Preview("Revisão · Salvando") {
+    OnboardingContainerView(model: .preview(
+        step: .completion,
+        operationState: .saving
+    ))
+}
+
+#Preview("Revisão · Erro recuperável") {
+    OnboardingContainerView(model: .preview(
+        step: .completion,
+        operationState: .failed(.serviceUnavailable)
+    ))
 }
 #endif

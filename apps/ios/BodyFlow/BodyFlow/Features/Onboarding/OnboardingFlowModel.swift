@@ -47,10 +47,19 @@ enum OnboardingStepValidator {
         case .persona:
             draft.persona == nil ? [.personaRequired] : []
         case .consent:
-            draft.consent == nil ? [.consentRequired] : []
+            hasRequiredDevelopmentConsent(draft.consent) ? [] : [.consentRequired]
         case .completion:
             []
         }
+    }
+
+    static func completionIssues(
+        draft: OnboardingDraft,
+        now: Date
+    ) -> [OnboardingValidationIssue] {
+        OnboardingStep.allCases
+            .filter { $0 != .completion }
+            .flatMap { issues(for: $0, draft: draft, now: now) }
     }
 
     private static func welcomeIssues(
@@ -143,6 +152,13 @@ enum OnboardingStepValidator {
         guard let time else { return false }
         return (0..<24).contains(time.hour) && (0..<60).contains(time.minute)
     }
+
+    private static func hasRequiredDevelopmentConsent(
+        _ acceptance: DevelopmentConsentAcceptance?
+    ) -> Bool {
+        let acceptedIDs = Set(acceptance?.documentIDs ?? [])
+        return Set(DevelopmentConsentDocumentID.allCases).isSubset(of: acceptedIDs)
+    }
 }
 
 @MainActor
@@ -150,9 +166,11 @@ enum OnboardingStepValidator {
 final class OnboardingFlowModel {
     let userID: String
     private let repository: any OnboardingRepository
+    private let personaRepository: any CoachPersonaRepository
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeSubmissionID: UUID?
+    private var didComplete = false
 
     private(set) var draft: OnboardingDraft
     private(set) var step: OnboardingStep
@@ -165,6 +183,7 @@ final class OnboardingFlowModel {
         userID: String,
         initialDraft: OnboardingDraft,
         repository: any OnboardingRepository,
+        personaRepository: any CoachPersonaRepository,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
         onCompleted: @escaping @MainActor () -> Void,
         initialOperationState: OnboardingOperationState = .idle,
@@ -174,6 +193,7 @@ final class OnboardingFlowModel {
     ) {
         self.userID = userID
         self.repository = repository
+        self.personaRepository = personaRepository
         draft = initialDraft
         step = initialDraft.currentStep
         operationState = initialOperationState
@@ -249,6 +269,65 @@ final class OnboardingFlowModel {
         }
     }
 
+    func complete() async {
+        guard step == .completion,
+              draft.currentStep == .completion,
+              operationState != .saving,
+              !didComplete else {
+            return
+        }
+
+        let issues = OnboardingStepValidator.completionIssues(
+            draft: draft,
+            now: now()
+        )
+        validationIssues = issues
+        guard issues.isEmpty, let selectedPersona = draft.persona else {
+            operationState = .idle
+            return
+        }
+
+        let submittedDraft = draft
+        let submissionID = UUID()
+        activeSubmissionID = submissionID
+        operationState = .saving
+
+        do {
+            try await personaRepository.setPersona(selectedPersona, for: userID)
+            guard canPublish(submissionID) else {
+                finishCancelledSubmission(submissionID)
+                return
+            }
+
+            try await repository.complete(submittedDraft, for: userID)
+            guard canPublish(submissionID) else {
+                finishCancelledSubmission(submissionID)
+                return
+            }
+
+            didComplete = true
+            activeSubmissionID = nil
+            operationState = .idle
+            onCompleted()
+        } catch is CancellationError {
+            finishCancelledSubmission(submissionID)
+        } catch {
+            guard activeSubmissionID == submissionID else { return }
+            guard !isCancellationRequested else {
+                finishCancelledSubmission(submissionID)
+                return
+            }
+            activeSubmissionID = nil
+            operationState = .failed(presentationError(for: error))
+        }
+    }
+
+    func cancelActiveSubmission() {
+        guard activeSubmissionID != nil else { return }
+        activeSubmissionID = nil
+        operationState = .idle
+    }
+
     func updateDisplayName(_ value: String?) { draft.displayName = value }
     func updateLocaleIdentifier(_ value: String) { draft.localeIdentifier = value }
     func updateCountryCode(_ value: String) { draft.countryCode = value.uppercased() }
@@ -269,8 +348,20 @@ final class OnboardingFlowModel {
     func updatePersona(_ value: CoachPersona?) { draft.persona = value }
     func updateConsent(_ value: DevelopmentConsentAcceptance?) { draft.consent = value }
 
+    var hasRequiredDevelopmentConsent: Bool {
+        OnboardingStepValidator.issues(
+            for: .consent,
+            draft: draft,
+            now: now()
+        ).isEmpty
+    }
+
     private var isCancellationRequested: Bool {
         Task.isCancelled || cancellationCheck()
+    }
+
+    private func canPublish(_ submissionID: UUID) -> Bool {
+        activeSubmissionID == submissionID && !isCancellationRequested
     }
 
     private func finishCancelledSubmission(_ submissionID: UUID) {
@@ -288,6 +379,10 @@ final class OnboardingFlowModel {
         case OnboardingRepositoryError.serviceUnavailable:
             .serviceUnavailable
         case OnboardingRepositoryError.storageUnavailable:
+            .storageUnavailable
+        case CoachPersonaRepositoryError.serviceUnavailable:
+            .serviceUnavailable
+        case CoachPersonaRepositoryError.storageUnavailable:
             .storageUnavailable
         default:
             .operationUnavailable

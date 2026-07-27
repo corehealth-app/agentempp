@@ -102,6 +102,26 @@ final class AppFlowModel {
         state = .onboarding(userID: userID, step: step)
     }
 
+    func completeOnboarding(for userID: String) {
+        guard !isCancellationRequested,
+              case .onboarding(let activeUserID, _) = state,
+              activeUserID == userID,
+              let session = currentSession,
+              session.userID == userID,
+              session.isEmailConfirmed,
+              !session.isOnboardingCompleted else {
+            return
+        }
+
+        currentSession = AuthSession(
+            userID: session.userID,
+            email: session.email,
+            isEmailConfirmed: session.isEmailConfirmed,
+            isOnboardingCompleted: true
+        )
+        state = .authenticated(userID: userID)
+    }
+
     func signIn(email: String, password: String) async {
         guard beginAuthOperation() else { return }
 

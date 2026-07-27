@@ -8,19 +8,24 @@ struct ConsentStepView: View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
                 title: "Consentimento de desenvolvimento",
-                message: "Esta demonstração usa documentos técnicos sintéticos. Eles não representam aceite legal."
+                message: "Ambiente de validação. Estes documentos são sintéticos e não representam um aceite jurídico real."
             )
 
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Label("Termos de desenvolvimento", systemImage: "doc.text")
-                Label("Privacidade de desenvolvimento", systemImage: "hand.raised")
-            }
-            .font(BodyFlowTypography.body)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                Toggle(
+                    "Confirmo os Termos de desenvolvimento (dev.terms.v1)",
+                    isOn: acceptanceBinding(for: .terms)
+                )
+                .accessibilityIdentifier("consent.terms")
 
-            Toggle("Confirmo os dois documentos sintéticos para continuar nesta demonstração", isOn: consentAccepted)
-                .font(BodyFlowTypography.headline)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("onboarding.development-consent")
+                Toggle(
+                    "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)",
+                    isOn: acceptanceBinding(for: .privacy)
+                )
+                .accessibilityIdentifier("consent.privacy")
+            }
+            .font(BodyFlowTypography.headline)
+            .fixedSize(horizontal: false, vertical: true)
 
             OnboardingFieldIssue(model: model, candidates: [.consentRequired])
         }
@@ -28,14 +33,29 @@ struct ConsentStepView: View {
         .accessibilityIdentifier("screen.onboarding.consent")
     }
 
-    private var consentAccepted: Binding<Bool> {
+    private func acceptanceBinding(
+        for documentID: DevelopmentConsentDocumentID
+    ) -> Binding<Bool> {
         Binding(
-            get: { model.draft.consent != nil },
+            get: { model.draft.consent?.documentIDs.contains(documentID) == true },
             set: { accepted in
-                model.updateConsent(accepted ? DevelopmentConsentAcceptance(
-                    documentIDs: ["development-privacy", "development-terms"],
-                    acceptedAt: Date()
-                ) : nil)
+                var acceptedIDs = Set(model.draft.consent?.documentIDs ?? [])
+                if accepted {
+                    acceptedIDs.insert(documentID)
+                } else {
+                    acceptedIDs.remove(documentID)
+                }
+
+                guard !acceptedIDs.isEmpty else {
+                    model.updateConsent(nil)
+                    return
+                }
+                model.updateConsent(DevelopmentConsentAcceptance(
+                    documentIDs: DevelopmentConsentDocumentID.allCases.filter(
+                        acceptedIDs.contains
+                    ),
+                    acceptedAt: model.draft.consent?.acceptedAt ?? Date()
+                ))
             }
         )
     }

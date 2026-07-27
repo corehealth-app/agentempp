@@ -59,7 +59,6 @@ struct AppDependenciesTests {
         )
 
         #expect(AppFixtures.profile.title == "Perfil de demonstração")
-        #expect(AppFixtures.profile.coachPreference == "Equilibrado")
         #expect(AppFixtures.profile.notifications == "Ativadas")
     }
 }

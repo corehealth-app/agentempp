@@ -129,32 +129,67 @@ actor DemoOnboardingRepository: OnboardingRepository {
     }
 
     private func validate(_ draft: OnboardingDraft) throws {
-        if buildFlavor == .release, draft.consent != nil {
+        let consentIDs = Set(draft.consent?.documentIDs ?? [])
+        let developmentIDs = Set(DevelopmentConsentDocumentID.allCases)
+        if buildFlavor == .release,
+           !consentIDs.isDisjoint(with: developmentIDs) {
             throw OnboardingRepositoryError.developmentConsentForbidden
         }
 
         let hasIdentity = !(draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-            && !draft.localeIdentifier.isEmpty
-            && !draft.countryCode.isEmpty
-            && !draft.timeZoneIdentifier.isEmpty
+            && ["pt-BR", "en-US"].contains(draft.localeIdentifier)
+            && isValidCountryCode(draft.countryCode)
+            && TimeZone(identifier: draft.timeZoneIdentifier) != nil
         let hasBody = draft.biologicalSex != nil
-            && draft.birthDate != nil
-            && (draft.heightCM ?? 0) > 0
-            && (draft.weightKG ?? 0) > 0
-            && (draft.bodyFatPercent ?? -1) >= 0
+            && isValidBirthDate(draft.birthDate)
+            && isInRange(draft.heightCM, range: 100...250)
+            && isInRange(draft.weightKG, range: 30...300)
+            && isOptionalBodyFatValid(draft.bodyFatPercent)
         let hasObjective = draft.objective != nil
         let hasRoutine = draft.activityLevel != nil
-            && (1...7).contains(draft.trainingFrequency ?? 0)
+            && (0...7).contains(draft.trainingFrequency ?? -1)
             && draft.waterIntake != nil
             && draft.hungerLevel != nil
             && valid(draft.wakeTime)
             && valid(draft.bedtime)
             && draft.foodOrganization != nil
-        let hasFinalChoices = draft.persona != nil && draft.consent != nil
+        let hasFinalChoices = draft.persona != nil
+            && developmentIDs.isSubset(of: consentIDs)
+        let isAtCompletion = draft.currentStep == .completion
 
-        guard hasIdentity, hasBody, hasObjective, hasRoutine, hasFinalChoices else {
+        guard hasIdentity,
+              hasBody,
+              hasObjective,
+              hasRoutine,
+              hasFinalChoices,
+              isAtCompletion else {
             throw OnboardingRepositoryError.invalidDraft
         }
+    }
+
+    private func isValidCountryCode(_ countryCode: String) -> Bool {
+        countryCode.count == 2
+            && countryCode == countryCode.uppercased()
+            && countryCode.unicodeScalars.allSatisfy { (65...90).contains($0.value) }
+            && Locale.Region.isoRegions.map(\.identifier).contains(countryCode)
+    }
+
+    private func isValidBirthDate(_ birthDate: Date?) -> Bool {
+        guard let birthDate else { return false }
+        return birthDate <= Date()
+    }
+
+    private func isInRange(
+        _ value: Double?,
+        range: ClosedRange<Double>
+    ) -> Bool {
+        guard let value else { return false }
+        return range.contains(value)
+    }
+
+    private func isOptionalBodyFatValid(_ value: Double?) -> Bool {
+        guard let value else { return true }
+        return (3...60).contains(value)
     }
 
     private func valid(_ time: LocalTime?) -> Bool {

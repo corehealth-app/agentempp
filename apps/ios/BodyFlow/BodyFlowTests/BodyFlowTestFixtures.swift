@@ -26,7 +26,7 @@ enum BodyFlowTestFixtures {
             foodOrganization: .yes,
             persona: .focus,
             consent: DevelopmentConsentAcceptance(
-                documentIDs: ["development-privacy", "development-terms"],
+                documentIDs: [.terms, .privacy],
                 acceptedAt: Date(timeIntervalSince1970: 946_684_800)
             ),
             currentStep: currentStep

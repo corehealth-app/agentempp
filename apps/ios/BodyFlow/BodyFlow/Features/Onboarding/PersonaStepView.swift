@@ -21,7 +21,7 @@ struct PersonaStepView: View {
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                                 Text(value.displayName).fontWeight(.semibold)
-                                Text(description(for: value))
+                                Text(value.summary)
                                     .font(BodyFlowTypography.callout)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                             }
@@ -34,6 +34,7 @@ struct PersonaStepView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(model.draft.persona == value ? .isSelected : [])
+                    .accessibilityIdentifier("persona.\(value.id)")
                 }
             }
             OnboardingFieldIssue(model: model, candidates: [.personaRequired])
@@ -41,12 +42,14 @@ struct PersonaStepView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.persona")
     }
+}
 
-    private func description(for persona: CoachPersona) -> String {
-        switch persona {
-        case .focus: "Direto, firme, objetivo e respeitoso."
-        case .impulse: "Motivador, positivo e energético."
-        case .zen: "Calmo, explicativo e acolhedor."
+extension CoachPersona {
+    var id: String {
+        switch self {
+        case .focus: "focus"
+        case .impulse: "impulse"
+        case .zen: "zen"
         }
     }
 }

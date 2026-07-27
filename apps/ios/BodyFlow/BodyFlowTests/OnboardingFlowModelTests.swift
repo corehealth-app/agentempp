@@ -373,14 +373,15 @@ struct OnboardingFlowModelTests {
         #expect(model.operationState == .idle)
     }
 
-    @Test("completion remains inert until final persistence orchestration is added")
-    func doesNotCompleteEarly() async {
+    @Test("regular Continue cannot bypass the dedicated final command")
+    func regularContinueDoesNotComplete() async {
         let repository = RecordingOnboardingRepository()
         var completionCount = 0
         let model = OnboardingFlowModel(
             userID: "fixture-user",
             initialDraft: .fixture(step: .completion),
             repository: repository,
+            personaRepository: OnboardingPersonaRepository(),
             onStepChanged: { _ in },
             onCompleted: { completionCount += 1 }
         )
@@ -402,6 +403,7 @@ struct OnboardingFlowModelTests {
             userID: "fixture-user",
             initialDraft: draft,
             repository: repository,
+            personaRepository: OnboardingPersonaRepository(),
             onStepChanged: onStepChanged,
             onCompleted: {},
             now: { now }
@@ -443,6 +445,11 @@ private actor RecordingOnboardingRepository: OnboardingRepository {
     }
 
     func clear(for userID: String) async throws {}
+}
+
+private actor OnboardingPersonaRepository: CoachPersonaRepository {
+    func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
+    func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
 }
 
 private actor SuspendedOnboardingRepository: OnboardingRepository {

@@ -51,8 +51,13 @@ struct LocalTime: Codable, Equatable, Sendable {
     let minute: Int
 }
 
+enum DevelopmentConsentDocumentID: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
+    case terms = "dev.terms.v1"
+    case privacy = "dev.privacy.v1"
+}
+
 struct DevelopmentConsentAcceptance: Codable, Equatable, Sendable {
-    let documentIDs: [String]
+    let documentIDs: [DevelopmentConsentDocumentID]
     let acceptedAt: Date
 }
 

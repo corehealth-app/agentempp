@@ -116,12 +116,14 @@ struct AppRootView: View {
                 userID: userID,
                 initialDraft: draft,
                 repository: dependencies.onboarding,
+                personaRepository: dependencies.coachPersona,
                 onStepChanged: { step in
                     guard onboardingUserID == userID else { return }
                     model.updateOnboardingStep(step)
                 },
                 onCompleted: {
-                    // Task 6 owns final persistence and authenticated transition.
+                    guard onboardingUserID == userID else { return }
+                    model.completeOnboarding(for: userID)
                 }
             )
         } catch is CancellationError {

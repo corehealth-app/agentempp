@@ -117,6 +117,7 @@ struct AppRootView: View {
                 initialDraft: draft,
                 repository: dependencies.onboarding,
                 personaRepository: dependencies.coachPersona,
+                developmentConsentAvailability: configuration.developmentConsentAvailability,
                 onStepChanged: { step in
                     guard onboardingUserID == userID else { return }
                     model.updateOnboardingStep(step)

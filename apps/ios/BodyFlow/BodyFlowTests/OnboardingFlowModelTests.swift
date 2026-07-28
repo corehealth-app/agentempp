@@ -253,6 +253,53 @@ struct OnboardingFlowModelTests {
         #expect(consentModel.validationIssues == [.consentRequired])
     }
 
+    @Test("unavailable synthetic consent is neither presented nor advanced")
+    func unavailableSyntheticConsentDoesNotAdvance() async {
+        let repository = RecordingOnboardingRepository()
+        let model = makeModel(
+            draft: .fixture(step: .consent),
+            repository: repository,
+            developmentConsentAvailability: .unavailable
+        )
+
+        #expect(model.stepPresentation == .developmentConsentUnavailable)
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.validationIssues == [.developmentConsentUnavailable])
+        #expect(model.step == .consent)
+        #expect(model.draft.currentStep == .consent)
+        #expect(await repository.savedDrafts.isEmpty)
+    }
+
+    @Test("unavailable synthetic consent hides a stale completion presentation")
+    func unavailableSyntheticConsentHidesStaleCompletion() {
+        let model = makeModel(
+            draft: .fixture(step: .completion),
+            developmentConsentAvailability: .unavailable
+        )
+
+        #expect(model.stepPresentation == .developmentConsentUnavailable)
+    }
+
+    @Test("synthetic development consent retains the debug journey")
+    func syntheticDevelopmentConsentAdvances() async {
+        let repository = RecordingOnboardingRepository()
+        let model = makeModel(
+            draft: .fixture(step: .consent),
+            repository: repository,
+            developmentConsentAvailability: .syntheticDevelopment
+        )
+
+        #expect(model.stepPresentation == .step(.consent))
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.validationIssues.isEmpty)
+        #expect(model.step == .completion)
+        #expect(await repository.savedDrafts.map(\.currentStep) == [.completion])
+    }
+
     @Test("continue saves the advanced draft before publishing the step")
     func savesBeforeAdvance() async {
         let events = LockedEventRecorder()
@@ -382,6 +429,7 @@ struct OnboardingFlowModelTests {
             initialDraft: .fixture(step: .completion),
             repository: repository,
             personaRepository: OnboardingPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
             onStepChanged: { _ in },
             onCompleted: { completionCount += 1 }
         )
@@ -396,6 +444,7 @@ struct OnboardingFlowModelTests {
     private func makeModel(
         draft: OnboardingDraft = .fixture(step: .welcome),
         repository: any OnboardingRepository = RecordingOnboardingRepository(),
+        developmentConsentAvailability: DevelopmentConsentAvailability = .syntheticDevelopment,
         now: Date = Date(timeIntervalSince1970: 2_000_000_000),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in }
     ) -> OnboardingFlowModel {
@@ -404,6 +453,7 @@ struct OnboardingFlowModelTests {
             initialDraft: draft,
             repository: repository,
             personaRepository: OnboardingPersonaRepository(),
+            developmentConsentAvailability: developmentConsentAvailability,
             onStepChanged: onStepChanged,
             onCompleted: {},
             now: { now }

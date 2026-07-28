@@ -17,6 +17,15 @@ struct AppLaunchConfiguration: Sendable {
     let preloadsSyntheticOnboardingValues: Bool
     let authBehavior: DemoOperationBehavior<AuthenticationError>
 
+    var developmentConsentAvailability: DevelopmentConsentAvailability {
+        switch mode {
+        case .demo:
+            .syntheticDevelopment
+        case .releaseUnavailable:
+            .unavailable
+        }
+    }
+
     static func current() -> AppLaunchConfiguration {
         #if DEBUG
         resolve(arguments: ProcessInfo.processInfo.arguments, buildFlavor: .debug)

@@ -53,6 +53,29 @@ struct OnboardingCompletionTests {
         #expect(await onboarding.completedDrafts.isEmpty)
     }
 
+    @Test("unsupported locale blocks completion before every persistence side effect")
+    func unsupportedLocaleBlocksCompletion() async {
+        var draft = completeDraft()
+        draft.localeIdentifier = "fr-FR"
+        let onboarding = CompletionOnboardingRepository()
+        let persona = CompletionPersonaRepository()
+        var callbackCount = 0
+        let model = makeModel(
+            draft: draft,
+            onboarding: onboarding,
+            persona: persona,
+            onCompleted: { callbackCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(model.validationIssues == [.localeUnsupported])
+        #expect(model.step == .completion)
+        #expect(await persona.writes.isEmpty)
+        #expect(await onboarding.completedDrafts.isEmpty)
+        #expect(callbackCount == 0)
+    }
+
     @Test("persona is persisted before onboarding completion and root callback")
     func persistsInApprovedOrder() async {
         let events = CompletionEventRecorder()
@@ -93,6 +116,27 @@ struct OnboardingCompletionTests {
         #expect(await onboarding.completedDrafts.isEmpty)
     }
 
+    @Test("unavailable synthetic consent blocks stale completion before every write")
+    func unavailableSyntheticConsentBlocksCompletion() async {
+        let onboarding = CompletionOnboardingRepository()
+        let persona = CompletionPersonaRepository()
+        var callbackCount = 0
+        let model = makeModel(
+            onboarding: onboarding,
+            persona: persona,
+            developmentConsentAvailability: .unavailable,
+            onCompleted: { callbackCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(model.validationIssues == [.developmentConsentUnavailable])
+        #expect(model.step == .completion)
+        #expect(await persona.writes.isEmpty)
+        #expect(await onboarding.completedDrafts.isEmpty)
+        #expect(callbackCount == 0)
+    }
+
     @Test("persona failure keeps completion visible and never calls complete")
     func personaFailureStopsCompletion() async {
         let onboarding = CompletionOnboardingRepository()
@@ -109,6 +153,8 @@ struct OnboardingCompletionTests {
         await model.complete()
 
         #expect(model.step == .completion)
+        #expect(model.draft.currentStep == .completion)
+        #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
         #expect(model.operationState == .failed(.serviceUnavailable))
         #expect(await persona.writes == [.focus])
         #expect(await onboarding.completedDrafts.isEmpty)
@@ -122,18 +168,32 @@ struct OnboardingCompletionTests {
         )
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
+        var changedSteps: [OnboardingStep] = []
         let model = makeModel(
             onboarding: onboarding,
             persona: persona,
+            onStepChanged: { changedSteps.append($0) },
             onCompleted: { callbackCount += 1 }
         )
 
         await model.complete()
 
-        #expect(model.step == .completion)
+        #expect(model.step == .consent)
+        #expect(model.draft.currentStep == .consent)
         #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
         #expect(model.operationState == .failed(.serviceUnavailable))
+        #expect(await persona.writes == [.focus])
+        #expect(await onboarding.completedDrafts.count == 1)
+        #expect(changedSteps == [.consent])
         #expect(callbackCount == 0)
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.step == .completion)
+        #expect(model.draft.currentStep == .completion)
+        #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
+        #expect(await onboarding.savedDrafts.map(\.currentStep) == [.completion])
+        #expect(changedSteps == [.consent, .completion])
 
         await model.complete()
 
@@ -221,6 +281,8 @@ struct OnboardingCompletionTests {
         await onboarding.resumeComplete()
         await submission.value
 
+        #expect(model.step == .completion)
+        #expect(model.draft.currentStep == .completion)
         #expect(model.operationState == .idle)
     }
 
@@ -241,6 +303,25 @@ struct OnboardingCompletionTests {
 
         #expect(try await store.loadSession() == originalSession)
         #expect(try await store.loadOnboardingDraft() == nil)
+    }
+
+    @Test("release rejects saving synthetic consent before replacing persisted draft")
+    func releaseRejectsDevelopmentConsentSaveWithoutMutation() async throws {
+        let store = DemoStateStore(secureStore: InMemorySecureStore())
+        var originalDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .persona)
+        originalDraft.consent = nil
+        try await store.saveOnboardingDraft(originalDraft)
+        let repository = DemoOnboardingRepository(
+            stateStore: store,
+            buildFlavor: .release
+        )
+        let forbiddenDraft = completeDraft()
+
+        await #expect(throws: OnboardingRepositoryError.developmentConsentForbidden) {
+            try await repository.saveDraft(forbiddenDraft, for: "fixture-user")
+        }
+
+        #expect(try await store.loadOnboardingDraft() == originalDraft)
     }
 
     @Test("root completion requires the current confirmed session and matching user")
@@ -304,6 +385,8 @@ struct OnboardingCompletionTests {
         draft: OnboardingDraft? = nil,
         onboarding: any OnboardingRepository = CompletionOnboardingRepository(),
         persona: any CoachPersonaRepository = CompletionPersonaRepository(),
+        developmentConsentAvailability: DevelopmentConsentAvailability = .syntheticDevelopment,
+        onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in },
         onCompleted: @escaping @MainActor () -> Void = {}
     ) -> OnboardingFlowModel {
         OnboardingFlowModel(
@@ -311,7 +394,8 @@ struct OnboardingCompletionTests {
             initialDraft: draft ?? completeDraft(),
             repository: onboarding,
             personaRepository: persona,
-            onStepChanged: { _ in },
+            developmentConsentAvailability: developmentConsentAvailability,
+            onStepChanged: onStepChanged,
             onCompleted: onCompleted,
             now: { fixtureDate }
         )
@@ -372,6 +456,7 @@ private actor CompletionOnboardingRepository: OnboardingRepository {
     private let loadedDraft: OnboardingDraft?
     private let events: CompletionEventRecorder?
     private var results: [Result<Void, OnboardingRepositoryError>]
+    private(set) var savedDrafts: [OnboardingDraft] = []
     private(set) var completedDrafts: [OnboardingDraft] = []
 
     init(
@@ -388,7 +473,9 @@ private actor CompletionOnboardingRepository: OnboardingRepository {
         loadedDraft
     }
 
-    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
+        savedDrafts.append(draft)
+    }
 
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {
         completedDrafts.append(draft)

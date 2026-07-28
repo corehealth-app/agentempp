@@ -1,9 +1,34 @@
+import SwiftUI
 import Testing
 
 @testable import BodyFlow
 
 @Suite("Onboarding presentation policies")
 struct OnboardingPresentationTests {
+    @Test("release resolves synthetic consent presentation as unavailable")
+    func releaseHidesSyntheticConsentPresentation() {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing"],
+            buildFlavor: .release
+        )
+
+        #expect(configuration.developmentConsentAvailability == .unavailable)
+    }
+
+    @MainActor
+    @Test("development consent exposes its legacy group and child identifiers")
+    func developmentConsentAccessibilityIdentifiers() {
+        var visitedObjects: Set<ObjectIdentifier> = []
+        let presentationStrings = reflectedStrings(
+            in: ConsentStepView(model: .preview(step: .consent)).body,
+            visitedObjects: &visitedObjects
+        )
+
+        #expect(presentationStrings.contains("onboarding.development-consent"))
+        #expect(presentationStrings.contains("consent.terms"))
+        #expect(presentationStrings.contains("consent.privacy"))
+    }
+
     @Test("the root renders a flow model only for the active onboarding user")
     func rootRenderRequiresMatchingUser() {
         #expect(OnboardingRootLoadState.canRender(
@@ -73,5 +98,32 @@ struct OnboardingPresentationTests {
         #expect(OnboardingDecimalFieldDescriptor.weight.accessibilityLabel == "Peso")
         #expect(OnboardingDecimalFieldDescriptor.weight.unit == "kg")
         #expect(OnboardingDecimalFieldDescriptor.weight.accessibilityValue(for: nil) == "Não informado, kg")
+    }
+
+    private func reflectedStrings(
+        in value: Any,
+        depth: Int = 0,
+        visitedObjects: inout Set<ObjectIdentifier>
+    ) -> Set<String> {
+        guard depth < 24 else { return [] }
+        if let string = value as? String {
+            return [string]
+        }
+
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .class {
+            let identifier = ObjectIdentifier(value as AnyObject)
+            guard visitedObjects.insert(identifier).inserted else {
+                return []
+            }
+        }
+
+        return mirror.children.reduce(into: Set<String>()) { strings, child in
+            strings.formUnion(reflectedStrings(
+                in: child.value,
+                depth: depth + 1,
+                visitedObjects: &visitedObjects
+            ))
+        }
     }
 }

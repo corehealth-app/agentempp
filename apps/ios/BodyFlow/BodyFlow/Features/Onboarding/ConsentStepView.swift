@@ -26,6 +26,8 @@ struct ConsentStepView: View {
             }
             .font(BodyFlowTypography.headline)
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("onboarding.development-consent")
 
             OnboardingFieldIssue(model: model, candidates: [.consentRequired])
         }

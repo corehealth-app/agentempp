@@ -51,9 +51,30 @@ struct LocalTime: Codable, Equatable, Sendable {
     let minute: Int
 }
 
+enum OnboardingLocalePolicy {
+    static let supportedIdentifiers: Set<String> = ["pt-BR", "en-US"]
+
+    static func isSupported(_ identifier: String) -> Bool {
+        supportedIdentifiers.contains(identifier)
+    }
+}
+
 enum DevelopmentConsentDocumentID: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
     case terms = "dev.terms.v1"
     case privacy = "dev.privacy.v1"
+}
+
+enum DevelopmentConsentAvailability: Equatable, Sendable {
+    case syntheticDevelopment
+    case unavailable
+
+    var allowsSyntheticDevelopmentConsent: Bool {
+        #if DEBUG
+        self == .syntheticDevelopment
+        #else
+        false
+        #endif
+    }
 }
 
 struct DevelopmentConsentAcceptance: Codable, Equatable, Sendable {

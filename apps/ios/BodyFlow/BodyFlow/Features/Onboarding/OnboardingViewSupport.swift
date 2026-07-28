@@ -148,6 +148,7 @@ extension OnboardingFlowModel {
             ),
             repository: PreviewOnboardingRepository(),
             personaRepository: PreviewCoachPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
             onStepChanged: { _ in },
             onCompleted: {},
             initialOperationState: operationState,

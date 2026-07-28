@@ -43,44 +43,48 @@ struct OnboardingContainerView: View {
 
     @ViewBuilder
     private var stepContent: some View {
-        switch model.step {
-        case .welcome:
+        switch model.stepPresentation {
+        case .step(.welcome):
             WelcomeStepView(model: model)
-        case .bodyData:
+        case .step(.bodyData):
             BodyDataStepView(model: model)
-        case .objective:
+        case .step(.objective):
             ObjectiveStepView(model: model)
-        case .routine:
+        case .step(.routine):
             RoutineStepView(model: model)
-        case .persona:
+        case .step(.persona):
             PersonaStepView(model: model)
-        case .consent:
+        case .step(.consent):
             ConsentStepView(model: model)
-        case .completion:
+        case .step(.completion):
             OnboardingCompletionView(model: model, onComplete: submitCompletion)
+        case .developmentConsentUnavailable:
+            DevelopmentConsentUnavailableView()
         }
     }
 
     private var commands: some View {
         VStack(spacing: BodyFlowSpacing.sm) {
             if model.step != .completion {
-                Button(action: submit) {
-                    HStack {
-                        Spacer()
-                        if model.operationState == .saving {
-                            ProgressView().tint(.white).accessibilityHidden(true)
+                if model.stepPresentation != .developmentConsentUnavailable {
+                    Button(action: submit) {
+                        HStack {
+                            Spacer()
+                            if model.operationState == .saving {
+                                ProgressView().tint(.white).accessibilityHidden(true)
+                            }
+                            Text(continueTitle)
+                            Spacer()
                         }
-                        Text(continueTitle)
-                        Spacer()
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        model.operationState == .saving
+                            || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
+                    )
+                    .accessibilityIdentifier("onboarding.continue")
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    model.operationState == .saving
-                        || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
-                )
-                .accessibilityIdentifier("onboarding.continue")
 
                 if model.step != .welcome {
                     Button("Voltar", action: model.back)
@@ -127,6 +131,7 @@ extension OnboardingValidationIssue {
     var message: String {
         switch self {
         case .displayNameRequired: "Informe como você quer ser chamado."
+        case .localeUnsupported: "Confirme um idioma compatível."
         case .countryInvalid: "Confirme um país válido."
         case .timeZoneInvalid: "Confirme um fuso horário válido."
         case .biologicalSexRequired: "Selecione o sexo biológico."
@@ -145,7 +150,20 @@ extension OnboardingValidationIssue {
         case .foodOrganizationRequired: "Confirme como você organiza as refeições."
         case .personaRequired: "Selecione uma persona de coach."
         case .consentRequired: "Confirme os documentos de desenvolvimento."
+        case .developmentConsentUnavailable: "Esta etapa não está disponível nesta versão."
         }
+    }
+}
+
+@MainActor
+private struct DevelopmentConsentUnavailableView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Etapa indisponível", systemImage: "lock.fill")
+        } description: {
+            Text("Esta etapa ainda não está disponível nesta versão.")
+        }
+        .accessibilityIdentifier("screen.onboarding.consent-unavailable")
     }
 }
 

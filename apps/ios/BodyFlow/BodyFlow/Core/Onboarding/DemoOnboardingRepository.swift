@@ -60,6 +60,7 @@ actor DemoOnboardingRepository: OnboardingRepository {
 
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
         try await apply(behavior)
+        try rejectDevelopmentConsentIfNeeded(draft)
         try Task.checkCancellation()
         do {
             try await stateStore.saveOnboardingDraft(draft)
@@ -129,15 +130,12 @@ actor DemoOnboardingRepository: OnboardingRepository {
     }
 
     private func validate(_ draft: OnboardingDraft) throws {
+        try rejectDevelopmentConsentIfNeeded(draft)
+
         let consentIDs = Set(draft.consent?.documentIDs ?? [])
         let developmentIDs = Set(DevelopmentConsentDocumentID.allCases)
-        if buildFlavor == .release,
-           !consentIDs.isDisjoint(with: developmentIDs) {
-            throw OnboardingRepositoryError.developmentConsentForbidden
-        }
-
         let hasIdentity = !(draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-            && ["pt-BR", "en-US"].contains(draft.localeIdentifier)
+            && OnboardingLocalePolicy.isSupported(draft.localeIdentifier)
             && isValidCountryCode(draft.countryCode)
             && TimeZone(identifier: draft.timeZoneIdentifier) != nil
         let hasBody = draft.biologicalSex != nil
@@ -164,6 +162,17 @@ actor DemoOnboardingRepository: OnboardingRepository {
               hasFinalChoices,
               isAtCompletion else {
             throw OnboardingRepositoryError.invalidDraft
+        }
+    }
+
+    private func rejectDevelopmentConsentIfNeeded(
+        _ draft: OnboardingDraft
+    ) throws {
+        let consentIDs = Set(draft.consent?.documentIDs ?? [])
+        let developmentIDs = Set(DevelopmentConsentDocumentID.allCases)
+        if buildFlavor == .release,
+           !consentIDs.isDisjoint(with: developmentIDs) {
+            throw OnboardingRepositoryError.developmentConsentForbidden
         }
     }
 

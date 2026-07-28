@@ -28,6 +28,7 @@ struct WelcomeStepView: View {
                 Text("Sugerido a partir do idioma compatível do aparelho.")
                     .font(BodyFlowTypography.caption)
                     .foregroundStyle(BodyFlowColor.secondaryText)
+                OnboardingFieldIssue(model: model, candidates: [.localeUnsupported])
             }
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {

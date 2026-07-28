@@ -12,20 +12,15 @@ struct ConsentStepView: View {
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Toggle(
-                    "Confirmo os Termos de desenvolvimento (dev.terms.v1)",
-                    isOn: acceptanceBinding(for: .terms)
+                consentButton(
+                    for: .terms,
+                    accessibilityIdentifier: "consent.terms"
                 )
-                .accessibilityIdentifier("consent.terms")
-
-                Toggle(
-                    "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)",
-                    isOn: acceptanceBinding(for: .privacy)
+                consentButton(
+                    for: .privacy,
+                    accessibilityIdentifier: "consent.privacy"
                 )
-                .accessibilityIdentifier("consent.privacy")
             }
-            .font(BodyFlowTypography.headline)
-            .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("onboarding.development-consent")
 
@@ -33,6 +28,67 @@ struct ConsentStepView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.consent")
+    }
+
+    private func consentButton(
+        for documentID: DevelopmentConsentDocumentID,
+        accessibilityIdentifier: String
+    ) -> some View {
+        let acceptance = acceptanceBinding(for: documentID)
+        let isAccepted = acceptance.wrappedValue
+
+        return Button {
+            acceptance.wrappedValue.toggle()
+        } label: {
+            HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                Image(
+                    systemName: isAccepted
+                        ? "checkmark.square.fill"
+                        : "square"
+                )
+                .accessibilityHidden(true)
+
+                VStack(
+                    alignment: .leading,
+                    spacing: BodyFlowSpacing.xxs
+                ) {
+                    Text(title(for: documentID))
+                        .font(BodyFlowTypography.headline)
+                    Text(isAccepted ? "Selecionado" : "Não selecionado")
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .frame(
+                maxWidth: .infinity,
+                minHeight: BodyFlowSpacing.minimumTapTarget,
+                alignment: .leading
+            )
+            .padding(BodyFlowSpacing.sm)
+            .background(
+                BodyFlowColor.surface,
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isAccepted ? .isSelected : [])
+        .accessibilityHint(
+            model.accessibilityHint(for: [.consentRequired])
+        )
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func title(
+        for documentID: DevelopmentConsentDocumentID
+    ) -> String {
+        switch documentID {
+        case .terms:
+            "Confirmo os Termos de desenvolvimento (dev.terms.v1)"
+        case .privacy:
+            "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)"
+        }
     }
 
     private func acceptanceBinding(

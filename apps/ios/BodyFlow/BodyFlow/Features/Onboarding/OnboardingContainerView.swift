@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct OnboardingContainerView: View {
@@ -87,8 +88,14 @@ struct OnboardingContainerView: View {
                 }
 
                 if model.step != .welcome {
-                    Button("Voltar", action: model.back)
-                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                    Button(action: model.back) {
+                        Text("Voltar")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
+                    }
                         .disabled(model.operationState == .saving)
                         .accessibilityIdentifier("onboarding.back")
                 }
@@ -108,6 +115,7 @@ struct OnboardingContainerView: View {
         guard submissionTask == nil else { return }
         submissionTask = Task {
             await model.continueFromCurrentStep()
+            announceOperationResultIfNeeded()
             submissionTask = nil
         }
     }
@@ -116,8 +124,22 @@ struct OnboardingContainerView: View {
         guard submissionTask == nil else { return }
         submissionTask = Task {
             await model.complete()
+            announceOperationResultIfNeeded()
             submissionTask = nil
         }
+    }
+
+    private func announceOperationResultIfNeeded() {
+        let message: String
+        if !model.validationIssues.isEmpty {
+            message = "Erros no formulário: "
+                + model.validationIssues.map(\.message).joined(separator: " ")
+        } else if case .failed(let error) = model.operationState {
+            message = error.authMessage
+        } else {
+            return
+        }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func cancelSubmission() {

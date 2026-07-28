@@ -11,7 +11,11 @@ struct RoutineStepView: View {
                 message: "Conte como são seus hábitos em uma semana comum."
             )
 
-            pickerField("Nível de atividade", selection: activityLevel) {
+            pickerField(
+                "Nível de atividade",
+                selection: activityLevel,
+                issues: [.activityLevelRequired]
+            ) {
                 Text("Selecione").tag(nil as ActivityLevel?)
                 ForEach(ActivityLevel.allCases, id: \.self) {
                     Text($0.onboardingLabel).tag($0 as ActivityLevel?)
@@ -26,16 +30,36 @@ struct RoutineStepView: View {
                         Text("\(model.draft.trainingFrequency ?? 0) por semana")
                     }
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.trainingFrequencyOutOfRange]
+                        )
+                    )
                 } else {
-                    Button("Definir frequência") {
+                    Button {
                         model.updateTrainingFrequency(0)
+                    } label: {
+                        Text("Definir frequência")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.trainingFrequencyOutOfRange]
+                        )
+                    )
                 }
                 OnboardingFieldIssue(model: model, candidates: [.trainingFrequencyOutOfRange])
             }
 
-            pickerField("Consumo de água", selection: waterIntake) {
+            pickerField(
+                "Consumo de água",
+                selection: waterIntake,
+                issues: [.waterIntakeRequired]
+            ) {
                 Text("Selecione").tag(nil as WaterIntake?)
                 ForEach(WaterIntake.allCases, id: \.self) {
                     Text($0.onboardingLabel).tag($0 as WaterIntake?)
@@ -43,7 +67,11 @@ struct RoutineStepView: View {
             }
             OnboardingFieldIssue(model: model, candidates: [.waterIntakeRequired])
 
-            pickerField("Fome ao longo do dia", selection: hungerLevel) {
+            pickerField(
+                "Fome ao longo do dia",
+                selection: hungerLevel,
+                issues: [.hungerLevelRequired]
+            ) {
                 Text("Selecione").tag(nil as HungerLevel?)
                 ForEach(HungerLevel.allCases, id: \.self) {
                     Text($0.onboardingLabel).tag($0 as HungerLevel?)
@@ -56,6 +84,7 @@ struct RoutineStepView: View {
                 value: model.draft.wakeTime,
                 selection: wakeDate,
                 defaultValue: LocalTime(hour: 7, minute: 0),
+                issues: [.wakeTimeRequired],
                 update: { model.updateWakeTime($0) }
             )
             OnboardingFieldIssue(model: model, candidates: [.wakeTimeRequired])
@@ -65,6 +94,7 @@ struct RoutineStepView: View {
                 value: model.draft.bedtime,
                 selection: bedtimeDate,
                 defaultValue: LocalTime(hour: 23, minute: 0),
+                issues: [.bedtimeRequired],
                 update: { model.updateBedtime($0) }
             )
             OnboardingFieldIssue(model: model, candidates: [.bedtimeRequired])
@@ -73,14 +103,30 @@ struct RoutineStepView: View {
                 Toggle("Organizo minhas refeições com antecedência", isOn: organizesFood)
                     .font(BodyFlowTypography.headline)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.foodOrganizationRequired]
+                        )
+                    )
                 if model.draft.foodOrganization == nil {
                     Text("Resposta ainda não confirmada.")
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.secondaryText)
-                    Button("Confirmar resposta: não") {
+                    Button {
                         model.updateFoodOrganization(.no)
+                    } label: {
+                        Text("Confirmar resposta: não")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.foodOrganizationRequired]
+                        )
+                    )
                 }
                 OnboardingFieldIssue(model: model, candidates: [.foodOrganizationRequired])
             }
@@ -143,6 +189,7 @@ struct RoutineStepView: View {
         value: LocalTime?,
         selection: Binding<Date>,
         defaultValue: LocalTime,
+        issues: [OnboardingValidationIssue],
         update: @escaping (LocalTime?) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -150,11 +197,20 @@ struct RoutineStepView: View {
             if value != nil {
                 DatePicker(title, selection: selection, displayedComponents: .hourAndMinute)
                     .labelsHidden()
+                    .accessibilityLabel(title)
+                    .accessibilityHint(model.accessibilityHint(for: issues))
             } else {
-                Button("Selecionar horário") {
+                Button {
                     update(defaultValue)
+                } label: {
+                    Text("Selecionar horário")
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
                 }
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                .accessibilityHint(model.accessibilityHint(for: issues))
             }
         }
     }
@@ -162,6 +218,7 @@ struct RoutineStepView: View {
     private func pickerField<Selection: Hashable, Content: View>(
         _ title: String,
         selection: Binding<Selection>,
+        issues: [OnboardingValidationIssue],
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -169,6 +226,7 @@ struct RoutineStepView: View {
             Picker(title, selection: selection, content: content)
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
+                .accessibilityHint(model.accessibilityHint(for: issues))
         }
     }
 }

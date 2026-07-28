@@ -20,6 +20,9 @@ struct BodyDataStepView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .accessibilityHint(
+                    model.accessibilityHint(for: [.biologicalSexRequired])
+                )
                 OnboardingFieldIssue(model: model, candidates: [.biologicalSexRequired])
             }
 
@@ -34,11 +37,28 @@ struct BodyDataStepView: View {
                     )
                     .labelsHidden()
                     .datePickerStyle(.compact)
+                    .accessibilityLabel("Data de nascimento")
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.birthDateRequired, .birthDateInFuture]
+                        )
+                    )
                 } else {
-                    Button("Selecionar data") {
+                    Button {
                         model.updateBirthDate(Date(timeIntervalSince1970: 946_684_800))
+                    } label: {
+                        Text("Selecionar data")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityHint(
+                        model.accessibilityHint(
+                            for: [.birthDateRequired, .birthDateInFuture]
+                        )
+                    )
                 }
                 OnboardingFieldIssue(
                     model: model,
@@ -111,6 +131,7 @@ struct BodyDataStepView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(descriptor.accessibilityLabel)
                     .accessibilityValue(descriptor.accessibilityValue(for: value.wrappedValue))
+                    .accessibilityHint(model.accessibilityHint(for: issues))
                     .accessibilityIdentifier(identifier)
                 Text(descriptor.unit)
                     .foregroundStyle(BodyFlowColor.secondaryText)

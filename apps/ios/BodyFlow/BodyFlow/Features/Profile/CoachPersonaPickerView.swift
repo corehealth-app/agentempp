@@ -103,6 +103,14 @@ struct CoachPersonaPickerView: View {
                                 Text(persona.summary)
                                     .font(BodyFlowTypography.callout)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
+
+                                Text(
+                                    model.selected == persona
+                                        ? "Selecionado"
+                                        : "Não selecionado"
+                                )
+                                .font(BodyFlowTypography.callout)
+                                .foregroundStyle(BodyFlowColor.secondaryText)
                             }
 
                             Spacer(minLength: 0)

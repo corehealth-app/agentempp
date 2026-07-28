@@ -11,30 +11,58 @@ struct ObjectiveStepView: View {
                 message: "Escolha uma opção para orientar a organização da experiência."
             )
 
-            Picker("Objetivo", selection: objective) {
+            VStack(spacing: BodyFlowSpacing.sm) {
                 ForEach(BodyFlowObjective.allCases, id: \.self) { value in
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                        Text(value.onboardingLabel).fontWeight(.semibold)
-                        Text(value.onboardingDescription)
-                            .font(BodyFlowTypography.callout)
-                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    Button {
+                        model.updateObjective(value)
+                    } label: {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                            Image(
+                                systemName: model.draft.objective == value
+                                    ? "checkmark.circle.fill"
+                                    : "circle"
+                            )
+                            .accessibilityHidden(true)
+
+                            VStack(
+                                alignment: .leading,
+                                spacing: BodyFlowSpacing.xxs
+                            ) {
+                                Text(value.onboardingLabel)
+                                    .fontWeight(.semibold)
+                                Text(value.onboardingDescription)
+                                    .font(BodyFlowTypography.callout)
+                                    .foregroundStyle(BodyFlowColor.secondaryText)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget,
+                            alignment: .leading
+                        )
+                        .padding(BodyFlowSpacing.sm)
+                        .background(
+                            BodyFlowColor.surface,
+                            in: RoundedRectangle(cornerRadius: 12)
+                        )
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .tag(value as BodyFlowObjective?)
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(
+                        model.draft.objective == value ? .isSelected : []
+                    )
+                    .accessibilityHint(
+                        model.accessibilityHint(for: [.objectiveRequired])
+                    )
                     .accessibilityIdentifier(identifier(for: value))
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
 
             OnboardingFieldIssue(model: model, candidates: [.objectiveRequired])
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.objective")
-    }
-
-    private var objective: Binding<BodyFlowObjective?> {
-        Binding(get: { model.draft.objective }, set: { model.updateObjective($0) })
     }
 
     private func identifier(for objective: BodyFlowObjective) -> String {

@@ -30,7 +30,19 @@ struct OnboardingFieldIssue: View {
                 .font(BodyFlowTypography.callout)
                 .foregroundStyle(BodyFlowColor.warning)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .combine)
         }
+    }
+}
+
+extension OnboardingFlowModel {
+    func accessibilityHint(
+        for candidates: [OnboardingValidationIssue]
+    ) -> String {
+        guard let issue = candidates.first(where: validationIssues.contains) else {
+            return ""
+        }
+        return "Erro: \(issue.message)"
     }
 }
 

@@ -229,7 +229,7 @@ actor DemoOnboardingRepository: OnboardingRepository {
             foodOrganization: .yes,
             persona: nil,
             consent: nil,
-            currentStep: .bodyData
+            currentStep: .welcome
         )
     }
 

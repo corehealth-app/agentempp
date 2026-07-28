@@ -355,7 +355,7 @@ struct DemoServicesTests {
         #expect(draft.objective == nil)
         #expect(draft.persona == nil)
         #expect(draft.consent == nil)
-        #expect(draft.currentStep == .bodyData)
+        #expect(draft.currentStep == .welcome)
     }
 
     @Test("repeated valid onboarding completion is idempotent")

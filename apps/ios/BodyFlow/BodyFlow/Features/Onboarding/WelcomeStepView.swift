@@ -15,8 +15,12 @@ struct WelcomeStepView: View {
                 Text("Como você quer ser chamado?").font(BodyFlowTypography.headline)
                 TextField("Seu nome", text: displayName)
                     .textContentType(.name)
-                    .submitLabel(.next)
+                    .submitLabel(.done)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Como você quer ser chamado?")
+                    .accessibilityHint(
+                        model.accessibilityHint(for: [.displayNameRequired])
+                    )
                     .accessibilityIdentifier("onboarding.display-name")
                 OnboardingFieldIssue(model: model, candidates: [.displayNameRequired])
             }
@@ -41,6 +45,9 @@ struct WelcomeStepView: View {
                     selectionRow(countryName, detail: model.draft.countryCode)
                 }
                 .buttonStyle(.plain)
+                .accessibilityHint(
+                    model.accessibilityHint(for: [.countryInvalid])
+                )
                 .accessibilityIdentifier("onboarding.country")
                 OnboardingFieldIssue(model: model, candidates: [.countryInvalid])
             }
@@ -55,6 +62,9 @@ struct WelcomeStepView: View {
                     selectionRow(model.draft.timeZoneIdentifier, detail: "IANA")
                 }
                 .buttonStyle(.plain)
+                .accessibilityHint(
+                    model.accessibilityHint(for: [.timeZoneInvalid])
+                )
                 .accessibilityIdentifier("onboarding.timezone")
                 OnboardingFieldIssue(model: model, candidates: [.timeZoneInvalid])
             }

@@ -64,6 +64,7 @@ final class AppFlowModel {
 
             guard let restoredSession else {
                 transitionToSignedOut()
+                await telemetry.record(.authScreenViewed(.signIn))
                 return
             }
 
@@ -71,6 +72,7 @@ final class AppFlowModel {
         } catch {
             guard !isCancellationRequested else { return }
             transitionToSignedOut(error: presentationError(for: error))
+            await telemetry.record(.authScreenViewed(.signIn))
         }
     }
 
@@ -79,6 +81,7 @@ final class AppFlowModel {
             try await authentication.signOut()
             guard !isCancellationRequested else { return }
             transitionToSignedOut()
+            await telemetry.record(TelemetryEvent(name: .signOutCompleted))
         } catch {
             guard !isCancellationRequested else { return }
             transitionToSignedOut(error: presentationError(for: error))
@@ -141,10 +144,14 @@ final class AppFlowModel {
                 return
             }
             authOperationState = .idle
+            await telemetry.record(.authOperationCompleted(
+                screen: .signIn,
+                outcome: .success
+            ))
         } catch is CancellationError {
             finishCancelledAuthOperation()
         } catch {
-            failAuthOperation(with: error)
+            await failAuthOperation(with: error, screen: .signIn)
         }
     }
 
@@ -165,6 +172,7 @@ final class AppFlowModel {
             case .confirmationRequired(let email):
                 currentSession = nil
                 state = .awaitingEmailConfirmation(email: email)
+                await telemetry.record(.authScreenViewed(.emailConfirmation))
             case .authenticated(let session):
                 await restore(session)
             }
@@ -174,10 +182,14 @@ final class AppFlowModel {
                 return
             }
             authOperationState = .idle
+            await telemetry.record(.authOperationCompleted(
+                screen: .signUp,
+                outcome: .success
+            ))
         } catch is CancellationError {
             finishCancelledAuthOperation()
         } catch {
-            failAuthOperation(with: error)
+            await failAuthOperation(with: error, screen: .signUp)
         }
     }
 
@@ -197,10 +209,14 @@ final class AppFlowModel {
                 return
             }
             authOperationState = .idle
+            await telemetry.record(.authOperationCompleted(
+                screen: .emailConfirmation,
+                outcome: .success
+            ))
         } catch is CancellationError {
             finishCancelledAuthOperation()
         } catch {
-            failAuthOperation(with: error)
+            await failAuthOperation(with: error, screen: .emailConfirmation)
         }
     }
 
@@ -214,10 +230,14 @@ final class AppFlowModel {
                 return
             }
             authOperationState = .recoveryConfirmation
+            await telemetry.record(.authOperationCompleted(
+                screen: .passwordRecovery,
+                outcome: .success
+            ))
         } catch is CancellationError {
             finishCancelledAuthOperation()
         } catch {
-            failAuthOperation(with: error)
+            await failAuthOperation(with: error, screen: .passwordRecovery)
         }
     }
 
@@ -232,6 +252,7 @@ final class AppFlowModel {
                 return
             }
             state = .awaitingEmailConfirmation(email: session.email)
+            await telemetry.record(.authScreenViewed(.emailConfirmation))
             return
         }
 
@@ -318,7 +339,10 @@ final class AppFlowModel {
         authOperationState = .idle
     }
 
-    private func failAuthOperation(with error: Error) {
+    private func failAuthOperation(
+        with error: Error,
+        screen: TelemetryAuthScreen
+    ) async {
         guard !isCancellationRequested else {
             finishCancelledAuthOperation()
             return
@@ -326,6 +350,11 @@ final class AppFlowModel {
         let error = presentationError(for: error)
         presentationError = error
         authOperationState = .failed(error)
+        await telemetry.record(.authOperationCompleted(
+            screen: screen,
+            outcome: .failure,
+            errorCategory: error.telemetryCategory
+        ))
     }
 
     private var isCancellationRequested: Bool {
@@ -353,6 +382,25 @@ final class AppFlowModel {
             .storageUnavailable
         default:
             .operationUnavailable
+        }
+    }
+}
+
+private extension AppPresentationError {
+    var telemetryCategory: TelemetryErrorCategory {
+        switch self {
+        case .invalidInput:
+            .invalidInput
+        case .invalidCredentials:
+            .invalidCredentials
+        case .confirmationRequired:
+            .confirmationRequired
+        case .operationUnavailable:
+            .operationUnavailable
+        case .serviceUnavailable:
+            .serviceUnavailable
+        case .storageUnavailable:
+            .storageUnavailable
         }
     }
 }

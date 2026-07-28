@@ -32,21 +32,6 @@ struct AppShellView: View {
             RegistrationSheet(sheet: sheet)
                 .environment(router)
         }
-        .task {
-            await dependencies.telemetry.record(
-                TelemetryEvent(name: .appLaunched)
-            )
-        }
-        .onChange(of: selectedTab) { _, tab in
-            Task {
-                await dependencies.telemetry.record(
-                    TelemetryEvent(
-                        name: .tabSelected,
-                        metadata: ["tab": tab.accessibilityIdentifier]
-                    )
-                )
-            }
-        }
     }
 
     private var presentedSheetBinding: Binding<AppSheet?> {

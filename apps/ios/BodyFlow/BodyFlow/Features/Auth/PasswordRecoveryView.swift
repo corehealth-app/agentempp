@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct PasswordRecoveryView: View {
@@ -43,6 +44,8 @@ struct PasswordRecoveryView: View {
                             .focused($emailIsFocused)
                             .onSubmit(submit)
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("E-mail")
+                            .accessibilityHint(accessibilityHint)
                             .accessibilityIdentifier("auth.email")
 
                         if let issue = validationIssues.first {
@@ -68,10 +71,17 @@ struct PasswordRecoveryView: View {
                     .accessibilityIdentifier("auth.recovery.submit")
                 }
 
-                Button("Voltar para entrar") {
+                Button {
                     model.showSignIn()
+                } label: {
+                    Text("Voltar para entrar")
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                .accessibilityIdentifier("auth.back-to-sign-in")
             }
         }
         .accessibilityElement(children: .contain)
@@ -83,16 +93,46 @@ struct PasswordRecoveryView: View {
         model.authOperationState == .submitting
     }
 
+    private var accessibilityHint: String {
+        guard let issue = validationIssues.first else { return "" }
+        return "Erro: \(issue.message)"
+    }
+
     private func submit() {
         guard submissionTask == nil else { return }
         validationIssues = AuthInputValidator.recovery(email: email)
-        guard validationIssues.isEmpty else { return }
+        guard validationIssues.isEmpty else {
+            announceValidationIssues()
+            return
+        }
 
         emailIsFocused = false
         submissionTask = Task {
             await model.requestPasswordRecovery(email: email)
+            announceResult()
             submissionTask = nil
         }
+    }
+
+    private func announceValidationIssues() {
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Erros no formulário: "
+                + validationIssues.map(\.message).joined(separator: " ")
+        )
+    }
+
+    private func announceResult() {
+        let message: String
+        switch model.authOperationState {
+        case .recoveryConfirmation:
+            message = "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."
+        case .failed(let error):
+            message = error.authMessage
+        case .idle, .submitting:
+            return
+        }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func cancelSubmission() {

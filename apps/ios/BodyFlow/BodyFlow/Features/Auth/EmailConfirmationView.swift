@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct EmailConfirmationView: View {
@@ -38,10 +39,17 @@ struct EmailConfirmationView: View {
                     .accessibilityIdentifier("auth.confirm-development")
                 }
 
-                Button("Voltar para entrar") {
+                Button {
                     model.showSignIn()
+                } label: {
+                    Text("Voltar para entrar")
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                .accessibilityIdentifier("auth.back-to-sign-in")
             }
         }
         .accessibilityElement(children: .contain)
@@ -57,6 +65,12 @@ struct EmailConfirmationView: View {
         guard submissionTask == nil else { return }
         submissionTask = Task {
             await model.confirmEmailForDevelopment()
+            if case .failed(let error) = model.authOperationState {
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: error.authMessage
+                )
+            }
             submissionTask = nil
         }
     }

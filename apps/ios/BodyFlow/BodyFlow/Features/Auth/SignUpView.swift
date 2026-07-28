@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct SignUpView: View {
@@ -36,6 +37,12 @@ struct SignUpView: View {
                         .focused($focusedField, equals: .email)
                         .onSubmit { focusedField = .password }
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("E-mail")
+                        .accessibilityHint(
+                            accessibilityHint(
+                                for: [.emailRequired, .emailMalformed]
+                            )
+                        )
                         .accessibilityIdentifier("auth.email")
                     fieldMessage(for: [.emailRequired, .emailMalformed])
                 }
@@ -48,6 +55,10 @@ struct SignUpView: View {
                         .focused($focusedField, equals: .password)
                         .onSubmit { focusedField = .confirmation }
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Senha")
+                        .accessibilityHint(
+                            accessibilityHint(for: [.passwordRequired])
+                        )
                         .accessibilityIdentifier("auth.password")
                     fieldMessage(for: [.passwordRequired])
                 }
@@ -56,10 +67,19 @@ struct SignUpView: View {
                     Text("Confirmar senha").font(BodyFlowTypography.headline)
                     SecureField("Confirmar senha", text: $confirmation)
                         .textContentType(.newPassword)
-                        .submitLabel(.join)
+                        .submitLabel(.done)
                         .focused($focusedField, equals: .confirmation)
                         .onSubmit(submit)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Confirmar senha")
+                        .accessibilityHint(
+                            accessibilityHint(
+                                for: [
+                                    .passwordConfirmationRequired,
+                                    .passwordsDoNotMatch,
+                                ]
+                            )
+                        )
                         .accessibilityIdentifier("auth.password-confirmation")
                     fieldMessage(for: [
                         .passwordConfirmationRequired,
@@ -84,10 +104,16 @@ struct SignUpView: View {
                 .disabled(isSubmitting)
                 .accessibilityIdentifier("auth.sign-up.submit")
 
-                Button("Já tenho uma conta") {
+                Button {
                     model.showSignIn()
+                } label: {
+                    Text("Já tenho uma conta")
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
             }
         }
         .accessibilityElement(children: .contain)
@@ -108,6 +134,15 @@ struct SignUpView: View {
         }
     }
 
+    private func accessibilityHint(
+        for candidates: [AuthValidationIssue]
+    ) -> String {
+        guard let issue = candidates.first(where: validationIssues.contains) else {
+            return ""
+        }
+        return "Erro: \(issue.message)"
+    }
+
     private func submit() {
         guard submissionTask == nil else { return }
         validationIssues = AuthInputValidator.signUp(
@@ -115,13 +150,33 @@ struct SignUpView: View {
             password: password,
             confirmation: confirmation
         )
-        guard validationIssues.isEmpty else { return }
+        guard validationIssues.isEmpty else {
+            announceValidationIssues()
+            return
+        }
 
         focusedField = nil
         submissionTask = Task {
             await model.signUp(email: email, password: password)
+            announceOperationErrorIfNeeded()
             submissionTask = nil
         }
+    }
+
+    private func announceValidationIssues() {
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Erros no formulário: "
+                + validationIssues.map(\.message).joined(separator: " ")
+        )
+    }
+
+    private func announceOperationErrorIfNeeded() {
+        guard case .failed(let error) = model.authOperationState else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: error.authMessage
+        )
     }
 
     private func cancelSubmission() {

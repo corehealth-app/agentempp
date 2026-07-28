@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct SignInView: View {
@@ -35,6 +36,12 @@ struct SignInView: View {
                         .focused($focusedField, equals: .email)
                         .onSubmit { focusedField = .password }
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("E-mail")
+                        .accessibilityHint(
+                            accessibilityHint(
+                                for: [.emailRequired, .emailMalformed]
+                            )
+                        )
                         .accessibilityIdentifier("auth.email")
                     fieldMessage(for: [.emailRequired, .emailMalformed])
                 }
@@ -48,6 +55,10 @@ struct SignInView: View {
                         .focused($focusedField, equals: .password)
                         .onSubmit(submit)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Senha")
+                        .accessibilityHint(
+                            accessibilityHint(for: [.passwordRequired])
+                        )
                         .accessibilityIdentifier("auth.password")
                     fieldMessage(for: [.passwordRequired])
                 }
@@ -70,16 +81,28 @@ struct SignInView: View {
                 .accessibilityIdentifier("auth.sign-in.submit")
 
                 VStack(spacing: BodyFlowSpacing.xs) {
-                    Button("Criar conta") {
+                    Button {
                         model.showSignUp()
+                    } label: {
+                        Text("Criar conta")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityIdentifier("auth.open-sign-up")
 
-                    Button("Esqueci minha senha") {
+                    Button {
                         model.showPasswordRecovery()
+                    } label: {
+                        Text("Esqueci minha senha")
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityIdentifier("auth.open-recovery")
                 }
                 .frame(maxWidth: .infinity)
@@ -103,19 +126,48 @@ struct SignInView: View {
         }
     }
 
+    private func accessibilityHint(
+        for candidates: [AuthValidationIssue]
+    ) -> String {
+        guard let issue = candidates.first(where: validationIssues.contains) else {
+            return ""
+        }
+        return "Erro: \(issue.message)"
+    }
+
     private func submit() {
         guard submissionTask == nil else { return }
         validationIssues = AuthInputValidator.signIn(
             email: email,
             password: password
         )
-        guard validationIssues.isEmpty else { return }
+        guard validationIssues.isEmpty else {
+            announceValidationIssues()
+            return
+        }
 
         focusedField = nil
         submissionTask = Task {
             await model.signIn(email: email, password: password)
+            announceOperationErrorIfNeeded()
             submissionTask = nil
         }
+    }
+
+    private func announceValidationIssues() {
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Erros no formulário: "
+                + validationIssues.map(\.message).joined(separator: " ")
+        )
+    }
+
+    private func announceOperationErrorIfNeeded() {
+        guard case .failed(let error) = model.authOperationState else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: error.authMessage
+        )
     }
 
     private func cancelSubmission() {

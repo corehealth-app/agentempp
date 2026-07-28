@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class BodyFlowUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -98,11 +99,344 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchApp() -> XCUIApplication {
+    func testFreshSignUpReachesDevelopmentConfirmation() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+
+        let openSignUp = app.buttons["auth.open-sign-up"]
+        assertMinimumTapTarget(openSignUp)
+        openSignUp.tap()
+        XCTAssertTrue(
+            element("screen.auth.sign-up", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        completeSignUpForm(in: app)
+
+        let submit = app.buttons["auth.sign-up.submit"]
+        XCTAssertTrue(submit.isHittable, "Criar conta deve ficar acessível com o teclado")
+        assertMinimumTapTarget(submit)
+        submit.tap()
+
+        XCTAssertTrue(
+            element("screen.auth.email-confirmation", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        assertMinimumTapTarget(app.buttons["auth.confirm-development"])
+        assertMinimumTapTarget(app.buttons["auth.back-to-sign-in"])
+    }
+
+    @MainActor
+    func testFreshUserCompletesOnboardingAndReachesToday() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let openSignUp = app.buttons["auth.open-sign-up"]
+        assertMinimumTapTarget(openSignUp)
+        openSignUp.tap()
+        completeSignUpForm(in: app)
+        app.buttons["auth.sign-up.submit"].tap()
+        XCTAssertTrue(
+            element("screen.auth.email-confirmation", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let confirmDevelopment = app.buttons["auth.confirm-development"]
+        assertMinimumTapTarget(confirmDevelopment)
+        confirmDevelopment.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.welcome", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        enter(
+            "Pessoa Teste",
+            in: app.textFields["onboarding.display-name"]
+        )
+        let continueButton = app.buttons["onboarding.continue"]
+        assertMinimumTapTarget(continueButton)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.body-data", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        assertMinimumTapTarget(app.buttons["onboarding.back"])
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.objective", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let objective = app.buttons["onboarding.objective.recomposicao"]
+        assertMinimumTapTarget(objective)
+        objective.tap()
+        XCTAssertTrue(objective.isSelected)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.routine", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.persona", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let focusPersona = app.buttons["persona.focus"]
+        assertMinimumTapTarget(focusPersona)
+        focusPersona.tap()
+        XCTAssertTrue(focusPersona.isSelected)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.consent", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let termsConsent = app.buttons["consent.terms"]
+        termsConsent.tap()
+        XCTAssertTrue(termsConsent.isSelected)
+        let privacyConsent = app.buttons["consent.privacy"]
+        privacyConsent.tap()
+        XCTAssertTrue(privacyConsent.isSelected)
+        assertMinimumTapTarget(termsConsent)
+        assertMinimumTapTarget(privacyConsent)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.completion", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let goToToday = app.buttons["onboarding.go-to-today"]
+        assertMinimumTapTarget(goToToday)
+        goToToday.tap()
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
+    func testCompletedFixtureRestoresToTodayAfterRelaunch() {
+        let app = launchApp(arguments: ["--ui-testing"])
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        app.terminate()
+        app.launch()
+
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
+    func testProfilePersonaChangeIsReflected() {
+        let app = launchApp(arguments: ["--ui-testing"])
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        let profileTab = app.tabBars.buttons["tab.perfil"]
+        XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
+        profileTab.tap()
+        XCTAssertTrue(waitForSelected(profileTab))
+
+        let profileScreen = element("screen.perfil", in: app)
+        XCTAssertTrue(profileScreen.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForHorizontallySettled(profileScreen, in: app))
+        let personaCommand = app.buttons["profile.coach-persona"]
+        XCTAssertTrue(personaCommand.waitForExistence(timeout: 3))
+        personaCommand.tap()
+
+        XCTAssertTrue(
+            element("screen.profile.coach-persona", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let zen = app.buttons["persona.zen"]
+        XCTAssertTrue(zen.waitForExistence(timeout: 3))
+        assertMinimumTapTarget(zen)
+        zen.tap()
+        XCTAssertTrue(zen.isSelected)
+
+        let save = app.buttons["persona.save"]
+        XCTAssertTrue(save.isEnabled)
+        save.tap()
+
+        XCTAssertFalse(
+            element("screen.profile.coach-persona", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["Zen"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testPasswordRecoveryUsesNeutralConfirmation() {
+        let app = launchApp(arguments: ["--ui-testing-recovery"])
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let openRecovery = app.buttons["auth.open-recovery"]
+        assertMinimumTapTarget(openRecovery)
+        openRecovery.tap()
+
+        XCTAssertTrue(
+            element("screen.auth.password-recovery", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        enter("person@example.invalid", in: app.textFields["auth.email"])
+        let recoverySubmit = app.buttons["auth.recovery.submit"]
+        assertMinimumTapTarget(recoverySubmit)
+        recoverySubmit.tap()
+
+        XCTAssertTrue(
+            element("auth.recovery.confirmation", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            app.staticTexts[
+                "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."
+            ]
+            .waitForExistence(timeout: 3)
+        )
+    }
+
+    @MainActor
+    func testDeterministicSignInFailureKeepsRetryAvailable() {
+        let app = launchApp(arguments: ["--ui-testing-auth-error"])
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        enter("person@example.invalid", in: app.textFields["auth.email"])
+        enter("local-pass", in: app.secureTextFields["auth.password"])
+        app.buttons["auth.sign-in.submit"].tap()
+
+        XCTAssertTrue(
+            element("auth.error", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            app.staticTexts[
+                "O serviço está temporariamente indisponível. Tente novamente."
+            ]
+            .waitForExistence(timeout: 3)
+        )
+        let retry = app.buttons["auth.sign-in.submit"]
+        XCTAssertTrue(retry.isEnabled)
+        XCTAssertEqual(retry.label, "Entrar")
+        assertMinimumTapTarget(retry)
+    }
+
+    @MainActor
+    private func launchApp(
+        arguments: [String] = ["--ui-testing"]
+    ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing"]
+        app.launchArguments = arguments
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func enter(_ text: String, in field: XCUIElement) {
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap()
+        field.typeText(text)
+    }
+
+    @MainActor
+    private func completeSignUpForm(in app: XCUIApplication) {
+        enter("person@example.invalid", in: app.textFields["auth.email"])
+        enterSecure(
+            "local-pass",
+            in: app.secureTextFields["auth.password"],
+            app: app
+        )
+        enterSecure(
+            "local-pass",
+            in: app.secureTextFields["auth.password-confirmation"],
+            app: app
+        )
+    }
+
+    @MainActor
+    private func enterSecure(
+        _ text: String,
+        in field: XCUIElement,
+        app: XCUIApplication
+    ) {
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap()
+        XCTAssertTrue(waitForKeyboardFocus(field))
+
+        // iOS 26.5 retains only the final character when XCUI bulk-types
+        // into the first new-password field. The edit menu preserves the
+        // complete synthetic credential while exercising the real field.
+        UIPasteboard.general.string = text
+        defer { UIPasteboard.general.string = nil }
+        field.press(forDuration: 1)
+
+        let paste = app.descendants(matching: .any)
+            .matching(
+                NSPredicate(
+                    format: "label == %@ OR label == %@",
+                    "Colar",
+                    "Paste"
+                )
+            )
+            .firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 3))
+        paste.tap()
+    }
+
+    @MainActor
+    private func waitForKeyboardFocus(
+        _ field: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func assertMinimumTapTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "O controle deve existir",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width.rounded(),
+            44,
+            "O alvo deve ter pelo menos 44 pt de largura",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height.rounded(),
+            44,
+            "O alvo deve ter pelo menos 44 pt de altura",
+            file: file,
+            line: line
+        )
     }
 
     @MainActor

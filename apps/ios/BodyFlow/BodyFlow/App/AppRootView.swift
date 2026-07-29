@@ -5,10 +5,7 @@ struct AppRootView: View {
     let model: AppFlowModel
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
-    @State private var onboardingFlowModel: OnboardingFlowModel?
-    @State private var onboardingLoadFailed = false
-    @State private var onboardingRetryID = 0
-    @State private var onboardingRootLoadState = OnboardingRootLoadState()
+    @State private var onboardingCoordinator = OnboardingRootCoordinator()
 
     var body: some View {
         Group {
@@ -41,13 +38,14 @@ struct AppRootView: View {
                 model: model
             )
         case .onboarding(let userID, _):
-            if let onboardingFlowModel,
+            if let onboardingFlowModel = onboardingCoordinator.flowModel,
                OnboardingRootLoadState.canRender(
                    modelUserID: onboardingFlowModel.userID,
                    activeUserID: userID
                ) {
                 OnboardingContainerView(model: onboardingFlowModel)
-            } else if onboardingFlowModel == nil, onboardingLoadFailed {
+            } else if onboardingCoordinator.flowModel == nil,
+                      onboardingCoordinator.loadFailed {
                 onboardingLoadError
             } else {
                 ProgressView("Carregando onboarding")
@@ -66,7 +64,10 @@ struct AppRootView: View {
     }
 
     private var onboardingTaskID: OnboardingRootTaskID {
-        OnboardingRootTaskID(userID: onboardingUserID, retryID: onboardingRetryID)
+        OnboardingRootTaskID(
+            userID: onboardingUserID,
+            restoreGeneration: model.onboardingRestoreGeneration
+        )
     }
 
     private var onboardingLoadError: some View {
@@ -76,7 +77,10 @@ struct AppRootView: View {
             Text("Tente novamente para continuar seu onboarding.")
         } actions: {
             Button("Tentar novamente") {
-                onboardingRetryID += 1
+                onboardingCoordinator.prepareForRetry()
+                Task {
+                    await model.retryOnboardingRestore()
+                }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -85,65 +89,76 @@ struct AppRootView: View {
     }
 
     private func synchronizeOnboardingModel() async {
-        guard let userID = onboardingUserID else {
-            onboardingRootLoadState.invalidate()
-            onboardingFlowModel = nil
-            onboardingLoadFailed = false
-            return
-        }
-        let loadToken = onboardingRootLoadState.begin(for: userID)
-        guard onboardingRootLoadState.canPublish(
-            loadToken,
-            activeUserID: onboardingUserID,
-            isCancelled: Task.isCancelled
-        ) else { return }
-        guard onboardingFlowModel?.userID != userID else { return }
-
-        onboardingFlowModel = nil
-        onboardingLoadFailed = false
-        do {
-            let draft = try await dependencies.onboarding.loadDraft(for: userID)
-            guard onboardingRootLoadState.canPublish(
-                loadToken,
-                activeUserID: onboardingUserID,
-                isCancelled: Task.isCancelled
-            ) else { return }
-            guard let draft else {
-                onboardingLoadFailed = true
-                return
+        let activeUserID = onboardingUserID
+        onboardingCoordinator.synchronize(
+            activeUserID: activeUserID,
+            restoredDraft: model.restoredOnboardingDraft,
+            onboarding: dependencies.onboarding,
+            persona: dependencies.coachPersona,
+            developmentConsentAvailability: configuration.developmentConsentAvailability,
+            telemetry: dependencies.telemetry,
+            onStepChanged: { step in
+                guard onboardingUserID == activeUserID else { return }
+                model.updateOnboardingStep(step)
+            },
+            onCompleted: {
+                guard let userID = activeUserID,
+                      onboardingUserID == userID else { return }
+                model.completeOnboarding(for: userID)
             }
-            onboardingFlowModel = OnboardingFlowModel(
-                userID: userID,
-                initialDraft: draft,
-                repository: dependencies.onboarding,
-                personaRepository: dependencies.coachPersona,
-                developmentConsentAvailability: configuration.developmentConsentAvailability,
-                telemetry: dependencies.telemetry,
-                onStepChanged: { step in
-                    guard onboardingUserID == userID else { return }
-                    model.updateOnboardingStep(step)
-                },
-                onCompleted: {
-                    guard onboardingUserID == userID else { return }
-                    model.completeOnboarding(for: userID)
-                }
-            )
-        } catch is CancellationError {
-            return
-        } catch {
-            guard onboardingRootLoadState.canPublish(
-                loadToken,
-                activeUserID: onboardingUserID,
-                isCancelled: Task.isCancelled
-            ) else { return }
-            onboardingLoadFailed = true
-        }
+        )
     }
 }
 
 private struct OnboardingRootTaskID: Equatable {
     let userID: String?
-    let retryID: Int
+    let restoreGeneration: Int
+}
+
+@MainActor
+struct OnboardingRootCoordinator {
+    private(set) var flowModel: OnboardingFlowModel?
+    private(set) var loadFailed = false
+
+    mutating func prepareForRetry() {
+        loadFailed = false
+    }
+
+    mutating func synchronize(
+        activeUserID: String?,
+        restoredDraft: OnboardingDraft?,
+        onboarding: any OnboardingRepository,
+        persona: any CoachPersonaRepository,
+        developmentConsentAvailability: DevelopmentConsentAvailability,
+        telemetry: any TelemetryClient,
+        onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
+        onCompleted: @escaping @MainActor () -> Void
+    ) {
+        guard let activeUserID else {
+            flowModel = nil
+            loadFailed = false
+            return
+        }
+        guard flowModel?.userID != activeUserID else { return }
+
+        flowModel = nil
+        loadFailed = false
+        guard let restoredDraft else {
+            loadFailed = true
+            return
+        }
+
+        flowModel = OnboardingFlowModel(
+            userID: activeUserID,
+            initialDraft: restoredDraft,
+            repository: onboarding,
+            personaRepository: persona,
+            developmentConsentAvailability: developmentConsentAvailability,
+            telemetry: telemetry,
+            onStepChanged: onStepChanged,
+            onCompleted: onCompleted
+        )
+    }
 }
 
 struct OnboardingRootLoadState: Equatable {

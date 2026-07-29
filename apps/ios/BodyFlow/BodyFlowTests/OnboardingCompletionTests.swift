@@ -336,11 +336,13 @@ struct OnboardingCompletionTests {
             step: .completion
         ))
         #expect(model.currentSession?.isOnboardingCompleted == false)
+        #expect(model.restoredOnboardingDraft != nil)
 
         model.completeOnboarding(for: "fixture-user")
 
         #expect(model.state == .authenticated(userID: "fixture-user"))
         #expect(model.currentSession?.isOnboardingCompleted == true)
+        #expect(model.restoredOnboardingDraft == nil)
     }
 
     @Test("an old callback after sign out cannot authenticate")

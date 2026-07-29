@@ -45,6 +45,115 @@ struct AppFlowModelTests {
         #expect(model.currentSession == session)
     }
 
+    @Test("a successful restore retains the authoritative draft without a second read")
+    func successfulRestoreRetainsAuthoritativeDraft() async {
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        let onboarding = SequencedOnboardingRepository(
+            results: [
+                .success(draft),
+                .failure(.serviceUnavailable),
+            ]
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+        var rootCoordinator = OnboardingRootCoordinator()
+        rootCoordinator.synchronize(
+            activeUserID: session.userID,
+            restoredDraft: model.restoredOnboardingDraft,
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: InMemoryTelemetryClient(),
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .objective))
+        #expect(model.restoredOnboardingDraft == draft)
+        #expect(rootCoordinator.flowModel?.draft == draft)
+        #expect(!rootCoordinator.loadFailed)
+        #expect(await onboarding.loadCount() == 1)
+    }
+
+    @Test("a failed authoritative restore can retry into the next saved draft")
+    func failedRestoreRetriesAuthoritativeDraft() async {
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let onboarding = SequencedOnboardingRepository(
+            results: [
+                .failure(.storageUnavailable),
+                .success(draft),
+            ]
+        )
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+
+        await model.start()
+        var rootCoordinator = OnboardingRootCoordinator()
+        rootCoordinator.synchronize(
+            activeUserID: session.userID,
+            restoredDraft: model.restoredOnboardingDraft,
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: InMemoryTelemetryClient(),
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+        #expect(model.restoredOnboardingDraft == nil)
+        #expect(model.presentationError == .storageUnavailable)
+        #expect(rootCoordinator.flowModel == nil)
+        #expect(rootCoordinator.loadFailed)
+        #expect(await onboarding.loadCount() == 1)
+        #expect(await telemetry.snapshot().isEmpty)
+
+        await model.retryOnboardingRestore()
+        rootCoordinator.synchronize(
+            activeUserID: session.userID,
+            restoredDraft: model.restoredOnboardingDraft,
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: InMemoryTelemetryClient(),
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .routine))
+        #expect(model.restoredOnboardingDraft == draft)
+        #expect(model.presentationError == nil)
+        #expect(rootCoordinator.flowModel?.draft == draft)
+        #expect(!rootCoordinator.loadFailed)
+        #expect(await onboarding.loadCount() == 2)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.routine),
+        ])
+    }
+
     @Test("confirmed complete session restores into the authenticated shell")
     func restoresAuthenticatedSession() async {
         let session = AuthSession(
@@ -514,6 +623,33 @@ private struct OnboardingRepositorySpy: OnboardingRepository {
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
 
     func clear(for userID: String) async throws {}
+}
+
+private actor SequencedOnboardingRepository: OnboardingRepository {
+    private var results: [Result<OnboardingDraft?, OnboardingRepositoryError>]
+    private var loadCallCount = 0
+
+    init(results: [Result<OnboardingDraft?, OnboardingRepositoryError>]) {
+        self.results = results
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? {
+        loadCallCount += 1
+        guard !results.isEmpty else {
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+        return try results.removeFirst().get()
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func clear(for userID: String) async throws {}
+
+    func loadCount() -> Int {
+        loadCallCount
+    }
 }
 
 private struct CoachPersonaRepositorySpy: CoachPersonaRepository {

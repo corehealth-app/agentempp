@@ -36,6 +36,8 @@ final class AppFlowModel {
     private(set) var currentSession: AuthSession?
     private(set) var presentationError: AppPresentationError?
     private(set) var authOperationState: AuthOperationState = .idle
+    private(set) var restoredOnboardingDraft: OnboardingDraft?
+    private(set) var onboardingRestoreGeneration = 0
 
     init(
         authentication: any AuthenticationService,
@@ -88,6 +90,19 @@ final class AppFlowModel {
         }
     }
 
+    func retryOnboardingRestore() async {
+        guard let session = currentSession,
+              session.isEmailConfirmed,
+              !session.isOnboardingCompleted,
+              case .onboarding(let userID, _) = state,
+              userID == session.userID else {
+            return
+        }
+
+        presentationError = nil
+        await restoreOnboarding(session)
+    }
+
     func showSignUp() async {
         guard navigate(to: .signUp) else { return }
         await telemetry.record(.authScreenViewed(.signUp))
@@ -125,6 +140,7 @@ final class AppFlowModel {
             isEmailConfirmed: session.isEmailConfirmed,
             isOnboardingCompleted: true
         )
+        restoredOnboardingDraft = nil
         state = .authenticated(userID: userID)
     }
 
@@ -249,6 +265,7 @@ final class AppFlowModel {
 
         guard session.isEmailConfirmed else {
             guard !isCancellationRequested else { return }
+            restoredOnboardingDraft = nil
             currentSession = session
             guard !isCancellationRequested else {
                 currentSession = nil
@@ -261,6 +278,7 @@ final class AppFlowModel {
 
         guard !session.isOnboardingCompleted else {
             guard !isCancellationRequested else { return }
+            restoredOnboardingDraft = nil
             currentSession = session
             guard !isCancellationRequested else {
                 currentSession = nil
@@ -270,37 +288,51 @@ final class AppFlowModel {
             return
         }
 
+        await restoreOnboarding(session)
+    }
+
+    private func restoreOnboarding(_ session: AuthSession) async {
         do {
             let draft = try await onboarding.loadDraft(for: session.userID)
             guard !isCancellationRequested else { return }
 
-            currentSession = session
-            guard !isCancellationRequested else {
-                currentSession = nil
-                return
-            }
+            publishOnboardingRestore(session: session, draft: draft)
             let step = draft?.currentStep ?? .welcome
-            state = .onboarding(
-                userID: session.userID,
-                step: step
-            )
             await telemetry.record(.onboardingStepViewed(step.telemetryValue))
         } catch {
             guard !isCancellationRequested else { return }
 
-            currentSession = session
-            guard !isCancellationRequested else {
-                currentSession = nil
-                return
-            }
-            state = .onboarding(userID: session.userID, step: .welcome)
-            presentationError = presentationError(for: error)
-            await telemetry.record(.onboardingStepViewed(.welcome))
+            publishOnboardingRestore(
+                session: session,
+                draft: nil,
+                error: presentationError(for: error)
+            )
         }
+    }
+
+    private func publishOnboardingRestore(
+        session: AuthSession,
+        draft: OnboardingDraft?,
+        error: AppPresentationError? = nil
+    ) {
+        currentSession = session
+        guard !isCancellationRequested else {
+            currentSession = nil
+            return
+        }
+
+        restoredOnboardingDraft = draft
+        presentationError = error
+        onboardingRestoreGeneration += 1
+        state = .onboarding(
+            userID: session.userID,
+            step: draft?.currentStep ?? .welcome
+        )
     }
 
     private func transitionToSignedOut(error: AppPresentationError? = nil) {
         guard !isCancellationRequested else { return }
+        restoredOnboardingDraft = nil
         currentSession = nil
         state = .signedOut(.signIn)
         if let error {
@@ -318,6 +350,7 @@ final class AppFlowModel {
               isAuthenticationNavigationAllowed else {
             return false
         }
+        restoredOnboardingDraft = nil
         currentSession = nil
         state = .signedOut(destination)
         presentationError = nil

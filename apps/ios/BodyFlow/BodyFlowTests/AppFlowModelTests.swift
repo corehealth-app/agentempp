@@ -154,6 +154,143 @@ struct AppFlowModelTests {
         ])
     }
 
+    @Test("an empty authoritative restore renders a new welcome draft")
+    func emptyRestoreRendersNewWelcomeDraft() async {
+        let session = incompleteSession()
+        let telemetry = InMemoryTelemetryClient()
+        let onboarding = OnboardingRepositorySpy(loadedDraft: nil)
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+
+        await model.start()
+        var rootCoordinator = OnboardingRootCoordinator()
+        rootCoordinator.synchronize(
+            activeUserID: session.userID,
+            restoredDraft: model.restoredOnboardingDraft,
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+        #expect(model.restoredOnboardingDraft?.currentStep == .welcome)
+        #expect(rootCoordinator.flowModel?.step == .welcome)
+        #expect(!rootCoordinator.loadFailed)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.welcome),
+        ])
+    }
+
+    @Test("a retry resumed after sign out cannot resurrect onboarding")
+    func staleRetryAfterSignOutIsIgnored() async {
+        let session = incompleteSession()
+        let initialDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        let staleDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let onboarding = SuspendedOnboardingRepository(initialDraft: initialDraft)
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+        await model.start()
+
+        let retry = Task {
+            await model.retryOnboardingRestore()
+        }
+        await onboarding.waitForLoadCount(2)
+        await model.signOut()
+        await onboarding.resumeLoad(2, with: .success(staleDraft))
+        await retry.value
+
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.currentSession == nil)
+        #expect(model.restoredOnboardingDraft == nil)
+        #expect(model.presentationError == nil)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.objective),
+            TelemetryEvent(name: .signOutCompleted),
+        ])
+    }
+
+    @Test("a cancelled retry cannot publish a late draft or telemetry")
+    func cancelledRetryIsIgnored() async {
+        let session = incompleteSession()
+        let initialDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        let lateDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let onboarding = SuspendedOnboardingRepository(initialDraft: initialDraft)
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+        await model.start()
+
+        let retry = Task {
+            await model.retryOnboardingRestore()
+        }
+        await onboarding.waitForLoadCount(2)
+        retry.cancel()
+        await onboarding.resumeLoad(2, with: .success(lateDraft))
+        await retry.value
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .objective))
+        #expect(model.restoredOnboardingDraft == initialDraft)
+        #expect(model.presentationError == nil)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.objective),
+        ])
+    }
+
+    @Test("the latest concurrent retry is the only result allowed to publish")
+    func latestRetryWins() async {
+        let session = incompleteSession()
+        let initialDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        let staleDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let latestDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .persona)
+        let onboarding = SuspendedOnboardingRepository(initialDraft: initialDraft)
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+        await model.start()
+
+        let firstRetry = Task {
+            await model.retryOnboardingRestore()
+        }
+        await onboarding.waitForLoadCount(2)
+        let latestRetry = Task {
+            await model.retryOnboardingRestore()
+        }
+        await onboarding.waitForLoadCount(3)
+
+        await onboarding.resumeLoad(3, with: .success(latestDraft))
+        await latestRetry.value
+        await onboarding.resumeLoad(2, with: .success(staleDraft))
+        await firstRetry.value
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .persona))
+        #expect(model.restoredOnboardingDraft == latestDraft)
+        #expect(model.presentationError == nil)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.objective),
+            .onboardingStepViewed(.persona),
+        ])
+    }
+
     @Test("confirmed complete session restores into the authenticated shell")
     func restoresAuthenticatedSession() async {
         let session = AuthSession(
@@ -490,6 +627,15 @@ struct AppFlowModelTests {
             telemetry: InMemoryTelemetryClient()
         )
     }
+
+    private func incompleteSession() -> AuthSession {
+        AuthSession(
+            userID: "fixture-user",
+            email: "fixture@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+    }
 }
 
 private struct AuthenticationServiceSpy: AuthenticationService {
@@ -649,6 +795,51 @@ private actor SequencedOnboardingRepository: OnboardingRepository {
 
     func loadCount() -> Int {
         loadCallCount
+    }
+}
+
+private actor SuspendedOnboardingRepository: OnboardingRepository {
+    private let initialDraft: OnboardingDraft
+    private var loadCallCount = 0
+    private var continuations: [
+        Int: CheckedContinuation<OnboardingDraft?, any Error>
+    ] = [:]
+
+    init(initialDraft: OnboardingDraft) {
+        self.initialDraft = initialDraft
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? {
+        loadCallCount += 1
+        let call = loadCallCount
+        if call == 1 {
+            return initialDraft
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations[call] = continuation
+        }
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func clear(for userID: String) async throws {}
+
+    func waitForLoadCount(_ expectedCount: Int) async {
+        while loadCallCount < expectedCount {
+            await Task.yield()
+        }
+    }
+
+    func resumeLoad(
+        _ call: Int,
+        with result: Result<OnboardingDraft?, OnboardingRepositoryError>
+    ) {
+        guard let continuation = continuations.removeValue(forKey: call) else {
+            return
+        }
+        continuation.resume(with: result)
     }
 }
 

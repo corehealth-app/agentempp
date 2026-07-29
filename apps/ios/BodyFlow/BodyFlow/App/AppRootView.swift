@@ -6,6 +6,7 @@ struct AppRootView: View {
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
+    @State private var onboardingRetryTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -17,6 +18,10 @@ struct AppRootView: View {
         }
         .task(id: onboardingTaskID) {
             await synchronizeOnboardingModel()
+        }
+        .onDisappear {
+            onboardingRetryTask?.cancel()
+            onboardingRetryTask = nil
         }
     }
 
@@ -78,7 +83,8 @@ struct AppRootView: View {
         } actions: {
             Button("Tentar novamente") {
                 onboardingCoordinator.prepareForRetry()
-                Task {
+                onboardingRetryTask?.cancel()
+                onboardingRetryTask = Task {
                     await model.retryOnboardingRestore()
                 }
             }

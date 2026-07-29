@@ -103,4 +103,30 @@ struct OnboardingDraft: Codable, Equatable, Sendable {
     var persona: CoachPersona?
     var consent: DevelopmentConsentAcceptance?
     var currentStep: OnboardingStep
+
+    static var currentDeviceWelcome: OnboardingDraft {
+        let languageCode = Locale.current.language.languageCode?.identifier
+        return OnboardingDraft(
+            displayName: nil,
+            localeIdentifier: languageCode == "pt" ? "pt-BR" : "en-US",
+            countryCode: Locale.current.region?.identifier ?? "US",
+            timeZoneIdentifier: TimeZone.current.identifier,
+            biologicalSex: nil,
+            birthDate: nil,
+            heightCM: nil,
+            weightKG: nil,
+            bodyFatPercent: nil,
+            objective: nil,
+            activityLevel: nil,
+            trainingFrequency: nil,
+            waterIntake: nil,
+            hungerLevel: nil,
+            wakeTime: nil,
+            bedtime: nil,
+            foodOrganization: nil,
+            persona: nil,
+            consent: nil,
+            currentStep: .welcome
+        )
+    }
 }

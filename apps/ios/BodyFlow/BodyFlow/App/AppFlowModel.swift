@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 enum AuthDestination: Equatable, Sendable {
@@ -31,6 +32,7 @@ final class AppFlowModel {
     private let persona: any CoachPersonaRepository
     private let telemetry: any TelemetryClient
     private let cancellationCheck: @MainActor () -> Bool
+    private var activeOnboardingRestoreID: UUID?
 
     private(set) var state: AppFlowState = .launching
     private(set) var currentSession: AuthSession?
@@ -79,6 +81,7 @@ final class AppFlowModel {
     }
 
     func signOut() async {
+        invalidateOnboardingRestore()
         do {
             try await authentication.signOut()
             guard !isCancellationRequested else { return }
@@ -140,6 +143,7 @@ final class AppFlowModel {
             isEmailConfirmed: session.isEmailConfirmed,
             isOnboardingCompleted: true
         )
+        invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         state = .authenticated(userID: userID)
     }
@@ -265,6 +269,7 @@ final class AppFlowModel {
 
         guard session.isEmailConfirmed else {
             guard !isCancellationRequested else { return }
+            invalidateOnboardingRestore()
             restoredOnboardingDraft = nil
             currentSession = session
             guard !isCancellationRequested else {
@@ -278,6 +283,7 @@ final class AppFlowModel {
 
         guard !session.isOnboardingCompleted else {
             guard !isCancellationRequested else { return }
+            invalidateOnboardingRestore()
             restoredOnboardingDraft = nil
             currentSession = session
             guard !isCancellationRequested else {
@@ -292,22 +298,51 @@ final class AppFlowModel {
     }
 
     private func restoreOnboarding(_ session: AuthSession) async {
+        let restoreID = beginOnboardingRestore()
         do {
-            let draft = try await onboarding.loadDraft(for: session.userID)
-            guard !isCancellationRequested else { return }
+            let loadedDraft = try await onboarding.loadDraft(for: session.userID)
+            guard canPublishOnboardingRestore(restoreID) else {
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
 
+            let draft = loadedDraft ?? .currentDeviceWelcome
             publishOnboardingRestore(session: session, draft: draft)
-            let step = draft?.currentStep ?? .welcome
+            finishOnboardingRestoreIfCurrent(restoreID)
+            let step = draft.currentStep
             await telemetry.record(.onboardingStepViewed(step.telemetryValue))
         } catch {
-            guard !isCancellationRequested else { return }
+            guard canPublishOnboardingRestore(restoreID) else {
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
 
             publishOnboardingRestore(
                 session: session,
                 draft: nil,
                 error: presentationError(for: error)
             )
+            finishOnboardingRestoreIfCurrent(restoreID)
         }
+    }
+
+    private func beginOnboardingRestore() -> UUID {
+        let restoreID = UUID()
+        activeOnboardingRestoreID = restoreID
+        return restoreID
+    }
+
+    private func canPublishOnboardingRestore(_ restoreID: UUID) -> Bool {
+        activeOnboardingRestoreID == restoreID && !isCancellationRequested
+    }
+
+    private func finishOnboardingRestoreIfCurrent(_ restoreID: UUID) {
+        guard activeOnboardingRestoreID == restoreID else { return }
+        activeOnboardingRestoreID = nil
+    }
+
+    private func invalidateOnboardingRestore() {
+        activeOnboardingRestoreID = nil
     }
 
     private func publishOnboardingRestore(
@@ -332,6 +367,7 @@ final class AppFlowModel {
 
     private func transitionToSignedOut(error: AppPresentationError? = nil) {
         guard !isCancellationRequested else { return }
+        invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         currentSession = nil
         state = .signedOut(.signIn)
@@ -350,6 +386,7 @@ final class AppFlowModel {
               isAuthenticationNavigationAllowed else {
             return false
         }
+        invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         currentSession = nil
         state = .signedOut(destination)

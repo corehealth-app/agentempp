@@ -190,6 +190,7 @@ final class OnboardingFlowModel {
     private let repository: any OnboardingRepository
     private let personaRepository: any CoachPersonaRepository
     private let developmentConsentAvailability: DevelopmentConsentAvailability
+    private let telemetry: any TelemetryClient
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeSubmissionID: UUID?
@@ -208,6 +209,7 @@ final class OnboardingFlowModel {
         repository: any OnboardingRepository,
         personaRepository: any CoachPersonaRepository,
         developmentConsentAvailability: DevelopmentConsentAvailability,
+        telemetry: any TelemetryClient = DisabledTelemetryClient(),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
         onCompleted: @escaping @MainActor () -> Void,
         initialOperationState: OnboardingOperationState = .idle,
@@ -219,6 +221,7 @@ final class OnboardingFlowModel {
         self.repository = repository
         self.personaRepository = personaRepository
         self.developmentConsentAvailability = developmentConsentAvailability
+        self.telemetry = telemetry
         draft = initialDraft
         step = initialDraft.currentStep
         operationState = initialOperationState
@@ -263,6 +266,7 @@ final class OnboardingFlowModel {
             return
         }
 
+        let completedStep = step
         let nextStep = OnboardingStep.allCases[index + 1]
         var advancedDraft = draft
         advancedDraft.currentStep = nextStep
@@ -282,6 +286,8 @@ final class OnboardingFlowModel {
             operationState = .idle
             activeSubmissionID = nil
             onStepChanged(nextStep)
+            await telemetry.record(.onboardingStepCompleted(completedStep.telemetryValue))
+            await telemetry.record(.onboardingStepViewed(nextStep.telemetryValue))
         } catch is CancellationError {
             finishCancelledSubmission(submissionID)
         } catch {
@@ -339,6 +345,7 @@ final class OnboardingFlowModel {
             finishCancelledSubmission(submissionID)
             return
         }
+        await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))
 
         do {
             try await repository.complete(submittedDraft, for: userID)
@@ -368,6 +375,8 @@ final class OnboardingFlowModel {
         activeSubmissionID = nil
         operationState = .idle
         onCompleted()
+        await telemetry.record(.onboardingStepCompleted(.completion))
+        await telemetry.record(.onboardingCompleted)
     }
 
     func cancelActiveSubmission() {

@@ -40,6 +40,17 @@ struct SecureStorageTests {
         try await store.removeData(forKey: key)
         #expect(try await store.data(forKey: key) == nil)
     }
+
+    @Test("Keychain removal is idempotent for a fresh reset")
+    func keychainRemovalIsIdempotent() async throws {
+        let service = "com.bodyflow.app.tests.\(UUID().uuidString)"
+        let store = KeychainSecureStore(service: service)
+
+        try await store.removeData(forKey: "missing-session")
+        try await store.removeData(forKey: "missing-session")
+
+        #expect(try await store.data(forKey: "missing-session") == nil)
+    }
 }
 
 private enum SecureStorageFixtureError: Error, Equatable, Sendable {

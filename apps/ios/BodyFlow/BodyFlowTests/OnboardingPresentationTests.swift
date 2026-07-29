@@ -100,6 +100,26 @@ struct OnboardingPresentationTests {
         #expect(OnboardingDecimalFieldDescriptor.weight.accessibilityValue(for: nil) == "Não informado, kg")
     }
 
+    @MainActor
+    @Test("onboarding validation exposes the matching hint and announcement")
+    func onboardingValidationAccessibilityText() {
+        let model = OnboardingFlowModel.preview(
+            step: .welcome,
+            validationIssues: [.displayNameRequired, .countryInvalid]
+        )
+
+        #expect(
+            model.accessibilityHint(for: [.displayNameRequired])
+                == "Erro: Informe como você quer ser chamado."
+        )
+        #expect(
+            FormAccessibilityText.validationAnnouncement(
+                messages: model.validationIssues.map(\.message)
+            )
+                == "Erros no formulário: Informe como você quer ser chamado. Confirme um país válido."
+        )
+    }
+
     private func reflectedStrings(
         in value: Any,
         depth: Int = 0,

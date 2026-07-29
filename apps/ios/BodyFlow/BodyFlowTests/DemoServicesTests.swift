@@ -28,6 +28,29 @@ struct DemoServicesTests {
         #expect(try await service.restoreSession() == nil)
     }
 
+    @Test("completed fixture seeds a session that preserve mode restores")
+    func completedFixtureSeedsPreservedSession() async throws {
+        let store = DemoStateStore(secureStore: InMemorySecureStore())
+        let seed = DemoAuthenticationService(
+            stateStore: store,
+            configuration: .resolve(
+                arguments: ["--ui-testing"],
+                buildFlavor: .debug
+            )
+        )
+
+        let seededSession = try #require(try await seed.restoreSession())
+        let preserve = DemoAuthenticationService(
+            stateStore: store,
+            configuration: .resolve(
+                arguments: ["--ui-testing-preserve-state"],
+                buildFlavor: .debug
+            )
+        )
+
+        #expect(try await preserve.restoreSession() == seededSession)
+    }
+
     @Test("sign up requires confirmation without creating a session")
     func signUpRequiresConfirmationWithoutCreatingSession() async throws {
         let store = DemoStateStore(secureStore: InMemorySecureStore())

@@ -119,6 +119,37 @@ extension TelemetryEvent {
             metadata: metadata
         )
     }
+
+    static func onboardingStepViewed(
+        _ step: TelemetryOnboardingStep
+    ) -> TelemetryEvent {
+        TelemetryEvent(
+            name: .onboardingStepViewed,
+            metadata: ["step": step.rawValue]
+        )
+    }
+
+    static func onboardingStepCompleted(
+        _ step: TelemetryOnboardingStep
+    ) -> TelemetryEvent {
+        TelemetryEvent(
+            name: .onboardingStepCompleted,
+            metadata: ["step": step.rawValue]
+        )
+    }
+
+    static func coachPersonaSelected(
+        _ persona: TelemetryPersona
+    ) -> TelemetryEvent {
+        TelemetryEvent(
+            name: .coachPersonaSelected,
+            metadata: ["persona": persona.rawValue]
+        )
+    }
+
+    static var onboardingCompleted: TelemetryEvent {
+        TelemetryEvent(name: .onboardingCompleted)
+    }
 }
 
 protocol TelemetryClient: Sendable {
@@ -134,5 +165,33 @@ actor InMemoryTelemetryClient: TelemetryClient {
 
     func snapshot() -> [TelemetryEvent] {
         events
+    }
+}
+
+struct DisabledTelemetryClient: TelemetryClient {
+    func record(_ event: TelemetryEvent) async {}
+}
+
+extension OnboardingStep {
+    var telemetryValue: TelemetryOnboardingStep {
+        switch self {
+        case .welcome: .welcome
+        case .bodyData: .bodyData
+        case .objective: .objective
+        case .routine: .routine
+        case .persona: .persona
+        case .consent: .consent
+        case .completion: .completion
+        }
+    }
+}
+
+extension CoachPersona {
+    var telemetryValue: TelemetryPersona {
+        switch self {
+        case .focus: .focus
+        case .impulse: .impulse
+        case .zen: .zen
+        }
     }
 }

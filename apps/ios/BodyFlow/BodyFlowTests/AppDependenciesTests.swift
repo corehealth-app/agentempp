@@ -20,6 +20,29 @@ struct AppDependenciesTests {
         #expect(summary == AppFixtures.today)
     }
 
+    @Test("UI relaunch seed and preserve modes use the durable Keychain boundary")
+    func uiRelaunchUsesDurableBoundary() {
+        let seed = AppDependencies.demo(
+            configuration: .resolve(
+                arguments: ["--ui-testing"],
+                buildFlavor: .debug
+            )
+        )
+        let preserveConfiguration = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing-preserve-state"],
+            buildFlavor: .debug
+        )
+        let preserve = AppDependencies.demo(
+            configuration: preserveConfiguration
+        )
+
+        #expect(seed.secureStore is KeychainSecureStore)
+        #expect(preserve.secureStore is KeychainSecureStore)
+        #expect(!preserveConfiguration.shouldResetDemoState)
+        #expect(!preserveConfiguration.startsWithCompletedFixture)
+        #expect(!preserveConfiguration.preloadsSyntheticOnboardingValues)
+    }
+
     @Test("fixture catalog exposes the approved server-provided values")
     func fixtureCatalogExposesApprovedValues() {
         #expect(AppFixtures.today.energy.consumedKcal == 1_200)

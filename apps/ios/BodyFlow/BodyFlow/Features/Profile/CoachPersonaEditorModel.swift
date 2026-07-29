@@ -15,6 +15,7 @@ final class CoachPersonaEditorModel: Identifiable {
     let userID: String
 
     private let repository: any CoachPersonaRepository
+    private let telemetry: any TelemetryClient
     private let cancellationCheck: @MainActor () -> Bool
     private var activeOperationID: UUID?
 
@@ -25,6 +26,7 @@ final class CoachPersonaEditorModel: Identifiable {
     init(
         userID: String,
         repository: any CoachPersonaRepository,
+        telemetry: any TelemetryClient = DisabledTelemetryClient(),
         initialSelected: CoachPersona? = nil,
         initialPersisted: CoachPersona? = nil,
         initialOperationState: CoachPersonaEditorOperationState = .loading,
@@ -32,6 +34,7 @@ final class CoachPersonaEditorModel: Identifiable {
     ) {
         self.userID = userID
         self.repository = repository
+        self.telemetry = telemetry
         selected = initialSelected
         persisted = initialPersisted
         operationState = initialOperationState
@@ -99,6 +102,7 @@ final class CoachPersonaEditorModel: Identifiable {
             persisted = selectedPersona
             activeOperationID = nil
             operationState = .idle
+            await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))
             return true
         } catch is CancellationError {
             finishCancelledOperation(operationID)

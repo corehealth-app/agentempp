@@ -131,9 +131,10 @@ struct OnboardingContainerView: View {
 
     private func announceOperationResultIfNeeded() {
         let message: String
-        if !model.validationIssues.isEmpty {
-            message = "Erros no formulário: "
-                + model.validationIssues.map(\.message).joined(separator: " ")
+        if let validationMessage = FormAccessibilityText.validationAnnouncement(
+            messages: model.validationIssues.map(\.message)
+        ) {
+            message = validationMessage
         } else if case .failed(let error) = model.operationState {
             message = error.authMessage
         } else {

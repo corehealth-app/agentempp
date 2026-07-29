@@ -20,7 +20,14 @@ struct AppDependencies: Sendable {
 
     static func demo(configuration: AppLaunchConfiguration) -> AppDependencies {
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
-        let secureStore = InMemorySecureStore()
+        let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
+        case .memory:
+            InMemorySecureStore()
+        case .keychain:
+            KeychainSecureStore(
+                service: "com.bodyflow.app.ui-testing.demo-state.v1"
+            )
+        }
         let stateStore = DemoStateStore(secureStore: secureStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
 

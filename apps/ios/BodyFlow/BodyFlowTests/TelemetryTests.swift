@@ -198,6 +198,183 @@ struct TelemetryTests {
     }
 
     @MainActor
+    @Test("records every allowed auth navigation after its screen transition")
+    func recordsAuthNavigationSequence() async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = makeAuthModel(
+            outcome: .failure(.operationUnavailable),
+            telemetry: telemetry
+        )
+
+        await model.showSignUp()
+        #expect(model.state == .signedOut(.signUp))
+        await model.showSignIn()
+        #expect(model.state == .signedOut(.signIn))
+        await model.showPasswordRecovery()
+        #expect(model.state == .signedOut(.passwordRecovery))
+        await model.showSignIn()
+        #expect(model.state == .signedOut(.signIn))
+
+        #expect(await telemetry.snapshot() == [
+            TelemetryEvent(
+                name: .authScreenViewed,
+                metadata: ["screen": "sign_up"]
+            ),
+            TelemetryEvent(
+                name: .authScreenViewed,
+                metadata: ["screen": "sign_in"]
+            ),
+            TelemetryEvent(
+                name: .authScreenViewed,
+                metadata: ["screen": "password_recovery"]
+            ),
+            TelemetryEvent(
+                name: .authScreenViewed,
+                metadata: ["screen": "sign_in"]
+            ),
+        ])
+    }
+
+    @MainActor
+    @Test("records onboarding completion and next view only after the saved transition")
+    func recordsOnboardingAdvanceSequence() async {
+        let order = TelemetryOrderRecorder()
+        let telemetry = OrderedTelemetryClient(order: order)
+        let repository = OrderedTelemetryOnboardingRepository(order: order)
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome),
+            repository: repository,
+            personaRepository: OrderedTelemetryPersonaRepository(order: order),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { step in
+                order.append("callback-\(step)")
+            },
+            onCompleted: {}
+        )
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.step == .bodyData)
+        #expect(order.values == [
+            "draft-saved-bodyData",
+            "callback-bodyData",
+            "event-onboarding_step_completed-welcome",
+            "event-onboarding_step_viewed-body_data",
+        ])
+    }
+
+    @MainActor
+    @Test("records no onboarding transition event when saving is cancelled")
+    func recordsNoOnboardingAdvanceOnCancellation() async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome),
+            repository: CancelledTelemetryOnboardingRepository(),
+            personaRepository: TelemetryPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.step == .welcome)
+        #expect(await telemetry.snapshot().isEmpty)
+    }
+
+    @MainActor
+    @Test("records persona and onboarding completion in persisted order")
+    func recordsOnboardingCompletionSequence() async {
+        let order = TelemetryOrderRecorder()
+        let telemetry = OrderedTelemetryClient(order: order)
+        let repository = OrderedTelemetryOnboardingRepository(order: order)
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .completion),
+            repository: repository,
+            personaRepository: OrderedTelemetryPersonaRepository(order: order),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {
+                order.append("callback-completed")
+            }
+        )
+
+        await model.complete()
+
+        #expect(order.values == [
+            "persona-persisted-focus",
+            "event-coach_persona_selected-focus",
+            "onboarding-persisted",
+            "callback-completed",
+            "event-onboarding_step_completed-completion",
+            "event-onboarding_completed",
+        ])
+    }
+
+    @MainActor
+    @Test("does not record onboarding success when final persistence fails")
+    func recordsNoFalseOnboardingCompletionOnFailure() async {
+        let order = TelemetryOrderRecorder()
+        let telemetry = OrderedTelemetryClient(order: order)
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .completion),
+            repository: OrderedTelemetryOnboardingRepository(
+                order: order,
+                completionError: .storageUnavailable
+            ),
+            personaRepository: OrderedTelemetryPersonaRepository(order: order),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { step in
+                order.append("callback-\(step)")
+            },
+            onCompleted: {
+                order.append("callback-completed")
+            }
+        )
+
+        await model.complete()
+
+        #expect(model.step == .consent)
+        #expect(order.values == [
+            "persona-persisted-focus",
+            "event-coach_persona_selected-focus",
+            "onboarding-persisted",
+            "callback-consent",
+        ])
+    }
+
+    @MainActor
+    @Test("records profile persona only after its repository accepts the change")
+    func recordsProfilePersonaAfterPersistence() async {
+        let order = TelemetryOrderRecorder()
+        let telemetry = OrderedTelemetryClient(order: order)
+        let model = CoachPersonaEditorModel(
+            userID: "fixture-user",
+            repository: OrderedTelemetryPersonaRepository(order: order),
+            telemetry: telemetry,
+            initialSelected: .zen,
+            initialPersisted: .focus,
+            initialOperationState: .idle
+        )
+
+        let didSave = await model.save()
+
+        #expect(didSave)
+        #expect(order.values == [
+            "persona-persisted-zen",
+            "event-coach_persona_selected-zen",
+        ])
+    }
+
+    @MainActor
     private func makeAuthModel(
         outcome: TelemetrySignInOutcome,
         telemetry: InMemoryTelemetryClient
@@ -258,6 +435,105 @@ private struct TelemetryOnboardingRepository: OnboardingRepository {
 private struct TelemetryPersonaRepository: CoachPersonaRepository {
     func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
     func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
+}
+
+private actor OrderedTelemetryClient: TelemetryClient {
+    let order: TelemetryOrderRecorder
+
+    init(order: TelemetryOrderRecorder) {
+        self.order = order
+    }
+
+    func record(_ event: TelemetryEvent) {
+        var value = "event-\(event.name.rawValue)"
+        if case .string(let step)? = event.metadata["step"] {
+            value += "-\(step)"
+        }
+        if case .string(let persona)? = event.metadata["persona"] {
+            value += "-\(persona)"
+        }
+        order.append(value)
+    }
+}
+
+private actor OrderedTelemetryOnboardingRepository: OnboardingRepository {
+    let order: TelemetryOrderRecorder
+    let completionError: OnboardingRepositoryError?
+
+    init(
+        order: TelemetryOrderRecorder,
+        completionError: OnboardingRepositoryError? = nil
+    ) {
+        self.order = order
+        self.completionError = completionError
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
+        order.append("draft-saved-\(draft.currentStep)")
+    }
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        order.append("onboarding-persisted")
+        if let completionError {
+            throw completionError
+        }
+    }
+
+    func clear(for userID: String) async throws {}
+}
+
+private struct CancelledTelemetryOnboardingRepository: OnboardingRepository {
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw CancellationError()
+    }
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func clear(for userID: String) async throws {}
+}
+
+private actor OrderedTelemetryPersonaRepository: CoachPersonaRepository {
+    let order: TelemetryOrderRecorder
+
+    init(order: TelemetryOrderRecorder) {
+        self.order = order
+    }
+
+    func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
+
+    func setPersona(_ persona: CoachPersona, for userID: String) async throws {
+        order.append("persona-persisted-\(persona.telemetryTestValue)")
+    }
+}
+
+private final class TelemetryOrderRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(_ value: String) {
+        lock.lock()
+        storage.append(value)
+        lock.unlock()
+    }
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
+private extension CoachPersona {
+    var telemetryTestValue: String {
+        switch self {
+        case .focus: "focus"
+        case .impulse: "impulse"
+        case .zen: "zen"
+        }
+    }
 }
 
 private extension AuthSession {

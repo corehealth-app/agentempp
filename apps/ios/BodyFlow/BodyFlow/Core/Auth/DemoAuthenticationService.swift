@@ -70,7 +70,13 @@ actor DemoAuthenticationService: AuthenticationService {
         try Task.checkCancellation()
 
         if configuration.startsWithCompletedFixture {
-            return completedFixtureSession
+            let session = completedFixtureSession
+            do {
+                try await stateStore.saveSession(session)
+            } catch {
+                throw AuthenticationError.storageUnavailable
+            }
+            return session
         }
 
         do {

@@ -129,6 +129,95 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testSignUpLabelsFocusOrderAndSubmitVisibility() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+        let openSignUp = app.buttons["auth.open-sign-up"]
+        XCTAssertTrue(openSignUp.waitForExistence(timeout: 3))
+        openSignUp.tap()
+
+        let email = app.textFields["auth.email"]
+        let password = app.secureTextFields["auth.password"]
+        let confirmation = app.secureTextFields["auth.password-confirmation"]
+        XCTAssertTrue(email.waitForExistence(timeout: 3))
+        XCTAssertEqual(email.label, "E-mail")
+        XCTAssertEqual(password.label, "Senha")
+        XCTAssertEqual(confirmation.label, "Confirmar senha")
+        XCTAssertTrue(app.staticTexts["E-mail"].exists)
+        XCTAssertTrue(app.staticTexts["Senha"].exists)
+        XCTAssertTrue(app.staticTexts["Confirmar senha"].exists)
+
+        email.tap()
+        XCTAssertTrue(waitForKeyboardFocus(email))
+        let submit = app.buttons["auth.sign-up.submit"]
+        assertVisibleAndHittable(submit)
+
+        email.typeText("\n")
+        XCTAssertTrue(waitForKeyboardFocus(password))
+        assertVisibleAndHittable(submit)
+
+        enterSecure("local-pass", in: password, app: app)
+        XCTAssertTrue(waitForKeyboardFocus(password))
+        assertVisibleAndHittable(submit)
+
+        enterSecure("local-pass", in: confirmation, app: app)
+        XCTAssertTrue(waitForKeyboardFocus(confirmation))
+        assertVisibleAndHittable(submit)
+    }
+
+    @MainActor
+    func testSignUpValidationPresentation() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+        let openSignUp = app.buttons["auth.open-sign-up"]
+        XCTAssertTrue(openSignUp.waitForExistence(timeout: 3))
+        openSignUp.tap()
+        let submit = app.buttons["auth.sign-up.submit"]
+        assertVisibleAndHittable(submit)
+        submit.tap()
+
+        XCTAssertTrue(
+            app.staticTexts[
+                "Erros no formulário: Informe seu e-mail. Informe sua senha. Confirme sua senha."
+            ]
+            .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["Informe seu e-mail."].exists)
+        XCTAssertTrue(app.staticTexts["Informe sua senha."].exists)
+        XCTAssertTrue(app.staticTexts["Confirme sua senha."].exists)
+    }
+
+    @MainActor
+    func testOnboardingWelcomeHasNoOverlapAtAccessibilityDynamicType() {
+        let app = launchApp(arguments: [
+            "--ui-testing-fresh-auth",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL",
+        ])
+        reachOnboardingWelcome(in: app)
+
+        let displayName = app.textFields["onboarding.display-name"]
+        let country = app.buttons["onboarding.country"]
+        let timeZone = app.buttons["onboarding.timezone"]
+        XCTAssertTrue(displayName.waitForExistence(timeout: 3))
+        XCTAssertEqual(displayName.label, "Como você quer ser chamado?")
+        XCTAssertTrue(country.waitForExistence(timeout: 3))
+        XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
+        assertNoOverlap(displayName, country)
+        assertNoOverlap(country, timeZone)
+        assertMinimumTapTarget(country)
+        assertMinimumTapTarget(timeZone)
+
+        let continueButton = app.buttons["onboarding.continue"]
+        for _ in 0..<4 where !continueButton.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            continueButton.isHittable,
+            "Continuar deve ser alcançável no Dynamic Type de acessibilidade"
+        )
+        assertMinimumTapTarget(continueButton)
+    }
+
+    @MainActor
     func testFreshUserCompletesOnboardingAndReachesToday() {
         let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
         XCTAssertTrue(
@@ -191,6 +280,7 @@ final class BodyFlowUITests: XCTestCase {
         assertMinimumTapTarget(focusPersona)
         focusPersona.tap()
         XCTAssertTrue(focusPersona.isSelected)
+        XCTAssertTrue(focusPersona.label.contains("Selecionado"))
         continueButton.tap()
 
         XCTAssertTrue(
@@ -200,9 +290,11 @@ final class BodyFlowUITests: XCTestCase {
         let termsConsent = app.buttons["consent.terms"]
         termsConsent.tap()
         XCTAssertTrue(termsConsent.isSelected)
+        XCTAssertTrue(termsConsent.label.contains("Selecionado"))
         let privacyConsent = app.buttons["consent.privacy"]
         privacyConsent.tap()
         XCTAssertTrue(privacyConsent.isSelected)
+        XCTAssertTrue(privacyConsent.label.contains("Selecionado"))
         assertMinimumTapTarget(termsConsent)
         assertMinimumTapTarget(privacyConsent)
         continueButton.tap()
@@ -229,6 +321,7 @@ final class BodyFlowUITests: XCTestCase {
         )
 
         app.terminate()
+        app.launchArguments = ["--ui-testing-preserve-state"]
         app.launch()
 
         XCTAssertTrue(
@@ -370,6 +463,26 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func reachOnboardingWelcome(in app: XCUIApplication) {
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        app.buttons["auth.open-sign-up"].tap()
+        completeSignUpForm(in: app)
+        app.buttons["auth.sign-up.submit"].tap()
+        XCTAssertTrue(
+            element("screen.auth.email-confirmation", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        app.buttons["auth.confirm-development"].tap()
+        XCTAssertTrue(
+            element("screen.onboarding.welcome", in: app)
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
     private func enterSecure(
         _ text: String,
         in field: XCUIElement,
@@ -412,6 +525,42 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertNoOverlap(
+        _ first: XCUIElement,
+        _ second: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            first.frame.intersection(second.frame).isNull,
+            "\(first.identifier) e \(second.identifier) não devem se sobrepor",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertVisibleAndHittable(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "O controle deve existir",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            element.isHittable,
+            "O controle deve permanecer visível e acionável",
+            file: file,
+            line: line
+        )
+        assertMinimumTapTarget(element, file: file, line: line)
+    }
+
+    @MainActor
     private func assertMinimumTapTarget(
         _ element: XCUIElement,
         file: StaticString = #filePath,
@@ -424,15 +573,15 @@ final class BodyFlowUITests: XCTestCase {
             line: line
         )
         XCTAssertGreaterThanOrEqual(
-            element.frame.width.rounded(),
-            44,
+            element.frame.width,
+            43.99,
             "O alvo deve ter pelo menos 44 pt de largura",
             file: file,
             line: line
         )
         XCTAssertGreaterThanOrEqual(
-            element.frame.height.rounded(),
-            44,
+            element.frame.height,
+            43.99,
             "O alvo deve ter pelo menos 44 pt de altura",
             file: file,
             line: line

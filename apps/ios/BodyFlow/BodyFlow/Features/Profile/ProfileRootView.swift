@@ -61,7 +61,8 @@ struct ProfileRootView: View {
                 Button {
                     personaEditor = CoachPersonaEditorModel(
                         userID: userID,
-                        repository: dependencies.coachPersona
+                        repository: dependencies.coachPersona,
+                        telemetry: dependencies.telemetry
                     )
                 } label: {
                     FeatureActionLabel(

@@ -1,21 +1,71 @@
 import SwiftUI
 import UIKit
 
-@MainActor
-struct SignUpView: View {
-    private enum Field: Hashable {
-        case email
-        case password
-        case confirmation
+enum SignUpField: Hashable, Sendable {
+    case email
+    case password
+    case confirmation
+}
+
+enum SignUpSubmitLabel: Equatable, Sendable {
+    case next
+    case done
+
+    var swiftUIValue: SubmitLabel {
+        switch self {
+        case .next: .next
+        case .done: .done
+        }
+    }
+}
+
+enum SignUpKeyboardAction: Equatable, Sendable {
+    case focus(SignUpField)
+    case submit
+}
+
+struct SignUpKeyboardPresentation: Equatable, Sendable {
+    let submitLabel: SignUpSubmitLabel
+    let action: SignUpKeyboardAction
+}
+
+enum SignUpKeyboardPolicy {
+    static var fields: [SignUpField] {
+        [.email, .password, .confirmation]
     }
 
+    static func presentation(
+        for field: SignUpField
+    ) -> SignUpKeyboardPresentation {
+        switch field {
+        case .email:
+            SignUpKeyboardPresentation(
+                submitLabel: .next,
+                action: .focus(.password)
+            )
+        case .password:
+            SignUpKeyboardPresentation(
+                submitLabel: .next,
+                action: .focus(.confirmation)
+            )
+        case .confirmation:
+            SignUpKeyboardPresentation(
+                submitLabel: .done,
+                action: .submit
+            )
+        }
+    }
+}
+
+@MainActor
+struct SignUpView: View {
     let model: AppFlowModel
     @State private var email = ""
     @State private var password = ""
     @State private var confirmation = ""
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
-    @FocusState private var focusedField: Field?
+    @FocusState private var focusedField: SignUpField?
 
     var body: some View {
         AuthScreenLayout(
@@ -33,9 +83,12 @@ struct SignUpView: View {
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .submitLabel(.next)
+                        .submitLabel(
+                            SignUpKeyboardPolicy.presentation(for: .email)
+                                .submitLabel.swiftUIValue
+                        )
                         .focused($focusedField, equals: .email)
-                        .onSubmit { focusedField = .password }
+                        .onSubmit { handleSubmit(from: .email) }
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("E-mail")
                         .accessibilityHint(
@@ -51,9 +104,12 @@ struct SignUpView: View {
                     Text("Senha").font(BodyFlowTypography.headline)
                     SecureField("Senha", text: $password)
                         .textContentType(.newPassword)
-                        .submitLabel(.next)
+                        .submitLabel(
+                            SignUpKeyboardPolicy.presentation(for: .password)
+                                .submitLabel.swiftUIValue
+                        )
                         .focused($focusedField, equals: .password)
-                        .onSubmit { focusedField = .confirmation }
+                        .onSubmit { handleSubmit(from: .password) }
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("Senha")
                         .accessibilityHint(
@@ -67,9 +123,12 @@ struct SignUpView: View {
                     Text("Confirmar senha").font(BodyFlowTypography.headline)
                     SecureField("Confirmar senha", text: $confirmation)
                         .textContentType(.newPassword)
-                        .submitLabel(.done)
+                        .submitLabel(
+                            SignUpKeyboardPolicy.presentation(for: .confirmation)
+                                .submitLabel.swiftUIValue
+                        )
                         .focused($focusedField, equals: .confirmation)
-                        .onSubmit(submit)
+                        .onSubmit { handleSubmit(from: .confirmation) }
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("Confirmar senha")
                         .accessibilityHint(
@@ -105,7 +164,7 @@ struct SignUpView: View {
                 .accessibilityIdentifier("auth.sign-up.submit")
 
                 Button {
-                    model.showSignIn()
+                    Task { await model.showSignIn() }
                 } label: {
                     Text("Já tenho uma conta")
                         .frame(
@@ -137,10 +196,9 @@ struct SignUpView: View {
     private func accessibilityHint(
         for candidates: [AuthValidationIssue]
     ) -> String {
-        guard let issue = candidates.first(where: validationIssues.contains) else {
-            return ""
-        }
-        return "Erro: \(issue.message)"
+        FormAccessibilityText.hint(
+            for: candidates.first(where: validationIssues.contains)?.message
+        )
     }
 
     private func submit() {
@@ -163,12 +221,20 @@ struct SignUpView: View {
         }
     }
 
+    private func handleSubmit(from field: SignUpField) {
+        switch SignUpKeyboardPolicy.presentation(for: field).action {
+        case .focus(let destination):
+            focusedField = destination
+        case .submit:
+            submit()
+        }
+    }
+
     private func announceValidationIssues() {
-        UIAccessibility.post(
-            notification: .announcement,
-            argument: "Erros no formulário: "
-                + validationIssues.map(\.message).joined(separator: " ")
-        )
+        guard let message = FormAccessibilityText.validationAnnouncement(
+            messages: validationIssues.map(\.message)
+        ) else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func announceOperationErrorIfNeeded() {

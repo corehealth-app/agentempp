@@ -10,12 +10,34 @@ enum AppBuildFlavor: Equatable, Sendable {
     case release
 }
 
+enum DemoStorageBoundary: Equatable, Sendable {
+    case memory
+    case keychain
+}
+
 struct AppLaunchConfiguration: Sendable {
     let mode: AppRuntimeMode
     let shouldResetDemoState: Bool
     let startsWithCompletedFixture: Bool
     let preloadsSyntheticOnboardingValues: Bool
     let authBehavior: DemoOperationBehavior<AuthenticationError>
+    let demoStorageBoundary: DemoStorageBoundary
+
+    init(
+        mode: AppRuntimeMode,
+        shouldResetDemoState: Bool,
+        startsWithCompletedFixture: Bool,
+        preloadsSyntheticOnboardingValues: Bool,
+        authBehavior: DemoOperationBehavior<AuthenticationError>,
+        demoStorageBoundary: DemoStorageBoundary = .memory
+    ) {
+        self.mode = mode
+        self.shouldResetDemoState = shouldResetDemoState
+        self.startsWithCompletedFixture = startsWithCompletedFixture
+        self.preloadsSyntheticOnboardingValues = preloadsSyntheticOnboardingValues
+        self.authBehavior = authBehavior
+        self.demoStorageBoundary = demoStorageBoundary
+    }
 
     var developmentConsentAvailability: DevelopmentConsentAvailability {
         switch mode {
@@ -45,6 +67,17 @@ struct AppLaunchConfiguration: Sendable {
                 startsWithCompletedFixture: false,
                 preloadsSyntheticOnboardingValues: false,
                 authBehavior: .fail(.operationUnavailable, after: nil)
+            )
+        }
+
+        if arguments.contains("--ui-testing-preserve-state") {
+            return AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: false,
+                startsWithCompletedFixture: false,
+                preloadsSyntheticOnboardingValues: false,
+                authBehavior: .succeed(after: nil),
+                demoStorageBoundary: .keychain
             )
         }
 
@@ -94,7 +127,8 @@ struct AppLaunchConfiguration: Sendable {
             shouldResetDemoState: true,
             startsWithCompletedFixture: startsWithCompletedFixture,
             preloadsSyntheticOnboardingValues: true,
-            authBehavior: authBehavior
+            authBehavior: authBehavior,
+            demoStorageBoundary: .keychain
         )
     }
 }

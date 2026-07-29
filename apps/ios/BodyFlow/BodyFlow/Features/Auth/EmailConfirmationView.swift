@@ -40,7 +40,7 @@ struct EmailConfirmationView: View {
                 }
 
                 Button {
-                    model.showSignIn()
+                    Task { await model.showSignIn() }
                 } label: {
                     Text("Voltar para entrar")
                         .frame(

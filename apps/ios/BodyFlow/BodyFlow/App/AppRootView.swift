@@ -118,6 +118,7 @@ struct AppRootView: View {
                 repository: dependencies.onboarding,
                 personaRepository: dependencies.coachPersona,
                 developmentConsentAvailability: configuration.developmentConsentAvailability,
+                telemetry: dependencies.telemetry,
                 onStepChanged: { step in
                     guard onboardingUserID == userID else { return }
                     model.updateOnboardingStep(step)

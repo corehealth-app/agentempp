@@ -155,13 +155,13 @@ struct AppFlowModelTests {
         let model = makeModel()
         await model.start()
 
-        model.showSignUp()
+        await model.showSignUp()
         #expect(model.state == .signedOut(.signUp))
 
-        model.showPasswordRecovery()
+        await model.showPasswordRecovery()
         #expect(model.state == .signedOut(.passwordRecovery))
 
-        model.showSignIn()
+        await model.showSignIn()
         #expect(model.state == .signedOut(.signIn))
     }
 
@@ -300,7 +300,7 @@ struct AppFlowModelTests {
     func recoveryUsesNeutralConfirmation() async {
         let model = makeModel()
         await model.start()
-        model.showPasswordRecovery()
+        await model.showPasswordRecovery()
 
         await model.requestPasswordRecovery(
             email: "fixture@example.invalid"

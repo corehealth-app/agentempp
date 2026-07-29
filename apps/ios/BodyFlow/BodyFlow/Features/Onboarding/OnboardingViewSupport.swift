@@ -39,10 +39,9 @@ extension OnboardingFlowModel {
     func accessibilityHint(
         for candidates: [OnboardingValidationIssue]
     ) -> String {
-        guard let issue = candidates.first(where: validationIssues.contains) else {
-            return ""
-        }
-        return "Erro: \(issue.message)"
+        FormAccessibilityText.hint(
+            for: candidates.first(where: validationIssues.contains)?.message
+        )
     }
 }
 

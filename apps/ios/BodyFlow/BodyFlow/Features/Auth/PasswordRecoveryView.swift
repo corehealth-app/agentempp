@@ -72,7 +72,7 @@ struct PasswordRecoveryView: View {
                 }
 
                 Button {
-                    model.showSignIn()
+                    Task { await model.showSignIn() }
                 } label: {
                     Text("Voltar para entrar")
                         .frame(
@@ -94,8 +94,7 @@ struct PasswordRecoveryView: View {
     }
 
     private var accessibilityHint: String {
-        guard let issue = validationIssues.first else { return "" }
-        return "Erro: \(issue.message)"
+        FormAccessibilityText.hint(for: validationIssues.first?.message)
     }
 
     private func submit() {
@@ -115,11 +114,10 @@ struct PasswordRecoveryView: View {
     }
 
     private func announceValidationIssues() {
-        UIAccessibility.post(
-            notification: .announcement,
-            argument: "Erros no formulário: "
-                + validationIssues.map(\.message).joined(separator: " ")
-        )
+        guard let message = FormAccessibilityText.validationAnnouncement(
+            messages: validationIssues.map(\.message)
+        ) else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func announceResult() {

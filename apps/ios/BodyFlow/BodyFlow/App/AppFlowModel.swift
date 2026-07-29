@@ -88,16 +88,19 @@ final class AppFlowModel {
         }
     }
 
-    func showSignUp() {
-        navigate(to: .signUp)
+    func showSignUp() async {
+        guard navigate(to: .signUp) else { return }
+        await telemetry.record(.authScreenViewed(.signUp))
     }
 
-    func showPasswordRecovery() {
-        navigate(to: .passwordRecovery)
+    func showPasswordRecovery() async {
+        guard navigate(to: .passwordRecovery) else { return }
+        await telemetry.record(.authScreenViewed(.passwordRecovery))
     }
 
-    func showSignIn() {
-        navigate(to: .signIn)
+    func showSignIn() async {
+        guard navigate(to: .signIn) else { return }
+        await telemetry.record(.authScreenViewed(.signIn))
     }
 
     func updateOnboardingStep(_ step: OnboardingStep) {
@@ -306,15 +309,17 @@ final class AppFlowModel {
         }
     }
 
-    private func navigate(to destination: AuthDestination) {
+    @discardableResult
+    private func navigate(to destination: AuthDestination) -> Bool {
         guard authOperationState != .submitting,
               isAuthenticationNavigationAllowed else {
-            return
+            return false
         }
         currentSession = nil
         state = .signedOut(destination)
         presentationError = nil
         authOperationState = .idle
+        return true
     }
 
     private var isAuthenticationNavigationAllowed: Bool {

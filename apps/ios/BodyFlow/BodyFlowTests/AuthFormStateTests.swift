@@ -45,6 +45,36 @@ struct AuthFormStateTests {
         )
     }
 
+    @Test("sign-up keyboard contract declares ordered Next, Next, Done actions")
+    func signUpKeyboardContract() {
+        #expect(SignUpKeyboardPolicy.fields == [
+            .email,
+            .password,
+            .confirmation,
+        ])
+        #expect(
+            SignUpKeyboardPolicy.presentation(for: .email)
+                == SignUpKeyboardPresentation(
+                    submitLabel: .next,
+                    action: .focus(.password)
+                )
+        )
+        #expect(
+            SignUpKeyboardPolicy.presentation(for: .password)
+                == SignUpKeyboardPresentation(
+                    submitLabel: .next,
+                    action: .focus(.confirmation)
+                )
+        )
+        #expect(
+            SignUpKeyboardPolicy.presentation(for: .confirmation)
+                == SignUpKeyboardPresentation(
+                    submitLabel: .done,
+                    action: .submit
+                )
+        )
+    }
+
     @Test("password confirmation must match without imposing provider policy")
     func passwordConfirmation() {
         #expect(
@@ -64,6 +94,27 @@ struct AuthFormStateTests {
                 password: "x",
                 confirmation: "x"
             ).isEmpty
+        )
+    }
+
+    @Test("validation accessibility text keeps bounded hints and announcements")
+    func validationAccessibilityText() {
+        let messages = [
+            AuthValidationIssue.emailRequired.message,
+            AuthValidationIssue.passwordRequired.message,
+        ]
+
+        #expect(
+            FormAccessibilityText.hint(for: messages.first)
+                == "Erro: Informe seu e-mail."
+        )
+        #expect(
+            FormAccessibilityText.validationAnnouncement(messages: messages)
+                == "Erros no formulário: Informe seu e-mail. Informe sua senha."
+        )
+        #expect(FormAccessibilityText.hint(for: nil).isEmpty)
+        #expect(
+            FormAccessibilityText.validationAnnouncement(messages: []) == nil
         )
     }
 }

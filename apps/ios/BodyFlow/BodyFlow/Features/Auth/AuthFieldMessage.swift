@@ -36,6 +36,18 @@ extension AppPresentationError {
     }
 }
 
+enum FormAccessibilityText {
+    static func hint(for message: String?) -> String {
+        guard let message else { return "" }
+        return "Erro: \(message)"
+    }
+
+    static func validationAnnouncement(messages: [String]) -> String? {
+        guard !messages.isEmpty else { return nil }
+        return "Erros no formulário: " + messages.joined(separator: " ")
+    }
+}
+
 @MainActor
 struct AuthFieldMessage: View {
     let message: String
@@ -129,8 +141,9 @@ struct AuthValidationSummary: View {
                 .font(BodyFlowTypography.callout)
                 .foregroundStyle(BodyFlowColor.warning)
                 .accessibilityLabel(
-                    "Erros no formulário: "
-                        + issues.map(\.message).joined(separator: " ")
+                    FormAccessibilityText.validationAnnouncement(
+                        messages: issues.map(\.message)
+                    ) ?? ""
                 )
         }
     }

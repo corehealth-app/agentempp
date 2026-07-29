@@ -82,7 +82,7 @@ struct SignInView: View {
 
                 VStack(spacing: BodyFlowSpacing.xs) {
                     Button {
-                        model.showSignUp()
+                        Task { await model.showSignUp() }
                     } label: {
                         Text("Criar conta")
                             .frame(
@@ -94,7 +94,7 @@ struct SignInView: View {
                     .accessibilityIdentifier("auth.open-sign-up")
 
                     Button {
-                        model.showPasswordRecovery()
+                        Task { await model.showPasswordRecovery() }
                     } label: {
                         Text("Esqueci minha senha")
                             .frame(
@@ -129,10 +129,9 @@ struct SignInView: View {
     private func accessibilityHint(
         for candidates: [AuthValidationIssue]
     ) -> String {
-        guard let issue = candidates.first(where: validationIssues.contains) else {
-            return ""
-        }
-        return "Erro: \(issue.message)"
+        FormAccessibilityText.hint(
+            for: candidates.first(where: validationIssues.contains)?.message
+        )
     }
 
     private func submit() {
@@ -155,11 +154,10 @@ struct SignInView: View {
     }
 
     private func announceValidationIssues() {
-        UIAccessibility.post(
-            notification: .announcement,
-            argument: "Erros no formulário: "
-                + validationIssues.map(\.message).joined(separator: " ")
-        )
+        guard let message = FormAccessibilityText.validationAnnouncement(
+            messages: validationIssues.map(\.message)
+        ) else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func announceOperationErrorIfNeeded() {

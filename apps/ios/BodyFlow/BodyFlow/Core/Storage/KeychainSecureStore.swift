@@ -66,7 +66,7 @@ struct KeychainSecureStore: SecureStoring {
         let query = try baseQuery(forKey: key)
         let status = SecItemDelete(query as CFDictionary)
 
-        guard status == errSecSuccess else {
+        guard status == errSecSuccess || status == errSecItemNotFound else {
             throw SecureStorageError.unhandledStatus(status)
         }
     }

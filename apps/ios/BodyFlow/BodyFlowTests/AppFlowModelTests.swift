@@ -357,19 +357,114 @@ struct AppFlowModelTests {
         #expect(model.currentSession == nil)
     }
 
-    @Test("sign out returns to sign in")
-    func signOutReturnsToSignIn() async {
+    @Test("successful sign out clears the session and returns to sign in")
+    func successfulSignOutClearsSessionAndReturnsToSignIn() async {
+        let session = AuthSession.completedFixture
+        let telemetry = InMemoryTelemetryClient()
         let model = AppFlowModel(
-            authentication: AuthenticationServiceSpy(restoredSession: nil),
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+
+        await model.start()
+        await model.signOut()
+
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.currentSession == nil)
+        #expect(model.presentationError == nil)
+        #expect(model.authOperationState == .idle)
+        #expect(await telemetry.snapshot() == [
+            TelemetryEvent(name: .signOutCompleted),
+        ])
+    }
+
+    @Test("failed sign out preserves the authenticated state and session")
+    func failedSignOutPreservesAuthenticatedStateAndSession() async {
+        let session = AuthSession.completedFixture
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: session,
+                signOutError: .serviceUnavailable
+            ),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
             telemetry: InMemoryTelemetryClient()
         )
 
+        await model.start()
         await model.signOut()
 
-        #expect(model.state == .signedOut(.signIn))
-        #expect(model.currentSession == nil)
+        #expect(model.state == .authenticated(userID: "fixture-user"))
+        #expect(model.currentSession == session)
+        #expect(model.presentationError == .serviceUnavailable)
+        #expect(model.authOperationState == .failed(.serviceUnavailable))
+    }
+
+    @Test("Keychain failure cannot publish a false signed-out state")
+    func keychainFailurePreservesOnboardingStateAndSession() async {
+        let session = incompleteSession()
+        let draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: session,
+                signOutError: .storageUnavailable
+            ),
+            onboarding: OnboardingRepositorySpy(loadedDraft: draft),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+        await model.signOut()
+
+        #expect(model.state == .onboarding(userID: "fixture-user", step: .routine))
+        #expect(model.currentSession == session)
+        #expect(model.restoredOnboardingDraft == draft)
+        #expect(model.presentationError == .storageUnavailable)
+        #expect(model.authOperationState == .failed(.storageUnavailable))
+    }
+
+    @Test("failed sign out does not cancel an in-flight onboarding retry")
+    func failedSignOutPreservesInFlightOnboardingRetry() async {
+        let session = incompleteSession()
+        let initialDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        let resumedDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let onboarding = SuspendedOnboardingRepository(initialDraft: initialDraft)
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: session,
+                signOutError: .serviceUnavailable
+            ),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry
+        )
+        await model.start()
+
+        let retry = Task {
+            await model.retryOnboardingRestore()
+        }
+        await onboarding.waitForLoadCount(2)
+
+        await model.signOut()
+
+        #expect(model.state == .onboarding(userID: "fixture-user", step: .objective))
+        #expect(model.currentSession == session)
+        #expect(model.presentationError == .serviceUnavailable)
+
+        await onboarding.resumeLoad(2, with: .success(resumedDraft))
+        await retry.value
+
+        #expect(model.state == .onboarding(userID: "fixture-user", step: .routine))
+        #expect(model.currentSession == session)
+        #expect(model.restoredOnboardingDraft == resumedDraft)
+        #expect(await telemetry.snapshot() == [
+            .onboardingStepViewed(.objective),
+            .onboardingStepViewed(.routine),
+        ])
     }
 
     @Test("cancelled restoration never publishes an authenticated destination")
@@ -645,6 +740,7 @@ private struct AuthenticationServiceSpy: AuthenticationService {
     let signUpResult: AuthSignUpResult?
     let confirmedSession: AuthSession?
     let recoveryError: AuthenticationError?
+    let signOutError: AuthenticationError?
 
     init(
         restoredSession: AuthSession?,
@@ -652,7 +748,8 @@ private struct AuthenticationServiceSpy: AuthenticationService {
         signedInSession: AuthSession? = nil,
         signUpResult: AuthSignUpResult? = nil,
         confirmedSession: AuthSession? = nil,
-        recoveryError: AuthenticationError? = nil
+        recoveryError: AuthenticationError? = nil,
+        signOutError: AuthenticationError? = nil
     ) {
         self.restoredSession = restoredSession
         self.restoreError = restoreError
@@ -660,6 +757,7 @@ private struct AuthenticationServiceSpy: AuthenticationService {
         self.signUpResult = signUpResult
         self.confirmedSession = confirmedSession
         self.recoveryError = recoveryError
+        self.signOutError = signOutError
     }
 
     func restoreSession() async throws -> AuthSession? {
@@ -696,7 +794,11 @@ private struct AuthenticationServiceSpy: AuthenticationService {
         }
     }
 
-    func signOut() async throws {}
+    func signOut() async throws {
+        if let signOutError {
+            throw signOutError
+        }
+    }
 }
 
 private actor SuspendedAuthenticationService: AuthenticationService {

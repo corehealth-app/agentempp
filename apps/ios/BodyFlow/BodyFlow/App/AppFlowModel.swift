@@ -81,7 +81,6 @@ final class AppFlowModel {
     }
 
     func signOut() async {
-        invalidateOnboardingRestore()
         do {
             try await authentication.signOut()
             guard !isCancellationRequested else { return }
@@ -89,7 +88,9 @@ final class AppFlowModel {
             await telemetry.record(TelemetryEvent(name: .signOutCompleted))
         } catch {
             guard !isCancellationRequested else { return }
-            transitionToSignedOut(error: presentationError(for: error))
+            let error = presentationError(for: error)
+            presentationError = error
+            authOperationState = .failed(error)
         }
     }
 

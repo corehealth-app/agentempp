@@ -92,10 +92,16 @@ struct AuthScreenLayout<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                        Text(title)
-                            .font(BodyFlowTypography.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundStyle(BodyFlowColor.primaryText)
+                        HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.xs) {
+                            Text(title)
+                                .font(BodyFlowTypography.largeTitle)
+                                .fontWeight(.bold)
+                                .foregroundStyle(BodyFlowColor.primaryText)
+
+                            Spacer(minLength: BodyFlowSpacing.xs)
+
+                            BodyFlowBrandIdentityView()
+                        }
 
                         Text(message)
                             .font(BodyFlowTypography.body)
@@ -111,7 +117,6 @@ struct AuthScreenLayout<Content: View>: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .bodyFlowBrandIdentity()
     }
 }
 

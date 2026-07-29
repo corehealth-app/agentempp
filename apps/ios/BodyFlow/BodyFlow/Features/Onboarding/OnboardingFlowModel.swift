@@ -232,8 +232,9 @@ final class OnboardingFlowModel {
         self.cancellationCheck = cancellationCheck
     }
 
-    func back() {
-        guard operationState != .saving,
+    func back() async {
+        guard !isCancellationRequested,
+              operationState != .saving,
               let index = OnboardingStep.allCases.firstIndex(of: step),
               index > OnboardingStep.allCases.startIndex else {
             return
@@ -244,6 +245,7 @@ final class OnboardingFlowModel {
         step = previousStep
         draft.currentStep = previousStep
         onStepChanged(previousStep)
+        await telemetry.record(.onboardingStepViewed(previousStep.telemetryValue))
     }
 
     func continueFromCurrentStep() async {

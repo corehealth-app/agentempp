@@ -328,7 +328,7 @@ struct OnboardingFlowModelTests {
         model.updateHeightCM(181.5)
         model.updateObjective(.muscleGain)
 
-        model.back()
+        await model.back()
 
         #expect(model.step == .bodyData)
         #expect(model.draft.currentStep == .bodyData)

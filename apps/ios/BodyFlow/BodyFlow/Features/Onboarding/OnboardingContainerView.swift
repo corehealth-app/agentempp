@@ -88,7 +88,9 @@ struct OnboardingContainerView: View {
                 }
 
                 if model.step != .welcome {
-                    Button(action: model.back) {
+                    Button {
+                        Task { await model.back() }
+                    } label: {
                         Text("Voltar")
                             .frame(
                                 maxWidth: .infinity,

@@ -279,10 +279,12 @@ final class AppFlowModel {
                 currentSession = nil
                 return
             }
+            let step = draft?.currentStep ?? .welcome
             state = .onboarding(
                 userID: session.userID,
-                step: draft?.currentStep ?? .welcome
+                step: step
             )
+            await telemetry.record(.onboardingStepViewed(step.telemetryValue))
         } catch {
             guard !isCancellationRequested else { return }
 
@@ -293,6 +295,7 @@ final class AppFlowModel {
             }
             state = .onboarding(userID: session.userID, step: .welcome)
             presentationError = presentationError(for: error)
+            await telemetry.record(.onboardingStepViewed(.welcome))
         }
     }
 

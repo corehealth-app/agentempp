@@ -176,6 +176,129 @@ struct TelemetryTests {
     }
 
     @MainActor
+    @Test("persisted-step restore records one viewed event after publishing that step")
+    func persistedStepRestoreRecordsViewedAfterStatePublication() async {
+        let telemetry = StateObservingTelemetryClient<AppFlowState>()
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "person@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let model = AppFlowModel(
+            authentication: RestoringTelemetryAuthenticationService(
+                restoredSession: session
+            ),
+            onboarding: RestoringTelemetryOnboardingRepository(
+                loadResult: .success(
+                    BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+                )
+            ),
+            persona: TelemetryPersonaRepository(),
+            telemetry: telemetry
+        )
+        await telemetry.observe { model.state }
+
+        await model.start()
+
+        let publishedState = AppFlowState.onboarding(
+            userID: "fixture-user",
+            step: .objective
+        )
+        #expect(model.state == publishedState)
+        #expect(await telemetry.snapshot() == [
+            ObservedTelemetryRecord(
+                event: TelemetryEvent(
+                    name: .onboardingStepViewed,
+                    metadata: ["step": "objective"]
+                ),
+                state: publishedState
+            ),
+        ])
+    }
+
+    @MainActor
+    @Test("nil-draft restore records welcome viewed after publishing the fallback")
+    func nilDraftRestoreRecordsWelcomeAfterStatePublication() async {
+        let telemetry = StateObservingTelemetryClient<AppFlowState>()
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "person@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let model = AppFlowModel(
+            authentication: RestoringTelemetryAuthenticationService(
+                restoredSession: session
+            ),
+            onboarding: RestoringTelemetryOnboardingRepository(
+                loadResult: .success(nil)
+            ),
+            persona: TelemetryPersonaRepository(),
+            telemetry: telemetry
+        )
+        await telemetry.observe { model.state }
+
+        await model.start()
+
+        let publishedState = AppFlowState.onboarding(
+            userID: "fixture-user",
+            step: .welcome
+        )
+        #expect(model.state == publishedState)
+        #expect(await telemetry.snapshot() == [
+            ObservedTelemetryRecord(
+                event: TelemetryEvent(
+                    name: .onboardingStepViewed,
+                    metadata: ["step": "welcome"]
+                ),
+                state: publishedState
+            ),
+        ])
+    }
+
+    @MainActor
+    @Test("failed-draft restore records welcome viewed after publishing the fallback")
+    func failedDraftRestoreRecordsWelcomeAfterStatePublication() async {
+        let telemetry = StateObservingTelemetryClient<AppFlowState>()
+        let session = AuthSession(
+            userID: "fixture-user",
+            email: "person@example.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: false
+        )
+        let model = AppFlowModel(
+            authentication: RestoringTelemetryAuthenticationService(
+                restoredSession: session
+            ),
+            onboarding: RestoringTelemetryOnboardingRepository(
+                loadResult: .failure(.storageUnavailable)
+            ),
+            persona: TelemetryPersonaRepository(),
+            telemetry: telemetry
+        )
+        await telemetry.observe { model.state }
+
+        await model.start()
+
+        let publishedState = AppFlowState.onboarding(
+            userID: "fixture-user",
+            step: .welcome
+        )
+        #expect(model.state == publishedState)
+        #expect(model.presentationError == .storageUnavailable)
+        #expect(await telemetry.snapshot() == [
+            ObservedTelemetryRecord(
+                event: TelemetryEvent(
+                    name: .onboardingStepViewed,
+                    metadata: ["step": "welcome"]
+                ),
+                state: publishedState
+            ),
+        ])
+    }
+
+    @MainActor
     @Test("records sign out only after returning to sign in")
     func recordsSignOutAfterTransition() async {
         let telemetry = InMemoryTelemetryClient()
@@ -236,7 +359,7 @@ struct TelemetryTests {
     }
 
     @MainActor
-    @Test("records onboarding completion and next view only after the saved transition")
+    @Test("records completion and exactly one next view only after the saved transition")
     func recordsOnboardingAdvanceSequence() async {
         let order = TelemetryOrderRecorder()
         let telemetry = OrderedTelemetryClient(order: order)
@@ -263,6 +386,113 @@ struct TelemetryTests {
             "event-onboarding_step_completed-welcome",
             "event-onboarding_step_viewed-body_data",
         ])
+    }
+
+    @MainActor
+    @Test("successful back records destination viewed after publishing step and draft")
+    func successfulBackRecordsViewedAfterStatePublication() async {
+        let telemetry = StateObservingTelemetryClient<OnboardingTelemetryState>()
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .objective),
+            repository: TelemetryOnboardingRepository(),
+            personaRepository: TelemetryPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+        await telemetry.observe {
+            OnboardingTelemetryState(
+                step: model.step,
+                draftStep: model.draft.currentStep
+            )
+        }
+
+        await model.back()
+
+        let publishedState = OnboardingTelemetryState(
+            step: .bodyData,
+            draftStep: .bodyData
+        )
+        #expect(model.step == .bodyData)
+        #expect(model.draft.currentStep == .bodyData)
+        #expect(await telemetry.snapshot() == [
+            ObservedTelemetryRecord(
+                event: TelemetryEvent(
+                    name: .onboardingStepViewed,
+                    metadata: ["step": "body_data"]
+                ),
+                state: publishedState
+            ),
+        ])
+    }
+
+    @MainActor
+    @Test("back at welcome records no viewed event")
+    func backAtWelcomeRecordsNoViewedEvent() async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome),
+            repository: TelemetryOnboardingRepository(),
+            personaRepository: TelemetryPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {}
+        )
+
+        await model.back()
+
+        #expect(model.step == .welcome)
+        #expect(await telemetry.snapshot().isEmpty)
+    }
+
+    @MainActor
+    @Test("cancelled back records no viewed event or transition")
+    func cancelledBackRecordsNoViewedEvent() async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .objective),
+            repository: TelemetryOnboardingRepository(),
+            personaRepository: TelemetryPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {},
+            cancellationCheck: { true }
+        )
+
+        await model.back()
+
+        #expect(model.step == .objective)
+        #expect(model.draft.currentStep == .objective)
+        #expect(await telemetry.snapshot().isEmpty)
+    }
+
+    @MainActor
+    @Test("back during a stale saving operation records no viewed event")
+    func staleSavingBackRecordsNoViewedEvent() async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .objective),
+            repository: TelemetryOnboardingRepository(),
+            personaRepository: TelemetryPersonaRepository(),
+            developmentConsentAvailability: .syntheticDevelopment,
+            telemetry: telemetry,
+            onStepChanged: { _ in },
+            onCompleted: {},
+            initialOperationState: .saving
+        )
+
+        await model.back()
+
+        #expect(model.step == .objective)
+        #expect(model.draft.currentStep == .objective)
+        #expect(await telemetry.snapshot().isEmpty)
     }
 
     @MainActor
@@ -425,8 +655,44 @@ private struct TelemetryAuthenticationService: AuthenticationService {
     func signOut() async throws {}
 }
 
+private struct RestoringTelemetryAuthenticationService: AuthenticationService {
+    let restoredSession: AuthSession?
+
+    func restoreSession() async throws -> AuthSession? { restoredSession }
+
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func requestPasswordRecovery(email: String) async throws {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signOut() async throws {}
+}
+
 private struct TelemetryOnboardingRepository: OnboardingRepository {
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func clear(for userID: String) async throws {}
+}
+
+private struct RestoringTelemetryOnboardingRepository: OnboardingRepository {
+    let loadResult: Result<OnboardingDraft?, OnboardingRepositoryError>
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? {
+        try loadResult.get()
+    }
+
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
     func clear(for userID: String) async throws {}
@@ -435,6 +701,37 @@ private struct TelemetryOnboardingRepository: OnboardingRepository {
 private struct TelemetryPersonaRepository: CoachPersonaRepository {
     func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
     func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
+}
+
+private struct ObservedTelemetryRecord<State: Equatable & Sendable>: Equatable, Sendable {
+    let event: TelemetryEvent
+    let state: State
+}
+
+private actor StateObservingTelemetryClient<State: Equatable & Sendable>: TelemetryClient {
+    private var observer: (@MainActor @Sendable () -> State)?
+    private var records: [ObservedTelemetryRecord<State>] = []
+
+    func observe(
+        _ observer: @escaping @MainActor @Sendable () -> State
+    ) {
+        self.observer = observer
+    }
+
+    func record(_ event: TelemetryEvent) async {
+        guard let observer else { return }
+        let state = await observer()
+        records.append(ObservedTelemetryRecord(event: event, state: state))
+    }
+
+    func snapshot() -> [ObservedTelemetryRecord<State>] {
+        records
+    }
+}
+
+private struct OnboardingTelemetryState: Equatable, Sendable {
+    let step: OnboardingStep
+    let draftStep: OnboardingStep
 }
 
 private actor OrderedTelemetryClient: TelemetryClient {

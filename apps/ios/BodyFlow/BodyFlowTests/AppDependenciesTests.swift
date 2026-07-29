@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BodyFlow
@@ -41,6 +42,63 @@ struct AppDependenciesTests {
         #expect(!preserveConfiguration.shouldResetDemoState)
         #expect(!preserveConfiguration.startsWithCompletedFixture)
         #expect(!preserveConfiguration.preloadsSyntheticOnboardingValues)
+    }
+
+    @Test("normal Debug relaunch uses the durable development boundary")
+    func normalDebugRelaunchUsesDurableBoundary() {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: [],
+            buildFlavor: .debug
+        )
+        let dependencies = AppDependencies.demo(configuration: configuration)
+
+        #expect(configuration.demoStorageBoundary == .keychain)
+        #expect(dependencies.secureStore is KeychainSecureStore)
+        #expect(!configuration.shouldResetDemoState)
+    }
+
+    @Test("normal Debug relaunch restores partial onboarding without a password")
+    func normalDebugRelaunchRestoresPartialOnboarding() async throws {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: [],
+            buildFlavor: .debug
+        )
+        let first = AppDependencies.demo(configuration: configuration)
+        try? await first.authentication.signOut()
+        try? await first.onboarding.clear(for: DemoUser.id)
+
+        let password = "local-pass"
+        _ = try await first.authentication.signUp(
+            email: "person@example.invalid",
+            password: password
+        )
+        let session = try await first.authentication.confirmEmailForDevelopment()
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
+        draft.displayName = "Pessoa Persistida"
+        draft.heightCM = 171
+        try await first.onboarding.saveDraft(draft, for: session.userID)
+
+        let relaunched = AppDependencies.demo(configuration: configuration)
+        #expect(try await relaunched.authentication.restoreSession() == session)
+        #expect(
+            try await relaunched.onboarding.loadDraft(for: session.userID)
+                == draft
+        )
+
+        let persistedKeys = [
+            "bodyflow.demo.session.v1",
+            "bodyflow.demo.onboarding-draft.v1",
+        ]
+        for key in persistedKeys {
+            let data = try await relaunched.secureStore.data(forKey: key)
+            #expect(
+                data.flatMap { String(data: $0, encoding: .utf8) }?
+                    .contains(password) != true
+            )
+        }
+
+        try await relaunched.authentication.signOut()
+        try await relaunched.onboarding.clear(for: session.userID)
     }
 
     @Test("fixture catalog exposes the approved server-provided values")

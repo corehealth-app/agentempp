@@ -15,6 +15,11 @@ enum DemoStorageBoundary: Equatable, Sendable {
     case keychain
 }
 
+enum DemoStorageService {
+    static let development = "com.bodyflow.app.development.demo-state.v1"
+    static let uiTesting = "com.bodyflow.app.ui-testing.demo-state.v1"
+}
+
 struct AppLaunchConfiguration: Sendable {
     let mode: AppRuntimeMode
     let shouldResetDemoState: Bool
@@ -22,6 +27,7 @@ struct AppLaunchConfiguration: Sendable {
     let preloadsSyntheticOnboardingValues: Bool
     let authBehavior: DemoOperationBehavior<AuthenticationError>
     let demoStorageBoundary: DemoStorageBoundary
+    let demoKeychainService: String
 
     init(
         mode: AppRuntimeMode,
@@ -29,7 +35,8 @@ struct AppLaunchConfiguration: Sendable {
         startsWithCompletedFixture: Bool,
         preloadsSyntheticOnboardingValues: Bool,
         authBehavior: DemoOperationBehavior<AuthenticationError>,
-        demoStorageBoundary: DemoStorageBoundary = .memory
+        demoStorageBoundary: DemoStorageBoundary = .memory,
+        demoKeychainService: String = DemoStorageService.development
     ) {
         self.mode = mode
         self.shouldResetDemoState = shouldResetDemoState
@@ -37,6 +44,7 @@ struct AppLaunchConfiguration: Sendable {
         self.preloadsSyntheticOnboardingValues = preloadsSyntheticOnboardingValues
         self.authBehavior = authBehavior
         self.demoStorageBoundary = demoStorageBoundary
+        self.demoKeychainService = demoKeychainService
     }
 
     var developmentConsentAvailability: DevelopmentConsentAvailability {
@@ -77,7 +85,8 @@ struct AppLaunchConfiguration: Sendable {
                 startsWithCompletedFixture: false,
                 preloadsSyntheticOnboardingValues: false,
                 authBehavior: .succeed(after: nil),
-                demoStorageBoundary: .keychain
+                demoStorageBoundary: .keychain,
+                demoKeychainService: DemoStorageService.uiTesting
             )
         }
 
@@ -114,7 +123,8 @@ struct AppLaunchConfiguration: Sendable {
             shouldResetDemoState: false,
             startsWithCompletedFixture: false,
             preloadsSyntheticOnboardingValues: false,
-            authBehavior: .succeed(after: nil)
+            authBehavior: .succeed(after: nil),
+            demoStorageBoundary: .keychain
         )
     }
 
@@ -128,7 +138,8 @@ struct AppLaunchConfiguration: Sendable {
             startsWithCompletedFixture: startsWithCompletedFixture,
             preloadsSyntheticOnboardingValues: true,
             authBehavior: authBehavior,
-            demoStorageBoundary: .keychain
+            demoStorageBoundary: .keychain,
+            demoKeychainService: DemoStorageService.uiTesting
         )
     }
 }

@@ -25,7 +25,7 @@ struct AppDependencies: Sendable {
             InMemorySecureStore()
         case .keychain:
             KeychainSecureStore(
-                service: "com.bodyflow.app.ui-testing.demo-state.v1"
+                service: configuration.demoKeychainService
             )
         }
         let stateStore = DemoStateStore(secureStore: secureStore)

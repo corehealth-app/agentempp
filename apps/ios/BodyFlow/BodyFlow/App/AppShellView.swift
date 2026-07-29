@@ -21,6 +21,7 @@ struct AppShellView: View {
             }
         }
         .tint(BodyFlowColor.accent)
+        .bodyFlowBrandIdentity()
         .background {
             TabBarAccessibilityConfigurator(
                 identifiers: AppTab.allCases.map(\.accessibilityIdentifier)

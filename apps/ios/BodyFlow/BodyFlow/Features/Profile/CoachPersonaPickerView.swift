@@ -34,6 +34,7 @@ struct CoachPersonaPickerView: View {
                 }
             }
         }
+        .bodyFlowBrandIdentity()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.profile.coach-persona")
         .interactiveDismissDisabled(isSaving)

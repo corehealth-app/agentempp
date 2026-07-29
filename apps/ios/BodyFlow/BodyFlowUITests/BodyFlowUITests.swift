@@ -7,6 +7,58 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testBrandIdentityIsVisibleOnAuthSurface() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+
+        XCTAssertTrue(
+            element("screen.auth.sign-in", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        assertVisibleBrand(in: app)
+    }
+
+    @MainActor
+    func testBrandIdentityIsVisibleOnOnboardingSurface() {
+        let app = launchApp(arguments: ["--ui-testing-fresh-auth"])
+        reachOnboardingWelcome(in: app)
+
+        assertVisibleBrand(in: app)
+    }
+
+    @MainActor
+    func testBrandIdentityIsVisibleOnAuthenticatedShell() {
+        let app = launchApp(arguments: ["--ui-testing"])
+
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        assertVisibleBrand(in: app)
+    }
+
+    @MainActor
+    func testBrandIdentityIsVisibleOnProfilePersonaEditor() {
+        let app = launchApp(arguments: ["--ui-testing"])
+        XCTAssertTrue(
+            element("screen.hoje", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        let profileTab = app.tabBars.buttons["tab.perfil"]
+        XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
+        profileTab.tap()
+        XCTAssertTrue(waitForSelected(profileTab))
+
+        let personaCommand = app.buttons["profile.coach-persona"]
+        XCTAssertTrue(personaCommand.waitForExistence(timeout: 3))
+        personaCommand.tap()
+        let editor = element("screen.profile.coach-persona", in: app)
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+
+        assertVisibleBrand(in: app, within: editor)
+    }
+
+    @MainActor
     func testFiveTabsAreReachableAndCaptured() {
         let app = launchApp()
         let tabs = [
@@ -193,6 +245,7 @@ final class BodyFlowUITests: XCTestCase {
             "UICTContentSizeCategoryAccessibilityXXXL",
         ])
         reachOnboardingWelcome(in: app)
+        assertVisibleBrand(in: app)
 
         let displayName = app.textFields["onboarding.display-name"]
         let country = app.buttons["onboarding.country"]
@@ -583,6 +636,38 @@ final class BodyFlowUITests: XCTestCase {
             element.frame.height,
             43.99,
             "O alvo deve ter pelo menos 44 pt de altura",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertVisibleBrand(
+        in app: XCUIApplication,
+        within container: XCUIElement? = nil,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let brand: XCUIElement
+        if let container {
+            brand = container.staticTexts
+                .matching(identifier: "brand.product-name")
+                .firstMatch
+        } else {
+            brand = app.staticTexts["brand.product-name"]
+        }
+        XCTAssertTrue(
+            brand.waitForExistence(timeout: 3),
+            "BodyFlow deve permanecer visível nesta superfície",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(brand.label, "BodyFlow", file: file, line: line)
+
+        let visibleFrame = brand.frame.intersection(app.windows.firstMatch.frame)
+        XCTAssertFalse(
+            visibleFrame.isNull || visibleFrame.isEmpty,
+            "BodyFlow deve ocupar geometria visível dentro da janela",
             file: file,
             line: line
         )

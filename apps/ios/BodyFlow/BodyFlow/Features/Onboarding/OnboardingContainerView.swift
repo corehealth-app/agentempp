@@ -26,6 +26,7 @@ struct OnboardingContainerView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
+        .bodyFlowBrandIdentity()
         .onDisappear(perform: cancelSubmission)
     }
 

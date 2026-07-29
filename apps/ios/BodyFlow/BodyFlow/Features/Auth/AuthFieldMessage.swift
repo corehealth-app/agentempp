@@ -111,6 +111,7 @@ struct AuthScreenLayout<Content: View>: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .bodyFlowBrandIdentity()
     }
 }
 

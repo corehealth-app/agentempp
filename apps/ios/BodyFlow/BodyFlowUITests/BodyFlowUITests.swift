@@ -57,6 +57,7 @@ final class BodyFlowUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
 
         assertVisibleBrand(in: app, within: editor)
+        assertBrandDoesNotOverlapProfileToolbar(in: app)
     }
 
     @MainActor
@@ -703,6 +704,52 @@ final class BodyFlowUITests: XCTestCase {
             progress.frame.minY,
             brand.frame.maxY,
             "O indicador de etapa deve começar abaixo da marca",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertBrandDoesNotOverlapProfileToolbar(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let editor = element("screen.profile.coach-persona", in: app)
+        let brand = editor.staticTexts
+            .matching(identifier: "brand.product-name")
+            .firstMatch
+        let cancel = app.buttons["Cancelar"]
+        let save = app.buttons["Salvar"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertTrue(save.waitForExistence(timeout: 3), file: file, line: line)
+
+        let windowFrame = app.windows.firstMatch.frame
+        for element in [brand, cancel, save] {
+            XCTAssertTrue(
+                windowFrame.contains(element.frame),
+                "\(element.label) deve estar integralmente visível",
+                file: file,
+                line: line
+            )
+        }
+        XCTAssertTrue(
+            brand.frame.intersection(cancel.frame).isNull,
+            "A marca não deve sobrepor Cancelar",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            brand.frame.intersection(save.frame).isNull,
+            "A marca não deve sobrepor Salvar",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            brand.frame.minY,
+            max(cancel.frame.maxY, save.frame.maxY),
+            "A marca deve começar abaixo da toolbar da sheet",
             file: file,
             line: line
         )

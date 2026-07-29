@@ -10,10 +10,20 @@ struct CoachPersonaPickerView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                BodyFlowColor.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                BodyFlowBrandIdentityView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, BodyFlowSpacing.lg)
+                    .padding(.vertical, BodyFlowSpacing.xs)
+                    .background(BodyFlowColor.background)
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                    }
 
-                content
+                ZStack {
+                    BodyFlowColor.background.ignoresSafeArea()
+                    content
+                }
             }
             .navigationTitle("Personalidade do coach")
             .navigationBarTitleDisplayMode(.inline)
@@ -34,7 +44,6 @@ struct CoachPersonaPickerView: View {
                 }
             }
         }
-        .bodyFlowBrandIdentity()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.profile.coach-persona")
         .interactiveDismissDisabled(isSaving)

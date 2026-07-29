@@ -258,8 +258,8 @@ struct TelemetryTests {
     }
 
     @MainActor
-    @Test("failed-draft restore records welcome viewed after publishing the fallback")
-    func failedDraftRestoreRecordsWelcomeAfterStatePublication() async {
+    @Test("failed-draft restore publishes the recoverable fallback without a false step view")
+    func failedDraftRestoreDoesNotRecordFalseWelcomeView() async {
         let telemetry = StateObservingTelemetryClient<AppFlowState>()
         let session = AuthSession(
             userID: "fixture-user",
@@ -287,15 +287,7 @@ struct TelemetryTests {
         )
         #expect(model.state == publishedState)
         #expect(model.presentationError == .storageUnavailable)
-        #expect(await telemetry.snapshot() == [
-            ObservedTelemetryRecord(
-                event: TelemetryEvent(
-                    name: .onboardingStepViewed,
-                    metadata: ["step": "welcome"]
-                ),
-                state: publishedState
-            ),
-        ])
+        #expect(await telemetry.snapshot().isEmpty)
     }
 
     @MainActor

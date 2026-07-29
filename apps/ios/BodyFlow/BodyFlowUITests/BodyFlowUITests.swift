@@ -23,6 +23,7 @@ final class BodyFlowUITests: XCTestCase {
         reachOnboardingWelcome(in: app)
 
         assertVisibleBrand(in: app)
+        assertBrandAndOnboardingProgressDoNotOverlap(in: app)
     }
 
     @MainActor
@@ -246,6 +247,7 @@ final class BodyFlowUITests: XCTestCase {
         ])
         reachOnboardingWelcome(in: app)
         assertVisibleBrand(in: app)
+        assertBrandAndOnboardingProgressDoNotOverlap(in: app)
 
         let displayName = app.textFields["onboarding.display-name"]
         let country = app.buttons["onboarding.country"]
@@ -668,6 +670,39 @@ final class BodyFlowUITests: XCTestCase {
         XCTAssertFalse(
             visibleFrame.isNull || visibleFrame.isEmpty,
             "BodyFlow deve ocupar geometria visível dentro da janela",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertBrandAndOnboardingProgressDoNotOverlap(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let brand = app.staticTexts["brand.product-name"]
+        let progress = element("onboarding.progress", in: app)
+        XCTAssertTrue(brand.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertTrue(progress.waitForExistence(timeout: 3), file: file, line: line)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertTrue(
+            windowFrame.contains(progress.frame),
+            "O indicador de etapa deve estar integralmente visível",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            brand.frame.intersection(progress.frame).isNull,
+            "A marca e o indicador de etapa não devem se sobrepor",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            progress.frame.minY,
+            brand.frame.maxY,
+            "O indicador de etapa deve começar abaixo da marca",
             file: file,
             line: line
         )

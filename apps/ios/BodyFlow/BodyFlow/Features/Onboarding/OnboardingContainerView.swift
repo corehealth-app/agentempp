@@ -12,6 +12,7 @@ struct OnboardingContainerView: View {
                 BodyFlowColor.background.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                        BodyFlowBrandIdentityView()
                         progress
                         OnboardingOperationMessage(state: model.operationState)
                         OnboardingValidationSummary(issues: model.validationIssues)
@@ -26,7 +27,6 @@ struct OnboardingContainerView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
-        .bodyFlowBrandIdentity()
         .onDisappear(perform: cancelSubmission)
     }
 

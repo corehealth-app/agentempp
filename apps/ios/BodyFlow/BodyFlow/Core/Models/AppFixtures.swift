@@ -32,7 +32,6 @@ struct ProgressFixture: Identifiable, Equatable, Sendable {
 struct ProfileFixture: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
-    let coachPreference: String
     let notifications: String
 }
 
@@ -106,7 +105,6 @@ enum AppFixtures {
     static let profile = ProfileFixture(
         id: "fixture-profile",
         title: "Perfil de demonstração",
-        coachPreference: "Equilibrado",
         notifications: "Ativadas"
     )
 

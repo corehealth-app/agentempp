@@ -5,6 +5,11 @@ struct AppShellView: View {
     @Environment(\.appDependencies) private var dependencies
     @State private var selectedTab = AppTab.today
     @State private var router = AppRouter()
+    let userID: String
+
+    init(userID: String = "fixture-user") {
+        self.userID = userID
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -16,6 +21,7 @@ struct AppShellView: View {
             }
         }
         .tint(BodyFlowColor.accent)
+        .bodyFlowBrandIdentity()
         .background {
             TabBarAccessibilityConfigurator(
                 identifiers: AppTab.allCases.map(\.accessibilityIdentifier)
@@ -26,21 +32,6 @@ struct AppShellView: View {
         .sheet(item: presentedSheetBinding) { sheet in
             RegistrationSheet(sheet: sheet)
                 .environment(router)
-        }
-        .task {
-            await dependencies.telemetry.record(
-                TelemetryEvent(name: .appLaunched)
-            )
-        }
-        .onChange(of: selectedTab) { _, tab in
-            Task {
-                await dependencies.telemetry.record(
-                    TelemetryEvent(
-                        name: .tabSelected,
-                        metadata: ["tab": tab.accessibilityIdentifier]
-                    )
-                )
-            }
         }
     }
 
@@ -73,7 +64,7 @@ struct AppShellView: View {
         case .progress:
             ProgressRootView()
         case .profile:
-            ProfileRootView()
+            ProfileRootView(userID: userID)
         }
     }
 }

@@ -1,30 +1,104 @@
+import Foundation
 import Testing
 
 @testable import BodyFlow
 
 @Suite("App Dependencies")
 struct AppDependenciesTests {
-    @Test("mock auth exposes its configured fixture session")
-    func mockAuthExposesConfiguredState() {
-        let provider = MockAuthSessionProvider(
-            state: .authenticated(userID: "fixture-user")
-        )
-
-        #expect(provider.state == .authenticated(userID: "fixture-user"))
-    }
-
-    @Test("scaffold graph decodes the same deterministic Today fixture")
+    @Test("scaffold graph has a completed deterministic demo session")
     func scaffoldGraphDecodesTodayFixture() async throws {
         let dependencies = AppDependencies.scaffold()
         let request = APIRequest<TodaySummary>(method: .get, path: "/today")
 
-        #expect(
-            dependencies.authSession.state
-                == .authenticated(userID: "fixture-user")
-        )
+        #expect(try await dependencies.authentication.restoreSession() == AuthSession(
+            userID: "demo-user-v1",
+            email: "demo-user@fixture.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: true
+        ))
 
         let summary = try await dependencies.apiClient.send(request)
         #expect(summary == AppFixtures.today)
+    }
+
+    @Test("UI relaunch seed and preserve modes use the durable Keychain boundary")
+    func uiRelaunchUsesDurableBoundary() {
+        let seed = AppDependencies.demo(
+            configuration: .resolve(
+                arguments: ["--ui-testing"],
+                buildFlavor: .debug
+            )
+        )
+        let preserveConfiguration = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing-preserve-state"],
+            buildFlavor: .debug
+        )
+        let preserve = AppDependencies.demo(
+            configuration: preserveConfiguration
+        )
+
+        #expect(seed.secureStore is KeychainSecureStore)
+        #expect(preserve.secureStore is KeychainSecureStore)
+        #expect(!preserveConfiguration.shouldResetDemoState)
+        #expect(!preserveConfiguration.startsWithCompletedFixture)
+        #expect(!preserveConfiguration.preloadsSyntheticOnboardingValues)
+    }
+
+    @Test("normal Debug relaunch uses the durable development boundary")
+    func normalDebugRelaunchUsesDurableBoundary() {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: [],
+            buildFlavor: .debug
+        )
+        let dependencies = AppDependencies.demo(configuration: configuration)
+
+        #expect(configuration.demoStorageBoundary == .keychain)
+        #expect(dependencies.secureStore is KeychainSecureStore)
+        #expect(!configuration.shouldResetDemoState)
+    }
+
+    @Test("normal Debug relaunch restores partial onboarding without a password")
+    func normalDebugRelaunchRestoresPartialOnboarding() async throws {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: [],
+            buildFlavor: .debug
+        )
+        let first = AppDependencies.demo(configuration: configuration)
+        try? await first.authentication.signOut()
+        try? await first.onboarding.clear(for: DemoUser.id)
+
+        let password = "local-pass"
+        _ = try await first.authentication.signUp(
+            email: "person@example.invalid",
+            password: password
+        )
+        let session = try await first.authentication.confirmEmailForDevelopment()
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
+        draft.displayName = "Pessoa Persistida"
+        draft.heightCM = 171
+        try await first.onboarding.saveDraft(draft, for: session.userID)
+
+        let relaunched = AppDependencies.demo(configuration: configuration)
+        #expect(try await relaunched.authentication.restoreSession() == session)
+        #expect(
+            try await relaunched.onboarding.loadDraft(for: session.userID)
+                == draft
+        )
+
+        let persistedKeys = [
+            "bodyflow.demo.session.v1",
+            "bodyflow.demo.onboarding-draft.v1",
+        ]
+        for key in persistedKeys {
+            let data = try await relaunched.secureStore.data(forKey: key)
+            #expect(
+                data.flatMap { String(data: $0, encoding: .utf8) }?
+                    .contains(password) != true
+            )
+        }
+
+        try await relaunched.authentication.signOut()
+        try await relaunched.onboarding.clear(for: session.userID)
     }
 
     @Test("fixture catalog exposes the approved server-provided values")
@@ -66,7 +140,6 @@ struct AppDependenciesTests {
         )
 
         #expect(AppFixtures.profile.title == "Perfil de demonstração")
-        #expect(AppFixtures.profile.coachPreference == "Equilibrado")
         #expect(AppFixtures.profile.notifications == "Ativadas")
     }
 }

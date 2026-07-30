@@ -7,9 +7,21 @@ struct AppDependencies: Sendable {
     let coachPersona: any CoachPersonaRepository
     let secureStore: any SecureStoring
     let telemetry: any TelemetryClient
+    let today: any TodayProviding
+    let history: any HistoryProviding
+    let plan: any PlanProviding
+    let progress: any ProgressProviding
+    let mealDetection: any MealDetectionProviding
+    let registration: any RegistrationProviding
+    let hydration: any HydrationRecording
+    let weight: any WeightRecording
+    let routine: any RoutineProviding
+    let timeProvider: any TimeProviding
+    let idempotencyKeyProvider: any IdempotencyKeyProviding
+    let patientTimeZone: PatientTimeZoneContext
 
     static func scaffold() -> AppDependencies {
-        demo(configuration: AppLaunchConfiguration(
+        make(configuration: AppLaunchConfiguration(
             mode: .demo,
             shouldResetDemoState: true,
             startsWithCompletedFixture: true,
@@ -19,7 +31,10 @@ struct AppDependencies: Sendable {
     }
 
     static func demo(configuration: AppLaunchConfiguration) -> AppDependencies {
-        let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
+        make(configuration: configuration)
+    }
+
+    static func make(configuration: AppLaunchConfiguration) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
             InMemorySecureStore()
@@ -30,11 +45,23 @@ struct AppDependencies: Sendable {
         }
         let stateStore = DemoStateStore(secureStore: secureStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
+        let unavailable = UnavailableBodyFlowCapabilities()
+        #if DEBUG
+        let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
+        let apiClient: any APIClient = switch configuration.mode {
+        case .demo:
+            MockAPIClient(
+                payloads: [todayRequest.key: AppFixtures.todayPayload]
+            )
+        case .releaseUnavailable:
+            UnavailableAPIClient()
+        }
+        #else
+        let apiClient: any APIClient = UnavailableAPIClient()
+        #endif
 
         return AppDependencies(
-            apiClient: MockAPIClient(
-                payloads: [todayRequest.key: AppFixtures.todayPayload]
-            ),
+            apiClient: apiClient,
             authentication: DemoAuthenticationService(
                 stateStore: stateStore,
                 configuration: configuration
@@ -46,7 +73,21 @@ struct AppDependencies: Sendable {
             ),
             coachPersona: DemoCoachPersonaRepository(stateStore: stateStore),
             secureStore: secureStore,
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            today: unavailable,
+            history: unavailable,
+            plan: unavailable,
+            progress: unavailable,
+            mealDetection: unavailable,
+            registration: unavailable,
+            hydration: unavailable,
+            weight: unavailable,
+            routine: unavailable,
+            timeProvider: SystemTimeProvider(),
+            idempotencyKeyProvider: UnavailableIdempotencyKeyProvider(),
+            patientTimeZone: PatientTimeZoneContext(
+                documentedIANAIdentifier: nil
+            )
         )
     }
 }

@@ -5,6 +5,138 @@ import Testing
 
 @Suite("App Dependencies")
 struct AppDependenciesTests {
+    @Test("Release graph installs fail-closed support dependencies")
+    func releaseGraphInstallsFailClosedSupportDependencies() {
+        let dependencies = releaseDependencies()
+
+        #expect(dependencies.timeProvider is SystemTimeProvider)
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+        #expect(dependencies.apiClient is UnavailableAPIClient)
+        #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try dependencies.idempotencyKeyProvider.nextKey()
+        }
+        #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try dependencies.patientTimeZone.requireTimeZone()
+        }
+    }
+
+    @Test("Release read capabilities fail closed")
+    func releaseReadCapabilitiesFailClosed() async {
+        let dependencies = releaseDependencies()
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.today.today()
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.history.history(.firstPage)
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.plan.plan()
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.progress.progress()
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.routine.list(
+                kind: .supplement,
+                includeArchived: false
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.routine.history(
+                kind: .supplement,
+                itemID: "release-unavailable-supplement",
+                cursor: nil,
+                limit: 20
+            )
+        }
+    }
+
+    @Test("Release meal detection fails closed")
+    func releaseDetectionIsUnavailable() async {
+        let dependencies = releaseDependencies()
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.mealDetection.detectMeal(
+                from: BodyFlowTestFixtures.textMealDetectionInput
+            )
+        }
+    }
+
+    @Test("Release registration mutations fail closed")
+    func releaseRegistrationMutationsFailClosed() async {
+        let dependencies = releaseDependencies()
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.registration.propose(
+                BodyFlowTestFixtures.registrationProposal
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.registration.edit(
+                BodyFlowTestFixtures.registrationEdit
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.registration.confirm(
+                BodyFlowTestFixtures.registrationID
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.registration.cancel(
+                BodyFlowTestFixtures.registrationID
+            )
+        }
+    }
+
+    @Test("Release routine mutations fail closed")
+    func releaseRoutineMutationsFailClosed() async throws {
+        let dependencies = releaseDependencies()
+        let hydrationAttempt = try BodyFlowTestFixtures.hydrationAttempt()
+        let weightAttempt = try BodyFlowTestFixtures.weightAttempt()
+        let routineAttempt = try BodyFlowTestFixtures.routineAttempt()
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.hydration.record(hydrationAttempt)
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.weight.record(weightAttempt)
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.routine.record(routineAttempt)
+        }
+    }
+
+    @Test("Release legacy API client fails closed without reaching Today fixture")
+    func releaseLegacyAPIClientFailsClosed() async {
+        let dependencies = releaseDependencies()
+        let request = APIRequest<TodaySummary>(method: .get, path: "/today")
+
+        await #expect(throws: APIClientError.operationUnavailable) {
+            try await dependencies.apiClient.send(request)
+        }
+    }
+
+    @Test("Debug make graph preserves Prompt 12 while Prompt 13 is unavailable")
+    func debugMakePreservesPrompt12AndFailsPrompt13Closed() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: true,
+                startsWithCompletedFixture: true,
+                preloadsSyntheticOnboardingValues: true,
+                authBehavior: .succeed(after: nil)
+            )
+        )
+        let legacyRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
+
+        #expect(try await dependencies.authentication.restoreSession()?.userID == "demo-user-v1")
+        #expect(try await dependencies.apiClient.send(legacyRequest) == AppFixtures.today)
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.today.today()
+        }
+    }
+
     @Test("scaffold graph has a completed deterministic demo session")
     func scaffoldGraphDecodesTodayFixture() async throws {
         let dependencies = AppDependencies.scaffold()
@@ -142,4 +274,13 @@ struct AppDependenciesTests {
         #expect(AppFixtures.profile.title == "Perfil de demonstração")
         #expect(AppFixtures.profile.notifications == "Ativadas")
     }
+}
+
+private func releaseDependencies() -> AppDependencies {
+    AppDependencies.make(
+        configuration: .resolve(
+            arguments: ["--ui-testing-prompt13-loaded"],
+            buildFlavor: .release
+        )
+    )
 }

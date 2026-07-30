@@ -4,6 +4,78 @@ import Testing
 @testable import BodyFlow
 
 enum BodyFlowTestFixtures {
+    static let textMealDetectionInput = MealDetectionInput.text(
+        "arroz integral e feijao"
+    )
+
+    static let registrationProposal = RegistrationProposalRequest.meal(
+        MealProposalRequest(
+            mealType: .lunch,
+            items: [
+                MealProposalItemRequest(
+                    foodName: "arroz integral",
+                    quantityG: 125,
+                    userKcal: nil
+                ),
+            ],
+            consumedAt: nil
+        )
+    )
+
+    static let registrationEdit = RegistrationEditCommand(
+        registrationID: "release-unavailable-registration",
+        proposal: registrationProposal
+    )
+
+    static let registrationID = RegistrationIDCommand(
+        registrationID: "release-unavailable-registration"
+    )
+
+    static func hydrationAttempt() throws -> MutationAttempt<HydrationCommand> {
+        MutationAttempt(
+            operation: .hydration,
+            key: try IdempotencyKey(validating: "release-hydration-0001"),
+            payload: try HydrationCommand(
+                amountML: 250,
+                occurredAt: APITimestamp(value: capabilityDate)
+            ),
+            createdAt: capabilityDate
+        )
+    }
+
+    static func weightAttempt() throws -> MutationAttempt<WeightCommand> {
+        MutationAttempt(
+            operation: .weight,
+            key: try IdempotencyKey(validating: "release-weight-0001"),
+            payload: try WeightCommand(
+                weightKG: 75,
+                recordedAt: capabilityDate
+            ),
+            createdAt: capabilityDate
+        )
+    }
+
+    static func routineAttempt() throws -> MutationAttempt<RoutineActionCommand> {
+        MutationAttempt(
+            operation: .routineAction,
+            key: try IdempotencyKey(validating: "release-routine-0001"),
+            payload: try RoutineActionCommand(
+                kind: .supplement,
+                itemID: "release-unavailable-supplement",
+                status: .taken,
+                reminderRuleID: "release-unavailable-reminder",
+                scheduledFor: APITimestamp(value: capabilityDate),
+                occurredAt: APITimestamp(value: capabilityDate),
+                snoozedUntil: nil
+            ),
+            createdAt: capabilityDate
+        )
+    }
+
+    private static let capabilityDate = Date(
+        timeIntervalSince1970: 1_785_283_200
+    )
+
     static func decodeHistoryWithMatchingRows() throws -> HistoryResponse {
         try decodeHistory(from: historyWithMatchingRowsData)
     }

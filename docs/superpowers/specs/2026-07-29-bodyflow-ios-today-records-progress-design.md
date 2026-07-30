@@ -1,7 +1,6 @@
 # BodyFlow iOS Today, Records And Progress Design
 
-**Status:** design approved on 2026-07-29; written specification awaiting final
-user review.
+**Status:** awaiting final approval.
 
 ## Objective
 
@@ -60,6 +59,9 @@ Important contract gaps remain:
   structured meal draft;
 - the sanitized pending proposal and `GET /history` do not expose per-item
   nutrition provenance;
+- each element of `GET /history.data.meals` is one individual `meal_logs` row
+  identified only by its row `id`; the response has no `meal_id` or another
+  shared meal-occurrence identifier;
 - no endpoint edits an already confirmed meal;
 - `GET /history` does not return a trustworthy next cursor for its two
   independently limited arrays;
@@ -134,6 +136,7 @@ contract fields:
 - `PlanResponse`;
 - `ProgressResponse`;
 - `HistoryResponse`;
+- `HistoryMealLogRow`;
 - `RoutineListResponse`;
 - `RoutineHistoryPage`.
 
@@ -157,6 +160,7 @@ The dependency graph exposes small protocols:
 - `PlanProviding`;
 - `ProgressProviding`;
 - `HistoryProviding`;
+- `TimeProviding`;
 - `IdempotencyKeyProviding`.
 
 `MealDetectionProviding` and `WeightRecording` are explicitly mock-only in this
@@ -164,6 +168,23 @@ increment. They have no path constant, `APIRequest` mapping or live adapter.
 
 The other protocols reflect documented BFF capabilities without configuring a
 base URL, bearer token or real network transport.
+
+### Time Source
+
+`TimeProviding` is an injectable `Sendable` source of the current instant.
+Feature logic does not call `Date()` directly for:
+
+- initial form dates and times;
+- default `occurred_at` values;
+- routine occurrence actions;
+- snooze preset calculation;
+- idempotent mutation-attempt creation times.
+
+Debug, previews and tests use a fixed deterministic source. A future live
+adapter may use a system-backed source, but server validation remains
+authoritative for accepted timestamps. Official Today dates, response update
+times and persisted event times always come from response contracts rather
+than the injected client clock.
 
 ### Deterministic Repository
 
@@ -209,16 +230,19 @@ or navigate.
 
 Successful commands explicitly invalidate affected reads:
 
+- meal or workout proposal creation invalidates Today;
+- meal or workout proposal editing invalidates Today;
+- meal or workout proposal cancellation invalidates Today;
 - meal or workout confirmation invalidates Today and main History;
 - hydration invalidates Today;
 - a routine action invalidates Today, its routine list and its detail history;
-- proposal editing invalidates only the current proposal;
 - a Debug-only weight receipt does not invalidate or alter Today, Progress,
   History or block state.
 
 Invalidation carries only revision signals. It never carries or patches
 official values. A refreshed screen reads a complete response from its
-provider.
+provider. No successful command corrects, increments, groups or otherwise
+changes an official value locally while the refresh is pending.
 
 ## Navigation
 
@@ -228,7 +252,8 @@ independent `NavigationStack`.
 The generic detail route evolves into typed destinations for:
 
 - a pending registration;
-- a confirmed meal or workout read-only detail;
+- an individual confirmed `meal_logs` row detail;
+- a confirmed workout-log read-only detail;
 - the main History screen;
 - a routine list;
 - a supplement or medication detail;
@@ -282,6 +307,9 @@ Today presents:
 8. supplement and medication occurrences;
 9. a compact 7,700 kcal block card;
 10. navigation to main History.
+
+Confirmed meal rows are displayed individually as supplied by Today. The UI
+does not infer an aggregate meal from a shared time or `meal_type`.
 
 The energy section visually separates:
 
@@ -367,6 +395,10 @@ does not patch displayed totals locally.
 Confirmation writes the pending registration. Cancellation cancels an open
 pending. A confirmed meal is read-only because the mobile contract has no
 confirmed-meal edit endpoint.
+
+Confirmed meal navigation opens only an individual meal-log row. The screen
+must not present the row as a complete meal or combine sibling rows that happen
+to share a time or `meal_type`.
 
 ### Nutrition Provenance
 
@@ -462,6 +494,23 @@ Supported occurrence actions are the documented `taken`, `snoozed` and
 scheduled time and occurrence time required by the contract. The app does not
 construct or expose an internal occurrence key.
 
+For `snoozed`, `snoozed_until` is mandatory. It must be later than
+`occurred_at` and must remain on the same local date as the original occurrence.
+The snooze UI provides:
+
+- 15 minutes;
+- 30 minutes;
+- 60 minutes;
+- a custom local time.
+
+The action's default `occurred_at` comes from `TimeProviding`. Presets add 15,
+30 or 60 minutes to that `occurred_at` and use the patient's IANA timezone to
+check the date boundary. A preset that would cross the original occurrence's
+local-date boundary is unavailable; the client does not silently clamp it. A
+custom value is limited to the same local date, and the provider still
+validates the final timestamp. For `taken` and `skipped`, `snoozed_until` is
+absent.
+
 Terminal or invalid transitions remain disabled or produce a typed recoverable
 error. A version or transition conflict triggers a reload; the app never
 silently overwrites the server-shaped state.
@@ -535,9 +584,14 @@ Each screen load or retry makes one conceptual request with:
 
 The response remains:
 
-- a meal array;
+- a meal-log row array;
 - a workout array;
 - the returned pagination metadata.
+
+Every element of the meal array represents exactly one `meal_logs` row with its
+own `id`, `meal_type`, food values and `consumed_at`. The response does not
+contain `meal_id`. Rows with the same `consumed_at` or `meal_type` remain
+separate and preserve response order.
 
 The iOS app does not:
 
@@ -546,11 +600,15 @@ The iOS app does not:
 - request a second page;
 - implement “Load more”;
 - merge the arrays into a transport feed;
+- group meal-log rows by `consumed_at`, `meal_type` or another heuristic;
+- synthesize a meal identifier;
 - add weight, hydration, supplement or medication entries.
 
-The screen presents exactly two sections, Meals and Workouts. One section may
-be empty while the other has content. The global empty state appears only when
-both arrays are empty.
+The screen presents exactly two sections, Meal records and Workouts. Each
+meal-record row may open a read-only detail for that individual `meal_logs`
+row. It never opens an aggregated meal detail. One section may be empty while
+the other has content. The global empty state appears only when both arrays are
+empty.
 
 The presentation layer is structured so another real section can be added
 later, but it constructs no future section, endpoint or placeholder data.
@@ -558,6 +616,10 @@ later, but it constructs no future section, endpoint or placeholder data.
 Reliable main-History pagination is explicitly deferred to backend work. The
 BFF must first return a trustworthy shared cursor or independent documented
 cursors before iOS pagination is designed.
+
+An aggregated meal presentation is also deferred to backend work. It requires a
+documented meal-occurrence identifier, such as `meal_id`, and explicit grouping
+semantics before iOS can combine food rows.
 
 This restriction does not apply to supplement and medication detail histories,
 which already provide documented opaque `next_cursor` values.
@@ -606,7 +668,7 @@ Every mutation attempt owns:
 - a validated key of 8 to 128 allowed characters;
 - an immutable payload identity;
 - the operation kind;
-- the attempt creation time.
+- the attempt creation time supplied by `TimeProviding`.
 
 Rules:
 
@@ -674,6 +736,8 @@ Unit and component tests cover:
 - Release launch arguments failing closed;
 - Release dependency graphs containing no successful demo behavior;
 - unavailable Release reads, detection and mutations;
+- fixed `TimeProviding` defaults for forms, occurrences, snooze choices and
+  idempotent attempts;
 - complete pre-authored snapshot transitions;
 - deliberately inconsistent Today values proving the iOS app does not
   recalculate official fields;
@@ -687,13 +751,22 @@ Unit and component tests cover:
 - idempotency-key preservation on retry;
 - idempotency payload conflict;
 - failed mutations preserving draft and pending state;
+- proposal creation, editing and cancellation invalidating Today;
+- confirmation invalidating Today and main History;
+- invalidation never patching an official value locally;
 - hydration refresh without client-side incrementing;
 - weight having no path or transport adapter;
 - exact routine occurrence actions and opaque routine-history cursors;
+- `snoozed_until` required only for snooze;
+- 15, 30 and 60 minute snooze presets plus a custom same-local-date time;
+- rejection of snooze values that cross the original local date;
 - Plan leaving opaque nutrition payloads uninterpreted;
 - unavailable block values remaining unavailable;
 - main History making only one `before=nil, limit=30` request;
 - absence of main-History next-page behavior;
+- one History meal row per response `meal_logs` row;
+- preservation of separate meal rows with matching time or `meal_type`;
+- individual meal-log detail with no synthesized `meal_id`;
 - main History containing only confirmed meal and workout sections.
 
 UI tests cover:
@@ -706,9 +779,12 @@ UI tests cover:
 - workout to proposal and confirmation;
 - Debug weight and hydration flows;
 - supplement and medication occurrence actions and item histories;
+- snooze presets, custom time and same-local-date validation;
 - Plan;
 - Progress and 7,700 kcal block detail;
-- main History with only Meals and Workouts and no Load more command;
+- main History with only individual Meal records and Workouts, no grouping and
+  no Load more command;
+- read-only detail for one individual meal-log row;
 - Release/unavailable presentation through configuration-level tests;
 - Dynamic Type accessibility layout;
 - Dark Mode;
@@ -729,6 +805,7 @@ It includes:
 - an evidence README with commands, hashes and results;
 - Today;
 - meal proposal and edit;
+- individual meal-log detail;
 - workout proposal;
 - hydration and routine;
 - Plan;
@@ -750,7 +827,9 @@ The following work requires an approved backend contract before iOS changes:
 - a structured raw text/photo/audio-to-meal-draft contract;
 - stable per-item nutrition provenance in pending proposals and History;
 - editing confirmed meal or workout logs;
-- reliable main-History pagination with a shared or independent cursors;
+- an explicit meal-occurrence identifier and grouping semantics for aggregated
+  meal History;
+- reliable main-History pagination with a shared cursor or independent cursors;
 - a typed nutrition prescription payload;
 - a live environment base URL and authenticated mobile transport.
 
@@ -766,6 +845,7 @@ infer server state locally.
 - local nutrition, workout, hydration, progress or block formulas;
 - optimistic patching of official values;
 - main-History pagination or Load more;
+- aggregated meal History without a backend `meal_id` contract;
 - weight, hydration or routine entries in main History;
 - editing a confirmed meal or workout;
 - supplement or medication CRUD and medication legal acceptance;
@@ -787,13 +867,22 @@ infer server state locally.
 - Meal editing applies only to an open pending and replaces the returned
   proposal.
 - Workout calories are displayed only from a proposal response.
+- Proposal creation, editing and cancellation invalidate Today; confirmation
+  invalidates Today and main History.
+- Invalidation never patches or corrects an official value locally.
 - Weight has no presumed BFF route or transport DTO.
 - Hydration and routine commands preserve idempotency keys on Retry.
+- Defaults, occurrence actions, snooze choices and idempotent attempts use an
+  injected time source.
+- Snooze requires `snoozed_until`, offers 15, 30 and 60 minute presets plus a
+  custom time, and cannot cross the original occurrence's local date.
 - Supplement and medication details use their own opaque-cursor histories.
 - Plan does not interpret opaque nutrition payloads.
 - Progress and the 7,700 kcal block use only supplied values.
 - Main History performs one bounded first-page read and shows only confirmed
-  Meals and Workouts.
+  meal-log rows and Workouts.
+- Each History meal row remains an individual `meal_logs` record; equal times
+  or `meal_type` values are not grouped, and detail uses only the row `id`.
 - Main History has no derived cursor, second-page request or Load more command.
 - Debug, previews and tests may use deterministic complete snapshots.
 - Release reads and operations fail closed with “Indisponível nesta versão” and

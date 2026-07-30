@@ -1,6 +1,6 @@
 # BodyFlow iOS Today, Records And Progress Design
 
-**Status:** awaiting final approval.
+**Status:** approved.
 
 ## Objective
 

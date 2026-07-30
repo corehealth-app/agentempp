@@ -5,6 +5,7 @@ struct AppShellView: View {
     @State private var selectedTab = AppTab.today
     @State private var router = AppRouter()
     @State private var invalidationCenter: FeatureInvalidationCenter
+    @State private var todayViewModel: TodayViewModel
     let userID: String
     let dependencies: AppDependencies
 
@@ -16,6 +17,9 @@ struct AppShellView: View {
         self.dependencies = dependencies
         _invalidationCenter = State(
             initialValue: FeatureInvalidationCenter()
+        )
+        _todayViewModel = State(
+            initialValue: TodayViewModel(provider: dependencies.today)
         )
     }
 
@@ -64,7 +68,10 @@ struct AppShellView: View {
     private func rootView(for tab: AppTab) -> some View {
         switch tab {
         case .today:
-            TodayRootView()
+            TodayRootView(
+                model: todayViewModel,
+                invalidationCenter: invalidationCenter
+            )
         case .register:
             RegisterRootView()
         case .plan:

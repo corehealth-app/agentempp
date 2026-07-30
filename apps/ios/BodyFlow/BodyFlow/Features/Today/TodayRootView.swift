@@ -1,113 +1,299 @@
 import Foundation
 import SwiftUI
 
+struct TodayPresentation: Equatable, Sendable {
+    let header: TodayHeaderDescriptor
+    let attention: TodayAttentionDescriptor
+    let energy: TodayEnergyDescriptor
+    let protein: TodayProteinDescriptor
+    let meals: [TodayMealDescriptor]
+    let workouts: [TodayWorkoutDescriptor]
+    let hydration: TodayHydrationDescriptor
+    let routineCollections: [TodayRoutineCollectionDescriptor]
+    let block: TodayBlockDescriptor
+    let completionMessage: String?
+    let sectionOrder: [TodaySectionKind]
+
+    init(snapshot: TodaySnapshot) {
+        header = TodayHeaderDescriptor(
+            localDate: snapshot.localDate,
+            protocolName: snapshot.protocolName,
+            updatedAt: snapshot.updatedAt
+        )
+        attention = TodayAttentionDescriptor(
+            pending: snapshot.pendingActions.registrations.map { registration in
+                TodayPendingDescriptor(
+                    id: registration.id,
+                    title: registration.kind == "meal"
+                        ? "Proposta de refeição"
+                        : "Proposta de treino",
+                    detail: registration.mealType ?? "Confirmação pendente"
+                )
+            },
+            routineActions: Self.routineAttention(
+                supplements: snapshot.supplements,
+                medications: snapshot.medications
+            )
+        )
+        energy = TodayEnergyDescriptor(
+            targetKcal: snapshot.targets.caloriesKcal,
+            consumedKcal: snapshot.consumed.caloriesKcal,
+            remainingFoodKcal: snapshot.remainingFoodKcal,
+            foodExcessKcal: snapshot.foodExcessKcal,
+            exerciseKcal: snapshot.exerciseKcal,
+            dailyBalanceKcal: snapshot.dailyBalanceKcal,
+            dailyBalanceStatus: snapshot.dailyBalanceStatus
+        )
+        protein = TodayProteinDescriptor(
+            consumedG: snapshot.proteinStatus.consumedG,
+            targetG: snapshot.proteinStatus.targetG,
+            remainingG: snapshot.proteinStatus.remainingG,
+            percentage: snapshot.proteinStatus.percentage,
+            status: snapshot.proteinStatus.status
+        )
+        meals = snapshot.meals.map { meal in
+            TodayMealDescriptor(
+                id: meal.id,
+                mealType: meal.mealType,
+                foodName: meal.foodName,
+                quantityG: meal.quantityG,
+                kcal: meal.kcal,
+                proteinG: meal.proteinG,
+                carbsG: meal.carbsG,
+                fatG: meal.fatG,
+                consumedAt: meal.consumedAt,
+                provenance: TodayNutritionProvenance.label(
+                    for: meal.nutritionSource
+                )
+            )
+        }
+        workouts = snapshot.workouts.map { workout in
+            TodayWorkoutDescriptor(
+                id: workout.id,
+                workoutType: workout.workoutType,
+                durationMin: workout.durationMin,
+                estimatedKcal: workout.estimatedKcal,
+                intensity: workout.intensity,
+                performedAt: workout.performedAt
+            )
+        }
+        hydration = TodayHydrationDescriptor(
+            consumedML: snapshot.hydration.consumedML,
+            targetML: snapshot.hydration.targetML,
+            remainingML: snapshot.hydration.remainingML,
+            percentage: snapshot.hydration.percentage,
+            status: snapshot.hydration.status
+        )
+        routineCollections = [
+            Self.routineCollection(
+                snapshot.supplements,
+                kind: .supplement
+            ),
+            Self.routineCollection(
+                snapshot.medications,
+                kind: .medication
+            ),
+        ]
+        if let block = snapshot.block7700 {
+            self.block = TodayBlockDescriptor(
+                enabled: block.enabled,
+                availability: block.availability,
+                targetKcal: block.targetKcal,
+                currentKcal: block.currentKcal,
+                percentage: block.percentage,
+                completedBlocks: block.completedBlocks,
+                totalCreditedKcal: block.totalCreditedKcal,
+                source: block.source
+            )
+        } else {
+            self.block = TodayBlockDescriptor(
+                enabled: nil,
+                availability: nil,
+                targetKcal: nil,
+                currentKcal: nil,
+                percentage: nil,
+                completedBlocks: nil,
+                totalCreditedKcal: nil,
+                source: nil
+            )
+        }
+        completionMessage = snapshot.completionStatus.status == "insufficient_data"
+            ? "Dados insuficientes para fechar o dia"
+            : nil
+        sectionOrder = [
+            .attention,
+            .pending,
+            .energy,
+            .protein,
+            .meals,
+            .workouts,
+            .hydration,
+            .routines,
+            .block,
+            .history,
+        ]
+    }
+
+    private static func routineAttention(
+        supplements: TodayRoutineSection,
+        medications: TodayRoutineSection
+    ) -> [TodayRoutineAttentionDescriptor] {
+        attentionRows(in: supplements, kind: .supplement)
+            + attentionRows(in: medications, kind: .medication)
+    }
+
+    private static func attentionRows(
+        in section: TodayRoutineSection,
+        kind: TodayRoutineAttentionID.Kind
+    ) -> [TodayRoutineAttentionDescriptor] {
+        section.items.flatMap { item in
+            item.occurrences.compactMap { occurrence in
+                guard occurrence.status == "pending"
+                        || occurrence.status == "snoozed" else {
+                    return nil
+                }
+                return TodayRoutineAttentionDescriptor(
+                    id: TodayRoutineAttentionID(
+                        kind: kind,
+                        itemID: item.id,
+                        reminderRuleID: occurrence.reminderRuleID,
+                        scheduledFor: occurrence.scheduledFor
+                    ),
+                    title: item.name,
+                    status: occurrence.status
+                )
+            }
+        }
+    }
+
+    private static func routineCollection(
+        _ section: TodayRoutineSection,
+        kind: TodayRoutineCollectionDescriptor.Kind
+    ) -> TodayRoutineCollectionDescriptor {
+        let items = section.items.map { item in
+            TodayRoutineDescriptor(
+                id: item.id,
+                name: item.name,
+                doseText: item.doseText,
+                occurrenceStatuses: item.occurrences.map(\.status)
+            )
+        }
+        let state: TodayRoutineCollectionDescriptor.State =
+            if section.availability != "available" {
+                .unavailable
+            } else if items.isEmpty {
+                .empty
+            } else {
+                .populated
+            }
+        return TodayRoutineCollectionDescriptor(
+            kind: kind,
+            state: state,
+            items: items
+        )
+    }
+}
+
 @MainActor
 struct TodayRootView: View {
-    let fixture: TodaySummary
-    let state: ScreenContentState
-    private let retryAction: @MainActor () -> Void
-
-    init(
-        fixture: TodaySummary = AppFixtures.today,
-        state: ScreenContentState = .loaded,
-        retryAction: @escaping @MainActor () -> Void = {}
-    ) {
-        self.fixture = fixture
-        self.state = state
-        self.retryAction = retryAction
-    }
+    let model: TodayViewModel
+    let invalidationCenter: FeatureInvalidationCenter
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
-
-            if let screenState = state.screenState {
-                ScreenStateView(state: screenState, retryAction: retryAction)
-            } else {
-                loadedContent
-            }
+            stateContent
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.today.rootAccessibilityIdentifier)
         .navigationTitle("Hoje")
+        .task(id: invalidationCenter.revision(for: .today)) {
+            let revision = invalidationCenter.revision(for: .today)
+            await model.load(revision: revision)
+        }
+        .toolbar {
+            if model.state.presentation.value != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: retry) {
+                        Label("Atualizar", systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("today.refresh")
+                }
+            }
+        }
     }
 
-    private var loadedContent: some View {
+    @ViewBuilder
+    private var stateContent: some View {
+        let presentation = model.state.presentation
+        if let fullScreenState = presentation.fullScreenState {
+            ScreenStateView(
+                state: fullScreenState,
+                retryAction: retry
+            )
+        } else if let snapshot = presentation.value {
+            loadedContent(
+                TodayPresentation(snapshot: snapshot),
+                showsStaleBanner: presentation.showsStaleBanner
+            )
+        }
+    }
+
+    private func loadedContent(
+        _ presentation: TodayPresentation,
+        showsStaleBanner: Bool
+    ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("RESUMO DIÁRIO")
-                        .font(BodyFlowTypography.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(BodyFlowColor.accent)
-
-                    Text("Um passo de cada vez.")
-                        .font(BodyFlowTypography.largeTitle)
-                        .fontWeight(.bold)
-                        .foregroundStyle(BodyFlowColor.primaryText)
-
-                    Text(fixture.localDate)
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                }
-
-                BodyFlowCard {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                        Label("Energia de hoje", systemImage: "bolt.heart")
-                            .font(BodyFlowTypography.headline)
-                            .foregroundStyle(BodyFlowColor.primaryText)
-
-                        FixtureMetricRow(
-                            title: "Consumido",
-                            value: kcal(fixture.energy.consumedKcal)
-                        )
-                        Divider()
-                        FixtureMetricRow(
-                            title: "Meta",
-                            value: kcal(fixture.energy.targetKcal)
-                        )
-                        Divider()
-                        FixtureMetricRow(
-                            title: "Restante para alimentos",
-                            value: kcal(fixture.energy.remainingFoodKcal)
-                        )
-                    }
-                }
-
-                BodyFlowCard {
+                if showsStaleBanner {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                        Label("Rotina", systemImage: "checklist")
+                        StaleDataBanner()
+                        Button("Tentar novamente", action: retry)
                             .font(BodyFlowTypography.headline)
-                            .foregroundStyle(BodyFlowColor.primaryText)
-
-                        Text(fixture.routine.statusLabel)
-                            .font(BodyFlowTypography.title)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(BodyFlowColor.onAchievement)
-                            .padding(.horizontal, BodyFlowSpacing.sm)
-                            .padding(.vertical, BodyFlowSpacing.xs)
-                            .background(
-                                BodyFlowColor.achievement,
-                                in: Capsule(style: .continuous)
-                            )
-
-                        Label(
-                            fixture.routine.nextItemLabel,
-                            systemImage: "clock"
-                        )
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                            .accessibilityIdentifier("state.retry")
                     }
                 }
+
+                TodayHeaderSection(descriptor: presentation.header)
+                TodayAttentionSection(descriptor: presentation.attention)
+                TodayEnergySection(
+                    descriptor: presentation.energy,
+                    completionMessage: presentation.completionMessage
+                )
+                TodayProteinSection(descriptor: presentation.protein)
+                TodayRecordsSection(
+                    meals: presentation.meals,
+                    workouts: presentation.workouts
+                )
+                TodayHydrationSection(descriptor: presentation.hydration)
+                TodayRoutineSectionView(
+                    collections: presentation.routineCollections
+                )
+                TodayBlockCard(descriptor: presentation.block)
+
+                NavigationLink(
+                    value: AppRoute.detail(tab: .today, id: "history")
+                ) {
+                    BodyFlowCard {
+                        FeatureActionLabel(
+                            title: "Histórico",
+                            detail: "Refeições e treinos confirmados",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("today.history")
 
                 NavigationLink(
                     value: AppRoute.detail(tab: .today, id: "daily-summary")
                 ) {
                     BodyFlowCard {
                         FeatureActionLabel(
-                            title: fixture.nextAction.title,
-                            detail: fixture.nextAction.detail,
-                            systemImage: "plus.circle.fill"
+                            title: "Resumo do dia",
+                            detail: "Consultar detalhes recebidos",
+                            systemImage: "doc.text.magnifyingglass"
                         )
                     }
                 }
@@ -116,25 +302,14 @@ struct TodayRootView: View {
             }
             .padding(BodyFlowSpacing.md)
         }
+        .refreshable {
+            await model.retry()
+        }
     }
 
-    private func kcal(_ value: Int) -> String {
-        "\(value.formatted(.number.locale(Locale(identifier: "pt_BR")))) kcal"
+    private func retry() {
+        Task {
+            await model.retry()
+        }
     }
-}
-
-#Preview("Hoje · Loaded") {
-    NavigationStack {
-        TodayRootView()
-    }
-    .environment(AppRouter())
-    .installAppDependencies(AppDependencies.scaffold())
-}
-
-#Preview("Hoje · Loading") {
-    NavigationStack {
-        TodayRootView(state: .loading)
-    }
-    .environment(AppRouter())
-    .installAppDependencies(AppDependencies.scaffold())
 }

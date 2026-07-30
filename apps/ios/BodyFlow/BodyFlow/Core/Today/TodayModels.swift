@@ -110,7 +110,7 @@ struct TodayMeal: Codable, Equatable, Sendable {
     let carbsG: Decimal
     let fatG: Decimal
     let consumedAt: APITimestamp
-    let nutritionSource: String
+    let nutritionSource: String?
 
     private enum CodingKeys: String, CodingKey {
         case id

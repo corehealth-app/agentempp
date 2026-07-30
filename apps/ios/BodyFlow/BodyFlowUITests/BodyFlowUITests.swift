@@ -99,7 +99,10 @@ final class BodyFlowUITests: XCTestCase {
 
     @MainActor
     func testTodayNavigationPersistsAcrossTabSwitch() {
-        let app = launchApp()
+        let app = launchApp(arguments: [
+            "--ui-testing",
+            Prompt13UITestScenario.loaded.rawValue,
+        ])
         let nextAction = app.buttons["today.next-action"]
         XCTAssertTrue(nextAction.waitForExistence(timeout: 3))
         nextAction.tap()

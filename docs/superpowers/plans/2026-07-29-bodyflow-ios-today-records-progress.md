@@ -11,7 +11,9 @@
 ## Approval And Execution Boundary
 
 - The approved specification is `docs/superpowers/specs/2026-07-29-bodyflow-ios-today-records-progress-design.md`.
-- This document is the implementation plan only. Do not begin Task 1 until the user explicitly approves this plan.
+- The user approved the architecture and this TDD plan. This mandatory
+  documentary revision does not start Task 1; implementation remains paused
+  until a later explicit instruction.
 - Execute implementation only in `/Users/eduardohenrique/Developer/bodyflow`.
 - Execute implementation only on `codex/bodyflow-ios-today-records-progress-v1`, stacked on `codex/bodyflow-ios-auth-onboarding-v1`.
 - Preserve the visible name `BodyFlow`, bundle ID `com.bodyflow.app`, Swift 6 language mode and iOS 18.0 deployment target.
@@ -34,9 +36,14 @@
 - Proposal create, edit and cancel invalidate Today only.
 - Proposal confirm invalidates Today and main History.
 - Hydration invalidates Today only.
-- A routine action invalidates Today, the matching routine list and the matching item-detail history.
+- A routine action invalidates Today, the matching routine list and the matching item-specific history.
 - Weight's Debug-only receipt invalidates no official read.
-- Invalidation carries revision signals only; refresh replaces the whole provider response.
+- Hydration accepts only integer amounts in the inclusive `1...5000` ml range.
+- Weight reuses the approved inclusive `30...300` kg app-domain limit and remains non-transport.
+- Demonstration meal text accepts `1...1000` Swift `String.count` characters only in Debug, previews and UI tests; this is not a current or future API contract.
+- Telemetry emits `calculation_version` only at `1...64` ASCII characters matching `[A-Za-z0-9._:-]`, without truncation or normalization.
+- `FeatureInvalidationCenter` is an `@MainActor @Observable final class` that carries revision signals only; refresh replaces the whole provider response.
+- Each read owner observes only its revision with `.task(id:)`; a read model deduplicates an already active/completed revision, a newer revision cancels the prior task, and at most one complete response publishes per revision.
 - A cancelled or superseded async task never publishes a late result, error, receipt or navigation.
 - Every mutation owns an immutable payload, operation kind, validated idempotency key and `TimeProviding` timestamp. Retry reuses that exact attempt.
 - Text, Photo and Audio always produce a detected draft and pending proposal before confirmation.
@@ -399,7 +406,7 @@ git commit -m "feat(ios): add capability execution primitives"
 
 - [ ] **Step 1: Copy a sanitized current-contract Today response into the test fixture**
 
-Use the existing response shape documented in `docs/mobile/api-v1.md` and the route implementation under `apps/admin/src/app/api/mobile/v1/today/route.ts`. Add one deliberately inconsistent fixture where `remaining_food_kcal`, `exercise_kcal` and `daily_balance_kcal` cannot be reproduced by a plausible local formula.
+Use the existing response shape documented in `docs/mobile/api-v1.md` and the route implementation under `apps/admin/src/app/api/mobile/v1/today/route.ts`. Add one deliberately inconsistent fixture where `targets.calories_kcal`, `consumed.calories_kcal`, `remaining_food_kcal`, `food_excess_kcal`, `exercise_kcal`, `daily_balance_kcal` and `daily_balance_status` are independently authored and cannot be reproduced by a plausible local formula.
 
 - [ ] **Step 2: Write RED decoding tests**
 
@@ -409,9 +416,13 @@ Assert exact coding keys, optional targets, completion status, hydration-without
 @Test("official daily values remain exactly as received")
 func preservesOfficialDailyValues() throws {
     let response = try BodyFlowTestFixtures.decodeInconsistentToday()
+    #expect(response.data.targets.caloriesKcal == 1_935)
+    #expect(response.data.consumed.caloriesKcal == 1_200)
     #expect(response.data.remainingFoodKcal == 731)
+    #expect(response.data.foodExcessKcal == 17)
     #expect(response.data.exerciseKcal == 419)
     #expect(response.data.dailyBalanceKcal == -83)
+    #expect(response.data.dailyBalanceStatus == "provisional")
 }
 ```
 
@@ -518,13 +529,15 @@ git commit -m "feat(ios): define registration capability contracts"
 - `RoutineActionCommand` carries item kind/id, status, reminder-rule id, scheduled time, occurrence time and optional snooze time.
 - `RoutineSnoozePolicy` receives `scheduledFor`, injected `occurredAt` and an explicit patient IANA timezone context.
 - `RoutineHistoryPage.nextCursor` is an opaque optional string.
-- `HydrationCommand` carries a validated controlled/custom amount and occurrence time.
-- `WeightCommand` is a non-`Codable` app command and has no route/path representation.
+- `HydrationCommand` carries an integer amount validated inclusively at `1...5000` ml and an occurrence time.
+- `WeightCommand` validates inclusively at `30...300` kg, is a non-`Codable` app command and has no route/path representation.
 - Documented hydration/routine responses reuse `MobileResponse`; the local weight receipt deliberately does not.
 
 - [ ] **Step 1: Write RED contract tests**
 
 Decode supplement and medication list responses—whose nested item later feeds the detail UI—and item-history responses from the currently documented route contracts. Assert that `next_cursor` is preserved byte-for-byte and callers pass it back unchanged. Do not create a `RoutineDetailResponse`, detail path or detail provider method.
+
+Add literal command-boundary RED tests: hydration rejects `0` and `5001` ml and accepts `1` and `5000` ml; weight rejects `29.99` and `300.01` kg and accepts `30` and `300` kg. The weight limit is reused from the approved onboarding domain rule and must not create a transport DTO or presumed endpoint.
 
 - [ ] **Step 2: Write RED snooze-policy tests**
 
@@ -560,7 +573,7 @@ Expected RED: missing routine commands, provider and snooze policy.
 
 - [ ] **Step 4: Implement GREEN with explicit validation**
 
-`PatientTimeZoneContext` is a small `Sendable` value with an optional documented IANA identifier. Debug/tests install a fixed identifier; Release has no synthetic patient timezone and operations fail unavailable before validation. Presets add to `occurredAt`, require a later result, and compare the result's patient-local date to `scheduledFor`'s patient-local date. Do not query a presumed endpoint or use `TimeZone.current` as an official patient timezone.
+`PatientTimeZoneContext` is a small `Sendable` value with an optional documented IANA identifier. Debug/tests install a fixed identifier; Release has no synthetic patient timezone and operations fail unavailable before validation. Presets add to `occurredAt`, require a later result, and compare the result's patient-local date to `scheduledFor`'s patient-local date. Enforce the exact hydration and weight boundaries from Step 1 without clamping. Do not query a presumed endpoint or use `TimeZone.current` as an official patient timezone.
 
 - [ ] **Step 5: Refactor action construction**
 
@@ -778,7 +791,9 @@ git commit -m "feat(ios): fail prompt 13 capabilities closed in release"
 
 - Reads represent `idle`, `loading`, `loaded`, `empty`, `offline(previousValue:)`, `failed(previousValue:error:)` and `unavailable`.
 - Mutations retain the exact typed attempt when recoverable. Registration wraps its four concrete `MutationAttempt` payload types in a `RegistrationMutationAttempt` enum and its four result types in `RegistrationMutationReceipt`; hydration, weight and routine may use their single concrete attempt/receipt directly.
-- `FeatureInvalidationCenter` stores integer revisions keyed by `.today`, `.history`, `.routineList(kind:)` and `.routineHistory(kind:itemID:)`.
+- `FeatureInvalidationCenter` is declared `@MainActor @Observable final class` and stores integer revisions keyed by `.today`, `.history`, `.routineList(kind:)` and `.routineHistory(kind:itemID:)`.
+- The single owning view for each read observes only its relevant expression with `.task(id: invalidationCenter.revision(for: key))`. The read model accepts that revision and deduplicates an already active or completed revision-driven load; revision zero performs the initial complete load and each later revision publishes at most one new complete response.
+- When the `.task(id:)` identity changes, SwiftUI cancellation plus the read model's load-identity check prevents the prior task from publishing a late value/error. No second observer or `onChange` starts the same reload.
 - `AppRootView` passes immutable dependencies explicitly into `AppShellView`; the shell owns one long-lived `@State FeatureInvalidationCenter` on the main actor. Later feature tasks pass that same instance explicitly to the models/sheets that need it.
 - Screen state uses stable ids `state.loading`, `state.empty`, `state.offline`, `state.error`, `state.unavailable`, `state.stale-banner` and `state.retry`.
 
@@ -824,7 +839,7 @@ func confirmationInvalidation() {
 }
 ```
 
-Also prove hydration affects Today only, routine action affects the exact three keys, and weight affects none.
+Also prove hydration affects Today only, routine action affects the exact three keys, and weight affects none. Add an observation harness proving an unrelated revision performs no reload, repeated observation of an already active/completed revision does not duplicate a load, one relevant revision performs exactly one complete reload, and a second relevant revision cancels the first task so only the newest complete response may publish. A cancelled incomplete load may be attempted again if the same revision becomes visible later; explicit Retry is a separate load intention.
 
 - [ ] **Step 5: Run `FeatureInvalidationTests` and observe RED**
 
@@ -832,11 +847,11 @@ Expected RED: missing center, keys and effects.
 
 - [ ] **Step 6: Implement signal-only invalidation and refactor**
 
-The center must never contain `TodayResponse`, History rows, calorie values or mutation receipts. Consumers reload a complete snapshot when their relevant revision changes. Do not add the center to `AppDependencies`.
+The center must never contain `TodayResponse`, History rows, calorie values or mutation receipts. Implement it as `@MainActor @Observable final class`; consumers reload a complete snapshot from `.task(id:)` when their relevant revision changes. Every load checks cancellation and its captured revision/load identity before publication. Do not add the center to `AppDependencies`.
 
 - [ ] **Step 7: Establish long-lived shell ownership**
 
-Change `AppRootView` to construct `AppShellView(userID:dependencies:)`. Initialize one `@State` center in the shell initializer. Feature-model state and explicit center arguments are added incrementally in later tasks, but mutable models must always be created outside `body`.
+Change `AppRootView` to construct `AppShellView(userID:dependencies:)`. Initialize one `@State` center in the shell initializer. Feature-model state and explicit center arguments are added incrementally in later tasks, but mutable models must always be created outside `body`. Do not add a competing notification, value-patching or `onChange` refresh channel.
 
 - [ ] **Step 8: Run both suites green and commit**
 
@@ -1085,13 +1100,13 @@ git commit -m "feat(ios): add deterministic routine recording transitions"
 **Interfaces:**
 
 - `@MainActor @Observable TodayViewModel` owns `FeatureReadState<TodaySnapshot>` and one cancellable load identity.
-- Retry starts a provider read; invalidation causes a full refresh.
+- Retry starts a provider read. `TodayRootView` observes the Today revision with `.task(id:)`; revision zero and every later revision each cause exactly one full refresh.
 - Presentation formatters accept one received field at a time and never combine official fields.
 - Stable ids include `today.header.local-date`, `today.header.protocol`, `today.header.updated-at`, `today.attention`, `today.pending`, `today.energy.remaining-food`, `today.energy.net-balance`, `today.completion.insufficient-data`, `today.protein`, `today.meals`, `today.workouts`, `today.hydration`, `today.routines`, `today.block` and `today.history`.
 
 - [ ] **Step 1: Write RED model-state tests**
 
-Cover load, empty, initial offline, offline with previous content, recoverable error with previous content, Retry, cancellation/replacement and unavailable. A late cancelled request must not publish. Record a Today invalidation revision and prove it triggers exactly one complete provider reload without a local patch.
+Cover load, empty, initial offline, offline with previous content, recoverable error with previous content, Retry, cancellation/replacement and unavailable. A late cancelled request must not publish. Through the same observable center owned by the shell, prove `.task(id: todayRevision)` runs one complete initial load, one relevant invalidation revision triggers exactly one additional complete provider reload without a local patch, an unrelated revision triggers none, and a newer Today revision cancels/supersedes the older load before publication.
 
 - [ ] **Step 2: Run `TodayViewModelTests` and observe RED**
 
@@ -1099,11 +1114,11 @@ Expected RED: missing view model.
 
 - [ ] **Step 3: Implement the minimal view model**
 
-Read complete snapshots only. On invalidation, transition to loading/stale presentation and fetch again; never patch a value while waiting.
+Read complete snapshots only. `load(revision:)` deduplicates an already active or completed revision while allowing an incomplete cancelled revision to be attempted again on a later appearance. On invalidation, transition to loading/stale presentation and fetch again; never patch a value while waiting. Check `Task.isCancelled`/`Task.checkCancellation()` and the captured revision/load identity immediately before every state publication.
 
 - [ ] **Step 4: Write RED presentation tests**
 
-Using the inconsistent fixture, assert literal food remaining and signed net balance. Assert distinct labels/accessibility values:
+Using the inconsistent fixture, assert literal food remaining and signed net balance. Add literal descriptor assertions for `targets.calories_kcal == 1_935`, `consumed.calories_kcal == 1_200`, `food_excess_kcal == 17`, `exercise_kcal == 419` and `daily_balance_status == "provisional"`; none may be derived from another field. Assert distinct labels/accessibility values:
 
 - food remaining says exercise is excluded;
 - net balance says exercise is included;
@@ -1139,7 +1154,7 @@ Expected RED: stable ids/labels absent before wiring.
 
 - [ ] **Step 8: Wire Today into the shell and make UI tests green**
 
-Create one long-lived `@State TodayViewModel` in `AppShellView.init(userID:dependencies:)`, outside `body`, and pass it plus the shell-owned invalidation center explicitly into `TodayRootView`. Do not store a response in `EnvironmentValues`.
+Create one long-lived `@State TodayViewModel` in `AppShellView.init(userID:dependencies:)`, outside `body`, and pass it plus the shell-owned invalidation center explicitly into `TodayRootView`. `TodayRootView` owns exactly one `.task(id: invalidationCenter.revision(for: .today))` that calls the model's complete-load entry point; do not add `onChange` or a second refresh observer. Do not store a response in `EnvironmentValues`.
 
 - [ ] **Step 9: Run unit/UI green, refactor, and commit**
 
@@ -1181,7 +1196,7 @@ git commit -m "feat(ios): implement official today snapshot"
 
 - [ ] **Step 1: Write the first RED model tests for all capture sources**
 
-Assert Text, Photo and Audio each call detection, then proposal, and never confirmation directly. Photo/audio tests assert no permission or media service dependency exists.
+Assert Text, Photo and Audio each call detection, then proposal, and never confirmation directly. For the local Text demonstration, assert `String.count` lengths 0 and 1,001 are rejected before the detector is called while lengths 1 and 1,000 are accepted. State in the test name that this is a Debug/preview/UI-test demonstration guard, not a present or future API request contract. Photo/audio tests assert no permission or media service dependency exists.
 
 - [ ] **Step 2: Run the focused tests and observe RED**
 
@@ -1189,7 +1204,7 @@ Expected RED: missing model and capture-source state machine.
 
 - [ ] **Step 3: Implement detection-to-proposal GREEN**
 
-Bound text input without parsing it. Label Photo/Audio as local demonstrations. Preserve the structured detected draft until proposal succeeds.
+Validate the demonstration text at inclusive `String.count` length `1...1000` before calling detection, without trimming, parsing, encoding it into a presumed transport DTO or exposing the limit as an API contract. Label Photo/Audio as local demonstrations. Preserve the structured detected draft until proposal succeeds.
 
 - [ ] **Step 4: Write RED lifecycle/retry tests**
 
@@ -1324,15 +1339,15 @@ git commit -m "feat(ios): implement workout proposal workflow"
 
 **Behaviors:**
 
-- Hydration supports controlled quick values 250/500/750 ml plus validated custom input and injected occurrence time.
+- Hydration supports controlled quick values 250/500/750 ml plus custom input, with every command validated as an integer in the inclusive `1...5000` ml range, and an injected occurrence time.
 - Success triggers only a Today revision and waits for a complete provider refresh.
-- Weight returns only a Debug/test receipt labelled `Demonstração local; não sincronizado`.
+- Weight accepts only the approved inclusive `30...300` kg app-domain range and returns only a Debug/test receipt labelled `Demonstração local; não sincronizado`.
 - Weight changes no Today, Progress, History or block state.
 - Release operations present `Indisponível nesta versão` and no success copy.
 
 - [ ] **Step 1: Write RED hydration model tests**
 
-Assert fixed time, quick/custom validation, one key per intention, same-attempt Retry, double-submit protection, exactly one Today revision, `.operationSummary` focus target after success/failure, and no late receipt/error/revision from a cancelled or superseded task. Add an integration RED using the same `FeatureInvalidationCenter` plus the existing `TodayViewModel`: hydration emits only the revision, Today performs one provider reload, and the deliberately non-additive next snapshot is adopted whole. `HydrationRegistrationModel` must not receive `TodayProviding`.
+Assert fixed time, quick/custom validation, one key per intention, same-attempt Retry, double-submit protection, exactly one Today revision, `.operationSummary` focus target after success/failure, and no late receipt/error/revision from a cancelled or superseded task. Add literal boundaries: `0` and `5001` ml are rejected without provider/invalidation calls; `1` and `5000` ml are accepted. Add an integration RED using the same `FeatureInvalidationCenter` plus the existing `TodayViewModel`: hydration emits only the revision, Today performs one provider reload through its `.task(id:)` owner, and the deliberately non-additive next snapshot is adopted whole. `HydrationRegistrationModel` must not receive `TodayProviding`.
 
 - [ ] **Step 2: Run the hydration tests and observe RED**
 
@@ -1340,11 +1355,11 @@ Expected RED: missing model or a locally patched amount.
 
 - [ ] **Step 3: Implement hydration GREEN**
 
-Submit the command, record Today invalidation, and let Today reload. Do not calculate percentage or remaining volume when a target is absent.
+Validate the exact inclusive integer `1...5000` ml range without clamping, submit the command, record Today invalidation, and let Today reload. Do not calculate percentage or remaining volume when a target is absent.
 
 - [ ] **Step 4: Write RED weight tests**
 
-Assert fixed recorded time, input bounds, receipt label, idempotent replay, payload-conflict behavior, no invalidation, Release unavailable state, `.operationSummary` focus target after success/failure, and no late receipt/error from a cancelled or superseded task.
+Assert fixed recorded time, literal input bounds (`29.99` and `300.01` kg rejected; `30` and `300` kg accepted), receipt label, idempotent replay, payload-conflict behavior, no invalidation, Release unavailable state, `.operationSummary` focus target after success/failure, and no late receipt/error from a cancelled or superseded task.
 
 - [ ] **Step 5: Run weight tests and observe RED**
 
@@ -1352,13 +1367,14 @@ Expected RED: missing model/receipt handling.
 
 - [ ] **Step 6: Implement weight GREEN**
 
-Keep `WeightRecording` protocol-only. Do not add `Codable`, an endpoint path, `APIRequest` or a claimed synchronization flag.
+Enforce the reused inclusive `30...300` kg app-domain limit without clamping. Keep `WeightRecording` protocol-only. Do not add `Codable`, an endpoint path, `APIRequest` or a claimed synchronization flag.
 
 - [ ] **Step 7: Write focused UI RED**
 
 Add:
 
 - `testHydrationQuickAndCustomFlowsUseCompleteRefresh`;
+- `testHydrationAndWeightShowExactBoundaryValidation`;
 - `testWeightReceiptIsClearlyLocal`;
 - `testUnavailableHydrationAndWeightNeverShowSuccess`.
 
@@ -1409,12 +1425,13 @@ git commit -m "feat(ios): add hydration and local weight flows"
 
 - Typed routes carry only `RoutineItemKind`, item id and destination kind.
 - `RoutineDetailViewModel` resolves `itemID` from the already-loaded list snapshot. When entered from Today before a list exists, it may call only `list(kind:includeArchived:false)` and select the returned row; no detail capability, path or `APIRequest` is created.
+- `RoutineListView` and `RoutineHistoryView` each own exactly one `.task(id:)` for their matching observed revision. Their models deduplicate active/completed revisions and publish at most one complete list or item-history response per revision; a cancelled/superseded load cannot publish. Detail follows the refreshed list snapshot and never owns a detail reload.
 - Routine-history load-more exists only when the response supplies a non-nil opaque `next_cursor`.
 - The action model creates exact occurrence commands and retains an idempotent attempt for Retry.
 
 - [ ] **Step 1: Write RED list/detail/history tests**
 
-Cover loaded/empty/offline/error/unavailable state, include-archived value, response order, and append of a next page only after passing the exact cursor from the first response. Nil cursor hides load-more. A list spy must prove detail resolution uses the loaded snapshot with no call, or one documented list call when entered from Today; the protocol has no detail method.
+Cover loaded/empty/offline/error/unavailable state, include-archived value, response order, and append of a next page only after passing the exact cursor from the first response. Nil cursor hides load-more. A list spy must prove detail resolution uses the loaded snapshot with no call, or one documented list call when entered from Today; the protocol has no detail method. For matching list/history revisions, prove `.task(id:)` performs exactly one complete reload per revision, ignores unrelated revisions, cancels a superseded task and suppresses its late publication.
 
 - [ ] **Step 2: Run `RoutineViewModelTests` and observe RED**
 
@@ -1435,8 +1452,10 @@ Cover:
 - custom later time on same patient-local date;
 - crossing-date preset/custom unavailable;
 - recoverable failure retains attempt;
-- conflict reloads exact list/detail/history providers;
-- success invalidates Today + exact list + exact detail history;
+- conflict reloads the exact documented list and matching item-history reads;
+- after conflict, detail re-resolves `itemID` from the refreshed list snapshot,
+  with no detail provider, path or reload call;
+- success invalidates Today + exact list + matching item history;
 - each exact revision triggers one complete list/history reload and carries no optimistic values;
 - success/failure sets `.operationSummary` focus target;
 - a cancelled or superseded list/history/action task cannot publish a late value, cursor append, receipt, error or navigation;
@@ -1448,7 +1467,7 @@ Expected RED: action model or invalidation behavior missing.
 
 - [ ] **Step 6: Implement action GREEN and refactor**
 
-The provider remains authoritative. Do not apply optimistic status/counters while refresh is pending.
+The provider remains authoritative. On conflict, advance only the matching list and item-history revisions; their `.task(id:)` owners reload those complete responses, and detail then resolves `itemID` from the refreshed list. On success, apply the approved Today/list/item-history invalidation matrix. Never create or call a detail provider, and do not apply optimistic status/counters while refresh is pending.
 
 - [ ] **Step 7: Write RED routine-presentation tests**
 
@@ -1477,7 +1496,7 @@ Expected RED: list/detail/action/history views or stable ids are absent. Opaque 
 
 - [ ] **Step 11: Implement UI/navigation GREEN**
 
-Keep the existing tab stacks. Use an item-driven action sheet, bind `@AccessibilityFocusState` to the model target, and clear it after consumption. Add no dose interpretation, prescription inference or schedule editor.
+Keep the existing tab stacks. Install exactly one `.task(id:)` owner for the matching list revision and one for the visible item-history revision; both call complete-load methods and rely on cancellation/load identity before publication. Detail is selected again from the refreshed list snapshot. Use an item-driven action sheet, bind `@AccessibilityFocusState` to the model target, and clear it after consumption. Add no dose interpretation, prescription inference or schedule editor.
 
 - [ ] **Step 12: Run green and commit**
 
@@ -1668,7 +1687,13 @@ case historyMealLog(rowID: String)
 case historyWorkout(logID: String)
 ```
 
-`MainHistoryView` receives that same model. A detail route resolves synchronously:
+`MainHistoryView` receives that same model and the shell-owned invalidation
+center. It owns exactly one
+`.task(id: invalidationCenter.revision(for: .history))`; the model deduplicates
+active/completed revisions, revision zero and each later History revision
+publish at most one bounded complete `.firstPage` response, and a new revision
+cancels/supersedes the prior load before it can publish. A detail route resolves
+synchronously:
 
 ```swift
 func mealLogRow(id: String) -> HistoryMealLogRow? {
@@ -1693,7 +1718,7 @@ The detail destination receives the returned immutable row. It must not construc
 
 - [ ] **Step 1: Write RED first-page load tests**
 
-Use a spy that records every query. Assert one load calls exactly `[.firstPage]`, Retry adds one more `.firstPage`, and no API exists for load more. Cover initial offline/error, stale offline/error with previous snapshot, unavailable, cancellation/replacement and Retry. After a confirmation increments the History revision, prove the model performs exactly one new `.firstPage` read and applies no local row patch.
+Use a spy that records every query. Assert revision-zero `.task(id:)` calls exactly `[.firstPage]`, Retry adds one more `.firstPage`, and no API exists for load more. Cover initial offline/error, stale offline/error with previous snapshot, unavailable, cancellation/replacement and Retry. After a confirmation increments the History revision, prove exactly one new `.firstPage` read occurs and no local row patch is applied; an unrelated revision performs no read, and a newer History revision cancels the older load so its late result/error cannot publish.
 
 - [ ] **Step 2: Write RED row-preservation and empty-state tests**
 
@@ -1743,7 +1768,7 @@ Create a testable `@MainActor HistoryFeatureCoordinator` initialized with the lo
 
 - [ ] **Step 7: Implement shell ownership and typed destinations**
 
-Keep `.mainHistory` on the Today stack. `AppShellView` owns the model/coordinator as `@State` initialized outside `body`; the handler for meal/workout detail asks that coordinator to read the visible loaded/stale snapshot only. Delete/replace the obsolete generic scaffold detail route only after all call sites and existing router tests are green.
+Keep `.mainHistory` on the Today stack. `AppShellView` owns the model/coordinator as `@State` initialized outside `body`; `MainHistoryView` has exactly one `.task(id: invalidationCenter.revision(for: .history))` complete-load owner and no competing `onChange` observer. The handler for meal/workout detail asks that coordinator to read the visible loaded/stale snapshot only. Delete/replace the obsolete generic scaffold detail route only after all call sites and existing router tests are green.
 
 - [ ] **Step 8: Write UI RED journeys**
 
@@ -1793,7 +1818,7 @@ git commit -m "feat(ios): add bounded individual-row history"
 
 - [ ] **Step 1: Write RED telemetry tests**
 
-Allow only bounded screen id, registration kind, capture-source enum, outcome, bounded error category and calculation-version metadata. Reject or omit meal text/food names, media data, weight/body-fat, routine names/doses, raw responses, user ids and idempotency keys.
+Allow only bounded screen id, registration kind, capture-source enum, outcome, bounded error category and `calculation_version` metadata. For `calculation_version`, add literal REDs accepting one ASCII character and exactly 64 ASCII characters from `[A-Za-z0-9._:-]`; omit empty, 65-character, whitespace-containing, slash-containing and non-ASCII values. Assert invalid values are neither truncated nor normalized into an accepted value. Reject or omit meal text/food names, media data, weight/body-fat, routine names/doses, raw responses, user ids and idempotency keys.
 
 - [ ] **Step 2: Run `Prompt13TelemetryTests` and observe RED**
 
@@ -1801,7 +1826,7 @@ Expected RED: controlled Prompt 13 event vocabulary is missing.
 
 - [ ] **Step 3: Implement controlled telemetry vocabulary**
 
-Do not log payload descriptions or raw errors.
+Emit `calculation_version` only when its complete value has `1...64` ASCII characters all matching `[A-Za-z0-9._:-]`; otherwise omit the key without truncation, normalization or substitution. This mapper must not mutate the official Today snapshot. Do not log payload descriptions or raw errors.
 
 - [ ] **Step 4: Run telemetry and Release-boundary unit suites green**
 
@@ -2108,7 +2133,13 @@ Do not create another PR, merge it, deploy, migrate or change production.
 - [ ] Debug fixtures/repository are structurally excluded from Release.
 - [ ] Release calls fail `operationUnavailable` and never present simulated success.
 - [ ] All official values come from complete provider responses.
+- [ ] Today tests preserve `targets`, `consumed`, `food_excess_kcal`, `exercise_kcal` and `daily_balance_status` literally.
 - [ ] Proposal invalidation and routine invalidation match the approved matrix exactly.
+- [ ] `@MainActor @Observable FeatureInvalidationCenter` revisions are observed with one `.task(id:)` complete reload per revision and cancellation-safe publication.
+- [ ] Hydration enforces inclusive integer `1...5000` ml and weight reuses inclusive `30...300` kg.
+- [ ] Demonstration meal text enforces `String.count` `1...1000` without becoming an API contract.
+- [ ] Routine conflict reloads list and item history only; detail re-resolves from the refreshed list and no detail provider exists.
+- [ ] Telemetry emits only valid 1...64-character ASCII `[A-Za-z0-9._:-]` `calculation_version` values without normalization.
 - [ ] Retry retains idempotency key, immutable payload and injected creation time.
 - [ ] Main History performs only `.firstPage` reads.
 - [ ] Individual meal-log detail uses only the already-loaded History snapshot.
@@ -2118,4 +2149,5 @@ Do not create another PR, merge it, deploy, migrate or change production.
 - [ ] Evidence records actual results and synthetic-only boundaries.
 - [ ] No real service, secret, production, migration, deploy, merge, TestFlight or WhatsApp architecture is introduced.
 
-Implementation must remain paused after this plan is committed. Resume only after explicit user approval.
+Task 1 must remain paused after this documentary revision is committed. Begin
+implementation only after a later explicit user instruction.

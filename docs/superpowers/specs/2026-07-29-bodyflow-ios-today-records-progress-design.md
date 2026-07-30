@@ -235,14 +235,28 @@ Successful commands explicitly invalidate affected reads:
 - meal or workout proposal cancellation invalidates Today;
 - meal or workout confirmation invalidates Today and main History;
 - hydration invalidates Today;
-- a routine action invalidates Today, its routine list and its detail history;
+- a routine action invalidates Today, its routine list and its item-specific
+  history;
 - a Debug-only weight receipt does not invalidate or alter Today, Progress,
   History or block state.
 
-Invalidation carries only revision signals. It never carries or patches
-official values. A refreshed screen reads a complete response from its
-provider. No successful command corrects, increments, groups or otherwise
-changes an official value locally while the refresh is pending.
+`FeatureInvalidationCenter` is an `@MainActor @Observable final class`. It owns
+only integer revisions for Today, main History, each routine list and each
+item-specific routine history. It never stores a response, row, receipt or
+official value.
+
+The single SwiftUI owner of each read observes its relevant revision with
+`.task(id: invalidationCenter.revision(for: key))`. Its read model accepts that
+revision, does not repeat an already completed or active revision-driven load,
+and publishes at most one complete response for it. If an incomplete task is
+cancelled because the view disappears, the same revision may be attempted
+again when the view returns. When the revision changes, SwiftUI cancels the
+prior task; the read model also checks cancellation and its load identity
+immediately before publishing, so a superseded task cannot publish a late
+value or error. Explicit user Retry remains a separate load intention.
+Invalidation never carries or patches official values. No successful command
+corrects, increments, groups or otherwise changes an official value locally
+while the refresh is pending.
 
 ## Navigation
 
@@ -292,6 +306,12 @@ carry complete mutable response snapshots.
 
 The UI may format dates, units and signed values. It must not derive one
 official field from another.
+
+The Today contract and presentation tests preserve
+`targets.calories_kcal`, `consumed.calories_kcal`, `food_excess_kcal`,
+`exercise_kcal` and `daily_balance_status` literally as received. None of
+these fields may be reconstructed, normalized or replaced with a locally
+calculated value.
 
 ### Information Hierarchy
 
@@ -343,8 +363,10 @@ The flow offers Text, Photo and Audio.
 In this increment all three sources use `MealDetectionProviding` with a
 deterministic Debug implementation:
 
-- Text accepts a bounded description but is not parsed by an iOS nutrition
-  algorithm.
+- Text accepts 1...1,000 user-visible characters, measured with Swift
+  `String.count`, but is not parsed by an iOS nutrition algorithm. This is only
+  a Debug, preview and UI-test demonstration-input limit; it is explicitly not
+  a current or future mobile API request contract.
 - Photo uses a labelled local demonstration sample. It does not open Photos or
   Camera, request permission or upload bytes.
 - Audio uses a labelled local demonstration sample. It does not request
@@ -447,6 +469,10 @@ There is no current mobile weight-mutation endpoint.
 route. Its command contains a weight, recorded time and idempotency key, but it
 is not a `Codable` transport DTO and has no route mapping.
 
+The app-domain weight input reuses the already approved inclusive
+30...300 kg limit. This validation does not imply a future BFF request schema
+or endpoint.
+
 Debug and tests may return a clearly labelled local demonstration receipt. The
 receipt:
 
@@ -464,8 +490,9 @@ before an adapter is added.
 
 ## Hydration
 
-Hydration accepts a controlled quick amount or a validated custom amount and an
-occurrence time. It maps conceptually to the documented
+Hydration accepts an integer amount in the inclusive 1...5,000 ml range,
+whether selected from a controlled quick amount or entered as a custom amount,
+plus an occurrence time. It maps conceptually to the documented
 `POST /routine/hydration` capability and requires an idempotency key.
 
 The Debug adapter returns a complete pre-authored response state. It does not
@@ -512,8 +539,10 @@ validates the final timestamp. For `taken` and `skipped`, `snoozed_until` is
 absent.
 
 Terminal or invalid transitions remain disabled or produce a typed recoverable
-error. A version or transition conflict triggers a reload; the app never
-silently overwrites the server-shaped state.
+error. A version or transition conflict reloads the documented routine list
+and the matching item-specific history. The detail then resolves its item from
+the refreshed list snapshot. There is no detail provider, detail endpoint or
+detail reload call. The app never silently overwrites the server-shaped state.
 
 Item detail history uses the documented opaque `next_cursor`. The iOS app may
 request another page with that exact token. It must not parse, derive or modify
@@ -692,7 +721,12 @@ Telemetry uses controlled event names and bounded metadata only:
 - meal capture source enum;
 - operation outcome;
 - bounded error category;
-- calculation-version string where available.
+- `calculation_version` where available, included only when it contains 1...64
+  ASCII characters and every character matches `[A-Za-z0-9._:-]`.
+
+An invalid `calculation_version` is omitted from telemetry without truncation,
+normalization or substitution. This telemetry bound does not alter decoding or
+presentation of the Today response.
 
 Telemetry must not contain:
 
@@ -741,6 +775,9 @@ Unit and component tests cover:
 - complete pre-authored snapshot transitions;
 - deliberately inconsistent Today values proving the iOS app does not
   recalculate official fields;
+- literal preservation of Today `targets.calories_kcal`,
+  `consumed.calories_kcal`, `food_excess_kcal`, `exercise_kcal` and
+  `daily_balance_status`;
 - separation of food remaining and signed net balance;
 - insufficient data as content rather than error;
 - conservative nutrition provenance and unknown fallback;
@@ -754,9 +791,18 @@ Unit and component tests cover:
 - proposal creation, editing and cancellation invalidating Today;
 - confirmation invalidating Today and main History;
 - invalidation never patching an official value locally;
+- `@MainActor @Observable` invalidation revisions observed with `.task(id:)`,
+  with one complete reload per revision and cancellation-safe publication;
 - hydration refresh without client-side incrementing;
+- hydration rejecting 0 and 5,001 ml while accepting 1 and 5,000 ml;
+- local weight rejecting values below 30 kg and above 300 kg while accepting
+  both inclusive boundaries;
+- demonstration meal text rejecting 0 and 1,001 characters while accepting 1
+  and 1,000 characters, without treating the limit as an API contract;
 - weight having no path or transport adapter;
 - exact routine occurrence actions and opaque routine-history cursors;
+- routine conflict reloading only list and item-specific history, then
+  resolving detail from the refreshed list;
 - `snoozed_until` required only for snooze;
 - 15, 30 and 60 minute snooze presets plus a custom same-local-date time;
 - rejection of snooze values that cross the original local date;
@@ -767,7 +813,10 @@ Unit and component tests cover:
 - one History meal row per response `meal_logs` row;
 - preservation of separate meal rows with matching time or `meal_type`;
 - individual meal-log detail with no synthesized `meal_id`;
-- main History containing only confirmed meal and workout sections.
+- main History containing only confirmed meal and workout sections;
+- telemetry accepting only a 1...64-character ASCII
+  `[A-Za-z0-9._:-]` `calculation_version` and omitting empty, overlong,
+  whitespace-containing or non-ASCII values without normalization.
 
 UI tests cover:
 
@@ -824,7 +873,9 @@ Evidence uses synthetic Debug data only.
 The following work requires an approved backend contract before iOS changes:
 
 - a versioned weight-recording mutation;
-- a structured raw text/photo/audio-to-meal-draft contract;
+- a structured raw text/photo/audio-to-meal-draft contract whose own approved
+  input limits remain independent of the local 1...1,000-character
+  demonstration guard;
 - stable per-item nutrition provenance in pending proposals and History;
 - editing confirmed meal or workout logs;
 - an explicit meal-occurrence identifier and grouping semantics for aggregated

@@ -5,6 +5,7 @@ struct AppRootView: View {
     let model: AppFlowModel
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var onboardingRetryTask: Task<Void, Never>?
 
@@ -13,6 +14,13 @@ struct AppRootView: View {
             rootContent
         }
         .installAppDependencies(dependencies)
+        .environment(
+            \.bodyFlowReduceMotion,
+            BodyFlowReduceMotionPolicy.effectiveValue(
+                systemValue: systemReduceMotion,
+                override: configuration.accessibilityReduceMotionOverride
+            )
+        )
         .task {
             await model.start()
         }
@@ -116,6 +124,26 @@ struct AppRootView: View {
                 model.completeOnboarding(for: userID)
             }
         )
+    }
+}
+
+enum BodyFlowReduceMotionPolicy {
+    static func effectiveValue(
+        systemValue: Bool,
+        override: Bool?
+    ) -> Bool {
+        override ?? systemValue
+    }
+}
+
+private struct BodyFlowReduceMotionEnvironmentKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var bodyFlowReduceMotion: Bool {
+        get { self[BodyFlowReduceMotionEnvironmentKey.self] }
+        set { self[BodyFlowReduceMotionEnvironmentKey.self] = newValue }
     }
 }
 

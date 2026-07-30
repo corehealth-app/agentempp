@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 
 @testable import BodyFlow
@@ -43,3 +44,4 @@ struct AppLaunchConfigurationPrompt13Tests {
         }
     }
 }
+#endif

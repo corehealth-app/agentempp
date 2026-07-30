@@ -60,6 +60,57 @@ struct AppDependencies: Sendable {
         let apiClient: any APIClient = UnavailableAPIClient()
         #endif
 
+        #if DEBUG
+        let timeProvider: any TimeProviding
+        let idempotencyKeyProvider: any IdempotencyKeyProviding
+        let patientTimeZone: PatientTimeZoneContext
+        let today: any TodayProviding
+        let history: any HistoryProviding
+        let plan: any PlanProviding
+        let progress: any ProgressProviding
+        let routine: any RoutineProviding
+        if configuration.mode == .demo,
+           let scenario = configuration.prompt13Scenario {
+            let repository = DemoBodyFlowRepository(scenario: scenario)
+            timeProvider = FixedTimeProvider(
+                value: Date(timeIntervalSince1970: 1_784_589_300)
+            )
+            idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
+                prefix: "prompt13-key"
+            )
+            patientTimeZone = configuration.patientTimeZoneForPrompt13
+                ?? PatientTimeZoneContext(documentedIANAIdentifier: nil)
+            today = repository
+            history = repository
+            plan = repository
+            progress = repository
+            routine = repository
+        } else {
+            timeProvider = SystemTimeProvider()
+            idempotencyKeyProvider = UnavailableIdempotencyKeyProvider()
+            patientTimeZone = PatientTimeZoneContext(
+                documentedIANAIdentifier: nil
+            )
+            today = unavailable
+            history = unavailable
+            plan = unavailable
+            progress = unavailable
+            routine = unavailable
+        }
+        #else
+        let timeProvider: any TimeProviding = SystemTimeProvider()
+        let idempotencyKeyProvider: any IdempotencyKeyProviding =
+            UnavailableIdempotencyKeyProvider()
+        let patientTimeZone = PatientTimeZoneContext(
+            documentedIANAIdentifier: nil
+        )
+        let today: any TodayProviding = unavailable
+        let history: any HistoryProviding = unavailable
+        let plan: any PlanProviding = unavailable
+        let progress: any ProgressProviding = unavailable
+        let routine: any RoutineProviding = unavailable
+        #endif
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: DemoAuthenticationService(
@@ -74,20 +125,18 @@ struct AppDependencies: Sendable {
             coachPersona: DemoCoachPersonaRepository(stateStore: stateStore),
             secureStore: secureStore,
             telemetry: InMemoryTelemetryClient(),
-            today: unavailable,
-            history: unavailable,
-            plan: unavailable,
-            progress: unavailable,
+            today: today,
+            history: history,
+            plan: plan,
+            progress: progress,
             mealDetection: unavailable,
             registration: unavailable,
             hydration: unavailable,
             weight: unavailable,
-            routine: unavailable,
-            timeProvider: SystemTimeProvider(),
-            idempotencyKeyProvider: UnavailableIdempotencyKeyProvider(),
-            patientTimeZone: PatientTimeZoneContext(
-                documentedIANAIdentifier: nil
-            )
+            routine: routine,
+            timeProvider: timeProvider,
+            idempotencyKeyProvider: idempotencyKeyProvider,
+            patientTimeZone: patientTimeZone
         )
     }
 }

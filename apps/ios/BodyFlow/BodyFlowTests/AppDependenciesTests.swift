@@ -117,6 +117,7 @@ struct AppDependenciesTests {
         }
     }
 
+    #if DEBUG
     @Test("Debug make graph preserves Prompt 12 while Prompt 13 is unavailable")
     func debugMakePreservesPrompt12AndFailsPrompt13Closed() async throws {
         let dependencies = AppDependencies.make(
@@ -274,6 +275,85 @@ struct AppDependenciesTests {
         #expect(AppFixtures.profile.title == "Perfil de demonstração")
         #expect(AppFixtures.profile.notifications == "Ativadas")
     }
+
+    @Test("Prompt 13 Debug reads share exactly one repository actor")
+    func prompt13DebugReadsShareOneActor() throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                buildFlavor: .debug
+            )
+        )
+
+        let today = try #require(dependencies.today as? DemoBodyFlowRepository)
+        let history = try #require(dependencies.history as? DemoBodyFlowRepository)
+        let plan = try #require(dependencies.plan as? DemoBodyFlowRepository)
+        let progress = try #require(dependencies.progress as? DemoBodyFlowRepository)
+        let routine = try #require(dependencies.routine as? DemoBodyFlowRepository)
+
+        #expect(today === history)
+        #expect(today === plan)
+        #expect(today === progress)
+        #expect(today === routine)
+    }
+
+    @Test("Prompt 13 Debug graph exposes coherent shared read behavior")
+    func prompt13DebugGraphReturnsCoherentReads() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                buildFlavor: .debug
+            )
+        )
+
+        #expect(try await dependencies.today.today() == DemoBodyFlowFixtures.loadedToday)
+        #expect(try await dependencies.plan.plan() == DemoBodyFlowFixtures.loadedPlan)
+        #expect(try await dependencies.progress.progress() == DemoBodyFlowFixtures.loadedProgress)
+        #expect(try await dependencies.history.history(.firstPage) == DemoBodyFlowFixtures.loadedHistory)
+        #expect(
+            try await dependencies.routine.list(
+                kind: .supplement,
+                includeArchived: false
+            ) == DemoBodyFlowFixtures.loadedSupplementList
+        )
+    }
+
+    @Test("Prompt 13 mutation and detection ports remain unavailable at Task 9")
+    func prompt13MutationAndDetectionPortsRemainUnavailable() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                buildFlavor: .debug
+            )
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.mealDetection.detectMeal(
+                from: BodyFlowTestFixtures.textMealDetectionInput
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.registration.propose(
+                BodyFlowTestFixtures.registrationProposal
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.hydration.record(
+                BodyFlowTestFixtures.hydrationAttempt()
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.weight.record(
+                BodyFlowTestFixtures.weightAttempt()
+            )
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await dependencies.routine.record(
+                BodyFlowTestFixtures.routineAttempt()
+            )
+        }
+    }
+    #endif
 }
 
 private func releaseDependencies() -> AppDependencies {

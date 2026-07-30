@@ -15,6 +15,42 @@ enum DemoStorageBoundary: Equatable, Sendable {
     case keychain
 }
 
+#if DEBUG
+enum DemoBodyFlowScenario: Equatable, Sendable {
+    case loaded
+    case loadingDelay
+    case empty
+    case initialOffline
+    case staleOffline
+    case initialError
+    case staleError
+    case incompleteDay
+    case unavailablePresentation
+    case registrationFailureOnce
+    case routineConflictOnce
+    case reduceMotionVerification
+
+    fileprivate static func resolve(arguments: [String]) -> DemoBodyFlowScenario? {
+        let mappings: [(String, DemoBodyFlowScenario)] = [
+            ("--ui-testing-prompt13-loaded", .loaded),
+            ("--ui-testing-prompt13-loading", .loadingDelay),
+            ("--ui-testing-prompt13-empty", .empty),
+            ("--ui-testing-prompt13-offline", .initialOffline),
+            ("--ui-testing-prompt13-stale-offline", .staleOffline),
+            ("--ui-testing-prompt13-error", .initialError),
+            ("--ui-testing-prompt13-stale-error", .staleError),
+            ("--ui-testing-prompt13-incomplete", .incompleteDay),
+            ("--ui-testing-prompt13-unavailable", .unavailablePresentation),
+            ("--ui-testing-prompt13-registration-error-once", .registrationFailureOnce),
+            ("--ui-testing-prompt13-routine-conflict-once", .routineConflictOnce),
+            ("--ui-testing-prompt13-reduce-motion", .reduceMotionVerification),
+        ]
+
+        return mappings.first { arguments.contains($0.0) }?.1
+    }
+}
+#endif
+
 enum DemoStorageService {
     static let development = "com.bodyflow.app.development.demo-state.v1"
     static let uiTesting = "com.bodyflow.app.ui-testing.demo-state.v1"
@@ -28,7 +64,38 @@ struct AppLaunchConfiguration: Sendable {
     let authBehavior: DemoOperationBehavior<AuthenticationError>
     let demoStorageBoundary: DemoStorageBoundary
     let demoKeychainService: String
+    #if DEBUG
+    let prompt13Scenario: DemoBodyFlowScenario?
+    #endif
 
+    #if DEBUG
+    init(
+        mode: AppRuntimeMode,
+        shouldResetDemoState: Bool,
+        startsWithCompletedFixture: Bool,
+        preloadsSyntheticOnboardingValues: Bool,
+        authBehavior: DemoOperationBehavior<AuthenticationError>,
+        demoStorageBoundary: DemoStorageBoundary = .memory,
+        demoKeychainService: String = DemoStorageService.development,
+        prompt13Scenario: DemoBodyFlowScenario? = nil
+    ) {
+        self.mode = mode
+        self.shouldResetDemoState = shouldResetDemoState
+        self.startsWithCompletedFixture = startsWithCompletedFixture
+        self.preloadsSyntheticOnboardingValues = preloadsSyntheticOnboardingValues
+        self.authBehavior = authBehavior
+        self.demoStorageBoundary = demoStorageBoundary
+        self.demoKeychainService = demoKeychainService
+        self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
+    }
+
+    var patientTimeZoneForPrompt13: PatientTimeZoneContext? {
+        guard mode == .demo, prompt13Scenario != nil else { return nil }
+        return PatientTimeZoneContext(
+            documentedIANAIdentifier: "America/Sao_Paulo"
+        )
+    }
+    #else
     init(
         mode: AppRuntimeMode,
         shouldResetDemoState: Bool,
@@ -45,6 +112,19 @@ struct AppLaunchConfiguration: Sendable {
         self.authBehavior = authBehavior
         self.demoStorageBoundary = demoStorageBoundary
         self.demoKeychainService = demoKeychainService
+    }
+    #endif
+
+    var accessibilityReduceMotionOverride: Bool? {
+        #if DEBUG
+        guard mode == .demo,
+              prompt13Scenario == .reduceMotionVerification else {
+            return nil
+        }
+        return true
+        #else
+        nil
+        #endif
     }
 
     var developmentConsentAvailability: DevelopmentConsentAvailability {
@@ -68,13 +148,16 @@ struct AppLaunchConfiguration: Sendable {
         arguments: [String],
         buildFlavor: AppBuildFlavor
     ) -> AppLaunchConfiguration {
+        #if DEBUG
         guard buildFlavor == .debug else {
-            return AppLaunchConfiguration(
-                mode: .releaseUnavailable,
-                shouldResetDemoState: false,
-                startsWithCompletedFixture: false,
-                preloadsSyntheticOnboardingValues: false,
-                authBehavior: .fail(.operationUnavailable, after: nil)
+            return releaseConfiguration()
+        }
+
+        if let scenario = DemoBodyFlowScenario.resolve(arguments: arguments) {
+            return uiTestingConfiguration(
+                startsWithCompletedFixture: true,
+                authBehavior: .succeed(after: nil),
+                prompt13Scenario: scenario
             )
         }
 
@@ -126,11 +209,18 @@ struct AppLaunchConfiguration: Sendable {
             authBehavior: .succeed(after: nil),
             demoStorageBoundary: .keychain
         )
+        #else
+        _ = arguments
+        _ = buildFlavor
+        return releaseConfiguration()
+        #endif
     }
 
+    #if DEBUG
     private static func uiTestingConfiguration(
         startsWithCompletedFixture: Bool,
-        authBehavior: DemoOperationBehavior<AuthenticationError>
+        authBehavior: DemoOperationBehavior<AuthenticationError>,
+        prompt13Scenario: DemoBodyFlowScenario? = nil
     ) -> AppLaunchConfiguration {
         AppLaunchConfiguration(
             mode: .demo,
@@ -139,7 +229,19 @@ struct AppLaunchConfiguration: Sendable {
             preloadsSyntheticOnboardingValues: true,
             authBehavior: authBehavior,
             demoStorageBoundary: .keychain,
-            demoKeychainService: DemoStorageService.uiTesting
+            demoKeychainService: DemoStorageService.uiTesting,
+            prompt13Scenario: prompt13Scenario
+        )
+    }
+    #endif
+
+    private static func releaseConfiguration() -> AppLaunchConfiguration {
+        AppLaunchConfiguration(
+            mode: .releaseUnavailable,
+            shouldResetDemoState: false,
+            startsWithCompletedFixture: false,
+            preloadsSyntheticOnboardingValues: false,
+            authBehavior: .fail(.operationUnavailable, after: nil)
         )
     }
 }

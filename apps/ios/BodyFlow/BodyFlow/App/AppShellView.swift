@@ -2,13 +2,21 @@ import SwiftUI
 
 @MainActor
 struct AppShellView: View {
-    @Environment(\.appDependencies) private var dependencies
     @State private var selectedTab = AppTab.today
     @State private var router = AppRouter()
+    @State private var invalidationCenter: FeatureInvalidationCenter
     let userID: String
+    let dependencies: AppDependencies
 
-    init(userID: String = "fixture-user") {
+    init(
+        userID: String,
+        dependencies: AppDependencies
+    ) {
         self.userID = userID
+        self.dependencies = dependencies
+        _invalidationCenter = State(
+            initialValue: FeatureInvalidationCenter()
+        )
     }
 
     var body: some View {
@@ -70,6 +78,9 @@ struct AppShellView: View {
 }
 
 #Preview("App Shell · Loaded") {
-    AppShellView()
+    AppShellView(
+        userID: "fixture-user",
+        dependencies: AppDependencies.scaffold()
+    )
         .installAppDependencies(AppDependencies.scaffold())
 }

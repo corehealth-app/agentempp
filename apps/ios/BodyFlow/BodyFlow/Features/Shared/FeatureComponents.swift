@@ -1,6 +1,31 @@
 import SwiftUI
 
 @MainActor
+struct FeatureStateContentStack<Content: View>: View {
+    let showsStaleBanner: Bool
+    private let content: Content
+
+    init(
+        showsStaleBanner: Bool,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.showsStaleBanner = showsStaleBanner
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+            if showsStaleBanner {
+                StaleDataBanner()
+            }
+
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+@MainActor
 struct BodyFlowCard<Content: View>: View {
     private let content: Content
 

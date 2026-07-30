@@ -59,7 +59,10 @@ struct AppRootView: View {
                     .accessibilityLabel("Carregando onboarding")
             }
         case .authenticated(let userID):
-            AppShellView(userID: userID)
+            AppShellView(
+                userID: userID,
+                dependencies: dependencies
+            )
         }
     }
 

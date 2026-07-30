@@ -34,6 +34,7 @@ enum ScreenContentState: Equatable, Sendable {
     case empty
     case recoverableError
     case offline
+    case unavailable
 
     var screenState: ScreenState? {
         switch self {
@@ -47,6 +48,8 @@ enum ScreenContentState: Equatable, Sendable {
             .recoverableError
         case .offline:
             .offline
+        case .unavailable:
+            .unavailable
         }
     }
 }
@@ -56,6 +59,7 @@ enum ScreenState: Equatable, Sendable {
     case empty
     case recoverableError
     case offline
+    case unavailable
 
     struct Descriptor: Equatable, Sendable {
         let title: String
@@ -94,6 +98,28 @@ enum ScreenState: Equatable, Sendable {
                 systemImage: "wifi.slash",
                 showsRetry: true
             )
+        case .unavailable:
+            Descriptor(
+                title: "Indisponível nesta versão",
+                message: "",
+                systemImage: "nosign",
+                showsRetry: false
+            )
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .loading:
+            "state.loading"
+        case .empty:
+            "state.empty"
+        case .recoverableError:
+            "state.error"
+        case .offline:
+            "state.offline"
+        case .unavailable:
+            "state.unavailable"
         }
     }
 }
@@ -121,9 +147,11 @@ struct ScreenStateView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(BodyFlowColor.primaryText)
 
-                    Text(state.descriptor.message)
-                        .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
+                    if !state.descriptor.message.isEmpty {
+                        Text(state.descriptor.message)
+                            .font(BodyFlowTypography.body)
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    }
 
                     if state.descriptor.showsRetry {
                         Button("Tentar novamente", action: triggerRetry)
@@ -144,6 +172,7 @@ struct ScreenStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
+        .accessibilityIdentifier(state.accessibilityIdentifier)
     }
 
     @MainActor

@@ -31,6 +31,50 @@ enum BodyFlowTestFixtures {
         registrationID: "release-unavailable-registration"
     )
 
+    static func registrationProposalAttempt(
+        key: String = "release-proposal-0001"
+    ) throws -> MutationAttempt<RegistrationProposalRequest> {
+        MutationAttempt(
+            operation: .proposalCreate,
+            key: try IdempotencyKey(validating: key),
+            payload: registrationProposal,
+            createdAt: capabilityDate
+        )
+    }
+
+    static func registrationEditAttempt(
+        key: String = "release-edit-0001"
+    ) throws -> MutationAttempt<RegistrationEditCommand> {
+        MutationAttempt(
+            operation: .proposalEdit,
+            key: try IdempotencyKey(validating: key),
+            payload: registrationEdit,
+            createdAt: capabilityDate
+        )
+    }
+
+    static func registrationConfirmAttempt(
+        key: String = "release-confirm-0001"
+    ) throws -> MutationAttempt<RegistrationIDCommand> {
+        MutationAttempt(
+            operation: .proposalConfirm,
+            key: try IdempotencyKey(validating: key),
+            payload: registrationID,
+            createdAt: capabilityDate
+        )
+    }
+
+    static func registrationCancelAttempt(
+        key: String = "release-cancel-0001"
+    ) throws -> MutationAttempt<RegistrationIDCommand> {
+        MutationAttempt(
+            operation: .proposalCancel,
+            key: try IdempotencyKey(validating: key),
+            payload: registrationID,
+            createdAt: capabilityDate
+        )
+    }
+
     static func hydrationAttempt() throws -> MutationAttempt<HydrationCommand> {
         MutationAttempt(
             operation: .hydration,

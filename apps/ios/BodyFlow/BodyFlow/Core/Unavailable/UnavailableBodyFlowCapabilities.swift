@@ -25,32 +25,32 @@ struct UnavailableBodyFlowCapabilities:
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
-    func detectMeal(
-        from input: MealDetectionInput
+    func detect(
+        _ input: MealDetectionInput
     ) async throws -> RegistrationProposalRequest {
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
     func propose(
-        _ request: RegistrationProposalRequest
+        _ attempt: MutationAttempt<RegistrationProposalRequest>
     ) async throws -> RegistrationProposalResponse {
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
     func edit(
-        _ command: RegistrationEditCommand
+        _ attempt: MutationAttempt<RegistrationEditCommand>
     ) async throws -> RegistrationProposalResponse {
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
     func confirm(
-        _ command: RegistrationIDCommand
+        _ attempt: MutationAttempt<RegistrationIDCommand>
     ) async throws -> RegistrationConfirmationResponse {
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
     func cancel(
-        _ command: RegistrationIDCommand
+        _ attempt: MutationAttempt<RegistrationIDCommand>
     ) async throws -> RegistrationCancellationResponse {
         throw BodyFlowCapabilityError.operationUnavailable
     }

@@ -5,5 +5,6 @@ enum MealDetectionInput: Hashable, Sendable {
 }
 
 protocol MealDetectionProviding: Sendable {
-    func detectMeal(from input: MealDetectionInput) async throws -> RegistrationProposalRequest
+    func detect(_ input: MealDetectionInput) async throws
+        -> RegistrationProposalRequest
 }

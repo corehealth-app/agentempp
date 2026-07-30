@@ -57,34 +57,34 @@ struct AppDependenciesTests {
         let dependencies = releaseDependencies()
 
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.mealDetection.detectMeal(
-                from: BodyFlowTestFixtures.textMealDetectionInput
+            try await dependencies.mealDetection.detect(
+                BodyFlowTestFixtures.textMealDetectionInput
             )
         }
     }
 
     @Test("Release registration mutations fail closed")
-    func releaseRegistrationMutationsFailClosed() async {
+    func releaseRegistrationMutationsFailClosed() async throws {
         let dependencies = releaseDependencies()
 
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.registration.propose(
-                BodyFlowTestFixtures.registrationProposal
+                BodyFlowTestFixtures.registrationProposalAttempt()
             )
         }
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.registration.edit(
-                BodyFlowTestFixtures.registrationEdit
+                BodyFlowTestFixtures.registrationEditAttempt()
             )
         }
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.registration.confirm(
-                BodyFlowTestFixtures.registrationID
+                BodyFlowTestFixtures.registrationConfirmAttempt()
             )
         }
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.registration.cancel(
-                BodyFlowTestFixtures.registrationID
+                BodyFlowTestFixtures.registrationCancelAttempt()
             )
         }
     }
@@ -290,11 +290,19 @@ struct AppDependenciesTests {
         let plan = try #require(dependencies.plan as? DemoBodyFlowRepository)
         let progress = try #require(dependencies.progress as? DemoBodyFlowRepository)
         let routine = try #require(dependencies.routine as? DemoBodyFlowRepository)
+        let mealDetection = try #require(
+            dependencies.mealDetection as? DemoBodyFlowRepository
+        )
+        let registration = try #require(
+            dependencies.registration as? DemoBodyFlowRepository
+        )
 
         #expect(today === history)
         #expect(today === plan)
         #expect(today === progress)
         #expect(today === routine)
+        #expect(today === mealDetection)
+        #expect(today === registration)
     }
 
     @Test("Prompt 13 Debug graph exposes coherent shared read behavior")
@@ -318,8 +326,8 @@ struct AppDependenciesTests {
         )
     }
 
-    @Test("Prompt 13 mutation and detection ports remain unavailable at Task 9")
-    func prompt13MutationAndDetectionPortsRemainUnavailable() async throws {
+    @Test("Prompt 13 Task 11 mutation ports remain unavailable")
+    func prompt13Task11MutationPortsRemainUnavailable() async throws {
         let dependencies = AppDependencies.make(
             configuration: .resolve(
                 arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
@@ -327,16 +335,6 @@ struct AppDependenciesTests {
             )
         )
 
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.mealDetection.detectMeal(
-                from: BodyFlowTestFixtures.textMealDetectionInput
-            )
-        }
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.registration.propose(
-                BodyFlowTestFixtures.registrationProposal
-            )
-        }
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.hydration.record(
                 BodyFlowTestFixtures.hydrationAttempt()
@@ -352,6 +350,45 @@ struct AppDependenciesTests {
                 BodyFlowTestFixtures.routineAttempt()
             )
         }
+    }
+
+    @Test("Prompt 13 registration existential mutates the shared Today and History actor")
+    func prompt13RegistrationUsesSharedActorSnapshots() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                buildFlavor: .debug
+            )
+        )
+        let registration: any RegistrationProviding = dependencies.registration
+        let createdAt = Date(timeIntervalSince1970: 1_784_589_300)
+        let detected = try await dependencies.mealDetection.detect(
+            .text("texto que não será interpretado")
+        )
+        let proposed = try await registration.propose(MutationAttempt(
+            operation: .proposalCreate,
+            key: try IdempotencyKey(validating: "dependency-propose-0001"),
+            payload: detected,
+            createdAt: createdAt
+        ))
+        #expect(proposed == DemoBodyFlowFixtures.pendingMealRegistration)
+
+        let confirmed = try await registration.confirm(MutationAttempt(
+            operation: .proposalConfirm,
+            key: try IdempotencyKey(validating: "dependency-confirm-0001"),
+            payload: RegistrationIDCommand(registrationID: proposed.data.id),
+            createdAt: createdAt
+        ))
+
+        #expect(confirmed == DemoBodyFlowFixtures.confirmedMealRegistration)
+        #expect(
+            try await dependencies.today.today()
+                == DemoBodyFlowFixtures.postMealConfirmationToday
+        )
+        #expect(
+            try await dependencies.history.history(.firstPage)
+                == DemoBodyFlowFixtures.postMealConfirmationHistory
+        )
     }
     #endif
 }

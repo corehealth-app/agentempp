@@ -1,13 +1,21 @@
 protocol RegistrationProviding: Sendable {
-    func propose(_ request: RegistrationProposalRequest) async throws
+    func propose(
+        _ attempt: MutationAttempt<RegistrationProposalRequest>
+    ) async throws
         -> RegistrationProposalResponse
 
-    func edit(_ command: RegistrationEditCommand) async throws
+    func edit(
+        _ attempt: MutationAttempt<RegistrationEditCommand>
+    ) async throws
         -> RegistrationProposalResponse
 
-    func confirm(_ command: RegistrationIDCommand) async throws
+    func confirm(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws
         -> RegistrationConfirmationResponse
 
-    func cancel(_ command: RegistrationIDCommand) async throws
+    func cancel(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws
         -> RegistrationCancellationResponse
 }

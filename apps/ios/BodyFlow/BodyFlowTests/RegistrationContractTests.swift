@@ -518,8 +518,8 @@ struct RegistrationContractTests {
             )
         )
 
-        let detected = try await detector.detectMeal(
-            from: .photoSample(label: "amostra rotulada sem bytes")
+        let detected = try await detector.detect(
+            .photoSample(label: "amostra rotulada sem bytes")
         )
         #expect(detected == proposal)
 
@@ -528,18 +528,105 @@ struct RegistrationContractTests {
             proposal: detected
         )
         let idCommand = RegistrationIDCommand(registrationID: "registration-meal-1")
+        let createdAt = Date(timeIntervalSince1970: 1_784_548_800)
 
-        #expect(try await provider.propose(detected).data.status == "pending")
-        #expect(try await provider.edit(editCommand).data.proposal == proposalSnapshot)
-        #expect(try await provider.confirm(idCommand).data.alreadyConfirmed == false)
-        #expect(try await provider.cancel(idCommand).data.status == "cancelled")
+        #expect(try await provider.propose(MutationAttempt(
+            operation: .proposalCreate,
+            key: try IdempotencyKey(validating: "contract-propose-0001"),
+            payload: detected,
+            createdAt: createdAt
+        )).data.status == "pending")
+        #expect(try await provider.edit(MutationAttempt(
+            operation: .proposalEdit,
+            key: try IdempotencyKey(validating: "contract-edit-0001"),
+            payload: editCommand,
+            createdAt: createdAt
+        )).data.proposal == proposalSnapshot)
+        #expect(try await provider.confirm(MutationAttempt(
+            operation: .proposalConfirm,
+            key: try IdempotencyKey(validating: "contract-confirm-0001"),
+            payload: idCommand,
+            createdAt: createdAt
+        )).data.alreadyConfirmed == false)
+        #expect(try await provider.cancel(MutationAttempt(
+            operation: .proposalCancel,
+            key: try IdempotencyKey(validating: "contract-cancel-0001"),
+            payload: idCommand,
+            createdAt: createdAt
+        )).data.status == "cancelled")
+    }
+
+    @Test("registration capability forwards each complete immutable attempt")
+    func registrationCapabilityForwardsCompleteAttempts() async throws {
+        let spy = RegistrationAttemptSpy()
+        let provider: any RegistrationProviding = spy
+        let createdAt = Date(timeIntervalSince1970: 1_784_548_800)
+        let proposal = RegistrationProposalRequest.meal(
+            MealProposalRequest(
+                mealType: .lunch,
+                items: [
+                    MealProposalItemRequest(
+                        foodName: "fixture",
+                        quantityG: 111,
+                        userKcal: nil
+                    )
+                ],
+                consumedAt: nil
+            )
+        )
+        let idCommand = RegistrationIDCommand(registrationID: "registration-meal-1")
+        let proposeAttempt = MutationAttempt(
+            operation: .proposalCreate,
+            key: try IdempotencyKey(validating: "forward-propose-0001"),
+            payload: proposal,
+            createdAt: createdAt
+        )
+        let editAttempt = MutationAttempt(
+            operation: .proposalEdit,
+            key: try IdempotencyKey(validating: "forward-edit-0001"),
+            payload: RegistrationEditCommand(
+                registrationID: idCommand.registrationID,
+                proposal: proposal
+            ),
+            createdAt: createdAt
+        )
+        let confirmAttempt = MutationAttempt(
+            operation: .proposalConfirm,
+            key: try IdempotencyKey(validating: "forward-confirm-0001"),
+            payload: idCommand,
+            createdAt: createdAt
+        )
+        let cancelAttempt = MutationAttempt(
+            operation: .proposalCancel,
+            key: try IdempotencyKey(validating: "forward-cancel-0001"),
+            payload: idCommand,
+            createdAt: createdAt
+        )
+
+        await #expect(throws: RegistrationProbeError.recorded) {
+            try await provider.propose(proposeAttempt)
+        }
+        await #expect(throws: RegistrationProbeError.recorded) {
+            try await provider.edit(editAttempt)
+        }
+        await #expect(throws: RegistrationProbeError.recorded) {
+            try await provider.confirm(confirmAttempt)
+        }
+        await #expect(throws: RegistrationProbeError.recorded) {
+            try await provider.cancel(cancelAttempt)
+        }
+
+        #expect(await spy.proposeAttempts == [proposeAttempt])
+        #expect(await spy.editAttempts == [editAttempt])
+        #expect(await spy.confirmAttempts == [confirmAttempt])
+        #expect(await spy.cancelAttempts == [cancelAttempt])
     }
 }
 
 private struct MealDetectorStub: MealDetectionProviding {
     let output: RegistrationProposalRequest
 
-    func detectMeal(from input: MealDetectionInput) async throws -> RegistrationProposalRequest {
+    func detect(_ input: MealDetectionInput) async throws -> RegistrationProposalRequest {
         output
     }
 }
@@ -549,28 +636,75 @@ private struct RegistrationProviderStub: RegistrationProviding {
     let confirmationResponse: RegistrationConfirmationResponse
     let cancellationResponse: RegistrationCancellationResponse
 
-    func propose(_ request: RegistrationProposalRequest) async throws
+    func propose(
+        _ attempt: MutationAttempt<RegistrationProposalRequest>
+    ) async throws
         -> RegistrationProposalResponse
     {
         proposalResponse
     }
 
-    func edit(_ command: RegistrationEditCommand) async throws
+    func edit(
+        _ attempt: MutationAttempt<RegistrationEditCommand>
+    ) async throws
         -> RegistrationProposalResponse
     {
         proposalResponse
     }
 
-    func confirm(_ command: RegistrationIDCommand) async throws
+    func confirm(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws
         -> RegistrationConfirmationResponse
     {
         confirmationResponse
     }
 
-    func cancel(_ command: RegistrationIDCommand) async throws
+    func cancel(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws
         -> RegistrationCancellationResponse
     {
         cancellationResponse
+    }
+}
+
+private enum RegistrationProbeError: Error {
+    case recorded
+}
+
+private actor RegistrationAttemptSpy: RegistrationProviding {
+    private(set) var proposeAttempts: [MutationAttempt<RegistrationProposalRequest>] = []
+    private(set) var editAttempts: [MutationAttempt<RegistrationEditCommand>] = []
+    private(set) var confirmAttempts: [MutationAttempt<RegistrationIDCommand>] = []
+    private(set) var cancelAttempts: [MutationAttempt<RegistrationIDCommand>] = []
+
+    func propose(
+        _ attempt: MutationAttempt<RegistrationProposalRequest>
+    ) async throws -> RegistrationProposalResponse {
+        proposeAttempts.append(attempt)
+        throw RegistrationProbeError.recorded
+    }
+
+    func edit(
+        _ attempt: MutationAttempt<RegistrationEditCommand>
+    ) async throws -> RegistrationProposalResponse {
+        editAttempts.append(attempt)
+        throw RegistrationProbeError.recorded
+    }
+
+    func confirm(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws -> RegistrationConfirmationResponse {
+        confirmAttempts.append(attempt)
+        throw RegistrationProbeError.recorded
+    }
+
+    func cancel(
+        _ attempt: MutationAttempt<RegistrationIDCommand>
+    ) async throws -> RegistrationCancellationResponse {
+        cancelAttempts.append(attempt)
+        throw RegistrationProbeError.recorded
     }
 }
 

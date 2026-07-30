@@ -68,6 +68,8 @@ struct AppDependencies: Sendable {
         let history: any HistoryProviding
         let plan: any PlanProviding
         let progress: any ProgressProviding
+        let mealDetection: any MealDetectionProviding
+        let registration: any RegistrationProviding
         let routine: any RoutineProviding
         if configuration.mode == .demo,
            let scenario = configuration.prompt13Scenario {
@@ -84,6 +86,8 @@ struct AppDependencies: Sendable {
             history = repository
             plan = repository
             progress = repository
+            mealDetection = repository
+            registration = repository
             routine = repository
         } else {
             timeProvider = SystemTimeProvider()
@@ -95,6 +99,8 @@ struct AppDependencies: Sendable {
             history = unavailable
             plan = unavailable
             progress = unavailable
+            mealDetection = unavailable
+            registration = unavailable
             routine = unavailable
         }
         #else
@@ -108,6 +114,8 @@ struct AppDependencies: Sendable {
         let history: any HistoryProviding = unavailable
         let plan: any PlanProviding = unavailable
         let progress: any ProgressProviding = unavailable
+        let mealDetection: any MealDetectionProviding = unavailable
+        let registration: any RegistrationProviding = unavailable
         let routine: any RoutineProviding = unavailable
         #endif
 
@@ -129,8 +137,8 @@ struct AppDependencies: Sendable {
             history: history,
             plan: plan,
             progress: progress,
-            mealDetection: unavailable,
-            registration: unavailable,
+            mealDetection: mealDetection,
+            registration: registration,
             hydration: unavailable,
             weight: unavailable,
             routine: routine,

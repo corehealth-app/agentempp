@@ -5,6 +5,8 @@ actor DemoBodyFlowRepository:
     TodayProviding,
     MealDetectionProviding,
     RegistrationProviding,
+    HydrationRecording,
+    WeightRecording,
     PlanProviding,
     ProgressProviding,
     HistoryProviding,
@@ -196,6 +198,29 @@ actor DemoBodyFlowRepository:
                 DemoBodyFlowFixtures.postEditedMealEditedWorkoutConfirmationHistory
             }
         }
+
+        var fixtureVariant: DemoConfirmationVariant {
+            switch self {
+            case .none:
+                .none
+            case .mealInitial:
+                .mealInitial
+            case .mealEdited:
+                .mealEdited
+            case .workoutInitial:
+                .workoutInitial
+            case .workoutEdited:
+                .workoutEdited
+            case .mealInitialWorkoutInitial:
+                .mealInitialWorkoutInitial
+            case .mealEditedWorkoutInitial:
+                .mealEditedWorkoutInitial
+            case .mealInitialWorkoutEdited:
+                .mealInitialWorkoutEdited
+            case .mealEditedWorkoutEdited:
+                .mealEditedWorkoutEdited
+            }
+        }
     }
 
     private enum ReplayEntry {
@@ -215,17 +240,47 @@ actor DemoBodyFlowRepository:
             MutationAttempt<RegistrationIDCommand>,
             RegistrationCancellationResponse
         )
+        case hydration(
+            MutationAttempt<HydrationCommand>,
+            HydrationReceipt
+        )
+        case weight(
+            MutationAttempt<WeightCommand>,
+            WeightDemoReceipt
+        )
+        case routine(
+            MutationAttempt<RoutineActionCommand>,
+            RoutineActionResponse
+        )
     }
 
     private let scenario: DemoBodyFlowScenario
     private var readCounts: [ReadCapability: Int] = [:]
     private var openRegistrations: [String: OpenRegistration] = [:]
     private var confirmationState = ConfirmationState.none
+    private var hydrationRecorded = false
+    private var supplementRoutineVariant = DemoRoutineVariant.baseline
+    private var medicationRoutineVariant = DemoRoutineVariant.baseline
     private var replayLedger: [IdempotencyKey: ReplayEntry] = [:]
     private var consumedRegistrationFailure = false
+    private var consumedRoutineConflict = false
 
     init(scenario: DemoBodyFlowScenario) {
         self.scenario = scenario
+    }
+
+    private func replayResult<Payload, Result>(
+        for attempt: MutationAttempt<Payload>,
+        extracting: (ReplayEntry) -> (MutationAttempt<Payload>, Result)?
+    ) throws -> Result? where Payload: Hashable & Sendable {
+        guard let entry = replayLedger[attempt.key] else {
+            return nil
+        }
+        guard let (originalAttempt, result) = extracting(entry),
+              originalAttempt == attempt else {
+            throw BodyFlowCapabilityError.idempotencyConflict
+        }
+        return result
     }
 
     func detect(
@@ -244,12 +299,15 @@ actor DemoBodyFlowRepository:
     func propose(
         _ attempt: MutationAttempt<RegistrationProposalRequest>
     ) async throws -> RegistrationProposalResponse {
-        if let replay = replayLedger[attempt.key] {
-            guard case let .propose(originalAttempt, result) = replay,
-                  originalAttempt == attempt
-            else {
-                throw BodyFlowCapabilityError.idempotencyConflict
+        if let result: RegistrationProposalResponse = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .propose(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
             }
+        ) {
             return result
         }
         guard attempt.operation == .proposalCreate else {
@@ -272,12 +330,15 @@ actor DemoBodyFlowRepository:
     func edit(
         _ attempt: MutationAttempt<RegistrationEditCommand>
     ) async throws -> RegistrationProposalResponse {
-        if let replay = replayLedger[attempt.key] {
-            guard case let .edit(originalAttempt, result) = replay,
-                  originalAttempt == attempt
-            else {
-                throw BodyFlowCapabilityError.idempotencyConflict
+        if let result: RegistrationProposalResponse = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .edit(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
             }
+        ) {
             return result
         }
         guard attempt.operation == .proposalEdit else {
@@ -302,12 +363,15 @@ actor DemoBodyFlowRepository:
     func confirm(
         _ attempt: MutationAttempt<RegistrationIDCommand>
     ) async throws -> RegistrationConfirmationResponse {
-        if let replay = replayLedger[attempt.key] {
-            guard case let .confirm(originalAttempt, result) = replay,
-                  originalAttempt == attempt
-            else {
-                throw BodyFlowCapabilityError.idempotencyConflict
+        if let result: RegistrationConfirmationResponse = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .confirm(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
             }
+        ) {
             return result
         }
         guard attempt.operation == .proposalConfirm else {
@@ -329,12 +393,15 @@ actor DemoBodyFlowRepository:
     func cancel(
         _ attempt: MutationAttempt<RegistrationIDCommand>
     ) async throws -> RegistrationCancellationResponse {
-        if let replay = replayLedger[attempt.key] {
-            guard case let .cancel(originalAttempt, result) = replay,
-                  originalAttempt == attempt
-            else {
-                throw BodyFlowCapabilityError.idempotencyConflict
+        if let result: RegistrationCancellationResponse = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .cancel(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
             }
+        ) {
             return result
         }
         guard attempt.operation == .proposalCancel else {
@@ -352,10 +419,82 @@ actor DemoBodyFlowRepository:
         return result
     }
 
+    func record(
+        _ attempt: MutationAttempt<HydrationCommand>
+    ) async throws -> HydrationReceipt {
+        try prepareTask11Mutation(requiresRoutineOccurrence: false)
+        if let result: HydrationReceipt = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .hydration(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
+            }
+        ) {
+            return result
+        }
+        guard attempt.operation == .hydration else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
+
+        let result = DemoBodyFlowFixtures.hydrationReceipt
+        hydrationRecorded = true
+        replayLedger[attempt.key] = .hydration(attempt, result)
+        return result
+    }
+
+    func record(
+        _ attempt: MutationAttempt<WeightCommand>
+    ) async throws -> WeightDemoReceipt {
+        try prepareTask11Mutation(requiresRoutineOccurrence: false)
+        if let result: WeightDemoReceipt = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .weight(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
+            }
+        ) {
+            return result
+        }
+        guard attempt.operation == .weight else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
+
+        let result = WeightDemoReceipt(
+            weightKG: attempt.payload.weightKG,
+            recordedAt: attempt.payload.recordedAt,
+            label: "Demonstração local; não sincronizado"
+        )
+        replayLedger[attempt.key] = .weight(attempt, result)
+        return result
+    }
+
     func today() async throws -> TodayResponse {
         try await prepareRead(.today)
-        if let confirmedToday = confirmationState.today {
-            return confirmedToday
+        if hydrationRecorded,
+           confirmationState.fixtureVariant == .none,
+           supplementRoutineVariant == .baseline,
+           medicationRoutineVariant == .baseline {
+            if scenario == .empty {
+                return DemoBodyFlowFixtures.postEmptyHydrationToday
+            }
+            if scenario == .incompleteDay {
+                return DemoBodyFlowFixtures.postIncompleteHydrationToday
+            }
+        }
+        if confirmationState.fixtureVariant != .none
+            || hydrationRecorded
+            || supplementRoutineVariant != .baseline
+            || medicationRoutineVariant != .baseline {
+            return DemoBodyFlowFixtures.today(
+                confirmation: confirmationState.fixtureVariant,
+                hydrationRecorded: hydrationRecorded,
+                routine: supplementRoutineVariant,
+                medication: medicationRoutineVariant
+            )
         }
         return scenario == .empty
             ? DemoBodyFlowFixtures.emptyToday
@@ -400,17 +539,75 @@ actor DemoBodyFlowRepository:
         }
         return switch kind {
         case .supplement:
-            DemoBodyFlowFixtures.loadedSupplementList
+            switch supplementRoutineVariant {
+            case .baseline:
+                DemoBodyFlowFixtures.loadedSupplementList
+            case .conflictReloaded:
+                DemoBodyFlowFixtures.routineConflictSupplementList
+            case .taken, .snoozedThenTaken:
+                DemoBodyFlowFixtures.postRoutineTakenSupplementList
+            case .skipped, .snoozedThenSkipped:
+                DemoBodyFlowFixtures.postRoutineSkippedSupplementList
+            case .snoozed, .snoozedThenSnoozed:
+                DemoBodyFlowFixtures.postRoutineSnoozedSupplementList
+            }
         case .medication:
-            DemoBodyFlowFixtures.loadedMedicationList
+            switch medicationRoutineVariant {
+            case .baseline, .conflictReloaded:
+                DemoBodyFlowFixtures.loadedMedicationList
+            case .taken, .snoozedThenTaken:
+                DemoBodyFlowFixtures.postMedicationTakenList
+            case .skipped, .snoozedThenSkipped:
+                DemoBodyFlowFixtures.postMedicationSkippedList
+            case .snoozed, .snoozedThenSnoozed:
+                DemoBodyFlowFixtures.postMedicationSnoozedList
+            }
         }
     }
 
     func record(
         _ attempt: MutationAttempt<RoutineActionCommand>
     ) async throws -> RoutineActionResponse {
-        _ = attempt
-        throw BodyFlowCapabilityError.operationUnavailable
+        try prepareTask11Mutation(requiresRoutineOccurrence: true)
+        if let result: RoutineActionResponse = try replayResult(
+            for: attempt,
+            extracting: { entry in
+                guard case let .routine(originalAttempt, result) = entry else {
+                    return nil
+                }
+                return (originalAttempt, result)
+            }
+        ) {
+            return result
+        }
+        guard attempt.operation == .routineAction else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
+        try validateRoutineCommand(attempt.payload)
+
+        if scenario == .routineConflictOnce,
+           attempt.payload.kind == .supplement,
+           !consumedRoutineConflict {
+            consumedRoutineConflict = true
+            supplementRoutineVariant = .conflictReloaded
+            throw BodyFlowCapabilityError.routineTransitionInvalid
+        }
+        let currentVariant = attempt.payload.kind == .supplement
+            ? supplementRoutineVariant
+            : medicationRoutineVariant
+        let transition = try routineTransition(
+            from: currentVariant,
+            kind: attempt.payload.kind,
+            status: attempt.payload.status
+        )
+        if attempt.payload.kind == .supplement {
+            supplementRoutineVariant = transition.variant
+        } else {
+            medicationRoutineVariant = transition.variant
+        }
+        let result = transition.receipt
+        replayLedger[attempt.key] = .routine(attempt, result)
+        return result
     }
 
     func history(
@@ -419,18 +616,176 @@ actor DemoBodyFlowRepository:
         cursor: String?,
         limit: Int
     ) async throws -> RoutineHistoryPage {
-        _ = itemID
-        _ = cursor
-        _ = limit
         try await prepareRead(.routineHistory(kind))
+        guard (1...50).contains(limit) else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
         guard scenario != .empty else {
             return DemoBodyFlowFixtures.emptyRoutineHistory
         }
         return switch kind {
         case .supplement:
-            DemoBodyFlowFixtures.loadedSupplementHistory
+            try supplementHistory(itemID: itemID, cursor: cursor)
         case .medication:
+            try medicationHistory(itemID: itemID, cursor: cursor)
+        }
+    }
+
+    private func routineTransition(
+        from variant: DemoRoutineVariant,
+        kind: RoutineItemKind,
+        status: RoutineActionStatus
+    ) throws -> (variant: DemoRoutineVariant, receipt: RoutineActionResponse) {
+        switch variant {
+        case .baseline, .conflictReloaded:
+            let nextVariant: DemoRoutineVariant = switch status {
+            case .taken: .taken
+            case .skipped: .skipped
+            case .snoozed: .snoozed
+            }
+            let receipt: RoutineActionResponse = switch (kind, status) {
+            case (.supplement, .taken):
+                DemoBodyFlowFixtures.routineTakenReceipt
+            case (.supplement, .skipped):
+                DemoBodyFlowFixtures.routineSkippedReceipt
+            case (.supplement, .snoozed):
+                DemoBodyFlowFixtures.routineSnoozedReceipt
+            case (.medication, .taken):
+                DemoBodyFlowFixtures.medicationTakenReceipt
+            case (.medication, .skipped):
+                DemoBodyFlowFixtures.medicationSkippedReceipt
+            case (.medication, .snoozed):
+                DemoBodyFlowFixtures.medicationSnoozedReceipt
+            }
+            return (nextVariant, receipt)
+        case .snoozed:
+            let nextVariant: DemoRoutineVariant = switch status {
+            case .taken: .snoozedThenTaken
+            case .skipped: .snoozedThenSkipped
+            case .snoozed: .snoozedThenSnoozed
+            }
+            let receipt: RoutineActionResponse = switch (kind, status) {
+            case (.supplement, .taken):
+                DemoBodyFlowFixtures.routineSnoozedThenTakenReceipt
+            case (.supplement, .skipped):
+                DemoBodyFlowFixtures.routineSnoozedThenSkippedReceipt
+            case (.supplement, .snoozed):
+                DemoBodyFlowFixtures.routineSnoozedThenSnoozedReceipt
+            case (.medication, .taken):
+                DemoBodyFlowFixtures.medicationSnoozedThenTakenReceipt
+            case (.medication, .skipped):
+                DemoBodyFlowFixtures.medicationSnoozedThenSkippedReceipt
+            case (.medication, .snoozed):
+                DemoBodyFlowFixtures.medicationSnoozedThenSnoozedReceipt
+            }
+            return (nextVariant, receipt)
+        case .taken,
+             .skipped,
+             .snoozedThenTaken,
+             .snoozedThenSkipped,
+             .snoozedThenSnoozed:
+            throw BodyFlowCapabilityError.routineTransitionInvalid
+        }
+    }
+
+    private func validateRoutineCommand(
+        _ command: RoutineActionCommand
+    ) throws {
+        let targetScheduledFor = Date(timeIntervalSince1970: 1_784_545_200)
+        let targetOccurredAt = Date(timeIntervalSince1970: 1_784_589_300)
+        let targetsAuthoredOccurrence: Bool = switch command.kind {
+        case .supplement:
+            command.itemID == "supplement-1"
+                && command.reminderRuleID == "rule-08"
+                && command.scheduledFor.value == targetScheduledFor
+        case .medication:
+            command.itemID == "medication-1"
+                && command.reminderRuleID == "medication-rule-09"
+                && command.scheduledFor.value
+                    == Date(timeIntervalSince1970: 1_784_548_800)
+        }
+        guard targetsAuthoredOccurrence,
+              command.occurredAt.value == targetOccurredAt else {
+            throw BodyFlowCapabilityError.routineTransitionInvalid
+        }
+
+        guard command.status == .snoozed else {
+            return
+        }
+        guard let snoozedUntil = command.snoozedUntil?.value,
+              let timeZone = TimeZone(identifier: "America/Sao_Paulo")
+        else {
+            throw BodyFlowCapabilityError.routineSnoozeInvalid
+        }
+        let policy = RoutineSnoozePolicy(timeZone: timeZone)
+        guard policy.date(
+            for: .custom(snoozedUntil),
+            scheduledFor: command.scheduledFor.value,
+            occurredAt: command.occurredAt.value
+        ) != nil else {
+            throw BodyFlowCapabilityError.routineSnoozeInvalid
+        }
+        guard snoozedUntil == Date(timeIntervalSince1970: 1_784_591_100) else {
+            throw BodyFlowCapabilityError.routineTransitionInvalid
+        }
+    }
+
+    private func supplementHistory(
+        itemID: String,
+        cursor: String?
+    ) throws -> RoutineHistoryPage {
+        guard itemID == "supplement-1" else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
+        if let cursor {
+            guard cursor == DemoBodyFlowFixtures.documentedRoutineHistoryCursor else {
+                throw BodyFlowCapabilityError.invalidInput
+            }
+            return DemoBodyFlowFixtures.secondSupplementHistoryPage
+        }
+
+        return switch supplementRoutineVariant {
+        case .baseline:
+            DemoBodyFlowFixtures.loadedSupplementHistory
+        case .conflictReloaded:
+            DemoBodyFlowFixtures.routineConflictSupplementHistory
+        case .taken:
+            DemoBodyFlowFixtures.postRoutineTakenSupplementHistory
+        case .skipped:
+            DemoBodyFlowFixtures.postRoutineSkippedSupplementHistory
+        case .snoozed:
+            DemoBodyFlowFixtures.postRoutineSnoozedSupplementHistory
+        case .snoozedThenTaken:
+            DemoBodyFlowFixtures.postRoutineSnoozedThenTakenSupplementHistory
+        case .snoozedThenSkipped:
+            DemoBodyFlowFixtures.postRoutineSnoozedThenSkippedSupplementHistory
+        case .snoozedThenSnoozed:
+            DemoBodyFlowFixtures.postRoutineSnoozedThenSnoozedSupplementHistory
+        }
+    }
+
+    private func medicationHistory(
+        itemID: String,
+        cursor: String?
+    ) throws -> RoutineHistoryPage {
+        guard itemID == "medication-1", cursor == nil else {
+            throw BodyFlowCapabilityError.invalidInput
+        }
+        return switch medicationRoutineVariant {
+        case .baseline, .conflictReloaded:
             DemoBodyFlowFixtures.loadedMedicationHistory
+        case .taken:
+            DemoBodyFlowFixtures.postMedicationTakenHistory
+        case .skipped:
+            DemoBodyFlowFixtures.postMedicationSkippedHistory
+        case .snoozed:
+            DemoBodyFlowFixtures.postMedicationSnoozedHistory
+        case .snoozedThenTaken:
+            DemoBodyFlowFixtures.postMedicationSnoozedThenTakenHistory
+        case .snoozedThenSkipped:
+            DemoBodyFlowFixtures.postMedicationSnoozedThenSkippedHistory
+        case .snoozedThenSnoozed:
+            DemoBodyFlowFixtures.postMedicationSnoozedThenSnoozedHistory
         }
     }
 
@@ -472,6 +827,18 @@ actor DemoBodyFlowRepository:
         }
         consumedRegistrationFailure = true
         throw BodyFlowCapabilityError.serviceUnavailable
+    }
+
+    private func prepareTask11Mutation(
+        requiresRoutineOccurrence: Bool
+    ) throws {
+        if scenario == .unavailablePresentation {
+            throw BodyFlowCapabilityError.operationUnavailable
+        }
+        if requiresRoutineOccurrence,
+           scenario == .empty || scenario == .incompleteDay {
+            throw BodyFlowCapabilityError.routineTransitionInvalid
+        }
     }
 
     private func requireOpenRegistration(

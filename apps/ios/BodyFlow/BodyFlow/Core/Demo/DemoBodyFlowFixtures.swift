@@ -1,9 +1,142 @@
 #if DEBUG
 import Foundation
 
+enum DemoConfirmationVariant: String, Sendable {
+    case none
+    case mealInitial
+    case mealEdited
+    case workoutInitial
+    case workoutEdited
+    case mealInitialWorkoutInitial
+    case mealEditedWorkoutInitial
+    case mealInitialWorkoutEdited
+    case mealEditedWorkoutEdited
+}
+
+enum DemoRoutineVariant: String, Sendable {
+    case baseline
+    case conflictReloaded
+    case taken
+    case skipped
+    case snoozed
+    case snoozedThenTaken
+    case snoozedThenSkipped
+    case snoozedThenSnoozed
+}
+
 enum DemoBodyFlowFixtures {
     private static let instant = Date(timeIntervalSince1970: 1_784_589_300)
     private static let timestamp = APITimestamp(value: instant)
+    private static let targetScheduledAt = apiTimestamp(1_784_545_200)
+    private static let medicationScheduledAt = apiTimestamp(1_784_548_800)
+    private static let routineActionAt = apiTimestamp(1_784_589_300)
+    private static let routineSnoozedUntil = apiTimestamp(1_784_591_100)
+
+    static let documentedRoutineHistoryCursor =
+        "AbC_-09+/=.%2F?keep-byte-for-byte"
+    static let supplementOccurrenceKey =
+        "ebde64099255d2c7c11df7a562d002eed14e46d1c73216f5c6294493a2306dce"
+    static let medicationOccurrenceKey =
+        "f7624f55dc025375174fa948c5cbf9dfb8c277de1b8d808e1ca64c1daae7f4c7"
+
+    static let hydrationReceipt = HydrationReceipt(
+        data: HydrationReceiptSnapshot(
+            hydrationLogID: "demo-hydration-log-authored-1",
+            inserted: true,
+            waterConsumedML: 2_111
+        ),
+        meta: metadata("demo-hydration-recorded")
+    )
+
+    static let weightReceipt = WeightDemoReceipt(
+        weightKG: 78.4,
+        recordedAt: instant,
+        label: "Demonstração local; não sincronizado"
+    )
+
+    static let routineTakenReceipt = routineReceipt(
+        kind: .supplement,
+        status: .taken,
+        logID: "demo-adherence-log-taken-1",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let routineSkippedReceipt = routineReceipt(
+        kind: .supplement,
+        status: .skipped,
+        logID: "demo-adherence-log-skipped-1",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let routineSnoozedReceipt = routineReceipt(
+        kind: .supplement,
+        status: .snoozed,
+        logID: "demo-adherence-log-snoozed-1",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let medicationTakenReceipt = routineReceipt(
+        kind: .medication,
+        status: .taken,
+        logID: "demo-medication-log-taken-1",
+        occurrenceKey: medicationOccurrenceKey
+    )
+
+    static let medicationSkippedReceipt = routineReceipt(
+        kind: .medication,
+        status: .skipped,
+        logID: "demo-medication-log-skipped-1",
+        occurrenceKey: medicationOccurrenceKey
+    )
+
+    static let medicationSnoozedReceipt = routineReceipt(
+        kind: .medication,
+        status: .snoozed,
+        logID: "demo-medication-log-snoozed-1",
+        occurrenceKey: medicationOccurrenceKey
+    )
+
+    static let routineSnoozedThenTakenReceipt = routineReceipt(
+        kind: .supplement,
+        status: .taken,
+        logID: "demo-adherence-log-taken-2",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let routineSnoozedThenSkippedReceipt = routineReceipt(
+        kind: .supplement,
+        status: .skipped,
+        logID: "demo-adherence-log-skipped-2",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let routineSnoozedThenSnoozedReceipt = routineReceipt(
+        kind: .supplement,
+        status: .snoozed,
+        logID: "demo-adherence-log-snoozed-2",
+        occurrenceKey: supplementOccurrenceKey
+    )
+
+    static let medicationSnoozedThenTakenReceipt = routineReceipt(
+        kind: .medication,
+        status: .taken,
+        logID: "demo-medication-log-taken-2",
+        occurrenceKey: medicationOccurrenceKey
+    )
+
+    static let medicationSnoozedThenSkippedReceipt = routineReceipt(
+        kind: .medication,
+        status: .skipped,
+        logID: "demo-medication-log-skipped-2",
+        occurrenceKey: medicationOccurrenceKey
+    )
+
+    static let medicationSnoozedThenSnoozedReceipt = routineReceipt(
+        kind: .medication,
+        status: .snoozed,
+        logID: "demo-medication-log-snoozed-2",
+        occurrenceKey: medicationOccurrenceKey
+    )
 
     static let detectedTextMealRequest = RegistrationProposalRequest.meal(
         MealProposalRequest(
@@ -223,6 +356,128 @@ enum DemoBodyFlowFixtures {
         requestID: "demo-today-after-edited-meal-edited-workout-confirmation"
     )
 
+    static let postHydrationToday = completeTodayFixture(
+        basedOn: loadedToday,
+        hydration: authoredHydration,
+        supplements: loadedToday.data.supplements,
+        requestID: "demo-today-after-hydration"
+    )
+
+    static let postEmptyHydrationToday = completeTodayFixture(
+        basedOn: emptyToday,
+        hydration: authoredHydration,
+        supplements: emptyToday.data.supplements,
+        requestID: "demo-today-empty-after-hydration"
+    )
+
+    static let postIncompleteHydrationToday = completeTodayFixture(
+        basedOn: incompleteToday,
+        hydration: authoredHydration,
+        supplements: incompleteToday.data.supplements,
+        requestID: "demo-today-incomplete-after-hydration"
+    )
+
+    static let postEditedMealEditedWorkoutConfirmationHydrationToday =
+        completeTodayFixture(
+            basedOn: postEditedMealEditedWorkoutConfirmationToday,
+            hydration: authoredHydration,
+            supplements: postEditedMealEditedWorkoutConfirmationToday.data.supplements,
+            requestID: "demo-today-after-edited-meal-edited-workout-hydration"
+        )
+
+    static let postRoutineTakenToday = completeTodayFixture(
+        basedOn: loadedToday,
+        hydration: loadedToday.data.hydration,
+        supplements: routineTodaySection(status: .taken),
+        requestID: "demo-today-after-routine-taken"
+    )
+
+    static let postRoutineSkippedToday = completeTodayFixture(
+        basedOn: loadedToday,
+        hydration: loadedToday.data.hydration,
+        supplements: routineTodaySection(status: .skipped),
+        requestID: "demo-today-after-routine-skipped"
+    )
+
+    static let postRoutineSnoozedToday = completeTodayFixture(
+        basedOn: loadedToday,
+        hydration: loadedToday.data.hydration,
+        supplements: routineTodaySection(status: .snoozed),
+        requestID: "demo-today-after-routine-snoozed"
+    )
+
+    static func today(
+        confirmation: DemoConfirmationVariant,
+        hydrationRecorded: Bool,
+        routine: DemoRoutineVariant,
+        medication: DemoRoutineVariant = .baseline
+    ) -> TodayResponse {
+        let base = confirmationToday(confirmation)
+        let supplementChanged = routine != .baseline && routine != .conflictReloaded
+        let medicationChanged = medication != .baseline
+            && medication != .conflictReloaded
+        let routineChanged = supplementChanged || medicationChanged
+        guard hydrationRecorded || routineChanged else {
+            return base
+        }
+        if confirmation == .none,
+           hydrationRecorded,
+           !routineChanged {
+            return postHydrationToday
+        }
+        if confirmation == .mealEditedWorkoutEdited,
+           hydrationRecorded,
+           !routineChanged {
+            return postEditedMealEditedWorkoutConfirmationHydrationToday
+        }
+        if confirmation == .none,
+           !hydrationRecorded {
+            if !medicationChanged {
+                switch routine {
+                case .taken, .snoozedThenTaken:
+                    return postRoutineTakenToday
+                case .skipped, .snoozedThenSkipped:
+                    return postRoutineSkippedToday
+                case .snoozed, .snoozedThenSnoozed:
+                    return postRoutineSnoozedToday
+                case .baseline, .conflictReloaded:
+                    return base
+                }
+            }
+        }
+
+        let hydration = hydrationRecorded
+            ? authoredHydration
+            : base.data.hydration
+        let supplements = switch routine {
+        case .baseline, .conflictReloaded:
+            base.data.supplements
+        case .taken, .snoozedThenTaken:
+            routineTodaySection(status: .taken)
+        case .skipped, .snoozedThenSkipped:
+            routineTodaySection(status: .skipped)
+        case .snoozed, .snoozedThenSnoozed:
+            routineTodaySection(status: .snoozed)
+        }
+        let medications = switch medication {
+        case .baseline, .conflictReloaded:
+            base.data.medications
+        case .taken, .snoozedThenTaken:
+            medicationTodaySection(status: .taken)
+        case .skipped, .snoozedThenSkipped:
+            medicationTodaySection(status: .skipped)
+        case .snoozed, .snoozedThenSnoozed:
+            medicationTodaySection(status: .snoozed)
+        }
+        return completeTodayFixture(
+            basedOn: base,
+            hydration: hydration,
+            supplements: supplements,
+            medications: medications,
+            requestID: "demo-today-authored-\(confirmation.rawValue)-\(hydrationRecorded)-\(routine.rawValue)-\(medication.rawValue)"
+        )
+    }
+
     static let postMealConfirmationHistory = postConfirmationHistory(
         meals: [confirmedMealHistory, loadedHistoryMealRow1, loadedHistoryMealRow2],
         workouts: [loadedHistoryWorkout],
@@ -369,8 +624,8 @@ enum DemoBodyFlowFixtures {
                 items: [todaySupplement]
             ),
             medications: TodayRoutineSection(
-                availability: "not_configured",
-                items: []
+                availability: "available",
+                items: [todayMedication]
             ),
             pendingActions: TodayPendingActions(
                 registrations: [
@@ -667,12 +922,50 @@ enum DemoBodyFlowFixtures {
         meta: metadata("demo-supplement-list-loaded")
     )
 
+    static let postRoutineTakenSupplementList = routineList(
+        status: .taken,
+        requestID: "demo-supplement-list-after-taken"
+    )
+
+    static let postRoutineSkippedSupplementList = routineList(
+        status: .skipped,
+        requestID: "demo-supplement-list-after-skipped"
+    )
+
+    static let postRoutineSnoozedSupplementList = routineList(
+        status: .snoozed,
+        requestID: "demo-supplement-list-after-snoozed"
+    )
+
+    static let routineConflictSupplementList = RoutineListResponse(
+        data: RoutineListSnapshot(
+            localDate: "2026-07-20",
+            items: [routineSupplement(status: nil, version: 2)]
+        ),
+        meta: metadata("demo-supplement-list-conflict-reloaded")
+    )
+
     static let loadedMedicationList = RoutineListResponse(
         data: RoutineListSnapshot(
             localDate: "2026-07-20",
-            items: []
+            items: [routineMedication(status: nil, version: 1)]
         ),
         meta: metadata("demo-medication-list-loaded")
+    )
+
+    static let postMedicationTakenList = medicationList(
+        status: .taken,
+        requestID: "demo-medication-list-after-taken"
+    )
+
+    static let postMedicationSkippedList = medicationList(
+        status: .skipped,
+        requestID: "demo-medication-list-after-skipped"
+    )
+
+    static let postMedicationSnoozedList = medicationList(
+        status: .snoozed,
+        requestID: "demo-medication-list-after-snoozed"
     )
 
     static let emptyRoutineList = RoutineListResponse(
@@ -697,15 +990,107 @@ enum DemoBodyFlowFixtures {
                     createdAt: apiTimestamp(1_784_588_460)
                 ),
             ],
-            nextCursor: nil
+            nextCursor: documentedRoutineHistoryCursor
         ),
         meta: metadata("demo-supplement-history-loaded")
     )
 
+    static let secondSupplementHistoryPage = RoutineHistoryPage(
+        data: RoutineHistorySnapshot(
+            items: [
+                RoutineHistoryItem(
+                    id: "routine-history-rule-08-older",
+                    routineItemID: "supplement-1",
+                    kind: .supplement,
+                    status: "taken",
+                    reminderRuleID: "rule-08",
+                    scheduledFor: apiTimestamp(1_784_458_800),
+                    occurredAt: apiTimestamp(1_784_458_860),
+                    snoozedUntil: nil,
+                    source: "patient",
+                    supersedesLogID: nil,
+                    createdAt: apiTimestamp(1_784_458_860)
+                ),
+            ],
+            nextCursor: nil
+        ),
+        meta: metadata("demo-supplement-history-page-2")
+    )
+
+    static let postRoutineTakenSupplementHistory = routineHistory(
+        status: .taken,
+        requestID: "demo-supplement-history-after-taken"
+    )
+
+    static let postRoutineSkippedSupplementHistory = routineHistory(
+        status: .skipped,
+        requestID: "demo-supplement-history-after-skipped"
+    )
+
+    static let postRoutineSnoozedSupplementHistory = routineHistory(
+        status: .snoozed,
+        requestID: "demo-supplement-history-after-snoozed"
+    )
+
+    static let postRoutineSnoozedThenTakenSupplementHistory =
+        snoozedFollowUpHistory(kind: .supplement, status: .taken)
+
+    static let postRoutineSnoozedThenSkippedSupplementHistory =
+        snoozedFollowUpHistory(kind: .supplement, status: .skipped)
+
+    static let postRoutineSnoozedThenSnoozedSupplementHistory =
+        snoozedFollowUpHistory(kind: .supplement, status: .snoozed)
+
+    static let routineConflictSupplementHistory = RoutineHistoryPage(
+        data: loadedSupplementHistory.data,
+        meta: metadata("demo-supplement-history-conflict-reloaded")
+    )
+
     static let loadedMedicationHistory = RoutineHistoryPage(
-        data: RoutineHistorySnapshot(items: [], nextCursor: nil),
+        data: RoutineHistorySnapshot(
+            items: [
+                RoutineHistoryItem(
+                    id: "demo-medication-history-older-1",
+                    routineItemID: "medication-1",
+                    kind: .medication,
+                    status: "taken",
+                    reminderRuleID: "medication-rule-09",
+                    scheduledFor: apiTimestamp(1_784_462_400),
+                    occurredAt: apiTimestamp(1_784_462_460),
+                    snoozedUntil: nil,
+                    source: "patient",
+                    supersedesLogID: nil,
+                    createdAt: apiTimestamp(1_784_462_460)
+                ),
+            ],
+            nextCursor: nil
+        ),
         meta: metadata("demo-medication-history-loaded")
     )
+
+    static let postMedicationTakenHistory = medicationHistory(
+        status: .taken,
+        requestID: "demo-medication-history-after-taken"
+    )
+
+    static let postMedicationSkippedHistory = medicationHistory(
+        status: .skipped,
+        requestID: "demo-medication-history-after-skipped"
+    )
+
+    static let postMedicationSnoozedHistory = medicationHistory(
+        status: .snoozed,
+        requestID: "demo-medication-history-after-snoozed"
+    )
+
+    static let postMedicationSnoozedThenTakenHistory =
+        snoozedFollowUpHistory(kind: .medication, status: .taken)
+
+    static let postMedicationSnoozedThenSkippedHistory =
+        snoozedFollowUpHistory(kind: .medication, status: .skipped)
+
+    static let postMedicationSnoozedThenSnoozedHistory =
+        snoozedFollowUpHistory(kind: .medication, status: .snoozed)
 
     static let emptyRoutineHistory = RoutineHistoryPage(
         data: RoutineHistorySnapshot(items: [], nextCursor: nil),
@@ -942,6 +1327,353 @@ enum DemoBodyFlowFixtures {
         performedAt: timestamp
     )
 
+    private static let authoredHydration = TodayHydration(
+        consumedML: 2_111,
+        targetML: nil,
+        remainingML: nil,
+        percentage: nil,
+        status: "tracked_without_target"
+    )
+
+    private static func confirmationToday(
+        _ confirmation: DemoConfirmationVariant
+    ) -> TodayResponse {
+        switch confirmation {
+        case .none:
+            loadedToday
+        case .mealInitial:
+            postMealConfirmationToday
+        case .mealEdited:
+            postEditedMealConfirmationToday
+        case .workoutInitial:
+            postWorkoutConfirmationToday
+        case .workoutEdited:
+            postEditedWorkoutConfirmationToday
+        case .mealInitialWorkoutInitial:
+            postInitialMealInitialWorkoutConfirmationToday
+        case .mealEditedWorkoutInitial:
+            postEditedMealInitialWorkoutConfirmationToday
+        case .mealInitialWorkoutEdited:
+            postInitialMealEditedWorkoutConfirmationToday
+        case .mealEditedWorkoutEdited:
+            postEditedMealEditedWorkoutConfirmationToday
+        }
+    }
+
+    private static func completeTodayFixture(
+        basedOn base: TodayResponse,
+        hydration: TodayHydration,
+        supplements: TodayRoutineSection,
+        medications: TodayRoutineSection? = nil,
+        requestID: String
+    ) -> TodayResponse {
+        TodayResponse(
+            data: TodaySnapshot(
+                localDate: base.data.localDate,
+                protocolName: base.data.protocolName,
+                targets: base.data.targets,
+                consumed: base.data.consumed,
+                remainingFoodKcal: base.data.remainingFoodKcal,
+                foodExcessKcal: base.data.foodExcessKcal,
+                exerciseKcal: base.data.exerciseKcal,
+                dailyBalanceKcal: base.data.dailyBalanceKcal,
+                dailyBalanceStatus: base.data.dailyBalanceStatus,
+                proteinStatus: base.data.proteinStatus,
+                meals: base.data.meals,
+                workouts: base.data.workouts,
+                hydration: hydration,
+                supplements: supplements,
+                medications: medications ?? base.data.medications,
+                pendingActions: base.data.pendingActions,
+                block7700: base.data.block7700,
+                completionStatus: base.data.completionStatus,
+                sources: base.data.sources,
+                calculationVersion: base.data.calculationVersion,
+                updatedAt: routineActionAt,
+                generatedAt: routineActionAt
+            ),
+            meta: metadata(requestID)
+        )
+    }
+
+    private static func routineReceipt(
+        kind: RoutineItemKind,
+        status: RoutineActionStatus,
+        logID: String,
+        occurrenceKey: String
+    ) -> RoutineActionResponse {
+        RoutineActionResponse(
+            data: RoutineActionReceipt(
+                adherenceLogID: logID,
+                occurrenceKey: occurrenceKey,
+                kind: kind,
+                status: status.rawValue
+            ),
+            meta: metadata("demo-routine-action-\(status.rawValue)")
+        )
+    }
+
+    private static func routineList(
+        status: RoutineActionStatus,
+        requestID: String
+    ) -> RoutineListResponse {
+        RoutineListResponse(
+            data: RoutineListSnapshot(
+                localDate: "2026-07-20",
+                items: [routineSupplement(status: status, version: 2)]
+            ),
+            meta: metadata(requestID)
+        )
+    }
+
+    private static func medicationList(
+        status: RoutineActionStatus,
+        requestID: String
+    ) -> RoutineListResponse {
+        RoutineListResponse(
+            data: RoutineListSnapshot(
+                localDate: "2026-07-20",
+                items: [routineMedication(status: status, version: 2)]
+            ),
+            meta: metadata(requestID)
+        )
+    }
+
+    private static func routineMedication(
+        status: RoutineActionStatus?,
+        version: Int
+    ) -> RoutineItemSnapshot {
+        RoutineItemSnapshot(
+            id: "medication-1",
+            kind: .medication,
+            name: "Medicamento informado",
+            doseText: "",
+            origin: "",
+            remindersEnabled: true,
+            active: true,
+            archivedAt: nil,
+            version: version,
+            createdAt: timestamp,
+            updatedAt: status == nil ? timestamp : routineActionAt,
+            frequencySummary: RoutineFrequencySummary(timesPerWeek: 7),
+            schedules: [
+                RoutineScheduleSnapshot(
+                    id: "medication-rule-09",
+                    localTime: "09:00",
+                    weekdays: [0, 1, 2, 3, 4, 5, 6],
+                    occurrence: RoutineOccurrenceSnapshot(
+                        scheduledFor: medicationScheduledAt,
+                        status: status?.rawValue ?? "pending",
+                        lastActionAt: status == nil ? nil : routineActionAt,
+                        snoozedUntil: status == .snoozed
+                            ? routineSnoozedUntil
+                            : nil
+                    )
+                ),
+            ]
+        )
+    }
+
+    private static func routineSupplement(
+        status: RoutineActionStatus?,
+        version: Int
+    ) -> RoutineItemSnapshot {
+        RoutineItemSnapshot(
+            id: "supplement-1",
+            kind: .supplement,
+            name: "Item informado",
+            doseText: "",
+            origin: "",
+            remindersEnabled: true,
+            active: true,
+            archivedAt: nil,
+            version: version,
+            createdAt: timestamp,
+            updatedAt: routineActionAt,
+            frequencySummary: RoutineFrequencySummary(timesPerWeek: 6),
+            schedules: [
+                RoutineScheduleSnapshot(
+                    id: "rule-20",
+                    localTime: "20:00",
+                    weekdays: [1, 3, 5],
+                    occurrence: RoutineOccurrenceSnapshot(
+                        scheduledFor: apiTimestamp(1_784_588_400),
+                        status: "snoozed",
+                        lastActionAt: apiTimestamp(1_784_588_460),
+                        snoozedUntil: apiTimestamp(1_784_590_260)
+                    )
+                ),
+                RoutineScheduleSnapshot(
+                    id: "rule-08",
+                    localTime: "08:00",
+                    weekdays: [1, 3, 5],
+                    occurrence: RoutineOccurrenceSnapshot(
+                        scheduledFor: targetScheduledAt,
+                        status: status?.rawValue ?? "pending",
+                        lastActionAt: status == nil ? nil : routineActionAt,
+                        snoozedUntil: status == .snoozed
+                            ? routineSnoozedUntil
+                            : nil
+                    )
+                ),
+            ]
+        )
+    }
+
+    private static func routineTodaySection(
+        status: RoutineActionStatus
+    ) -> TodayRoutineSection {
+        TodayRoutineSection(
+            availability: "available",
+            items: [
+                TodayRoutineItem(
+                    id: "supplement-1",
+                    name: "Item informado",
+                    doseText: nil,
+                    origin: nil,
+                    remindersEnabled: true,
+                    schedules: [
+                        TodayRoutineSchedule(
+                            id: "rule-20",
+                            localTime: "20:00",
+                            weekdays: [1, 3, 5]
+                        ),
+                        TodayRoutineSchedule(
+                            id: "rule-08",
+                            localTime: "08:00",
+                            weekdays: [1, 3, 5]
+                        ),
+                    ],
+                    occurrences: [
+                        TodayRoutineOccurrence(
+                            reminderRuleID: "rule-20",
+                            scheduledFor: apiTimestamp(1_784_588_400),
+                            status: "snoozed",
+                            lastActionAt: apiTimestamp(1_784_588_460),
+                            snoozedUntil: apiTimestamp(1_784_590_260)
+                        ),
+                        TodayRoutineOccurrence(
+                            reminderRuleID: "rule-08",
+                            scheduledFor: targetScheduledAt,
+                            status: status.rawValue,
+                            lastActionAt: routineActionAt,
+                            snoozedUntil: status == .snoozed
+                                ? routineSnoozedUntil
+                                : nil
+                        ),
+                    ]
+                ),
+            ]
+        )
+    }
+
+    private static func medicationTodaySection(
+        status: RoutineActionStatus?
+    ) -> TodayRoutineSection {
+        TodayRoutineSection(
+            availability: "available",
+            items: [
+                TodayRoutineItem(
+                    id: "medication-1",
+                    name: "Medicamento informado",
+                    doseText: nil,
+                    origin: nil,
+                    remindersEnabled: true,
+                    schedules: [
+                        TodayRoutineSchedule(
+                            id: "medication-rule-09",
+                            localTime: "09:00",
+                            weekdays: [0, 1, 2, 3, 4, 5, 6]
+                        ),
+                    ],
+                    occurrences: [
+                        TodayRoutineOccurrence(
+                            reminderRuleID: "medication-rule-09",
+                            scheduledFor: medicationScheduledAt,
+                            status: status?.rawValue ?? "pending",
+                            lastActionAt: status == nil ? nil : routineActionAt,
+                            snoozedUntil: status == .snoozed
+                                ? routineSnoozedUntil
+                                : nil
+                        ),
+                    ]
+                ),
+            ]
+        )
+    }
+
+    private static func routineHistory(
+        status: RoutineActionStatus,
+        requestID: String
+    ) -> RoutineHistoryPage {
+        RoutineHistoryPage(
+            data: RoutineHistorySnapshot(
+                items: [
+                    RoutineHistoryItem(
+                        id: "demo-adherence-log-\(status.rawValue)-1",
+                        routineItemID: "supplement-1",
+                        kind: .supplement,
+                        status: status.rawValue,
+                        reminderRuleID: "rule-08",
+                        scheduledFor: targetScheduledAt,
+                        occurredAt: routineActionAt,
+                        snoozedUntil: status == .snoozed
+                            ? routineSnoozedUntil
+                            : nil,
+                        source: "patient",
+                        supersedesLogID: nil,
+                        createdAt: routineActionAt
+                    ),
+                    RoutineHistoryItem(
+                        id: "routine-history-rule-20",
+                        routineItemID: "supplement-1",
+                        kind: .supplement,
+                        status: "snoozed",
+                        reminderRuleID: "rule-20",
+                        scheduledFor: apiTimestamp(1_784_588_400),
+                        occurredAt: apiTimestamp(1_784_588_460),
+                        snoozedUntil: apiTimestamp(1_784_590_260),
+                        source: "patient",
+                        supersedesLogID: nil,
+                        createdAt: apiTimestamp(1_784_588_460)
+                    ),
+                ],
+                nextCursor: documentedRoutineHistoryCursor
+            ),
+            meta: metadata(requestID)
+        )
+    }
+
+    private static func medicationHistory(
+        status: RoutineActionStatus,
+        requestID: String
+    ) -> RoutineHistoryPage {
+        RoutineHistoryPage(
+            data: RoutineHistorySnapshot(
+                items: [
+                    RoutineHistoryItem(
+                        id: "demo-medication-log-\(status.rawValue)-1",
+                        routineItemID: "medication-1",
+                        kind: .medication,
+                        status: status.rawValue,
+                        reminderRuleID: "medication-rule-09",
+                        scheduledFor: medicationScheduledAt,
+                        occurredAt: routineActionAt,
+                        snoozedUntil: status == .snoozed
+                            ? routineSnoozedUntil
+                            : nil,
+                        source: "patient",
+                        supersedesLogID: nil,
+                        createdAt: routineActionAt
+                    ),
+                    loadedMedicationHistory.data.items[0],
+                ],
+                nextCursor: nil
+            ),
+            meta: metadata(requestID)
+        )
+    }
+
     private static func registrationResponse(
         id: String,
         status: String,
@@ -1037,10 +1769,7 @@ enum DemoBodyFlowFixtures {
                     availability: "available",
                     items: [todaySupplement]
                 ),
-                medications: TodayRoutineSection(
-                    availability: "not_configured",
-                    items: []
-                ),
+                medications: medicationTodaySection(status: nil),
                 pendingActions: preservedLoadedPendingActions,
                 block7700: TodayBlock7700(
                     enabled: true,
@@ -1066,6 +1795,48 @@ enum DemoBodyFlowFixtures {
         )
     }
 
+    private static func snoozedFollowUpHistory(
+        kind: RoutineItemKind,
+        status: RoutineActionStatus
+    ) -> RoutineHistoryPage {
+        let firstSnooze = kind == .supplement
+            ? postRoutineSnoozedSupplementHistory.data.items[0]
+            : postMedicationSnoozedHistory.data.items[0]
+        let baseline = kind == .supplement
+            ? loadedSupplementHistory.data.items
+            : loadedMedicationHistory.data.items
+        let logPrefix = kind == .supplement
+            ? "demo-adherence-log"
+            : "demo-medication-log"
+        let followUp = RoutineHistoryItem(
+            id: "\(logPrefix)-\(status.rawValue)-2",
+            routineItemID: kind == .supplement ? "supplement-1" : "medication-1",
+            kind: kind,
+            status: status.rawValue,
+            reminderRuleID: kind == .supplement ? "rule-08" : "medication-rule-09",
+            scheduledFor: kind == .supplement
+                ? targetScheduledAt
+                : medicationScheduledAt,
+            occurredAt: routineActionAt,
+            snoozedUntil: status == .snoozed ? routineSnoozedUntil : nil,
+            source: "patient",
+            supersedesLogID: firstSnooze.id,
+            createdAt: routineActionAt
+        )
+        let kindLabel = kind == .supplement ? "supplement" : "medication"
+        return RoutineHistoryPage(
+            data: RoutineHistorySnapshot(
+                items: [followUp, firstSnooze] + baseline,
+                nextCursor: kind == .supplement
+                    ? documentedRoutineHistoryCursor
+                    : nil
+            ),
+            meta: metadata(
+                "demo-\(kindLabel)-history-after-\(status.rawValue)"
+            )
+        )
+    }
+
     private static func postConfirmationHistory(
         meals: [HistoryMealLogRow],
         workouts: [HistoryWorkoutLogRow],
@@ -1080,6 +1851,8 @@ enum DemoBodyFlowFixtures {
             meta: metadata(requestID)
         )
     }
+
+    private static let todayMedication = medicationTodaySection(status: nil).items[0]
 
     private static let todaySupplement = TodayRoutineItem(
         id: "supplement-1",

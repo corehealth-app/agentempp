@@ -296,6 +296,12 @@ struct AppDependenciesTests {
         let registration = try #require(
             dependencies.registration as? DemoBodyFlowRepository
         )
+        let hydration = try #require(
+            dependencies.hydration as? DemoBodyFlowRepository
+        )
+        let weight = try #require(
+            dependencies.weight as? DemoBodyFlowRepository
+        )
 
         #expect(today === history)
         #expect(today === plan)
@@ -303,6 +309,8 @@ struct AppDependenciesTests {
         #expect(today === routine)
         #expect(today === mealDetection)
         #expect(today === registration)
+        #expect(today === hydration)
+        #expect(today === weight)
     }
 
     @Test("Prompt 13 Debug graph exposes coherent shared read behavior")
@@ -326,8 +334,8 @@ struct AppDependenciesTests {
         )
     }
 
-    @Test("Prompt 13 Task 11 mutation ports remain unavailable")
-    func prompt13Task11MutationPortsRemainUnavailable() async throws {
+    @Test("Prompt 13 hydration weight and routine ports share coherent actor behavior")
+    func prompt13Task11MutationPortsUseSharedActor() async throws {
         let dependencies = AppDependencies.make(
             configuration: .resolve(
                 arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
@@ -335,21 +343,55 @@ struct AppDependenciesTests {
             )
         )
 
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.hydration.record(
-                BodyFlowTestFixtures.hydrationAttempt()
-            )
-        }
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.weight.record(
-                BodyFlowTestFixtures.weightAttempt()
-            )
-        }
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await dependencies.routine.record(
-                BodyFlowTestFixtures.routineAttempt()
-            )
-        }
+        let beforeToday = try await dependencies.today.today()
+        let beforeProgress = try await dependencies.progress.progress()
+        let beforeHistory = try await dependencies.history.history(.firstPage)
+
+        let hydration = try await dependencies.hydration.record(
+            dependencyHydrationAttempt()
+        )
+        #expect(hydration == DemoBodyFlowFixtures.hydrationReceipt)
+        #expect(
+            try await dependencies.today.today()
+                == DemoBodyFlowFixtures.postHydrationToday
+        )
+
+        let beforeWeightToday = try await dependencies.today.today()
+        let weight = try await dependencies.weight.record(
+            dependencyWeightAttempt()
+        )
+        #expect(weight == DemoBodyFlowFixtures.weightReceipt)
+        #expect(try await dependencies.today.today() == beforeWeightToday)
+        #expect(try await dependencies.progress.progress() == beforeProgress)
+        #expect(try await dependencies.history.history(.firstPage) == beforeHistory)
+
+        let routine = try await dependencies.routine.record(
+            dependencyRoutineAttempt()
+        )
+        #expect(routine == DemoBodyFlowFixtures.routineTakenReceipt)
+        #expect(
+            try await dependencies.today.today()
+                == DemoBodyFlowFixtures.today(
+                    confirmation: .none,
+                    hydrationRecorded: true,
+                    routine: .taken
+                )
+        )
+        #expect(
+            try await dependencies.routine.list(
+                kind: .supplement,
+                includeArchived: false
+            ) == DemoBodyFlowFixtures.postRoutineTakenSupplementList
+        )
+        #expect(
+            try await dependencies.routine.history(
+                kind: .supplement,
+                itemID: "supplement-1",
+                cursor: nil,
+                limit: 20
+            ) == DemoBodyFlowFixtures.postRoutineTakenSupplementHistory
+        )
+        #expect(beforeToday == DemoBodyFlowFixtures.loadedToday)
     }
 
     @Test("Prompt 13 registration existential mutates the shared Today and History actor")
@@ -401,3 +443,51 @@ private func releaseDependencies() -> AppDependencies {
         )
     )
 }
+
+#if DEBUG
+private let dependencyActionDate = Date(timeIntervalSince1970: 1_784_589_300)
+
+private func dependencyHydrationAttempt() throws -> MutationAttempt<HydrationCommand> {
+    MutationAttempt(
+        operation: .hydration,
+        key: try IdempotencyKey(validating: "dependency-hydration-0001"),
+        payload: try HydrationCommand(
+            amountML: 250,
+            occurredAt: APITimestamp(value: dependencyActionDate)
+        ),
+        createdAt: dependencyActionDate
+    )
+}
+
+private func dependencyWeightAttempt() throws -> MutationAttempt<WeightCommand> {
+    MutationAttempt(
+        operation: .weight,
+        key: try IdempotencyKey(validating: "dependency-weight-0001"),
+        payload: try WeightCommand(
+            weightKG: 78.4,
+            recordedAt: dependencyActionDate
+        ),
+        createdAt: dependencyActionDate
+    )
+}
+
+private func dependencyRoutineAttempt() throws
+    -> MutationAttempt<RoutineActionCommand> {
+    MutationAttempt(
+        operation: .routineAction,
+        key: try IdempotencyKey(validating: "dependency-routine-0001"),
+        payload: try RoutineActionCommand(
+            kind: .supplement,
+            itemID: "supplement-1",
+            status: .taken,
+            reminderRuleID: "rule-08",
+            scheduledFor: APITimestamp(
+                value: Date(timeIntervalSince1970: 1_784_545_200)
+            ),
+            occurredAt: APITimestamp(value: dependencyActionDate),
+            snoozedUntil: nil
+        ),
+        createdAt: dependencyActionDate
+    )
+}
+#endif

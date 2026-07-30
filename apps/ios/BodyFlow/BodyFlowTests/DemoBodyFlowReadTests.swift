@@ -42,7 +42,7 @@ struct DemoBodyFlowReadTests {
         #expect(progress.data.xpTotal == 7_420)
         #expect(history.data.meals.map(\.id) == ["demo-history-meal-row-1", "demo-history-meal-row-2"])
         #expect(supplements.data.items.map(\.id) == ["supplement-1"])
-        #expect(medications.data.items.isEmpty)
+        #expect(medications.data.items.map(\.id) == ["medication-1"])
     }
 
     @Test("Loaded Today and routine snapshots resolve as one coherent graph")
@@ -112,8 +112,8 @@ struct DemoBodyFlowReadTests {
         }
     }
 
-    @Test("Not-configured Today medication resolves to empty list and history")
-    func notConfiguredMedicationHasNoInventedRoutine() async throws {
+    @Test("Loaded Today medication resolves to its actionable list and history")
+    func configuredMedicationResolvesAcrossSnapshots() async throws {
         let repository = DemoBodyFlowRepository(scenario: .loaded)
         let today = try await repository.today()
         let medications = try await repository.list(
@@ -122,16 +122,16 @@ struct DemoBodyFlowReadTests {
         )
         let medicationHistory = try await repository.history(
             kind: .medication,
-            itemID: "absent-medication",
+            itemID: "medication-1",
             cursor: nil,
             limit: 20
         )
 
-        #expect(today.data.medications.availability == "not_configured")
-        #expect(today.data.medications.items.isEmpty)
+        #expect(today.data.medications.availability == "available")
+        #expect(today.data.medications.items.map(\.id) == ["medication-1"])
         #expect(medications.data.localDate == today.data.localDate)
-        #expect(medications.data.items.isEmpty)
-        #expect(medicationHistory.items.isEmpty)
+        #expect(medications.data.items.map(\.id) == ["medication-1"])
+        #expect(medicationHistory.items.map(\.routineItemID) == ["medication-1"])
     }
 
     @Test("Loaded Today preserves deliberately inconsistent official values")
@@ -139,7 +139,23 @@ struct DemoBodyFlowReadTests {
         let today = try await DemoBodyFlowRepository(scenario: .loaded).today()
         let task2Fixture = try BodyFlowTestFixtures.decodeInconsistentToday()
 
-        #expect(today == task2Fixture)
+        #expect(today.data.localDate == task2Fixture.data.localDate)
+        #expect(today.data.protocolName == task2Fixture.data.protocolName)
+        #expect(today.data.targets == task2Fixture.data.targets)
+        #expect(today.data.consumed == task2Fixture.data.consumed)
+        #expect(today.data.proteinStatus == task2Fixture.data.proteinStatus)
+        #expect(today.data.meals == task2Fixture.data.meals)
+        #expect(today.data.workouts == task2Fixture.data.workouts)
+        #expect(today.data.hydration == task2Fixture.data.hydration)
+        #expect(today.data.supplements == task2Fixture.data.supplements)
+        #expect(today.data.pendingActions == task2Fixture.data.pendingActions)
+        #expect(today.data.block7700 == task2Fixture.data.block7700)
+        #expect(today.data.completionStatus == task2Fixture.data.completionStatus)
+        #expect(today.data.sources == task2Fixture.data.sources)
+        #expect(today.data.calculationVersion == task2Fixture.data.calculationVersion)
+        #expect(today.data.updatedAt == task2Fixture.data.updatedAt)
+        #expect(today.data.generatedAt == task2Fixture.data.generatedAt)
+        #expect(today.meta == task2Fixture.meta)
         #expect(today.data.targets.caloriesKcal == 1_935)
         #expect(today.data.consumed.caloriesKcal == 1_200)
         #expect(today.data.remainingFoodKcal == 731)
@@ -278,11 +294,11 @@ struct DemoBodyFlowReadTests {
         }
     }
 
-    @Test("Routine mutation remains unavailable until Task 11")
-    func routineMutationRemainsUnavailable() async throws {
+    @Test("Routine mutation rejects a command that does not target the authored occurrence")
+    func routineMutationRejectsUnknownOccurrence() async throws {
         let repository = DemoBodyFlowRepository(scenario: .loaded)
 
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+        await #expect(throws: BodyFlowCapabilityError.routineTransitionInvalid) {
             try await repository.record(BodyFlowTestFixtures.routineAttempt())
         }
     }

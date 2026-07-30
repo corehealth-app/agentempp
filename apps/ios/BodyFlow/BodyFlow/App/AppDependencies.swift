@@ -70,6 +70,8 @@ struct AppDependencies: Sendable {
         let progress: any ProgressProviding
         let mealDetection: any MealDetectionProviding
         let registration: any RegistrationProviding
+        let hydration: any HydrationRecording
+        let weight: any WeightRecording
         let routine: any RoutineProviding
         if configuration.mode == .demo,
            let scenario = configuration.prompt13Scenario {
@@ -88,6 +90,8 @@ struct AppDependencies: Sendable {
             progress = repository
             mealDetection = repository
             registration = repository
+            hydration = repository
+            weight = repository
             routine = repository
         } else {
             timeProvider = SystemTimeProvider()
@@ -101,6 +105,8 @@ struct AppDependencies: Sendable {
             progress = unavailable
             mealDetection = unavailable
             registration = unavailable
+            hydration = unavailable
+            weight = unavailable
             routine = unavailable
         }
         #else
@@ -116,6 +122,8 @@ struct AppDependencies: Sendable {
         let progress: any ProgressProviding = unavailable
         let mealDetection: any MealDetectionProviding = unavailable
         let registration: any RegistrationProviding = unavailable
+        let hydration: any HydrationRecording = unavailable
+        let weight: any WeightRecording = unavailable
         let routine: any RoutineProviding = unavailable
         #endif
 
@@ -139,8 +147,8 @@ struct AppDependencies: Sendable {
             progress: progress,
             mealDetection: mealDetection,
             registration: registration,
-            hydration: unavailable,
-            weight: unavailable,
+            hydration: hydration,
+            weight: weight,
             routine: routine,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,

@@ -4,6 +4,22 @@ import Testing
 @testable import BodyFlow
 
 enum BodyFlowTestFixtures {
+    static func decodeHistoryWithMatchingRows() throws -> HistoryResponse {
+        try decodeHistory(from: historyWithMatchingRowsData)
+    }
+
+    static func decodeHistoryMealsOnly() throws -> HistoryResponse {
+        try decodeHistory(meals: nil, workouts: [])
+    }
+
+    static func decodeHistoryWorkoutsOnly() throws -> HistoryResponse {
+        try decodeHistory(meals: [], workouts: nil)
+    }
+
+    static func decodeEmptyHistory() throws -> HistoryResponse {
+        try decodeHistory(meals: [], workouts: [])
+    }
+
     static func decodeInconsistentToday() throws -> TodayResponse {
         try JSONDecoder().decode(TodayResponse.self, from: inconsistentTodayData)
     }
@@ -40,6 +56,89 @@ enum BodyFlowTestFixtures {
             from: JSONSerialization.data(withJSONObject: object)
         )
     }
+
+    private static func decodeHistory(
+        meals: [[String: Any]]? = nil,
+        workouts: [[String: Any]]? = nil
+    ) throws -> HistoryResponse {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: historyWithMatchingRowsData)
+                as? [String: Any]
+        )
+        var data = try #require(object["data"] as? [String: Any])
+
+        if let meals {
+            data["meals"] = meals
+        }
+        if let workouts {
+            data["workouts"] = workouts
+        }
+        object["data"] = data
+
+        return try JSONDecoder().decode(
+            HistoryResponse.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+    }
+
+    private static func decodeHistory(from data: Data) throws -> HistoryResponse {
+        try JSONDecoder().decode(HistoryResponse.self, from: data)
+    }
+
+    private static let historyWithMatchingRowsData = Data(
+        """
+        {
+          "data": {
+            "meals": [
+              {
+                "id": "fixture-meal-row-1",
+                "meal_type": "almoco",
+                "food_name": "Arroz integral",
+                "quantity_g": 125.50,
+                "kcal": 407.25,
+                "protein_g": 31.25,
+                "carbs_g": 48.50,
+                "fat_g": 9.75,
+                "consumed_at": "2026-07-29T15:30:00.123Z",
+                "future_meal_field": "ignored"
+              },
+              {
+                "id": "fixture-meal-row-2",
+                "meal_type": "almoco",
+                "food_name": "Feijao carioca",
+                "quantity_g": null,
+                "kcal": null,
+                "protein_g": null,
+                "carbs_g": null,
+                "fat_g": null,
+                "consumed_at": "2026-07-29T15:30:00.123Z"
+              }
+            ],
+            "workouts": [
+              {
+                "id": "fixture-workout-row-1",
+                "workout_type": null,
+                "duration_min": null,
+                "estimated_kcal": null,
+                "intensity": null,
+                "performed_at": "2026-07-29T12:00:00Z",
+                "future_workout_field": true
+              }
+            ],
+            "pagination": {
+              "limit": 2,
+              "before": "2026-07-28T00:00:00Z",
+              "future_pagination_field": "ignored"
+            },
+            "future_history_field": [1, 2, 3]
+          },
+          "meta": {
+            "api_version": "v1",
+            "request_id": "request-history-contract-0001"
+          }
+        }
+        """.utf8
+    )
 
     private static let inconsistentTodayData = Data(
         """

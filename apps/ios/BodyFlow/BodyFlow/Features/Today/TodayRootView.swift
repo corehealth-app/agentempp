@@ -220,6 +220,13 @@ struct TodayRootView: View {
                     }
                     .accessibilityIdentifier("today.refresh")
                 }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: AppRoute.mainHistory) {
+                        Label("Histórico", systemImage: "clock.arrow.circlepath")
+                    }
+                    .accessibilityIdentifier("today.history")
+                }
             }
         }
     }
@@ -273,9 +280,7 @@ struct TodayRootView: View {
                 )
                 TodayBlockCard(descriptor: presentation.block)
 
-                NavigationLink(
-                    value: AppRoute.detail(tab: .today, id: "history")
-                ) {
+                NavigationLink(value: AppRoute.mainHistory) {
                     BodyFlowCard {
                         FeatureActionLabel(
                             title: "Histórico",

@@ -46,6 +46,24 @@ struct AppRouterTests {
         ])
     }
 
+    @Test("history routes carry only identifiers and remain on the today path")
+    func historyRoutesStayTypedAndIndependent() {
+        let router = AppRouter()
+        let history = AppRoute.mainHistory
+        let meal = AppRoute.historyMealLog(rowID: "fixture-meal-row-1")
+        let workout = AppRoute.historyWorkout(logID: "fixture-workout-row-1")
+
+        router.navigate(to: history, in: .today)
+        router.navigate(to: meal, in: .today)
+        router.navigate(to: workout, in: .today)
+
+        #expect(router.path(for: .today) == [history, meal, workout])
+        #expect(router.path(for: .register).isEmpty)
+        #expect(router.path(for: .plan).isEmpty)
+        #expect(router.path(for: .progress).isEmpty)
+        #expect(router.path(for: .profile).isEmpty)
+    }
+
     @Test("registration kinds keep copy, symbols, and command identifiers aligned")
     func registrationContract() {
         #expect(RegistrationKind.allCases.map(\.title) == [

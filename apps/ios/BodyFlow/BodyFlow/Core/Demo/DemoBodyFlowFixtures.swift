@@ -893,7 +893,7 @@ enum DemoBodyFlowFixtures {
             workouts: [
                 HistoryWorkoutLogRow(
                     id: "demo-history-workout-1",
-                    workoutType: "corrida",
+                    workoutType: "Treino de corrida intervalada em terreno inclinado com recuperação ativa entre séries",
                     durationMin: 35,
                     estimatedKcal: 287,
                     intensity: "moderada",
@@ -1282,7 +1282,7 @@ enum DemoBodyFlowFixtures {
 
     private static let loadedHistoryWorkout = HistoryWorkoutLogRow(
         id: "demo-history-workout-1",
-        workoutType: "corrida",
+        workoutType: "Treino de corrida intervalada em terreno inclinado com recuperação ativa entre séries",
         durationMin: 35,
         estimatedKcal: 287,
         intensity: "moderada",

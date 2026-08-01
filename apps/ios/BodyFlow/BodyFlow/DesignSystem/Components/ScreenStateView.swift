@@ -127,13 +127,19 @@ enum ScreenState: Equatable, Sendable {
 struct ScreenStateView: View {
     let state: ScreenState
     private let retryAction: @MainActor () -> Void
+    private let identifier: String
+    private let titleIdentifier: String?
 
     init(
         state: ScreenState,
-        retryAction: @escaping @MainActor () -> Void
+        retryAction: @escaping @MainActor () -> Void,
+        accessibilityIdentifier: String? = nil,
+        titleAccessibilityIdentifier: String? = nil
     ) {
         self.state = state
         self.retryAction = retryAction
+        identifier = accessibilityIdentifier ?? state.accessibilityIdentifier
+        titleIdentifier = titleAccessibilityIdentifier
     }
 
     var body: some View {
@@ -142,10 +148,18 @@ struct ScreenStateView: View {
                 VStack(spacing: BodyFlowSpacing.md) {
                     stateGraphic
 
-                    Text(state.descriptor.title)
-                        .font(BodyFlowTypography.title)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(BodyFlowColor.primaryText)
+                    if let titleIdentifier {
+                        Text(state.descriptor.title)
+                            .font(BodyFlowTypography.title)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                            .accessibilityIdentifier(titleIdentifier)
+                    } else {
+                        Text(state.descriptor.title)
+                            .font(BodyFlowTypography.title)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                    }
 
                     if !state.descriptor.message.isEmpty {
                         Text(state.descriptor.message)
@@ -172,7 +186,7 @@ struct ScreenStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
-        .accessibilityIdentifier(state.accessibilityIdentifier)
+        .accessibilityIdentifier(identifier)
     }
 
     @MainActor

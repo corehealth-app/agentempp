@@ -107,6 +107,115 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     }
 
     @MainActor
+    func testHistoryKeepsMatchingMealRowsSeparate() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        openHistory(in: app)
+
+        XCTAssertTrue(element("history.meals", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("history.meal.demo-history-meal-row-1", in: app).exists)
+        XCTAssertTrue(element("history.meal.demo-history-meal-row-2", in: app).exists)
+    }
+
+    @MainActor
+    func testIndividualMealLogDetailShowsOnlySelectedRow() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        openHistory(in: app)
+        let meal = element("history.meal.demo-history-meal-row-1", in: app)
+        XCTAssertTrue(meal.waitForExistence(timeout: 5))
+        meal.tap()
+
+        XCTAssertTrue(app.staticTexts["Registro de alimento"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Arroz integral sintético"].exists)
+        XCTAssertFalse(app.staticTexts["Feijão sintético"].exists)
+        XCTAssertFalse(app.staticTexts["Refeição completa"].exists)
+    }
+
+    @MainActor
+    func testHistoryHasOnlyMealsAndWorkouts() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        openHistory(in: app)
+
+        XCTAssertTrue(element("history.meals", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("history.workouts", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Peso"].exists)
+        XCTAssertFalse(app.staticTexts["Hidratação"].exists)
+        XCTAssertFalse(app.staticTexts["Suplementos"].exists)
+        XCTAssertFalse(app.staticTexts["Medicamentos"].exists)
+    }
+
+    @MainActor
+    func testHistoryHasNoLoadMore() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        openHistory(in: app)
+
+        XCTAssertTrue(element("history.meals", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("history.load-more", in: app).exists)
+        XCTAssertFalse(app.buttons["Carregar mais"].exists)
+    }
+
+    @MainActor
+    func testHistoryGlobalEmptyRequiresBothSectionsEmpty() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .empty)
+
+        openHistory(in: app)
+
+        XCTAssertTrue(element("history.empty", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("history.meals", in: app).exists)
+        XCTAssertFalse(element("history.workouts", in: app).exists)
+    }
+
+    @MainActor
+    func testStaleHistoryRetryUsesMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .staleOffline)
+
+        openHistory(in: app)
+        XCTAssertTrue(
+            element("history.meal.demo-history-meal-row-1", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        let refresh = element("state.retry", in: app)
+        XCTAssertTrue(refresh.waitForExistence(timeout: 5))
+
+        support.assertMinimumTapTarget(refresh)
+    }
+
+    @MainActor
+    func testWorkoutDetailScrollsWithLongValueAtAccessibleDynamicType() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(
+            scenario: .loaded,
+            additionalArguments: [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        )
+
+        openHistory(in: app)
+        let workout = element("history.workout.demo-history-workout-1", in: app)
+        XCTAssertTrue(workout.waitForExistence(timeout: 5))
+        workout.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Treino de corrida intervalada em terreno inclinado com recuperação ativa entre séries"]
+                .waitForExistence(timeout: 5)
+        )
+        app.swipeUp()
+        XCTAssertTrue(
+            app.staticTexts["Energia estimada: 287 kcal"].waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
     private func element(
         _ identifier: String,
         in app: XCUIApplication
@@ -119,5 +228,12 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         for _ in 0..<4 where !element.exists {
             app.swipeUp()
         }
+    }
+
+    @MainActor
+    private func openHistory(in app: XCUIApplication) {
+        XCTAssertTrue(element("today.history", in: app).waitForExistence(timeout: 5))
+        element("today.history", in: app).tap()
+        XCTAssertTrue(element("screen.history", in: app).waitForExistence(timeout: 5))
     }
 }

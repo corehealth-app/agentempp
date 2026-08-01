@@ -3,6 +3,9 @@ import SwiftUI
 
 enum AppRoute: Hashable, Sendable {
     case detail(tab: AppTab, id: String)
+    case mainHistory
+    case historyMealLog(rowID: String)
+    case historyWorkout(logID: String)
     case routine(RoutineRoute)
     case plan(PlanRoute)
     case progress(ProgressRoute)
@@ -11,6 +14,8 @@ enum AppRoute: Hashable, Sendable {
         switch self {
         case let .detail(tab, _):
             tab
+        case .mainHistory, .historyMealLog, .historyWorkout:
+            .today
         case .routine:
             .today
         case .plan:

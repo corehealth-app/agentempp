@@ -8,6 +8,8 @@ struct AppShellView: View {
     @State private var todayViewModel: TodayViewModel
     @State private var planViewModel: PlanViewModel
     @State private var progressViewModel: ProgressViewModel
+    @State private var historyViewModel: HistoryViewModel
+    @State private var historyCoordinator: HistoryFeatureCoordinator
     let userID: String
     let dependencies: AppDependencies
 
@@ -29,6 +31,11 @@ struct AppShellView: View {
         _progressViewModel = State(
             initialValue: ProgressViewModel(provider: dependencies.progress)
         )
+        let historyModel = HistoryViewModel(provider: dependencies.history)
+        _historyViewModel = State(initialValue: historyModel)
+        _historyCoordinator = State(
+            initialValue: HistoryFeatureCoordinator(model: historyModel)
+        )
     }
 
     var body: some View {
@@ -42,6 +49,15 @@ struct AppShellView: View {
         }
         .tint(BodyFlowColor.accent)
         .bodyFlowBrandIdentity()
+#if DEBUG
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
+                return
+            }
+            await historyViewModel.load(revision: 0)
+            await historyViewModel.retry()
+        }
+#endif
         .background {
             TabBarAccessibilityConfigurator(
                 identifiers: AppTab.allCases.map(\.accessibilityIdentifier)
@@ -106,6 +122,19 @@ struct AppShellView: View {
         switch route {
         case .detail:
             FeatureDetailView(route: route)
+        case .mainHistory:
+            MainHistoryView(
+                model: historyViewModel,
+                invalidationCenter: invalidationCenter
+            )
+        case .historyMealLog:
+            HistoryMealLogDetailView(
+                row: historyCoordinator.mealLogRow(for: route)
+            )
+        case .historyWorkout:
+            HistoryWorkoutDetailView(
+                row: historyCoordinator.workoutLogRow(for: route)
+            )
         case let .routine(routineRoute):
             switch routineRoute.destination {
             case .list:

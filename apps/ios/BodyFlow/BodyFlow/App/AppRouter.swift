@@ -3,11 +3,14 @@ import SwiftUI
 
 enum AppRoute: Hashable, Sendable {
     case detail(tab: AppTab, id: String)
+    case routine(RoutineRoute)
 
     var tab: AppTab {
         switch self {
         case let .detail(tab, _):
             tab
+        case .routine:
+            .today
         }
     }
 
@@ -19,6 +22,30 @@ enum AppRoute: Hashable, Sendable {
         case .progress: "route.progresso.detalhe"
         case .profile: "route.perfil.detalhe"
         }
+    }
+}
+
+enum RoutineRouteDestination: Hashable, Sendable {
+    case list
+    case detail
+    case history
+}
+
+/// A routine route intentionally contains only the response item identity and
+/// destination. Detail data is always selected from the matching list snapshot.
+struct RoutineRoute: Hashable, Sendable {
+    let kind: RoutineItemKind
+    let itemID: String?
+    let destination: RoutineRouteDestination
+
+    init(
+        kind: RoutineItemKind,
+        itemID: String? = nil,
+        destination: RoutineRouteDestination
+    ) {
+        self.kind = kind
+        self.itemID = itemID
+        self.destination = destination
     }
 }
 

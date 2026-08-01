@@ -814,6 +814,7 @@ actor DemoBodyFlowRepository:
              .incompleteDay,
              .registrationFailureOnce,
              .routineConflictOnce,
+             .routineActionUnavailable,
              .reduceMotionVerification:
             break
         }
@@ -836,6 +837,10 @@ actor DemoBodyFlowRepository:
         requiresRoutineOccurrence: Bool
     ) throws {
         if scenario == .unavailablePresentation {
+            throw BodyFlowCapabilityError.operationUnavailable
+        }
+        if requiresRoutineOccurrence,
+           scenario == .routineActionUnavailable {
             throw BodyFlowCapabilityError.operationUnavailable
         }
         if requiresRoutineOccurrence,

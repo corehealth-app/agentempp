@@ -798,10 +798,17 @@ struct DemoRoutineRepositoryTests {
             try await repository.record(attempt)
         }
         #expect(try await repository.today() == beforeToday)
-        #expect(
-            try await repository.list(kind: .supplement, includeArchived: false)
-                == DemoBodyFlowFixtures.routineConflictSupplementList
+        let reloadedList = try await repository.list(
+            kind: .supplement,
+            includeArchived: false
         )
+        #expect(reloadedList == DemoBodyFlowFixtures.routineConflictSupplementList)
+        let reloadedItem = try #require(reloadedList.data.items.first)
+        let terminalOccurrences = try reloadedItem.schedules.map { schedule in
+            try #require(schedule.occurrence)
+        }
+        #expect(terminalOccurrences.map(\.status) == ["taken", "taken"])
+        #expect(terminalOccurrences.map(\.snoozedUntil) == [nil, nil])
         #expect(
             try await repository.history(
                 kind: .supplement,

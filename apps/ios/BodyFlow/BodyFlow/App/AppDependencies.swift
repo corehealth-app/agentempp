@@ -77,7 +77,8 @@ struct AppDependencies: Sendable {
            let scenario = configuration.prompt13Scenario {
             let repository = DemoBodyFlowRepository(scenario: scenario)
             timeProvider = FixedTimeProvider(
-                value: Date(timeIntervalSince1970: 1_784_589_300)
+                value: configuration.routineCrossingDateTimeOverride
+                    ?? Date(timeIntervalSince1970: 1_784_589_300)
             )
             idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
                 prefix: "prompt13-key"

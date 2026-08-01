@@ -940,7 +940,11 @@ enum DemoBodyFlowFixtures {
     static let routineConflictSupplementList = RoutineListResponse(
         data: RoutineListSnapshot(
             localDate: "2026-07-20",
-            items: [routineSupplement(status: nil, version: 2)]
+            items: [routineSupplement(
+                status: .taken,
+                firstScheduleStatus: "taken",
+                version: 2
+            )]
         ),
         meta: metadata("demo-supplement-list-conflict-reloaded")
     )
@@ -1476,6 +1480,7 @@ enum DemoBodyFlowFixtures {
 
     private static func routineSupplement(
         status: RoutineActionStatus?,
+        firstScheduleStatus: String = "snoozed",
         version: Int
     ) -> RoutineItemSnapshot {
         RoutineItemSnapshot(
@@ -1498,9 +1503,11 @@ enum DemoBodyFlowFixtures {
                     weekdays: [1, 3, 5],
                     occurrence: RoutineOccurrenceSnapshot(
                         scheduledFor: apiTimestamp(1_784_588_400),
-                        status: "snoozed",
+                        status: firstScheduleStatus,
                         lastActionAt: apiTimestamp(1_784_588_460),
-                        snoozedUntil: apiTimestamp(1_784_590_260)
+                        snoozedUntil: firstScheduleStatus == "snoozed"
+                            ? apiTimestamp(1_784_590_260)
+                            : nil
                     )
                 ),
                 RoutineScheduleSnapshot(

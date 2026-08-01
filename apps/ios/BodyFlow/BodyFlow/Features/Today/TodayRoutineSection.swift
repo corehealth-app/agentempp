@@ -22,6 +22,13 @@ struct TodayRoutineCollectionDescriptor: Equatable, Sendable, Identifiable {
                 "Nenhum medicamento registrado."
             }
         }
+
+        var routineKind: RoutineItemKind {
+            switch self {
+            case .supplement: .supplement
+            case .medication: .medication
+            }
+        }
     }
 
     enum State: Equatable, Sendable {
@@ -39,6 +46,7 @@ struct TodayRoutineCollectionDescriptor: Equatable, Sendable, Identifiable {
 
 struct TodayRoutineDescriptor: Equatable, Sendable, Identifiable {
     let id: String
+    let kind: RoutineItemKind
     let name: String
     let doseText: String?
     let occurrenceStatuses: [String]
@@ -74,6 +82,17 @@ struct TodayRoutineSectionView: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
+            NavigationLink(value: AppRoute.routine(RoutineRoute(
+                kind: collection.kind.routineKind,
+                destination: .list
+            ))) {
+                Label("Ver lista", systemImage: "list.bullet")
+                    .font(BodyFlowTypography.callout)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("routine.list.\(collection.kind.routineKind.rawValue)")
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+
             switch collection.state {
             case .unavailable:
                 Label("Indisponível", systemImage: "nosign")
@@ -92,7 +111,12 @@ struct TodayRoutineSectionView: View {
     }
 
     private func routineContent(_ routine: TodayRoutineDescriptor) -> some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+        NavigationLink(value: AppRoute.routine(RoutineRoute(
+            kind: routine.kind,
+            itemID: routine.id,
+            destination: .detail
+        ))) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
             Text(routine.name)
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.primaryText)
@@ -111,7 +135,9 @@ struct TodayRoutineSectionView: View {
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
         }
-        .accessibilityElement(children: .combine)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("routine.\(routine.id)")
     }
 
     private func statusIcon(_ status: String) -> String {

@@ -63,7 +63,7 @@ struct AppShellView: View {
         NavigationStack(path: router.binding(for: tab)) {
             rootView(for: tab)
                 .navigationDestination(for: AppRoute.self) { route in
-                    FeatureDetailView(route: route)
+                    destination(for: route)
                 }
         }
     }
@@ -84,6 +84,36 @@ struct AppShellView: View {
             ProgressRootView()
         case .profile:
             ProfileRootView(userID: userID)
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: AppRoute) -> some View {
+        switch route {
+        case .detail:
+            FeatureDetailView(route: route)
+        case let .routine(routineRoute):
+            switch routineRoute.destination {
+            case .list:
+                RoutineListView(
+                    kind: routineRoute.kind,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case .detail:
+                RoutineDetailRouteView(
+                    route: routineRoute,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case .history:
+                RoutineHistoryView(
+                    kind: routineRoute.kind,
+                    itemID: routineRoute.itemID ?? "",
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            }
         }
     }
 }

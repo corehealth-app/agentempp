@@ -47,7 +47,11 @@ final class FeatureInvalidationCenter {
     }
 
     func record(_ invalidation: FeatureInvalidation) {
-        for key in invalidation.keys {
+        record(keys: invalidation.keys)
+    }
+
+    func record(keys: Set<FeatureInvalidationKey>) {
+        for key in keys {
             revisions[key, default: 0] += 1
         }
     }

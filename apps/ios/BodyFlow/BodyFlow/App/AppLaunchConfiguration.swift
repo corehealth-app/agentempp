@@ -28,6 +28,7 @@ enum DemoBodyFlowScenario: Equatable, Sendable {
     case unavailablePresentation
     case registrationFailureOnce
     case routineConflictOnce
+    case routineActionUnavailable
     case reduceMotionVerification
 
     fileprivate static func resolve(arguments: [String]) -> DemoBodyFlowScenario? {
@@ -43,6 +44,7 @@ enum DemoBodyFlowScenario: Equatable, Sendable {
             ("--ui-testing-prompt13-unavailable", .unavailablePresentation),
             ("--ui-testing-prompt13-registration-error-once", .registrationFailureOnce),
             ("--ui-testing-prompt13-routine-conflict-once", .routineConflictOnce),
+            ("--ui-testing-prompt13-routine-action-unavailable", .routineActionUnavailable),
             ("--ui-testing-prompt13-reduce-motion", .reduceMotionVerification),
         ]
 
@@ -94,6 +96,18 @@ struct AppLaunchConfiguration: Sendable {
         return PatientTimeZoneContext(
             documentedIANAIdentifier: "America/Sao_Paulo"
         )
+    }
+
+    /// UI-test-only clock used to exercise a same-local-date snooze boundary.
+    /// It is unavailable outside a configured debug Prompt 13 demo launch.
+    var routineCrossingDateTimeOverride: Date? {
+        guard mode == .demo,
+              prompt13Scenario != nil,
+              ProcessInfo.processInfo.arguments.contains(
+                "--ui-testing-routine-crossing-date"
+              )
+        else { return nil }
+        return Date(timeIntervalSince1970: 1_784_602_200) // 2026-07-20 23:50 BRT
     }
     #else
     init(

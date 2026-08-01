@@ -173,6 +173,7 @@ struct TodayPresentation: Equatable, Sendable {
         let items = section.items.map { item in
             TodayRoutineDescriptor(
                 id: item.id,
+                kind: kind == .supplement ? .supplement : .medication,
                 name: item.name,
                 doseText: item.doseText,
                 occurrenceStatuses: item.occurrences.map(\.status)

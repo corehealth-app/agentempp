@@ -7,6 +7,7 @@ struct AppShellView: View {
     @State private var invalidationCenter: FeatureInvalidationCenter
     @State private var todayViewModel: TodayViewModel
     @State private var planViewModel: PlanViewModel
+    @State private var progressViewModel: ProgressViewModel
     let userID: String
     let dependencies: AppDependencies
 
@@ -24,6 +25,9 @@ struct AppShellView: View {
         )
         _planViewModel = State(
             initialValue: PlanViewModel(provider: dependencies.plan)
+        )
+        _progressViewModel = State(
+            initialValue: ProgressViewModel(provider: dependencies.progress)
         )
     }
 
@@ -88,7 +92,10 @@ struct AppShellView: View {
                 selectedTab: $selectedTab
             )
         case .progress:
-            ProgressRootView()
+            ProgressRootView(
+                model: progressViewModel,
+                selectedTab: $selectedTab
+            )
         case .profile:
             ProfileRootView(userID: userID)
         }
@@ -123,6 +130,8 @@ struct AppShellView: View {
             }
         case .plan:
             PlanDetailView(provider: dependencies.plan)
+        case .progress:
+            Block7700DetailView(today: dependencies.today)
         }
     }
 }

@@ -4,6 +4,76 @@ import Testing
 @testable import BodyFlow
 
 enum BodyFlowTestFixtures {
+    static let progressSnapshot = ProgressSnapshot(
+        xpTotal: 12_345,
+        level: 13,
+        currentStreak: 4,
+        longestStreak: 29,
+        blocksCompleted: 7,
+        deficitBlock: 611,
+        currentWeight: Decimal(string: "83.75"),
+        currentBodyFatPercent: Decimal(string: "18.25"),
+        badgesEarned: ["badge-z", "badge-a"],
+        lastActiveDate: "2026-07-28",
+        nextReevaluation: "2026-08-19",
+        updatedAt: APITimestamp(value: Date(timeIntervalSince1970: 1_785_283_200))
+    )
+
+    static let progressResponse = ProgressResponse(
+        data: progressSnapshot,
+        meta: MobileResponseMetadata(
+            apiVersion: "v1",
+            requestID: "progress-presentation-0001"
+        )
+    )
+
+    static let todayBlock = TodayBlock7700(
+        enabled: true,
+        availability: "available",
+        targetKcal: 7_700,
+        currentKcal: 2_500,
+        percentage: 32,
+        completedBlocks: 1,
+        totalCreditedKcal: 10_200,
+        source: "today-user-progress-snapshot"
+    )
+
+    static let todayResponseWithBlock: TodayResponse = {
+        var response = try! decodeInconsistentToday()
+        response = TodayResponse(
+            data: TodaySnapshot(
+                localDate: response.data.localDate,
+                protocolName: response.data.protocolName,
+                targets: response.data.targets,
+                consumed: response.data.consumed,
+                remainingFoodKcal: response.data.remainingFoodKcal,
+                foodExcessKcal: response.data.foodExcessKcal,
+                exerciseKcal: response.data.exerciseKcal,
+                dailyBalanceKcal: response.data.dailyBalanceKcal,
+                dailyBalanceStatus: response.data.dailyBalanceStatus,
+                proteinStatus: response.data.proteinStatus,
+                meals: response.data.meals,
+                workouts: response.data.workouts,
+                hydration: response.data.hydration,
+                supplements: response.data.supplements,
+                medications: response.data.medications,
+                pendingActions: response.data.pendingActions,
+                block7700: todayBlock,
+                completionStatus: response.data.completionStatus,
+                sources: response.data.sources,
+                calculationVersion: response.data.calculationVersion,
+                updatedAt: response.data.updatedAt,
+                generatedAt: response.data.generatedAt
+            ),
+            meta: response.meta
+        )
+        return response
+    }()
+
+    static let todayResponseWithoutBlock: TodayResponse = {
+        try! decodeTodayWithoutOptionalBlock()
+    }()
+
     static let textMealDetectionInput = MealDetectionInput.text(
         "arroz integral e feijao"
     )

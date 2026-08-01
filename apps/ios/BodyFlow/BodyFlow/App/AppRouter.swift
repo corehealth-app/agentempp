@@ -5,6 +5,7 @@ enum AppRoute: Hashable, Sendable {
     case detail(tab: AppTab, id: String)
     case routine(RoutineRoute)
     case plan(PlanRoute)
+    case progress(ProgressRoute)
 
     var tab: AppTab {
         switch self {
@@ -14,6 +15,8 @@ enum AppRoute: Hashable, Sendable {
             .today
         case .plan:
             .plan
+        case .progress:
+            .progress
         }
     }
 
@@ -32,6 +35,12 @@ enum AppRoute: Hashable, Sendable {
 /// destination reloads only the current Plan capability.
 enum PlanRoute: Hashable, Sendable {
     case detail
+}
+
+/// Progress routes carry no response snapshot. The block destination reloads
+/// only the Today capability, which is its documented source of truth.
+enum ProgressRoute: Hashable, Sendable {
+    case block7700
 }
 
 enum RoutineRouteDestination: Hashable, Sendable {

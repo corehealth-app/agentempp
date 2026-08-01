@@ -51,6 +51,62 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     }
 
     @MainActor
+    func testProgressShowsReceivedValues() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        app.tabBars.buttons["Progresso"].tap()
+        XCTAssertTrue(
+            element("progress.received-values", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["7.420 XP"].exists)
+        XCTAssertTrue(app.staticTexts["6.999 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["78,4 kg"].exists)
+    }
+
+    @MainActor
+    func testBlockDetailUsesTodaySnapshot() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        app.tabBars.buttons["Progresso"].tap()
+        let detail = element("progress.block.detail", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        support.assertMinimumTapTarget(detail)
+        detail.tap()
+
+        XCTAssertTrue(
+            element("screen.block7700.detail", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["2.500 kcal"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["user_progress"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["6.999 kcal"].exists)
+    }
+
+    @MainActor
+    func testUnavailableBlockDoesNotShowZero() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .incomplete)
+
+        app.tabBars.buttons["Progresso"].tap()
+        let detail = element("progress.block.detail", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        detail.tap()
+
+        XCTAssertTrue(
+            element("screen.block7700.detail", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Indisponível nesta versão"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.staticTexts["0 kcal"].exists)
+        XCTAssertFalse(app.staticTexts["0%"].exists)
+    }
+
+    @MainActor
     private func element(
         _ identifier: String,
         in app: XCUIApplication

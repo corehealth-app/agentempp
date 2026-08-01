@@ -6,6 +6,8 @@ enum RegistrationSheetOperationIntent: Equatable, Sendable {
     case edit(MealProposalRequest)
     case confirm
     case cancel
+    case workoutProposal(WorkoutProposalRequest)
+    case workoutEdit(WorkoutProposalRequest)
 }
 
 @MainActor

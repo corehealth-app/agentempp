@@ -9,6 +9,7 @@ struct RegistrationSheet: View {
     let dependencies: AppDependencies
     let invalidationCenter: FeatureInvalidationCenter
     @State private var mealModel: MealRegistrationModel
+    @State private var workoutModel: WorkoutRegistrationModel
     @State private var taskCoordinator = RegistrationSheetTaskCoordinator()
 
     init(
@@ -26,6 +27,12 @@ struct RegistrationSheet: View {
             keyProvider: dependencies.idempotencyKeyProvider,
             invalidationCenter: invalidationCenter,
             demonstrationTextLimit: Self.demonstrationTextLimit
+        ))
+        _workoutModel = State(initialValue: WorkoutRegistrationModel(
+            registration: dependencies.registration,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider,
+            invalidationCenter: invalidationCenter
         ))
     }
 
@@ -75,6 +82,28 @@ struct RegistrationSheet: View {
                         }
                     )
                         .accessibilityIdentifier(sheet.id)
+                } else if kind == .training {
+                    WorkoutRegistrationContent(
+                        model: workoutModel,
+                        propose: { proposal in
+                            perform(.workoutProposal(proposal)) {
+                                await workoutModel.submit(proposal)
+                            }
+                        },
+                        saveEdit: { proposal in
+                            perform(.workoutEdit(proposal)) {
+                                await workoutModel.saveEdit(proposal)
+                            }
+                        },
+                        retry: {
+                            perform(.operationAction(.retry)) {
+                                await workoutModel.retry()
+                            }
+                        },
+                        confirm: { perform(.confirm) { await workoutModel.confirm() } },
+                        cancel: { perform(.cancel) { await workoutModel.cancel() } }
+                    )
+                    .accessibilityIdentifier(sheet.id)
                 } else {
                     GeometryReader { geometry in
                         ScrollView {
@@ -153,6 +182,7 @@ struct RegistrationSheet: View {
     private func discardOperation() {
         taskCoordinator.discard()
         mealModel.discardSheet()
+        workoutModel.discardSheet()
     }
 
     static func presentationDetents(
@@ -161,6 +191,77 @@ struct RegistrationSheet: View {
         dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium]
     }
 }
+
+@MainActor
+private struct WorkoutRegistrationContent: View {
+    let model: WorkoutRegistrationModel
+    let propose: @MainActor (WorkoutProposalRequest) -> Void
+    let saveEdit: @MainActor (WorkoutProposalRequest) -> Void
+    let retry: @MainActor () -> Void
+    let confirm: @MainActor () -> Void
+    let cancel: @MainActor () -> Void
+    @State private var showingEditor = false
+    @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                content
+                RegistrationOperationSummary(
+                    state: model.mutationState,
+                    captureError: model.captureError
+                ) { action in
+                    if action == .retry { retry() } else { model.startNewProposal() }
+                }
+                .accessibilityFocused($operationFocus, equals: .operationSummary)
+            }
+            .padding(BodyFlowSpacing.lg)
+        }
+        .navigationDestination(isPresented: $showingEditor) {
+            if let draft = model.pendingDraft {
+                WorkoutRegistrationView(
+                    initialPerformedAt: model.initialPerformedAt,
+                    initialProposal: draft,
+                    actionTitle: "Salvar", isSubmitting: model.isSubmitting
+                ) { edit in
+                    showingEditor = false
+                    saveEdit(edit)
+                }
+                .navigationTitle("Editar proposta")
+            }
+        }
+        .onChange(of: model.accessibilityFocusTarget) { _, target in
+            guard let target else { return }
+            operationFocus = target
+            model.consumeAccessibilityFocus()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let proposal = model.currentProposal {
+            WorkoutProposalView(
+                proposal: WorkoutProposalPresentation(registration: proposal),
+                isSubmitting: model.isSubmitting,
+                edit: { showingEditor = true }, confirm: confirm, cancel: cancel
+            )
+        } else if model.phase == .confirmed {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                Text("Treino confirmado").font(BodyFlowTypography.title).fontWeight(.semibold)
+                Text("O registro confirmado não pode ser editado nesta tela.")
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            }
+            .accessibilityIdentifier("registration.proposal.confirmed")
+        } else {
+            WorkoutRegistrationView(
+                initialPerformedAt: model.initialPerformedAt,
+                isSubmitting: model.isSubmitting, submit: propose
+            )
+        }
+    }
+
+}
+
 
 #Preview("Registro · Refeição") {
     let dependencies = AppDependencies.scaffold()

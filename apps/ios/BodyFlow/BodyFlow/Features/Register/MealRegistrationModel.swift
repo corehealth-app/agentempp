@@ -422,7 +422,7 @@ final class MealRegistrationModel {
     }
 }
 
-private struct RegistrationAttemptCoordinator {
+struct RegistrationAttemptCoordinator {
     let timeProvider: any TimeProviding
     let keyProvider: any IdempotencyKeyProviding
 

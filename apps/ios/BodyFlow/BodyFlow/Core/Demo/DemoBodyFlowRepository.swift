@@ -820,6 +820,9 @@ actor DemoBodyFlowRepository:
     }
 
     private func prepareRegistrationMutation() throws {
+        if scenario == .unavailablePresentation {
+            throw BodyFlowCapabilityError.operationUnavailable
+        }
         guard scenario == .registrationFailureOnce,
               !consumedRegistrationFailure
         else {

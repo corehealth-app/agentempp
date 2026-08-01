@@ -42,7 +42,11 @@ struct AppShellView: View {
         }
         .environment(router)
         .sheet(item: presentedSheetBinding) { sheet in
-            RegistrationSheet(sheet: sheet)
+            RegistrationSheet(
+                sheet: sheet,
+                dependencies: dependencies,
+                invalidationCenter: invalidationCenter
+            )
                 .environment(router)
         }
     }

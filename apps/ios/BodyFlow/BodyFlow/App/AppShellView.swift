@@ -6,6 +6,7 @@ struct AppShellView: View {
     @State private var router = AppRouter()
     @State private var invalidationCenter: FeatureInvalidationCenter
     @State private var todayViewModel: TodayViewModel
+    @State private var planViewModel: PlanViewModel
     let userID: String
     let dependencies: AppDependencies
 
@@ -20,6 +21,9 @@ struct AppShellView: View {
         )
         _todayViewModel = State(
             initialValue: TodayViewModel(provider: dependencies.today)
+        )
+        _planViewModel = State(
+            initialValue: PlanViewModel(provider: dependencies.plan)
         )
     }
 
@@ -79,7 +83,10 @@ struct AppShellView: View {
         case .register:
             RegisterRootView()
         case .plan:
-            PlanRootView()
+            PlanRootView(
+                model: planViewModel,
+                selectedTab: $selectedTab
+            )
         case .progress:
             ProgressRootView()
         case .profile:
@@ -114,6 +121,8 @@ struct AppShellView: View {
                     invalidationCenter: invalidationCenter
                 )
             }
+        case .plan:
+            PlanDetailView(provider: dependencies.plan)
         }
     }
 }

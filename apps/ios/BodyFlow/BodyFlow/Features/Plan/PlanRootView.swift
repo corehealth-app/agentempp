@@ -2,108 +2,73 @@ import SwiftUI
 
 @MainActor
 struct PlanRootView: View {
-    let fixture: PlanFixture
-    let state: ScreenContentState
-    private let retryAction: @MainActor () -> Void
-
-    init(
-        fixture: PlanFixture = AppFixtures.plan,
-        state: ScreenContentState = .loaded,
-        retryAction: @escaping @MainActor () -> Void = {}
-    ) {
-        self.fixture = fixture
-        self.state = state
-        self.retryAction = retryAction
-    }
+    let model: PlanViewModel
+    @Binding var selectedTab: AppTab
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
-
-            if let screenState = state.screenState {
-                ScreenStateView(state: screenState, retryAction: retryAction)
-            } else {
-                loadedContent
-            }
+            PlanReadContent(model: model, showsDetailLink: true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.plan.rootAccessibilityIdentifier)
         .navigationTitle("Plano")
-    }
-
-    private var loadedContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("SUA SEMANA")
-                        .font(BodyFlowTypography.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(BodyFlowColor.accent)
-
-                    Text(fixture.title)
-                        .font(BodyFlowTypography.largeTitle)
-                        .fontWeight(.bold)
-                        .foregroundStyle(BodyFlowColor.primaryText)
-
-                    Text("Visão local dos valores já fornecidos pelo servidor.")
-                        .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                }
-
-                BodyFlowCard {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                        Label("Sessões", systemImage: "calendar")
-                            .font(BodyFlowTypography.headline)
-                            .foregroundStyle(BodyFlowColor.primaryText)
-
-                        FixtureMetricRow(
-                            title: "Planejadas",
-                            value: "\(fixture.plannedSessions)"
-                        )
-                        Divider()
-                        FixtureMetricRow(
-                            title: "Concluídas",
-                            value: "\(fixture.completedSessions)"
-                        )
-                        Divider()
-                        FixtureMetricRow(
-                            title: "Próxima sessão",
-                            value: fixture.nextItemLabel
-                        )
-                    }
-                }
-
-                NavigationLink(
-                    value: AppRoute.detail(tab: .plan, id: "weekly-plan")
-                ) {
-                    BodyFlowCard {
-                        FeatureActionLabel(
-                            title: "Ver detalhes do plano",
-                            detail: "Abrir destino local de demonstração",
-                            systemImage: "list.clipboard"
-                        )
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("plan.detail")
-            }
-            .padding(BodyFlowSpacing.md)
+        .task(id: selectedTab) {
+            guard selectedTab == .plan else { return }
+            await model.load()
         }
     }
 }
 
-#Preview("Plano · Loaded") {
-    NavigationStack {
-        PlanRootView()
-    }
-    .environment(AppRouter())
-    .installAppDependencies(AppDependencies.scaffold())
-}
+@MainActor
+struct PlanReadContent: View {
+    let model: PlanViewModel
+    var showsDetailLink = false
 
-#Preview("Plano · Error") {
-    NavigationStack {
-        PlanRootView(state: .recoverableError)
+    var body: some View {
+        let presentation = model.state.presentation
+        if let screenState = presentation.fullScreenState {
+            ScreenStateView(state: screenState, retryAction: retry)
+        } else if let snapshot = presentation.value {
+            ScrollView {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                    if presentation.showsStaleBanner {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                            StaleDataBanner()
+                            retryButton
+                        }
+                    }
+
+                    PlanContentView(presentation: PlanPresentation(snapshot: snapshot))
+
+                    if showsDetailLink {
+                        NavigationLink(value: AppRoute.plan(.detail)) {
+                            BodyFlowCard {
+                                FeatureActionLabel(
+                                    title: "Ver detalhes do plano",
+                                    detail: "Recarregar os dados atuais do plano",
+                                    systemImage: "list.clipboard"
+                                )
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("plan.detail")
+                    }
+
+                }
+                .padding(BodyFlowSpacing.md)
+            }
+        }
     }
-    .environment(AppRouter())
-    .installAppDependencies(AppDependencies.scaffold())
+
+    private var retryButton: some View {
+        Button("Tentar novamente", action: retry)
+            .font(BodyFlowTypography.headline)
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            .accessibilityIdentifier("state.retry")
+    }
+
+    private func retry() {
+        Task { await model.retry() }
+    }
 }

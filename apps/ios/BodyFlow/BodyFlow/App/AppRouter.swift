@@ -4,6 +4,7 @@ import SwiftUI
 enum AppRoute: Hashable, Sendable {
     case detail(tab: AppTab, id: String)
     case routine(RoutineRoute)
+    case plan(PlanRoute)
 
     var tab: AppTab {
         switch self {
@@ -11,6 +12,8 @@ enum AppRoute: Hashable, Sendable {
             tab
         case .routine:
             .today
+        case .plan:
+            .plan
         }
     }
 
@@ -23,6 +26,12 @@ enum AppRoute: Hashable, Sendable {
         case .profile: "route.perfil.detalhe"
         }
     }
+}
+
+/// Plan navigation intentionally carries no mutable plan snapshot. The
+/// destination reloads only the current Plan capability.
+enum PlanRoute: Hashable, Sendable {
+    case detail
 }
 
 enum RoutineRouteDestination: Hashable, Sendable {

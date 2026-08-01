@@ -10,6 +10,8 @@ struct RegistrationSheet: View {
     let invalidationCenter: FeatureInvalidationCenter
     @State private var mealModel: MealRegistrationModel
     @State private var workoutModel: WorkoutRegistrationModel
+    @State private var hydrationModel: HydrationRegistrationModel
+    @State private var weightModel: WeightRegistrationModel
     @State private var taskCoordinator = RegistrationSheetTaskCoordinator()
 
     init(
@@ -30,6 +32,18 @@ struct RegistrationSheet: View {
         ))
         _workoutModel = State(initialValue: WorkoutRegistrationModel(
             registration: dependencies.registration,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider,
+            invalidationCenter: invalidationCenter
+        ))
+        _hydrationModel = State(initialValue: HydrationRegistrationModel(
+            recording: dependencies.hydration,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider,
+            invalidationCenter: invalidationCenter
+        ))
+        _weightModel = State(initialValue: WeightRegistrationModel(
+            recording: dependencies.weight,
             timeProvider: dependencies.timeProvider,
             keyProvider: dependencies.idempotencyKeyProvider,
             invalidationCenter: invalidationCenter
@@ -102,6 +116,46 @@ struct RegistrationSheet: View {
                         },
                         confirm: { perform(.confirm) { await workoutModel.confirm() } },
                         cancel: { perform(.cancel) { await workoutModel.cancel() } }
+                    )
+                    .accessibilityIdentifier(sheet.id)
+                } else if kind == .hydration {
+                    HydrationRegistrationContent(
+                        model: hydrationModel,
+                        submit: { quickAmount, customAmount, occurredAt in
+                            perform(.hydration(
+                                amountML: quickAmount,
+                                customAmount: customAmount,
+                                occurredAt: occurredAt
+                            )) {
+                                if let quickAmount {
+                                    await hydrationModel.submitQuick(
+                                        quickAmount,
+                                        occurredAt: occurredAt
+                                    )
+                                } else {
+                                    await hydrationModel.submitCustom(
+                                        customAmount,
+                                        occurredAt: occurredAt
+                                    )
+                                }
+                            }
+                        },
+                        retry: { perform(.operationAction(.retry)) { await hydrationModel.retry() } }
+                    )
+                    .accessibilityIdentifier(sheet.id)
+                } else if kind == .weight {
+                    WeightRegistrationContent(
+                        model: weightModel,
+                        submit: { value, recordedAt in
+                            let parsedValue = Double(value.replacingOccurrences(of: ",", with: "."))
+                            perform(.weight(value: parsedValue, recordedAt: recordedAt)) {
+                                await weightModel.submit(
+                                    weightKG: parsedValue ?? .nan,
+                                    recordedAt: recordedAt
+                                )
+                            }
+                        },
+                        retry: { perform(.operationAction(.retry)) { await weightModel.retry() } }
                     )
                     .accessibilityIdentifier(sheet.id)
                 } else {
@@ -183,12 +237,127 @@ struct RegistrationSheet: View {
         taskCoordinator.discard()
         mealModel.discardSheet()
         workoutModel.discardSheet()
+        hydrationModel.discardSheet()
+        weightModel.discardSheet()
     }
 
     static func presentationDetents(
         for dynamicTypeSize: DynamicTypeSize
     ) -> Set<PresentationDetent> {
         dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium]
+    }
+}
+
+@MainActor
+private struct HydrationRegistrationContent: View {
+    let model: HydrationRegistrationModel
+    let submit: @MainActor (Int?, String, Date) -> Void
+    let retry: @MainActor () -> Void
+    @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                HydrationRegistrationView(
+                    initialOccurredAt: model.initialOccurredAt,
+                    isSubmitting: model.isSubmitting,
+                    submit: submit
+                )
+                OperationResultSummary(
+                    state: model.mutationState,
+                    captureError: model.captureError,
+                    validationMessage: "Informe um valor inteiro entre 1 e 5.000 ml.",
+                    successMessage: "Hidratação registrada.",
+                    retry: retry
+                )
+                .accessibilityFocused($operationFocus, equals: .operationSummary)
+            }
+            .padding(BodyFlowSpacing.lg)
+        }
+        .onChange(of: model.accessibilityFocusTarget) { _, target in
+            guard let target else { return }
+            operationFocus = target
+            model.consumeAccessibilityFocus()
+        }
+    }
+}
+
+@MainActor
+private struct WeightRegistrationContent: View {
+    let model: WeightRegistrationModel
+    let submit: @MainActor (String, Date) -> Void
+    let retry: @MainActor () -> Void
+    @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                WeightRegistrationView(
+                    initialRecordedAt: model.initialRecordedAt,
+                    isSubmitting: model.isSubmitting,
+                    submit: submit
+                )
+                OperationResultSummary(
+                    state: model.mutationState,
+                    captureError: model.captureError,
+                    validationMessage: "Informe um valor entre 30 e 300 kg.",
+                    successMessage: nil,
+                    demoReceipt: model.receipt,
+                    retry: retry
+                )
+                .accessibilityFocused($operationFocus, equals: .operationSummary)
+            }
+            .padding(BodyFlowSpacing.lg)
+        }
+        .onChange(of: model.accessibilityFocusTarget) { _, target in
+            guard let target else { return }
+            operationFocus = target
+            model.consumeAccessibilityFocus()
+        }
+    }
+}
+
+private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Equatable & Sendable>: View {
+    let state: FeatureMutationState<Attempt, Receipt>
+    let captureError: BodyFlowCapabilityError?
+    let validationMessage: String
+    let successMessage: String?
+    var demoReceipt: WeightDemoReceipt? = nil
+    let retry: @MainActor () -> Void
+
+    var body: some View {
+        Group {
+            if let message {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                    Text(message)
+                    if retryIsAvailable {
+                        Button("Tentar novamente", action: retry)
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                            .accessibilityIdentifier("registration.mutation.retry")
+                    }
+                }
+                .font(BodyFlowTypography.callout)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(demoReceipt == nil ? "registration.operation.summary" : "registration.weight.demo-receipt")
+    }
+
+    private var message: String? {
+        if let demoReceipt { return demoReceipt.label }
+        if captureError == .invalidInput { return validationMessage }
+        switch state {
+        case .unavailable: return "Indisponível nesta versão"
+        case .succeeded: return successMessage
+        case .failed: return "Não foi possível concluir. Tente novamente."
+        case .idle, .submitting: return nil
+        }
+    }
+
+    private var retryIsAvailable: Bool {
+        if case .failed = state { true } else { false }
     }
 }
 

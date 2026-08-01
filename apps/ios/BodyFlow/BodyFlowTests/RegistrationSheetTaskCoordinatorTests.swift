@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BodyFlow
@@ -25,7 +26,7 @@ struct RegistrationSheetTaskCoordinatorTests {
         await work.resumeAll()
     }
 
-    @Test("changed capture payload cancels the old task and starts its replacement")
+    @Test("changed capture payload waits for the cancelled task before starting its replacement")
     func changedCapturePayloadReplacesActiveTask() async {
         let work = SuspendingSheetWork()
         let coordinator = RegistrationSheetTaskCoordinator()
@@ -37,11 +38,67 @@ struct RegistrationSheetTaskCoordinatorTests {
         coordinator.perform(.capture(.text("Alterado"))) {
             await work.run("replacement")
         }
-        await work.waitUntilStarted(2)
         await work.waitUntilCancelled("first")
+        #expect(await work.started == ["first"])
+        await work.resume("first")
+        await work.waitUntilStarted(2)
         #expect(await work.started == ["first", "replacement"])
         coordinator.discard()
         await work.resumeAll()
+    }
+
+    @Test("changed hydration intent runs after a cancelled non-cooperative recording unwinds")
+    func changedHydrationIntentRunsAfterCancellationUnwinds() async {
+        let recording = NonCooperativeHydrationRecording()
+        let center = FeatureInvalidationCenter()
+        let date = Date(timeIntervalSince1970: 1_784_589_300)
+        let model = HydrationRegistrationModel(
+            recording: recording,
+            timeProvider: FixedTimeProvider(value: date),
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "coordinator-hydration"),
+            invalidationCenter: center
+        )
+        let coordinator = RegistrationSheetTaskCoordinator()
+        var operationCalls = 0
+
+        coordinator.perform(.hydration(amountML: 250, customAmount: "", occurredAt: date)) {
+            operationCalls += 1
+            await model.submitQuick(250, occurredAt: date)
+        }
+        await recording.waitUntilStarted(1)
+
+        coordinator.perform(.hydration(amountML: 500, customAmount: "", occurredAt: date)) {
+            operationCalls += 1
+            await model.submitQuick(500, occurredAt: date)
+        }
+        await recording.waitUntilCancelled(1)
+
+        guard operationCalls == 1 else {
+            Issue.record("Replacement began while the first recording was still submitting")
+            await recording.succeedNext()
+            coordinator.discard()
+            return
+        }
+
+        await recording.succeedNext()
+        guard await recording.waitUntilStarted(2) else {
+            Issue.record("Replacement was not started after the cancelled recording unwound")
+            coordinator.discard()
+            return
+        }
+
+        let attempts = await recording.attempts
+        #expect(operationCalls == 2)
+        #expect(attempts.map(\.payload.amountML) == [250, 500])
+        #expect(attempts[0].key != attempts[1].key)
+
+        await recording.succeedNext()
+        guard await waitUntil({ model.receipt != nil }) else {
+            Issue.record("Replacement receipt was not published")
+            return
+        }
+        #expect(model.accessibilityFocusTarget == .operationSummary)
+        #expect(center.revision(for: .today) == 1)
     }
 
     @Test("dismissal cancels the active task")
@@ -99,7 +156,61 @@ private actor SuspendingSheetWork {
         }
     }
 
+    func resume(_ label: String) {
+        continuations.removeValue(forKey: label)?.resume()
+    }
+
     private func recordCancellation(_ label: String) {
         cancelled.insert(label)
     }
+}
+
+private actor NonCooperativeHydrationRecording: HydrationRecording {
+    private var continuations: [CheckedContinuation<HydrationReceipt, Never>] = []
+    private(set) var attempts: [MutationAttempt<HydrationCommand>] = []
+    private var cancellationCount = 0
+
+    func record(_ attempt: MutationAttempt<HydrationCommand>) async throws -> HydrationReceipt {
+        attempts.append(attempt)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                continuations.append(continuation)
+            }
+        } onCancel: {
+            Task { await self.recordCancellation() }
+        }
+    }
+
+    func waitUntilStarted(_ count: Int) async -> Bool {
+        for _ in 0..<1_000 {
+            if attempts.count >= count { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
+    func waitUntilCancelled(_ count: Int) async {
+        while cancellationCount < count {
+            await Task.yield()
+        }
+    }
+
+    func succeedNext() {
+        continuations.removeFirst().resume(returning: DemoBodyFlowFixtures.hydrationReceipt)
+    }
+
+    private func recordCancellation() {
+        cancellationCount += 1
+    }
+}
+
+@MainActor
+private func waitUntil(
+    _ condition: @escaping @MainActor () -> Bool
+) async -> Bool {
+    for _ in 0..<1_000 {
+        if condition() { return true }
+        await Task.yield()
+    }
+    return false
 }

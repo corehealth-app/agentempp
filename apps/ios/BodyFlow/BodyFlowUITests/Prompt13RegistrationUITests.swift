@@ -246,6 +246,138 @@ final class Prompt13RegistrationUITests: XCTestCase {
     }
 
     @MainActor
+    func testHydrationQuickAndCustomFlowsUseCompleteRefresh() {
+        let app = launchAndOpenHydration(scenario: .loaded)
+        let support = BodyFlowUITestSupport(testCase: self)
+
+        let quick = app.buttons["registration.hydration.quick.250"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["registration.hydration.quick.500"].exists)
+        XCTAssertTrue(app.buttons["registration.hydration.quick.750"].exists)
+        XCTAssertTrue(app.textFields["registration.hydration.custom"].exists)
+        XCTAssertTrue(element("registration.hydration.occurred-at", in: app).exists)
+        support.assertMinimumTapTarget(quick)
+        support.assertMinimumTapTarget(app.buttons["registration.hydration.submit"])
+
+        quick.tap()
+        app.buttons["registration.hydration.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Hidratação registrada."].waitForExistence(timeout: 5))
+
+        app.buttons["sheet.fechar"].tap()
+        app.tabBars.buttons["tab.hoje"].tap()
+        XCTAssertTrue(element("today.hydration", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("today.hydration", in: app).value as? String == "2.111 ml; meta Indisponível")
+
+        app.tabBars.buttons["tab.registrar"].tap()
+        app.buttons["register.hidratacao"].tap()
+        let custom = app.textFields["registration.hydration.custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 3))
+        custom.tap()
+        custom.typeText("500")
+        app.buttons["registration.hydration.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Hidratação registrada."].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testHydrationAndWeightShowExactBoundaryValidation() {
+        let hydration = launchAndOpenHydration(scenario: .loaded)
+        let custom = hydration.textFields["registration.hydration.custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 3))
+        custom.tap()
+        custom.typeText("0")
+        hydration.buttons["registration.hydration.submit"].tap()
+        XCTAssertTrue(
+            hydration.staticTexts["Informe um valor inteiro entre 1 e 5.000 ml."]
+                .waitForExistence(timeout: 5)
+        )
+
+        let weight = launchAndOpenWeight(scenario: .loaded)
+        let value = weight.textFields["registration.weight.value"]
+        XCTAssertTrue(value.waitForExistence(timeout: 3))
+        value.tap()
+        value.typeText("29.99")
+        weight.buttons["registration.weight.submit"].tap()
+        XCTAssertTrue(
+            weight.staticTexts["Informe um valor entre 30 e 300 kg."]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
+    func testWeightReceiptIsClearlyLocal() {
+        let app = launchAndOpenWeight(scenario: .loaded)
+        let support = BodyFlowUITestSupport(testCase: self)
+        let value = app.textFields["registration.weight.value"]
+
+        XCTAssertTrue(value.waitForExistence(timeout: 3))
+        XCTAssertTrue(element("registration.weight.recorded-at", in: app).exists)
+        support.assertMinimumTapTarget(value)
+        support.assertMinimumTapTarget(app.buttons["registration.weight.submit"])
+        value.tap()
+        value.typeText("78.4")
+        app.buttons["registration.weight.submit"].tap()
+
+        let receipt = element("registration.weight.demo-receipt", in: app)
+        XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Demonstração local; não sincronizado"].exists)
+    }
+
+    @MainActor
+    func testWeightValidationClearsPreviousLocalReceipt() {
+        let app = launchAndOpenWeight(scenario: .loaded)
+        let value = app.textFields["registration.weight.value"]
+
+        XCTAssertTrue(value.waitForExistence(timeout: 3))
+        value.tap()
+        value.typeText("78.4")
+        app.buttons["registration.weight.submit"].tap()
+        XCTAssertTrue(
+            element("registration.weight.demo-receipt", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        value.tap()
+        value.typeText("29.99")
+        app.buttons["registration.weight.submit"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Informe um valor entre 30 e 300 kg."]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(element("registration.weight.demo-receipt", in: app).exists)
+        XCTAssertFalse(app.staticTexts["Demonstração local; não sincronizado"].exists)
+    }
+
+    @MainActor
+    func testUnavailableHydrationAndWeightNeverShowSuccess() {
+        let hydration = launchAndOpenHydration(scenario: .unavailable)
+        XCTAssertTrue(
+            hydration.buttons["registration.hydration.submit"]
+                .waitForExistence(timeout: 3)
+        )
+        hydration.buttons["registration.hydration.quick.250"].tap()
+        hydration.buttons["registration.hydration.submit"].tap()
+        XCTAssertTrue(
+            hydration.staticTexts["Indisponível nesta versão"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(hydration.staticTexts["Hidratação registrada."].exists)
+
+        let weight = launchAndOpenWeight(scenario: .unavailable)
+        XCTAssertTrue(
+            weight.buttons["registration.weight.submit"].waitForExistence(timeout: 3)
+        )
+        let weightValue = weight.textFields["registration.weight.value"]
+        weightValue.tap()
+        weightValue.typeText("78.4")
+        weight.buttons["registration.weight.submit"].tap()
+        XCTAssertTrue(
+            weight.staticTexts["Indisponível nesta versão"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(element("registration.weight.demo-receipt", in: weight).exists)
+    }
+
+    @MainActor
     private func reachTextProposal(
         scenario: Prompt13UITestScenario
     ) -> XCUIApplication {
@@ -314,6 +446,48 @@ final class Prompt13RegistrationUITests: XCTestCase {
             element("sheet.registrar.treino", in: app)
                 .waitForExistence(timeout: 3)
         )
+        return app
+    }
+
+    @MainActor
+    private func launchAndOpenHydration(
+        scenario: Prompt13UITestScenario
+    ) -> XCUIApplication {
+        let app = launchRegistration(scenario: scenario)
+        let hydration = app.buttons["register.hidratacao"]
+        XCTAssertTrue(hydration.waitForExistence(timeout: 3))
+        hydration.tap()
+        XCTAssertTrue(
+            element("sheet.registrar.hidratacao", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        return app
+    }
+
+    @MainActor
+    private func launchAndOpenWeight(
+        scenario: Prompt13UITestScenario
+    ) -> XCUIApplication {
+        let app = launchRegistration(scenario: scenario)
+        let weight = app.buttons["register.peso"]
+        XCTAssertTrue(weight.waitForExistence(timeout: 3))
+        weight.tap()
+        XCTAssertTrue(
+            element("sheet.registrar.peso", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        return app
+    }
+
+    @MainActor
+    private func launchRegistration(
+        scenario: Prompt13UITestScenario
+    ) -> XCUIApplication {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: scenario)
+        let registerTab = app.tabBars.buttons["tab.registrar"]
+        XCTAssertTrue(registerTab.waitForExistence(timeout: 5))
+        registerTab.tap()
         return app
     }
 

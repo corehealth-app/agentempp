@@ -4,7 +4,7 @@
 
 **Goal:** Deliver the approved Prompt 14 native iOS experience for the published educational Library and detail, Today recommendations, the BodyFlow mascot, and literal server-owned XP, level, earned-medal and streak presentation without inventing APIs, rewards or calculations.
 
-**Architecture:** Mandatory backend Task 0 first makes the existing Markdown authority detect and reject GFM pipe-table AST nodes at CMS writes and mobile-detail reads. Then small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
+**Architecture:** Mandatory backend Task 0 first makes the existing Markdown authority detect and reject GFM pipe-table AST nodes at author writes, legacy clone/workflow guards and mobile-detail reads. A minimal per-version validation snapshot prevents the admin service from loading publication history or identities. Local fail-closed guards mirror existing source/approve/publish preconditions without redefining them; the database remains final authority for eligible mutations, and the locked submit RPC remains authority for concurrent revision/lifecycle outcomes. Then small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
 
 **Tech Stack:** Xcode 26.6 (build 17F113), Swift 6, SwiftUI, Observation, Foundation, ImageIO, Swift Testing, XCTest/XCUIAutomation, exact `swift-markdown` 0.8.0 at `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, iOS 18.0 deployment target, and iPhone 17 Pro on iOS 26.5 (`27291590-659D-4A29-8F45-CA5CA2D154F9`). Backend Task 0 keeps exact `mdast-util-from-markdown` 2.0.3 and adds exact `micromark-extension-gfm-table` 2.1.1 plus `mdast-util-gfm-table` 2.0.0.
 
@@ -33,9 +33,10 @@
 The approved contract chooses backend fail-closed rejection. GFM pipe tables
 are not BodyFlow content. Task 0 must complete and commit before Task 1 begins:
 the backend recognizes a real table through compatible AST extensions, rejects
-the `table` node clearly at both CMS write boundaries, and revalidates legacy
-stored Markdown before the mobile detail service emits any DTO or cover
-capability.
+the `table` node clearly at both author-input boundaries, guards legacy clone,
+submit, approval and publish transitions, and revalidates legacy stored
+Markdown before the mobile detail service emits any DTO or cover capability.
+Rejecting an incompatible `in_review` version remains deliberately available.
 
 No regex or broad `|` search is permitted. The backend must not escape,
 rewrite or reinterpret a table as prose, and the iOS parser remains strict.
@@ -55,12 +56,13 @@ Prompt 14 does not implement or approve live Release transport. TestFlight remai
 That later gate must include same-origin/redirect tests, current-token/rotation tests, sign-out cancellation tests and an explicit distribution approval. A successful Release build from this plan is only a compile/fail-closed check and never authorizes TestFlight.
 
 The Markdown audit is a second independent distribution gate. A separately
-authorized live read-only run must report zero incompatible current
-published/eligible versions before TestFlight. Task 0 documents the exact
-query/output constraints and adds no automatic live command. If an affected
-version exists, its historical row remains immutable and editors create a new
-version through the existing workflow; TestFlight stays blocked until a fresh
-read-only audit is clean.
+authorized live read-only run must report zero incompatible `current` and
+`scheduled` visibility candidates before TestFlight. Task 0 documents the
+exact activation-point query/output constraints and adds no automatic live
+command. If an affected version exists, its historical row remains immutable
+and editors create a new compatible version through the existing workflow;
+TestFlight stays blocked until a fresh read-only audit is clean in both
+candidate classes.
 
 ## Authoritative Contract Sources
 
@@ -68,6 +70,8 @@ read-only audit is clean.
 - `packages/core/src/content.ts`
 - `packages/core/src/content.test.ts`
 - `packages/core/src/coach-messages.ts`
+- `apps/admin/src/lib/content/admin-service.ts`
+- `apps/admin/src/lib/content/supabase-repository.ts`
 - `apps/admin/src/lib/mobile-api/content-service.ts`
 - `apps/admin/src/lib/mobile-api/supabase-content.ts`
 - `apps/admin/src/lib/mobile-api/coach-service.ts`
@@ -337,11 +341,16 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 - Modify `packages/core/src/content.ts` and
   `packages/core/src/content.test.ts` for AST classification and literal pipe
   behavior.
-- Modify only tests at
-  `apps/admin/src/app/(admin)/content/actions.test.ts` and
-  `apps/admin/src/lib/content/admin-service.test.ts` to prove the two existing
-  `contentDraftInputSchema` write boundaries reject before persistence; their
-  production consumers already share the core validator.
+- Modify `apps/admin/src/app/(admin)/content/actions.test.ts` to preserve the
+  untrusted `saveDraft` boundary test.
+- Modify `apps/admin/src/lib/content/admin-service.ts` and
+  `apps/admin/src/lib/content/admin-service.test.ts` to add the minimal
+  per-version validation snapshot contract and guard source cloning, submit,
+  approve and publish while leaving reject available.
+- Modify `apps/admin/src/lib/content/supabase-repository.ts` and
+  `apps/admin/src/lib/content/supabase-repository.test.ts` for the exact
+  seven-column `content_versions` snapshot query; do not reuse publication
+  detail/history.
 - Modify `apps/admin/src/lib/mobile-api/content-service.ts`,
   `apps/admin/src/lib/mobile-api/content-service.test.ts` and
   `apps/admin/src/app/api/mobile/v1/content/route.test.ts` for atomic,
@@ -439,26 +448,34 @@ database migration, live audit or iOS behavior.
 - Modify: `packages/core/src/content.ts`
 - Modify: `packages/core/src/content.test.ts`
 - Modify: `apps/admin/src/app/(admin)/content/actions.test.ts`
+- Modify: `apps/admin/src/lib/content/admin-service.ts`
 - Modify: `apps/admin/src/lib/content/admin-service.test.ts`
+- Modify: `apps/admin/src/lib/content/supabase-repository.ts`
+- Modify: `apps/admin/src/lib/content/supabase-repository.test.ts`
 - Modify: `apps/admin/src/lib/mobile-api/content-service.ts`
 - Modify: `apps/admin/src/lib/mobile-api/content-service.test.ts`
 - Modify: `apps/admin/src/app/api/mobile/v1/content/route.test.ts`
 
 **Interfaces:**
 - Consumes: existing `validateContentMarkdown`, `contentDraftInputSchema`, CMS
-  `saveDraft` action/service boundaries, `ContentRepository.get`,
-  `getContent`, and the current opaque `MobileApiError` mapping.
-- Produces: exact-pinned GFM-table AST recognition solely for rejection, plus
-  atomic mobile-detail revalidation before cover/DTO work.
+  `saveDraft` action/service boundaries, admin `createDraft`/`submit`/`review`/
+  `publish`, `ContentRepository.get`, `getContent`, the editorial RPC
+  concurrency contract and the current opaque `MobileApiError` mapping.
+- Produces: exact-pinned GFM-table AST recognition solely for rejection; a
+  seven-field `ContentVersionValidationSnapshot` repository capability;
+  legacy clone/workflow guards; and atomic mobile-detail revalidation before
+  cover/DTO work.
 - Preserves: the existing CMS normalization contract for allowed Markdown and
-  the original stored `bodyMarkdown` bytes returned by a valid detail. It adds
+  the original stored `bodyMarkdown` bytes returned by a valid detail; reject
+  remains available; submit's locked RPC remains the stale authority. It adds
   no table renderer, alternate parser, endpoint, migration or live query.
 
 - [ ] **Step 1: Revalidate the documentary and dependency preconditions**
 
-Confirm the approved specification contains the pipe-table rule, both CMS
-boundaries, mobile-detail defense and read-only audit gate. Confirm the branch
-and clean worktree, then prove the existing versions before changing anything:
+Confirm the approved specification contains the pipe-table rule, both
+author-input boundaries, every legacy clone/workflow guard, mobile-detail
+defense and current/scheduled read-only audit gate. Confirm the branch and
+clean worktree, then prove the existing versions before changing anything:
 
 ```bash
 set -euo pipefail
@@ -488,11 +505,58 @@ In `packages/core/src/content.test.ts`, add literal tests proving:
 Use the same table-bearing draft in the CMS suites. The action test must prove
 untrusted `saveDraft` input is rejected before `service.saveDraft`; the service
 test must prove direct service input is rejected before
-`repository.saveDraft`. `createPublication` and `createDraft` need no invented
-body field: they accept no author-supplied `body_markdown`, while every
-author-supplied entry/edit passes through `saveDraft`. An existing
-`sourceVersionId` remains an internal copy reference, not a second body-input
-contract.
+`repository.saveDraft`.
+
+In `apps/admin/src/lib/content/supabase-repository.test.ts`, first require a
+new `getVersionValidationSnapshot(versionId, expectedUpdatedAt?)` capability.
+Its strict row fixture and query log must prove that it:
+
+- selects exactly `id, publication_id, locale, state, body_markdown,
+  updated_at, publish_at` from `content_versions`;
+- filters by `id` and, only when supplied, by `updated_at`;
+- maps only `versionId`, `publicationId`, `locale`, `state`, `bodyMarkdown`,
+  `updatedAt` and `publishAt`;
+- returns null for a missing row and maps malformed/provider failures through
+  the existing opaque repository error path;
+- performs no publication-detail/history, target, asset or admin-identity
+  query.
+
+In `apps/admin/src/lib/content/admin-service.test.ts`, add controlled snapshot
+and mutation spies proving all workflow guards before their repositories are
+called:
+
+1. `createDraft` with an immutable source containing a table never calls
+   `repository.createDraft`;
+2. a legacy table-bearing draft never calls `repository.submit`;
+3. a table-bearing `in_review` version never calls
+   `repository.review(decision=approve)`;
+4. the same `in_review` version can call
+   `repository.review(decision=reject)`, without a validation-snapshot read;
+5. a table-bearing approved version never calls `repository.publish`;
+6. a valid ordinary-pipe body advances through source clone, submit, approve
+   and publish without normalization or rewriting;
+7. a submit whose exact-`expectedUpdatedAt` snapshot is no longer available
+   because the row changed but remains `draft` still delegates to the locked
+   submit RPC and surfaces its existing `stale` result; the same draft-revision
+   race raised after a matching valid preflight also remains `stale`, while a
+   controlled state transition after a matching valid preflight preserves the
+   RPC's lifecycle error;
+8. absent source/approve/publish snapshots fail closed as `not_found` without
+   calling their mutation repositories;
+9. a source snapshot with wrong publication/locale/state, or an approve/publish
+   snapshot with the wrong lifecycle, fails locally as `lifecycle` without
+   calling a mutation; include an incompatible `in_review` source and prove it
+   cannot reach
+   `repository.createDraft` even though a concurrent reject could make that
+   source eligible;
+10. a submit snapshot already in the wrong lifecycle delegates to the locked
+    RPC and preserves its lifecycle error;
+11. null or invalid Markdown fails closed and no incompatible body is cloned,
+    persisted, approved or published.
+
+`createDraft` without `sourceVersionId` remains unchanged. Do not add a body
+field to its command. The source guard exists specifically because the real
+`create_content_draft` RPC copies `v_source.body_markdown`.
 
 In the mobile service and route suites, make the repository return a legacy
 record whose body is that valid pipe table and whose cover is non-null. Assert:
@@ -521,18 +585,22 @@ bodyflow_expect_red pnpm --filter @mpp/admin test -- \
 bodyflow_expect_red pnpm --filter @mpp/admin test -- \
   src/lib/content/admin-service.test.ts
 bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/lib/content/supabase-repository.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
   src/lib/mobile-api/content-service.test.ts
 bodyflow_expect_red pnpm --filter @mpp/admin test -- \
   src/app/api/mobile/v1/content/route.test.ts
 ```
 
-Expected RED: the current parser accepts the pipe table as paragraph text, so
-each command exits non-zero for its intended missing rejection/defense: core,
-untrusted CMS action, CMS service, mobile detail service and atomic route.
-Ordinary and escaped-pipe acceptance assertions inside the core run must
-already pass; if they fail, correct the fixtures rather than weakening the
-contract. Inspect each report and record the named failing assertion; an
-unrelated compile, fixture or infrastructure failure is not an acceptable RED.
+Expected RED: the current parser accepts the pipe table as paragraph text, the
+minimal snapshot does not exist, and clone/submit/approve/publish do not guard
+stored bodies. Each command exits non-zero for its intended missing behavior:
+core AST rejection, untrusted CMS action, admin workflow service, exact
+snapshot repository, mobile detail service and atomic route. Ordinary and
+escaped-pipe acceptance assertions inside the core run must already pass; if
+they fail, correct the fixtures rather than weakening the contract. Inspect
+each report and record the named failing assertion; an unrelated compile,
+fixture or infrastructure failure is not an acceptable RED.
 
 - [ ] **Step 3: Add only the exact compatible AST dependencies**
 
@@ -584,7 +652,7 @@ PY
 Expected: only `packages/core/package.json` and `pnpm-lock.yaml` change at this
 step. Do not add the broad GFM bundle or a table-to-Markdown extension.
 
-- [ ] **Step 4: Implement the minimal AST and mobile-detail GREEN**
+- [ ] **Step 4: Implement the minimal AST, snapshot and workflow GREEN**
 
 In `packages/core/src/content.ts`, import `gfmTable` from
 `micromark-extension-gfm-table` and `gfmTableFromMarkdown` from
@@ -601,7 +669,72 @@ Add an explicit `case 'table'` to the exhaustive block conversion that throws
 `Invalid content Markdown: tables are not supported`. Reject before
 `toMarkdown`; do not install `gfmTableToMarkdown`, use regex, scan `|`, escape
 the table or add permissive fallback. This makes the existing
-`contentDraftInputSchema` enforce the decision at both CMS write boundaries.
+`contentDraftInputSchema` enforce the decision at both author-input CMS write
+boundaries.
+
+In `apps/admin/src/lib/content/admin-service.ts`, add only the narrow contract:
+
+```typescript
+interface ContentVersionValidationSnapshot {
+  versionId: string
+  publicationId: string
+  locale: 'pt-BR' | 'en-US'
+  state: 'draft' | 'in_review' | 'approved' | 'rejected'
+  bodyMarkdown: string | null
+  updatedAt: string
+  publishAt: string | null
+}
+
+getVersionValidationSnapshot(
+  versionId: string,
+  expectedUpdatedAt?: string,
+): Promise<ContentVersionValidationSnapshot | null>
+```
+
+Implement it in `apps/admin/src/lib/content/supabase-repository.ts` with a
+strict schema over exactly
+`id, publication_id, locale, state, body_markdown, updated_at, publish_at` and
+`eq('id', versionId).maybeSingle()`. When `expectedUpdatedAt` is present, add
+only `eq('updated_at', expectedUpdatedAt)` so PostgreSQL applies the timestamp
+equality used by the submit preflight. Do not call
+`ContentAdminRepository.get(publicationId)` or query publication history,
+targets, assets or identities.
+
+Add one shared admin-service helper that calls `validateContentMarkdown` and
+discards its normalized output. It must never log or rewrite `bodyMarkdown`.
+Apply it as follows:
+
+- a `createDraft` without `sourceVersionId` delegates unchanged; with a source,
+  read its snapshot, require the command's publication/locale and the RPC's
+  immutable `approved`/`rejected` source lifecycle, then validate before
+  `repository.createDraft`;
+- `submit` requests the snapshot with the command's exact
+  `expectedUpdatedAt`, requires `draft`, validates it, then calls
+  `repository.submit` with the original precondition unchanged;
+- `review(approve)` reads an `in_review` snapshot and validates it before its
+  RPC;
+- `review(reject)` calls the existing RPC directly, with no snapshot read, so
+  incompatible content can be rejected out of the workflow;
+- `publish` reads an `approved` snapshot with null `publishAt` and validates it
+  before its RPC.
+
+If an unfiltered source/approve/publish snapshot is absent, return the existing
+bounded admin `not_found` error and call no mutation. Return the bounded admin
+`lifecycle` error with no mutation when the source publication/locale/state
+does not match, approval is not `in_review`, or publish is not `approved` with
+null `publishAt`. This local source stop is mandatory: delegating an
+incompatible `in_review` source could race with allowed `review(reject)` and
+let the RPC clone it after it becomes `rejected`. If the submit query has no
+matching `draft` snapshot for `expectedUpdatedAt`, or finds a snapshot already
+outside `draft`, delegate unchanged to the submit RPC solely so its locked
+checks return the authoritative `stale`/not-found/lifecycle result; do not
+manufacture those outcomes in TypeScript. A concurrent body update that leaves
+the row in `draft` returns `stale`; a concurrent submit that changes state
+after a valid preflight returns the RPC lifecycle error. The database's
+existing immutability rules keep eligible source, `in_review` and `approved`
+bodies unchanged between a successful validation and transition. Any
+applicable snapshot with null or invalid `bodyMarkdown` fails closed before the
+mutation call. Do not change an RPC or migration.
 
 In `apps/admin/src/lib/mobile-api/content-service.ts`, call
 `validateContentMarkdown(record.bodyMarkdown)` immediately after the
@@ -615,9 +748,12 @@ in logs or response details.
 
 Run the Step 2 commands again. Then refactor only duplicated synthetic fixture
 construction, keeping the production path minimal. Assert the accepted
-ordinary/escaped pipe ASTs literally, the CMS service/action spies remain at
-zero calls for a table, and the detail route never issues a cover or serializes
-a partial body.
+ordinary/escaped pipe ASTs literally; the exact seven-column snapshot query;
+zero clone/submit/approve/publish calls for matching incompatible snapshots;
+reject availability; absent and lifecycle-mismatch local stops; the unsafe
+`in_review` source/reject race; both authoritative draft-revision stale timings;
+post-preflight lifecycle preservation; and that the detail route never issues
+a cover or serializes a partial body.
 
 ```bash
 set -euo pipefail
@@ -625,43 +761,66 @@ pnpm --filter @mpp/core test -- content.test.ts
 pnpm --filter @mpp/admin test -- \
   'src/app/(admin)/content/actions.test.ts' \
   src/lib/content/admin-service.test.ts \
+  src/lib/content/supabase-repository.test.ts \
   src/lib/mobile-api/content-service.test.ts \
   src/app/api/mobile/v1/content/route.test.ts
 git diff --check
 ```
 
-Expected GREEN: all literal tests pass and the only content table behavior is
-AST rejection.
+Expected GREEN: all literal tests pass; invalid Markdown is never persisted,
+cloned, approved, published, served or partially rendered; ordinary/escaped
+pipes still work; reject and RPC-owned stale behavior are preserved.
 
 - [ ] **Step 6: Review the future live read-only audit without executing it**
 
 Record the following runbook in the Task 0 review/commit handoff; do not create
 or invoke a linked-database command in this task:
 
-1. obtain separate explicit authorization and freeze one `audit_timestamp`;
+1. obtain separate explicit authorization, open one read-only snapshot and
+   freeze one `audit_timestamp` for the entire calculation;
 2. read only `public.content_versions` joined to
-   `public.content_publications`, selecting `content_version.id AS version_id`,
-   `content_version.publication_id`, numeric `content_version.version`,
-   `content_version.locale`, `content_version.state` and
-   `content_version.body_markdown` for in-memory classification;
-3. apply the current repository publication rule exactly: `state='approved'`,
-   non-null `publish_at <= audit_timestamp`, non-archived publication, then
-   `row_number() = 1` per `(publication_id, locale)` ordered by
+   `public.content_publications`, internally selecting the fields needed for
+   eligibility, ordering and parsing; include only non-archived publications
+   and versions with `state='approved'` and non-null `publish_at`;
+3. partition by `(publication_id, locale)`, create activation points at
+   `audit_timestamp` and at every distinct future `publish_at`, and at each
+   point rank all rows with `publish_at <= activation_at` by exactly
    `version DESC, publish_at DESC`;
-4. scan that conservative union before patient-specific targeting; query no
-   user, profile, preference, subscription, health or other PII table;
-5. pass each body directly to the same `validateContentMarkdown` implementation
-   without printing, logging, persisting or including it in an exception;
-6. emit only aggregate scanned/compatible/incompatible counts and affected
-   `version_id`, `publication_id`, `version`, `locale`, `state`;
-7. expose no apply mode and perform no insert, update, delete, RPC mutation,
+4. label the winner at `audit_timestamp` as `candidate_class=current`; label a
+   newly winning version at a later activation as
+   `candidate_class=scheduled`; deduplicate unchanged winners;
+5. exclude a historical or future row only when the same ordering proves that
+   it cannot win now or at any future activation. Exclude approved rows with
+   null `publish_at`: they cannot activate automatically and any later publish
+   command passes through the new guard;
+6. scan the conservative current/scheduled union before patient-specific
+   targeting; query no user, profile, preference, subscription, health or
+   other PII table;
+7. pass only candidate bodies directly to the same
+   `validateContentMarkdown` implementation in memory, without printing,
+   logging, persisting or including Markdown/parser details in an exception;
+8. emit aggregate scanned/compatible/incompatible counts separated by class
+   and, only for affected rows, `version_id`, `publication_id`, numeric
+   `version`, `locale`, `state` and `candidate_class` (`current` or
+   `scheduled`). Never emit `body_markdown`, `publish_at`, activation time,
+   title, excerpt, tags or content fragments;
+9. expose no apply mode and perform no insert, update, delete, RPC mutation,
    migration or editorial state transition.
 
-If the future audit reports any incompatible current candidate, stop the
-TestFlight gate. Do not alter the historical version. Create and publish a new
-version only through the existing editorial workflow, then rerun the read-only
-audit under fresh authorization. Task 1 may follow Task 0 GREEN without a live
-audit; TestFlight may not proceed until the authorized audit is clean.
+The later audit workpack must fixture-review at least: a current highest
+version; first future winner with no current row; a higher future winner; a
+lower future version shadowed by a higher current version; a later lower
+version shadowed by an earlier higher schedule; same-activation ordering;
+archived, unscheduled and non-approved exclusion; winner deduplication; and an
+exact output-key allowlist with no Markdown or PII. This task does not build or
+run that audit.
+
+If the future audit reports any incompatible `current` or `scheduled`
+candidate, stop the TestFlight gate. Do not alter a historical version or
+clone an incompatible source. Create and publish a new compatible version only
+through the existing editorial workflow, then rerun the read-only audit under
+fresh authorization. Task 1 may follow Task 0 GREEN without a live audit;
+TestFlight may not proceed until both incompatible counts are zero.
 
 - [ ] **Step 7: Run the backend checkpoint, review and commit Task 0**
 
@@ -675,8 +834,10 @@ git diff --check
 git status --short
 ```
 
-Review the diff against this exact allowlist, verify no migration/audit output
-or content body is present, and make one conventional checkpoint:
+Review the diff against this exact allowlist, verify no migration, live/real
+content body or audit output is present, and confirm that the only Markdown
+bodies are the reviewed synthetic test fixtures before making one conventional
+checkpoint:
 
 ```bash
 git add packages/core/package.json \
@@ -684,16 +845,20 @@ git add packages/core/package.json \
   packages/core/src/content.ts \
   packages/core/src/content.test.ts \
   'apps/admin/src/app/(admin)/content/actions.test.ts' \
+  apps/admin/src/lib/content/admin-service.ts \
   apps/admin/src/lib/content/admin-service.test.ts \
+  apps/admin/src/lib/content/supabase-repository.ts \
+  apps/admin/src/lib/content/supabase-repository.test.ts \
   apps/admin/src/lib/mobile-api/content-service.ts \
   apps/admin/src/lib/mobile-api/content-service.test.ts \
   apps/admin/src/app/api/mobile/v1/content/route.test.ts
 git diff --cached --name-only
+test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 12
 git commit -m "fix(content): reject pipe-table markdown"
 ```
 
-Expected: one Task 0 commit touching only the nine listed files. No live audit,
-migration, deploy, push, PR, merge or TestFlight action occurs.
+Expected: one Task 0 commit touching only the twelve listed files. No live
+audit, migration, deploy, push, PR, merge or TestFlight action occurs.
 
 ### Task 1: Define And Validate Published Content Contracts
 
@@ -3308,7 +3473,7 @@ Open all 21 PNGs and their same-base hierarchy TXT attachments. Reject and rerun
 
 - [ ] **Step 6: Write the evidence README with `apply_patch`**
 
-Record branch/tested SHA, Xcode/runtime/simulator, exact backend GFM-table and native package pins, result-bundle path, actual backend/native test and build counts/durations, every visual/accessibility state inspected, synthetic Debug-only fixture disclosure, Release fail-closed proof, and the separate three-part transport/session pre-TestFlight gate. Record that the live Markdown audit was not executed by this plan and remains a separate read-only TestFlight blocker whose authorized result must be zero incompatible current candidates. Explicitly state no live transport/base URL/session bridge, live content audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp architecture was added.
+Record branch/tested SHA, Xcode/runtime/simulator, exact backend GFM-table and native package pins, result-bundle path, actual backend/native test and build counts/durations, every visual/accessibility state inspected, synthetic Debug-only fixture disclosure, Release fail-closed proof, and the separate three-part transport/session pre-TestFlight gate. Record that the live Markdown audit was not executed by this plan and remains a separate read-only TestFlight blocker whose authorized result must be zero incompatible `current` and `scheduled` visibility candidates. Explicitly state that the future audit uses the exact activation-point ordering and emits only its approved technical allowlist, and that no live transport/base URL/session bridge, live content audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp architecture was added.
 
 - [ ] **Step 7: Final diff checks and evidence commit**
 
@@ -3360,10 +3525,14 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 | Exact-pinned `swift-markdown` and resolved transitive lock | 4 | `jq` lock assertion and resolved-file-only resolution |
 | Approved Markdown subset only; all current/future unsupported nodes fail closed; AST renderer; no regex/WebView/raw fallback | 5 | exhaustive source/node/default-reject `BodyFlowMarkdownParserTests`, forbidden-source scan |
 | Exact backend GFM-table AST pins; table rejected without regex/rewrite while ordinary and escaped pipes remain valid | 0 | manifest/lock assertions and literal `content.test.ts` RED/GREEN cases |
-| CMS entry/edit reject pipe tables at untrusted action and service boundaries before persistence | 0 | `actions.test.ts` and `admin-service.test.ts` zero-call assertions |
+| CMS author entry/edit reject pipe tables at untrusted action and service boundaries before persistence | 0 | `actions.test.ts` and `admin-service.test.ts` save zero-call assertions |
+| Minimal version-validation read selects only seven allowed fields, never publication history, targeting, assets or identities | 0 | exact query/mapping/null/error tests in `supabase-repository.test.ts` |
+| Legacy source clone, submit, approve and publish fail before mutation; reject remains available; ordinary pipes advance unchanged | 0 | controlled snapshot/mutation-spy matrix in `admin-service.test.ts` |
+| Unfiltered source/approve/publish snapshot absence returns bounded `not_found`; source publication/locale/state or approve/publish lifecycle mismatch returns bounded `lifecycle`; neither calls a mutation, including the `in_review` source-to-reject race | 0 | absent/mismatch and unsafe clone-race zero-call tests in `admin-service.test.ts` |
+| Submit validates the exact expected revision while the locked RPC remains authoritative for draft-revision stale and lifecycle races | 0 | matching/missing snapshot plus preflight/post-preflight RPC error tests in `admin-service.test.ts` |
 | Legacy-invalid detail is revalidated before cover/DTO work and returns no partial body | 0 | `content-service.test.ts` and mobile detail route atomic-error test |
 | Compatibility with real backend normalization/parser | 0, 6 | rejected pipe-table plus accepted ordinary/escaped-pipe rows through shared JSON, `content-ios-compatibility.test.ts` and `MarkdownBackendCompatibilityTests` |
-| Live published-content audit is read-only, PII-free and separately authorized; incompatible current content blocks TestFlight and is replaced only through a new editorial version | 0, 26 | Task 0 audit runbook review and evidence README distribution-blocker declaration; no live run in this plan |
+| Live audit is read-only, PII-free and separately authorized; exact current/future activation winners carry `candidate_class`, historical never-winners do not block, and both incompatible counts must be zero | 0, 26 | Task 0 current/scheduled fixture-review runbook, output allowlist and evidence README blocker declaration; no live run in this plan |
 | Impression/completion/save exact bodies/version/idempotency | 1, 3, 12, 14, 18 | contract, demo replay, feed and detail mutation tests |
 | Version conflict from impression/opened/save/complete invalidates catalog/detail, evicts exact old cover and never replays/reopens/reapplies | 3, 9, 14, 17, 18 | feed/detail invalidation tests with cover spies and one-attempt counters |
 | JSON/Markdown/covers and mutation ledgers are session-memory-only; all old-user results are suppressed | 9, 11, 12, 15, 24 | repository generation tests, cache/session tests, controlled shell replacement tests and Release/privacy gate |
@@ -3393,11 +3562,15 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 
 ## Plan Completion Checklist
 
-- [ ] Task 0 runs first, observes every backend/CMS/BFF RED, reaches GREEN and commits the exact AST rejection before Task 1 begins.
+- [ ] Task 0 runs first, observes every backend/CMS/workflow/BFF RED, reaches GREEN and commits the AST rejection plus legacy transition/read guards before Task 1 begins.
 - [ ] Task 1 begins only after Task 0 is committed and explicit implementation authorization exists; the live audit is not a Task 1 prerequisite but remains a TestFlight prerequisite.
 - [ ] Backend pins remain exact at `mdast-util-from-markdown` 2.0.3, `mdast-util-to-markdown` 2.1.2, `micromark-extension-gfm-table` 2.1.1 and `mdast-util-gfm-table` 2.0.0.
 - [ ] Pipe table, ordinary pipe and escaped-pipe behavior is proven at the backend and in the Task 6 shared corpus; no regex, escaping, rewriting or iOS weakening is introduced.
-- [ ] CMS action/service writes and mobile detail defense remain fail-closed, and an invalid legacy body produces neither persistence nor body/cover/partial response.
+- [ ] The Task 0 commit changes exactly the twelve allowlisted files, including `admin-service.ts`, `supabase-repository.ts` and its focused test; no migration or audit executable is added.
+- [ ] The validation snapshot reads only version ID, publication ID, locale, state, body, updated timestamp and publish timestamp; publication detail/history, targets, assets and identities are never loaded.
+- [ ] CMS action/service writes, source clone, submit, approve, publish and mobile detail defense remain fail-closed, while reject remains available; an invalid legacy body produces no persistence, clone, approval, publication, body, cover or partial response.
+- [ ] Unfiltered source/approve/publish absence, source publication/locale/state mismatch and approve/publish lifecycle mismatch stop locally with bounded existing errors and zero mutation; an incompatible `in_review` source cannot race its allowed rejection into a successful clone.
+- [ ] Submit validates the snapshot corresponding to `expectedUpdatedAt`, passes the original precondition unchanged and leaves conflict decisions to the locked RPC: draft-revision races are `stale`, while lifecycle races retain their lifecycle error.
 - [ ] Every production behavior has an observed focused RED before GREEN code.
 - [ ] Every task returns GREEN, passes `git diff --check`, receives adherence/quality review and one Conventional Commit.
 - [ ] Package resolution remains exact and reproducible from `Package.resolved` with updates disabled.
@@ -3408,8 +3581,9 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 - [ ] User replacement/sign-out ends content and cover sessions, clears every Prompt 14 ledger/cache/value and suppresses all controlled late list/detail/mutation/coach/progress results.
 - [ ] Debug/previews/tests alone construct fixtures, fake streams and temporary mascot art.
 - [ ] Release remains `operationUnavailable` with no Prompt 14 URL, bearer, request or fixture success.
-- [ ] No live Markdown audit is executed by these 27 tasks; the future read-only audit queries no PII, emits only its approved technical allowlist and must be clean before TestFlight.
-- [ ] Any incompatible published candidate is remediated only by a new version through the existing editorial workflow; no historical version is mutated.
+- [ ] No live Markdown audit is executed by these 27 tasks; the future read-only audit queries no PII and evaluates the real winner at `audit_timestamp` plus every future activation with `version DESC, publish_at DESC`.
+- [ ] The audit excludes only versions proven never to win, emits only separated counts plus the approved identifiers/state/`candidate_class` allowlist, and must report zero incompatible `current` and `scheduled` candidates before TestFlight.
+- [ ] Any incompatible current or scheduled candidate is remediated only by a new compatible version through the existing editorial workflow; no historical version is mutated or cloned as an incompatible source.
 - [ ] Daily missions remain unavailable; ranking/cooperative surfaces remain absent.
 - [ ] Full inherited and Prompt 14 unit/contract/integration/UI suites pass with zero failure/skip.
 - [ ] Debug and Release builds pass; Release success is not treated as distribution approval.

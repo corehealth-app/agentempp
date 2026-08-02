@@ -43,11 +43,16 @@ iOS app. Primary sources include:
 - `docs/superpowers/specs/2026-07-20-bodyflow-personalities-messages-mascot-design.md`;
 - `packages/core/src/content.ts`;
 - `packages/core/src/coach-messages.ts`;
+- `apps/admin/src/lib/content/admin-service.ts`;
+- `apps/admin/src/lib/content/supabase-repository.ts`;
 - `apps/admin/src/lib/mobile-api/content-service.ts`;
 - `apps/admin/src/lib/mobile-api/supabase-content.ts`;
 - `apps/admin/src/lib/mobile-api/coach-service.ts`;
 - `apps/admin/src/lib/mobile-api/supabase-coach.ts`;
 - `apps/admin/src/lib/mobile-api/read-model.ts`;
+- `supabase/migrations/20260721124600_bodyflow_content_cms_domain.sql`;
+- `supabase/migrations/20260721141618_bodyflow_content_delivery.sql`;
+- `supabase/migrations/20260722123000_bodyflow_content_visibility_order.sql`;
 - route handlers under `apps/admin/src/app/api/mobile/v1`;
 - Swift project's `swift-markdown` 0.8.0 release, manifest and public AST APIs;
 - `apps/ios/BodyFlow/BodyFlow` and its unit/UI test targets.
@@ -190,9 +195,9 @@ authorization for TestFlight.
 
 The published-Markdown compatibility audit defined below is an additional,
 independent TestFlight blocker. Even after the three transport/session
-dependencies pass, TestFlight remains prohibited while any currently
-published/eligible content version is incompatible with the approved Markdown
-subset.
+dependencies pass, TestFlight remains prohibited while any `current` or
+already-approved `scheduled` visibility candidate is incompatible with the
+approved Markdown subset.
 
 ## Architecture
 
@@ -832,19 +837,93 @@ The pipe character alone is not table syntax. An ordinary paragraph such as
 for both cases so a later implementation cannot replace AST classification
 with a broad pipe search.
 
-The same shared validator applies at both current CMS write boundaries:
+The same shared validator continues to apply at both author-input CMS write
+boundaries:
 
 - the untrusted `saveDraft` action input parsed by
   `apps/admin/src/app/(admin)/content/actions-core.ts`;
 - the service input parsed again by
   `apps/admin/src/lib/content/admin-service.ts` before repository persistence.
 
-These two boundaries cover untrusted author entry and later editing. The
-current `createPublication` and `createDraft` inputs do not receive
-`body_markdown`; every author-supplied body change occurs through `saveDraft`.
-An existing `sourceVersionId` remains only an internal copy reference, never an
-alternate unvalidated body input. No route, migration or alternate parser is
-added. Preview inherits the same validator and cannot render a rejected table.
+These two boundaries cover untrusted author entry and later editing. They are
+not sufficient for legacy rows: `create_content_draft` copies
+`v_source.body_markdown` directly when `sourceVersionId` is present, while the
+current admin service delegates `createDraft`, `submit`, `review` and `publish`
+without revalidating stored Markdown. Task 0 therefore adds a narrow
+repository read instead of reusing `ContentAdminRepository.get(publicationId)`:
+
+```typescript
+interface ContentVersionValidationSnapshot {
+  versionId: string
+  publicationId: string
+  locale: 'pt-BR' | 'en-US'
+  state: 'draft' | 'in_review' | 'approved' | 'rejected'
+  bodyMarkdown: string | null
+  updatedAt: string
+  publishAt: string | null
+}
+
+getVersionValidationSnapshot(
+  versionId: string,
+  expectedUpdatedAt?: string,
+): Promise<ContentVersionValidationSnapshot | null>
+```
+
+The Supabase implementation queries only `content_versions` and selects
+exactly `id`, `publication_id`, `locale`, `state`, `body_markdown`,
+`updated_at` and `publish_at`. The optional `expectedUpdatedAt` is only an
+equality predicate for the submit preflight; it does not expand the selected
+data. The guard must not load publication history, targets, assets or admin
+identities, and it must not call the existing detail repository method.
+
+The service validates stored `bodyMarkdown` before any successful transition
+that could propagate or expose it:
+
+- `createDraft` validates an immutable `approved` or `rejected` source before
+  calling `repository.createDraft` when `sourceVersionId` is present; a draft
+  without a source remains unchanged;
+- `submit` validates the `draft` snapshot selected for the exact
+  `expectedUpdatedAt` before calling `repository.submit` with that same,
+  unchanged precondition;
+- `review` with `decision=approve` validates the immutable `in_review`
+  snapshot before calling `repository.review`;
+- `review` with `decision=reject` deliberately bypasses Markdown validation so
+  an incompatible version can still be removed from the workflow;
+- `publish` validates the immutable `approved` snapshot before calling
+  `repository.publish`.
+
+The service uses the snapshot metadata only to recognize the exact lifecycle
+that could succeed: matching publication/locale and `approved` or `rejected`
+for a clone source, `draft` for submit, `in_review` for approval, and
+`approved` with null `publishAt` for publish. For the unfiltered source,
+approval and publish reads, an absent snapshot fails closed as the existing
+bounded `not_found` admin error. A source publication/locale/state mismatch,
+an approval state other than `in_review`, or a publish snapshot other than
+`approved` with null `publishAt` fails as the existing bounded `lifecycle`
+error; none of those paths calls a mutation. In particular, an incompatible
+`in_review` clone source cannot race with an allowed reject transition and
+become an eligible `rejected` source before `create_content_draft` copies it.
+Submit is the deliberate exception:
+absence from its `expectedUpdatedAt`-filtered snapshot can mean not-found or a
+concurrent draft revision, and a present snapshot can already have changed
+state, so only the locked submit RPC distinguishes `not_found`, lifecycle and
+`stale`. This ensures every transition that can succeed has first validated the
+stored body.
+
+The guard does not redefine the database lifecycle and is not a concurrency
+authority: its local source/approve/publish stops mirror existing RPC
+preconditions solely to fail closed. When a draft revision no longer
+corresponds to `expectedUpdatedAt` but remains a draft, the original submit RPC
+performs its locked timestamp comparison and returns the existing `stale`
+result. A missing row or intervening lifecycle transition retains the submit
+RPC's not-found/lifecycle result, and a race after a valid preflight is rejected
+by that same RPC. After any eligible snapshot has passed validation, the
+database remains the final authority for the mutation; its immutability rules
+keep source, `in_review` and `approved` bodies stable between preflight and RPC.
+The normalized validator result is discarded: no stored body is rewritten,
+and no invalid body is cloned, persisted, approved or published. No route,
+migration or alternate parser is added. Preview inherits the same validator
+and cannot render a rejected table.
 
 As defense in depth, `getContent` in
 `apps/admin/src/lib/mobile-api/content-service.ts` validates the repository's
@@ -859,19 +938,29 @@ rejects every `Table` node.
 #### Planned Read-Only Published-Content Audit
 
 Before TestFlight, a separately authorized live read-only audit must evaluate
-the current candidates in `public.content_versions` with the same publication
-visibility rule used by the current mobile repository, at one captured audit
-timestamp:
+both the currently visible candidates and every already approved, future
+scheduled candidate that can become visible. It freezes one
+`audit_timestamp`, reads only non-archived publications and approved versions
+with non-null `publish_at`, and reproduces the mobile repository rule per
+`(publication_id, locale)`:
 
-- `content_version.state = 'approved'`;
-- `publish_at IS NOT NULL` and `publish_at <= audit_timestamp`;
-- the joined `content_publications.archived_at IS NULL`;
-- only the highest visible version per `(publication_id, locale)`, ordered by
-  `version DESC, publish_at DESC`, matching the repository's
-  rank-after-patient-locale behavior.
+1. evaluate the winner at `audit_timestamp` from rows with
+   `publish_at <= audit_timestamp`, ordered by
+   `version DESC, publish_at DESC`, and label it
+   `candidate_class=current`;
+2. treat each distinct future `publish_at` as an activation point, evaluate
+   all rows with `publish_at <= activation_at` with that same ordering, and
+   label every newly winning version `candidate_class=scheduled`;
+3. deduplicate unchanged winners and exclude historical or future rows that
+   provably never win at any activation point.
+
+An approved version with null `publish_at` is not an automatic visibility
+candidate; any later publish attempt is protected by the new publish guard.
+The activation calculation is evaluated from one read-only snapshot so a
+moving clock cannot change membership halfway through the audit.
 
 The audit is deliberately not patient-specific. It scans the conservative
-union of all current published candidates from which the repository can apply
+union of all current and scheduled winners before the repository applies
 protocol, plan and personality targeting, so it neither queries a patient nor
 misses a targeted version. It must not query or print users, subscriptions,
 profiles, preferences, health data or any other PII.
@@ -879,18 +968,22 @@ profiles, preferences, health data or any other PII.
 The audit may read each selected `body_markdown` only in memory and must pass it
 through the same `validateContentMarkdown` AST rule. It must never print,
 persist or include the body, title, excerpt, tags or a content fragment in an
-error. Its complete output is limited to aggregate counts and, for affected
-rows, `version_id`, `publication_id`, numeric `version`, `locale` and `state`.
-It has no apply mode and performs no insert, update, delete, RPC mutation,
-migration or editorial transition. This specification plans that audit; it
-does not authorize or execute a live read.
+error. Its complete output is limited to aggregate compatible/incompatible
+counts separated by candidate class and, for affected rows, `version_id`,
+`publication_id`, numeric `version`, `locale`, `state` and `candidate_class`
+whose value is only `current` or `scheduled`. `publish_at`, activation times
+and Markdown remain internal and are never emitted. It has no apply mode and
+performs no insert, update, delete, RPC mutation, migration or editorial
+transition. This specification plans that audit; it does not authorize or
+execute a live read.
 
-If the later authorized audit finds an affected currently published candidate,
-historical rows remain immutable. Editors must create a new version through
-the existing draft, edit, review, approval and publication workflow. Direct
-database repair, silent body rewriting and mutation of a historical version
-are prohibited. TestFlight remains blocked until a fresh audit reports zero
-incompatible current candidates.
+If the later authorized audit finds an affected current or scheduled
+candidate, historical rows remain immutable. Editors must create a new version
+through the existing draft, edit, review, approval and publication workflow;
+an incompatible source is not cloned. Direct database repair, silent body
+rewriting and mutation of a historical version are prohibited. TestFlight
+remains blocked until a fresh audit reports zero incompatible candidates in
+both `current` and `scheduled` classes.
 
 Parsing, source-guard or conversion failure publishes one recoverable content
 rendering error, no partial body and no `opened` event. Raw Markdown is never
@@ -1438,6 +1531,21 @@ Test literal decoding/encoding for:
   while ordinary paragraph text containing `|` and escaped `\|` remain valid;
 - the CMS untrusted action and service write boundaries both reject the same
   pipe-table draft before repository persistence;
+- the minimal version-validation snapshot selects exactly the seven approved
+  fields from `content_versions`, never calls publication detail/history and
+  exposes no targets, assets or admin identities;
+- `createDraft(sourceVersionId:)`, `submit`, `review(approve)` and `publish`
+  each reject a legacy pipe table before their repository mutation is called,
+  while `review(reject)` for the same `in_review` version remains allowed;
+- absent source/approve/publish snapshots call no mutation; source
+  publication/locale/state mismatch and approve/publish lifecycle mismatch
+  likewise stop locally, specifically preventing an incompatible `in_review`
+  source from racing an allowed reject into a successful clone;
+- an ordinary pipe paragraph advances through clone, submit, approval and
+  publish guards unchanged; a concurrent draft revision before or after
+  preflight still returns `stale` from the timestamp-authoritative RPC and
+  persists no transition, while a concurrent lifecycle change retains its
+  lifecycle error;
 - the mobile detail service revalidates a legacy stored body before cover/DTO
   construction, returns only an opaque error for an invalid table and exposes
   no `body_markdown`, fragment or partial detail;
@@ -1463,6 +1571,22 @@ Test literal decoding/encoding for:
 - parser/adapter failure exposes no partial/raw body and emits no `opened`;
 - no regex parser, `AttributedString(markdown:)`, WebView or executable content
   path exists.
+
+### Audit Gate Review Tests
+
+The later separately authorized audit workpack must prove its selection logic
+with non-live fixtures before any read-only run: current highest-version
+winner; first scheduled winner when no current row exists; a higher future
+winner; a lower future version permanently shadowed by a higher current
+version; a lower later schedule shadowed by an earlier higher version; ties at
+one activation resolved by `version DESC, publish_at DESC`; unchanged-winner
+deduplication; and exclusion of archived, unscheduled and non-approved rows.
+Its output-schema test allows only separated counts plus `version_id`,
+`publication_id`, `version`, `locale`, `state` and `candidate_class` for
+incompatible rows, and proves that Markdown, `publish_at`, activation times and
+PII cannot be emitted. These are requirements for the future authorized
+workpack; this Prompt 14 documentary/implementation plan creates no audit
+executable and performs no live read.
 
 ### Cover Loader Tests
 
@@ -1661,6 +1785,18 @@ The later implementation is acceptable only when all of the following are true:
   rejects the `table` node clearly, without regex, escaping or rewriting;
 - ordinary text containing `|` and escaped `\|` remains backend-valid, while
   CMS action/service writes reject a real pipe table before persistence;
+- cloning with `sourceVersionId`, submitting, approving and publishing each
+  revalidate the minimal stored-version snapshot and never call their mutation
+  repository for an incompatible body in the eligible lifecycle; rejecting the
+  same incompatible `in_review` row remains possible;
+- absent source/approve/publish snapshots stop locally with the existing
+  bounded not-found error; source publication/locale/state and approve/publish
+  lifecycle mismatches stop with the bounded lifecycle error and no mutation,
+  closing the `in_review` source-to-rejected clone race;
+- submit validates only the snapshot corresponding to its
+  `expectedUpdatedAt`; the locked RPC remains the concurrency authority and
+  continues to return `stale` for a concurrent draft revision before or after
+  preflight, while lifecycle races retain their lifecycle error;
 - the mobile detail service revalidates stored Markdown before DTO/cover work,
   and a legacy-invalid table yields no body, partial detail or cover capability;
 - Markdown rendering supports exactly the backend subset, passes the backend
@@ -1709,11 +1845,16 @@ The later implementation is acceptable only when all of the following are true:
 - authenticated HTTP transport, an approved staging base URL and the session
   bridge must pass a separately approved security/test gate before TestFlight;
 - a separately authorized read-only audit must report zero incompatible
-  currently published/eligible content versions before TestFlight; its output
-  is limited to counts and technical version/publication identifiers, version,
-  locale and state, never Markdown or PII;
-- an affected published version is replaced only by a new version through the
-  existing editorial workflow; historical versions are never mutated;
+  `current` and `scheduled` visibility candidates before TestFlight; it uses
+  the real `version DESC, publish_at DESC` winner at the frozen timestamp and
+  at each future activation, without blocking rows that can provably never
+  become visible;
+- audit output is limited to separated counts and technical
+  version/publication identifiers, version, locale, state and
+  `candidate_class`, never Markdown, activation time, `publish_at` or PII;
+- an affected current or scheduled version is replaced only by a new version
+  through the existing editorial workflow; historical versions are never
+  mutated or used as an incompatible clone source;
 - a passing Release build alone never authorizes TestFlight;
 - full tests, Debug/Release builds, simulator and visual evidence pass before
   any publication action;

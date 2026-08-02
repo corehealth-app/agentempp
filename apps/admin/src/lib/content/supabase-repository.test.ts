@@ -173,6 +173,20 @@ function versionDetailRow() {
   }
 }
 
+function versionValidationSnapshotRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: VERSION_ID,
+    publication_id: PUBLICATION_ID,
+    locale: 'pt-BR',
+    state: 'draft',
+    body_markdown:
+      '## Comece com calma\n\nObserve seus sinais de fome e saciedade antes de montar cada refeição do dia com atenção.',
+    updated_at: UPDATED_AT,
+    publish_at: null,
+    ...overrides,
+  }
+}
+
 function validDraft() {
   return {
     locale: 'pt-BR' as const,
@@ -647,6 +661,111 @@ describe('Supabase content admin repository', () => {
       code: 'database_unavailable',
       operation: 'list',
     })
+  })
+
+  it('reads exactly the seven-field version validation snapshot without detail side queries', async () => {
+    const client = fakeClient({
+      tableResults: {
+        content_versions: [{ data: versionValidationSnapshotRow(), error: null }],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    await expect(repository.getVersionValidationSnapshot(VERSION_ID)).resolves.toEqual({
+      versionId: VERSION_ID,
+      publicationId: PUBLICATION_ID,
+      locale: 'pt-BR',
+      state: 'draft',
+      bodyMarkdown:
+        '## Comece com calma\n\nObserve seus sinais de fome e saciedade antes de montar cada refeição do dia com atenção.',
+      updatedAt: UPDATED_AT,
+      publishAt: null,
+    })
+
+    expect(client.queryLog).toEqual([
+      {
+        table: 'content_versions',
+        method: 'select',
+        args: ['id, publication_id, locale, state, body_markdown, updated_at, publish_at'],
+      },
+      { table: 'content_versions', method: 'eq', args: ['id', VERSION_ID] },
+      { table: 'content_versions', method: 'maybeSingle', args: [] },
+    ])
+    expect(client.from).toHaveBeenCalledTimes(1)
+    expect(client.from).toHaveBeenCalledWith('content_versions')
+  })
+
+  it('adds only the exact updated_at predicate when a snapshot precondition is supplied', async () => {
+    const client = fakeClient({
+      tableResults: {
+        content_versions: [{ data: versionValidationSnapshotRow(), error: null }],
+      },
+    })
+    const { repository } = createSupabaseContentAdminDependencies(client)
+
+    await repository.getVersionValidationSnapshot(VERSION_ID, UPDATED_AT)
+
+    expect(client.queryLog).toEqual([
+      {
+        table: 'content_versions',
+        method: 'select',
+        args: ['id, publication_id, locale, state, body_markdown, updated_at, publish_at'],
+      },
+      { table: 'content_versions', method: 'eq', args: ['id', VERSION_ID] },
+      { table: 'content_versions', method: 'eq', args: ['updated_at', UPDATED_AT] },
+      { table: 'content_versions', method: 'maybeSingle', args: [] },
+    ])
+  })
+
+  it('returns null for a missing validation snapshot and maps malformed/provider failures opaquely', async () => {
+    const missing = fakeClient({
+      tableResults: { content_versions: [{ data: null, error: null }] },
+    })
+    await expect(
+      createSupabaseContentAdminDependencies(missing).repository.getVersionValidationSnapshot(
+        VERSION_ID,
+      ),
+    ).resolves.toBeNull()
+
+    const malformed = fakeClient({
+      tableResults: {
+        content_versions: [
+          {
+            data: versionValidationSnapshotRow({ provider_secret: 'must-not-leak' }),
+            error: null,
+          },
+        ],
+      },
+    })
+    const malformedFailure = await createSupabaseContentAdminDependencies(
+      malformed,
+    ).repository
+      .getVersionValidationSnapshot(VERSION_ID)
+      .catch((error: unknown) => error)
+    expect(malformedFailure).toMatchObject({
+      code: 'database_unavailable',
+      operation: 'getVersionValidationSnapshot',
+    })
+    expect(String(malformedFailure)).not.toContain('must-not-leak')
+
+    const provider = fakeClient({
+      tableResults: {
+        content_versions: [
+          {
+            data: null,
+            error: { code: 'XX000', message: 'secret provider failure' },
+          },
+        ],
+      },
+    })
+    const providerFailure = await createSupabaseContentAdminDependencies(provider).repository
+      .getVersionValidationSnapshot(VERSION_ID)
+      .catch((error: unknown) => error)
+    expect(providerFailure).toMatchObject({
+      code: 'database_unavailable',
+      operation: 'getVersionValidationSnapshot',
+    })
+    expect(String(providerFailure)).not.toContain('secret provider failure')
   })
 
   it('composes detail, target, identity, and safe cover rows without leaking internals', async () => {

@@ -28,6 +28,13 @@ const NEXT_CURSOR = encodeContentCursor({
   publishAt: PUBLISH_AT,
   publicationId: PUBLICATION_ID,
 })
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
 
 const auth = {
   accessToken: 'redacted-test-token',
@@ -213,6 +220,19 @@ describe('mobile educational content service', () => {
     })
     expect(JSON.stringify(result)).not.toContain('bucketId')
     expect(JSON.stringify(result)).not.toContain('objectPath')
+  })
+
+  it('fails a legacy pipe-table detail opaquely before issuing its cover capability', async () => {
+    const deps = dependencies({
+      get: vi.fn(async () => contentRecord({ bodyMarkdown: PIPE_TABLE_MARKDOWN })),
+    })
+
+    await expect(getContent(deps, auth, PUBLICATION_ID)).rejects.toMatchObject({
+      status: 500,
+      code: 'internal_error',
+      message: 'Unexpected server error',
+    })
+    expect(deps.covers.issue).not.toHaveBeenCalled()
   })
 
   it('returns the same non-disclosing 404 for missing or ineligible content', async () => {

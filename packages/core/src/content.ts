@@ -1,5 +1,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfmTableFromMarkdown } from 'mdast-util-gfm-table'
 import { toMarkdown } from 'mdast-util-to-markdown'
+import { gfmTable } from 'micromark-extension-gfm-table'
 import { z } from 'zod'
 
 const MAX_CONTENT_BODY_LENGTH = 50_000
@@ -278,6 +280,8 @@ function convertBlock(node: MarkdownNode, containerDepth: number): ContentMarkdo
       })
       return { type: 'list', ordered: node.ordered, items }
     }
+    case 'table':
+      return invalidMarkdown('tables are not supported')
     default:
       return invalidMarkdown(`unsupported block node: ${node.type}`)
   }
@@ -304,7 +308,10 @@ export function validateContentMarkdown(value: string): ValidatedContentMarkdown
     )
   }
 
-  const root = fromMarkdown(source)
+  const root = fromMarkdown(source, {
+    extensions: [gfmTable()],
+    mdastExtensions: [gfmTableFromMarkdown()],
+  })
   const rootChildren: unknown[] = root.children
   if (!rootChildren.every(isMarkdownNode)) {
     invalidMarkdown('root has malformed children')

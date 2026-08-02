@@ -5,6 +5,7 @@ import {
   type ContentAdminStorage,
   type ContentPublicationDetail,
   type ContentPublicationSummary,
+  type ContentVersionValidationSnapshot,
   ContentStorageError,
   createContentAdminService,
 } from './admin-service'
@@ -15,6 +16,31 @@ const VERSION_ID = '00000000-0000-0000-0000-000000000503'
 const SOURCE_VERSION_ID = '00000000-0000-0000-0000-000000000504'
 const ASSET_ID = '00000000-0000-0000-0000-000000000505'
 const UPDATED_AT = '2026-07-21T12:00:00.000Z'
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const ORDINARY_PIPE_MARKDOWN =
+  'Proteína | contexto ajuda a comparar escolhas alimentares sem transformar esta frase em uma tabela ou alterar o texto editorial.'
+
+function validationSnapshot(
+  overrides: Partial<ContentVersionValidationSnapshot> = {},
+): ContentVersionValidationSnapshot {
+  return {
+    versionId: VERSION_ID,
+    publicationId: PUBLICATION_ID,
+    locale: 'pt-BR',
+    state: 'draft',
+    bodyMarkdown:
+      '## Comece com calma\n\nObserve seus sinais de fome e saciedade antes de montar cada refeição do dia com atenção.',
+    updatedAt: UPDATED_AT,
+    publishAt: null,
+    ...overrides,
+  }
+}
 
 function summary(): ContentPublicationSummary {
   return {
@@ -83,6 +109,7 @@ function repository(): ContentAdminRepository {
   return {
     list: vi.fn(async () => [summary()]),
     get: vi.fn(async () => detail()),
+    getVersionValidationSnapshot: vi.fn(async () => validationSnapshot()),
     createPublication: vi.fn(async () => ({
       publicationId: PUBLICATION_ID,
       slug: 'alimentacao-consciente',
@@ -320,8 +347,442 @@ describe('content admin service', () => {
     ).rejects.toBe(stale)
   })
 
+  it('rejects a direct table-bearing service draft before persistence', async () => {
+    const repo = repository()
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.saveDraft({
+        actorId: ACTOR_ID,
+        versionId: VERSION_ID,
+        expectedUpdatedAt: UPDATED_AT,
+        draft: { ...validDraft(), bodyMarkdown: PIPE_TABLE_MARKDOWN },
+      }),
+    ).rejects.toMatchObject({ code: 'validation', operation: 'saveDraft' })
+
+    expect(repo.saveDraft).not.toHaveBeenCalled()
+  })
+
+  it('leaves source-free createDraft unchanged and performs no validation snapshot read', async () => {
+    const repo = repository()
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await service.createDraft({
+      actorId: ACTOR_ID,
+      publicationId: PUBLICATION_ID,
+      locale: 'pt-BR',
+    })
+
+    expect(repo.getVersionValidationSnapshot).not.toHaveBeenCalled()
+    expect(repo.createDraft).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      publicationId: PUBLICATION_ID,
+      locale: 'pt-BR',
+    })
+  })
+
+  it('rejects a table-bearing immutable source before createDraft can clone it', async () => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({
+        versionId: SOURCE_VERSION_ID,
+        state: 'approved',
+        bodyMarkdown: PIPE_TABLE_MARKDOWN,
+      }),
+    )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.createDraft({
+        actorId: ACTOR_ID,
+        publicationId: PUBLICATION_ID,
+        locale: 'pt-BR',
+        sourceVersionId: SOURCE_VERSION_ID,
+      }),
+    ).rejects.toMatchObject({ code: 'validation', operation: 'createDraft' })
+
+    expect(repo.getVersionValidationSnapshot).toHaveBeenCalledWith(SOURCE_VERSION_ID)
+    expect(repo.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('rejects a legacy table-bearing draft before submit', async () => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ state: 'draft', bodyMarkdown: PIPE_TABLE_MARKDOWN }),
+    )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.submit({ actorId: ACTOR_ID, versionId: VERSION_ID, expectedUpdatedAt: UPDATED_AT }),
+    ).rejects.toMatchObject({ code: 'validation', operation: 'submit' })
+
+    expect(repo.getVersionValidationSnapshot).toHaveBeenCalledWith(VERSION_ID, UPDATED_AT)
+    expect(repo.submit).not.toHaveBeenCalled()
+  })
+
+  it('blocks approval for a table-bearing in-review version but keeps reject available', async () => {
+    const approvingRepository = repository()
+    vi.mocked(approvingRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ state: 'in_review', bodyMarkdown: PIPE_TABLE_MARKDOWN }),
+    )
+    const approvingService = createContentAdminService({
+      repository: approvingRepository,
+      storage: storage(),
+    })
+
+    await expect(
+      approvingService.review({
+        actorId: ACTOR_ID,
+        versionId: VERSION_ID,
+        decision: 'approve',
+        rejectionReason: null,
+      }),
+    ).rejects.toMatchObject({ code: 'validation', operation: 'review' })
+    expect(approvingRepository.review).not.toHaveBeenCalled()
+
+    const rejectingRepository = repository()
+    const rejectingService = createContentAdminService({
+      repository: rejectingRepository,
+      storage: storage(),
+    })
+    await rejectingService.review({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      decision: 'reject',
+      rejectionReason: 'A tabela não faz parte do contrato editorial.',
+    })
+
+    expect(rejectingRepository.getVersionValidationSnapshot).not.toHaveBeenCalled()
+    expect(rejectingRepository.review).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      decision: 'reject',
+      rejectionReason: 'A tabela não faz parte do contrato editorial.',
+    })
+  })
+
+  it('rejects a table-bearing approved version before publish', async () => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ state: 'approved', bodyMarkdown: PIPE_TABLE_MARKDOWN }),
+    )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null }),
+    ).rejects.toMatchObject({ code: 'validation', operation: 'publish' })
+
+    expect(repo.getVersionValidationSnapshot).toHaveBeenCalledWith(VERSION_ID)
+    expect(repo.publish).not.toHaveBeenCalled()
+  })
+
+  it('advances ordinary pipe Markdown through clone, submit, approve and publish unchanged', async () => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot)
+      .mockResolvedValueOnce(
+        validationSnapshot({
+          versionId: SOURCE_VERSION_ID,
+          state: 'approved',
+          bodyMarkdown: ORDINARY_PIPE_MARKDOWN,
+        }),
+      )
+      .mockResolvedValueOnce(
+        validationSnapshot({ state: 'draft', bodyMarkdown: ORDINARY_PIPE_MARKDOWN }),
+      )
+      .mockResolvedValueOnce(
+        validationSnapshot({ state: 'in_review', bodyMarkdown: ORDINARY_PIPE_MARKDOWN }),
+      )
+      .mockResolvedValueOnce(
+        validationSnapshot({ state: 'approved', bodyMarkdown: ORDINARY_PIPE_MARKDOWN }),
+      )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await service.createDraft({
+      actorId: ACTOR_ID,
+      publicationId: PUBLICATION_ID,
+      locale: 'pt-BR',
+      sourceVersionId: SOURCE_VERSION_ID,
+    })
+    await service.submit({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      expectedUpdatedAt: UPDATED_AT,
+    })
+    await service.review({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      decision: 'approve',
+      rejectionReason: null,
+    })
+    await service.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null })
+
+    expect(repo.getVersionValidationSnapshot).toHaveBeenCalledTimes(4)
+    expect(repo.createDraft).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      publicationId: PUBLICATION_ID,
+      locale: 'pt-BR',
+      sourceVersionId: SOURCE_VERSION_ID,
+    })
+    expect(repo.submit).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      expectedUpdatedAt: UPDATED_AT,
+    })
+    expect(repo.review).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      decision: 'approve',
+      rejectionReason: null,
+    })
+    expect(repo.publish).toHaveBeenCalledWith({
+      actorId: ACTOR_ID,
+      versionId: VERSION_ID,
+      publishAt: null,
+    })
+    expect(repo.saveDraft).not.toHaveBeenCalled()
+  })
+
+  it('keeps the locked submit RPC authoritative for preflight and post-preflight races', async () => {
+    const scenarios = [
+      { snapshot: null, error: new ContentAdminError('stale', 'submit') },
+      {
+        snapshot: validationSnapshot({ state: 'draft' }),
+        error: new ContentAdminError('stale', 'submit'),
+      },
+      {
+        snapshot: validationSnapshot({ state: 'draft' }),
+        error: new ContentAdminError('lifecycle', 'submit'),
+      },
+    ]
+
+    for (const scenario of scenarios) {
+      const repo = repository()
+      vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(scenario.snapshot)
+      vi.mocked(repo.submit).mockRejectedValueOnce(scenario.error)
+      const service = createContentAdminService({ repository: repo, storage: storage() })
+
+      await expect(
+        service.submit({ actorId: ACTOR_ID, versionId: VERSION_ID, expectedUpdatedAt: UPDATED_AT }),
+      ).rejects.toBe(scenario.error)
+      expect(repo.getVersionValidationSnapshot).toHaveBeenCalledWith(VERSION_ID, UPDATED_AT)
+      expect(repo.submit).toHaveBeenCalledWith({
+        actorId: ACTOR_ID,
+        versionId: VERSION_ID,
+        expectedUpdatedAt: UPDATED_AT,
+      })
+    }
+  })
+
+  it('delegates a submit snapshot already outside draft so the locked RPC owns lifecycle', async () => {
+    const repo = repository()
+    const lifecycle = new ContentAdminError('lifecycle', 'submit')
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ state: 'in_review' }),
+    )
+    vi.mocked(repo.submit).mockRejectedValueOnce(lifecycle)
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.submit({ actorId: ACTOR_ID, versionId: VERSION_ID, expectedUpdatedAt: UPDATED_AT }),
+    ).rejects.toBe(lifecycle)
+
+    expect(repo.getVersionValidationSnapshot).toHaveBeenCalledWith(VERSION_ID, UPDATED_AT)
+    expect(repo.submit).toHaveBeenCalledOnce()
+  })
+
+  it('fails absent source, approval and publish snapshots closed as not_found', async () => {
+    const cases = [
+      {
+        operation: 'createDraft',
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.createDraft({
+            actorId: ACTOR_ID,
+            publicationId: PUBLICATION_ID,
+            locale: 'pt-BR',
+            sourceVersionId: SOURCE_VERSION_ID,
+          }),
+        mutation: 'createDraft' as const,
+      },
+      {
+        operation: 'review',
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.review({
+            actorId: ACTOR_ID,
+            versionId: VERSION_ID,
+            decision: 'approve',
+            rejectionReason: null,
+          }),
+        mutation: 'review' as const,
+      },
+      {
+        operation: 'publish',
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null }),
+        mutation: 'publish' as const,
+      },
+    ]
+
+    for (const testCase of cases) {
+      const repo = repository()
+      vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(null)
+      const service = createContentAdminService({ repository: repo, storage: storage() })
+
+      await expect(testCase.invoke(service)).rejects.toMatchObject({
+        code: 'not_found',
+        operation: testCase.operation,
+      })
+      expect(repo[testCase.mutation]).not.toHaveBeenCalled()
+    }
+  })
+
+  it.each([
+    ['publication', { publicationId: ASSET_ID }],
+    ['locale', { locale: 'en-US' as const }],
+    ['draft lifecycle', { state: 'draft' as const }],
+  ])('fails a clone source with mismatched %s locally as lifecycle', async (_case, overrides) => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({
+        versionId: SOURCE_VERSION_ID,
+        state: 'approved',
+        ...overrides,
+      }),
+    )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.createDraft({
+        actorId: ACTOR_ID,
+        publicationId: PUBLICATION_ID,
+        locale: 'pt-BR',
+        sourceVersionId: SOURCE_VERSION_ID,
+      }),
+    ).rejects.toMatchObject({ code: 'lifecycle', operation: 'createDraft' })
+    expect(repo.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('stops an in-review source locally even if a concurrent reject could make it cloneable', async () => {
+    const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ versionId: SOURCE_VERSION_ID, state: 'in_review' }),
+    )
+    const service = createContentAdminService({ repository: repo, storage: storage() })
+
+    await expect(
+      service.createDraft({
+        actorId: ACTOR_ID,
+        publicationId: PUBLICATION_ID,
+        locale: 'pt-BR',
+        sourceVersionId: SOURCE_VERSION_ID,
+      }),
+    ).rejects.toMatchObject({ code: 'lifecycle', operation: 'createDraft' })
+    expect(repo.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('fails approval and publish lifecycle mismatches locally without mutations', async () => {
+    const approvalRepository = repository()
+    vi.mocked(approvalRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ state: 'draft' }),
+    )
+    const approvalService = createContentAdminService({
+      repository: approvalRepository,
+      storage: storage(),
+    })
+    await expect(
+      approvalService.review({
+        actorId: ACTOR_ID,
+        versionId: VERSION_ID,
+        decision: 'approve',
+        rejectionReason: null,
+      }),
+    ).rejects.toMatchObject({ code: 'lifecycle', operation: 'review' })
+    expect(approvalRepository.review).not.toHaveBeenCalled()
+
+    for (const snapshot of [
+      validationSnapshot({ state: 'in_review' }),
+      validationSnapshot({ state: 'approved', publishAt: UPDATED_AT }),
+    ]) {
+      const publishRepository = repository()
+      vi.mocked(publishRepository.getVersionValidationSnapshot).mockResolvedValueOnce(snapshot)
+      const publishService = createContentAdminService({
+        repository: publishRepository,
+        storage: storage(),
+      })
+      await expect(
+        publishService.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null }),
+      ).rejects.toMatchObject({ code: 'lifecycle', operation: 'publish' })
+      expect(publishRepository.publish).not.toHaveBeenCalled()
+    }
+  })
+
+  it('fails null stored Markdown closed before clone, submit, approve or publish', async () => {
+    const cases = [
+      {
+        snapshot: validationSnapshot({
+          versionId: SOURCE_VERSION_ID,
+          state: 'approved',
+          bodyMarkdown: null,
+        }),
+        operation: 'createDraft',
+        mutation: 'createDraft' as const,
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.createDraft({
+            actorId: ACTOR_ID,
+            publicationId: PUBLICATION_ID,
+            locale: 'pt-BR',
+            sourceVersionId: SOURCE_VERSION_ID,
+          }),
+      },
+      {
+        snapshot: validationSnapshot({ state: 'draft', bodyMarkdown: null }),
+        operation: 'submit',
+        mutation: 'submit' as const,
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.submit({
+            actorId: ACTOR_ID,
+            versionId: VERSION_ID,
+            expectedUpdatedAt: UPDATED_AT,
+          }),
+      },
+      {
+        snapshot: validationSnapshot({ state: 'in_review', bodyMarkdown: null }),
+        operation: 'review',
+        mutation: 'review' as const,
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.review({
+            actorId: ACTOR_ID,
+            versionId: VERSION_ID,
+            decision: 'approve',
+            rejectionReason: null,
+          }),
+      },
+      {
+        snapshot: validationSnapshot({ state: 'approved', bodyMarkdown: null }),
+        operation: 'publish',
+        mutation: 'publish' as const,
+        invoke: (service: ReturnType<typeof createContentAdminService>) =>
+          service.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null }),
+      },
+    ]
+
+    for (const testCase of cases) {
+      const repo = repository()
+      vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(testCase.snapshot)
+      const service = createContentAdminService({ repository: repo, storage: storage() })
+
+      await expect(testCase.invoke(service)).rejects.toMatchObject({
+        code: 'validation',
+        operation: testCase.operation,
+      })
+      expect(repo[testCase.mutation]).not.toHaveBeenCalled()
+    }
+  })
+
   it('preserves copy-from-version through the draft RPC boundary', async () => {
     const repo = repository()
+    vi.mocked(repo.getVersionValidationSnapshot).mockResolvedValueOnce(
+      validationSnapshot({ versionId: SOURCE_VERSION_ID, state: 'approved' }),
+    )
     const service = createContentAdminService({ repository: repo, storage: storage() })
 
     await service.createDraft({

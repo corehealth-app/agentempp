@@ -17,6 +17,17 @@ import {
 
 const UUID = '9baf14c8-6376-4a47-a9b8-9fcf2e5cefc1'
 const LONG_BODY = 'A alimentação consistente apoia decisões graduais e sustentáveis. '.repeat(3)
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const ORDINARY_PIPE_MARKDOWN =
+  'Proteína | contexto ajuda a comparar escolhas alimentares sem transformar esta frase em uma tabela ou alterar o texto editorial.'
+const ESCAPED_PIPE_MARKDOWN =
+  'Proteína \\| contexto ajuda a explicar o caractere literal sem transformar esta frase em uma tabela ou perder o conteúdo editorial.'
 
 function nestedList(depth: number): string {
   return Array.from(
@@ -181,6 +192,39 @@ describe('content contracts', () => {
 })
 
 describe('validateContentMarkdown', () => {
+  it('rejects a length-valid GFM pipe table with the bounded table error', () => {
+    expect(PIPE_TABLE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+    expect(PIPE_TABLE_MARKDOWN.length).toBeLessThanOrEqual(50_000)
+
+    expect(() => validateContentMarkdown(PIPE_TABLE_MARKDOWN)).toThrow(
+      'Invalid content Markdown: tables are not supported',
+    )
+  })
+
+  it('accepts an ordinary pipe as one paragraph text AST instead of scanning raw pipes', () => {
+    expect(ORDINARY_PIPE_MARKDOWN).toContain('|')
+    expect(ORDINARY_PIPE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+
+    expect(validateContentMarkdown(ORDINARY_PIPE_MARKDOWN).blocks).toEqual([
+      {
+        type: 'paragraph',
+        children: [{ type: 'text', value: ORDINARY_PIPE_MARKDOWN }],
+      },
+    ])
+  })
+
+  it('accepts an escaped pipe as one paragraph text AST instead of scanning raw pipes', () => {
+    expect(ESCAPED_PIPE_MARKDOWN).toContain('\\|')
+    expect(ESCAPED_PIPE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+
+    expect(validateContentMarkdown(ESCAPED_PIPE_MARKDOWN).blocks).toEqual([
+      {
+        type: 'paragraph',
+        children: [{ type: 'text', value: ESCAPED_PIPE_MARKDOWN.replace('\\|', '|') }],
+      },
+    ])
+  })
+
   it('normalizes CRLF and produces the portable allowed AST', () => {
     const result = validateContentMarkdown(
       '## Título\r\n\r\nTexto com **força**, *ênfase* e [fonte](https://bodyflow.app).\r\n\r\n> Conselho seguro.\r\n\r\n1. Primeiro\r\n2. Segundo\r\n\r\n- Terceiro\r\n\r\n' +

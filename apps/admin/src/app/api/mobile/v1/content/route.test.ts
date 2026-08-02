@@ -13,7 +13,11 @@ import {
   type MobileIdempotencyStore,
 } from '@/lib/mobile-api/idempotency'
 import type { MobileRouteContext, MobileRouteRuntime } from '@/lib/mobile-api/route'
-import { type ContentDetailRouteDependencies, handleContentDetail } from './[id]/handlers'
+import {
+  type ContentDetailRouteDependencies,
+  createContentDetailRoute,
+  handleContentDetail,
+} from './[id]/handlers'
 import { type ContentReadRouteDependencies, handleContentRead } from './[id]/read/handlers'
 import { type ContentSaveRouteDependencies, handleContentSave } from './[id]/save/handlers'
 import {
@@ -25,6 +29,13 @@ import {
 const USER_ID = '00000000-0000-0000-0000-000000000421'
 const AUTH_USER_ID = '00000000-0000-0000-0000-000000000422'
 const PUBLICATION_ID = '00000000-0000-0000-0000-000000000423'
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
 
 function contentRecord(overrides: Partial<ContentRecord> = {}): ContentRecord {
   return {
@@ -262,6 +273,42 @@ describe('mobile educational content routes', () => {
         deps,
       ),
     ).rejects.toThrow()
+  })
+
+  it('returns one atomic opaque error for a legacy pipe-table detail without issuing a cover', async () => {
+    const service = serviceDependencies({
+      get: vi.fn(async () =>
+        contentRecord({
+          bodyMarkdown: PIPE_TABLE_MARKDOWN,
+          cover: {
+            bucketId: 'content-covers',
+            objectPath: 'content/private-table-cover.webp',
+          },
+        }),
+      ),
+    })
+    const baseContext = context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}`)
+    const mobileRuntime: MobileRouteRuntime = {
+      authenticate: vi.fn(async () => baseContext.auth),
+      authorizeEntitlement: vi.fn(async () => undefined),
+      createServiceClient: vi.fn(() => baseContext.supabase),
+      createRequestId: vi.fn(() => 'request-content-table-421'),
+    }
+    const route = createContentDetailRoute(mobileRuntime, detailDependencies(service))
+
+    const response = await route(baseContext.request, routeContext())
+    const serialized = JSON.stringify(await response.json())
+
+    expect(response.status).toBe(500)
+    expect(JSON.parse(serialized)).toEqual({
+      error: {
+        code: 'internal_error',
+        message: 'Unexpected server error',
+        request_id: 'request-content-table-421',
+      },
+    })
+    expect(serialized).not.toMatch(/body_markdown|Refeição|Aveia|Plano alimentar/)
+    expect(service.covers.issue).not.toHaveBeenCalled()
   })
 
   it('uses one non-disclosing 404 for absent or ineligible detail', async () => {

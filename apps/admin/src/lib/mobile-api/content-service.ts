@@ -1,4 +1,9 @@
-import type { ContentListQuery, ContentReadInput, ContentSaveInput } from '@mpp/core'
+import {
+  type ContentListQuery,
+  type ContentReadInput,
+  type ContentSaveInput,
+  validateContentMarkdown,
+} from '@mpp/core'
 import type { MobileAuthContext } from './auth'
 import { MobileApiError } from './http'
 
@@ -248,6 +253,11 @@ export async function getContent(
 ): Promise<ContentDetailDto> {
   const record = await repositoryCall(() => dependencies.repository.get(auth.userId, publicationId))
   if (!record) throw contentNotFound()
+  try {
+    validateContentMarkdown(record.bodyMarkdown)
+  } catch {
+    throw internalError()
+  }
 
   return {
     ...(await mapFeedItem(dependencies, record, auth.userId)),

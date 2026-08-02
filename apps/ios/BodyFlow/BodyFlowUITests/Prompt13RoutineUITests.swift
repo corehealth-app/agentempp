@@ -104,6 +104,50 @@ final class Prompt13RoutineUITests: XCTestCase {
     }
 
     @MainActor
+    func testRoutineActionAndSubmitControlsHaveMinimumTapTargets() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = launchRoutine()
+        openSupplement(app)
+
+        for identifier in [
+            "routine.action.taken",
+            "routine.action.snoozed",
+            "routine.action.skipped",
+        ] {
+            let action = app.buttons[identifier]
+            XCTAssertTrue(action.waitForExistence(timeout: 3))
+            support.assertMinimumTapTarget(action)
+        }
+
+        app.buttons["routine.action.taken"].tap()
+        let submit = app.buttons["routine.action.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(submit)
+    }
+
+    @MainActor
+    func testRoutineSnoozeControlsHaveMinimumTapTargets() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = launchRoutine()
+        openSupplement(app)
+        app.buttons["routine.action.snoozed"].tap()
+
+        for identifier in [
+            "routine.snooze.15",
+            "routine.snooze.30",
+            "routine.snooze.60",
+            "routine.snooze.custom",
+        ] {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.waitForExistence(timeout: 3))
+            support.assertMinimumTapTarget(control)
+        }
+        let customTime = app.datePickers["routine.snooze.custom-time"]
+        XCTAssertTrue(customTime.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(customTime)
+    }
+
+    @MainActor
     func testSupplementAndMedicationListsAreReachable() {
         let app = launchRoutine()
         XCTAssertTrue(app.buttons["routine.supplement-1"].waitForExistence(timeout: 3))

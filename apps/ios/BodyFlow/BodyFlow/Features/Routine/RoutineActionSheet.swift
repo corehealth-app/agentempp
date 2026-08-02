@@ -49,13 +49,16 @@ struct RoutineActionSheet: View {
                 Text(selection.status == .taken ? "Marcar como tomado" : "Marcar como pulado")
                     .font(BodyFlowTypography.title)
                     .fontWeight(.semibold)
-                Button("Confirmar") {
+                Button {
                     Task { await model.submit(status: selection.status) }
+                } label: {
+                    Text("Confirmar")
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.isSubmitting)
                 .accessibilityIdentifier("routine.action.submit")
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
             }
             }
         } else {

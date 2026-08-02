@@ -30,24 +30,33 @@ struct RoutineSnoozeView: View {
                 selection: $customTime,
                 displayedComponents: .hourAndMinute
             )
+            .datePickerStyle(.wheel)
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+            .contentShape(Rectangle())
             .accessibilityIdentifier("routine.snooze.custom-time")
 
-            Button("Usar horário personalizado") {
+            Button {
                 submit(.custom(customTime))
+            } label: {
+                Text("Usar horário personalizado")
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                    .contentShape(Rectangle())
             }
             .disabled(model.isSubmitting || model.snoozeDate(for: .custom(customTime)) == nil)
             .accessibilityIdentifier("routine.snooze.custom")
-            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
         }
         .padding(BodyFlowSpacing.lg)
     }
 
     private func presetButton(_ minutes: Int) -> some View {
-        Button("\(minutes) minutos") {
+        Button {
             submit(.minutes(minutes))
+        } label: {
+            Text("\(minutes) minutos")
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                .contentShape(Rectangle())
         }
         .disabled(model.isSubmitting || model.snoozeDate(for: .minutes(minutes)) == nil)
         .accessibilityIdentifier("routine.snooze.\(minutes)")
-        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
     }
 }

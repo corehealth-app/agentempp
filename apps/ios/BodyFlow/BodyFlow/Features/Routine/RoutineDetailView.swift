@@ -162,18 +162,21 @@ struct RoutineDetailView: View {
         _ status: RoutineActionStatus,
         title: String
     ) -> some View {
-        Button(title) {
+        Button {
             guard let actionModel else { return }
             selectedAction = RoutineActionSheetItem(
                 status: status,
                 model: actionModel,
                 allowsRetry: actionConfiguration.context != nil
             )
+        } label: {
+            Text(title)
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("routine.action.\(status.rawValue)")
         .disabled(actionModel?.isSubmitting ?? true)
-        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
     }
 
     private func configureActionModel() {

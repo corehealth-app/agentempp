@@ -48,6 +48,7 @@ iOS app. Primary sources include:
 - `apps/admin/src/lib/mobile-api/supabase-coach.ts`;
 - `apps/admin/src/lib/mobile-api/read-model.ts`;
 - route handlers under `apps/admin/src/app/api/mobile/v1`;
+- Swift project's `swift-markdown` 0.8.0 release, manifest and public AST APIs;
 - `apps/ios/BodyFlow/BodyFlow` and its unit/UI test targets.
 
 ### Real Mobile Operations
@@ -161,6 +162,30 @@ models and surfaces subject to all of the following:
   “Indisponível nesta versão” rather than fixture success;
 - no migration, deploy, merge, TestFlight, production change or WhatsApp-based
   architecture is part of the workpack.
+
+### Mandatory Pre-TestFlight Release Gate
+
+A live-capable Release or any TestFlight distribution is blocked until these
+three dependencies are designed, security-reviewed, implemented and tested
+together in a separately approved workpack:
+
+1. an authenticated HTTP transport that trusts only the configured BodyFlow
+   BFF HTTPS origin, defines a strict redirect policy, applies `no-store`
+   behavior and proves that a bearer can never be sent to another origin;
+2. an approved, configuration-injected staging base URL with no hard-coded
+   production fallback and no host inferred from content payloads;
+3. a session bridge that supplies the current bearer from the authentication
+   boundary, handles token refresh/rotation, clears credentials and cancels
+   patient-scoped work on sign-out or session change, and never copies a bearer
+   into fixtures or feature state.
+
+Prompt 14 does not approve or implement this gate. Its fixtures may be
+constructed only under `#if DEBUG`, SwiftUI previews and test targets. Until
+the gate receives explicit approval, every Prompt 14 Release provider remains
+`operationUnavailable`, the UI says “Indisponível nesta versão”, and Release
+contains no Prompt 14 base URL, outbound request, bearer injection or fixture
+fallback. A successful Release compile is necessary verification, not
+authorization for TestFlight.
 
 ## Architecture
 
@@ -368,7 +393,8 @@ struct PublishedContentCover: Codable, Equatable, Sendable {
 
 `url` is the exact wire field. Its value is a relative authenticated BFF
 capability, not a public URL or Storage path. The app never persists or logs
-it.
+it, and no request may be built until it passes the strict `ContentCoverPath`
+validation defined under Covers.
 
 The list response is:
 
@@ -601,8 +627,10 @@ an unsupported third Library segment while mapping exactly to the two real feed
 surfaces used by that screen.
 
 The real router continues to store `[AppRoute]`. Both `.content` and `.mascot`
-map to `.today` in `AppRoute.tab`, so `AppRouter.navigate` appends them only to
-the Today stack. `AppShellView.destination(for:)` dispatches content routes to
+map to `.today` in `AppRoute.tab`. Because the current
+`AppRouter.navigate(to:in:)` receives an explicit tab, every content/mascot call
+site must pass `.today`; router tests prohibit appending either route to another
+stack. `AppShellView.destination(for:)` dispatches content routes to
 Library/detail destinations and `.mascot(.detail)` to a mascot detail that
 reloads `CoachExperienceProviding`. No route carries an article, coach or
 mascot response snapshot.
@@ -611,13 +639,15 @@ Entry points are:
 
 - a persistent Library toolbar action or card in Today;
 - “Ver biblioteca” from the Today recommendations section;
-- selecting a Today recommendation, Library item or Saved item opens content
-  detail;
+- selecting a Today recommendation, Library item or Saved item performs no
+  read mutation and navigates to content detail with only `publicationID` and
+  `origin`;
 - selecting the Today mascot card opens `.mascot(.detail)`.
 
 The detail route always reloads `GET /content/:id` to revalidate version,
 entitlement, locale, targeting, schedule and archive state. It does not trust a
-list snapshot as the full detail contract.
+list snapshot as the full detail contract, and it never carries or uses the
+card's version for `opened`.
 
 ## Educational Library
 
@@ -692,41 +722,122 @@ The article title is the screen heading. The Markdown body never supplies an H1.
 
 ### Native Markdown Policy
 
-The renderer accepts exactly the backend-approved subset:
+The concrete implementation is `BodyFlowMarkdownParser`, a fail-closed adapter
+over the Swift project's `swift-markdown` AST package. SwiftPM pins exact
+version `0.8.0`, resolved commit
+`3c6f9523da3a1ec2fd829673e472d95b8097a3b8`; `Package.resolved` is versioned and
+also locks the transitive `swift-cmark` resolution. Branch, `from:` and other
+floating requirements are prohibited. Any package update requires a separate
+dependency review and a complete compatibility-corpus run.
 
-- paragraphs;
-- H2 and H3;
-- emphasis and strong;
-- ordered lists beginning at 1;
-- unordered lists;
-- block quotes;
-- absolute HTTPS links;
-- nesting no deeper than eight levels.
+Version 0.8.0 requires Swift Tools 6.2 and is compatible with the approved
+Xcode 26.6 / Swift 6.3.3 toolchain and iOS 18 deployment target. The pinned
+primary sources are:
 
-It does not use `WKWebView`, arbitrary HTML, remote scripts, inline images,
-attachments, inline or block code, embeds, thematic breaks, link titles,
-reference-style links, HTTP links, protocol-relative links, data URLs or
-JavaScript URLs. Unsupported or malformed local parsing fails closed with a
-recoverable content rendering error. Raw Markdown is not displayed as trusted
-health content.
+- `https://github.com/swiftlang/swift-markdown/releases/tag/0.8.0`;
+- `https://github.com/swiftlang/swift-markdown/blob/0.8.0/Package.swift`;
+- the public `Document`, `MarkupVisitor` and `ParseOptions` APIs at that tag.
 
-Links use the system open-URL path only after an HTTPS check. The app does not
-rewrite, track or decorate a link as a BodyFlow endorsement.
+The parser first enforces the existing 100...50,000-character body bound, then
+creates `Document(parsing: body, options: [.disableSmartOpts])`. Smart
+punctuation is disabled so iOS cannot rewrite quotes or dashes that the backend
+normalized differently. Block directives, symbol links and Doxygen parsing are
+not enabled.
+
+An exhaustive visitor converts the complete library tree into an immutable
+BodyFlow-owned AST before the detail can enter loaded state. Rendering consumes
+only that AST, never the package's `Markup` tree or raw source. The exact
+allowlist is:
+
+- blocks: `Document`, `Paragraph`, H2/H3 `Heading`, `BlockQuote`,
+  `OrderedList` with `startIndex == 1`, `UnorderedList`, and `ListItem` whose
+  checkbox is absent;
+- inline: `Text`, `SoftBreak`, `Strong`, `Emphasis`, and `Link` with no title
+  and an absolute HTTPS destination with a non-empty host;
+- container and inline nesting: no deeper than eight, matching the backend.
+
+`SoftBreak` becomes the ordinary textual separation represented by the
+backend's multiline text node. The visitor has no permissive/default rendering
+branch: every unrecognized current or future node returns
+`unsupportedMarkdown`. Explicitly rejected nodes include HTML block/inline,
+H1/H4-H6, code block/inline, image, hard `LineBreak`, thematic break, table,
+strikethrough, task-list/checkbox, symbol link, directive, inline attributes,
+custom nodes and Doxygen nodes.
+
+`swift-markdown` enables GFM tables, strikethrough and task lists internally,
+while the backend's `mdast-util-from-markdown` configuration does not. The
+visitor therefore rejects those AST forms. The package also resolves a
+reference-style link into `Link` and omits its definition node. To avoid
+accepting syntax the backend rejects, `BodyFlowMarkdownParser` adds two bounded,
+non-regex checks based on the parser's source ranges:
+
+1. `InlineLinkSourceGuard` uses a deterministic Unicode-scalar state machine to
+   accept the inline/autolink source forms represented by an approved `Link`
+   and reject reference forms; semantic URL validation still comes only from
+   the AST destination.
+2. `DocumentSourceCoverageGuard` recursively verifies each container's source
+   slice against accepted child ranges and its known structural delimiters. Any
+   unowned non-whitespace span fails, including a reference definition removed
+   by the package AST at any nesting level.
+
+These guards do not parse or render Markdown and cannot make a rejected AST
+node acceptable. Regex, `AttributedString(markdown:)`, `WKWebView`, HTML,
+remote scripts and permissive/raw fallback rendering are prohibited.
+
+Compatibility is locked with a golden corpus sourced from the real
+`validateContentMarkdown` implementation and tests in
+`packages/core/src/content.ts` and `packages/core/src/content.test.ts`:
+
+- every backend-accepted normalized document must produce the exact expected
+  BodyFlow AST;
+- every backend-rejected fixture must also fail on iOS;
+- coverage includes CRLF normalization, soft breaks, depth 8/9, ordered-list
+  start, titled/reference links, tables, strikethrough and task lists;
+- any new parser/backend divergence blocks the package or backend-parser
+  upgrade.
+
+Parsing, source-guard or conversion failure publishes one recoverable content
+rendering error, no partial body and no `opened` event. Raw Markdown is never
+displayed as trusted health content. Approved links use the system open-URL
+path only after the HTTPS check; the app does not rewrite, track or decorate a
+link as a BodyFlow endorsement.
 
 ### Read Events
 
 - `impression` is created only after a card is actually visible.
-- `opened` is created when a user selects a card/detail.
+- selecting a card creates no `opened` attempt; it only navigates with
+  `publicationID` and `origin`;
+- `opened` is created by the detail owner only after `GET /content/:id` has
+  returned the current authorized detail and that response has been decoded,
+  contract-validated and parsed into the approved renderable Markdown AST;
 - `completed` requires an explicit user action at the article detail.
 
-SwiftUI re-rendering must not emit duplicate impressions. The feed owner keeps
-one immutable attempt per publication/version/origin for the current visible
-response. The endpoint remains the authoritative deduplication layer.
+The feed owner deduplicates only `impression`, keeping one immutable attempt per
+publication/version/origin for the current visible response. The detail owner
+has a separate route-lifetime guard. On `@MainActor`, after successful detail
+validation, it commits the loaded state and marks that guard atomically without
+suspension; only then does it dispatch one logical `opened` attempt from:
 
-Opened-event failure does not block reading an already authorized detail. It
-appears as a non-blocking recoverable state. Save and completion operations show
-submitting, success, recoverable failure and unavailable states and prevent
-double submission.
+- `publicationID` carried by the route;
+- `origin` carried by the route;
+- `version` returned by that successful detail response.
+
+The card/feed version is never read for `opened`. The guard prevents SwiftUI
+re-rendering, refresh, a later detail reload or an `opened` mutation failure from
+creating another attempt during the same route presentation. Leaving and
+explicitly navigating to detail again creates a new route presentation and one
+new logical opening.
+
+If detail loading fails, returns `operationUnavailable`, is cancelled or
+superseded, fails contract decoding, or fails the approved Markdown validation,
+no `opened` attempt is created. An `opened` POST failure is non-blocking: the
+authorized article remains visible, the failure is presented as a bounded
+recoverable event state, and Prompt 14 does not automatically retry or enqueue
+it offline. If `opened` returns `content_version_changed`, the approved content
+invalidation/reload runs without dispatching a second `opened`; only a later
+explicit navigation can create another opening. Save and completion operations
+continue to show submitting, success, recoverable failure and unavailable
+states and prevent double submission.
 
 No event is persisted into an offline queue. The server owns event time, so a
 later replay after another session could misrepresent when a card was visible.
@@ -772,7 +883,8 @@ recommendation.
 Behavior:
 
 - show at most the three items returned in server order;
-- send `origin=today` for impression/opened events;
+- use `origin=today` for the visible-card impression and carry that origin into
+  the detail route; only the authorized detail owner may use it for `opened`;
 - expose “Ver biblioteca” regardless of recommendation count;
 - do not paginate the compact Today section;
 - when its response contains `next_cursor`, the CTA opens the normal Library
@@ -782,9 +894,10 @@ Behavior:
 - offline/error/unavailable treatment remains inside the section.
 
 Save/unsave and completion mutations invalidate the affected Today
-recommendation list, Library list, Saved list and open detail. Impression and
-opened events do not invalidate official content feeds. No content event or
-mutation invalidates or patches official `TodaySnapshot` nutrition values.
+recommendation list, Library list, Saved list and open detail. Successful
+impression/opened events do not invalidate content feeds; an opened version
+conflict follows the explicit conflict rule above. No content event or mutation
+invalidates or patches official `TodaySnapshot` nutrition values.
 
 ## BodyFlow Mascot
 
@@ -937,24 +1050,84 @@ publication state. Stale surfaces display the existing stale-data disclosure.
 
 ### Covers
 
-Cover responses are private and valid for at most the remaining capability
-TTL, initially 300 seconds. A small session-owned image loader may retain image
-bytes in memory only until the earlier of:
+`ContentCoverLoader` is a session-owned actor with an injectable byte-stream
+transport. Debug/tests use a deterministic fake stream; Release receives an
+unavailable transport until the mandatory pre-TestFlight gate is approved.
 
-- `cover.expires_at`;
-- response `private, max-age` expiry;
-- user/session change;
-- content version invalidation;
-- cover 404 or loss of eligibility.
+#### Capability Path And Bearer Boundary
 
-The loader accepts only the existing proxy MIME allowlist (`image/jpeg`,
-`image/png`, `image/webp`), honors `X-Content-Type-Options: nosniff`, and treats
-any other media type as a failed cover rather than attempting content
-interpretation.
+A failable `ContentCoverPath` value owns validation. The only accepted raw
+`cover.url` shape is:
 
-Cover tokens, relative paths and bytes are not written to disk, Keychain,
-telemetry or logs. After expiry/404, the parent list/detail is reloaded to obtain
-a new capability. Offline stale text may remain visible while an expired cover
+```text
+^/api/mobile/v1/content/covers/[A-Za-z0-9_-]+$
+```
+
+Validation happens on the raw string before URL resolution. The loader rejects
+an empty token, percent encoding, backslash, extra path segment, `.`/`..`
+traversal, scheme, host, user info, port, protocol-relative form, query,
+fragment and every external URL. It then resolves the validated path against
+the separately configured trusted HTTPS BFF base URL and rechecks that scheme,
+host and effective port exactly match the trusted origin.
+
+A future authenticated transport may attach the bearer only after both checks.
+Cover requests reject every redirect rather than following it, because the
+real proxy contract does not redirect. The loader never forwards or retries an
+Authorization header to a different origin. Its future URL session must be
+ephemeral, have no disk `URLCache`, ignore local cache data and rely only on the
+bounded session cache below.
+
+#### Bounded Download And Decode
+
+The backend admits cover objects up to exactly 10 MiB (10,485,760 bytes). The
+iOS stream rejects a declared `Content-Length` above that bound and also counts
+actual chunks, cancelling at byte 10,485,761 when the header is absent, false or
+smaller than the body. It never uses an API that must materialize an unbounded
+response before checking the limit.
+
+The response `Content-Type` must be exactly `image/jpeg`, `image/png` or
+`image/webp`. ImageIO must independently recognize bytes of the corresponding
+type; a missing, different, unsupported or header/bytes-mismatched type fails
+closed. `X-Content-Type-Options: nosniff` is honored rather than emulated by a
+permissive decoder.
+
+Before decoding, ImageIO reads image properties with source caching disabled.
+As an explicit iOS decode-safety policy, not a new backend contract, the loader
+rejects a zero/invalid size, either source dimension above 16,384 pixels, an
+overflowing dimension product or more than 64,000,000 source pixels. It never
+calls `UIImage(data:)` or decodes the full raster. It uses
+`CGImageSourceCreateThumbnailAtIndex` with transform enabled and a maximum pixel
+dimension derived from the actual displayed point size times display scale.
+Only that downsampled result crosses into SwiftUI.
+
+#### Session Memory Cache
+
+A `SessionCoverCache` wrapper owns `NSCache` plus a deterministic LRU cost
+ledger. Its production limits are fixed at:
+
+```text
+totalCostLimit = 33,554,432 bytes (32 MiB)
+countLimit = 64 images
+```
+
+The key is `(publicationID, version, targetPixelSize)` within one authenticated
+session. Entry cost is the downsampled `CGImage.bytesPerRow * height`, using
+overflow-checked arithmetic. The ledger evicts least-recently-used entries
+before insertion so both limits remain true independently of `NSCache`'s own
+non-deterministic pressure eviction.
+
+An entry expires at the earlier of `cover.expires_at` and the response
+`private, max-age` deadline calculated with injected `TimeProviding`. Raw
+download bytes are discarded after the bounded decode. Capability strings,
+raw bytes and decoded images are never written to disk, Keychain, telemetry or
+logs.
+
+On sign-out, user/session replacement or authenticated-shell destruction, the
+owner cancels every download/decode task, invalidates the ephemeral session,
+clears the LRU ledger and calls `removeAllObjects()`. A memory warning clears the
+same cache. Content version invalidation and cover 404 remove the affected
+entry; expiry/404 triggers only the bounded parent list/detail refresh needed to
+obtain a new capability. Offline stale text may remain visible while the cover
 falls back to the neutral placeholder.
 
 ## Refresh And Invalidation
@@ -1093,8 +1266,12 @@ field to the DTO.
 
 ### Release
 
-Until approved BodyFlow-owned art and live providers exist, Release shows the
-normal unavailable text treatment and no successful fixture mascot/content.
+Prompt 14 fixtures, placeholder-success scenarios and fake byte streams exist
+only under `#if DEBUG`, previews and tests. Release shows the normal unavailable
+text treatment and no successful fixture mascot/content. This remains true even
+when approved BodyFlow-owned art exists: live Prompt 14 providers stay
+fail-closed until the authenticated transport, approved staging base URL and
+session bridge pass the mandatory pre-TestFlight gate.
 
 Future final art must:
 
@@ -1157,13 +1334,52 @@ Test literal decoding/encoding for:
 
 ### Markdown Tests
 
+- exact SwiftPM resolution is `swift-markdown` 0.8.0 at
+  `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, with no floating requirement;
+- parsing uses `.disableSmartOpts` and enables no block-directive, symbol-link
+  or Doxygen option;
 - paragraphs, H2/H3, strong, emphasis, ordered/unordered lists, quotes and
-  HTTPS links render correctly;
+  HTTPS links plus soft breaks produce the exact BodyFlow AST;
 - nested content respects depth eight;
 - HTML, H1, inline image, code, embed, thematic break, link title,
-  reference-style link, non-HTTPS URL and malformed structures fail closed;
+  hard line break, reference-style link, non-HTTPS URL and malformed
+  structures fail closed;
+- table, strikethrough, task list, symbol link, directive, attributes, custom
+  and unknown/future AST nodes fail closed;
+- source-range guards reject a reference-form link and its removed definition
+  without regex or permissive source parsing;
+- the backend golden corpus produces identical accepted BodyFlow ASTs and
+  rejects the complete backend-invalid corpus; any divergence fails the gate;
 - headings/lists/links expose native accessibility semantics;
-- no WebView or executable content path exists.
+- parser/adapter failure exposes no partial/raw body and emits no `opened`;
+- no regex parser, `AttributedString(markdown:)`, WebView or executable content
+  path exists.
+
+### Cover Loader Tests
+
+- the exact relative path
+  `/api/mobile/v1/content/covers/<base64url-capability>` is accepted;
+- absolute/protocol-relative/external URLs, scheme, host, user info, port,
+  query, fragment, percent encoding, backslash, extra segments and traversal
+  are rejected before request construction;
+- a trusted-origin request may receive a bearer only after validation, and
+  every redirect is cancelled without forwarding Authorization;
+- 10,485,760 streamed bytes are accepted while a declared or actual
+  10,485,761-byte body is cancelled and rejected;
+- missing/incorrect MIME, unsupported MIME and header/ImageIO-type mismatch
+  fail closed;
+- zero/invalid dimensions, a dimension above 16,384 and more than 64,000,000
+  source pixels are rejected without full raster decode;
+- ImageIO downsampling produces the requested point-size × display-scale
+  thumbnail rather than the source dimensions;
+- cache insertion never exceeds `totalCostLimit=33,554,432` or
+  `countLimit=64`, and deterministic LRU overflow evicts before insertion;
+- expiry uses the earlier capability/header deadline; cover 404 and content
+  version invalidation remove the affected entry;
+- session replacement/sign-out cancels in-flight stream/decode work and clears
+  `NSCache`, LRU state and the ephemeral session, so no late image publishes;
+- Release's unavailable stream performs no request and exposes no bearer/base
+  URL.
 
 ### Provider And State Tests
 
@@ -1173,12 +1389,24 @@ Test literal decoding/encoding for:
 - category/surface changes cancel old loads and suppress late publication;
 - `AppRoute.content` and `AppRoute.mascot` map only to the Today stack and
   destinations carry no mutable response snapshots;
+- a content-detail route contains only `publicationID` and `origin`, never a
+  card summary or version;
 - first-page and next-page loading/error behavior remain distinct;
 - stale offline content is memory-only and visibly stale;
 - detail always loads by publication ID;
 - impression emits only for an actually visible card and deduplicates a single
   rendered response;
-- opened failure does not hide authorized detail;
+- tapping a card records no `opened` before the detail GET resolves;
+- detail GET success at version N emits exactly one `opened` at version N even
+  when the originating card carried N-1;
+- re-render, refresh, detail reload and mutation failure do not create a second
+  `opened` in the same route presentation; a new explicit navigation does;
+- failed, unavailable, cancelled, superseded, contract-invalid or
+  Markdown-invalid detail emits zero `opened` attempts;
+- `opened` failure keeps authorized detail visible, remains non-blocking and is
+  neither automatically retried nor queued offline;
+- `opened` version conflict invalidates/reloads content without emitting a
+  second opening;
 - save/complete retry preserves the exact idempotency attempt;
 - version conflict drops the old cover, reloads every resident feed plus detail
   and never reapplies the old mutation;
@@ -1189,7 +1417,24 @@ Test literal decoding/encoding for:
   even after the fixed clock advances;
 - sign-out/user change cancels and clears every patient-scoped value;
 - Release dependencies return `operationUnavailable` for every new capability;
-- no fixture repository or Prompt 14 launch symbol is present in Release.
+- Release ignores Prompt 14 launch arguments, cannot construct fixtures, has
+  no Prompt 14 base URL/bearer/outbound request, and contains no fixture
+  repository or Prompt 14 launch symbol.
+
+### Release And Distribution Gate Tests
+
+- current Prompt 14 Release resolves every new provider/transport as
+  `operationUnavailable` and only presents “Indisponível nesta versão”;
+- fixture factories are structurally Debug/preview/test-only and cannot link
+  into Release;
+- a future gate cannot be approved until tests prove the configured staging
+  HTTPS origin, same-origin/no-redirect bearer policy and absence of a
+  production/hard-coded fallback;
+- session-bridge tests must prove current-token injection, refresh/rotation,
+  sign-out/session-change clearing, request cancellation and suppression of
+  late patient-scoped publication;
+- a Release build passing without all three approved live dependencies remains
+  explicitly ineligible for TestFlight.
 
 ### Mascot And Gamification Tests
 
@@ -1217,8 +1462,12 @@ Deterministic Debug journeys cover:
 - Today recommendations loaded, empty, offline, error and unavailable;
 - Today continues to render when recommendations fail;
 - Library all/saved/category filters and opaque load-more;
-- content detail, Markdown, save, unsave, completion and conflict reload;
-- cover success, nil, expiry and placeholder;
+- content detail loads before its one `opened`, while an opened-event failure
+  leaves the full authorized article usable;
+- approved Markdown, parser failure without raw fallback, save, unsave,
+  completion and conflict reload;
+- cover success, nil, expiry, oversized/invalid placeholder and no external
+  navigation/request;
 - Focus/Impulse/Zen plus Balanced fallback;
 - four requested mascot presentations plus Evolving/Unknown fallback;
 - Today mascot navigation to its snapshot-reloading typed detail;
@@ -1251,11 +1500,11 @@ implementation:
 7. An approved mascot-state mobile transition command if the patient is ever
    allowed to trigger transitions.
 8. Approved BodyFlow-owned final mascot and medal assets.
-9. A deployed staging BFF URL and reviewed bearer/session bridge for live iOS
-   transport.
 
 All additions must be additive. Prompt 14 reserves no speculative wire shape
-for them.
+for them. Authenticated HTTP transport, staging base URL and session bridge are
+not optional backlog items: they are the mandatory Release/TestFlight gate
+defined above and require explicit approval before any live-capable build.
 
 ## Deliberately Out Of Scope
 
@@ -1288,14 +1537,30 @@ The later implementation is acceptable only when all of the following are true:
 - Today recommendations use a separate `surface=today` request and never modify
   `TodayResponse`;
 - Library and Saved use exact real surfaces and opaque server pagination;
-- detail uses publication ID and only the real detail DTO;
-- the native Markdown renderer supports exactly the approved subset without a
-  WebView;
-- impression/opened/completed/save mutations preserve exact version and
-  idempotency semantics;
+- detail navigation carries only publication ID and origin, never a card
+  version or response snapshot, and loads only the real detail DTO;
+- a card tap emits no `opened`; one current authorized/renderable detail emits
+  exactly one route-lifetime `opened` using the detail response version, while
+  failed/unavailable/cancelled/invalid detail emits none;
+- `opened` failure remains non-blocking and cannot cause an automatic retry,
+  offline queue or duplicate event in the same route presentation;
+- the native Markdown parser is exact-pinned `swift-markdown` 0.8.0 behind an
+  exhaustive fail-closed BodyFlow AST adapter and source-range guards;
+- Markdown rendering supports exactly the backend subset, passes the backend
+  golden corpus, and has no regex parser, raw/permissive fallback or WebView;
+- impression/completed/save mutations and the post-detail `opened` preserve
+  exact version and idempotency semantics;
 - version conflicts invalidate every resident content feed and detail, discard
   the prior version's cover and never auto-apply an old intent to new content;
 - JSON and private cover data are not persisted across sessions;
+- cover paths match only the exact relative capability shape; external,
+  redirected, traversal, query and fragment forms are rejected before bearer
+  attachment, and Authorization never crosses the trusted BFF origin;
+- cover bodies are stream-bounded to 10 MiB, MIME and ImageIO type agree,
+  abusive dimensions fail closed, and ImageIO downsamples to displayed pixels;
+- the session cover cache enforces 32 MiB/64-image limits, expiry and
+  deterministic overflow, and session change cancels work and clears all
+  entries;
 - cover expiry never exposes a Storage path or stale capability;
 - mascot state/personality come only from the coach snapshot;
 - all five real mascot wire states decode, while only the four requested states
@@ -1320,8 +1585,13 @@ The later implementation is acceptable only when all of the following are true:
 - cover expiry and mutation attempt creation use injected `TimeProviding`, and
   retry preserves the original attempt timestamp;
 - Dynamic Type, Dark Mode, VoiceOver, 44-point targets and Reduce Motion pass;
-- temporary visuals are first-party, neutral and Debug/preview/test-only;
-- Release contains no Prompt 14 fixture success and fails closed;
+- temporary visuals, content fixtures and fake streams are first-party,
+  deterministic and Debug/preview/test-only;
+- Release contains no Prompt 14 fixture success, base URL, bearer or outbound
+  request and remains fail-closed;
+- authenticated HTTP transport, an approved staging base URL and the session
+  bridge must pass a separately approved security/test gate before TestFlight;
+- a passing Release build alone never authorizes TestFlight;
 - full tests, Debug/Release builds, simulator and visual evidence pass before
   any publication action;
 - no live service, secret, migration, deploy, merge, TestFlight, production or

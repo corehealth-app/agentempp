@@ -794,17 +794,25 @@ actor DemoBodyFlowRepository:
         case .loadingDelay:
             try await Task.sleep(for: .milliseconds(100))
         case .initialOffline:
-            throw BodyFlowCapabilityError.offline
+            try await preparePersistentFailure(
+                of: capability,
+                error: .offline
+            )
         case .initialError:
-            throw BodyFlowCapabilityError.serviceUnavailable
+            try await preparePersistentFailure(
+                of: capability,
+                error: .serviceUnavailable
+            )
         case .unavailablePresentation:
             throw BodyFlowCapabilityError.operationUnavailable
         case .staleOffline:
+            try await delayRepeatedRead(of: capability)
             try consumeFirstRead(
                 of: capability,
                 thenThrow: .offline
             )
         case .staleError:
+            try await delayRepeatedRead(of: capability)
             try consumeFirstRead(
                 of: capability,
                 thenThrow: .serviceUnavailable
@@ -817,6 +825,26 @@ actor DemoBodyFlowRepository:
              .routineActionUnavailable,
              .reduceMotionVerification:
             break
+        }
+    }
+
+    private func preparePersistentFailure(
+        of capability: ReadCapability,
+        error: BodyFlowCapabilityError
+    ) async throws {
+        let count = readCounts[capability, default: 0]
+        readCounts[capability] = count + 1
+        if count > 0 {
+            try await Task.sleep(for: .milliseconds(1_500))
+        }
+        throw error
+    }
+
+    private func delayRepeatedRead(
+        of capability: ReadCapability
+    ) async throws {
+        if readCounts[capability, default: 0] > 0 {
+            try await Task.sleep(for: .milliseconds(1_500))
         }
     }
 

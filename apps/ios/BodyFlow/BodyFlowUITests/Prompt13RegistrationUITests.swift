@@ -95,6 +95,22 @@ final class Prompt13RegistrationUITests: XCTestCase {
     }
 
     @MainActor
+    func testMealProposalActionsHaveMinimumTapTargets() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = reachTextProposal(scenario: .loaded)
+
+        for identifier in [
+            "registration.proposal.edit",
+            "registration.proposal.confirm",
+            "registration.proposal.cancel",
+        ] {
+            let action = app.buttons[identifier]
+            XCTAssertTrue(action.waitForExistence(timeout: 3))
+            support.assertMinimumTapTarget(action)
+        }
+    }
+
+    @MainActor
     func testMealMutationFailurePreservesPendingAndRetries() {
         let app = launchAndOpenMeal(scenario: .registrationErrorOnce)
         app.buttons["registration.meal.source.text"].tap()

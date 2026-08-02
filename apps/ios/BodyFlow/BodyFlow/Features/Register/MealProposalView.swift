@@ -130,19 +130,31 @@ struct MealProposalView: View {
                 .foregroundStyle(BodyFlowColor.secondaryText)
 
             if proposal.allowsEdit {
-                Button("Editar", action: edit)
+                Button(action: edit) {
+                    Text("Editar")
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                        .contentShape(Rectangle())
+                }
                     .buttonStyle(.bordered)
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.edit")
             }
             if proposal.allowsConfirm {
-                Button("Confirmar", action: confirm)
+                Button(action: confirm) {
+                    Text("Confirmar")
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                        .contentShape(Rectangle())
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.confirm")
             }
             if proposal.allowsCancel {
-                Button("Cancelar proposta", action: cancel)
+                Button(action: cancel) {
+                    Text("Cancelar proposta")
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                        .contentShape(Rectangle())
+                }
                     .buttonStyle(.bordered)
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.cancel")

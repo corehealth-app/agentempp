@@ -29,8 +29,36 @@ struct CoachExperienceContractTests {
                 == timestamp("2026-07-29T22:15:16.123Z")
         )
         #expect(response.data.contractVersion == "bodyflow.coach-persona.v1")
+        #expect(
+            CoachExperienceV1PresentationContract.validatedSnapshot(
+                from: response
+            ) == response.data
+        )
 
         assertContract(response)
+    }
+
+    @Test("v1 presentation boundary rejects an unsupported contract after decoding")
+    func rejectsUnsupportedCoachContract() throws {
+        let json = try #require(
+            String(data: Self.coachExperienceJSON, encoding: .utf8)
+        )
+        let response = try JSONDecoder().decode(
+            CoachExperienceResponse.self,
+            from: Data(
+                json.replacingOccurrences(
+                    of: "bodyflow.coach-persona.v1",
+                    with: "bodyflow.coach-persona.v2"
+                ).utf8
+            )
+        )
+
+        #expect(response.data.contractVersion == "bodyflow.coach-persona.v2")
+        #expect(
+            CoachExperienceV1PresentationContract.validatedSnapshot(
+                from: response
+            ) == nil
+        )
     }
 
     @Test("selectable and effective personas decode only their wire domains")

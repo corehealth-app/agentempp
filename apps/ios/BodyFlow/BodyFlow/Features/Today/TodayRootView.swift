@@ -217,7 +217,13 @@ struct TodayRootView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
                         Label("Atualizar", systemImage: "arrow.clockwise")
+                            .frame(
+                                width: BodyFlowSpacing.minimumTapTarget,
+                                height: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("today.refresh")
                 }
             } else {
@@ -256,10 +262,15 @@ struct TodayRootView: View {
                 if showsStaleBanner {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                         StaleDataBanner()
-                        Button("Tentar novamente", action: retry)
-                            .font(BodyFlowTypography.headline)
-                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .accessibilityIdentifier("state.retry")
+                        Button(action: retry) {
+                            Text("Tentar novamente")
+                                .font(BodyFlowTypography.headline)
+                                .frame(
+                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("state.retry")
                     }
                 }
 

@@ -112,6 +112,43 @@ final class Prompt13TodayUITests: XCTestCase {
     }
 
     @MainActor
+    func testTodayRefreshToolbarControlHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+        XCTAssertTrue(
+            element("today.header.local-date", in: app)
+                .waitForExistence(timeout: 10)
+        )
+        let refresh = app.buttons["today.refresh"]
+
+        XCTAssertTrue(refresh.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(refresh)
+    }
+
+    @MainActor
+    func testTodayStaleRetryControlHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .staleError)
+        let refresh = app.buttons["today.refresh"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+        refresh.tap()
+
+        let retry = element("state.retry", in: app)
+        XCTAssertTrue(retry.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(retry)
+    }
+
+    @MainActor
+    func testTodayInitialErrorRetryControlHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .error)
+        let retry = element("state.retry", in: app)
+
+        XCTAssertTrue(retry.waitForExistence(timeout: 10))
+        support.assertMinimumTapTarget(retry)
+    }
+
+    @MainActor
     private func element(
         _ identifier: String,
         in app: XCUIApplication

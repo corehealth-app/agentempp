@@ -168,10 +168,15 @@ struct ScreenStateView: View {
                     }
 
                     if state.descriptor.showsRetry {
-                        Button("Tentar novamente", action: triggerRetry)
-                            .font(BodyFlowTypography.headline)
-                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .accessibilityIdentifier("state.retry")
+                        Button(action: triggerRetry) {
+                            Text("Tentar novamente")
+                                .font(BodyFlowTypography.headline)
+                                .frame(
+                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("state.retry")
                     }
                 }
                 .multilineTextAlignment(.center)

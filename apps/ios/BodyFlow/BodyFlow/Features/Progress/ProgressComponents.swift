@@ -21,8 +21,7 @@ struct ProgressPresentation: Equatable, Sendable {
         currentStreakText = "\(Self.integer(snapshot.currentStreak)) dias"
         longestStreakText = "\(Self.integer(snapshot.longestStreak)) dias"
         completedBlocksText = Self.integer(snapshot.blocksCompleted)
-        deficitBlockText = snapshot.deficitBlock.map { "\(Self.integer($0)) kcal" }
-            ?? "Indisponível"
+        deficitBlockText = "\(Self.integer(snapshot.deficitBlock)) kcal"
         weightText = snapshot.currentWeight.map { "\(Self.decimal($0)) kg" }
             ?? "Indisponível"
         bodyFatText = snapshot.currentBodyFatPercent.map { "\(Self.decimal($0))%" }

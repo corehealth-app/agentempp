@@ -847,20 +847,7 @@ enum DemoBodyFlowFixtures {
     )
 
     static let emptyProgress = ProgressResponse(
-        data: ProgressSnapshot(
-            xpTotal: 0,
-            level: 0,
-            currentStreak: 0,
-            longestStreak: 0,
-            blocksCompleted: 0,
-            deficitBlock: nil,
-            currentWeight: nil,
-            currentBodyFatPercent: nil,
-            badgesEarned: [],
-            lastActiveDate: nil,
-            nextReevaluation: nil,
-            updatedAt: timestamp
-        ),
+        data: nil,
         meta: metadata("demo-progress-empty")
     )
 

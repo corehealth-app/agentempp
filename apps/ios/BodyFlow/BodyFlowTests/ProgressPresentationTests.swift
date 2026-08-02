@@ -42,11 +42,11 @@ struct ProgressPresentationTests {
         #expect(presentation.bodyFatText != "0%")
     }
 
-    @Test("missing deficit block stays unavailable instead of becoming zero")
-    func missingDeficitBlockRemainsUnavailable() {
+    @Test("zero deficit block is displayed as literal official data")
+    func zeroDeficitBlockRemainsVisible() {
         let snapshot = ProgressSnapshot(
             xpTotal: 12_345, level: 13, currentStreak: 4, longestStreak: 29,
-            blocksCompleted: 7, deficitBlock: nil,
+            blocksCompleted: 7, deficitBlock: 0,
             currentWeight: Decimal(string: "83.75"),
             currentBodyFatPercent: Decimal(string: "18.25"),
             badgesEarned: ["badge-z", "badge-a"], lastActiveDate: "2026-07-28",
@@ -55,7 +55,6 @@ struct ProgressPresentationTests {
         )
 
         let presentation = ProgressPresentation(snapshot: snapshot)
-        #expect(presentation.deficitBlockText == "Indisponível")
-        #expect(presentation.deficitBlockText != "0 kcal")
+        #expect(presentation.deficitBlockText == "0 kcal")
     }
 }

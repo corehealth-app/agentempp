@@ -1,6 +1,6 @@
 import Foundation
 
-typealias ProgressResponse = MobileResponse<ProgressSnapshot>
+typealias ProgressResponse = MobileResponse<ProgressSnapshot?>
 
 struct ProgressSnapshot: Codable, Equatable, Sendable {
     let xpTotal: Int
@@ -8,7 +8,7 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
     let currentStreak: Int
     let longestStreak: Int
     let blocksCompleted: Int
-    let deficitBlock: Int?
+    let deficitBlock: Int
     let currentWeight: Decimal?
     let currentBodyFatPercent: Decimal?
     let badgesEarned: [String]

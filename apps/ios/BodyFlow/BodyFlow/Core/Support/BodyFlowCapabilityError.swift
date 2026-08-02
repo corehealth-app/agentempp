@@ -11,4 +11,14 @@ enum BodyFlowCapabilityError: Error, Equatable, Sendable {
     case invalidIdempotencyKey
     case invalidContentContract
     case invalidContentCursor
+    case unsupportedMarkdown
+    case unsupportedCoachContract
+    case contentNotFound
+    case contentCoverNotFound
+    case invalidContentCover
+    case contentCoverTooLarge
+    case subscriptionRequired
+    case contentVersionChanged
+    case idempotencyRequestInProgress
+    case coachLocaleUnsupported
 }

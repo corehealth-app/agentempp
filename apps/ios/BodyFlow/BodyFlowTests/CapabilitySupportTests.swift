@@ -147,6 +147,55 @@ struct CapabilitySupportTests {
         #expect(retry.createdAt == fixedTimeProvider.value)
     }
 
+    // Mutation caught: regenerating a content retry's operation, key, payload,
+    // or creation time instead of retaining the original attempt.
+    @Test("content read and save retries retain the original mutation attempt")
+    func contentRetryRetainsAttempt() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_785_283_200)
+
+        for operation in [MutationOperation.contentRead, .contentSave] {
+            let attempt = MutationAttempt(
+                operation: operation,
+                key: try IdempotencyKey(validating: "content-key-0001"),
+                payload: CapabilityPayloadFixture(value: "publication-1"),
+                createdAt: createdAt
+            )
+
+            let retry = attempt
+
+            #expect(retry == attempt)
+            #expect(retry.operation == operation)
+            #expect(retry.key.value == "content-key-0001")
+            #expect(retry.payload.value == "publication-1")
+            #expect(retry.createdAt == createdAt)
+        }
+    }
+
+    // Mutation caught: removing an approved content or coach error, or mapping
+    // one of those technical errors outside the existing bounded categories.
+    @Test("content and coach errors use bounded telemetry categories")
+    func contentAndCoachErrorsUseBoundedTelemetry() {
+        let mappings: [
+            (BodyFlowCapabilityError, TelemetryErrorCategory)
+        ] = [
+            (.unsupportedMarkdown, .invalidInput),
+            (.unsupportedCoachContract, .invalidInput),
+            (.contentNotFound, .operationUnavailable),
+            (.contentCoverNotFound, .operationUnavailable),
+            (.invalidContentCover, .invalidInput),
+            (.contentCoverTooLarge, .invalidInput),
+            (.subscriptionRequired, .operationUnavailable),
+            (.contentVersionChanged, .idempotencyConflict),
+            (.idempotencyRequestInProgress, .idempotencyConflict),
+            (.coachLocaleUnsupported, .invalidInput),
+        ]
+
+        #expect(mappings.count == 10)
+        for (error, expectedCategory) in mappings {
+            #expect(error.telemetryValue == expectedCategory)
+        }
+    }
+
     @Test("invalid published content contract maps to bounded invalid-input telemetry")
     func invalidContentContractMapsToBoundedTelemetry() {
         #expect(

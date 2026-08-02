@@ -41,6 +41,8 @@ enum MutationOperation: Hashable, Sendable {
     case hydration
     case weight
     case routineAction
+    case contentRead
+    case contentSave
 }
 
 struct MutationAttempt<Payload: Hashable & Sendable>: Hashable, Sendable {

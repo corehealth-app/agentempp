@@ -6,6 +6,14 @@ enum FeatureInvalidationKey: Hashable, Sendable {
     case history
     case routineList(kind: RoutineItemKind)
     case routineHistory(kind: RoutineItemKind, itemID: String)
+    case contentCatalog
+    case contentDetail(String)
+    case coachExperience
+}
+
+struct FeedLoadKey: Equatable, Hashable, Sendable {
+    let query: ContentFeedQuery
+    let catalogRevision: Int
 }
 
 enum FeatureInvalidation: Hashable, Sendable {
@@ -16,6 +24,10 @@ enum FeatureInvalidation: Hashable, Sendable {
     case hydrationRecorded
     case routineAction(kind: RoutineItemKind, itemID: String)
     case weightRecorded
+    case contentSaved(publicationID: String)
+    case contentCompleted(publicationID: String)
+    case contentVersionConflict(publicationID: String)
+    case coachPersonaChanged
 
     fileprivate var keys: Set<FeatureInvalidationKey> {
         switch self {
@@ -33,6 +45,12 @@ enum FeatureInvalidation: Hashable, Sendable {
             ]
         case .weightRecorded:
             []
+        case let .contentSaved(publicationID),
+             let .contentCompleted(publicationID),
+             let .contentVersionConflict(publicationID):
+            [.contentCatalog, .contentDetail(publicationID)]
+        case .coachPersonaChanged:
+            [.coachExperience, .contentCatalog]
         }
     }
 }

@@ -339,9 +339,20 @@ extension BodyFlowCapabilityError {
         case .invalidInput,
              .invalidIdempotencyKey,
              .invalidContentContract,
-             .invalidContentCursor:
+             .invalidContentCursor,
+             .unsupportedMarkdown,
+             .unsupportedCoachContract,
+             .invalidContentCover,
+             .contentCoverTooLarge,
+             .coachLocaleUnsupported:
             .invalidInput
-        case .idempotencyConflict:
+        case .contentNotFound,
+             .contentCoverNotFound,
+             .subscriptionRequired:
+            .operationUnavailable
+        case .idempotencyConflict,
+             .contentVersionChanged,
+             .idempotencyRequestInProgress:
             .idempotencyConflict
         case .registrationNotPending:
             .registrationNotPending

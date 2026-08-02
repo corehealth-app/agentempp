@@ -336,7 +336,10 @@ extension BodyFlowCapabilityError {
             .offline
         case .serviceUnavailable:
             .serviceUnavailable
-        case .invalidInput, .invalidIdempotencyKey:
+        case .invalidInput,
+             .invalidIdempotencyKey,
+             .invalidContentContract,
+             .invalidContentCursor:
             .invalidInput
         case .idempotencyConflict:
             .idempotencyConflict

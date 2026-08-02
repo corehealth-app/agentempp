@@ -9,4 +9,6 @@ enum BodyFlowCapabilityError: Error, Equatable, Sendable {
     case routineTransitionInvalid
     case routineSnoozeInvalid
     case invalidIdempotencyKey
+    case invalidContentContract
+    case invalidContentCursor
 }

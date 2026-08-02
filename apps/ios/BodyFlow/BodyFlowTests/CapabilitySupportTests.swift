@@ -146,6 +146,22 @@ struct CapabilitySupportTests {
         #expect(retry.payload == attempt.payload)
         #expect(retry.createdAt == fixedTimeProvider.value)
     }
+
+    @Test("invalid published content contract maps to bounded invalid-input telemetry")
+    func invalidContentContractMapsToBoundedTelemetry() {
+        #expect(
+            BodyFlowCapabilityError.invalidContentContract.telemetryValue
+                == .invalidInput
+        )
+    }
+
+    @Test("invalid opaque content cursor maps to bounded invalid-input telemetry")
+    func invalidContentCursorMapsToBoundedTelemetry() {
+        #expect(
+            BodyFlowCapabilityError.invalidContentCursor.telemetryValue
+                == .invalidInput
+        )
+    }
 }
 
 private struct CapabilityPayloadFixture: Hashable, Sendable {

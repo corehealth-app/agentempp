@@ -88,6 +88,22 @@ final class Prompt13RoutineUITests: XCTestCase {
     }
 
     @MainActor
+    func testRoutineConflictRetryHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .routineConflictOnce)
+        openSupplement(app)
+        app.buttons["routine.action.taken"].tap()
+        app.buttons["routine.action.submit"].tap()
+
+        XCTAssertTrue(
+            app.buttons["Tentar novamente"].waitForExistence(timeout: 5)
+        )
+        let retry = app.buttons["routine.mutation.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(retry)
+    }
+
+    @MainActor
     func testSupplementAndMedicationListsAreReachable() {
         let app = launchRoutine()
         XCTAssertTrue(app.buttons["routine.supplement-1"].waitForExistence(timeout: 3))

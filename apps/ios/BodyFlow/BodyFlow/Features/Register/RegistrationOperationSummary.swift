@@ -80,8 +80,18 @@ struct RegistrationOperationSummary: View {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(message)
                     if let action = descriptor.action {
-                        Button(action == .newProposal ? "Criar nova proposta" : "Tentar novamente") {
+                        Button {
                             perform(action)
+                        } label: {
+                            Text(
+                                action == .newProposal
+                                    ? "Criar nova proposta"
+                                    : "Tentar novamente"
+                            )
+                            .frame(
+                                minHeight: BodyFlowSpacing.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier(

@@ -76,13 +76,21 @@ struct RoutineActionSummary: View {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(message)
                     if case .failed = model.mutationState, allowsRetry {
-                        Button("Tentar novamente", action: retry)
+                        Button(action: retry) {
+                            Text("Tentar novamente")
+                                .frame(
+                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("routine.mutation.retry")
                     }
                 }
                 .font(BodyFlowTypography.callout)
                 .foregroundStyle(BodyFlowColor.secondaryText)
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("routine.operation.summary")
     }
 

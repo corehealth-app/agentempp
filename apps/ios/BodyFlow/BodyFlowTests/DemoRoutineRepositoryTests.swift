@@ -6,6 +6,30 @@ import Testing
 
 @Suite("Demo Routine Repository")
 struct DemoRoutineRepositoryTests {
+    @Test("hydration registration failure once preserves state and exact retry replays")
+    func hydrationRegistrationFailureOnceIsDeterministic() async throws {
+        let repository = DemoBodyFlowRepository(
+            scenario: .registrationFailureOnce
+        )
+        let attempt = try hydrationAttempt(
+            amountML: 250,
+            key: "hydration-failure-once-0001"
+        )
+        let before = try await repository.today()
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.record(attempt)
+        }
+        #expect(try await repository.today() == before)
+
+        let retryReceipt = try await repository.record(attempt)
+        let afterRetry = try await repository.today()
+        #expect(retryReceipt == DemoBodyFlowFixtures.hydrationReceipt)
+        #expect(afterRetry == DemoBodyFlowFixtures.postHydrationToday)
+        #expect(try await repository.record(attempt) == retryReceipt)
+        #expect(try await repository.today() == afterRetry)
+    }
+
     @Test("hydration selects a complete non-additive Today snapshot and exact replay does not transition twice")
     func hydrationSelectsCompleteSnapshotAndReplays() async throws {
         let repository = DemoBodyFlowRepository(scenario: .loaded)

@@ -839,6 +839,9 @@ actor DemoBodyFlowRepository:
         if scenario == .unavailablePresentation {
             throw BodyFlowCapabilityError.operationUnavailable
         }
+        if !requiresRoutineOccurrence {
+            try prepareRegistrationMutation()
+        }
         if requiresRoutineOccurrence,
            scenario == .routineActionUnavailable {
             throw BodyFlowCapabilityError.operationUnavailable

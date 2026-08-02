@@ -331,9 +331,14 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(message)
                     if retryIsAvailable {
-                        Button("Tentar novamente", action: retry)
+                        Button(action: retry) {
+                            Text("Tentar novamente")
+                                .frame(
+                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                                )
+                                .contentShape(Rectangle())
+                        }
                             .buttonStyle(.bordered)
-                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .accessibilityIdentifier("registration.mutation.retry")
                     }
                 }

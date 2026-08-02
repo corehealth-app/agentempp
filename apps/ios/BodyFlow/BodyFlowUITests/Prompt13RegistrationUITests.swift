@@ -114,6 +114,18 @@ final class Prompt13RegistrationUITests: XCTestCase {
     }
 
     @MainActor
+    func testMealMutationRetryHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = launchAndOpenMeal(scenario: .registrationErrorOnce)
+        app.buttons["registration.meal.source.text"].tap()
+        app.buttons["registration.meal.detect"].tap()
+
+        let retry = app.buttons["registration.mutation.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        support.assertMinimumTapTarget(retry)
+    }
+
+    @MainActor
     func testConfirmedMealIsReadOnly() {
         let app = reachTextProposal(scenario: .loaded)
 
@@ -276,6 +288,23 @@ final class Prompt13RegistrationUITests: XCTestCase {
         custom.typeText("500")
         app.buttons["registration.hydration.submit"].tap()
         XCTAssertTrue(app.staticTexts["Hidratação registrada."].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testHydrationMutationRetryHasMinimumTapTarget() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = launchAndOpenHydration(scenario: .registrationErrorOnce)
+        app.buttons["registration.hydration.quick.250"].tap()
+        app.buttons["registration.hydration.submit"].tap()
+
+        let retry = app.buttons["registration.mutation.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        support.assertMinimumTapTarget(retry)
+        retry.tap()
+        XCTAssertTrue(
+            app.staticTexts["Hidratação registrada."]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     @MainActor

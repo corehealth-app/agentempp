@@ -4,14 +4,14 @@
 
 **Goal:** Deliver the approved Prompt 14 native iOS experience for the published educational Library and detail, Today recommendations, the BodyFlow mascot, and literal server-owned XP, level, earned-medal and streak presentation without inventing APIs, rewards or calculations.
 
-**Architecture:** Small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
+**Architecture:** Mandatory backend Task 0 first makes the existing Markdown authority detect and reject GFM pipe-table AST nodes at CMS writes and mobile-detail reads. Then small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
 
-**Tech Stack:** Xcode 26.6 (build 17F113), Swift 6, SwiftUI, Observation, Foundation, ImageIO, Swift Testing, XCTest/XCUIAutomation, exact `swift-markdown` 0.8.0 at `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, iOS 18.0 deployment target, and iPhone 17 Pro on iOS 26.5 (`27291590-659D-4A29-8F45-CA5CA2D154F9`).
+**Tech Stack:** Xcode 26.6 (build 17F113), Swift 6, SwiftUI, Observation, Foundation, ImageIO, Swift Testing, XCTest/XCUIAutomation, exact `swift-markdown` 0.8.0 at `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, iOS 18.0 deployment target, and iPhone 17 Pro on iOS 26.5 (`27291590-659D-4A29-8F45-CA5CA2D154F9`). Backend Task 0 keeps exact `mdast-util-from-markdown` 2.0.3 and adds exact `micromark-extension-gfm-table` 2.1.1 plus `mdast-util-gfm-table` 2.0.0.
 
 ## Approval And Execution Boundary
 
 - The approved specification is `docs/superpowers/specs/2026-08-02-bodyflow-ios-library-mascot-gamification-design.md`.
-- This plan is documentary only. Task 1 remains paused until both a later explicit implementation authorization and the Markdown compatibility decision below.
+- This plan is documentary only. Task 0 remains paused until a later explicit implementation authorization; the pipe-table contract decision is approved and incorporated below.
 - Execute later implementation only in `/Users/eduardohenrique/Developer/bodyflow` on `codex/bodyflow-ios-library-mascot-gamification-v1`.
 - Preserve the stacked base `codex/bodyflow-ios-today-records-progress-v1` at `94c5dd1e5a62d2948eb5e56a1c63d2dfaf689123`; do not rewrite, reset, rebase or force the stack.
 - Preserve visible name `BodyFlow`, bundle ID `com.bodyflow.app`, Swift 6 language mode, complete concurrency checking and iOS 18.0.
@@ -28,16 +28,21 @@
 - Do not introduce WhatsApp or another messaging transport into any native architecture.
 - Do not run migration, deploy, merge, archive, production change, TestFlight, push or PR creation while executing this plan unless a later user instruction explicitly authorizes the exact action.
 
-## Mandatory Pre-Implementation Markdown Compatibility Decision
+## Approved Mandatory Pipe-Table Decision
 
-The independent plan review found one real mismatch between the approved native policy and the current backend normalizer. `validateContentMarkdown` calls `mdast-util-from-markdown` without GFM extensions, so a padded pipe-table source is currently an allowed paragraph/text document; `mdast-util-to-markdown` preserves that pipe-table shape in the normalized `body_markdown`. Exact-pinned `swift-markdown` 0.8.0 then recognizes the same normalized source as a GFM `Table`, while the approved specification requires the native adapter to reject every `Table` node. Therefore the current backend-accepted response cannot both render and satisfy the approved fail-closed native subset.
+The approved contract chooses backend fail-closed rejection. GFM pipe tables
+are not BodyFlow content. Task 0 must complete and commit before Task 1 begins:
+the backend recognizes a real table through compatible AST extensions, rejects
+the `table` node clearly at both CMS write boundaries, and revalidates legacy
+stored Markdown before the mobile detail service emits any DTO or cover
+capability.
 
-This is a known prerequisite, not a Task 6 surprise and not permission to weaken either authority. Before Task 1 begins, a separate explicit decision must approve exactly one contract-level resolution and update the specification/corpus accordingly:
-
-1. the backend Markdown contract rejects or canonically escapes pipe-table syntax before a published response can contain it; or
-2. the native policy is revised with a reviewed, AST-compatible way to preserve the backend-authorized normalized source as literal text without regex parsing, permissive fallback or raw rendering.
-
-This Prompt 14 iOS plan does not choose or implement either resolution, does not modify the backend parser and does not relabel an observed result. The shared corpus must contain the pipe-table fixture and prove the selected policy through both real authorities. Strikethrough and task-list fixtures likewise record the backend's actual normalized classification rather than assuming acceptance or rejection. Until the decision is approved, the implementation plan is blocked before Task 1; the remaining 39 acceptance criteria are fully mapped and implementation-ready.
+No regex or broad `|` search is permitted. The backend must not escape,
+rewrite or reinterpret a table as prose, and the iOS parser remains strict.
+Ordinary paragraphs containing `|` and escaped `\|` remain valid. Task 6 then
+locks the same decision through one shared backend/iOS JSON corpus. The full
+plan contains 27 sequential tasks: mandatory Task 0 followed by the existing
+Tasks 1 through 26.
 
 ## Mandatory Separate Pre-TestFlight Gate
 
@@ -48,6 +53,14 @@ Prompt 14 does not implement or approve live Release transport. TestFlight remai
 3. an authentication-session bridge that supplies and rotates the current bearer, clears it and cancels patient-scoped work on sign-out/user change, and suppresses every late publication.
 
 That later gate must include same-origin/redirect tests, current-token/rotation tests, sign-out cancellation tests and an explicit distribution approval. A successful Release build from this plan is only a compile/fail-closed check and never authorizes TestFlight.
+
+The Markdown audit is a second independent distribution gate. A separately
+authorized live read-only run must report zero incompatible current
+published/eligible versions before TestFlight. Task 0 documents the exact
+query/output constraints and adds no automatic live command. If an affected
+version exists, its historical row remains immutable and editors create a new
+version through the existing workflow; TestFlight stays blocked until a fresh
+read-only audit is clean.
 
 ## Authoritative Contract Sources
 
@@ -63,6 +76,8 @@ That later gate must include same-origin/redirect tests, current-token/rotation 
 - route handlers under `apps/admin/src/app/api/mobile/v1/content`, `coach/persona` and `progress`
 - `supabase/migrations/20260501120100_users_core.sql`
 - `supabase/migrations/20260721124600_bodyflow_content_cms_domain.sql`
+- `supabase/migrations/20260721141618_bodyflow_content_delivery.sql`
+- `supabase/migrations/20260722123000_bodyflow_content_visibility_order.sql`
 - `supabase/tests/bodyflow_content_delivery.sql`
 - `supabase/tests/bodyflow_content_cms.sql`
 
@@ -80,6 +95,8 @@ The Markdown compatibility corpus created by Task 6 is test-only. It is checked 
 - A version conflict reloads catalog and affected detail, discards the old cover and never rewrites/replays the old intent against a new version.
 - `swift-markdown` is exactly version `0.8.0`, revision `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`; `Package.resolved` also locks `swift-cmark` 0.8.0 at `924936d0427cb25a61169739a7660230bffa6ea6`.
 - Every backend JavaScript string bound is measured with `String.utf16.count`, matching JavaScript `String.length`; Swift grapheme `String.count` is prohibited for contract limits. Body Markdown source and normalized forms remain `100...50_000` UTF-16 code units. Rendering consumes only the BodyFlow-owned AST and rejects every node outside the approved subset.
+- Backend table detection uses only exact-pinned GFM-table micromark/mdast AST extensions. A `table` node is rejected clearly before normalization; ordinary and escaped pipes remain valid, and neither backend nor iOS uses regex, escaping, rewriting or permissive fallback to hide a table.
+- CMS action/service writes invoke the shared validator before persistence. Mobile detail revalidates stored Markdown before cover capability/DTO construction, returns the accepted stored body unchanged, and maps any legacy-invalid body to an opaque error with no partial response or content log.
 - Markdown parsing never uses regex as the parser, `AttributedString(markdown:)`, WKWebView, HTML, JavaScript, raw/permissive fallback or remote scripts.
 - Cover paths match only `^/api/mobile/v1/content/covers/[A-Za-z0-9_-]+$`. Scheme, host, user info, port, protocol-relative form, query, fragment, percent encoding, backslash, extra segment and traversal fail before transport invocation.
 - Cover streaming accepts at most `10_485_760` bytes, checks declared and actual length, requires exact JPEG/PNG/WebP MIME matching ImageIO, rejects invalid/zero/abusive dimensions and downsamples to displayed pixels without `UIImage(data:)` or full-raster decode.
@@ -313,6 +330,26 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 
 ## File Map
 
+### Backend Markdown prerequisite
+
+- Modify `packages/core/package.json` and `pnpm-lock.yaml` only for the exact
+  Task 0 GFM-table AST dependencies.
+- Modify `packages/core/src/content.ts` and
+  `packages/core/src/content.test.ts` for AST classification and literal pipe
+  behavior.
+- Modify only tests at
+  `apps/admin/src/app/(admin)/content/actions.test.ts` and
+  `apps/admin/src/lib/content/admin-service.test.ts` to prove the two existing
+  `contentDraftInputSchema` write boundaries reject before persistence; their
+  production consumers already share the core validator.
+- Modify `apps/admin/src/lib/mobile-api/content-service.ts`,
+  `apps/admin/src/lib/mobile-api/content-service.test.ts` and
+  `apps/admin/src/app/api/mobile/v1/content/route.test.ts` for atomic,
+  fail-closed legacy-body defense before cover/DTO emission.
+- Do not create a live-audit executable in this workpack. Task 0 records the
+  exact future read-only query, output allowlist and stop conditions in its
+  reviewed checkpoint; running it requires separate explicit authorization.
+
 ### Project dependency and shared contract support
 
 - Modify `apps/ios/BodyFlow/BodyFlow.xcodeproj/project.pbxproj` only to add the exact `swift-markdown` package reference and `Markdown` product to the `BodyFlow` application target.
@@ -389,6 +426,274 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 - Create verification evidence under `docs/superpowers/evidence/2026-08-02-bodyflow-ios-library-mascot-gamification/` only in the final gate task.
 
 ---
+
+### Task 0: Reject GFM Pipe Tables At Every Backend Content Boundary
+
+This task is mandatory and must be committed before Task 1 starts. It changes
+the existing backend Markdown contract only; it adds no mobile endpoint,
+database migration, live audit or iOS behavior.
+
+**Files:**
+- Modify: `packages/core/package.json`
+- Modify: `pnpm-lock.yaml`
+- Modify: `packages/core/src/content.ts`
+- Modify: `packages/core/src/content.test.ts`
+- Modify: `apps/admin/src/app/(admin)/content/actions.test.ts`
+- Modify: `apps/admin/src/lib/content/admin-service.test.ts`
+- Modify: `apps/admin/src/lib/mobile-api/content-service.ts`
+- Modify: `apps/admin/src/lib/mobile-api/content-service.test.ts`
+- Modify: `apps/admin/src/app/api/mobile/v1/content/route.test.ts`
+
+**Interfaces:**
+- Consumes: existing `validateContentMarkdown`, `contentDraftInputSchema`, CMS
+  `saveDraft` action/service boundaries, `ContentRepository.get`,
+  `getContent`, and the current opaque `MobileApiError` mapping.
+- Produces: exact-pinned GFM-table AST recognition solely for rejection, plus
+  atomic mobile-detail revalidation before cover/DTO work.
+- Preserves: the existing CMS normalization contract for allowed Markdown and
+  the original stored `bodyMarkdown` bytes returned by a valid detail. It adds
+  no table renderer, alternate parser, endpoint, migration or live query.
+
+- [ ] **Step 1: Revalidate the documentary and dependency preconditions**
+
+Confirm the approved specification contains the pipe-table rule, both CMS
+boundaries, mobile-detail defense and read-only audit gate. Confirm the branch
+and clean worktree, then prove the existing versions before changing anything:
+
+```bash
+set -euo pipefail
+test "$(git branch --show-current)" = \
+  "codex/bodyflow-ios-library-mascot-gamification-v1"
+test -z "$(git status --porcelain)"
+rg -n '"mdast-util-from-markdown": "2\.0\.3"' packages/core/package.json
+rg -n '"mdast-util-to-markdown": "2\.1\.2"' packages/core/package.json
+git diff --exit-code -- pnpm-workspace.yaml
+```
+
+Expected: exact current pins and no workspace-file drift. Do not contact the
+live database and do not run a Supabase linked command.
+
+- [ ] **Step 2: Add every focused test first and observe the intended RED**
+
+In `packages/core/src/content.test.ts`, add literal tests proving:
+
+1. a 100...50,000-UTF-16-unit, syntactically valid GFM pipe table is rejected
+   with the clear bounded message
+   `Invalid content Markdown: tables are not supported`;
+2. a length-valid ordinary paragraph containing `|` remains accepted as one
+   paragraph/text AST;
+3. a length-valid paragraph containing escaped `\|` remains accepted;
+4. neither accepted case is classified by searching raw pipe characters.
+
+Use the same table-bearing draft in the CMS suites. The action test must prove
+untrusted `saveDraft` input is rejected before `service.saveDraft`; the service
+test must prove direct service input is rejected before
+`repository.saveDraft`. `createPublication` and `createDraft` need no invented
+body field: they accept no author-supplied `body_markdown`, while every
+author-supplied entry/edit passes through `saveDraft`. An existing
+`sourceVersionId` remains an internal copy reference, not a second body-input
+contract.
+
+In the mobile service and route suites, make the repository return a legacy
+record whose body is that valid pipe table and whose cover is non-null. Assert:
+
+- `getContent` fails with only `500/internal_error`;
+- `covers.issue` is never called;
+- the route's atomic error response contains neither `body_markdown` nor any
+  table cell/source fragment;
+- no partially successful detail payload exists.
+
+Run all new tests against the current implementation:
+
+```bash
+set -euo pipefail
+bodyflow_expect_red() {
+  local red_status
+  set +e
+  "$@"
+  red_status=$?
+  set -e
+  test "$red_status" -ne 0
+}
+bodyflow_expect_red pnpm --filter @mpp/core test -- content.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  'src/app/(admin)/content/actions.test.ts'
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/lib/content/admin-service.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/lib/mobile-api/content-service.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/app/api/mobile/v1/content/route.test.ts
+```
+
+Expected RED: the current parser accepts the pipe table as paragraph text, so
+each command exits non-zero for its intended missing rejection/defense: core,
+untrusted CMS action, CMS service, mobile detail service and atomic route.
+Ordinary and escaped-pipe acceptance assertions inside the core run must
+already pass; if they fail, correct the fixtures rather than weakening the
+contract. Inspect each report and record the named failing assertion; an
+unrelated compile, fixture or infrastructure failure is not an acceptable RED.
+
+- [ ] **Step 3: Add only the exact compatible AST dependencies**
+
+Add exact `micromark-extension-gfm-table` `2.1.1` and
+`mdast-util-gfm-table` `2.0.0` to `@mpp/core`. Keep
+`mdast-util-from-markdown` exactly `2.0.3` and `mdast-util-to-markdown` exactly
+`2.1.2`. The mdast GFM-table package's `2.0.0` dependency ranges accept both
+existing mdast 2.x pins; the micromark extension is compatible with the
+parser's micromark 4 line.
+
+```bash
+set -euo pipefail
+pnpm --filter @mpp/core add --save-exact \
+  micromark-extension-gfm-table@2.1.1 \
+  mdast-util-gfm-table@2.0.0
+git diff --exit-code -- pnpm-workspace.yaml
+rg -n '"mdast-util-from-markdown": "2\.0\.3"' packages/core/package.json
+rg -n '"mdast-util-to-markdown": "2\.1\.2"' packages/core/package.json
+rg -n '"micromark-extension-gfm-table": "2\.1\.1"' packages/core/package.json
+rg -n '"mdast-util-gfm-table": "2\.0\.0"' packages/core/package.json
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+lock = Path('pnpm-lock.yaml').read_text()
+match = re.search(r'^  packages/core:\n(.*?)(?=^  \S|\Z)', lock, re.M | re.S)
+assert match is not None
+importer = match.group(1)
+for package, version in {
+    'mdast-util-from-markdown': '2.0.3',
+    'mdast-util-to-markdown': '2.1.2',
+    'micromark-extension-gfm-table': '2.1.1',
+    'mdast-util-gfm-table': '2.0.0',
+}.items():
+    exact = (
+        f'      {package}:\n'
+        f'        specifier: {version}\n'
+        f'        version: {version}\n'
+    )
+    assert exact in importer, (package, 'importer pin mismatch')
+    assert re.search(rf'^  {re.escape(package)}@{re.escape(version)}:', lock, re.M), (
+        package,
+        'resolved lock entry missing',
+    )
+print('Task 0 lock pins: PASS')
+PY
+```
+
+Expected: only `packages/core/package.json` and `pnpm-lock.yaml` change at this
+step. Do not add the broad GFM bundle or a table-to-Markdown extension.
+
+- [ ] **Step 4: Implement the minimal AST and mobile-detail GREEN**
+
+In `packages/core/src/content.ts`, import `gfmTable` from
+`micromark-extension-gfm-table` and `gfmTableFromMarkdown` from
+`mdast-util-gfm-table`. Parse with exactly:
+
+```typescript
+fromMarkdown(source, {
+  extensions: [gfmTable()],
+  mdastExtensions: [gfmTableFromMarkdown()],
+})
+```
+
+Add an explicit `case 'table'` to the exhaustive block conversion that throws
+`Invalid content Markdown: tables are not supported`. Reject before
+`toMarkdown`; do not install `gfmTableToMarkdown`, use regex, scan `|`, escape
+the table or add permissive fallback. This makes the existing
+`contentDraftInputSchema` enforce the decision at both CMS write boundaries.
+
+In `apps/admin/src/lib/mobile-api/content-service.ts`, call
+`validateContentMarkdown(record.bodyMarkdown)` immediately after the
+repository returns a non-null detail and before `mapFeedItem` can issue a cover
+capability. Discard the validation result and return the original stored
+`record.bodyMarkdown` only after success. Map any validation failure to the
+existing opaque `internal_error`; never include the validator message or body
+in logs or response details.
+
+- [ ] **Step 5: Reach focused GREEN, refactor and prove atomic failure**
+
+Run the Step 2 commands again. Then refactor only duplicated synthetic fixture
+construction, keeping the production path minimal. Assert the accepted
+ordinary/escaped pipe ASTs literally, the CMS service/action spies remain at
+zero calls for a table, and the detail route never issues a cover or serializes
+a partial body.
+
+```bash
+set -euo pipefail
+pnpm --filter @mpp/core test -- content.test.ts
+pnpm --filter @mpp/admin test -- \
+  'src/app/(admin)/content/actions.test.ts' \
+  src/lib/content/admin-service.test.ts \
+  src/lib/mobile-api/content-service.test.ts \
+  src/app/api/mobile/v1/content/route.test.ts
+git diff --check
+```
+
+Expected GREEN: all literal tests pass and the only content table behavior is
+AST rejection.
+
+- [ ] **Step 6: Review the future live read-only audit without executing it**
+
+Record the following runbook in the Task 0 review/commit handoff; do not create
+or invoke a linked-database command in this task:
+
+1. obtain separate explicit authorization and freeze one `audit_timestamp`;
+2. read only `public.content_versions` joined to
+   `public.content_publications`, selecting `content_version.id AS version_id`,
+   `content_version.publication_id`, numeric `content_version.version`,
+   `content_version.locale`, `content_version.state` and
+   `content_version.body_markdown` for in-memory classification;
+3. apply the current repository publication rule exactly: `state='approved'`,
+   non-null `publish_at <= audit_timestamp`, non-archived publication, then
+   `row_number() = 1` per `(publication_id, locale)` ordered by
+   `version DESC, publish_at DESC`;
+4. scan that conservative union before patient-specific targeting; query no
+   user, profile, preference, subscription, health or other PII table;
+5. pass each body directly to the same `validateContentMarkdown` implementation
+   without printing, logging, persisting or including it in an exception;
+6. emit only aggregate scanned/compatible/incompatible counts and affected
+   `version_id`, `publication_id`, `version`, `locale`, `state`;
+7. expose no apply mode and perform no insert, update, delete, RPC mutation,
+   migration or editorial state transition.
+
+If the future audit reports any incompatible current candidate, stop the
+TestFlight gate. Do not alter the historical version. Create and publish a new
+version only through the existing editorial workflow, then rerun the read-only
+audit under fresh authorization. Task 1 may follow Task 0 GREEN without a live
+audit; TestFlight may not proceed until the authorized audit is clean.
+
+- [ ] **Step 7: Run the backend checkpoint, review and commit Task 0**
+
+```bash
+set -euo pipefail
+pnpm --filter @mpp/core test
+pnpm --filter @mpp/core typecheck
+pnpm --filter @mpp/admin test
+pnpm --filter @mpp/admin typecheck
+git diff --check
+git status --short
+```
+
+Review the diff against this exact allowlist, verify no migration/audit output
+or content body is present, and make one conventional checkpoint:
+
+```bash
+git add packages/core/package.json \
+  pnpm-lock.yaml \
+  packages/core/src/content.ts \
+  packages/core/src/content.test.ts \
+  'apps/admin/src/app/(admin)/content/actions.test.ts' \
+  apps/admin/src/lib/content/admin-service.test.ts \
+  apps/admin/src/lib/mobile-api/content-service.ts \
+  apps/admin/src/lib/mobile-api/content-service.test.ts \
+  apps/admin/src/app/api/mobile/v1/content/route.test.ts
+git diff --cached --name-only
+git commit -m "fix(content): reject pipe-table markdown"
+```
+
+Expected: one Task 0 commit touching only the nine listed files. No live audit,
+migration, deploy, push, PR, merge or TestFlight action occurs.
 
 ### Task 1: Define And Validate Published Content Contracts
 
@@ -920,7 +1225,7 @@ Expected RED: missing `Prompt14MarkdownCorpus` and its checked-in corpus file.
 
 - [ ] **Step 3: Create and independently validate the shared corpus**
 
-After the mandatory compatibility decision is approved and reflected in the specification, copy literal accepted/rejected inputs from `packages/core/src/content.test.ts`, then add every source-representable divergence case from Task 5 to this shared corpus: CRLF/soft break acceptance; block/inline HTML; H1/H4-H6; fenced, indented and inline code; image; hard break; thematic break; pipe table; strikethrough; task-list syntax; titled, reference, collapsed-reference and shortcut-reference links; nested/removed reference definitions; HTTP, data, JavaScript and protocol-relative destinations; ordered-list start other than one; depth nine; symbol-link syntax; block/inline directives; inline attributes; Doxygen command/source; malformed input; and the 99/50,001-UTF-16-unit limits including surrogate pairs. The pipe-table row is mandatory and must match the separately approved resolution; no fixture may hide the current backend/native difference. Current custom-node and synthetic future-node probes that cannot be represented by Markdown source remain direct adapter tests in Task 5; they are the only deliberate non-corpus cases. Create the backend test to read the same JSON by a repository-relative URL resolved from `import.meta.url`, and assert actual `validateContentMarkdown` normalization/portable AST or rejection:
+After Task 0 is GREEN and committed, copy literal accepted/rejected inputs from `packages/core/src/content.test.ts`, then add every source-representable divergence case from Task 5 to this shared corpus: CRLF/soft break acceptance; block/inline HTML; H1/H4-H6; fenced, indented and inline code; image; hard break; thematic break; pipe table; ordinary prose containing `|`; prose containing escaped `\|`; strikethrough; task-list syntax; titled, reference, collapsed-reference and shortcut-reference links; nested/removed reference definitions; HTTP, data, JavaScript and protocol-relative destinations; ordered-list start other than one; depth nine; symbol-link syntax; block/inline directives; inline attributes; Doxygen command/source; malformed input; and the 99/50,001-UTF-16-unit limits including surrogate pairs. The pipe-table row is obligatorily rejected by both authorities; ordinary and escaped-pipe rows are obligatorily accepted with exact normalized source and portable AST. No fixture may hide or relabel a backend/native difference. Current custom-node and synthetic future-node probes that cannot be represented by Markdown source remain direct adapter tests in Task 5; they are the only deliberate non-corpus cases. Create the backend test to read the same JSON by a repository-relative URL resolved from `import.meta.url`, and assert actual `validateContentMarkdown` normalization/portable AST or rejection:
 
 ```typescript
 for (const fixture of corpus) {
@@ -946,7 +1251,7 @@ git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
 trap - EXIT
 ```
 
-Expected after the prerequisite is resolved: PASS, including the mandatory pipe-table row. If any approved classification disagrees with the real validator, stop and report a specification/backend contract blocker; do not alter production parser behavior or relabel the corpus merely to make the test pass.
+Expected: PASS, including rejected pipe-table and accepted ordinary/escaped-pipe rows. If any approved classification disagrees with the real validator, stop and report a specification/backend contract blocker; do not alter production parser behavior or relabel the corpus merely to make the test pass.
 
 - [ ] **Step 4: Add the test-only JSON decoder, run native GREEN, then run both authorities**
 
@@ -2788,7 +3093,10 @@ bodyflow_copy_attachment_pair() {
 
 git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
 trap 'git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml' EXIT
-pnpm --filter @mpp/core test -- content-ios-compatibility.test.ts
+pnpm --filter @mpp/core test
+pnpm --filter @mpp/core typecheck
+pnpm --filter @mpp/admin test
+pnpm --filter @mpp/admin typecheck
 git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
 trap - EXIT
 
@@ -2950,7 +3258,7 @@ done
 echo "Gate artifacts: $BODYFLOW_GATE_ROOT"
 ```
 
-Expected: backend compatibility and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured; three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual logical-test count, execution count, UI-test count and duration; never predict counts. A successful Release compile still does not authorize TestFlight.
+Expected: the complete core/admin backend suites (including Task 0 and the shared corpus) and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured; three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual backend logical-test count, native logical/execution/UI-test counts and durations; never predict counts. The live content audit is not run, and both that clean-audit prerequisite and a successful Release compile remain insufficient without explicit TestFlight authorization.
 
 - [ ] **Step 3: Perform manual visual and interaction inspection across deterministic scenarios**
 
@@ -3000,7 +3308,7 @@ Open all 21 PNGs and their same-base hierarchy TXT attachments. Reject and rerun
 
 - [ ] **Step 6: Write the evidence README with `apply_patch`**
 
-Record branch/tested SHA, Xcode/runtime/simulator, exact package pins, result-bundle path, actual test/build counts and durations, every visual/accessibility state inspected, synthetic Debug-only fixture disclosure, Release fail-closed proof, and the separate three-part pre-TestFlight gate. Explicitly state no live transport/base URL/session bridge, secret, migration, deploy, merge, TestFlight, production or WhatsApp architecture was added.
+Record branch/tested SHA, Xcode/runtime/simulator, exact backend GFM-table and native package pins, result-bundle path, actual backend/native test and build counts/durations, every visual/accessibility state inspected, synthetic Debug-only fixture disclosure, Release fail-closed proof, and the separate three-part transport/session pre-TestFlight gate. Record that the live Markdown audit was not executed by this plan and remains a separate read-only TestFlight blocker whose authorized result must be zero incompatible current candidates. Explicitly state no live transport/base URL/session bridge, live content audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp architecture was added.
 
 - [ ] **Step 7: Final diff checks and evidence commit**
 
@@ -3051,7 +3359,11 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 | Opened failure non-blocking, no retry/queue/duplicate | 17 | opened-error unit/UI journeys |
 | Exact-pinned `swift-markdown` and resolved transitive lock | 4 | `jq` lock assertion and resolved-file-only resolution |
 | Approved Markdown subset only; all current/future unsupported nodes fail closed; AST renderer; no regex/WebView/raw fallback | 5 | exhaustive source/node/default-reject `BodyFlowMarkdownParserTests`, forbidden-source scan |
-| Compatibility with real backend normalization/parser | mandatory pre-implementation decision, then 6 | explicit pipe-table resolution plus shared JSON through `content-ios-compatibility.test.ts` and `MarkdownBackendCompatibilityTests` |
+| Exact backend GFM-table AST pins; table rejected without regex/rewrite while ordinary and escaped pipes remain valid | 0 | manifest/lock assertions and literal `content.test.ts` RED/GREEN cases |
+| CMS entry/edit reject pipe tables at untrusted action and service boundaries before persistence | 0 | `actions.test.ts` and `admin-service.test.ts` zero-call assertions |
+| Legacy-invalid detail is revalidated before cover/DTO work and returns no partial body | 0 | `content-service.test.ts` and mobile detail route atomic-error test |
+| Compatibility with real backend normalization/parser | 0, 6 | rejected pipe-table plus accepted ordinary/escaped-pipe rows through shared JSON, `content-ios-compatibility.test.ts` and `MarkdownBackendCompatibilityTests` |
+| Live published-content audit is read-only, PII-free and separately authorized; incompatible current content blocks TestFlight and is replaced only through a new editorial version | 0, 26 | Task 0 audit runbook review and evidence README distribution-blocker declaration; no live run in this plan |
 | Impression/completion/save exact bodies/version/idempotency | 1, 3, 12, 14, 18 | contract, demo replay, feed and detail mutation tests |
 | Version conflict from impression/opened/save/complete invalidates catalog/detail, evicts exact old cover and never replays/reopens/reapplies | 3, 9, 14, 17, 18 | feed/detail invalidation tests with cover spies and one-attempt counters |
 | JSON/Markdown/covers and mutation ledgers are session-memory-only; all old-user results are suppressed | 9, 11, 12, 15, 24 | repository generation tests, cache/session tests, controlled shell replacement tests and Release/privacy gate |
@@ -3076,12 +3388,16 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 | Temporary art/fixtures/fake streams first-party Debug-only | 10, 11, 22, 24 | Release boundary tests/build/binary scan |
 | Release unavailable with nil origin, no request/stream call, URL/bearer/outbound/fixture success | 10, 24, 26 | unavailable-factory/no-stream spy tests, scoped source gate, Release build and binary scan |
 | Auth transport/staging/session bridge remain mandatory separate gate | boundary section, 24, 26 | evidence README and explicit TestFlight prohibition |
-| Full tests, Debug/Release builds, simulator and evidence | 25, 26 | xcresult summary, three builds and 21 curated PNG/hierarchy pairs |
-| No live service, secret, migration, deploy, merge, TestFlight, production or WhatsApp | all; especially 10, 24, 26 | diff/source audit and evidence README |
+| Full backend/native tests, Debug/Release builds, simulator and evidence | 0, 25, 26 | complete core/admin suites, xcresult summary, three builds and 21 curated PNG/hierarchy pairs |
+| No live service/audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp | all; especially 0, 10, 24, 26 | diff/source audit and evidence README |
 
 ## Plan Completion Checklist
 
-- [ ] Task 1 begins only after explicit implementation authorization and an approved resolution of the documented pipe-table backend/native mismatch.
+- [ ] Task 0 runs first, observes every backend/CMS/BFF RED, reaches GREEN and commits the exact AST rejection before Task 1 begins.
+- [ ] Task 1 begins only after Task 0 is committed and explicit implementation authorization exists; the live audit is not a Task 1 prerequisite but remains a TestFlight prerequisite.
+- [ ] Backend pins remain exact at `mdast-util-from-markdown` 2.0.3, `mdast-util-to-markdown` 2.1.2, `micromark-extension-gfm-table` 2.1.1 and `mdast-util-gfm-table` 2.0.0.
+- [ ] Pipe table, ordinary pipe and escaped-pipe behavior is proven at the backend and in the Task 6 shared corpus; no regex, escaping, rewriting or iOS weakening is introduced.
+- [ ] CMS action/service writes and mobile detail defense remain fail-closed, and an invalid legacy body produces neither persistence nor body/cover/partial response.
 - [ ] Every production behavior has an observed focused RED before GREEN code.
 - [ ] Every task returns GREEN, passes `git diff --check`, receives adherence/quality review and one Conventional Commit.
 - [ ] Package resolution remains exact and reproducible from `Package.resolved` with updates disabled.
@@ -3092,6 +3408,8 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 - [ ] User replacement/sign-out ends content and cover sessions, clears every Prompt 14 ledger/cache/value and suppresses all controlled late list/detail/mutation/coach/progress results.
 - [ ] Debug/previews/tests alone construct fixtures, fake streams and temporary mascot art.
 - [ ] Release remains `operationUnavailable` with no Prompt 14 URL, bearer, request or fixture success.
+- [ ] No live Markdown audit is executed by these 27 tasks; the future read-only audit queries no PII, emits only its approved technical allowlist and must be clean before TestFlight.
+- [ ] Any incompatible published candidate is remediated only by a new version through the existing editorial workflow; no historical version is mutated.
 - [ ] Daily missions remain unavailable; ranking/cooperative surfaces remain absent.
 - [ ] Full inherited and Prompt 14 unit/contract/integration/UI suites pass with zero failure/skip.
 - [ ] Debug and Release builds pass; Release success is not treated as distribution approval.
@@ -3099,4 +3417,6 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 - [ ] Worktree is clean after the final local evidence commit.
 - [ ] No push, PR, merge, migration, deploy, TestFlight, production or WhatsApp action occurs without later authorization.
 
-Task 1 remains paused after this documentary plan is committed. Await an explicit Markdown contract decision and later implementation authorization before implementation.
+Task 0 remains paused after this documentary revision is committed. The
+Markdown contract decision is approved; await later explicit implementation
+authorization before executing Task 0 or any subsequent task.

@@ -27,8 +27,9 @@ The design uses only contracts already implemented under
 screens, internal RPCs, legacy product documents, or desired future behavior.
 It does not calculate official gamification values in iOS.
 
-This document is the complete Prompt 14 design. It does not authorize a TDD
-plan or application implementation.
+This document is the complete Prompt 14 design. Together with its documentary
+TDD plan, it does not authorize implementation until a later explicit user
+instruction.
 
 ## Verified Evidence And Constraints
 
@@ -186,6 +187,12 @@ the gate receives explicit approval, every Prompt 14 Release provider remains
 contains no Prompt 14 base URL, outbound request, bearer injection or fixture
 fallback. A successful Release compile is necessary verification, not
 authorization for TestFlight.
+
+The published-Markdown compatibility audit defined below is an additional,
+independent TestFlight blocker. Even after the three transport/session
+dependencies pass, TestFlight remains prohibited while any currently
+published/eligible content version is incompatible with the approved Markdown
+subset.
 
 ## Architecture
 
@@ -764,12 +771,14 @@ H1/H4-H6, code block/inline, image, hard `LineBreak`, thematic break, table,
 strikethrough, task-list/checkbox, symbol link, directive, inline attributes,
 custom nodes and Doxygen nodes.
 
-`swift-markdown` enables GFM tables, strikethrough and task lists internally,
-while the backend's `mdast-util-from-markdown` configuration does not. The
-visitor therefore rejects those AST forms. The package also resolves a
-reference-style link into `Link` and omits its definition node. To avoid
-accepting syntax the backend rejects, `BodyFlowMarkdownParser` adds two bounded,
-non-regex checks based on the parser's source ranges:
+`swift-markdown` recognizes GFM tables, strikethrough and task lists
+internally. After mandatory Task 0, the backend also recognizes the GFM
+`table` node through its narrowly configured table extension solely to reject
+it; the backend does not enable strikethrough or task-list extensions. The
+native visitor independently rejects all three AST forms. The package also
+resolves a reference-style link into `Link` and omits its definition node. To
+avoid accepting syntax the backend rejects, `BodyFlowMarkdownParser` adds two
+bounded, non-regex checks based on the parser's source ranges:
 
 1. `InlineLinkSourceGuard` uses a deterministic Unicode-scalar state machine to
    accept the inline/autolink source forms represented by an approved `Link`
@@ -795,6 +804,93 @@ Compatibility is locked with a golden corpus sourced from the real
   start, titled/reference links, tables, strikethrough and task lists;
 - any new parser/backend divergence blocks the package or backend-parser
   upgrade.
+
+#### Approved Backend Pipe-Table Contract
+
+Pipe tables in GFM form are outside the BodyFlow content contract. Before any
+native Prompt 14 implementation begins, the backend validator must detect them
+from an AST and reject them fail-closed. The implementation plan names this
+mandatory prerequisite `Task 0`; it must be GREEN and committed before Task 1.
+`packages/core` keeps its exact
+`mdast-util-from-markdown` `2.0.3` pin and adds exactly
+`micromark-extension-gfm-table` `2.1.1` plus `mdast-util-gfm-table` `2.0.0`.
+Those versions are compatible with the existing mdast parser line and are
+recorded exactly in `packages/core/package.json` and `pnpm-lock.yaml`.
+
+`validateContentMarkdown` configures `fromMarkdown` with the GFM-table
+micromark extension and its matching mdast extension solely so a valid pipe
+table becomes an explicit `table` node. Its exhaustive block conversion then
+rejects that node with a clear `Invalid content Markdown` table error. It does
+not use a regex, a line-shape heuristic, the broader GFM bundle or a
+table-to-Markdown serializer. It does not escape, rewrite or reinterpret a
+table as literal prose. Existing canonical normalization remains applicable
+only after the AST has passed the complete allowlist.
+
+The pipe character alone is not table syntax. An ordinary paragraph such as
+`Proteína | contexto` remains valid, and an escaped pipe such as
+`Proteína \| contexto` remains valid. Tests must exercise the real AST result
+for both cases so a later implementation cannot replace AST classification
+with a broad pipe search.
+
+The same shared validator applies at both current CMS write boundaries:
+
+- the untrusted `saveDraft` action input parsed by
+  `apps/admin/src/app/(admin)/content/actions-core.ts`;
+- the service input parsed again by
+  `apps/admin/src/lib/content/admin-service.ts` before repository persistence.
+
+These two boundaries cover untrusted author entry and later editing. The
+current `createPublication` and `createDraft` inputs do not receive
+`body_markdown`; every author-supplied body change occurs through `saveDraft`.
+An existing `sourceVersionId` remains only an internal copy reference, never an
+alternate unvalidated body input. No route, migration or alternate parser is
+added. Preview inherits the same validator and cannot render a rejected table.
+
+As defense in depth, `getContent` in
+`apps/admin/src/lib/mobile-api/content-service.ts` validates the repository's
+stored `bodyMarkdown` again before constructing any detail DTO or requesting a
+cover capability. A valid stored body is returned unchanged; this read guard
+does not normalize, escape or rewrite it. A legacy-invalid body produces only
+the existing opaque mobile internal error. No `body_markdown`, source excerpt,
+partially constructed detail or cover capability may be returned or logged.
+The iOS `BodyFlowMarkdownParser` remains independently fail-closed and still
+rejects every `Table` node.
+
+#### Planned Read-Only Published-Content Audit
+
+Before TestFlight, a separately authorized live read-only audit must evaluate
+the current candidates in `public.content_versions` with the same publication
+visibility rule used by the current mobile repository, at one captured audit
+timestamp:
+
+- `content_version.state = 'approved'`;
+- `publish_at IS NOT NULL` and `publish_at <= audit_timestamp`;
+- the joined `content_publications.archived_at IS NULL`;
+- only the highest visible version per `(publication_id, locale)`, ordered by
+  `version DESC, publish_at DESC`, matching the repository's
+  rank-after-patient-locale behavior.
+
+The audit is deliberately not patient-specific. It scans the conservative
+union of all current published candidates from which the repository can apply
+protocol, plan and personality targeting, so it neither queries a patient nor
+misses a targeted version. It must not query or print users, subscriptions,
+profiles, preferences, health data or any other PII.
+
+The audit may read each selected `body_markdown` only in memory and must pass it
+through the same `validateContentMarkdown` AST rule. It must never print,
+persist or include the body, title, excerpt, tags or a content fragment in an
+error. Its complete output is limited to aggregate counts and, for affected
+rows, `version_id`, `publication_id`, numeric `version`, `locale` and `state`.
+It has no apply mode and performs no insert, update, delete, RPC mutation,
+migration or editorial transition. This specification plans that audit; it
+does not authorize or execute a live read.
+
+If the later authorized audit finds an affected currently published candidate,
+historical rows remain immutable. Editors must create a new version through
+the existing draft, edit, review, approval and publication workflow. Direct
+database repair, silent body rewriting and mutation of a historical version
+are prohibited. TestFlight remains blocked until a fresh audit reports zero
+incompatible current candidates.
 
 Parsing, source-guard or conversion failure publishes one recoverable content
 rendering error, no partial body and no `opened` event. Raw Markdown is never
@@ -1334,6 +1430,17 @@ Test literal decoding/encoding for:
 
 ### Markdown Tests
 
+- backend dependency manifests and the lockfile contain exact compatible pins:
+  `mdast-util-from-markdown` `2.0.3`,
+  `micromark-extension-gfm-table` `2.1.1` and
+  `mdast-util-gfm-table` `2.0.0`;
+- the real backend AST rejects a valid GFM pipe table with a clear table error,
+  while ordinary paragraph text containing `|` and escaped `\|` remain valid;
+- the CMS untrusted action and service write boundaries both reject the same
+  pipe-table draft before repository persistence;
+- the mobile detail service revalidates a legacy stored body before cover/DTO
+  construction, returns only an opaque error for an invalid table and exposes
+  no `body_markdown`, fragment or partial detail;
 - exact SwiftPM resolution is `swift-markdown` 0.8.0 at
   `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, with no floating requirement;
 - parsing uses `.disableSmartOpts` and enables no block-directive, symbol-link
@@ -1349,7 +1456,9 @@ Test literal decoding/encoding for:
 - source-range guards reject a reference-form link and its removed definition
   without regex or permissive source parsing;
 - the backend golden corpus produces identical accepted BodyFlow ASTs and
-  rejects the complete backend-invalid corpus; any divergence fails the gate;
+  rejects the complete backend-invalid corpus; the corpus includes both a GFM
+  pipe table and ordinary/escaped pipe paragraphs, and any divergence fails
+  the gate;
 - headings/lists/links expose native accessibility semantics;
 - parser/adapter failure exposes no partial/raw body and emits no `opened`;
 - no regex parser, `AttributedString(markdown:)`, WebView or executable content
@@ -1522,6 +1631,8 @@ defined above and require explicit approval before any live-capable build.
 - persistent content/cache/offline mutation queue;
 - live Supabase/BFF wiring, secrets or real service configuration;
 - migration, deploy, merge, TestFlight or production change;
+- a live `public.content_versions` audit without separate explicit
+  authorization, or any write/repair mode in that audit;
 - WhatsApp or another messaging transport in the native architecture.
 
 ## Acceptance Criteria
@@ -1546,6 +1657,12 @@ The later implementation is acceptable only when all of the following are true:
   offline queue or duplicate event in the same route presentation;
 - the native Markdown parser is exact-pinned `swift-markdown` 0.8.0 behind an
   exhaustive fail-closed BodyFlow AST adapter and source-range guards;
+- the backend detects GFM pipe tables through exact-pinned AST extensions and
+  rejects the `table` node clearly, without regex, escaping or rewriting;
+- ordinary text containing `|` and escaped `\|` remains backend-valid, while
+  CMS action/service writes reject a real pipe table before persistence;
+- the mobile detail service revalidates stored Markdown before DTO/cover work,
+  and a legacy-invalid table yields no body, partial detail or cover capability;
 - Markdown rendering supports exactly the backend subset, passes the backend
   golden corpus, and has no regex parser, raw/permissive fallback or WebView;
 - impression/completed/save mutations and the post-detail `opened` preserve
@@ -1591,6 +1708,12 @@ The later implementation is acceptable only when all of the following are true:
   request and remains fail-closed;
 - authenticated HTTP transport, an approved staging base URL and the session
   bridge must pass a separately approved security/test gate before TestFlight;
+- a separately authorized read-only audit must report zero incompatible
+  currently published/eligible content versions before TestFlight; its output
+  is limited to counts and technical version/publication identifiers, version,
+  locale and state, never Markdown or PII;
+- an affected published version is replaced only by a new version through the
+  existing editorial workflow; historical versions are never mutated;
 - a passing Release build alone never authorizes TestFlight;
 - full tests, Debug/Release builds, simulator and visual evidence pass before
   any publication action;

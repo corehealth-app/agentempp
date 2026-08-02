@@ -6,6 +6,8 @@ enum TelemetryEventName: String, Sendable {
     case coachPersonaSelected = "coach_persona_selected"
     case onboardingCompleted = "onboarding_completed"
     case signOutCompleted = "sign_out_completed"
+    case featureScreenViewed = "feature_screen_viewed"
+    case registrationOperationCompleted = "registration_operation_completed"
 }
 
 enum TelemetryAuthScreen: String, CaseIterable, Sendable {
@@ -25,8 +27,47 @@ enum TelemetryErrorCategory: String, CaseIterable, Sendable {
     case invalidCredentials = "invalid_credentials"
     case confirmationRequired = "confirmation_required"
     case operationUnavailable = "operation_unavailable"
+    case offline
     case serviceUnavailable = "service_unavailable"
     case storageUnavailable = "storage_unavailable"
+    case idempotencyConflict = "idempotency_conflict"
+    case registrationNotPending = "registration_not_pending"
+    case registrationExpired = "registration_expired"
+    case routineTransitionInvalid = "routine_transition_invalid"
+    case routineSnoozeInvalid = "routine_snooze_invalid"
+}
+
+enum TelemetryFeatureScreen: String, CaseIterable, Sendable {
+    case today
+    case register
+    case mealCapture = "meal_capture"
+    case mealProposal = "meal_proposal"
+    case workoutProposal = "workout_proposal"
+    case hydration
+    case weight
+    case routineList = "routine_list"
+    case routineDetail = "routine_detail"
+    case routineHistory = "routine_history"
+    case plan
+    case planDetail = "plan_detail"
+    case progress
+    case block7700 = "block_7700"
+    case history
+    case historyMealLog = "history_meal_log"
+    case historyWorkout = "history_workout"
+}
+
+enum TelemetryRegistrationKind: String, CaseIterable, Sendable {
+    case meal
+    case workout
+    case weight
+    case hydration
+}
+
+enum TelemetryMealCaptureSource: String, CaseIterable, Sendable {
+    case text
+    case photo
+    case audio
 }
 
 enum TelemetryOnboardingStep: String, CaseIterable, Sendable {
@@ -69,11 +110,18 @@ enum TelemetryValue: Equatable, Sendable {
 
 struct TelemetryEvent: Equatable, Sendable {
     private static let allowedMetadataValues: [String: Set<String>] = [
-        "screen": Set(TelemetryAuthScreen.allCases.map(\.rawValue)),
+        "screen": Set(TelemetryAuthScreen.allCases.map(\.rawValue))
+            .union(TelemetryFeatureScreen.allCases.map(\.rawValue)),
         "outcome": Set(TelemetryOutcome.allCases.map(\.rawValue)),
         "error_category": Set(TelemetryErrorCategory.allCases.map(\.rawValue)),
         "step": Set(TelemetryOnboardingStep.allCases.map(\.rawValue)),
         "persona": Set(TelemetryPersona.allCases.map(\.rawValue)),
+        "registration_kind": Set(
+            TelemetryRegistrationKind.allCases.map(\.rawValue)
+        ),
+        "capture_source": Set(
+            TelemetryMealCaptureSource.allCases.map(\.rawValue)
+        ),
     ]
 
     let name: TelemetryEventName
@@ -85,10 +133,30 @@ struct TelemetryEvent: Equatable, Sendable {
     ) {
         self.name = name
         self.metadata = metadata.reduce(into: [:]) { filtered, entry in
+            if entry.key == "calculation_version",
+               let value = entry.value as? String,
+               Self.isValidCalculationVersion(value) {
+                filtered[entry.key] = .string(value)
+                return
+            }
             if let allowedValues = Self.allowedMetadataValues[entry.key],
                let value = entry.value as? String,
                allowedValues.contains(value) {
                 filtered[entry.key] = .string(value)
+            }
+        }
+    }
+
+    private static func isValidCalculationVersion(_ value: String) -> Bool {
+        let bytes = value.utf8
+        guard (1...64).contains(bytes.count) else { return false }
+
+        return bytes.allSatisfy { byte in
+            switch byte {
+            case 48...57, 65...90, 97...122, 45, 46, 58, 95:
+                true
+            default:
+                false
             }
         }
     }
@@ -150,6 +218,48 @@ extension TelemetryEvent {
     static var onboardingCompleted: TelemetryEvent {
         TelemetryEvent(name: .onboardingCompleted)
     }
+
+    static func featureScreenViewed(
+        _ screen: TelemetryFeatureScreen,
+        calculationVersion: String? = nil
+    ) -> TelemetryEvent {
+        var metadata: [String: any Sendable] = [
+            "screen": screen.rawValue,
+        ]
+        if let calculationVersion {
+            metadata["calculation_version"] = calculationVersion
+        }
+        return TelemetryEvent(
+            name: .featureScreenViewed,
+            metadata: metadata
+        )
+    }
+
+    static func registrationOperationCompleted(
+        kind: TelemetryRegistrationKind,
+        captureSource: TelemetryMealCaptureSource? = nil,
+        outcome: TelemetryOutcome,
+        errorCategory: TelemetryErrorCategory? = nil,
+        calculationVersion: String? = nil
+    ) -> TelemetryEvent {
+        var metadata: [String: any Sendable] = [
+            "registration_kind": kind.rawValue,
+            "outcome": outcome.rawValue,
+        ]
+        if kind == .meal, let captureSource {
+            metadata["capture_source"] = captureSource.rawValue
+        }
+        if let errorCategory {
+            metadata["error_category"] = errorCategory.rawValue
+        }
+        if let calculationVersion {
+            metadata["calculation_version"] = calculationVersion
+        }
+        return TelemetryEvent(
+            name: .registrationOperationCompleted,
+            metadata: metadata
+        )
+    }
 }
 
 protocol TelemetryClient: Sendable {
@@ -192,6 +302,52 @@ extension CoachPersona {
         case .focus: .focus
         case .impulse: .impulse
         case .zen: .zen
+        }
+    }
+}
+
+extension RegistrationKind {
+    var telemetryValue: TelemetryRegistrationKind {
+        switch self {
+        case .meal: .meal
+        case .training: .workout
+        case .weight: .weight
+        case .hydration: .hydration
+        }
+    }
+}
+
+extension MealCaptureSource {
+    var telemetryValue: TelemetryMealCaptureSource {
+        switch self {
+        case .text: .text
+        case .photoDemonstration: .photo
+        case .audioDemonstration: .audio
+        }
+    }
+}
+
+extension BodyFlowCapabilityError {
+    var telemetryValue: TelemetryErrorCategory {
+        switch self {
+        case .operationUnavailable:
+            .operationUnavailable
+        case .offline:
+            .offline
+        case .serviceUnavailable:
+            .serviceUnavailable
+        case .invalidInput, .invalidIdempotencyKey:
+            .invalidInput
+        case .idempotencyConflict:
+            .idempotencyConflict
+        case .registrationNotPending:
+            .registrationNotPending
+        case .registrationExpired:
+            .registrationExpired
+        case .routineTransitionInvalid:
+            .routineTransitionInvalid
+        case .routineSnoozeInvalid:
+            .routineSnoozeInvalid
         }
     }
 }

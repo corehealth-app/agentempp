@@ -366,6 +366,97 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
     }
 }
 
+#if DEBUG
+enum Prompt13RegistrationReceiptPreviewKind {
+    case hydration
+    case weight
+}
+
+@MainActor
+struct Prompt13RegistrationReceiptPreview: View {
+    let kind: Prompt13RegistrationReceiptPreviewKind
+    private let dependencies: AppDependencies
+    @State private var hydrationModel: HydrationRegistrationModel
+    @State private var weightModel: WeightRegistrationModel
+
+    init(kind: Prompt13RegistrationReceiptPreviewKind) {
+        self.kind = kind
+        let dependencies = Prompt13PreviewSupport.dependencies(for: .loaded)
+        let invalidationCenter = FeatureInvalidationCenter()
+        self.dependencies = dependencies
+        _hydrationModel = State(initialValue: HydrationRegistrationModel(
+            recording: dependencies.hydration,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider,
+            invalidationCenter: invalidationCenter
+        ))
+        _weightModel = State(initialValue: WeightRegistrationModel(
+            recording: dependencies.weight,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider,
+            invalidationCenter: invalidationCenter
+        ))
+    }
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .hydration:
+                HydrationRegistrationContent(
+                    model: hydrationModel,
+                    submit: { quickAmount, customAmount, occurredAt in
+                        Task {
+                            if let quickAmount {
+                                await hydrationModel.submitQuick(
+                                    quickAmount,
+                                    occurredAt: occurredAt
+                                )
+                            } else {
+                                await hydrationModel.submitCustom(
+                                    customAmount,
+                                    occurredAt: occurredAt
+                                )
+                            }
+                        }
+                    },
+                    retry: { Task { await hydrationModel.retry() } }
+                )
+            case .weight:
+                WeightRegistrationContent(
+                    model: weightModel,
+                    submit: { value, recordedAt in
+                        let parsed = Double(
+                            value.replacingOccurrences(of: ",", with: ".")
+                        ) ?? .nan
+                        Task {
+                            await weightModel.submit(
+                                weightKG: parsed,
+                                recordedAt: recordedAt
+                            )
+                        }
+                    },
+                    retry: { Task { await weightModel.retry() } }
+                )
+            }
+        }
+        .background(BodyFlowColor.background)
+        .task {
+            switch kind {
+            case .hydration:
+                if hydrationModel.receipt == nil {
+                    await hydrationModel.submitQuick(250)
+                }
+            case .weight:
+                if weightModel.receipt == nil {
+                    await weightModel.submit(weightKG: 78.4)
+                }
+            }
+        }
+        .installAppDependencies(dependencies)
+    }
+}
+#endif
+
 @MainActor
 private struct WorkoutRegistrationContent: View {
     let model: WorkoutRegistrationModel

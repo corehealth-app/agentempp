@@ -22,6 +22,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Planejadas"].exists)
         XCTAssertFalse(app.staticTexts["Concluídas"].exists)
         XCTAssertFalse(app.staticTexts["opaque"].exists)
+        support.captureEvidence(named: "06-plan.png", of: app)
 
         let detail = element("plan.detail", in: app)
         reveal(detail, in: app)
@@ -83,6 +84,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["2.500 kcal"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["user_progress"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["6.999 kcal"].exists)
+        support.captureEvidence(named: "07-progress-block.png", of: app)
     }
 
     @MainActor
@@ -114,8 +116,12 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         openHistory(in: app)
 
         XCTAssertTrue(element("history.meals", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            element("history.workouts", in: app).waitForExistence(timeout: 5)
+        )
         XCTAssertTrue(element("history.meal.demo-history-meal-row-1", in: app).exists)
         XCTAssertTrue(element("history.meal.demo-history-meal-row-2", in: app).exists)
+        support.captureEvidence(named: "08-main-history.png", of: app)
     }
 
     @MainActor
@@ -132,6 +138,10 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Arroz integral sintético"].exists)
         XCTAssertFalse(app.staticTexts["Feijão sintético"].exists)
         XCTAssertFalse(app.staticTexts["Refeição completa"].exists)
+        support.captureEvidence(
+            named: "03-individual-meal-log-detail.png",
+            of: app
+        )
     }
 
     @MainActor

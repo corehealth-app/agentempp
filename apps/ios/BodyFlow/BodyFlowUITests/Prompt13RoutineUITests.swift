@@ -11,6 +11,10 @@ final class Prompt13RoutineUITests: XCTestCase {
         XCTAssertTrue(app.buttons["routine.action.submit"].waitForExistence(timeout: 3))
         app.buttons["routine.action.submit"].tap()
         XCTAssertTrue(app.staticTexts["taken"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["routine.operation.summary"]
+                .waitForExistence(timeout: 3)
+        )
     }
 
     @MainActor

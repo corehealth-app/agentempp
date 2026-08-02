@@ -199,6 +199,7 @@ struct TodayPresentation: Equatable, Sendable {
 struct TodayRootView: View {
     let model: TodayViewModel
     let invalidationCenter: FeatureInvalidationCenter
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
@@ -207,6 +208,9 @@ struct TodayRootView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.today.rootAccessibilityIdentifier)
+#if DEBUG
+        .accessibilityValue(colorScheme == .dark ? "dark" : "light")
+#endif
         .navigationTitle("Hoje")
         .task(id: invalidationCenter.revision(for: .today)) {
             let revision = invalidationCenter.revision(for: .today)

@@ -18,6 +18,22 @@ enum Prompt13UITestScenario: String, CaseIterable {
 
 @MainActor
 struct BodyFlowUITestSupport {
+    private static let approvedEvidenceNames: Set<String> = [
+        "01-today.png",
+        "02-meal-proposal-edit.png",
+        "03-individual-meal-log-detail.png",
+        "04-workout-proposal.png",
+        "05-hydration-routine.png",
+        "06-plan.png",
+        "07-progress-block.png",
+        "08-main-history.png",
+        "09-offline-error-retry.png",
+        "10-dark-mode.png",
+        "11-accessibility-xxxl.png",
+        "12-reduce-motion.png",
+        "13-final-simulator.png",
+    ]
+
     let testCase: XCTestCase
 
     func launch(
@@ -45,23 +61,31 @@ struct BodyFlowUITestSupport {
         XCTAssertGreaterThanOrEqual(element.frame.height, 44, file: file, line: line)
     }
 
-    func captureScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        testCase.add(attachment)
-    }
-
-    func attachAccessibilityTree(
+    func captureEvidence(
+        named name: String,
         of app: XCUIApplication,
-        named name: String
+        file: StaticString = #filePath,
+        line: UInt = #line
     ) {
-        let attachment = XCTAttachment(
+        XCTAssertTrue(
+            Self.approvedEvidenceNames.contains(name),
+            "Evidence name must be one of the 13 approved PNG names",
+            file: file,
+            line: line
+        )
+        guard Self.approvedEvidenceNames.contains(name) else { return }
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        testCase.add(screenshot)
+
+        let hierarchy = XCTAttachment(
             data: Data(app.debugDescription.utf8),
             uniformTypeIdentifier: "public.plain-text"
         )
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        testCase.add(attachment)
+        hierarchy.name = String(name.dropLast(4)) + ".txt"
+        hierarchy.lifetime = .keepAlways
+        testCase.add(hierarchy)
     }
 }

@@ -69,6 +69,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
 
     @MainActor
     func testPendingMealEditReplacesProposal() {
+        let support = BodyFlowUITestSupport(testCase: self)
         let app = reachTextProposal(scenario: .loaded)
 
         let edit = app.buttons["registration.proposal.edit"]
@@ -86,6 +87,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
         XCTAssertTrue(element("registration.proposal.edit.consumed-at", in: app).exists)
         XCTAssertFalse(app.textFields["registration.proposal.edit.protein"].exists)
         XCTAssertFalse(app.textFields["registration.proposal.edit.total"].exists)
+        support.captureEvidence(named: "02-meal-proposal-edit.png", of: app)
 
         app.buttons["registration.proposal.edit.save"].tap()
 
@@ -207,6 +209,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
         support.assertMinimumTapTarget(app.buttons["registration.proposal.edit"])
         support.assertMinimumTapTarget(app.buttons["registration.proposal.confirm"])
         support.assertMinimumTapTarget(app.buttons["registration.proposal.cancel"])
+        support.captureEvidence(named: "04-workout-proposal.png", of: app)
     }
 
     @MainActor
@@ -365,6 +368,45 @@ final class Prompt13RegistrationUITests: XCTestCase {
         let receipt = element("registration.weight.demo-receipt", in: app)
         XCTAssertTrue(receipt.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Demonstração local; não sincronizado"].exists)
+    }
+
+    @MainActor
+    func testHydrationSuccessRefreshesTodayBeforeRoutineDetail() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = launchAndOpenHydration(scenario: .loaded)
+
+        let quick = app.buttons["registration.hydration.quick.250"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 3))
+        quick.tap()
+        let submit = app.buttons["registration.hydration.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 3))
+        submit.tap()
+        XCTAssertTrue(
+            app.staticTexts["Hidratação registrada."]
+                .waitForExistence(timeout: 5)
+        )
+
+        app.buttons["sheet.fechar"].tap()
+        let today = app.tabBars.buttons["tab.hoje"]
+        XCTAssertTrue(today.waitForExistence(timeout: 3))
+        today.tap()
+        let hydration = element("today.hydration", in: app)
+        XCTAssertTrue(hydration.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            hydration.value as? String,
+            "2.111 ml; meta Indisponível"
+        )
+
+        let routine = app.buttons["routine.supplement-1"]
+        XCTAssertTrue(routine.waitForExistence(timeout: 5))
+        reveal(routine, in: app)
+        XCTAssertTrue(routine.isHittable)
+        routine.tap()
+        XCTAssertTrue(
+            app.buttons["routine.action.snoozed"]
+                .waitForExistence(timeout: 5)
+        )
+        support.captureEvidence(named: "05-hydration-routine.png", of: app)
     }
 
     @MainActor
@@ -542,5 +584,16 @@ final class Prompt13RegistrationUITests: XCTestCase {
         in app: XCUIApplication
     ) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
+    }
+
+    @MainActor
+    private func reveal(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        attempts: Int = 6
+    ) {
+        for _ in 0..<attempts where !element.isHittable {
+            app.swipeUp()
+        }
     }
 }

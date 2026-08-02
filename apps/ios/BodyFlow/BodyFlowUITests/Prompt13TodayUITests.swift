@@ -25,6 +25,7 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertLessThanOrEqual(attention.frame.minY, energy.frame.minY)
         XCTAssertTrue(app.staticTexts["Data local: 2026-07-20"].exists)
         XCTAssertTrue(app.staticTexts["Protocolo: recomposicao"].exists)
+        support.captureEvidence(named: "01-today.png", of: app)
     }
 
     @MainActor
@@ -91,11 +92,83 @@ final class Prompt13TodayUITests: XCTestCase {
             element("state.stale-banner", in: app)
                 .waitForExistence(timeout: 3)
         )
+        let retry = element("state.retry", in: app)
+        XCTAssertTrue(retry.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(retry)
+        XCTAssertTrue(element("today.header.local-date", in: app).exists)
+        retry.tap()
         XCTAssertTrue(
-            element("state.retry", in: app)
+            retry.waitForNonExistence(timeout: 3),
+            "Retry must leave the terminal stale state while a new read runs"
+        )
+        let completedRetry = element("state.retry", in: app)
+        XCTAssertTrue(
+            completedRetry.waitForExistence(timeout: 3),
+            "A new terminal stale state must be published after retry"
+        )
+        XCTAssertTrue(
+            element("state.stale-banner", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        support.captureEvidence(named: "09-offline-error-retry.png", of: app)
+    }
+
+    @MainActor
+    func testInitialOfflineAndErrorExposeReachableRetry() {
+        let support = BodyFlowUITestSupport(testCase: self)
+
+        for entry in [
+            (Prompt13UITestScenario.offline, "Você está offline"),
+            (Prompt13UITestScenario.error, "Não foi possível carregar"),
+        ] {
+            let app = support.launch(scenario: entry.0)
+            XCTAssertTrue(
+                app.staticTexts[entry.1].waitForExistence(timeout: 5)
+            )
+            let retry = element("state.retry", in: app)
+            XCTAssertTrue(retry.waitForExistence(timeout: 3))
+            support.assertMinimumTapTarget(retry)
+            retry.tap()
+            XCTAssertTrue(
+                retry.waitForNonExistence(timeout: 3),
+                "Retry must leave the terminal error while a new read runs"
+            )
+            XCTAssertTrue(
+                app.staticTexts[entry.1].waitForExistence(timeout: 3)
+            )
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testStaleErrorPreservesSnapshotAndReachableRetry() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .staleError)
+
+        let refresh = app.buttons["today.refresh"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 5))
+        refresh.tap()
+
+        XCTAssertTrue(
+            element("state.stale-banner", in: app)
                 .waitForExistence(timeout: 3)
         )
         XCTAssertTrue(element("today.header.local-date", in: app).exists)
+        let retry = element("state.retry", in: app)
+        XCTAssertTrue(retry.waitForExistence(timeout: 3))
+        support.assertMinimumTapTarget(retry)
+        retry.tap()
+        XCTAssertTrue(
+            retry.waitForNonExistence(timeout: 3),
+            "Retry must leave the terminal stale state while a new read runs"
+        )
+        XCTAssertTrue(
+            element("state.retry", in: app).waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            element("state.stale-banner", in: app)
+                .waitForExistence(timeout: 3)
+        )
     }
 
     @MainActor

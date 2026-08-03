@@ -288,6 +288,10 @@ function convertBlock(node: MarkdownNode, containerDepth: number): ContentMarkdo
 }
 
 function isHttpsUrl(value: string): boolean {
+  const hasOriginalHttpsAuthority =
+    /^https:\/\/[^/?#\\\s\u0000-\u001f\u007f]+(?:[/?#]|$)/i.test(value)
+  if (!hasOriginalHttpsAuthority) return false
+
   try {
     const url = new URL(value)
     return url.protocol === 'https:' && url.hostname.length > 0

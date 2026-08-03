@@ -349,6 +349,30 @@ describe('validateContentMarkdown', () => {
     ).toThrow()
   })
 
+  it('rejects a hostless HTTPS source instead of repairing it into an authority', () => {
+    const validAbsoluteHTTPS = `[fonte](HTTPS://bodyflow.app/conteudo)\n\n${LONG_BODY}`
+    const hostlessHTTPS = `[fonte](https:///conteudo/local)\n\n${LONG_BODY}`
+
+    expect(validAbsoluteHTTPS.length).toBeGreaterThanOrEqual(100)
+    expect(hostlessHTTPS.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(validAbsoluteHTTPS)).not.toThrow()
+    expect(() => validateContentMarkdown(hostlessHTTPS)).toThrow()
+  })
+
+  it('rejects a backslash authority instead of repairing it into a host', () => {
+    const backslashAuthority = `[fonte](https://\\conteudo/local)\n\n${LONG_BODY}`
+
+    expect(backslashAuthority.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(backslashAuthority)).toThrow()
+  })
+
+  it('rejects whitespace in the original authority instead of repairing it into a host', () => {
+    const whitespaceAuthority = `[fonte](https://&#x09;/conteudo/local)\n\n${LONG_BODY}`
+
+    expect(whitespaceAuthority.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(whitespaceAuthority)).toThrow()
+  })
+
   it('rejects more than eight nested inline nodes', () => {
     const nestedInlineMarkdown = `${'**'.repeat(9)}texto${'**'.repeat(9)}\n\n${LONG_BODY}`
 

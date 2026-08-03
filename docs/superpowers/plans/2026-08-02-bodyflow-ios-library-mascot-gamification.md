@@ -4,14 +4,14 @@
 
 **Goal:** Deliver the approved Prompt 14 native iOS experience for the published educational Library and detail, Today recommendations, the BodyFlow mascot, and literal server-owned XP, level, earned-medal and streak presentation without inventing APIs, rewards or calculations.
 
-**Architecture:** Mandatory backend Task 0 first makes the existing Markdown authority detect and reject GFM pipe-table AST nodes at author writes, legacy clone/workflow guards and mobile-detail reads. A minimal per-version validation snapshot prevents the admin service from loading publication history or identities. Local fail-closed guards mirror existing source/approve/publish preconditions without redefining them; the database remains final authority for eligible mutations, and the locked submit RPC remains authority for concurrent revision/lifecycle outcomes. Then small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
+**Architecture:** Mandatory backend Task 0 first makes the existing Markdown authority detect and reject GFM pipe-table AST nodes at author writes, legacy clone/workflow guards and mobile-detail reads. Tasks 6 and 7 reconcile the distinct editorial-source, backend-canonical and native-payload boundaries before Task 8 resumes the shared corpus: backend hardening rejects the three portable semantic sources and serves only `toMarkdown` canonical detail, while iOS consumes that canonical payload without reproducing the serializer. A minimal per-version validation snapshot prevents the admin service from loading publication history or identities. Local fail-closed guards mirror existing source/approve/publish preconditions without redefining them; the database remains final authority for eligible mutations, and the locked submit RPC remains authority for concurrent revision/lifecycle outcomes. Then small `Sendable` capabilities keep content listing, content detail/state, coach experience and existing progress reads independent. Authenticated-session-owned `@MainActor @Observable` feature models publish complete immutable responses through cancellation-safe revision keys; Debug/previews/tests use deterministic actors, while Release installs only unavailable providers and no Prompt 14 URL, bearer, fixture or successful fallback. Published canonical Markdown is converted fail-closed from exact-pinned `swift-markdown` into a BodyFlow-owned AST, and private covers pass strict capability validation, streamed byte limits, ImageIO downsampling and bounded session memory caching.
 
-**Tech Stack:** Xcode 26.6 (build 17F113), Swift 6, SwiftUI, Observation, Foundation, ImageIO, Swift Testing, XCTest/XCUIAutomation, exact `swift-markdown` 0.8.0 at `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, iOS 18.0 deployment target, and iPhone 17 Pro on iOS 26.5 (`27291590-659D-4A29-8F45-CA5CA2D154F9`). Backend Task 0 keeps exact `mdast-util-from-markdown` 2.0.3 and adds exact `micromark-extension-gfm-table` 2.1.1 plus `mdast-util-gfm-table` 2.0.0.
+**Tech Stack:** Xcode 26.6 (build 17F113), Swift 6, SwiftUI, Observation, Foundation, ImageIO, Swift Testing, XCTest/XCUIAutomation, exact `swift-markdown` 0.8.0 at `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, iOS 18.0 deployment target, and iPhone 17 Pro on iOS 26.5 (`27291590-659D-4A29-8F45-CA5CA2D154F9`). Backend keeps exact `mdast-util-from-markdown` 2.0.3, `mdast-util-to-markdown` 2.1.2, `micromark-extension-gfm-table` 2.1.1 and `mdast-util-gfm-table` 2.0.0; Task 6 adds exact `micromark-extension-gfm-strikethrough` 2.1.0, `mdast-util-gfm-strikethrough` 2.0.0, `micromark-extension-gfm-task-list-item` 2.1.0 and `mdast-util-gfm-task-list-item` 2.0.0 solely for rejection.
 
 ## Approval And Execution Boundary
 
-- The approved specification is `docs/superpowers/specs/2026-08-02-bodyflow-ios-library-mascot-gamification-design.md`.
-- This plan is documentary only. Task 0 remains paused until a later explicit implementation authorization; the pipe-table contract decision is approved and incorporated below.
+- The specification at `docs/superpowers/specs/2026-08-02-bodyflow-ios-library-mascot-gamification-design.md` is `awaiting contract reconciliation approval` after this documentary revision.
+- Tasks 0 through 5 are already committed. The former Task 6 stopped at the diagnosed compatibility gate and is renumbered Task 8 below; do not execute Tasks 6, 7 or 8 until this reconciliation receives explicit approval.
 - Execute later implementation only in `/Users/eduardohenrique/Developer/bodyflow` on `codex/bodyflow-ios-library-mascot-gamification-v1`.
 - Preserve the stacked base `codex/bodyflow-ios-today-records-progress-v1` at `94c5dd1e5a62d2948eb5e56a1c63d2dfaf689123`; do not rewrite, reset, rebase or force the stack.
 - Preserve visible name `BodyFlow`, bundle ID `com.bodyflow.app`, Swift 6 language mode, complete concurrency checking and iOS 18.0.
@@ -40,10 +40,35 @@ Rejecting an incompatible `in_review` version remains deliberately available.
 
 No regex or broad `|` search is permitted. The backend must not escape,
 rewrite or reinterpret a table as prose, and the iOS parser remains strict.
-Ordinary paragraphs containing `|` and escaped `\|` remain valid. Task 6 then
-locks the same decision through one shared backend/iOS JSON corpus. The full
-plan contains 27 sequential tasks: mandatory Task 0 followed by the existing
-Tasks 1 through 26.
+Ordinary paragraphs containing `|` and escaped `\|` remain valid. Task 8 locks
+the reconciled decision through one shared backend/iOS JSON corpus only after
+the separate backend and iOS commits in Tasks 6 and 7. The full plan contains
+29 sequential tasks: Task 0 followed by Tasks 1 through 28.
+
+## Reconciled Markdown Boundary And Corpus Contract
+
+The backend alone owns editorial-source parsing and `toMarkdown`
+canonicalization. It applies `100...50_000` UTF-16 units to the complete
+canonical result, including terminal LF, and decides whether the source can be
+published. Mobile detail revalidates the stored source and returns only that
+canonical result; it never rewrites the stored row. iOS consumes the returned
+payload, normalizes CRLF/CR to LF for its independent safety bound, and never
+implements or imitates `toMarkdown`.
+
+The shared JSON uses exactly this expectation matrix:
+
+| `accepted` | `native_expectation` | Required fields | Native action |
+| --- | --- | --- | --- |
+| `true` | `parse_normalized` | `normalized`, `document` | parse canonical payload and compare exact AST |
+| `false` | `reject_source` | neither accepted field | parse original source and require semantic rejection |
+| `false` | `backend_canonicalization_only` | neither accepted field | make no native-parser call |
+
+`backend_canonicalization_only` is allowed only for
+`normalized-body-under-100-characters`,
+`normalized-body-over-50000-characters` and
+`normalized-crlf-over-50000-utf16-units`. The final 50 fixtures must split
+exactly into 11/36/3 rows and leave no unexplained divergence. Tasks 6, 7 and 8
+are separate ordered commits; Task 9 cannot begin before all three are GREEN.
 
 ## Mandatory Separate Pre-TestFlight Gate
 
@@ -85,7 +110,7 @@ candidate classes.
 - `supabase/tests/bodyflow_content_delivery.sql`
 - `supabase/tests/bodyflow_content_cms.sql`
 
-The Markdown compatibility corpus created by Task 6 is test-only. It is checked by both the real `validateContentMarkdown` implementation and the native parser; it does not define a new endpoint or relax either parser.
+The Markdown compatibility corpus completed by Task 8 is test-only. It distinguishes `parse_normalized`, `reject_source` and `backend_canonicalization_only`, is checked against the real `validateContentMarkdown` implementation and the applicable native-parser boundary, and does not define a new endpoint or reproduce the backend serializer on iOS.
 
 ## Non-Negotiable Contract Invariants
 
@@ -98,9 +123,10 @@ The Markdown compatibility corpus created by Task 6 is test-only. It is checked 
 - Content mutation retry preserves the exact immutable route, JSON body, version, idempotency key and injected `createdAt`.
 - A version conflict reloads catalog and affected detail, discards the old cover and never rewrites/replays the old intent against a new version.
 - `swift-markdown` is exactly version `0.8.0`, revision `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`; `Package.resolved` also locks `swift-cmark` 0.8.0 at `924936d0427cb25a61169739a7660230bffa6ea6`.
-- Every backend JavaScript string bound is measured with `String.utf16.count`, matching JavaScript `String.length`; Swift grapheme `String.count` is prohibited for contract limits. Body Markdown source and normalized forms remain `100...50_000` UTF-16 code units. Rendering consumes only the BodyFlow-owned AST and rejects every node outside the approved subset.
+- Every backend JavaScript string bound is measured with JavaScript `String.length`, equivalent to Swift `utf16.count`; Swift grapheme `String.count` is prohibited for contract limits. The backend applies the `100...50_000` publication bound to the complete `toMarkdown` canonical representation, including terminal LF. iOS independently applies `100...50_000` as a safety bound to the received canonical payload after CRLF/CR → LF and never reproduces `toMarkdown`.
 - Backend table detection uses only exact-pinned GFM-table micromark/mdast AST extensions. A `table` node is rejected clearly before normalization; ordinary and escaped pipes remain valid, and neither backend nor iOS uses regex, escaping, rewriting or permissive fallback to hide a table.
-- CMS action/service writes invoke the shared validator before persistence. Mobile detail revalidates stored Markdown before cover capability/DTO construction, returns the accepted stored body unchanged, and maps any legacy-invalid body to an opaque error with no partial response or content log.
+- CMS action/service writes invoke the shared validator before persistence. Mobile detail revalidates stored editorial Markdown before cover capability/DTO construction, returns exactly the validator's canonical `normalized` value without rewriting storage, and maps any legacy-invalid body to an opaque error with no partial response or content log.
+- The shared corpus contains exactly 50 unique fixtures: 11 `accepted=true`/`parse_normalized`, 36 `accepted=false`/`reject_source` and three named `accepted=false`/`backend_canonicalization_only` cases. The last mode never invokes the native parser.
 - Markdown parsing never uses regex as the parser, `AttributedString(markdown:)`, WKWebView, HTML, JavaScript, raw/permissive fallback or remote scripts.
 - Cover paths match only `^/api/mobile/v1/content/covers/[A-Za-z0-9_-]+$`. Scheme, host, user info, port, protocol-relative form, query, fragment, percent encoding, backslash, extra segment and traversal fail before transport invocation.
 - Cover streaming accepts at most `10_485_760` bytes, checks declared and actual length, requires exact JPEG/PNG/WebP MIME matching ImageIO, rejects invalid/zero/abusive dimensions and downsamples to displayed pixels without `UIImage(data:)` or full-raster decode.
@@ -337,12 +363,14 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 ### Backend Markdown prerequisite
 
 - Modify `packages/core/package.json` and `pnpm-lock.yaml` only for the exact
-  Task 0 GFM-table AST dependencies.
+  Task 0 GFM-table AST dependencies and Task 6's four exact strikethrough/task-
+  list rejection extensions; no broad GFM or rendering extension is allowed.
 - Modify `packages/core/src/content.ts` and
-  `packages/core/src/content.test.ts` for AST classification and literal pipe
-  behavior.
+  `packages/core/src/content.test.ts` for AST classification, portable semantic
+  source rejection, canonical-size boundaries and safe literal text behavior.
 - Modify `apps/admin/src/app/(admin)/content/actions.test.ts` to preserve the
-  untrusted `saveDraft` boundary test.
+  untrusted `saveDraft` boundary test and extend it to every Task 6 portable
+  semantic rejection.
 - Modify `apps/admin/src/lib/content/admin-service.ts` and
   `apps/admin/src/lib/content/admin-service.test.ts` to add the minimal
   per-version validation snapshot contract and guard source cloning, submit,
@@ -354,7 +382,8 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 - Modify `apps/admin/src/lib/mobile-api/content-service.ts`,
   `apps/admin/src/lib/mobile-api/content-service.test.ts` and
   `apps/admin/src/app/api/mobile/v1/content/route.test.ts` for atomic,
-  fail-closed legacy-body defense before cover/DTO emission.
+  fail-closed legacy-body defense and canonical `normalized` delivery before
+  cover/DTO emission, without rewriting storage.
 - Do not create a live-audit executable in this workpack. Task 0 records the
   exact future read-only query, output allowlist and stop conditions in its
   reviewed checkpoint; running it requires separate explicit authorization.
@@ -420,7 +449,7 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 - Create focused Swift Testing files under `apps/ios/BodyFlow/BodyFlowTests/`: `PublishedContentContractTests.swift`, `CoachExperienceContractTests.swift`, `FeatureKeyedLoadControllerTests.swift`, `BodyFlowMarkdownParserTests.swift`, `MarkdownBackendCompatibilityTests.swift`, `ContentCoverPathTests.swift`, `ContentCoverDecoderTests.swift`, `SessionCoverCacheTests.swift`, `ContentCoverLoaderTests.swift`, `DemoPrompt14RepositoryTests.swift`, `PublishedContentFeedViewModelTests.swift`, `ContentDetailViewModelTests.swift`, `LibraryPresentationTests.swift`, `TodayRecommendationsTests.swift`, `MascotPresentationTests.swift`, `MascotExperienceViewModelTests.swift`, `Prompt14LaunchConfigurationTests.swift`, `Prompt14ReleaseBoundaryTests.swift`, `Prompt14TelemetryPrivacyTests.swift`, and `Prompt14PreviewSupportTests.swift`.
 - Create focused Swift Testing support/files under `apps/ios/BodyFlow/BodyFlowTests/`: `Fixtures/Prompt14CoverFixtures.swift`, `Prompt14SessionOwnershipTests.swift`, `ContentCoverViewModelTests.swift`, and `MascotAccessibilityModelTests.swift`.
 - Create `apps/ios/BodyFlow/BodyFlowTests/Fixtures/Prompt14MarkdownCompatibility.json`.
-- Create `packages/core/src/content-ios-compatibility.test.ts` to run the same JSON corpus through the existing backend validator; do not modify production parser behavior.
+- Create `packages/core/src/content-ios-compatibility.test.ts` to validate the exact `native_expectation` schema/counts and run the same JSON corpus through the hardened backend validator; Task 8 does not modify production parser behavior.
 - Modify `apps/ios/BodyFlow/BodyFlowTests/AppDependenciesTests.swift`.
 - Modify `apps/ios/BodyFlow/BodyFlowTests/AppRouterTests.swift`.
 - Modify `apps/ios/BodyFlow/BodyFlowTests/BodyFlowTestFixtures.swift`.
@@ -437,6 +466,12 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
 ---
 
 ### Task 0: Reject GFM Pipe Tables At Every Backend Content Boundary
+
+> **Committed checkpoint:** Task 0 records the implementation that established
+> table rejection and legacy guards. Its valid-detail behavior of returning the
+> stored body unchanged is intentionally superseded by Task 6, which returns
+> the validator's canonical value without rewriting storage. Do not rerun or
+> amend the Task 0 commit.
 
 This task is mandatory and must be committed before Task 1 starts. It changes
 the existing backend Markdown contract only; it adds no mobile endpoint,
@@ -862,6 +897,11 @@ audit, migration, deploy, push, PR, merge or TestFlight action occurs.
 
 ### Task 1: Define And Validate Published Content Contracts
 
+> **Committed checkpoint:** Task 1 established the wire DTO and initial body
+> bound. Task 7 supersedes only its raw-body size check by measuring the
+> received payload after CRLF/CR → LF; the decoded canonical body itself remains
+> lossless and unmodified. Do not amend the Task 1 commit.
+
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentModels.swift`
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentProviding.swift`
@@ -955,7 +995,7 @@ enum PublishedContentContractValidator {
 }
 ```
 
-The validator uses deterministic ASCII/scalar checks for UUID/slug/tag invariants and never repairs received values. It does not parse cover URLs or Markdown; Tasks 4–9 own those boundaries.
+The validator uses deterministic ASCII/scalar checks for UUID/slug/tag invariants and never repairs received values. It does not parse cover URLs or Markdown; Tasks 4–11 own those boundaries.
 
 - [ ] **Step 4: Reach GREEN and refactor**
 
@@ -1057,7 +1097,7 @@ typealias CoachExperienceResponse = MobileResponse<CoachExperienceSnapshot>
 typealias ProgressResponse = MobileResponse<ProgressSnapshot?>
 ```
 
-Use custom `MascotWireState` decoding/encoding to preserve unknown raw values. Validate coach contract version at the presenter/view-model boundary, not by accepting unsupported semantics. Make `deficitBlock` an `Int`; only measurements and documented dates remain optional. In the same GREEN, change `ProgressViewModel` to switch on `response.data` (`nil` → `.empty`, non-null → `.loaded`), remove the impossible zero-row heuristic, render non-null deficit literally, and update both inherited fixture families. Do not add the new medal/missions UI yet; Task 23 owns that presentation increment.
+Use custom `MascotWireState` decoding/encoding to preserve unknown raw values. Validate coach contract version at the presenter/view-model boundary, not by accepting unsupported semantics. Make `deficitBlock` an `Int`; only measurements and documented dates remain optional. In the same GREEN, change `ProgressViewModel` to switch on `response.data` (`nil` → `.empty`, non-null → `.loaded`), remove the impossible zero-row heuristic, render non-null deficit literally, and update both inherited fixture families. Do not add the new medal/missions UI yet; Task 25 owns that presentation increment.
 
 - [ ] **Step 4: Run GREEN, refactor and check the diff**
 
@@ -1130,7 +1170,7 @@ Expected RED: missing content operations/keys/events and keyed controller.
 
 - [ ] **Step 3: Implement minimal GREEN primitives**
 
-Add only documented error categories not already introduced in Task 1: unsupported Markdown/coach contract, content not found, cover not found, invalid cover, cover too large, subscription required, version changed, idempotency in progress and coach locale unsupported. The exact new cases are `.unsupportedMarkdown`, `.unsupportedCoachContract`, `.contentNotFound`, `.contentCoverNotFound`, `.invalidContentCover`, `.contentCoverTooLarge`, `.subscriptionRequired`, `.contentVersionChanged`, `.idempotencyRequestInProgress`, and `.coachLocaleUnsupported`. Update `TelemetryClient.swift` in the same GREEN so its exhaustive switch compiles; map only to bounded existing error classes until Task 24 adds reviewed Prompt 14 screen/outcome classifications.
+Add only documented error categories not already introduced in Task 1: unsupported Markdown/coach contract, content not found, cover not found, invalid cover, cover too large, subscription required, version changed, idempotency in progress and coach locale unsupported. The exact new cases are `.unsupportedMarkdown`, `.unsupportedCoachContract`, `.contentNotFound`, `.contentCoverNotFound`, `.invalidContentCover`, `.contentCoverTooLarge`, `.subscriptionRequired`, `.contentVersionChanged`, `.idempotencyRequestInProgress`, and `.coachLocaleUnsupported`. Update `TelemetryClient.swift` in the same GREEN so its exhaustive switch compiles; map only to bounded existing error classes until Task 26 adds reviewed Prompt 14 screen/outcome classifications.
 
 ```swift
 enum FeatureInvalidationKey: Hashable, Sendable {
@@ -1248,6 +1288,12 @@ Every later `xcodebuild` command in this plan must include `-onlyUsePackageVersi
 
 ### Task 5: Build The Fail-Closed BodyFlow Markdown AST Adapter
 
+> **Committed checkpoint:** Task 5 records the initial conservative source-form
+> policy. Task 7 supersedes its broad rejection of literal pipe, directive and
+> Doxygen spellings when the configured parser produces only allowlisted
+> `Text`; actual prohibited nodes and portable semantic sources remain rejected.
+> Do not amend the Task 5 commit.
+
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/BodyFlowMarkdownAST.swift`
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/BodyFlowMarkdownParser.swift`
@@ -1344,115 +1390,439 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Content/BodyFlowMarkdownAST.swift \
 git commit -m "feat(ios): enforce the published markdown subset"
 ```
 
-### Task 6: Lock A Shared Backend/Native Markdown Compatibility Corpus
+### Task 6: Harden Portable Markdown Semantics And Canonical Mobile Delivery
+
+This task starts only after the reconciled contract is approved. It must leave
+the three in-progress Task 8 corpus files byte-identical and must not execute
+their stale compatibility suite.
+
+**Files:**
+- Modify: `packages/core/package.json`
+- Modify: `pnpm-lock.yaml`
+- Modify: `packages/core/src/content.ts`
+- Modify: `packages/core/src/content.test.ts`
+- Modify: `apps/admin/src/app/(admin)/content/actions.test.ts`
+- Modify: `apps/admin/src/lib/content/admin-service.test.ts`
+- Modify: `apps/admin/src/lib/mobile-api/content-service.ts`
+- Modify: `apps/admin/src/lib/mobile-api/content-service.test.ts`
+- Modify: `apps/admin/src/app/api/mobile/v1/content/route.test.ts`
+
+**Interfaces:**
+- Consumes: Task 0's real `validateContentMarkdown`, exact GFM-table pins,
+  existing CMS/workflow validation calls, opaque mobile error mapping and
+  atomic cover-before-detail boundary.
+- Produces: exact AST recognition and rejection for strikethrough and task-list
+  items; a bounded source-range guard for corpus-defined malformed strong; and
+  canonical `body_markdown` delivery from `ValidatedContentMarkdown.normalized`.
+- Preserves: ordinary/escaped pipes, valid strong, literal directive/Doxygen
+  text, reject availability, RPC-owned stale/lifecycle behavior, immutable
+  historical rows and all three Task 8 files.
+
+- [ ] **Step 1: Freeze the paused-corpus and dependency preconditions**
+
+Confirm branch/HEAD/worktree expectations from the authorization. Record and
+require these current hashes before and after every Task 6 command:
+
+```bash
+set -euo pipefail
+test "$(git branch --show-current)" = \
+  "codex/bodyflow-ios-library-mascot-gamification-v1"
+test "$(git diff --name-only)" = ""
+test "$(git diff --cached --name-only)" = ""
+test "$(shasum -a 256 apps/ios/BodyFlow/BodyFlowTests/Fixtures/Prompt14MarkdownCompatibility.json | awk '{print $1}')" = \
+  "e676d38a3db5d3445720eae55dad19e7eb9c32e74ab700f79ef80b1cead94775"
+test "$(shasum -a 256 apps/ios/BodyFlow/BodyFlowTests/MarkdownBackendCompatibilityTests.swift | awk '{print $1}')" = \
+  "675e465df56d614c5c47db9286c6b4552b8258988cd38c267ea84e2dc936ff93"
+test "$(shasum -a 256 packages/core/src/content-ios-compatibility.test.ts | awk '{print $1}')" = \
+  "4dd8a9e901450a716fe786732a222ffda3a60a7f801e2c9147f911a537750d2c"
+```
+
+Expected: only the three named Task 8 files are untracked; manifests retain
+the exact Task 0 pins. Do not run `content-ios-compatibility.test.ts` yet.
+
+- [ ] **Step 2: Write every focused backend and mobile RED first**
+
+In `packages/core/src/content.test.ts`, add a table-driven contract proving
+that length-valid strikethrough, `- [x]`/`- [X]`/`- [ ]` task-list source and
+`Texto com **ênfase sem fechamento` each throw a bounded
+`Invalid content Markdown` error before canonicalization. Add controls proving
+that valid `**strong**`, ordinary/escaped pipes, escaped literal delimiters,
+block/inline directive spelling and Doxygen command/source remain accepted when
+their configured backend AST is safe text. Preserve the three literal
+canonical-size cases from the audit: trailing spaces serialize below 100;
+50,000 text units serialize to 50,001 with terminal LF; CRLF/CR normalizes to
+50,000 before serializing to 50,001.
+
+In `actions.test.ts`, prove each source is rejected by the untrusted
+`saveDraft` action before `service.saveDraft`. In `admin-service.test.ts`,
+prove direct `saveDraft` rejects each source before `repository.saveDraft`,
+then parameterize the existing workflow spies so the same sources stop source
+clone, submit, `review(approve)` and publish before mutation while
+`review(reject)` and the existing stale/lifecycle cases remain unchanged.
+
+In the mobile service/route tests, first prove two missing behaviors:
+
+1. a valid stored escaped-pipe source is returned as the exact canonical
+   `normalized` body, not as the stored source, without writing the repository;
+2. each new invalid legacy source returns only the opaque atomic error before
+   cover issuance and exposes no source/canonical fragment or partial DTO.
+
+Run only the focused suites and record the intended REDs:
+
+```bash
+set -euo pipefail
+bodyflow_expect_red() {
+  local status
+  set +e
+  "$@"
+  status=$?
+  set -e
+  test "$status" -ne 0
+}
+bodyflow_expect_red pnpm --filter @mpp/core test -- content.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  'src/app/(admin)/content/actions.test.ts'
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/lib/content/admin-service.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/lib/mobile-api/content-service.test.ts
+bodyflow_expect_red pnpm --filter @mpp/admin test -- \
+  src/app/api/mobile/v1/content/route.test.ts
+```
+
+Expected RED: the backend currently accepts all three portable-invalid sources,
+workflow guards therefore allow them, and valid mobile detail still returns
+the stored source instead of `normalized`. Fixture, syntax or infrastructure
+errors are not valid REDs.
+
+- [ ] **Step 3: Add only the four exact rejection extensions**
+
+Add these exact compatible pins to `@mpp/core`:
+
+```bash
+pnpm --filter @mpp/core add --save-exact \
+  micromark-extension-gfm-strikethrough@2.1.0 \
+  mdast-util-gfm-strikethrough@2.0.0 \
+  micromark-extension-gfm-task-list-item@2.1.0 \
+  mdast-util-gfm-task-list-item@2.0.0
+```
+
+Keep `mdast-util-from-markdown` exactly `2.0.3`,
+`mdast-util-to-markdown` exactly `2.1.2` and every Task 0 table pin unchanged.
+Configure only the narrowly scoped syntax/mdast extensions; do not add the
+broad GFM bundle or any strikethrough/task-list `toMarkdown` extension. Verify
+all eight exact importer/resolution pins structurally in `pnpm-lock.yaml` and
+confirm `pnpm-workspace.yaml` is unchanged.
+
+- [ ] **Step 4: Implement structural rejection and canonical read GREEN**
+
+In `content.ts`, add the exact strikethrough and task-list micromark/mdast
+extensions beside the table extensions. Reject mdast `delete` and a list item
+whose `checked` value is non-null before `toMarkdown`. For malformed strong,
+walk only parsed `text` node source ranges and use a bounded Unicode-scalar
+state machine: respect backslash escapes, reject an unescaped `**` delimiter
+that remains literal text, and leave a real `strong` node valid. The guard may
+not regex-scan the document, ban `*`, `|`, `@` or backslash globally, repair
+source, or reinterpret an unsupported node as text.
+
+In `content-service.ts`, capture the complete validator result immediately
+after the repository read and before cover/DTO work. Map exactly
+`validated.normalized` to the outgoing detail's `bodyMarkdown`; never mutate or
+persist the stored source. Preserve the existing opaque failure mapping and
+zero-cover/zero-partial-response ordering.
+
+- [ ] **Step 5: Reach focused GREEN and verify both backend packages**
+
+```bash
+set -euo pipefail
+pnpm --filter @mpp/core test -- content.test.ts
+pnpm --filter @mpp/core typecheck
+pnpm --filter @mpp/admin test -- \
+  'src/app/(admin)/content/actions.test.ts' \
+  src/lib/content/admin-service.test.ts \
+  src/lib/mobile-api/content-service.test.ts \
+  src/app/api/mobile/v1/content/route.test.ts
+pnpm --filter @mpp/admin typecheck
+git diff --check
+```
+
+Expected: focused tests are GREEN; the three portable-invalid sources never
+persist, transition or serve; valid canonical detail uses `normalized`; safe
+text and all concurrency/lifecycle controls remain GREEN. Do not run the stale
+Task 8 compatibility test or the complete core suite in this task.
+
+- [ ] **Step 6: Review the exact allowlist and commit Task 6**
+
+Recheck the three frozen hashes, exact dependency pins and nine-path allowlist.
+Then stage only:
+
+```bash
+git add packages/core/package.json \
+  pnpm-lock.yaml \
+  packages/core/src/content.ts \
+  packages/core/src/content.test.ts \
+  'apps/admin/src/app/(admin)/content/actions.test.ts' \
+  apps/admin/src/lib/content/admin-service.test.ts \
+  apps/admin/src/lib/mobile-api/content-service.ts \
+  apps/admin/src/lib/mobile-api/content-service.test.ts \
+  apps/admin/src/app/api/mobile/v1/content/route.test.ts
+git diff --cached --check
+test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 9
+git commit -m "fix(content): reject nonportable markdown source"
+```
+
+Expected: one backend commit; Task 8 files remain byte-identical and untracked.
+
+### Task 7: Align Native Guards With Canonical Published Markdown
+
+This task starts only after Task 6 is committed and must not edit or execute
+the Task 8 corpus.
+
+**Files:**
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Content/MarkdownSourceGuards.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/BodyFlowMarkdownParserTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentContractValidator.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/PublishedContentContractTests.swift`
+
+**Interfaces:**
+- Consumes: Task 5's immutable BodyFlow AST, exact `swift-markdown` parser and
+  source-range ownership model; Task 6's canonical mobile-detail boundary.
+- Produces: escape-aware exact text coverage with no broad character bans and
+  post-line-ending-normalization payload-size validation.
+- Preserves: single fail-closed unknown-node route, removed-reference/unowned-
+  span rejection, URL/depth guards and native rejection of strikethrough,
+  checkbox and corpus-defined malformed strong.
+
+- [ ] **Step 1: Write canonical-payload and contract REDs**
+
+Add exact AST assertions for ordinary pipe; the canonical literal result of an
+escaped pipe; block and inline directive spellings parsed only as `Text`;
+Doxygen command/source spellings parsed only as `Text`; and safe backend-
+emitted backslash escapes whose decoded AST stays in the allowlist. Preserve
+literal rejection assertions for actual Directive/Doxygen probe nodes,
+strikethrough, raw task-list/checkbox, corpus-defined malformed strong,
+reference definitions, unowned spans and unknown/future nodes. Add mutation
+tests proving no global `|`, `@` or backslash blacklist can pass.
+
+In `PublishedContentContractTests`, add CRLF/isolated-CR payload boundaries
+proving validation measures `100...50_000` after CRLF/CR → LF, uses UTF-16 and
+does not append a terminal LF or invoke editorial canonicalization.
+
+Run the two suites and record RED: the current broad `validateText` blacklist
+rejects the six safe text families, and the contract validator measures the
+pre-normalized body.
+
+```bash
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  -only-testing:BodyFlowTests/BodyFlowMarkdownParserTests \
+  -only-testing:BodyFlowTests/PublishedContentContractTests \
+  test
+```
+
+- [ ] **Step 2: Implement the minimum exact native alignment**
+
+Replace only the broad text-character blacklist. `DocumentSourceCoverageGuard`
+must compare a `Text` range through a bounded Unicode-scalar state machine that
+either matches literal text exactly or consumes only a CommonMark backslash
+escape whose decoded scalar matches `Text.string`. A backslash before a
+non-escapable scalar remains literal. Every byte must still be owned; there is
+no raw fallback. Reject an unescaped `**` sequence that remains in a `Text`
+range, while actual strikethrough/checkbox/Directive/Doxygen/unknown nodes stay
+on the converter's fail-closed route.
+
+In `PublishedContentContractValidator`, normalize CRLF and isolated CR to LF
+only for safety-bound measurement with `utf16.count`; do not mutate the decoded
+DTO, trim, escape, append LF or import/reproduce `toMarkdown`.
+`BodyFlowMarkdownParser.swift`, `project.pbxproj` and `Package.resolved` remain
+unchanged.
+
+- [ ] **Step 3: Reach GREEN and audit prohibited paths**
+
+Run the two focused suites again with the resolved lockfile. Then execute the
+Task 5 forbidden-path `rg` audit, `git diff --check`, strict-concurrency review
+and the three frozen Task 8 hash checks. Expected: safe canonical text is
+accepted with exact AST; portable semantic sources, removed references,
+unowned spans and current/future unsupported nodes remain rejected.
+
+- [ ] **Step 4: Commit Task 7 independently**
+
+```bash
+git add \
+  apps/ios/BodyFlow/BodyFlow/Core/Content/MarkdownSourceGuards.swift \
+  apps/ios/BodyFlow/BodyFlowTests/BodyFlowMarkdownParserTests.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentContractValidator.swift \
+  apps/ios/BodyFlow/BodyFlowTests/PublishedContentContractTests.swift
+git diff --cached --check
+test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 4
+git commit -m "fix(ios): align canonical markdown guards"
+```
+
+Expected: one native commit and no Task 8 corpus mutation.
+
+### Task 8: Resume And Lock The Shared Markdown Compatibility Corpus
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlowTests/Fixtures/Prompt14MarkdownCompatibility.json`
 - Create: `packages/core/src/content-ios-compatibility.test.ts`
 - Create: `apps/ios/BodyFlow/BodyFlowTests/MarkdownBackendCompatibilityTests.swift`
-- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Content/BodyFlowMarkdownParser.swift` only if the verified shared corpus exposes a native compatibility defect.
 
 **Interfaces:**
-- Consumes: the existing backend `validateContentMarkdown` and native `BodyFlowMarkdownParsing`.
-- Produces: one checked-in test-only corpus with `name`, `source`, `accepted`, accepted `normalized` and expected portable AST.
+- Consumes: Task 6's hardened backend/canonical detail contract and Task 7's
+  aligned native parser/contract guards.
+- Produces: one checked-in, test-only 50-row corpus with `name`, `source`,
+  `accepted`, `native_expectation`, and accepted-only `normalized` plus
+  `document`; exactly 11 `parse_normalized`, 36 `reject_source` and 3
+  `backend_canonicalization_only` rows.
 
-- [ ] **Step 1: Write the native corpus contract test before the corpus loader (RED)**
+- [ ] **Step 1: Tighten both test decoders first and observe schema RED**
 
-Create `MarkdownBackendCompatibilityTests.swift` referencing `Prompt14MarkdownCorpus.load()`. For accepted rows, parse the backend-normalized string and compare the exact BodyFlow AST. For rejected rows, parse the source and expect `unsupportedMarkdown`. Assert unique fixture names and non-empty accepted/rejected sets.
+Before changing the JSON, update both test-only decoders to require exactly:
+
+```text
+native_expectation = parse_normalized
+                   | reject_source
+                   | backend_canonicalization_only
+```
+
+Reject unknown values and every invalid field combination. `accepted=true`
+requires `parse_normalized`, non-null `normalized` and non-null `document`.
+`accepted=false` permits only the other two expectations and must have neither
+accepted field. Restrict `backend_canonicalization_only` by exact fixture name
+to:
+
+- `normalized-body-under-100-characters`;
+- `normalized-body-over-50000-characters`;
+- `normalized-crlf-over-50000-utf16-units`.
+
+Require 50 unique names and exact counts `11/36/3`. The portable document wire
+shape is `{ "blocks": [...] }`, not a package AST and not top-level `blocks`.
+Run the backend and native compatibility suites against the existing paused
+JSON before editing it. Expected RED: `native_expectation`/`document` are
+missing and the current distribution is 14 accepted/36 rejected. No production
+file may change to reach this RED.
+
+- [ ] **Step 2: Reconcile only the synthetic JSON corpus**
+
+Preserve all 50 names and exact synthetic source strings. Apply the approved
+expectations:
+
+- retain 11 accepted rows as `accepted=true`, `parse_normalized` with their
+  exact canonical `normalized` and portable `document`;
+- change `strikethrough-is-backend-literal-text`,
+  `task-list-marker-is-backend-literal-list-text` and
+  `malformed-strong-is-backend-literal-text` to `accepted=false`,
+  `reject_source`, removing accepted-only fields;
+- assign the three exact size/canonicalization names above to
+  `backend_canonicalization_only`;
+- assign every other backend-invalid row to `reject_source`.
+
+Do not rename, rewrite or weaken a source to obtain GREEN. Confirm the file
+contains only synthetic data and no PII, clinical content or real message.
+
+- [ ] **Step 3: Run the backend authority over all 50 rows**
+
+The backend test reads the JSON relative to `import.meta.url`, validates its
+schema/counts first, then applies:
+
+```typescript
+switch (fixture.native_expectation) {
+  case 'parse_normalized':
+    expect(validateContentMarkdown(fixture.source)).toEqual({
+      normalized: fixture.normalized,
+      blocks: fixture.document.blocks,
+      wordCount: expect.any(Number),
+    })
+    break
+  case 'reject_source':
+  case 'backend_canonicalization_only':
+    expect(() => validateContentMarkdown(fixture.source)).toThrow()
+    break
+}
+```
+
+For the three canonicalization-only names, also require the bounded normalized-
+body size error so a future semantic reclassification cannot pass unnoticed.
+Run the backend authority first and stop on any mismatch; never change a source
+or expectation outside the approved mapping to force GREEN.
+
+```bash
+set -euo pipefail
+git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
+pnpm --filter @mpp/core test -- content-ios-compatibility.test.ts
+git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
+```
+
+Expected: all 50 backend outcomes match exactly: 11 canonical documents and 39
+throws split by the two explicit native expectations.
+
+- [ ] **Step 4: Evaluate only the applicable 47 rows on iOS**
+
+Resolve the JSON from the Swift test's `#filePath`; do not add PBX resource
+membership. Put the switch in a private test-only evaluator that accepts a
+recording parse closure:
 
 ```swift
 for fixture in try Prompt14MarkdownCorpus.load() {
-    if fixture.accepted {
+    switch fixture.nativeExpectation {
+    case .parseNormalized:
         #expect(
             try BodyFlowMarkdownParser().parse(try #require(fixture.normalized))
                 == try #require(fixture.document)
         )
-    } else {
+    case .rejectSource:
         #expect(throws: BodyFlowCapabilityError.unsupportedMarkdown) {
             try BodyFlowMarkdownParser().parse(fixture.source)
         }
+    case .backendCanonicalizationOnly:
+        break
     }
 }
 ```
 
-- [ ] **Step 2: Run native RED**
+The recorder must prove exactly 47 parser invocations and zero invocation for
+all three canonicalization-only names. This is a boundary assertion, not a
+skip: those sources never form a mobile payload. For all 11 accepted rows,
+compare the exact BodyFlow document; for all 36 portable rejects, require
+`unsupportedMarkdown` from the original source.
 
 ```bash
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  -only-testing:BodyFlowTests/BodyFlowMarkdownParserTests \
   -only-testing:BodyFlowTests/MarkdownBackendCompatibilityTests \
   test
 ```
 
-Expected RED: missing `Prompt14MarkdownCorpus` and its checked-in corpus file.
+Expected: all 47 applicable native evaluations pass and the three editorial-
+only canonicalization rows produce no parser call.
 
-- [ ] **Step 3: Create and independently validate the shared corpus**
+- [ ] **Step 5: Run the joint gate, independently review and commit**
 
-After Task 0 is GREEN and committed, copy literal accepted/rejected inputs from `packages/core/src/content.test.ts`, then add every source-representable divergence case from Task 5 to this shared corpus: CRLF/soft break acceptance; block/inline HTML; H1/H4-H6; fenced, indented and inline code; image; hard break; thematic break; pipe table; ordinary prose containing `|`; prose containing escaped `\|`; strikethrough; task-list syntax; titled, reference, collapsed-reference and shortcut-reference links; nested/removed reference definitions; HTTP, data, JavaScript and protocol-relative destinations; ordered-list start other than one; depth nine; symbol-link syntax; block/inline directives; inline attributes; Doxygen command/source; malformed input; and the 99/50,001-UTF-16-unit limits including surrogate pairs. The pipe-table row is obligatorily rejected by both authorities; ordinary and escaped-pipe rows are obligatorily accepted with exact normalized source and portable AST. No fixture may hide or relabel a backend/native difference. Current custom-node and synthetic future-node probes that cannot be represented by Markdown source remain direct adapter tests in Task 5; they are the only deliberate non-corpus cases. Create the backend test to read the same JSON by a repository-relative URL resolved from `import.meta.url`, and assert actual `validateContentMarkdown` normalization/portable AST or rejection:
-
-```typescript
-for (const fixture of corpus) {
-  if (fixture.accepted) {
-    expect(validateContentMarkdown(fixture.source)).toMatchObject({
-      normalized: fixture.normalized,
-      blocks: fixture.blocks,
-    })
-  } else {
-    expect(() => validateContentMarkdown(fixture.source)).toThrow()
-  }
-}
-```
-
-Run the backend authority first:
-
-```bash
-set -euo pipefail
-git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
-trap 'git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml' EXIT
-pnpm --filter @mpp/core test -- content-ios-compatibility.test.ts
-git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
-trap - EXIT
-```
-
-Expected: PASS, including rejected pipe-table and accepted ordinary/escaped-pipe rows. If any approved classification disagrees with the real validator, stop and report a specification/backend contract blocker; do not alter production parser behavior or relabel the corpus merely to make the test pass.
-
-- [ ] **Step 4: Add the test-only JSON decoder, run native GREEN, then run both authorities**
-
-Implement `Prompt14MarkdownCorpus` privately in the native test target. Resolve `Fixtures/Prompt14MarkdownCompatibility.json` from the test source's `#filePath`, following the existing contract-test pattern, so Task 6 does not add PBX resource membership or touch `project.pbxproj`. Decode that same checked-in file and run:
-
-```bash
-set -euo pipefail
-xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
-  -scheme BodyFlow \
-  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
-  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
-  -only-testing:BodyFlowTests/MarkdownBackendCompatibilityTests \
-  test
-
-git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
-trap 'git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml' EXIT
-pnpm --filter @mpp/core test -- content-ios-compatibility.test.ts
-git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
-trap - EXIT
-```
-
-Expected native result after minimal adapter correction: PASS. A backend-accepted/native-rejected or backend-rejected/native-accepted row remains a blocking failure.
-
-- [ ] **Step 5: Refactor, verify and commit**
-
-Confirm the corpus contains only synthetic text, no health advice/patient data, no backend production file changed, and no iOS parser accepts a backend-rejected row. Run `git diff --check`, then:
+Run the backend compatibility suite again, both native suites again, complete
+`@mpp/core` tests and typecheck, then `git diff --check`. Confirm exactly the
+three allowlisted test files changed; PBX, package resolution, manifests,
+lockfiles and every production parser remain unchanged. Independently review
+schema validation, exact counts, source preservation and zero unexplained
+divergence. Then:
 
 ```bash
 git add apps/ios/BodyFlow/BodyFlowTests/Fixtures/Prompt14MarkdownCompatibility.json \
   apps/ios/BodyFlow/BodyFlowTests/MarkdownBackendCompatibilityTests.swift \
-  apps/ios/BodyFlow/BodyFlow/Core/Content/BodyFlowMarkdownParser.swift \
   packages/core/src/content-ios-compatibility.test.ts
+test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 3
+git diff --cached --check
 git commit -m "test(ios): lock markdown backend compatibility"
 ```
 
-### Task 7: Validate Cover Capabilities Before Any Transport Boundary
+Expected: one Task 8 commit, corpus `50 = 11 + 36 + 3`, no unexplained
+divergence. Only now may Task 9 begin.
+
+### Task 9: Validate Cover Capabilities Before Any Transport Boundary
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/ContentCoverPath.swift`
@@ -1500,7 +1870,7 @@ Expected RED: missing path/stream types.
 
 Validate the raw string before creating any `URL`. Require the exact fixed prefix and at least one capability byte; every remaining UTF-8 byte must be ASCII letter/digit/underscore/hyphen. Do not expose capability values through `CustomStringConvertible`, telemetry or logs.
 
-Define `ContentCoverTrustedOrigin`, `ContentCoverTransportRequest` and its only resolver together in `ContentCoverStreaming.swift`. Give the request an explicit `fileprivate init(path:url:)`; no memberwise/internal initializer remains available to another application file. Resolve only an already validated path, then compare the resolved URL's HTTPS scheme, case-normalized host and effective port with the trusted origin. Add a structural test/helper assertion that feature/test consumers can obtain requests only through the resolver. Define stream status/MIME/cache/redirect metadata so Task 8 can reject redirects before reading a body. The protocol accepts only the resolved request, so an invalid/external string cannot cross the transport boundary. There is still no live URL or bearer.
+Define `ContentCoverTrustedOrigin`, `ContentCoverTransportRequest` and its only resolver together in `ContentCoverStreaming.swift`. Give the request an explicit `fileprivate init(path:url:)`; no memberwise/internal initializer remains available to another application file. Resolve only an already validated path, then compare the resolved URL's HTTPS scheme, case-normalized host and effective port with the trusted origin. Add a structural test/helper assertion that feature/test consumers can obtain requests only through the resolver. Define stream status/MIME/cache/redirect metadata so Task 10 can reject redirects before reading a body. The protocol accepts only the resolved request, so an invalid/external string cannot cross the transport boundary. There is still no live URL or bearer.
 
 - [ ] **Step 4: Reach GREEN and refactor**
 
@@ -1515,7 +1885,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Content/ContentCoverPath.swift \
 git commit -m "feat(ios): validate private cover capabilities"
 ```
 
-### Task 8: Stream-Bound And Downsample Cover Images With ImageIO
+### Task 10: Stream-Bound And Downsample Cover Images With ImageIO
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/ContentCoverDecoder.swift`
@@ -1576,7 +1946,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Content/ContentCoverDecoder.swift \
 git commit -m "feat(ios): bound private cover decoding"
 ```
 
-### Task 9: Add The Session Cover Cache, Expiry And Cancellation Boundary
+### Task 11: Add The Session Cover Cache, Expiry And Cancellation Boundary
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Content/SessionCoverCache.swift`
@@ -1657,7 +2027,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Content/SessionCoverCache.swift \
 git commit -m "feat(ios): add session-scoped cover loading"
 ```
 
-### Task 10: Extend The Fail-Closed Dependency And Launch-Scenario Boundary
+### Task 12: Extend The Fail-Closed Dependency And Launch-Scenario Boundary
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/Core/Unavailable/UnavailableBodyFlowCapabilities.swift`
@@ -1728,7 +2098,7 @@ let coachExperienceSessions: any CoachExperienceSessionCreating
 let contentCoverSessions: any ContentCoverSessionCreating
 ```
 
-Define the session composition/lifetime protocols exactly as in the stable interface section. `ContentCoverSessionCreating.makeLoader(userID:)` returns only `any ContentCoverLoading`. In all builds, initialize the three factories to unavailable adapters unless the later Task 11 Debug branch supplies deterministic factories. The unavailable cover factory creates a loader with a nil trusted origin; test that resolution throws `operationUnavailable` before a `ContentCoverTransportRequest` exists and a stream spy remains at call count zero. The unavailable stream itself accepts only an already-resolved request and still throws if called directly. Keep `DemoPrompt14Scenario` and every literal Prompt 14 launch flag inside `#if DEBUG`.
+Define the session composition/lifetime protocols exactly as in the stable interface section. `ContentCoverSessionCreating.makeLoader(userID:)` returns only `any ContentCoverLoading`. In all builds, initialize the three factories to unavailable adapters unless the later Task 13 Debug branch supplies deterministic factories. The unavailable cover factory creates a loader with a nil trusted origin; test that resolution throws `operationUnavailable` before a `ContentCoverTransportRequest` exists and a stream spy remains at call count zero. The unavailable stream itself accepts only an already-resolved request and still throws if called directly. Keep `DemoPrompt14Scenario` and every literal Prompt 14 launch flag inside `#if DEBUG`.
 
 Because SwiftUI's system `accessibilityDifferentiateWithoutColor` value is read-only, add a writable BodyFlow-owned `bodyFlowDifferentiateWithoutColor` environment key. `AppRootView` reads the system value and installs `configuration.differentiateWithoutColorOverride ?? systemValue` into that custom key; feature views read only the custom key. The Debug-only flag sets the optional override, while Release ignores the flag and uses the real system value. Increase Contrast is controlled only through `simctl ui`, not a fake application state. Release configuration exposes no `prompt14Scenario`, origin URL or bearer field/value.
 
@@ -1752,7 +2122,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Unavailable/UnavailableBodyFlowCapabilit
 git commit -m "feat(ios): enforce the prompt 14 release boundary"
 ```
 
-### Task 11: Add Complete Deterministic Prompt 14 Read Fixtures
+### Task 13: Add Complete Deterministic Prompt 14 Read Fixtures
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift`
@@ -1834,7 +2204,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift \
 git commit -m "test(ios): add prompt 14 deterministic reads"
 ```
 
-### Task 12: Implement Debug Content Mutations And Exact Idempotent Replay
+### Task 14: Implement Debug Content Mutations And Exact Idempotent Replay
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Repository.swift`
@@ -1901,7 +2271,7 @@ git add apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Repository.swift \
 git commit -m "feat(ios): add idempotent demo content mutations"
 ```
 
-### Task 13: Implement Query, Paging And Cancellation-Safe Content Feed State
+### Task 15: Implement Query, Paging And Cancellation-Safe Content Feed State
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentFeedViewModel.swift`
@@ -1975,7 +2345,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentFeedViewMode
 git commit -m "feat(ios): add published content feed state"
 ```
 
-### Task 14: Record Visible Impressions Once Per Feed Response
+### Task 16: Record Visible Impressions Once Per Feed Response
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentFeedViewModel.swift`
@@ -2035,7 +2405,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentFeedViewMode
 git commit -m "feat(ios): record visible content impressions"
 ```
 
-### Task 15: Add Typed Today Routes And Authenticated Session Ownership
+### Task 17: Add Typed Today Routes And Authenticated Session Ownership
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/App/AppRouter.swift`
@@ -2093,7 +2463,7 @@ Add `LibrarySelection`, `ContentRoute`, `MascotRoute`, `.content` and `.mascot`;
 
 `AppRootView` owns an `@MainActor @Observable Prompt14AuthenticatedShellCoordinator`. Its `.task(id: requestedAuthenticatedUserID)` calls `transition(to:)`. That method increments a transition generation, calls the old owner's `invalidateSynchronously()` before its first `await`, awaits complete old-session teardown, rechecks that the generation/requested user is still current, and only then constructs/publishes the new owner and renderable shell identity. During teardown, root content shows a neutral authenticated-loading state rather than constructing shell B concurrently. Transition to signed-out/onboarding likewise awaits teardown; `AppShellView.onDisappear` is only a defensive synchronous invalidation and is never relied on to await work. `AppShellView` receives the already-created owner, passes its capabilities to child models and remains `.id(userID)`.
 
-Progress remains a separate shell-owned view model; root serialization, the shared closed publication gate and task cancellation/ownership prevent an old result from entering the new shell. Add temporary unavailable `FeatureDetailView` destinations for new route cases only until Tasks 16, 17 and 22 replace them; they must not display fixture success.
+Progress remains a separate shell-owned view model; root serialization, the shared closed publication gate and task cancellation/ownership prevent an old result from entering the new shell. Add temporary unavailable `FeatureDetailView` destinations for new route cases only until Tasks 18, 19 and 24 replace them; they must not display fixture success.
 
 - [ ] **Step 4: Reach GREEN and refactor**
 
@@ -2123,7 +2493,7 @@ git add apps/ios/BodyFlow/BodyFlow/App/AppRouter.swift \
 git commit -m "feat(ios): add prompt 14 typed routes"
 ```
 
-### Task 16: Build The Library, Saved And Category Feed UI
+### Task 18: Build The Library, Saved And Category Feed UI
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Library/LibraryRootView.swift`
@@ -2198,7 +2568,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/LibraryRootView.swift \
 git commit -m "feat(ios): build the educational library"
 ```
 
-### Task 17: Load And Authorize Detail Before One Non-Blocking `opened`
+### Task 19: Load And Authorize Detail Before One Non-Blocking `opened`
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Library/ContentDetailViewModel.swift`
@@ -2277,7 +2647,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/ContentDetailViewModel.swift
 git commit -m "feat(ios): load content before opened"
 ```
 
-### Task 18: Add Save, Unsave, Completion And Version-Conflict Recovery
+### Task 20: Add Save, Unsave, Completion And Version-Conflict Recovery
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/Features/Library/ContentDetailViewModel.swift`
@@ -2320,7 +2690,7 @@ Expected RED: missing save/completion state, semantic focus and conflict recover
 
 - [ ] **Step 3: Implement minimal GREEN mutations**
 
-Build save body without origin/route ID and completed read body with route ID outside JSON. Reconcile only returned `saved`, `completed`, version and response metadata; do not patch feeds or official Today values locally. On conflict, retain failed attempt for diagnostics, remove the exact old cover through the loader already injected in Task 17, record catalog/detail invalidation, end the attempt and disable retry until current detail reloads. Resolve the new detail only from the reloaded detail provider; do not patch its version/state locally.
+Build save body without origin/route ID and completed read body with route ID outside JSON. Reconcile only returned `saved`, `completed`, version and response metadata; do not patch feeds or official Today values locally. On conflict, retain failed attempt for diagnostics, remove the exact old cover through the loader already injected in Task 19, record catalog/detail invalidation, end the attempt and disable retry until current detail reloads. Resolve the new detail only from the reloaded detail provider; do not patch its version/state locally.
 
 Use separate 44-point Save/Unsave and Complete controls outside tappable cards. Publish accessible success/error focus once; prevent nested controls.
 
@@ -2349,7 +2719,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/ContentDetailViewModel.swift
 git commit -m "feat(ios): add content save and completion"
 ```
 
-### Task 19: Integrate Safe Covers Into Cards And Detail
+### Task 21: Integrate Safe Covers Into Cards And Detail
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Library/ContentCoverView.swift`
@@ -2413,7 +2783,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Library/ContentCoverView.swift \
 git commit -m "feat(ios): render bounded private covers"
 ```
 
-### Task 20: Compose Published Recommendations Independently In Today
+### Task 22: Compose Published Recommendations Independently In Today
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Today/TodayRecommendationsViewModel.swift`
@@ -2490,7 +2860,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Today/TodayRecommendationsViewModel.
 git commit -m "feat(ios): add today content recommendations"
 ```
 
-### Task 21: Present Server-Owned Mascot State And Personality
+### Task 23: Present Server-Owned Mascot State And Personality
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotExperienceViewModel.swift`
@@ -2541,7 +2911,7 @@ Expected RED: missing view model/presentation.
 
 - [ ] **Step 3: Implement minimal GREEN read/presentation behavior**
 
-Use cancellation-safe revision loading. Validate `contractVersion == "bodyflow.coach-persona.v1"` and selectable/effective option consistency before publishing. Map only presentation geometry/tone by effective persona; keep state mapping orthogonal. Use server-provided option names/descriptions, never `CoachPersona.summary`, throughout the Prompt 14 experience. Expose a code-keyed option presentation consumed by Task 22's existing picker integration. `changedAt` may format for display but never feeds a threshold.
+Use cancellation-safe revision loading. Validate `contractVersion == "bodyflow.coach-persona.v1"` and selectable/effective option consistency before publishing. Map only presentation geometry/tone by effective persona; keep state mapping orthogonal. Use server-provided option names/descriptions, never `CoachPersona.summary`, throughout the Prompt 14 experience. Expose a code-keyed option presentation consumed by Task 24's existing picker integration. `changedAt` may format for display but never feeds a threshold.
 
 - [ ] **Step 4: Run GREEN and refactor**
 
@@ -2583,7 +2953,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotExperienceViewModel.swi
 git commit -m "feat(ios): present server-owned mascot state"
 ```
 
-### Task 22: Build The BodyFlow Mascot Card, Detail And Temporary Art
+### Task 24: Build The BodyFlow Mascot Card, Detail And Temporary Art
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotCardView.swift`
@@ -2678,7 +3048,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotCardView.swift \
 git commit -m "feat(ios): build the bodyflow mascot experience"
 ```
 
-### Task 23: Render Literal XP, Levels, Medals And Streaks
+### Task 25: Render Literal XP, Levels, Medals And Streaks
 
 **Files:**
 - Modify: `apps/ios/BodyFlow/BodyFlow/Features/Progress/ProgressComponents.swift`
@@ -2762,7 +3132,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/Progress/ProgressComponents.swift \
 git commit -m "feat(ios): present official gamification values"
 ```
 
-### Task 24: Add Debug Previews, Bounded Telemetry And Release Structural Gates
+### Task 26: Add Debug Previews, Bounded Telemetry And Release Structural Gates
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlow/Features/PreviewSupport/Prompt14PreviewSupport.swift`
@@ -2922,7 +3292,7 @@ git add apps/ios/BodyFlow/BodyFlow/Features/PreviewSupport/Prompt14PreviewSuppor
 git commit -m "test(ios): harden prompt 14 release privacy"
 ```
 
-### Task 25: Add UI, Accessibility And Visual-Evidence Journeys
+### Task 27: Add UI, Accessibility And Visual-Evidence Journeys
 
 **Files:**
 - Create: `apps/ios/BodyFlow/BodyFlowUITests/Prompt14UITestSupport.swift`
@@ -2976,7 +3346,7 @@ First define exactly one `--ui-testing-prompt14-*` scenario per launch, preservi
 
 Use stable IDs, `waitForExistence`, explicit absence assertions and 44×44 frame checks. Add these exact attachment names to a closed allowlist:
 
-`Prompt14AccessibilityUITests` defines the exact selectors `testDarkModeEvidence`, `testAccessibilityXXXLEvidence`, `testIncreaseContrastEvidence`, `testDifferentiateWithoutColorEvidence` and `testReduceMotionEvidence`. The first three consume the real simulator settings established before launch; the latter two launch with their reviewed Debug-only overrides. Each selector emits only its corresponding named PNG/TXT pair so Task 26 can export it from a dedicated result bundle without accepting a default-environment duplicate.
+`Prompt14AccessibilityUITests` defines the exact selectors `testDarkModeEvidence`, `testAccessibilityXXXLEvidence`, `testIncreaseContrastEvidence`, `testDifferentiateWithoutColorEvidence` and `testReduceMotionEvidence`. The first three consume the real simulator settings established before launch; the latter two launch with their reviewed Debug-only overrides. Each selector emits only its corresponding named PNG/TXT pair so Task 28 can export it from a dedicated result bundle without accepting a default-environment duplicate.
 
 ```text
 01-today-recommendations.png
@@ -3076,11 +3446,11 @@ trap - EXIT
 git diff --check
 ```
 
-Expected: the non-variant group passes once, each of the five excluded selectors passes exactly once after its real simulator setting or reviewed Debug override is active, the simulator is restored to Light/Large/normal contrast even on failure, and `git diff --check` passes. Task 26 repeats this with fresh result bundles for the final zero-skip evidence gate.
+Expected: the non-variant group passes once, each of the five excluded selectors passes exactly once after its real simulator setting or reviewed Debug override is active, the simulator is restored to Light/Large/normal contrast even on failure, and `git diff --check` passes. Task 28 repeats this with fresh result bundles for the final zero-skip evidence gate.
 
 - [ ] **Step 5: Review and commit**
 
-Review UI hierarchy attachments for duplicate/nested actions, clipped text and missing semantics. Confirm screenshots are attachments only; Task 26 curates evidence. Commit all and only Task 25 changes:
+Review UI hierarchy attachments for duplicate/nested actions, clipped text and missing semantics. Confirm screenshots are attachments only; Task 28 curates evidence. Commit all and only Task 27 changes:
 
 ```bash
 set -euo pipefail
@@ -3119,11 +3489,11 @@ git commit -m "test(ios): cover prompt 14 runtime and accessibility"
 
 Before committing, require all five new XCUI files. Production view paths are an allowed subset only: each staged view must have its recorded RED/GREEN, unchanged permitted views do not appear in the stage, and any path outside the allowlist stops the task.
 
-### Task 26: Run The Complete Local Gate And Capture Evidence
+### Task 28: Run The Complete Local Gate And Capture Evidence
 
 **Files:**
 - Create: `docs/superpowers/evidence/2026-08-02-bodyflow-ios-library-mascot-gamification/README.md`
-- Create: the 21 curated PNGs and 21 matching hierarchy TXT files listed in Task 25 under the same evidence directory.
+- Create: the 21 curated PNGs and 21 matching hierarchy TXT files listed in Task 27 under the same evidence directory.
 
 **Interfaces:**
 - Consumes: complete inherited + Prompt 14 unit/UI suite, exact package lock, Debug/Release builds and approved simulator.
@@ -3423,7 +3793,7 @@ done
 echo "Gate artifacts: $BODYFLOW_GATE_ROOT"
 ```
 
-Expected: the complete core/admin backend suites (including Task 0 and the shared corpus) and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured; three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual backend logical-test count, native logical/execution/UI-test counts and durations; never predict counts. The live content audit is not run, and both that clean-audit prerequisite and a successful Release compile remain insufficient without explicit TestFlight authorization.
+Expected: the complete core/admin backend suites (including Tasks 0, 6 and 8) and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured; three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual backend logical-test count, native logical/execution/UI-test counts and durations; never predict counts. The live content audit is not run, and both that clean-audit prerequisite and a successful Release compile remain insufficient without explicit TestFlight authorization.
 
 - [ ] **Step 3: Perform manual visual and interaction inspection across deterministic scenarios**
 
@@ -3440,7 +3810,7 @@ Inspect:
 - complete absence of ranking/cooperative UI, recurring generated message, reward math or third-party visual references;
 - no clipping, false success, unexpected permission prompt, crash or external navigation from a cover.
 
-For each state family, terminate and relaunch the installed Debug app with exactly one applicable `--ui-testing-prompt14-*` flag from Task 10. Explicitly inspect `stale` and `conflict` rather than inferring them from generic error. Finish by relaunching `--ui-testing-prompt14-loaded` and leave BodyFlow running.
+For each state family, terminate and relaunch the installed Debug app with exactly one applicable `--ui-testing-prompt14-*` flag from Task 12. Explicitly inspect `stale` and `conflict` rather than inferring them from generic error. Finish by relaunching `--ui-testing-prompt14-loaded` and leave BodyFlow running.
 
 - [ ] **Step 4: Inspect accessibility variants and focus behavior**
 
@@ -3514,66 +3884,72 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 
 | Approved specification criterion | Implementation task(s) | Proving test/gate |
 | --- | --- | --- |
-| Exactly five tabs; Library/mascot in Today typed stack | 15, 16, 22 | `AppRouterTests`, Prompt 14 tab UI journey |
-| Content only from real published-content contract shapes | 1, 11 | `PublishedContentContractTests`, `DemoPrompt14RepositoryTests` |
-| Today recommendations are separate `surface=today&limit=3` and do not alter Today | 13, 20 | `TodayRecommendationsTests`, inherited `TodayContractTests` |
-| Library/Saved exact surfaces, category, query bounds, opaque pagination and invalid-cursor first-page recovery | 1, 13, 16 | literal `0/1/50/51` and empty/`1/512/513` contract tests, feed invalid-cursor tests, Library UI tests |
-| Detail route only ID/origin and GET detail authorization | 15, 17 | `AppRouterTests`, `ContentDetailViewModelTests` |
-| No opened on tap; one opened after valid detail using detail version | 17 | controlled-provider `ContentDetailViewModelTests`, detail UI journey |
-| No opened for failed/unavailable/cancelled/invalid detail | 17 | zero-attempt parameterized detail tests |
-| Opened failure non-blocking, no retry/queue/duplicate | 17 | opened-error unit/UI journeys |
+| Exactly five tabs; Library/mascot in Today typed stack | 17, 18, 24 | `AppRouterTests`, Prompt 14 tab UI journey |
+| Content only from real published-content contract shapes | 1, 13 | `PublishedContentContractTests`, `DemoPrompt14RepositoryTests` |
+| Today recommendations are separate `surface=today&limit=3` and do not alter Today | 15, 22 | `TodayRecommendationsTests`, inherited `TodayContractTests` |
+| Library/Saved exact surfaces, category, query bounds, opaque pagination and invalid-cursor first-page recovery | 1, 15, 18 | literal `0/1/50/51` and empty/`1/512/513` contract tests, feed invalid-cursor tests, Library UI tests |
+| Detail route only ID/origin and GET detail authorization | 17, 19 | `AppRouterTests`, `ContentDetailViewModelTests` |
+| No opened on tap; one opened after valid detail using detail version | 19 | controlled-provider `ContentDetailViewModelTests`, detail UI journey |
+| No opened for failed/unavailable/cancelled/invalid detail | 19 | zero-attempt parameterized detail tests |
+| Opened failure non-blocking, no retry/queue/duplicate | 19 | opened-error unit/UI journeys |
 | Exact-pinned `swift-markdown` and resolved transitive lock | 4 | `jq` lock assertion and resolved-file-only resolution |
-| Approved Markdown subset only; all current/future unsupported nodes fail closed; AST renderer; no regex/WebView/raw fallback | 5 | exhaustive source/node/default-reject `BodyFlowMarkdownParserTests`, forbidden-source scan |
+| Approved canonical Markdown subset only; safe literal pipe/directive/Doxygen text loads while current/future unsupported nodes fail closed; no regex/WebView/raw fallback | 5, 7, 8 | reconciled source/node/default-reject `BodyFlowMarkdownParserTests`, exact corpus ASTs and forbidden-source scan |
 | Exact backend GFM-table AST pins; table rejected without regex/rewrite while ordinary and escaped pipes remain valid | 0 | manifest/lock assertions and literal `content.test.ts` RED/GREEN cases |
+| Backend rejects strikethrough, task-list/checkbox and corpus-defined malformed strong before canonicalization while safe text remains valid | 6 | exact extension/lock assertions, `content.test.ts` and admin/mobile boundary tests |
+| Backend measures complete canonical `toMarkdown` including terminal LF; iOS measures received payload after CRLF/CR → LF and never runs the serializer | 6, 7, 8 | three canonicalization-only backend cases, native contract-bound tests and zero-parser-call corpus assertions |
 | CMS author entry/edit reject pipe tables at untrusted action and service boundaries before persistence | 0 | `actions.test.ts` and `admin-service.test.ts` save zero-call assertions |
 | Minimal version-validation read selects only seven allowed fields, never publication history, targeting, assets or identities | 0 | exact query/mapping/null/error tests in `supabase-repository.test.ts` |
 | Legacy source clone, submit, approve and publish fail before mutation; reject remains available; ordinary pipes advance unchanged | 0 | controlled snapshot/mutation-spy matrix in `admin-service.test.ts` |
 | Unfiltered source/approve/publish snapshot absence returns bounded `not_found`; source publication/locale/state or approve/publish lifecycle mismatch returns bounded `lifecycle`; neither calls a mutation, including the `in_review` source-to-reject race | 0 | absent/mismatch and unsafe clone-race zero-call tests in `admin-service.test.ts` |
 | Submit validates the exact expected revision while the locked RPC remains authoritative for draft-revision stale and lifecycle races | 0 | matching/missing snapshot plus preflight/post-preflight RPC error tests in `admin-service.test.ts` |
-| Legacy-invalid detail is revalidated before cover/DTO work and returns no partial body | 0 | `content-service.test.ts` and mobile detail route atomic-error test |
-| Compatibility with real backend normalization/parser | 0, 6 | rejected pipe-table plus accepted ordinary/escaped-pipe rows through shared JSON, `content-ios-compatibility.test.ts` and `MarkdownBackendCompatibilityTests` |
-| Live audit is read-only, PII-free and separately authorized; exact current/future activation winners carry `candidate_class`, historical never-winners do not block, and both incompatible counts must be zero | 0, 26 | Task 0 current/scheduled fixture-review runbook, output allowlist and evidence README blocker declaration; no live run in this plan |
-| Impression/completion/save exact bodies/version/idempotency | 1, 3, 12, 14, 18 | contract, demo replay, feed and detail mutation tests |
-| Version conflict from impression/opened/save/complete invalidates catalog/detail, evicts exact old cover and never replays/reopens/reapplies | 3, 9, 14, 17, 18 | feed/detail invalidation tests with cover spies and one-attempt counters |
-| JSON/Markdown/covers and mutation ledgers are session-memory-only; all old-user results are suppressed | 9, 11, 12, 15, 24 | repository generation tests, cache/session tests, controlled shell replacement tests and Release/privacy gate |
-| Exact relative cover capability; no external bearer boundary | 7, 10 | `ContentCoverPathTests`, `Prompt14ReleaseBoundaryTests` |
-| 10 MiB stream, MIME agreement, abusive dimensions, ImageIO downsampling | 8 | `ContentCoverDecoderTests` |
-| 32 MiB/64 deterministic cache, expiry and session clear | 9 | `SessionCoverCacheTests`, `ContentCoverLoaderTests` |
-| Cover failure uses neutral placeholder and bounded refresh | 19 | `ContentCoverViewModelTests`, cover UI journey |
-| Mascot/persona and picker names/descriptions only from coach snapshot options | 2, 21, 22 | coach contract, mascot view-model and literal server-option picker tests |
-| All five real states + unknown; four requested states dedicated | 2, 21, 22 | `CoachExperienceContractTests`, `MascotPresentationTests`, mascot UI journeys |
-| Focus/Impulse/Zen visual-only; Balanced neutral | 21, 22 | presentation and accessibility-model tests |
-| No local transitions, recurring LLM/catalog or invented message endpoint | 21, 24, 26 | dependency/source scans and mascot tests |
-| XP/level/streak/badges literal from nullable `/progress` | 2, 23 | contract, view-model and presentation tests |
-| Null is empty; minimum non-null row is loaded | 2, 23 | literal null/minimum progress tests |
-| No level formula, badge metadata or XP award | 23, 26 | presentation tests and forbidden-type/source scan |
-| Duplicate medals use positional identity | 23 | `ProgressPresentationTests` and progress UI journey |
-| Zero streak supportive Today return without fake restoration | 23 | streak-zero unit/UI tests |
-| Daily missions unavailable only | 23 | progress presentation/UI test |
-| Ranking/cooperative missions absent | 23, 26 | UI absence assertions and forbidden-type scan |
-| Loading/empty/offline/stale/error/conflict/retry/unavailable plus content-not-found/subscription-required deterministic | 10, 11, 13, 16, 17, 18, 20, 21, 23, 25 | feature suites plus explicit 404/subscription/stale/conflict launch/UI journeys |
-| Injected time for attempts/cover expiry and immutable retry timestamp | 3, 9, 14, 18 | fixed-time cache/feed/detail tests |
-| Accessibility, logical focus, Dynamic Type, Dark Mode, 44 points, Increase Contrast, Differentiate Without Color and Reduce Motion | 10, 16, 17, 18, 22, 23, 25, 26 | focus reducers, accessibility unit/UI journeys, real simulator contrast and manual gate |
-| Temporary art/fixtures/fake streams first-party Debug-only | 10, 11, 22, 24 | Release boundary tests/build/binary scan |
-| Release unavailable with nil origin, no request/stream call, URL/bearer/outbound/fixture success | 10, 24, 26 | unavailable-factory/no-stream spy tests, scoped source gate, Release build and binary scan |
-| Auth transport/staging/session bridge remain mandatory separate gate | boundary section, 24, 26 | evidence README and explicit TestFlight prohibition |
-| Full backend/native tests, Debug/Release builds, simulator and evidence | 0, 25, 26 | complete core/admin suites, xcresult summary, three builds and 21 curated PNG/hierarchy pairs |
-| No live service/audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp | all; especially 0, 10, 24, 26 | diff/source audit and evidence README |
+| Legacy-invalid detail is revalidated before cover/DTO work; valid detail returns only canonical `normalized`; storage is unchanged | 0, 6 | `content-service.test.ts` and mobile detail route canonical/atomic-error tests |
+| Shared-corpus schema allows only 11 `parse_normalized`, 36 `reject_source` and the three named canonicalization-only rows | 8 | decoder combination tests, exact counts and zero native calls for the three editorial-only cases |
+| Compatibility with real backend normalization/parser has no unexplained divergence | 0, 6, 7, 8 | shared JSON, `content-ios-compatibility.test.ts` and `MarkdownBackendCompatibilityTests` |
+| Live audit is read-only, PII-free and separately authorized; exact current/future activation winners carry `candidate_class`, historical never-winners do not block, and both incompatible counts must be zero | 0, 28 | Task 0 current/scheduled fixture-review runbook, output allowlist and evidence README blocker declaration; no live run in this plan |
+| Impression/completion/save exact bodies/version/idempotency | 1, 3, 14, 16, 20 | contract, demo replay, feed and detail mutation tests |
+| Version conflict from impression/opened/save/complete invalidates catalog/detail, evicts exact old cover and never replays/reopens/reapplies | 3, 11, 16, 19, 20 | feed/detail invalidation tests with cover spies and one-attempt counters |
+| JSON/Markdown/covers and mutation ledgers are session-memory-only; all old-user results are suppressed | 11, 13, 14, 17, 26 | repository generation tests, cache/session tests, controlled shell replacement tests and Release/privacy gate |
+| Exact relative cover capability; no external bearer boundary | 9, 12 | `ContentCoverPathTests`, `Prompt14ReleaseBoundaryTests` |
+| 10 MiB stream, MIME agreement, abusive dimensions, ImageIO downsampling | 10 | `ContentCoverDecoderTests` |
+| 32 MiB/64 deterministic cache, expiry and session clear | 11 | `SessionCoverCacheTests`, `ContentCoverLoaderTests` |
+| Cover failure uses neutral placeholder and bounded refresh | 21 | `ContentCoverViewModelTests`, cover UI journey |
+| Mascot/persona and picker names/descriptions only from coach snapshot options | 2, 23, 24 | coach contract, mascot view-model and literal server-option picker tests |
+| All five real states + unknown; four requested states dedicated | 2, 23, 24 | `CoachExperienceContractTests`, `MascotPresentationTests`, mascot UI journeys |
+| Focus/Impulse/Zen visual-only; Balanced neutral | 23, 24 | presentation and accessibility-model tests |
+| No local transitions, recurring LLM/catalog or invented message endpoint | 23, 26, 28 | dependency/source scans and mascot tests |
+| XP/level/streak/badges literal from nullable `/progress` | 2, 25 | contract, view-model and presentation tests |
+| Null is empty; minimum non-null row is loaded | 2, 25 | literal null/minimum progress tests |
+| No level formula, badge metadata or XP award | 25, 28 | presentation tests and forbidden-type/source scan |
+| Duplicate medals use positional identity | 25 | `ProgressPresentationTests` and progress UI journey |
+| Zero streak supportive Today return without fake restoration | 25 | streak-zero unit/UI tests |
+| Daily missions unavailable only | 25 | progress presentation/UI test |
+| Ranking/cooperative missions absent | 25, 28 | UI absence assertions and forbidden-type scan |
+| Loading/empty/offline/stale/error/conflict/retry/unavailable plus content-not-found/subscription-required deterministic | 12, 13, 15, 18, 19, 20, 22, 23, 25, 27 | feature suites plus explicit 404/subscription/stale/conflict launch/UI journeys |
+| Injected time for attempts/cover expiry and immutable retry timestamp | 3, 11, 16, 20 | fixed-time cache/feed/detail tests |
+| Accessibility, logical focus, Dynamic Type, Dark Mode, 44 points, Increase Contrast, Differentiate Without Color and Reduce Motion | 12, 18, 19, 20, 24, 25, 27, 28 | focus reducers, accessibility unit/UI journeys, real simulator contrast and manual gate |
+| Temporary art/fixtures/fake streams first-party Debug-only | 12, 13, 24, 26 | Release boundary tests/build/binary scan |
+| Release unavailable with nil origin, no request/stream call, URL/bearer/outbound/fixture success | 12, 26, 28 | unavailable-factory/no-stream spy tests, scoped source gate, Release build and binary scan |
+| Auth transport/staging/session bridge remain mandatory separate gate | boundary section, 26, 28 | evidence README and explicit TestFlight prohibition |
+| Full backend/native tests, Debug/Release builds, simulator and evidence | 0, 6, 7, 8, 27, 28 | complete core/admin suites, xcresult summary, three builds and 21 curated PNG/hierarchy pairs |
+| No live service/audit, secret, migration, deploy, merge, TestFlight, production or WhatsApp | all; especially 0, 12, 26, 28 | diff/source audit and evidence README |
 
 ## Plan Completion Checklist
 
-- [ ] Task 0 runs first, observes every backend/CMS/workflow/BFF RED, reaches GREEN and commits the AST rejection plus legacy transition/read guards before Task 1 begins.
-- [ ] Task 1 begins only after Task 0 is committed and explicit implementation authorization exists; the live audit is not a Task 1 prerequisite but remains a TestFlight prerequisite.
-- [ ] Backend pins remain exact at `mdast-util-from-markdown` 2.0.3, `mdast-util-to-markdown` 2.1.2, `micromark-extension-gfm-table` 2.1.1 and `mdast-util-gfm-table` 2.0.0.
-- [ ] Pipe table, ordinary pipe and escaped-pipe behavior is proven at the backend and in the Task 6 shared corpus; no regex, escaping, rewriting or iOS weakening is introduced.
+- [ ] Committed Tasks 0 through 5 remain unchanged; this reconciliation starts with a new Task 6 commit and never amends earlier checkpoints.
+- [ ] Task 6 backend hardening commits before Task 7 native alignment; Task 7 commits before Task 8 resumes the corpus; Task 9 remains blocked until Task 8 is GREEN and committed.
+- [ ] Backend pins remain exact at `mdast-util-from-markdown` 2.0.3, `mdast-util-to-markdown` 2.1.2, `micromark-extension-gfm-table` 2.1.1, `mdast-util-gfm-table` 2.0.0, `micromark-extension-gfm-strikethrough` 2.1.0, `mdast-util-gfm-strikethrough` 2.0.0, `micromark-extension-gfm-task-list-item` 2.1.0 and `mdast-util-gfm-task-list-item` 2.0.0.
+- [ ] Pipe table, ordinary pipe, escaped-pipe and safe literal directive/Doxygen behavior is proven at the backend and in the Task 8 shared corpus; no regex, silent repair, serializer port or permissive iOS fallback is introduced.
 - [ ] The Task 0 commit changes exactly the twelve allowlisted files, including `admin-service.ts`, `supabase-repository.ts` and its focused test; no migration or audit executable is added.
 - [ ] The validation snapshot reads only version ID, publication ID, locale, state, body, updated timestamp and publish timestamp; publication detail/history, targets, assets and identities are never loaded.
-- [ ] CMS action/service writes, source clone, submit, approve, publish and mobile detail defense remain fail-closed, while reject remains available; an invalid legacy body produces no persistence, clone, approval, publication, body, cover or partial response.
+- [ ] CMS action/service writes, source clone, submit, approve, publish and mobile detail defense reject table, strikethrough, task-list/checkbox and corpus-defined malformed strong, while reject remains available and safe text remains valid.
+- [ ] Editorial source is never silently rewritten; mobile detail returns exactly the revalidated canonical `normalized` body, and invalid legacy content produces no body, cover or partial response.
 - [ ] Unfiltered source/approve/publish absence, source publication/locale/state mismatch and approve/publish lifecycle mismatch stop locally with bounded existing errors and zero mutation; an incompatible `in_review` source cannot race its allowed rejection into a successful clone.
 - [ ] Submit validates the snapshot corresponding to `expectedUpdatedAt`, passes the original precondition unchanged and leaves conflict decisions to the locked RPC: draft-revision races are `stale`, while lifecycle races retain their lifecycle error.
 - [ ] Every production behavior has an observed focused RED before GREEN code.
 - [ ] Every task returns GREEN, passes `git diff --check`, receives adherence/quality review and one Conventional Commit.
 - [ ] Package resolution remains exact and reproducible from `Package.resolved` with updates disabled.
+- [ ] iOS applies its `100...50_000` safety limit after CRLF/CR → LF only, never runs `toMarkdown`, and its source guards do not globally ban `|`, `@` or backslash.
+- [ ] Task 8 validates all schema combinations and exact counts `50 = 11 parse_normalized + 36 reject_source + 3 backend_canonicalization_only`; the three named editorial-only rows cause zero native-parser calls and no unexplained divergence remains.
 - [ ] Content, coach and progress models match only existing `/api/mobile/v1` contracts.
 - [ ] No speculative endpoint, DTO, provider, score, formula, transition or history is introduced.
 - [ ] Detail loads/authorizes/validates/parses before its one opened attempt.
@@ -3581,7 +3957,7 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 - [ ] User replacement/sign-out ends content and cover sessions, clears every Prompt 14 ledger/cache/value and suppresses all controlled late list/detail/mutation/coach/progress results.
 - [ ] Debug/previews/tests alone construct fixtures, fake streams and temporary mascot art.
 - [ ] Release remains `operationUnavailable` with no Prompt 14 URL, bearer, request or fixture success.
-- [ ] No live Markdown audit is executed by these 27 tasks; the future read-only audit queries no PII and evaluates the real winner at `audit_timestamp` plus every future activation with `version DESC, publish_at DESC`.
+- [ ] No live Markdown audit is executed by these 29 tasks; the future read-only audit queries no PII and evaluates the real winner at `audit_timestamp` plus every future activation with `version DESC, publish_at DESC`.
 - [ ] The audit excludes only versions proven never to win, emits only separated counts plus the approved identifiers/state/`candidate_class` allowlist, and must report zero incompatible `current` and `scheduled` candidates before TestFlight.
 - [ ] Any incompatible current or scheduled candidate is remediated only by a new compatible version through the existing editorial workflow; no historical version is mutated or cloned as an incompatible source.
 - [ ] Daily missions remain unavailable; ranking/cooperative surfaces remain absent.
@@ -3591,6 +3967,6 @@ Expected: clean worktree. Stop here. Do not push, create a PR, merge, deploy, mi
 - [ ] Worktree is clean after the final local evidence commit.
 - [ ] No push, PR, merge, migration, deploy, TestFlight, production or WhatsApp action occurs without later authorization.
 
-Task 0 remains paused after this documentary revision is committed. The
-Markdown contract decision is approved; await later explicit implementation
-authorization before executing Task 0 or any subsequent task.
+Tasks 0 through 5 remain committed. After this documentary revision, the
+specification status is `awaiting contract reconciliation approval`; await
+later explicit authorization before executing Task 6 or any subsequent task.

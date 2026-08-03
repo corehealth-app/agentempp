@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-02
 
-**Status:** approved
+**Status:** awaiting contract reconciliation approval
 
 **Stacked branch:** `codex/bodyflow-ios-library-mascot-gamification-v1`
 
@@ -435,7 +435,7 @@ does not truncate or repair malformed server values:
 | `tags` | at most 20 unique lowercase slugs, each 1...40 characters |
 | `reading_time_minutes` | integer in 1...500 |
 | `version` | integer in 1...2,147,483,647 |
-| `body_markdown` | 100...50,000 characters after approved normalization |
+| `body_markdown` | canonical backend Markdown in 100...50,000 UTF-16 code units, including the terminal LF emitted by `toMarkdown`; iOS applies its transport-safety bound after CRLF/CR → LF only |
 
 ### Published Content Detail
 
@@ -726,11 +726,35 @@ Detail loads by publication ID. It renders:
 - category and reading time;
 - optional cover;
 - saved/completed state;
-- normalized published Markdown;
+- backend-accepted canonical published Markdown;
 - Save/Unsave action;
 - an explicit “Marcar como concluído” action when not completed.
 
 The article title is the screen heading. The Markdown body never supplies an H1.
+
+### Editorial Source, Canonical Delivery And Native Boundaries
+
+The three Markdown boundaries are deliberately different:
+
+1. The CMS and editorial workflow submit source Markdown to the backend.
+   `validateContentMarkdown` parses that source, applies the portable semantic
+   rejections and the backend AST allowlist, serializes an accepted tree with
+   `toMarkdown`, and validates the complete canonical serialization.
+2. Editorial and historical rows are not silently rewritten. On a mobile
+   detail read, the backend revalidates the stored source and returns only the
+   resulting canonical `normalized` value as `body_markdown`; it never returns
+   an uncanonicalized editorial source to iOS.
+3. iOS consumes that canonical payload. It normalizes CRLF and isolated CR to
+   LF only, applies its local UTF-16 transport-safety bound and parses the
+   result. It does not trim, escape, append a terminal LF, reproduce or port
+   the backend's `toMarkdown` serializer.
+
+The backend's publication bound is `100...50,000` UTF-16 code units over the
+complete `toMarkdown` result, including its terminal LF. The iOS safety bound
+is independently `100...50,000` UTF-16 code units over the received payload
+after CRLF/CR → LF. A source rejected only because backend canonicalization
+changes its size does not become a portable semantic rejection and is never
+required to be passed to the native parser.
 
 ### Native Markdown Policy
 
@@ -750,11 +774,13 @@ primary sources are:
 - `https://github.com/swiftlang/swift-markdown/blob/0.8.0/Package.swift`;
 - the public `Document`, `MarkupVisitor` and `ParseOptions` APIs at that tag.
 
-The parser first enforces the existing 100...50,000-character body bound, then
-creates `Document(parsing: body, options: [.disableSmartOpts])`. Smart
+The parser first converts CRLF and isolated CR to LF, enforces the inclusive
+`100...50,000` bound with `normalizedPayload.utf16.count`, then creates
+`Document(parsing: normalizedPayload, options: [.disableSmartOpts])`. Smart
 punctuation is disabled so iOS cannot rewrite quotes or dashes that the backend
 normalized differently. Block directives, symbol links and Doxygen parsing are
-not enabled.
+not enabled. The parser performs no editorial canonicalization or second
+post-serialization size check.
 
 An exhaustive visitor converts the complete library tree into an immutable
 BodyFlow-owned AST before the detail can enter loaded state. Rendering consumes
@@ -771,19 +797,47 @@ allowlist is:
 `SoftBreak` becomes the ordinary textual separation represented by the
 backend's multiline text node. The visitor has no permissive/default rendering
 branch: every unrecognized current or future node returns
-`unsupportedMarkdown`. Explicitly rejected nodes include HTML block/inline,
-H1/H4-H6, code block/inline, image, hard `LineBreak`, thematic break, table,
-strikethrough, task-list/checkbox, symbol link, directive, inline attributes,
-custom nodes and Doxygen nodes.
+`unsupportedMarkdown`. Actual HTML block/inline, H1/H4-H6, code block/inline,
+image, hard `LineBreak`, thematic break, table, strikethrough,
+task-list/checkbox, symbol-link, `Directive`, inline-attribute, custom and
+Doxygen nodes are explicitly rejected.
+
+Source spelling alone does not create one of those nodes. Canonical payloads
+are accepted when the configured parser produces only allowlisted `Text` and
+the complete source is structurally owned:
+
+| Canonical/source case | Contract result |
+| --- | --- |
+| ordinary pipe prose | accepted safe text |
+| escaped editorial pipe whose canonical form is a literal pipe | accepted safe text |
+| block-directive spelling parsed only as `Text` | accepted safe text |
+| inline-directive spelling parsed only as `Text` | accepted safe text |
+| Doxygen command spelling parsed only as `Text` | accepted safe text |
+| Doxygen source spelling parsed only as `Text` | accepted safe text |
+| actual `Directive` or Doxygen node | rejected |
+| strikethrough | portable semantic rejection |
+| task-list/checkbox in editorial source | portable semantic rejection |
+| corpus-defined malformed strong source | portable semantic rejection |
+| table or any unknown/future node | rejected |
 
 `swift-markdown` recognizes GFM tables, strikethrough and task lists
 internally. After mandatory Task 0, the backend also recognizes the GFM
 `table` node through its narrowly configured table extension solely to reject
-it; the backend does not enable strikethrough or task-list extensions. The
-native visitor independently rejects all three AST forms. The package also
-resolves a reference-style link into `Link` and omits its definition node. To
-avoid accepting syntax the backend rejects, `BodyFlowMarkdownParser` adds two
-bounded, non-regex checks based on the parser's source ranges:
+it. Before the compatibility corpus can complete, the backend additionally
+rejects strikethrough, editorial task-list/checkbox source and the exact
+malformed-strong form represented in the corpus; it must not canonicalize any
+of those into publishable text. It uses exact
+`micromark-extension-gfm-strikethrough` `2.1.0`,
+`mdast-util-gfm-strikethrough` `2.0.0`,
+`micromark-extension-gfm-task-list-item` `2.1.0` and
+`mdast-util-gfm-task-list-item` `2.0.0` pins only to expose the first two AST
+forms for rejection; no broad GFM bundle or rendering extension is added. The
+malformed-strong guard uses exact source ranges and a bounded deterministic
+scanner. The native visitor independently rejects the corresponding AST forms.
+The package also resolves a reference-style link into
+`Link` and omits its definition node. To avoid accepting syntax the backend
+rejects, `BodyFlowMarkdownParser` adds two bounded, non-regex checks based on
+the parser's source ranges:
 
 1. `InlineLinkSourceGuard` uses a deterministic Unicode-scalar state machine to
    accept the inline/autolink source forms represented by an approved `Link`
@@ -795,20 +849,53 @@ bounded, non-regex checks based on the parser's source ranges:
    by the package AST at any nesting level.
 
 These guards do not parse or render Markdown and cannot make a rejected AST
-node acceptable. Regex, `AttributedString(markdown:)`, `WKWebView`, HTML,
-remote scripts and permissive/raw fallback rendering are prohibited.
+node acceptable. They must not globally ban `|`, `@` or backslash. A backend-
+emitted escape may be accepted only when the resulting AST is entirely in the
+allowlist and exact source-range coverage accounts for every byte. Unowned
+spans, removed reference definitions, unknown structural delimiters and
+semantically prohibited structures still fail closed; no raw-text or default
+fallback may turn an unknown node into `Text`. Regex,
+`AttributedString(markdown:)`, `WKWebView`, HTML, remote scripts and
+permissive/raw fallback rendering are prohibited.
 
 Compatibility is locked with a golden corpus sourced from the real
 `validateContentMarkdown` implementation and tests in
-`packages/core/src/content.ts` and `packages/core/src/content.test.ts`:
+`packages/core/src/content.ts` and `packages/core/src/content.test.ts`. Every
+fixture has an explicit `native_expectation` and only these combinations are
+valid:
 
-- every backend-accepted normalized document must produce the exact expected
-  BodyFlow AST;
-- every backend-rejected fixture must also fail on iOS;
-- coverage includes CRLF normalization, soft breaks, depth 8/9, ordered-list
-  start, titled/reference links, tables, strikethrough and task lists;
-- any new parser/backend divergence blocks the package or backend-parser
-  upgrade.
+| `accepted` | `native_expectation` | Required accepted fields | Backend assertion | iOS assertion |
+| --- | --- | --- | --- | --- |
+| `true` | `parse_normalized` | `normalized`, `document` | accepts source and matches canonical Markdown/document | parses `normalized` and matches the exact BodyFlow AST |
+| `false` | `reject_source` | no accepted canonical document | semantically rejects source | parses source and requires `unsupportedMarkdown` |
+| `false` | `backend_canonicalization_only` | no accepted canonical document | rejects only after canonicalization/size validation | native parser is not invoked |
+
+`accepted=true` requires `parse_normalized`, `normalized` and `document`.
+`accepted=false` permits only `reject_source` or
+`backend_canonicalization_only`. An unknown expectation or any other field
+combination is invalid. `backend_canonicalization_only` is restricted by name
+to exactly:
+
+- `normalized-body-under-100-characters`;
+- `normalized-body-over-50000-characters`;
+- `normalized-crlf-over-50000-utf16-units`.
+
+The reconciled corpus contains exactly 50 unique fixtures: 11
+`parse_normalized`, 36 `reject_source` and 3
+`backend_canonicalization_only`, with no unexplained divergence. Coverage
+includes CRLF normalization, soft breaks, depth 8/9, ordered-list start,
+titled/reference links, tables, strikethrough and task lists. In the CRLF
+boundary fixture, iOS legitimately accepts the 50,000-unit payload after line-
+ending normalization while the backend legitimately rejects the editorial
+source after `toMarkdown` adds its terminal LF and reaches 50,001 units. Any
+divergence outside the explicit expectation matrix blocks the package or
+backend-parser upgrade.
+
+The reconciliation sequence is mandatory: Task 6 first commits backend
+hardening for the three portable semantic rejections and canonical mobile-
+detail delivery; Task 7 separately aligns native source guards and parser
+tests; only after both commits may Task 8 resume the shared corpus. Task 9
+remains blocked until Task 8 is GREEN and committed.
 
 #### Approved Backend Pipe-Table Contract
 
@@ -834,8 +921,26 @@ only after the AST has passed the complete allowlist.
 The pipe character alone is not table syntax. An ordinary paragraph such as
 `Proteína | contexto` remains valid, and an escaped pipe such as
 `Proteína \| contexto` remains valid. Tests must exercise the real AST result
-for both cases so a later implementation cannot replace AST classification
-with a broad pipe search.
+for both cases and prove the canonical literal pipe is accepted by iOS, so a
+later implementation cannot replace AST classification with a broad pipe
+search or treat serializer removal of an escape as unsafe.
+
+#### Approved Portable Semantic Rejections
+
+Before producing publishable canonical Markdown, `validateContentMarkdown`
+also rejects strikethrough and task-list/checkbox through their narrowly
+enabled, exact-pinned AST extensions, plus the malformed-strong source
+identified by the shared corpus through exact source ranges and bounded
+deterministic inspection. The checks are structural and fail closed: they
+never use regex, delimiter-wide blacklists, silent escaping, repair or
+rewriting. Valid strong markup and safe literal text containing pipes, `@` or
+backslash remain eligible when their AST belongs to the backend allowlist.
+
+Because every editorial boundary uses the same validator, these portable
+semantic rejections protect `saveDraft`, source-version clone, `submit`,
+`review(approve)`, `publish` and mobile detail. `review(reject)` remains
+available for withdrawal of incompatible content, and the existing stale,
+lifecycle and database-concurrency guarantees remain unchanged.
 
 The same shared validator continues to apply at both author-input CMS write
 boundaries:
@@ -920,20 +1025,24 @@ RPC's not-found/lifecycle result, and a race after a valid preflight is rejected
 by that same RPC. After any eligible snapshot has passed validation, the
 database remains the final authority for the mutation; its immutability rules
 keep source, `in_review` and `approved` bodies stable between preflight and RPC.
-The normalized validator result is discarded: no stored body is rewritten,
-and no invalid body is cloned, persisted, approved or published. No route,
-migration or alternate parser is added. Preview inherits the same validator
-and cannot render a rejected table.
+At editorial transition guards, the normalized validator result is discarded:
+no stored body or historical version is rewritten, and no invalid body is
+cloned, persisted, approved or published. This does not apply to the mobile
+read DTO, whose contract is canonical delivery. No route, migration or
+alternate parser is added. Preview inherits the same validator and cannot
+render rejected Markdown.
 
 As defense in depth, `getContent` in
 `apps/admin/src/lib/mobile-api/content-service.ts` validates the repository's
 stored `bodyMarkdown` again before constructing any detail DTO or requesting a
-cover capability. A valid stored body is returned unchanged; this read guard
-does not normalize, escape or rewrite it. A legacy-invalid body produces only
-the existing opaque mobile internal error. No `body_markdown`, source excerpt,
-partially constructed detail or cover capability may be returned or logged.
-The iOS `BodyFlowMarkdownParser` remains independently fail-closed and still
-rejects every `Table` node.
+cover capability. A valid body contributes exactly the validator's canonical
+`normalized` result to the DTO's `body_markdown`; the stored row is not
+rewritten and its editorial source is never returned to iOS. A legacy-invalid
+body produces only the existing opaque mobile internal error. No
+`body_markdown`, source excerpt, canonical fragment, partially constructed
+detail or cover capability may be returned or logged. The iOS
+`BodyFlowMarkdownParser` remains independently fail-closed and still rejects
+every `Table` node.
 
 #### Planned Read-Only Published-Content Audit
 
@@ -966,16 +1075,19 @@ misses a targeted version. It must not query or print users, subscriptions,
 profiles, preferences, health data or any other PII.
 
 The audit may read each selected `body_markdown` only in memory and must pass it
-through the same `validateContentMarkdown` AST rule. It must never print,
-persist or include the body, title, excerpt, tags or a content fragment in an
-error. Its complete output is limited to aggregate compatible/incompatible
-counts separated by candidate class and, for affected rows, `version_id`,
-`publication_id`, numeric `version`, `locale`, `state` and `candidate_class`
-whose value is only `current` or `scheduled`. `publish_at`, activation times
-and Markdown remain internal and are never emitted. It has no apply mode and
-performs no insert, update, delete, RPC mutation, migration or editorial
-transition. This specification plans that audit; it does not authorize or
-execute a live read.
+through the same `validateContentMarkdown` rule. A candidate is compatible only
+when its editorial source passes every portable semantic and AST rejection,
+`toMarkdown` produces the canonical representation, and that complete
+canonical value—including its terminal LF—contains `100...50,000` UTF-16 code
+units. The audit must never print, persist or include the source, canonical
+body, title, excerpt, tags or a content fragment in an error. Its complete
+output is limited to aggregate compatible/incompatible counts separated by
+candidate class and, for affected rows, `version_id`, `publication_id`, numeric
+`version`, `locale`, `state` and `candidate_class` whose value is only
+`current` or `scheduled`. `publish_at`, activation times and Markdown remain
+internal and are never emitted. It has no apply mode and performs no insert,
+update, delete, RPC mutation, migration or editorial transition. This
+specification plans that audit; it does not authorize or execute a live read.
 
 If the later authorized audit finds an affected current or scheduled
 candidate, historical rows remain immutable. Editors must create a new version
@@ -985,11 +1097,12 @@ rewriting and mutation of a historical version are prohibited. TestFlight
 remains blocked until a fresh audit reports zero incompatible candidates in
 both `current` and `scheduled` classes.
 
-Parsing, source-guard or conversion failure publishes one recoverable content
-rendering error, no partial body and no `opened` event. Raw Markdown is never
-displayed as trusted health content. Approved links use the system open-URL
-path only after the HTTPS check; the app does not rewrite, track or decorate a
-link as a BodyFlow endorsement.
+Parsing, source-guard or conversion failure for the canonical payload received
+by iOS publishes one recoverable content-rendering error, no partial body and
+no `opened` event. A `backend_canonicalization_only` source never reaches that
+native parser. Raw Markdown is never displayed as trusted health content.
+Approved links use the system open-URL path only after the HTTPS check; the app
+does not rewrite, track or decorate a link as a BodyFlow endorsement.
 
 ### Read Events
 
@@ -1526,7 +1639,11 @@ Test literal decoding/encoding for:
 - backend dependency manifests and the lockfile contain exact compatible pins:
   `mdast-util-from-markdown` `2.0.3`,
   `micromark-extension-gfm-table` `2.1.1` and
-  `mdast-util-gfm-table` `2.0.0`;
+  `mdast-util-gfm-table` `2.0.0`, plus rejection-only
+  `micromark-extension-gfm-strikethrough` `2.1.0`,
+  `mdast-util-gfm-strikethrough` `2.0.0`,
+  `micromark-extension-gfm-task-list-item` `2.1.0` and
+  `mdast-util-gfm-task-list-item` `2.0.0`;
 - the real backend AST rejects a valid GFM pipe table with a clear table error,
   while ordinary paragraph text containing `|` and escaped `\|` remain valid;
 - the CMS untrusted action and service write boundaries both reject the same
@@ -1546,27 +1663,46 @@ Test literal decoding/encoding for:
   preflight still returns `stale` from the timestamp-authoritative RPC and
   persists no transition, while a concurrent lifecycle change retains its
   lifecycle error;
+- backend source hardening rejects strikethrough, editorial task-list/checkbox
+  and the corpus-defined malformed strong before save, clone, submit, approval,
+  publish or mobile serving, while valid strong, ordinary/escaped pipes and
+  block/inline directive plus Doxygen spellings that parse only as `Text`
+  remain valid;
+- backend canonical-size tests prove that trailing spaces can serialize below
+  100, a 50,000-unit paragraph can serialize to 50,001 with terminal LF, and a
+  CRLF/CR source can normalize to 50,000 before serializing to 50,001; all three
+  are editorial canonicalization failures rather than portable native rejects;
 - the mobile detail service revalidates a legacy stored body before cover/DTO
-  construction, returns only an opaque error for an invalid table and exposes
-  no `body_markdown`, fragment or partial detail;
+  construction, returns exactly the validator's canonical `normalized` body
+  for valid content, returns only an opaque error for invalid content and
+  exposes no source body, fragment or partial detail;
 - exact SwiftPM resolution is `swift-markdown` 0.8.0 at
   `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, with no floating requirement;
 - parsing uses `.disableSmartOpts` and enables no block-directive, symbol-link
   or Doxygen option;
 - paragraphs, H2/H3, strong, emphasis, ordered/unordered lists, quotes and
   HTTPS links plus soft breaks produce the exact BodyFlow AST;
+- ordinary pipe, canonical escaped-pipe text, `@` and backslash in approved
+  canonical text, and block/inline directive or Doxygen spellings parsed only
+  as `Text` produce the exact BodyFlow AST;
 - nested content respects depth eight;
 - HTML, H1, inline image, code, embed, thematic break, link title,
   hard line break, reference-style link, non-HTTPS URL and malformed
   structures fail closed;
-- table, strikethrough, task list, symbol link, directive, attributes, custom
-  and unknown/future AST nodes fail closed;
+- table, strikethrough, task-list/checkbox, symbol-link, actual Directive or
+  Doxygen, attributes, custom and unknown/future AST nodes fail closed;
 - source-range guards reject a reference-form link and its removed definition
-  without regex or permissive source parsing;
-- the backend golden corpus produces identical accepted BodyFlow ASTs and
-  rejects the complete backend-invalid corpus; the corpus includes both a GFM
-  pipe table and ordinary/escaped pipe paragraphs, and any divergence fails
-  the gate;
+  plus every unowned span without regex or permissive source parsing, while no
+  broad `|`, `@` or backslash ban rejects safe canonical text;
+- iOS applies its safety limit only after CRLF/CR → LF and never invokes or
+  reproduces `toMarkdown`;
+- the shared-corpus decoder rejects every invalid `accepted`/
+  `native_expectation`/field combination and requires exactly 50 unique rows:
+  11 `parse_normalized`, 36 `reject_source` and 3 allowlisted
+  `backend_canonicalization_only`;
+- all 11 `parse_normalized` rows produce exact BodyFlow ASTs, all 36
+  `reject_source` rows fail on both authorities, the three canonicalization-only
+  rows make zero native-parser calls, and no unexplained divergence remains;
 - headings/lists/links expose native accessibility semantics;
 - parser/adapter failure exposes no partial/raw body and emits no `opened`;
 - no regex parser, `AttributedString(markdown:)`, WebView or executable content
@@ -1783,8 +1919,18 @@ The later implementation is acceptable only when all of the following are true:
   exhaustive fail-closed BodyFlow AST adapter and source-range guards;
 - the backend detects GFM pipe tables through exact-pinned AST extensions and
   rejects the `table` node clearly, without regex, escaping or rewriting;
-- ordinary text containing `|` and escaped `\|` remains backend-valid, while
-  CMS action/service writes reject a real pipe table before persistence;
+- editorial source, backend-canonical mobile Markdown and native payload are
+  distinct boundaries: backend limits the complete `toMarkdown` result,
+  including terminal LF, while iOS limits only the received payload after
+  CRLF/CR → LF and never implements `toMarkdown`;
+- ordinary text containing `|`, escaped `\|` and its canonical literal form
+  remain valid, while CMS action/service writes reject a real pipe table before
+  persistence;
+- block/inline directive and Doxygen spellings are accepted when configured
+  parsers produce only allowlisted `Text`; actual Directive and Doxygen nodes
+  remain prohibited;
+- strikethrough, editorial task-list/checkbox and the corpus-defined malformed
+  strong are portable semantic rejections at backend and native boundaries;
 - cloning with `sourceVersionId`, submitting, approving and publishing each
   revalidate the minimal stored-version snapshot and never call their mutation
   repository for an incompatible body in the eligible lifecycle; rejecting the
@@ -1797,10 +1943,23 @@ The later implementation is acceptable only when all of the following are true:
   `expectedUpdatedAt`; the locked RPC remains the concurrency authority and
   continues to return `stale` for a concurrent draft revision before or after
   preflight, while lifecycle races retain their lifecycle error;
-- the mobile detail service revalidates stored Markdown before DTO/cover work,
-  and a legacy-invalid table yields no body, partial detail or cover capability;
-- Markdown rendering supports exactly the backend subset, passes the backend
-  golden corpus, and has no regex parser, raw/permissive fallback or WebView;
+- the mobile detail service revalidates stored source before DTO/cover work,
+  returns only the validator's canonical `normalized` body when valid, never
+  rewrites the stored row, and yields no body, partial detail or cover
+  capability for invalid content;
+- native source guards never globally ban `|`, `@` or backslash; backend-emitted
+  escapes are accepted only with an allowlisted AST and complete source
+  coverage, while unowned spans, removed references, tables and unknown/future
+  nodes remain fail-closed;
+- the shared corpus validates every expectation combination and contains
+  exactly 50 fixtures: 11 `parse_normalized`, 36 `reject_source` and the three
+  named `backend_canonicalization_only` rows, which never invoke the iOS parser;
+- the iOS adapter parses exactly the approved canonical mobile subset, portable
+  source rejections and editorial-only canonicalization failures follow their
+  explicit corpus expectations, and no unexplained divergence, regex parser,
+  raw/permissive fallback or WebView remains;
+- backend hardening, iOS source-guard alignment and corpus resumption complete
+  as Tasks 6, 7 and 8 with separate ordered commits before Task 9 begins;
 - impression/completed/save mutations and the post-detail `opened` preserve
   exact version and idempotency semantics;
 - version conflicts invalidate every resident content feed and detail, discard

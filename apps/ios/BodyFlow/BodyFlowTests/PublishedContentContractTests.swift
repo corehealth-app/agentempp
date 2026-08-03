@@ -396,6 +396,24 @@ struct PublishedContentContractTests {
             )
         }
     }
+
+    // Mutation caught: measuring the raw payload, appending a terminal line feed, or editorially canonicalizing the DTO rejects valid CRLF/CR UTF-16 boundaries.
+    @Test("body bounds normalize CRLF and CR only for UTF-16 measurement")
+    func bodyBoundsNormalizeLineEndingsOnlyForMeasurement() throws {
+        let minimumCRLF = String(repeating: "a", count: 99) + "\r\n"
+        let maximumCRLF = String(repeating: "b", count: 49_999) + "\r\n"
+        let maximumCR = String(repeating: "c", count: 49_999) + "\r"
+
+        #expect(minimumCRLF.utf16.count == 101)
+        #expect(maximumCRLF.utf16.count == 50_001)
+        #expect(maximumCR.utf16.count == 50_000)
+
+        for bodyMarkdown in [minimumCRLF, maximumCRLF, maximumCR] {
+            let detail = PublishedContentDetail(summary: summary(), bodyMarkdown: bodyMarkdown)
+            try PublishedContentContractValidator.validate(detail)
+            #expect(detail.bodyMarkdown == bodyMarkdown)
+        }
+    }
 }
 
 private func summary(

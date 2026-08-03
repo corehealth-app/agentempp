@@ -7,7 +7,8 @@ enum PublishedContentContractValidator {
 
     static func validate(_ detail: PublishedContentDetail) throws {
         try validate(detail.summary)
-        guard (100...50_000).contains(detail.bodyMarkdown.utf16.count) else {
+        let normalizedBodyLength = MarkdownSourceNormalizer.normalize(detail.bodyMarkdown).utf16.count
+        guard (100...50_000).contains(normalizedBodyLength) else {
             throw BodyFlowCapabilityError.invalidContentContract
         }
     }

@@ -105,6 +105,37 @@ struct BodyFlowMarkdownParserTests {
         ])
     }
 
+    // Mutation caught: a global pipe, at-sign, or backslash ban rejects canonical text that swift-markdown represents only as Text.
+    @Test("canonical text spellings preserve their exact BodyFlow AST", arguments: CanonicalTextSyntax.allCases)
+    func parsesCanonicalTextSpellings(_ syntax: CanonicalTextSyntax) throws {
+        let document = try BodyFlowMarkdownParser().parse(padded(syntax.source))
+
+        #expect(document == BodyFlowMarkdownDocument(blocks: [
+            .paragraph(children: [.text(syntax.expectedText)]),
+        ]))
+    }
+
+    // Mutation caught: routing real Directive or Doxygen nodes through text conversion bypasses the converter's single fail-closed default route.
+    @Test("actual Directive and Doxygen probe nodes use the default reject route")
+    func actualDirectiveAndDoxygenNodesUseDefaultRejectRoute() {
+        var directiveConverter = BodyFlowMarkdownConverter(normalizedSource: "directive")
+        var doxygenConverter = BodyFlowMarkdownConverter(normalizedSource: "doxygen")
+
+        #expect(throws: BodyFlowCapabilityError.unsupportedMarkdown) {
+            try directiveConverter.convert(
+                markup: BlockDirective(
+                    name: "Callout",
+                    children: Paragraph(Text("Conteúdo"))
+                )
+            ).get()
+        }
+        #expect(throws: BodyFlowCapabilityError.unsupportedMarkdown) {
+            try doxygenConverter.convert(
+                markup: DoxygenDiscussion(children: Paragraph(Text("Conteúdo")))
+            ).get()
+        }
+    }
+
     // Mutation caught: broadening the explicit node, source-form, URL, list-start, or depth allowlist lets a forbidden Markdown construct render.
     @Test("every forbidden syntax fails closed", arguments: RejectedSyntax.allCases)
     func rejectsForbiddenSyntax(_ syntax: RejectedSyntax) {
@@ -187,11 +218,6 @@ enum RejectedSyntax: String, CaseIterable, Sendable, CustomTestStringConvertible
     case orderedStartOtherThanOne
     case depthNine
     case symbolLink
-    case blockDirective
-    case inlineDirective
-    case inlineAttributes
-    case doxygenCommand
-    case doxygenSource
     case malformedSource
 
     var testDescription: String { rawValue }
@@ -256,18 +282,68 @@ enum RejectedSyntax: String, CaseIterable, Sendable, CustomTestStringConvertible
             String(repeating: "> ", count: 9) + "Profundo demais"
         case .symbolLink:
             "``BodyFlow.symbol``"
-        case .blockDirective:
-            "@Callout {\nConteúdo\n}"
-        case .inlineDirective:
-            "Texto @Image(source: \"cover.png\")"
-        case .inlineAttributes:
-            "^[Texto](role: 'note')"
-        case .doxygenCommand:
-            "@discussion Conteúdo Doxygen"
-        case .doxygenSource:
-            #"\discussion Conteúdo Doxygen"#
         case .malformedSource:
             "Texto com **ênfase sem fechamento"
+        }
+    }
+}
+
+enum CanonicalTextSyntax: CaseIterable, Sendable, CustomTestStringConvertible {
+    case ordinaryPipe
+    case escapedPipe
+    case blockDirectiveSpelling
+    case inlineDirectiveSpelling
+    case doxygenCommandSpelling
+    case doxygenSourceSpelling
+    case backendEscapes
+
+    var testDescription: String {
+        switch self {
+        case .ordinaryPipe: "ordinary pipe"
+        case .escapedPipe: "escaped pipe"
+        case .blockDirectiveSpelling: "block directive spelling"
+        case .inlineDirectiveSpelling: "inline directive spelling"
+        case .doxygenCommandSpelling: "Doxygen command spelling"
+        case .doxygenSourceSpelling: "Doxygen source spelling"
+        case .backendEscapes: "safe backend backslash escapes"
+        }
+    }
+
+    var source: String {
+        switch self {
+        case .ordinaryPipe:
+            "Conteúdo | seguro"
+        case .escapedPipe:
+            "Conteúdo \\| seguro"
+        case .blockDirectiveSpelling:
+            "@Callout { Conteúdo }"
+        case .inlineDirectiveSpelling:
+            "Texto @Image(source: \"cover.png\")"
+        case .doxygenCommandSpelling:
+            "@discussion Conteúdo Doxygen"
+        case .doxygenSourceSpelling:
+            #"\discussion Conteúdo Doxygen"#
+        case .backendEscapes:
+            "Escapes: \\! \\@ \\[ \\] \\_ \\* \\~ \\^ \\| \\\\ e \\q"
+        }
+    }
+
+    var expectedText: String {
+        switch self {
+        case .ordinaryPipe:
+            "Conteúdo | seguro"
+        case .escapedPipe:
+            "Conteúdo | seguro"
+        case .blockDirectiveSpelling:
+            "@Callout { Conteúdo }"
+        case .inlineDirectiveSpelling:
+            "Texto @Image(source: \"cover.png\")"
+        case .doxygenCommandSpelling:
+            "@discussion Conteúdo Doxygen"
+        case .doxygenSourceSpelling:
+            #"\discussion Conteúdo Doxygen"#
+        case .backendEscapes:
+            "Escapes: ! @ [ ] _ * ~ ^ | \\ e \\q"
         }
     }
 }

@@ -287,11 +287,53 @@ struct DocumentSourceCoverageGuard {
     }
 
     private func validateText(_ text: Text) -> Bool {
-        guard let source = sourceMap.substring(for: text), source == text.string else {
+        guard let source = sourceMap.substring(for: text) else {
             return false
         }
-        let forbidden: Set<Unicode.Scalar> = ["`", "<", ">", "[", "]", "!", "\\", "@", "^", "~", "|", "*", "_"]
-        return !source.unicodeScalars.contains { forbidden.contains($0) }
+
+        let sourceScalars = source.unicodeScalars
+        let textScalars = text.string.unicodeScalars
+        var sourceIndex = sourceScalars.startIndex
+        var textIndex = textScalars.startIndex
+
+        while sourceIndex < sourceScalars.endIndex {
+            guard textIndex < textScalars.endIndex else { return false }
+
+            let sourceScalar = sourceScalars[sourceIndex]
+            if sourceScalar == "\\" {
+                let nextSourceIndex = sourceScalars.index(after: sourceIndex)
+                if nextSourceIndex < sourceScalars.endIndex,
+                   isCommonMarkEscapable(sourceScalars[nextSourceIndex]) {
+                    guard textScalars[textIndex] == sourceScalars[nextSourceIndex] else {
+                        return false
+                    }
+                    sourceIndex = sourceScalars.index(after: nextSourceIndex)
+                    textIndex = textScalars.index(after: textIndex)
+                    continue
+                }
+            } else if sourceScalar == "*" {
+                let nextSourceIndex = sourceScalars.index(after: sourceIndex)
+                guard nextSourceIndex == sourceScalars.endIndex
+                    || sourceScalars[nextSourceIndex] != "*" else {
+                    return false
+                }
+            }
+
+            guard textScalars[textIndex] == sourceScalar else { return false }
+            sourceIndex = sourceScalars.index(after: sourceIndex)
+            textIndex = textScalars.index(after: textIndex)
+        }
+
+        return textIndex == textScalars.endIndex
+    }
+
+    private func isCommonMarkEscapable(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x21...0x2F, 0x3A...0x40, 0x5B...0x60, 0x7B...0x7E:
+            true
+        default:
+            false
+        }
     }
 
     private func isWhitespace(_ byte: UInt8) -> Bool {

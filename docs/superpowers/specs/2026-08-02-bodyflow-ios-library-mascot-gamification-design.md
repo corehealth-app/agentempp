@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-02
 
-**Status:** awaiting contract reconciliation approval
+**Status:** approved
 
 **Stacked branch:** `codex/bodyflow-ios-library-mascot-gamification-v1`
 

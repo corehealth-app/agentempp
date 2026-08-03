@@ -35,6 +35,13 @@ const PIPE_TABLE_MARKDOWN = `## Plano alimentar
 | Café da manhã | Aveia, fruta e iogurte natural |
 
 Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${'orientação segura '.repeat(6)}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${'orientação segura '.repeat(6)}`],
+] as const
 
 function validDraft() {
   return {
@@ -225,6 +232,30 @@ describe('content admin action core', () => {
 
     expect(contentService.saveDraft).not.toHaveBeenCalled()
   })
+
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'rejects untrusted portable-invalid %s before calling the saveDraft service boundary',
+    async (_description, bodyMarkdown) => {
+      const { deps, contentService } = dependencies('content_editor')
+      const saveDraft = action('saveDraft')
+      if (saveDraft.type !== 'saveDraft') throw new Error('Expected saveDraft action')
+
+      await expect(
+        executeContentAdminAction(
+          {
+            ...saveDraft,
+            input: {
+              ...saveDraft.input,
+              draft: { ...saveDraft.input.draft, bodyMarkdown },
+            },
+          },
+          deps,
+        ),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'action' })
+
+      expect(contentService.saveDraft).not.toHaveBeenCalled()
+    },
+  )
 
   it('reauthenticates and recreates service dependencies for every action', async () => {
     const { deps } = dependencies('content_editor')

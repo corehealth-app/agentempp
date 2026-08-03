@@ -36,6 +36,13 @@ const PIPE_TABLE_MARKDOWN = `## Plano alimentar
 | Café da manhã | Aveia, fruta e iogurte natural |
 
 Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${'orientação segura '.repeat(6)}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${'orientação segura '.repeat(6)}`],
+] as const
 
 function contentRecord(overrides: Partial<ContentRecord> = {}): ContentRecord {
   return {
@@ -310,6 +317,46 @@ describe('mobile educational content routes', () => {
     expect(serialized).not.toMatch(/body_markdown|Refeição|Aveia|Plano alimentar/)
     expect(service.covers.issue).not.toHaveBeenCalled()
   })
+
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'returns one atomic opaque error for a legacy portable-invalid %s detail without issuing a cover',
+    async (_description, bodyMarkdown) => {
+      const service = serviceDependencies({
+        get: vi.fn(async () =>
+          contentRecord({
+            bodyMarkdown,
+            cover: {
+              bucketId: 'content-covers',
+              objectPath: 'content/private-nonportable-cover.webp',
+            },
+          }),
+        ),
+      })
+      const baseContext = context(`https://bodyflow.test/api/mobile/v1/content/${PUBLICATION_ID}`)
+      const mobileRuntime: MobileRouteRuntime = {
+        authenticate: vi.fn(async () => baseContext.auth),
+        authorizeEntitlement: vi.fn(async () => undefined),
+        createServiceClient: vi.fn(() => baseContext.supabase),
+        createRequestId: vi.fn(() => 'request-content-nonportable-421'),
+      }
+      const route = createContentDetailRoute(mobileRuntime, detailDependencies(service))
+
+      const response = await route(baseContext.request, routeContext())
+      const serialized = JSON.stringify(await response.json())
+
+      expect(response.status).toBe(500)
+      expect(JSON.parse(serialized)).toEqual({
+        error: {
+          code: 'internal_error',
+          message: 'Unexpected server error',
+          request_id: 'request-content-nonportable-421',
+        },
+      })
+      expect(serialized).not.toContain(bodyMarkdown)
+      expect(serialized).not.toContain('body_markdown')
+      expect(service.covers.issue).not.toHaveBeenCalled()
+    },
+  )
 
   it('uses one non-disclosing 404 for absent or ineligible detail', async () => {
     const service = serviceDependencies({ get: vi.fn(async () => null) })

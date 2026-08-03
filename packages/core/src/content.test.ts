@@ -28,6 +28,13 @@ const ORDINARY_PIPE_MARKDOWN =
   'Proteína | contexto ajuda a comparar escolhas alimentares sem transformar esta frase em uma tabela ou alterar o texto editorial.'
 const ESCAPED_PIPE_MARKDOWN =
   'Proteína \\| contexto ajuda a explicar o caractere literal sem transformar esta frase em uma tabela ou perder o conteúdo editorial.'
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${LONG_BODY}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${LONG_BODY}`],
+] as const
 
 function nestedList(depth: number): string {
   return Array.from(
@@ -192,6 +199,39 @@ describe('content contracts', () => {
 })
 
 describe('validateContentMarkdown', () => {
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'rejects portable-invalid %s with a bounded Markdown error before canonicalization',
+    (_description, value) => {
+      expect(value.length).toBeGreaterThanOrEqual(100)
+      expect(value.length).toBeLessThanOrEqual(50_000)
+      expect(() => validateContentMarkdown(value)).toThrow('Invalid content Markdown')
+    },
+  )
+
+  it.each([
+    ['valid strong', `Texto com **ênfase válida** e ${LONG_BODY}`],
+    ['ordinary pipe', ORDINARY_PIPE_MARKDOWN],
+    ['escaped pipe', ESCAPED_PIPE_MARKDOWN],
+    ['escaped literal delimiters', `Texto com \\*asteriscos\\* e \\~tils\\~. ${LONG_BODY}`],
+    ['block directive spelling', `:::aviso\nTexto literal seguro para o leitor.\n:::\n\n${LONG_BODY}`],
+    ['inline directive spelling', `Texto com :aviso[orientação segura] como texto literal. ${LONG_BODY}`],
+    ['Doxygen command spelling', `Texto com \\param escolha e \\brief orientação segura. ${LONG_BODY}`],
+  ])('accepts safe text containing %s', (_description, value) => {
+    expect(() => validateContentMarkdown(value)).not.toThrow()
+  })
+
+  it('preserves the audited canonical size boundaries', () => {
+    expect(() => validateContentMarkdown(`palavra${' '.repeat(100)}`)).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+    expect(() => validateContentMarkdown('a'.repeat(50_000))).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+    expect(() => validateContentMarkdown(`${'a'.repeat(24_999)}\r\n${'a'.repeat(25_000)}`)).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+  })
+
   it('rejects a length-valid GFM pipe table with the bounded table error', () => {
     expect(PIPE_TABLE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
     expect(PIPE_TABLE_MARKDOWN.length).toBeLessThanOrEqual(50_000)

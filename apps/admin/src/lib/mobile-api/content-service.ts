@@ -253,15 +253,16 @@ export async function getContent(
 ): Promise<ContentDetailDto> {
   const record = await repositoryCall(() => dependencies.repository.get(auth.userId, publicationId))
   if (!record) throw contentNotFound()
+  let validated: ReturnType<typeof validateContentMarkdown>
   try {
-    validateContentMarkdown(record.bodyMarkdown)
+    validated = validateContentMarkdown(record.bodyMarkdown)
   } catch {
     throw internalError()
   }
 
   return {
     ...(await mapFeedItem(dependencies, record, auth.userId)),
-    body_markdown: record.bodyMarkdown,
+    body_markdown: validated.normalized,
   }
 }
 

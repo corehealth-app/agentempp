@@ -25,6 +25,13 @@ const PIPE_TABLE_MARKDOWN = `## Plano alimentar
 Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
 const ORDINARY_PIPE_MARKDOWN =
   'Proteína | contexto ajuda a comparar escolhas alimentares sem transformar esta frase em uma tabela ou alterar o texto editorial.'
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${'orientação segura '.repeat(6)}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${'orientação segura '.repeat(6)}`],
+] as const
 
 function validationSnapshot(
   overrides: Partial<ContentVersionValidationSnapshot> = {},
@@ -362,6 +369,80 @@ describe('content admin service', () => {
 
     expect(repo.saveDraft).not.toHaveBeenCalled()
   })
+
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'rejects a direct portable-invalid %s service draft before persistence',
+    async (_description, bodyMarkdown) => {
+      const repo = repository()
+      const service = createContentAdminService({ repository: repo, storage: storage() })
+
+      await expect(
+        service.saveDraft({
+          actorId: ACTOR_ID,
+          versionId: VERSION_ID,
+          expectedUpdatedAt: UPDATED_AT,
+          draft: { ...validDraft(), bodyMarkdown },
+        }),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'saveDraft' })
+
+      expect(repo.saveDraft).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'stops a legacy portable-invalid %s before clone, submit, approve, and publish mutations',
+    async (_description, bodyMarkdown) => {
+      const cloneRepository = repository()
+      vi.mocked(cloneRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+        validationSnapshot({ versionId: SOURCE_VERSION_ID, state: 'approved', bodyMarkdown }),
+      )
+      const cloneService = createContentAdminService({ repository: cloneRepository, storage: storage() })
+      await expect(
+        cloneService.createDraft({
+          actorId: ACTOR_ID,
+          publicationId: PUBLICATION_ID,
+          locale: 'pt-BR',
+          sourceVersionId: SOURCE_VERSION_ID,
+        }),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'createDraft' })
+      expect(cloneRepository.createDraft).not.toHaveBeenCalled()
+
+      const submitRepository = repository()
+      vi.mocked(submitRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+        validationSnapshot({ state: 'draft', bodyMarkdown }),
+      )
+      const submitService = createContentAdminService({ repository: submitRepository, storage: storage() })
+      await expect(
+        submitService.submit({ actorId: ACTOR_ID, versionId: VERSION_ID, expectedUpdatedAt: UPDATED_AT }),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'submit' })
+      expect(submitRepository.submit).not.toHaveBeenCalled()
+
+      const reviewRepository = repository()
+      vi.mocked(reviewRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+        validationSnapshot({ state: 'in_review', bodyMarkdown }),
+      )
+      const reviewService = createContentAdminService({ repository: reviewRepository, storage: storage() })
+      await expect(
+        reviewService.review({
+          actorId: ACTOR_ID,
+          versionId: VERSION_ID,
+          decision: 'approve',
+          rejectionReason: null,
+        }),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'review' })
+      expect(reviewRepository.review).not.toHaveBeenCalled()
+
+      const publishRepository = repository()
+      vi.mocked(publishRepository.getVersionValidationSnapshot).mockResolvedValueOnce(
+        validationSnapshot({ state: 'approved', bodyMarkdown }),
+      )
+      const publishService = createContentAdminService({ repository: publishRepository, storage: storage() })
+      await expect(
+        publishService.publish({ actorId: ACTOR_ID, versionId: VERSION_ID, publishAt: null }),
+      ).rejects.toMatchObject({ code: 'validation', operation: 'publish' })
+      expect(publishRepository.publish).not.toHaveBeenCalled()
+    },
+  )
 
   it('leaves source-free createDraft unchanged and performs no validation snapshot read', async () => {
     const repo = repository()

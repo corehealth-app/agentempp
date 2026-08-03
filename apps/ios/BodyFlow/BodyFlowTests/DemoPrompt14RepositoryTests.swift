@@ -320,7 +320,7 @@ struct DemoPrompt14RepositoryTests {
         let pending = Task {
             try await repository.content(DemoPrompt14Fixtures.todayQuery())
         }
-        await Task.yield()
+        await repository.waitUntilPendingReadCountForTesting(1)
 
         await repository.endSession()
 
@@ -340,16 +340,845 @@ struct DemoPrompt14RepositoryTests {
         }
     }
 
-    @Test("Task 13 mutations stay unavailable before session end")
-    func mutationsRemainUnavailable() async throws {
+    @Test("Read events record canonical state and replay their exact attempts")
+    func readEventsAndExactReplay() async throws {
         let repository = DemoPrompt14Repository(scenario: .loaded)
+        let impression = try Prompt14Attempts.read(
+            .impression,
+            origin: .today,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-impression-0001"
+        )
+        let opened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-opened-0001"
+        )
+        let completed = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-completed-0001"
+        )
 
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await repository.recordRead(prompt14ReadAttempt())
+        let impressionState = try await repository.recordRead(impression)
+        let openedState = try await repository.recordRead(opened)
+        let completedState = try await repository.recordRead(completed)
+        let replay = try await repository.recordRead(completed)
+
+        #expect(impressionState.data.changed)
+        #expect(!impressionState.data.replayed)
+        #expect(openedState.data.changed)
+        #expect(!openedState.data.completed)
+        #expect(completedState.data.changed)
+        #expect(completedState.data.completed)
+        #expect(!replay.data.changed)
+        #expect(replay.data.replayed)
+        #expect(replay.data.publicationID == completed.payload.publicationID)
+        #expect(replay.data.version == completed.payload.body.version)
+    }
+
+    @Test("Save and unsave reconcile canonical feed state without changing official fixtures")
+    func saveAndUnsaveReconcileOnlyContentState() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let saved = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-save-0001"
+        )
+        let unchangedSave = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-save-0002"
+        )
+        let unsaved = try Prompt14Attempts.saved(
+            false,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-unsave-0001"
+        )
+
+        let saveState = try await repository.setSaved(saved)
+        let noOpState = try await repository.setSaved(unchangedSave)
+        let unsaveState = try await repository.setSaved(unsaved)
+        let library = try await repository.content(DemoPrompt14Fixtures.libraryQuery())
+
+        #expect(saveState.data.changed)
+        #expect(saveState.data.saved)
+        #expect(!noOpState.data.changed)
+        #expect(noOpState.data.saved)
+        #expect(unsaveState.data.changed)
+        #expect(!unsaveState.data.saved)
+        #expect(
+            library.data.items.first { $0.publicationID == publicationID }?.saved == false
+        )
+        #expect(DemoPrompt14Fixtures.completeProgress.data?.xpTotal == 2_450)
+        #expect(DemoPrompt14Fixtures.completeProgress.data?.level == 7)
+        #expect(DemoPrompt14Fixtures.completeProgress.data?.currentStreak == 12)
+        #expect(DemoPrompt14Fixtures.balancedCoachResponse.data.mascot.state == .inactive)
+        #expect(DemoPrompt14Fixtures.todayFeed.data.items.count == 3)
+    }
+
+    @Test("Completed content is one-way and future completion attempts are no-ops")
+    func completionIsOneWay() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let completion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-complete-one-way-0001"
+        )
+        let laterCompletion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-complete-one-way-0002"
+        )
+
+        let first = try await repository.recordRead(completion)
+        let second = try await repository.recordRead(laterCompletion)
+        let library = try await repository.content(DemoPrompt14Fixtures.libraryQuery())
+
+        #expect(first.data.changed)
+        #expect(first.data.completed)
+        #expect(!second.data.changed)
+        #expect(second.data.completed)
+        #expect(
+            library.data.items.first { $0.publicationID == publicationID }?.completed == true
+        )
+    }
+
+    @Test("Mutable content state overlays authored detail without changing body metadata or version")
+    func mutableStateOverlaysOnlyAuthoredDetailState() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let unsave = try Prompt14Attempts.saved(
+            false,
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID,
+            version: DemoPrompt14Fixtures.firstSummary.version,
+            key: "content-detail-unsave-0001"
+        )
+
+        _ = try await repository.setSaved(unsave)
+        let detail = try await repository.contentDetail(
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+        )
+
+        #expect(!detail.data.summary.saved)
+        #expect(detail.data.summary.completed)
+        #expect(detail.data.summary.version == DemoPrompt14Fixtures.firstSummary.version)
+        #expect(detail.data.bodyMarkdown == DemoPrompt14Fixtures.validDetail.bodyMarkdown)
+        #expect(detail.meta == DemoPrompt14Fixtures.validDetailResponse.meta)
+    }
+
+    @Test("A globally reused key conflicts for changed operation route payload or timestamp")
+    func idempotencyKeyRequiresExactGlobalAttemptIdentity() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let first = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-global-key-0001"
+        )
+        _ = try await repository.recordRead(first)
+
+        let differentRoute = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID,
+            version: DemoPrompt14Fixtures.firstSummary.version,
+            key: first.key.value
+        )
+        let differentBody = try Prompt14Attempts.read(
+            .impression,
+            origin: .library,
+            publicationID: first.payload.publicationID,
+            version: first.payload.body.version,
+            key: first.key.value
+        )
+        let differentTimestamp = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: first.payload.publicationID,
+            version: first.payload.body.version,
+            key: first.key.value,
+            createdAt: prompt14AttemptDate.addingTimeInterval(1)
+        )
+        let differentOperation = try Prompt14Attempts.saved(
+            true,
+            publicationID: first.payload.publicationID,
+            version: first.payload.body.version,
+            key: first.key.value
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.recordRead(differentRoute)
         }
-        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
-            try await repository.setSaved(prompt14SaveAttempt())
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.recordRead(differentBody)
         }
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.recordRead(differentTimestamp)
+        }
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.setSaved(differentOperation)
+        }
+    }
+
+    @Test("Identical in-progress attempts return the bounded retryable error")
+    func identicalInProgressAttemptIsRejected() async throws {
+        let gate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationGate: gate
+        )
+        let attempt = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-in-progress-0001"
+        )
+        let first = Task {
+            return try await repository.recordRead(attempt)
+        }
+        await gate.waitUntilStarted()
+
+        await #expect(throws: BodyFlowCapabilityError.idempotencyRequestInProgress) {
+            try await repository.recordRead(attempt)
+        }
+
+        await repository.endSession()
+        await gate.finish()
+        await #expect(throws: CancellationError.self) {
+            try await first.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+    }
+
+    @Test("Version and deterministic one-shot scenario conflicts do not mutate or complete a ledger entry")
+    func versionAndScenarioConflictAreOneShotAndSafe() async throws {
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let stale = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version + 1,
+            key: "content-stale-version-0001"
+        )
+        let loaded = DemoPrompt14Repository(scenario: .loaded)
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await loaded.setSaved(stale)
+        }
+        #expect(
+            try await loaded.content(DemoPrompt14Fixtures.libraryQuery())
+                .data.items.first { $0.publicationID == publicationID }?.saved == false
+        )
+
+        let conflict = DemoPrompt14Repository(scenario: .conflict)
+        let mutation = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-scenario-conflict-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await conflict.setSaved(mutation)
+        }
+        let retry = try await conflict.setSaved(mutation)
+        #expect(retry.data.changed)
+        #expect(retry.data.saved)
+
+        let completionConflict = DemoPrompt14Repository(scenario: .conflict)
+        let completion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-completion-conflict-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await completionConflict.recordRead(completion)
+        }
+        #expect(try await completionConflict.recordRead(completion).data.changed)
+    }
+
+    @Test("Opened error is one-shot and leaves no completed replay before its retry")
+    func openedErrorIsOneShot() async throws {
+        let repository = DemoPrompt14Repository(scenario: .openedError)
+        let opened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-opened-error-0001"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.recordRead(opened)
+        }
+        let retry = try await repository.recordRead(opened)
+        #expect(retry.data.changed)
+        #expect(!retry.data.replayed)
+    }
+
+    @Test("Ending a controlled mutation rejects its late completion and isolates a fresh user session")
+    func endingControlledMutationClearsSessionState() async throws {
+        let gate = DemoPrompt14MutationGate()
+        let firstRepository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationGate: gate
+        )
+        let factory = DemoPrompt14PublishedContentSessionFactory(scenario: .loaded)
+        let second = factory.makeSession(userID: "prompt14-user-b")
+        let secondRepository = try #require(second.state as? DemoPrompt14Repository)
+        let attempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-end-session-0001"
+        )
+        let late = Task {
+            return try await firstRepository.setSaved(attempt)
+        }
+        await gate.waitUntilStarted()
+
+        await firstRepository.endSession()
+        await gate.finish()
+        await #expect(throws: CancellationError.self) {
+            try await late.value
+        }
+        await #expect(throws: CancellationError.self) {
+            try await firstRepository.setSaved(attempt)
+        }
+        #expect(await firstRepository.mutationLedgerCountForTesting() == 0)
+
+        let fresh = try await secondRepository.setSaved(attempt)
+        #expect(fresh.data.changed)
+        #expect(!fresh.data.replayed)
+    }
+
+    @Test("Saved surface derives membership from authored candidates and session state")
+    func savedSurfaceTracksSaveAndUnsaveMembership() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let secondID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let firstID = DemoPrompt14Fixtures.firstSummary.publicationID
+        let thirdID = DemoPrompt14Fixtures.thirdSummary.publicationID
+        let initial = try await repository.content(DemoPrompt14Fixtures.savedQuery())
+
+        #expect(initial.data.items.map(\.publicationID) == [firstID, thirdID])
+
+        _ = try await repository.setSaved(
+            Prompt14Attempts.saved(
+                true,
+                publicationID: secondID,
+                version: DemoPrompt14Fixtures.secondSummary.version,
+                key: "content-saved-membership-0001"
+            )
+        )
+        let afterSave = try await repository.content(DemoPrompt14Fixtures.savedQuery())
+
+        #expect(
+            afterSave.data.items.map(\.publicationID)
+                == [firstID, secondID, thirdID]
+        )
+        #expect(afterSave.meta == initial.meta)
+        #expect(afterSave.data.nextCursor == initial.data.nextCursor)
+
+        _ = try await repository.setSaved(
+            Prompt14Attempts.saved(
+                false,
+                publicationID: firstID,
+                version: DemoPrompt14Fixtures.firstSummary.version,
+                key: "content-saved-membership-0002"
+            )
+        )
+        let afterUnsave = try await repository.content(DemoPrompt14Fixtures.savedQuery())
+
+        #expect(afterUnsave.data.items.map(\.publicationID) == [secondID, thirdID])
+
+        let empty = DemoPrompt14Repository(scenario: .empty)
+        _ = try await empty.setSaved(
+            Prompt14Attempts.saved(
+                true,
+                publicationID: secondID,
+                version: DemoPrompt14Fixtures.secondSummary.version,
+                key: "content-empty-saved-0001"
+            )
+        )
+        #expect(
+            try await empty.content(DemoPrompt14Fixtures.savedQuery())
+                == DemoPrompt14Fixtures.emptySavedFeed
+        )
+    }
+
+    @Test("Replay preserves its original consolidated state after an intervening mutation")
+    func replayPreservesOriginalConsolidatedState() async throws {
+        let repository = DemoPrompt14Repository(scenario: .loaded)
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let save = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-historical-save-0001"
+        )
+        let completion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-historical-completion-0001"
+        )
+        let unsave = try Prompt14Attempts.saved(
+            false,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-historical-unsave-0001"
+        )
+
+        let original = try await repository.setSaved(save)
+        _ = try await repository.recordRead(completion)
+        _ = try await repository.setSaved(unsave)
+        let library = try await repository.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        let current = try #require(
+            library.data.items.first { $0.publicationID == publicationID }
+        )
+
+        #expect(!current.saved)
+        #expect(current.completed)
+
+        let replay = try await repository.setSaved(save)
+
+        #expect(original.data.saved)
+        #expect(!original.data.completed)
+        #expect(replay.data.saved)
+        #expect(!replay.data.completed)
+        #expect(!replay.data.changed)
+        #expect(replay.data.replayed)
+        #expect(replay.meta == original.meta)
+    }
+
+    @Test("An incompatible in-progress attempt conflicts while an identical one is retryable")
+    func incompatibleInProgressAttemptConflicts() async throws {
+        let gate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationGate: gate
+        )
+        let first = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-in-progress-conflict-0001"
+        )
+        let incompatible = try Prompt14Attempts.saved(
+            false,
+            publicationID: first.payload.publicationID,
+            version: first.payload.body.version,
+            key: first.key.value
+        )
+        let pending = Task { try await repository.setSaved(first) }
+        await gate.waitUntilStarted()
+
+        await #expect(throws: BodyFlowCapabilityError.idempotencyRequestInProgress) {
+            try await repository.setSaved(first)
+        }
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.setSaved(incompatible)
+        }
+
+        await repository.endSession()
+        await gate.finish()
+        await #expect(throws: CancellationError.self) {
+            try await pending.value
+        }
+    }
+
+    @Test("Completed session A state and replay key never cross into session B")
+    func completedSessionIsFullyIsolated() async throws {
+        let factory = DemoPrompt14PublishedContentSessionFactory(scenario: .loaded)
+        let sessionA = factory.makeSession(userID: "prompt14-complete-user-a")
+        let repositoryA = try #require(sessionA.state as? DemoPrompt14Repository)
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let attempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-complete-session-0001"
+        )
+
+        let completed = try await repositoryA.setSaved(attempt)
+        let replay = try await repositoryA.setSaved(attempt)
+        #expect(completed.data.changed)
+        #expect(replay.data.replayed)
+        await sessionA.lifetime.endSession()
+
+        let sessionB = factory.makeSession(userID: "prompt14-complete-user-b")
+        let repositoryB = try #require(sessionB.state as? DemoPrompt14Repository)
+        let before = try await sessionB.listing.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        #expect(
+            before.data.items.first { $0.publicationID == publicationID }?.saved
+                == false
+        )
+
+        let fresh = try await repositoryB.setSaved(attempt)
+        #expect(fresh.data.changed)
+        #expect(!fresh.data.replayed)
+    }
+
+    @Test("Invalid attempts fail guards without consuming one-shot scenarios")
+    func invalidAttemptsDoNotConsumeOneShotFailures() async throws {
+        let wrongReadOperation = MutationAttempt(
+            operation: MutationOperation.contentSave,
+            key: try IdempotencyKey(
+                validating: "content-wrong-read-operation-0001"
+            ),
+            payload: ContentReadCommand(
+                publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+                body: ContentReadBody(
+                    event: .opened,
+                    origin: .library,
+                    version: DemoPrompt14Fixtures.secondSummary.version
+                )
+            ),
+            createdAt: prompt14AttemptDate
+        )
+        let openedError = DemoPrompt14Repository(scenario: .openedError)
+        await #expect(throws: BodyFlowCapabilityError.invalidInput) {
+            try await openedError.recordRead(wrongReadOperation)
+        }
+
+        let unknownOpened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: "10000000-0000-4000-8000-999999999999",
+            version: 1,
+            key: "content-unknown-opened-publication-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentNotFound) {
+            try await openedError.recordRead(unknownOpened)
+        }
+
+        let staleOpened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version + 1,
+            key: "content-invalid-opened-error-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await openedError.recordRead(staleOpened)
+        }
+        #expect(await openedError.mutationLedgerCountForTesting() == 0)
+        let validOpened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-valid-opened-error-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await openedError.recordRead(validOpened)
+        }
+        #expect(try await openedError.recordRead(validOpened).data.changed)
+
+        let conflict = DemoPrompt14Repository(scenario: .conflict)
+        let wrongSaveOperation = MutationAttempt(
+            operation: MutationOperation.contentRead,
+            key: try IdempotencyKey(
+                validating: "content-wrong-save-operation-0001"
+            ),
+            payload: ContentSaveCommand(
+                publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+                body: ContentSaveBody(
+                    saved: true,
+                    version: DemoPrompt14Fixtures.secondSummary.version
+                )
+            ),
+            createdAt: prompt14AttemptDate
+        )
+        await #expect(throws: BodyFlowCapabilityError.invalidInput) {
+            try await conflict.setSaved(wrongSaveOperation)
+        }
+
+        let unknownSave = try Prompt14Attempts.saved(
+            true,
+            publicationID: "10000000-0000-4000-8000-999999999999",
+            version: 1,
+            key: "content-unknown-save-publication-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentNotFound) {
+            try await conflict.setSaved(unknownSave)
+        }
+
+        let staleSave = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version + 1,
+            key: "content-invalid-conflict-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await conflict.setSaved(staleSave)
+        }
+        #expect(await conflict.mutationLedgerCountForTesting() == 0)
+        let validSave = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-valid-conflict-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await conflict.setSaved(validSave)
+        }
+        #expect(try await conflict.setSaved(validSave).data.changed)
+    }
+
+    @Test("A pre-cancelled opened request does not consume the openedError one-shot")
+    func cancelledOpenedRequestPreservesOneShotFailure() async throws {
+        let repository = DemoPrompt14Repository(scenario: .openedError)
+        let attempt = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-cancelled-opened-error-0001"
+        )
+        let cancelled = Task {
+            withUnsafeCurrentTask { task in
+                task?.cancel()
+            }
+            return try await repository.recordRead(attempt)
+        }
+
+        await #expect(throws: CancellationError.self) {
+            try await cancelled.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.recordRead(attempt)
+        }
+        #expect(try await repository.recordRead(attempt).data.changed)
+    }
+
+    @Test("A pre-cancelled save does not consume the conflict one-shot")
+    func cancelledSavePreservesOneShotFailure() async throws {
+        let repository = DemoPrompt14Repository(scenario: .conflict)
+        let attempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-cancelled-save-conflict-0001"
+        )
+        let cancelled = Task {
+            withUnsafeCurrentTask { task in
+                task?.cancel()
+            }
+            return try await repository.setSaved(attempt)
+        }
+
+        await #expect(throws: CancellationError.self) {
+            try await cancelled.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+        await #expect(throws: BodyFlowCapabilityError.contentVersionChanged) {
+            try await repository.setSaved(attempt)
+        }
+        #expect(try await repository.setSaved(attempt).data.changed)
+    }
+
+    @Test("Content mutation leaves real Today Progress and coach providers unchanged")
+    func contentMutationDoesNotPatchRealGraphProviders() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(
+                arguments: ["--ui-testing", "--ui-testing-prompt14-loaded"],
+                buildFlavor: .debug
+            )
+        )
+        let userID = "prompt14-real-graph-user"
+        let session = dependencies.publishedContentSessions.makeSession(
+            userID: userID
+        )
+        let coach = dependencies.coachExperienceSessions.makeCoachExperience(
+            userID: userID
+        )
+        let beforeToday = try await dependencies.today.today()
+        let beforeProgress = try await dependencies.progress.progress()
+        let beforeCoach = try await coach.coachExperience()
+
+        _ = try await session.state.setSaved(
+            Prompt14Attempts.saved(
+                true,
+                publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+                version: DemoPrompt14Fixtures.secondSummary.version,
+                key: "content-real-graph-save-0001"
+            )
+        )
+
+        #expect(try await dependencies.today.today() == beforeToday)
+        #expect(try await dependencies.progress.progress() == beforeProgress)
+        #expect(try await coach.coachExperience() == beforeCoach)
+    }
+
+    @Test("Two controlled mutations coexist and session end cancels both exactly once")
+    func endSessionCancelsAllConcurrentMutations() async throws {
+        let gate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationGate: gate
+        )
+        let save = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-concurrent-save-0001"
+        )
+        let completion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.fourthSummary.publicationID,
+            version: DemoPrompt14Fixtures.fourthSummary.version,
+            key: "content-concurrent-complete-0001"
+        )
+        let pendingSave = Task { try await repository.setSaved(save) }
+        let pendingCompletion = Task { try await repository.recordRead(completion) }
+        await gate.waitUntilStarted(count: 2)
+
+        #expect(await repository.mutationLedgerCountForTesting() == 2)
+        await repository.endSession()
+        await gate.finish()
+
+        await #expect(throws: CancellationError.self) {
+            try await pendingSave.value
+        }
+        await #expect(throws: CancellationError.self) {
+            try await pendingCompletion.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+    }
+
+    @Test("Cancelling one controlled task frees its ledger entry for an exact retry")
+    func individualCancellationAllowsRetry() async throws {
+        let gate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationGate: gate
+        )
+        let attempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-cancel-retry-0001"
+        )
+        let cancelled = Task { try await repository.setSaved(attempt) }
+        await gate.waitUntilStarted(count: 1)
+
+        cancelled.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelled.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+
+        let retry = Task { try await repository.setSaved(attempt) }
+        await gate.waitUntilStarted(count: 2)
+        await gate.finish()
+        let response = try await retry.value
+
+        #expect(response.data.changed)
+        #expect(response.data.saved)
+        #expect(!response.data.replayed)
+    }
+
+    @Test("Computed mutation state stays private until the final generation check")
+    func mutationCommitIsAtomic() async throws {
+        let commitGate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationCommitGate: commitGate
+        )
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let attempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-atomic-commit-0001"
+        )
+        let pending = Task { try await repository.setSaved(attempt) }
+        await commitGate.waitUntilStarted(count: 1)
+
+        let whilePending = try await repository.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        #expect(
+            whilePending.data.items.first { $0.publicationID == publicationID }?.saved
+                == false
+        )
+
+        pending.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await pending.value
+        }
+        #expect(await repository.mutationLedgerCountForTesting() == 0)
+        let afterCancellation = try await repository.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        #expect(
+            afterCancellation.data.items.first { $0.publicationID == publicationID }?.saved
+                == false
+        )
+    }
+
+    @Test("Concurrent save and completion merge the latest state at commit")
+    func concurrentSaveAndCompletionDoNotLoseState() async throws {
+        let commitGate = DemoPrompt14MutationGate()
+        let repository = DemoPrompt14Repository(
+            scenario: .loaded,
+            mutationCommitGate: commitGate
+        )
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let save = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-concurrent-merge-save-0001"
+        )
+        let completion = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-concurrent-merge-completion-0001"
+        )
+        let pendingSave = Task { try await repository.setSaved(save) }
+        let pendingCompletion = Task { try await repository.recordRead(completion) }
+        await commitGate.waitUntilStarted(count: 2)
+
+        await commitGate.finish()
+        let saveResponse = try await pendingSave.value
+        let completionResponse = try await pendingCompletion.value
+        let library = try await repository.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        let consolidated = try #require(
+            library.data.items.first { $0.publicationID == publicationID }
+        )
+
+        #expect(saveResponse.data.saved)
+        #expect(completionResponse.data.completed)
+        #expect(consolidated.saved)
+        #expect(consolidated.completed)
     }
 
     @Test("Cover stream serves neutral local bytes and invalid scenario is rejected")
@@ -384,6 +1213,49 @@ struct DemoPrompt14RepositoryTests {
 }
 
 private let prompt14AttemptDate = Date(timeIntervalSince1970: 1_784_589_300)
+
+private enum Prompt14Attempts {
+    static func read(
+        _ event: ContentReadEvent,
+        origin: ContentOrigin,
+        publicationID: String,
+        version: Int,
+        key: String,
+        createdAt: Date = prompt14AttemptDate
+    ) throws -> MutationAttempt<ContentReadCommand> {
+        MutationAttempt(
+            operation: .contentRead,
+            key: try IdempotencyKey(validating: key),
+            payload: ContentReadCommand(
+                publicationID: publicationID,
+                body: ContentReadBody(
+                    event: event,
+                    origin: origin,
+                    version: version
+                )
+            ),
+            createdAt: createdAt
+        )
+    }
+
+    static func saved(
+        _ saved: Bool,
+        publicationID: String,
+        version: Int,
+        key: String,
+        createdAt: Date = prompt14AttemptDate
+    ) throws -> MutationAttempt<ContentSaveCommand> {
+        MutationAttempt(
+            operation: .contentSave,
+            key: try IdempotencyKey(validating: key),
+            payload: ContentSaveCommand(
+                publicationID: publicationID,
+                body: ContentSaveBody(saved: saved, version: version)
+            ),
+            createdAt: createdAt
+        )
+    }
+}
 
 private func prompt14ReadAttempt() throws -> MutationAttempt<ContentReadCommand> {
     MutationAttempt(

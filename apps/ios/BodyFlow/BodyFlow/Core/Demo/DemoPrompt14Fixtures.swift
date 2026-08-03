@@ -411,6 +411,24 @@ enum DemoPrompt14Fixtures {
 
     static let validDetailResponses = [validDetailResponse]
 
+    static let contentStateMetadata = MobileResponseMetadata(
+        apiVersion: "1",
+        requestID: "94000000-0000-4000-8000-000000000001"
+    )
+
+    static let authoredSummaries = [
+        firstSummary,
+        secondSummary,
+        thirdSummary,
+        fourthSummary,
+        fifthSummary,
+        sixthSummary,
+    ]
+
+    static func summary(publicationID: String) -> PublishedContentSummary? {
+        authoredSummaries.first { $0.publicationID == publicationID }
+    }
+
     static func todayQuery() throws -> ContentFeedQuery {
         try ContentFeedQuery(
             surface: .today,
@@ -542,6 +560,96 @@ enum DemoPrompt14Fixtures {
 
     private static func timestamp(_ seconds: TimeInterval) -> APITimestamp {
         APITimestamp(value: Date(timeIntervalSince1970: seconds))
+    }
+}
+
+actor DemoPrompt14MutationGate {
+    private struct StartWaiter {
+        let minimumCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private var startedCount = 0
+    private var nextCompletionID: UInt64 = 0
+    private var completions: [
+        UInt64: CheckedContinuation<Void, any Error>
+    ] = [:]
+    private var nextStartWaiterID: UInt64 = 0
+    private var startWaiters: [UInt64: StartWaiter] = [:]
+
+    func wait() async throws {
+        nextCompletionID &+= 1
+        let completionID = nextCompletionID
+        startedCount += 1
+        resumeSatisfiedStartWaiters()
+
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    completions[completionID] = continuation
+                }
+            }
+        }, onCancel: {
+            Task {
+                await self.cancel(completionID: completionID)
+            }
+        })
+    }
+
+    func waitUntilStarted(count: Int = 1) async {
+        precondition(count > 0)
+        guard startedCount < count else { return }
+        nextStartWaiterID &+= 1
+        let startWaiterID = nextStartWaiterID
+        await withCheckedContinuation { continuation in
+            startWaiters[startWaiterID] = StartWaiter(
+                minimumCount: count,
+                continuation: continuation
+            )
+        }
+    }
+
+    func finish() {
+        let continuations = Array(completions.values)
+        completions.removeAll(keepingCapacity: false)
+        for continuation in continuations {
+            continuation.resume()
+        }
+        resumeAllStartWaiters()
+    }
+
+    func cancelAll() {
+        let continuations = Array(completions.values)
+        completions.removeAll(keepingCapacity: false)
+        for continuation in continuations {
+            continuation.resume(throwing: CancellationError())
+        }
+        resumeAllStartWaiters()
+    }
+
+    private func cancel(completionID: UInt64) {
+        completions.removeValue(forKey: completionID)?
+            .resume(throwing: CancellationError())
+    }
+
+    private func resumeSatisfiedStartWaiters() {
+        let waiterIDs = startWaiters.compactMap { waiterID, waiter in
+            startedCount >= waiter.minimumCount ? waiterID : nil
+        }
+        for waiterID in waiterIDs {
+            startWaiters.removeValue(forKey: waiterID)?.continuation.resume()
+        }
+    }
+
+    private func resumeAllStartWaiters() {
+        let continuations = startWaiters.values.map(\.continuation)
+        startWaiters.removeAll(keepingCapacity: false)
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 }
 #endif

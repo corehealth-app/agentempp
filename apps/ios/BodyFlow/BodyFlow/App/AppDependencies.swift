@@ -49,11 +49,11 @@ struct AppDependencies: Sendable {
         let stateStore = DemoStateStore(secureStore: secureStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
         let unavailable = UnavailableBodyFlowCapabilities()
-        let publishedContentSessions: any PublishedContentSessionCreating =
+        var publishedContentSessions: any PublishedContentSessionCreating =
             UnavailablePublishedContentSessionFactory()
-        let coachExperienceSessions: any CoachExperienceSessionCreating =
+        var coachExperienceSessions: any CoachExperienceSessionCreating =
             UnavailableCoachExperienceSessionFactory()
-        let contentCoverSessions: any ContentCoverSessionCreating =
+        var contentCoverSessions: any ContentCoverSessionCreating =
             UnavailableContentCoverSessionFactory()
         #if DEBUG
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
@@ -103,6 +103,53 @@ struct AppDependencies: Sendable {
             hydration = repository
             weight = repository
             routine = repository
+        } else if configuration.mode == .demo,
+                  let scenario = configuration.prompt14Scenario {
+            let repository = DemoBodyFlowRepository(scenario: .loaded)
+            let prompt14TimeProvider = FixedTimeProvider(
+                value: DemoPrompt14Fixtures.fixedNow
+            )
+            timeProvider = prompt14TimeProvider
+            idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
+                prefix: "prompt14-key"
+            )
+            patientTimeZone = PatientTimeZoneContext(
+                documentedIANAIdentifier: nil
+            )
+            today = repository
+            history = repository
+            plan = repository
+            progress = switch scenario {
+            case .progressEmpty:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.emptyProgress
+                )
+            case .progressMinimum:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.minimumProgress
+                )
+            case .streakZero:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.streakZeroProgress
+                )
+            default:
+                repository
+            }
+            mealDetection = repository
+            registration = repository
+            hydration = repository
+            weight = repository
+            routine = repository
+            publishedContentSessions = DemoPrompt14PublishedContentSessionFactory(
+                scenario: scenario
+            )
+            coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
+                scenario: scenario
+            )
+            contentCoverSessions = DemoPrompt14ContentCoverSessionFactory(
+                scenario: scenario,
+                timeProvider: prompt14TimeProvider
+            )
         } else {
             timeProvider = SystemTimeProvider()
             idempotencyKeyProvider = UnavailableIdempotencyKeyProvider()

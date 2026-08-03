@@ -121,13 +121,13 @@ struct AppDependenciesTests {
     func releasePrompt14FactoriesFailClosed() async throws {
         let dependencies = releaseDependencies()
         let content = dependencies.publishedContentSessions.makeSession(
-            userID: "release-user"
+            userID: "40000000-0000-4000-8000-000000000001"
         )
         let coach = dependencies.coachExperienceSessions.makeCoachExperience(
-            userID: "release-user"
+            userID: "40000000-0000-4000-8000-000000000001"
         )
         let cover = dependencies.contentCoverSessions.makeLoader(
-            userID: "release-user"
+            userID: "40000000-0000-4000-8000-000000000001"
         )
         let query = try ContentFeedQuery(
             surface: .library,
@@ -191,7 +191,7 @@ struct AppDependenciesTests {
             )
         )
         let content = dependencies.publishedContentSessions.makeSession(
-            userID: "demo-user-v1"
+            userID: "40000000-0000-4000-8000-000000000002"
         )
 
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
@@ -199,6 +199,149 @@ struct AppDependenciesTests {
                 publicationID: "publication-1"
             )
         }
+    }
+
+    @Test("Debug Prompt 14 content capabilities share one actor only within a session")
+    func debugPrompt14ScopesContentRepositoryToSession() async throws {
+        let dependencies = prompt14Dependencies("--ui-testing-prompt14-loaded")
+        let first = dependencies.publishedContentSessions.makeSession(
+            userID: "40000000-0000-4000-8000-000000000003"
+        )
+        let sameUserSecondSession = dependencies.publishedContentSessions.makeSession(
+            userID: "40000000-0000-4000-8000-000000000003"
+        )
+        let otherUser = dependencies.publishedContentSessions.makeSession(
+            userID: "40000000-0000-4000-8000-000000000004"
+        )
+
+        let listing = try #require(first.listing as? DemoPrompt14Repository)
+        let detail = try #require(first.detail as? DemoPrompt14Repository)
+        let state = try #require(first.state as? DemoPrompt14Repository)
+        let lifetime = try #require(first.lifetime as? DemoPrompt14Repository)
+        let sameUserSecondListing = try #require(
+            sameUserSecondSession.listing as? DemoPrompt14Repository
+        )
+        let otherUserListing = try #require(
+            otherUser.listing as? DemoPrompt14Repository
+        )
+
+        #expect(listing === detail)
+        #expect(listing === state)
+        #expect(listing === lifetime)
+        #expect(listing !== sameUserSecondListing)
+        #expect(listing !== otherUserListing)
+
+        await first.lifetime.endSession()
+        await #expect(throws: CancellationError.self) {
+            try await first.listing.content(DemoPrompt14Fixtures.todayQuery())
+        }
+        #expect(
+            try await sameUserSecondSession.listing.content(
+                DemoPrompt14Fixtures.todayQuery()
+            ) == DemoPrompt14Fixtures.todayFeed
+        )
+    }
+
+    @Test("Debug Prompt 14 coach and cover factories never cache by user")
+    func debugPrompt14ScopesCoachAndCoverPerFactoryCall() throws {
+        let dependencies = prompt14Dependencies("--ui-testing-prompt14-loaded")
+        let coachA = try #require(
+            dependencies.coachExperienceSessions.makeCoachExperience(
+                userID: "40000000-0000-4000-8000-000000000005"
+            ) as? DemoPrompt14CoachProvider
+        )
+        let coachSameUser = try #require(
+            dependencies.coachExperienceSessions.makeCoachExperience(
+                userID: "40000000-0000-4000-8000-000000000005"
+            ) as? DemoPrompt14CoachProvider
+        )
+        let coachOtherUser = try #require(
+            dependencies.coachExperienceSessions.makeCoachExperience(
+                userID: "40000000-0000-4000-8000-000000000006"
+            ) as? DemoPrompt14CoachProvider
+        )
+        let coverA = try #require(
+            dependencies.contentCoverSessions.makeLoader(
+                userID: "40000000-0000-4000-8000-000000000005"
+            ) as? ContentCoverLoader
+        )
+        let coverSameUser = try #require(
+            dependencies.contentCoverSessions.makeLoader(
+                userID: "40000000-0000-4000-8000-000000000005"
+            ) as? ContentCoverLoader
+        )
+        let coverOtherUser = try #require(
+            dependencies.contentCoverSessions.makeLoader(
+                userID: "40000000-0000-4000-8000-000000000006"
+            ) as? ContentCoverLoader
+        )
+
+        #expect(coachA !== coachSameUser)
+        #expect(coachA !== coachOtherUser)
+        #expect(coverA !== coverSameUser)
+        #expect(coverA !== coverOtherUser)
+    }
+
+    @Test("Prompt 14 failures do not replace the complete loaded Prompt 13 graph")
+    func prompt14KeepsOfficialGraphIndependent() async throws {
+        let dependencies = prompt14Dependencies("--ui-testing-prompt14-offline")
+        let today = try #require(dependencies.today as? DemoBodyFlowRepository)
+        let history = try #require(dependencies.history as? DemoBodyFlowRepository)
+        let plan = try #require(dependencies.plan as? DemoBodyFlowRepository)
+        let progress = try #require(dependencies.progress as? DemoBodyFlowRepository)
+        let routine = try #require(dependencies.routine as? DemoBodyFlowRepository)
+
+        #expect(today === history)
+        #expect(today === plan)
+        #expect(today === progress)
+        #expect(today === routine)
+        #expect(try await dependencies.today.today() == DemoBodyFlowFixtures.loadedToday)
+        #expect(try await dependencies.progress.progress() == DemoBodyFlowFixtures.loadedProgress)
+
+        let session = dependencies.publishedContentSessions.makeSession(
+            userID: "40000000-0000-4000-8000-000000000007"
+        )
+        await #expect(throws: BodyFlowCapabilityError.offline) {
+            try await session.listing.content(DemoPrompt14Fixtures.todayQuery())
+        }
+    }
+
+    @Test("Only Prompt 14 progress scenarios replace the progress capability")
+    func prompt14ProgressReplacementIsNarrow() async throws {
+        let cases: [(String, ProgressResponse)] = [
+            ("--ui-testing-prompt14-progress-empty", DemoPrompt14Fixtures.emptyProgress),
+            ("--ui-testing-prompt14-progress-minimum", DemoPrompt14Fixtures.minimumProgress),
+            ("--ui-testing-prompt14-streak-zero", DemoPrompt14Fixtures.streakZeroProgress),
+        ]
+
+        for (argument, expected) in cases {
+            let dependencies = prompt14Dependencies(argument)
+            let today = try #require(dependencies.today as? DemoBodyFlowRepository)
+            let history = try #require(dependencies.history as? DemoBodyFlowRepository)
+            let plan = try #require(dependencies.plan as? DemoBodyFlowRepository)
+            let routine = try #require(dependencies.routine as? DemoBodyFlowRepository)
+
+            #expect(today === history)
+            #expect(today === plan)
+            #expect(today === routine)
+            #expect(dependencies.progress is DemoPrompt14ProgressProvider)
+            #expect(try await dependencies.today.today() == DemoBodyFlowFixtures.loadedToday)
+            #expect(try await dependencies.progress.progress() == expected)
+        }
+
+        let loaded = prompt14Dependencies("--ui-testing-prompt14-loaded")
+        #expect(loaded.progress is DemoBodyFlowRepository)
+        #expect(try await loaded.progress.progress() == DemoBodyFlowFixtures.loadedProgress)
+    }
+
+    @Test("Prompt 14 graph installs the exact deterministic clock and idempotency source")
+    func prompt14InstallsDeterministicSupport() throws {
+        let dependencies = prompt14Dependencies("--ui-testing-prompt14-loaded")
+
+        #expect(dependencies.timeProvider.now == DemoPrompt14Fixtures.fixedNow)
+        #expect(dependencies.timeProvider is FixedTimeProvider)
+        #expect(try dependencies.idempotencyKeyProvider.nextKey().value == "prompt14-key-0001")
+        #expect(try dependencies.idempotencyKeyProvider.nextKey().value == "prompt14-key-0002")
     }
 
     @Test("scaffold graph has a completed deterministic demo session")
@@ -509,6 +652,15 @@ private func releaseDependencies() -> AppDependencies {
 
 #if DEBUG
 private let dependencyActionDate = Date(timeIntervalSince1970: 1_784_589_300)
+
+private func prompt14Dependencies(_ argument: String) -> AppDependencies {
+    AppDependencies.make(
+        configuration: .resolve(
+            arguments: ["--ui-testing", argument],
+            buildFlavor: .debug
+        )
+    )
+}
 
 private func dependencyHydrationAttempt() throws -> MutationAttempt<HydrationCommand> {
     MutationAttempt(

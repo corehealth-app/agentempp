@@ -51,6 +51,59 @@ enum DemoBodyFlowScenario: Equatable, Sendable {
         return mappings.first { arguments.contains($0.0) }?.1
     }
 }
+
+enum DemoPrompt14Scenario: Equatable, Sendable {
+    case loaded
+    case loading
+    case empty
+    case offline
+    case error
+    case stale
+    case unavailable
+    case openedError
+    case contentNotFound
+    case subscriptionRequired
+    case markdownInvalid
+    case coverInvalid
+    case mascotVariants
+    case progressEmpty
+    case progressMinimum
+    case streakZero
+    case conflict
+    case reduceMotion
+    case differentiateWithoutColor
+
+    fileprivate static func resolve(
+        arguments: [String]
+    ) -> DemoPrompt14Scenario? {
+        let mappings: [(String, DemoPrompt14Scenario)] = [
+            ("--ui-testing-prompt14-loaded", .loaded),
+            ("--ui-testing-prompt14-loading", .loading),
+            ("--ui-testing-prompt14-empty", .empty),
+            ("--ui-testing-prompt14-offline", .offline),
+            ("--ui-testing-prompt14-error", .error),
+            ("--ui-testing-prompt14-stale", .stale),
+            ("--ui-testing-prompt14-unavailable", .unavailable),
+            ("--ui-testing-prompt14-opened-error", .openedError),
+            ("--ui-testing-prompt14-content-not-found", .contentNotFound),
+            ("--ui-testing-prompt14-subscription-required", .subscriptionRequired),
+            ("--ui-testing-prompt14-markdown-invalid", .markdownInvalid),
+            ("--ui-testing-prompt14-cover-invalid", .coverInvalid),
+            ("--ui-testing-prompt14-mascot-variants", .mascotVariants),
+            ("--ui-testing-prompt14-progress-empty", .progressEmpty),
+            ("--ui-testing-prompt14-progress-minimum", .progressMinimum),
+            ("--ui-testing-prompt14-streak-zero", .streakZero),
+            ("--ui-testing-prompt14-conflict", .conflict),
+            ("--ui-testing-prompt14-reduce-motion", .reduceMotion),
+            (
+                "--ui-testing-prompt14-differentiate-without-color",
+                .differentiateWithoutColor
+            ),
+        ]
+
+        return mappings.first { arguments.contains($0.0) }?.1
+    }
+}
 #endif
 
 enum DemoStorageService {
@@ -68,6 +121,7 @@ struct AppLaunchConfiguration: Sendable {
     let demoKeychainService: String
     #if DEBUG
     let prompt13Scenario: DemoBodyFlowScenario?
+    let prompt14Scenario: DemoPrompt14Scenario?
     #endif
 
     #if DEBUG
@@ -79,7 +133,8 @@ struct AppLaunchConfiguration: Sendable {
         authBehavior: DemoOperationBehavior<AuthenticationError>,
         demoStorageBoundary: DemoStorageBoundary = .memory,
         demoKeychainService: String = DemoStorageService.development,
-        prompt13Scenario: DemoBodyFlowScenario? = nil
+        prompt13Scenario: DemoBodyFlowScenario? = nil,
+        prompt14Scenario: DemoPrompt14Scenario? = nil
     ) {
         self.mode = mode
         self.shouldResetDemoState = shouldResetDemoState
@@ -89,6 +144,7 @@ struct AppLaunchConfiguration: Sendable {
         self.demoStorageBoundary = demoStorageBoundary
         self.demoKeychainService = demoKeychainService
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
+        self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
     }
 
     var patientTimeZoneForPrompt13: PatientTimeZoneContext? {
@@ -132,7 +188,20 @@ struct AppLaunchConfiguration: Sendable {
     var accessibilityReduceMotionOverride: Bool? {
         #if DEBUG
         guard mode == .demo,
-              prompt13Scenario == .reduceMotionVerification else {
+              prompt13Scenario == .reduceMotionVerification
+                || prompt14Scenario == .reduceMotion else {
+            return nil
+        }
+        return true
+        #else
+        nil
+        #endif
+    }
+
+    var differentiateWithoutColorOverride: Bool? {
+        #if DEBUG
+        guard mode == .demo,
+              prompt14Scenario == .differentiateWithoutColor else {
             return nil
         }
         return true
@@ -172,6 +241,14 @@ struct AppLaunchConfiguration: Sendable {
                 startsWithCompletedFixture: true,
                 authBehavior: .succeed(after: nil),
                 prompt13Scenario: scenario
+            )
+        }
+
+        if let scenario = DemoPrompt14Scenario.resolve(arguments: arguments) {
+            return uiTestingConfiguration(
+                startsWithCompletedFixture: true,
+                authBehavior: .succeed(after: nil),
+                prompt14Scenario: scenario
             )
         }
 
@@ -234,7 +311,8 @@ struct AppLaunchConfiguration: Sendable {
     private static func uiTestingConfiguration(
         startsWithCompletedFixture: Bool,
         authBehavior: DemoOperationBehavior<AuthenticationError>,
-        prompt13Scenario: DemoBodyFlowScenario? = nil
+        prompt13Scenario: DemoBodyFlowScenario? = nil,
+        prompt14Scenario: DemoPrompt14Scenario? = nil
     ) -> AppLaunchConfiguration {
         AppLaunchConfiguration(
             mode: .demo,
@@ -244,7 +322,8 @@ struct AppLaunchConfiguration: Sendable {
             authBehavior: authBehavior,
             demoStorageBoundary: .keychain,
             demoKeychainService: DemoStorageService.uiTesting,
-            prompt13Scenario: prompt13Scenario
+            prompt13Scenario: prompt13Scenario,
+            prompt14Scenario: prompt14Scenario
         )
     }
     #endif

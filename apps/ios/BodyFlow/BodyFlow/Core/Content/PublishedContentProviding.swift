@@ -19,3 +19,18 @@ protocol PublishedContentStateRecording: Sendable {
         _ attempt: MutationAttempt<ContentSaveCommand>
     ) async throws -> PublishedContentStateResponse
 }
+
+struct PublishedContentSession: Sendable {
+    let listing: any PublishedContentListing
+    let detail: any PublishedContentDetailProviding
+    let state: any PublishedContentStateRecording
+    let lifetime: any PublishedContentSessionLifetime
+}
+
+protocol PublishedContentSessionCreating: Sendable {
+    func makeSession(userID: String) -> PublishedContentSession
+}
+
+protocol PublishedContentSessionLifetime: Sendable {
+    func endSession() async
+}

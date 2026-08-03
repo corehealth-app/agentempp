@@ -12,6 +12,10 @@ protocol ContentCoverLoading: Sendable {
     func endSession() async
 }
 
+protocol ContentCoverSessionCreating: Sendable {
+    func makeLoader(userID: String) -> any ContentCoverLoading
+}
+
 actor ContentCoverLoader: ContentCoverLoading {
 #if DEBUG
     private struct WaiterCountExpectation {

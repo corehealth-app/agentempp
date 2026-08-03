@@ -2,6 +2,10 @@ protocol CoachExperienceProviding: Sendable {
     func coachExperience() async throws -> CoachExperienceResponse
 }
 
+protocol CoachExperienceSessionCreating: Sendable {
+    func makeCoachExperience(userID: String) -> any CoachExperienceProviding
+}
+
 struct CoachExperienceV1PresentationContract: Sendable {
     static let version = "bodyflow.coach-persona.v1"
 

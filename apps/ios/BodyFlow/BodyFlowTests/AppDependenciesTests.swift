@@ -117,6 +117,47 @@ struct AppDependenciesTests {
         }
     }
 
+    @Test("Release Prompt 14 factories expose only fail-closed capabilities")
+    func releasePrompt14FactoriesFailClosed() async throws {
+        let dependencies = releaseDependencies()
+        let content = dependencies.publishedContentSessions.makeSession(
+            userID: "release-user"
+        )
+        let coach = dependencies.coachExperienceSessions.makeCoachExperience(
+            userID: "release-user"
+        )
+        let cover = dependencies.contentCoverSessions.makeLoader(
+            userID: "release-user"
+        )
+        let query = try ContentFeedQuery(
+            surface: .library,
+            category: nil,
+            limit: 20,
+            cursor: nil
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await content.listing.content(query)
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await coach.coachExperience()
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await cover.image(
+                publicationID: "publication-1",
+                version: 4,
+                cover: PublishedContentCover(
+                    url: "/api/mobile/v1/content/covers/AbC_123-xyz",
+                    expiresAt: APITimestamp(value: .distantFuture)
+                ),
+                target: ContentCoverTargetSize(
+                    widthPixels: 240,
+                    heightPixels: 160
+                )
+            )
+        }
+    }
+
     #if DEBUG
     @Test("Debug make graph preserves Prompt 12 while Prompt 13 is unavailable")
     func debugMakePreservesPrompt12AndFailsPrompt13Closed() async throws {
@@ -135,6 +176,28 @@ struct AppDependenciesTests {
         #expect(try await dependencies.apiClient.send(legacyRequest) == AppFixtures.today)
         await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
             try await dependencies.today.today()
+        }
+    }
+
+    @Test("Debug Prompt 14 factories remain unavailable before fixture composition")
+    func debugPrompt14FactoriesRemainUnavailable() async throws {
+        let dependencies = AppDependencies.make(
+            configuration: AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: true,
+                startsWithCompletedFixture: true,
+                preloadsSyntheticOnboardingValues: true,
+                authBehavior: .succeed(after: nil)
+            )
+        )
+        let content = dependencies.publishedContentSessions.makeSession(
+            userID: "demo-user-v1"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await content.detail.contentDetail(
+                publicationID: "publication-1"
+            )
         }
     }
 

@@ -6,6 +6,8 @@ struct AppRootView: View {
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor)
+    private var systemDifferentiateWithoutColor
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var onboardingRetryTask: Task<Void, Never>?
 
@@ -20,6 +22,11 @@ struct AppRootView: View {
                 systemValue: systemReduceMotion,
                 override: configuration.accessibilityReduceMotionOverride
             )
+        )
+        .environment(
+            \.bodyFlowDifferentiateWithoutColor,
+            configuration.differentiateWithoutColorOverride
+                ?? systemDifferentiateWithoutColor
         )
         .task {
             await model.start()
@@ -144,6 +151,20 @@ extension EnvironmentValues {
     var bodyFlowReduceMotion: Bool {
         get { self[BodyFlowReduceMotionEnvironmentKey.self] }
         set { self[BodyFlowReduceMotionEnvironmentKey.self] = newValue }
+    }
+}
+
+private struct BodyFlowDifferentiateWithoutColorEnvironmentKey:
+    EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var bodyFlowDifferentiateWithoutColor: Bool {
+        get { self[BodyFlowDifferentiateWithoutColorEnvironmentKey.self] }
+        set {
+            self[BodyFlowDifferentiateWithoutColorEnvironmentKey.self] = newValue
+        }
     }
 }
 

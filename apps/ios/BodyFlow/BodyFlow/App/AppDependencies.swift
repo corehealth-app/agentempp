@@ -16,6 +16,9 @@ struct AppDependencies: Sendable {
     let hydration: any HydrationRecording
     let weight: any WeightRecording
     let routine: any RoutineProviding
+    let publishedContentSessions: any PublishedContentSessionCreating
+    let coachExperienceSessions: any CoachExperienceSessionCreating
+    let contentCoverSessions: any ContentCoverSessionCreating
     let timeProvider: any TimeProviding
     let idempotencyKeyProvider: any IdempotencyKeyProviding
     let patientTimeZone: PatientTimeZoneContext
@@ -46,6 +49,12 @@ struct AppDependencies: Sendable {
         let stateStore = DemoStateStore(secureStore: secureStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
         let unavailable = UnavailableBodyFlowCapabilities()
+        let publishedContentSessions: any PublishedContentSessionCreating =
+            UnavailablePublishedContentSessionFactory()
+        let coachExperienceSessions: any CoachExperienceSessionCreating =
+            UnavailableCoachExperienceSessionFactory()
+        let contentCoverSessions: any ContentCoverSessionCreating =
+            UnavailableContentCoverSessionFactory()
         #if DEBUG
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
         let apiClient: any APIClient = switch configuration.mode {
@@ -151,6 +160,9 @@ struct AppDependencies: Sendable {
             hydration: hydration,
             weight: weight,
             routine: routine,
+            publishedContentSessions: publishedContentSessions,
+            coachExperienceSessions: coachExperienceSessions,
+            contentCoverSessions: contentCoverSessions,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
             patientTimeZone: patientTimeZone

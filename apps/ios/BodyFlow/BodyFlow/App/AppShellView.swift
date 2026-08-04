@@ -176,8 +176,17 @@ struct AppShellView: View {
                     dependencies: dependencies,
                     invalidationCenter: invalidationCenter
                 )
-            case .detail:
-                FeatureDetailView(route: route)
+            case let .detail(publicationID, origin):
+                PublishedContentDetailView(
+                    publicationID: publicationID,
+                    origin: origin,
+                    detailProvider: sessionOwner.contentDetail,
+                    stateRecorder: sessionOwner.contentState,
+                    keyProvider: dependencies.idempotencyKeyProvider,
+                    timeProvider: dependencies.timeProvider,
+                    invalidationCenter: invalidationCenter,
+                    coverLoader: sessionOwner.coverLoader
+                )
             }
         case .mascot:
             FeatureDetailView(route: route)

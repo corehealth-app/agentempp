@@ -9,7 +9,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("pending first page is loading and forwards the exact query")
     func initialLoadingAndQuery() async throws {
         let provider = ControlledPublishedContentListing()
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let query = try Self.query(
             surface: .library,
             category: .sleep
@@ -29,7 +29,7 @@ struct PublishedContentFeedViewModelTests {
     func loaded() async throws {
         let feed = Self.feed(items: [Self.item(1), Self.item(2)], nextCursor: "next")
         let provider = QueuePublishedContentListing([.success(Self.response(feed))])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
 
@@ -42,7 +42,7 @@ struct PublishedContentFeedViewModelTests {
         let provider = QueuePublishedContentListing([
             .success(Self.response(items: [], nextCursor: nil)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
 
@@ -52,7 +52,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("initial offline has no invented content")
     func initialOffline() async throws {
         let provider = QueuePublishedContentListing([.failure(.offline)])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
 
@@ -62,7 +62,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("initial service failure has no invented content")
     func initialFailure() async throws {
         let provider = QueuePublishedContentListing([.failure(.serviceUnavailable)])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
 
@@ -75,7 +75,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("unavailable listing publishes unavailable")
     func unavailable() async throws {
         let provider = QueuePublishedContentListing([.failure(.operationUnavailable)])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
 
@@ -91,7 +91,7 @@ struct PublishedContentFeedViewModelTests {
                 .success(Self.response(original)),
                 .failure(error),
             ])
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
 
             await model.load(query: try Self.query(), catalogRevision: 2)
             await model.retryFirstPage()
@@ -119,7 +119,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(replacement)),
             .success(Self.response(next)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
         await model.retryFirstPage()
@@ -159,7 +159,7 @@ struct PublishedContentFeedViewModelTests {
         let provider = QueuePublishedContentListing(
             queries.map { _ in .success(Self.response(items: [Self.item(1)])) }
         )
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         for (revision, query) in queries.enumerated() {
             await model.load(query: query, catalogRevision: revision)
@@ -178,7 +178,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(first)),
             .success(Self.response(second)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let initial = try Self.query(surface: .library, category: .sleep)
         let expectedNext = try ContentFeedQuery(
             surface: .library,
@@ -202,7 +202,7 @@ struct PublishedContentFeedViewModelTests {
     func nilNextCursor() async throws {
         let first = Self.feed(items: [Self.item(1)], nextCursor: nil)
         let provider = QueuePublishedContentListing([.success(Self.response(first))])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
 
         await model.load(query: try Self.query(), catalogRevision: 1)
         await model.loadNextPage()
@@ -222,7 +222,7 @@ struct PublishedContentFeedViewModelTests {
                 .failure(error),
                 .success(Self.response(next)),
             ])
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let initial = try Self.query(surface: .saved, category: .nutrition)
             let attempt = try ContentFeedQuery(
                 surface: .saved,
@@ -258,7 +258,7 @@ struct PublishedContentFeedViewModelTests {
             .failure(.invalidContentCursor),
             .success(Self.response(replacement)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let initial = try Self.query(surface: .library, category: .sleep)
         let invalidAttempt = try ContentFeedQuery(
             surface: .library,
@@ -296,7 +296,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(items: [item], nextCursor: malformedCursor)),
             .success(Self.response(replacement)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let initial = try Self.query(surface: .library, category: .sleep)
 
         await model.load(query: initial, catalogRevision: 1)
@@ -332,7 +332,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(items: [Self.item(2)], nextCursor: malformedCursor)),
             .success(Self.response(replacement)),
         ])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let initial = try Self.query(surface: .saved, category: .nutrition)
         let next = try ContentFeedQuery(
             surface: .saved,
@@ -364,7 +364,7 @@ struct PublishedContentFeedViewModelTests {
     func cancelledInvalidCursorReload() async throws {
         for lateOutcome in LatePageOutcome.allCases {
             let provider = ControlledPublishedContentListing()
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let query = try Self.query(surface: .saved, category: .sleep)
             let first = Self.feed(items: [Self.item(1)], nextCursor: "rejected.next")
             let cleared = Self.feed(items: [Self.item(1)], nextCursor: nil)
@@ -436,7 +436,7 @@ struct PublishedContentFeedViewModelTests {
     func directNextPageCancellation() async throws {
         for lateOutcome in LatePageOutcome.allCases {
             let provider = ControlledPublishedContentListing()
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let first = Self.feed(items: [Self.item(1)], nextCursor: "cancel.next")
             let next = Self.feed(items: [Self.item(2)], nextCursor: nil)
             let query = try Self.query()
@@ -482,7 +482,7 @@ struct PublishedContentFeedViewModelTests {
     func directNextPageRetryCancellation() async throws {
         for lateOutcome in LatePageOutcome.allCases {
             let provider = ControlledPublishedContentListing()
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let first = Self.feed(items: [Self.item(1)], nextCursor: "cancel.retry")
             let next = Self.feed(items: [Self.item(2)], nextCursor: nil)
             let query = try Self.query()
@@ -534,7 +534,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("active first-page retry blocks paging and owns stale failure")
     func firstPageRetryBlocksPaging() async throws {
         let provider = ControlledPublishedContentListing()
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let query = try Self.query()
         let first = Self.feed(items: [Self.item(1)], nextCursor: "stale.next")
         let stale = Self.feed(items: [Self.item(1)], nextCursor: nil)
@@ -569,7 +569,7 @@ struct PublishedContentFeedViewModelTests {
     func revisionOnlyNextPageSupersession() async throws {
         for lateOutcome in LatePageOutcome.allCases {
             let provider = ControlledPublishedContentListing()
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let query = try Self.query(surface: .library, category: .sleep)
             let first = Self.feed(items: [Self.item(1)], nextCursor: "shared.next")
             let fresh = Self.feed(items: [Self.item(3)], nextCursor: "shared.next")
@@ -606,7 +606,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("new query suppresses an older late first-page value")
     func querySupersessionSuppressesLateValue() async throws {
         let provider = ControlledPublishedContentListing()
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let oldQuery = try Self.query(surface: .library, category: nil)
         let newQuery = try Self.query(surface: .saved, category: .sleep)
         let fresh = Self.feed(items: [Self.item(2)], nextCursor: nil)
@@ -631,7 +631,7 @@ struct PublishedContentFeedViewModelTests {
     @Test("new revision suppresses an older late first-page error")
     func revisionSupersessionSuppressesLateError() async throws {
         let provider = ControlledPublishedContentListing()
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let query = try Self.query()
         let fresh = Self.feed(items: [Self.item(2)], nextCursor: nil)
 
@@ -653,7 +653,7 @@ struct PublishedContentFeedViewModelTests {
     func nextPageSupersession() async throws {
         for lateOutcome in LatePageOutcome.allCases {
             let provider = ControlledPublishedContentListing()
-            let model = PublishedContentFeedViewModel(listing: provider)
+            let model = Self.model(listing: provider)
             let oldQuery = try Self.query(surface: .library, category: nil)
             let newQuery = try Self.query(surface: .saved, category: nil)
             let oldFirst = Self.feed(items: [Self.item(1)], nextCursor: "old.next")
@@ -694,7 +694,7 @@ struct PublishedContentFeedViewModelTests {
         let initialProvider = QueuePublishedContentListing([
             .success(Self.response(items: [duplicated, duplicated])),
         ])
-        let initialModel = PublishedContentFeedViewModel(listing: initialProvider)
+        let initialModel = Self.model(listing: initialProvider)
 
         await initialModel.load(query: try Self.query(), catalogRevision: 1)
 
@@ -708,7 +708,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(first)),
             .success(Self.response(items: [duplicated])),
         ])
-        let nextModel = PublishedContentFeedViewModel(listing: nextProvider)
+        let nextModel = Self.model(listing: nextProvider)
 
         await nextModel.load(query: try Self.query(), catalogRevision: 1)
         await nextModel.loadNextPage()
@@ -723,7 +723,7 @@ struct PublishedContentFeedViewModelTests {
         let initialProvider = QueuePublishedContentListing([
             .success(Self.response(items: [invalid])),
         ])
-        let initialModel = PublishedContentFeedViewModel(listing: initialProvider)
+        let initialModel = Self.model(listing: initialProvider)
 
         await initialModel.load(query: try Self.query(), catalogRevision: 1)
 
@@ -737,7 +737,7 @@ struct PublishedContentFeedViewModelTests {
             .success(Self.response(first)),
             .success(Self.response(items: [invalid])),
         ])
-        let nextModel = PublishedContentFeedViewModel(listing: nextProvider)
+        let nextModel = Self.model(listing: nextProvider)
 
         await nextModel.load(query: try Self.query(), catalogRevision: 1)
         await nextModel.loadNextPage()
@@ -750,7 +750,7 @@ struct PublishedContentFeedViewModelTests {
     func completedKeyLoadsOnlyOnce() async throws {
         let response = Self.response(items: [Self.item(1)])
         let provider = QueuePublishedContentListing([.success(response)])
-        let model = PublishedContentFeedViewModel(listing: provider)
+        let model = Self.model(listing: provider)
         let query = try Self.query(surface: .library, category: .nutrition)
 
         await model.load(query: query, catalogRevision: 11)
@@ -759,12 +759,329 @@ struct PublishedContentFeedViewModelTests {
         #expect(await provider.recordedQueries() == [query])
         #expect(model.state == .loaded(response.data))
     }
+
+    @Test("visible card emits one immutable impression while dispatch is pending")
+    func impressionDeduplicatesWhilePending() async throws {
+        let summary = Self.item(4)
+        let feed = Self.feed(items: [summary], nextCursor: nil)
+        let listing = QueuePublishedContentListing([.success(Self.response(feed))])
+        let recorder = ControlledContentStateRecorder()
+        let fixedNow = Date(timeIntervalSince1970: 1_784_071_600)
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "impression"),
+            timeProvider: FixedTimeProvider(value: fixedNow),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        #expect(await recorder.readAttempts.isEmpty)
+
+        let firstAppearance = Task {
+            await model.recordImpression(for: summary, origin: .library)
+        }
+        await recorder.waitForReadAttemptCount(1)
+        await model.recordImpression(for: summary, origin: .library)
+
+        let attempts = await recorder.readAttempts
+        #expect(attempts.count == 1)
+        #expect(attempts.first?.operation == .contentRead)
+        #expect(attempts.first?.key.value == "impression-0001")
+        #expect(attempts.first?.payload == ContentReadCommand(
+            publicationID: "00000000-0000-4000-8000-000000000004",
+            body: ContentReadBody(
+                event: .impression,
+                origin: .library,
+                version: 4
+            )
+        ))
+        #expect(attempts.first?.createdAt == fixedNow)
+
+        await recorder.succeed(call: 1)
+        await firstAppearance.value
+        #expect(model.state == .loaded(feed))
+    }
+
+    @Test("replacement owns a new impression while the old dispatch is pending")
+    func impressionReplacementWhilePending() async throws {
+        let summary = Self.item(5)
+        let first = Self.feed(items: [summary], nextCursor: nil)
+        let replacement = Self.feed(items: [summary], nextCursor: nil)
+        let listing = QueuePublishedContentListing([
+            .success(Self.response(first)),
+            .success(Self.response(replacement)),
+        ])
+        let recorder = ControlledContentStateRecorder()
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "pending"),
+            timeProvider: FixedTimeProvider(
+                value: Date(timeIntervalSince1970: 1_784_071_650)
+            ),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        let firstVisibility = Task {
+            await model.recordImpression(for: summary, origin: .library)
+        }
+        await recorder.waitForReadAttemptCount(1)
+
+        await model.load(query: try Self.query(), catalogRevision: 2)
+        let replacementVisibility = Task {
+            await model.recordImpression(for: summary, origin: .library)
+        }
+        await recorder.waitForReadAttemptCount(2)
+
+        let attempts = await recorder.readAttempts
+        #expect(attempts.count == 2)
+        #expect(attempts.map(\.key.value) == ["pending-0001", "pending-0002"])
+        #expect(attempts.map(\.payload) == [
+            ContentReadCommand(
+                publicationID: summary.publicationID,
+                body: ContentReadBody(
+                    event: .impression,
+                    origin: .library,
+                    version: 5
+                )
+            ),
+            ContentReadCommand(
+                publicationID: summary.publicationID,
+                body: ContentReadBody(
+                    event: .impression,
+                    origin: .library,
+                    version: 5
+                )
+            ),
+        ])
+
+        await recorder.succeed(call: 1)
+        await recorder.succeed(call: 2)
+        await firstVisibility.value
+        await replacementVisibility.value
+        #expect(model.state == .loaded(replacement))
+    }
+
+    @Test("origins are distinct and a replacement waits for new visibility")
+    func impressionOriginsAndResponseReplacement() async throws {
+        let summaryV4 = Self.item(7, version: 4)
+        let summaryV5 = Self.item(7, version: 5)
+        let listing = QueuePublishedContentListing([
+            .success(Self.response(items: [summaryV4])),
+            .success(Self.response(items: [summaryV4])),
+            .success(Self.response(items: [summaryV5])),
+        ])
+        let recorder = QueueContentStateRecorder()
+        let fixedNow = Date(timeIntervalSince1970: 1_784_071_700)
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "origin"),
+            timeProvider: FixedTimeProvider(value: fixedNow),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        #expect(await recorder.readAttempts.isEmpty)
+        await model.recordImpression(for: summaryV4, origin: .library)
+        await model.recordImpression(for: summaryV4, origin: .library)
+        await model.recordImpression(for: summaryV4, origin: .today)
+        await model.recordImpression(for: summaryV4, origin: .today)
+
+        await model.load(query: try Self.query(), catalogRevision: 2)
+        #expect(await recorder.readAttempts.count == 2)
+        await model.recordImpression(for: summaryV4, origin: .library)
+        await model.recordImpression(for: summaryV4, origin: .library)
+
+        await model.load(query: try Self.query(), catalogRevision: 3)
+        #expect(await recorder.readAttempts.count == 3)
+        await model.recordImpression(for: summaryV5, origin: .library)
+        await model.recordImpression(for: summaryV5, origin: .library)
+
+        let attempts = await recorder.readAttempts
+        #expect(attempts.map(\.key.value) == [
+            "origin-0001",
+            "origin-0002",
+            "origin-0003",
+            "origin-0004",
+        ])
+        #expect(attempts.map(\.payload.body) == [
+            ContentReadBody(event: .impression, origin: .library, version: 4),
+            ContentReadBody(event: .impression, origin: .today, version: 4),
+            ContentReadBody(event: .impression, origin: .library, version: 4),
+            ContentReadBody(event: .impression, origin: .library, version: 5),
+        ])
+        #expect(attempts.allSatisfy { $0.createdAt == fixedNow })
+    }
+
+    @Test("pagination and first-page failure preserve the response guard")
+    func impressionGuardSurvivesAppendAndReadFailure() async throws {
+        let summary = Self.item(1)
+        let first = Self.feed(items: [summary], nextCursor: "next.page")
+        let appended = Self.feed(items: [Self.item(2)], nextCursor: nil)
+        let listing = QueuePublishedContentListing([
+            .success(Self.response(first)),
+            .success(Self.response(appended)),
+            .failure(.offline),
+        ])
+        let recorder = QueueContentStateRecorder()
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "guard"),
+            timeProvider: FixedTimeProvider(value: Date(timeIntervalSince1970: 1_784_071_800)),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        await model.recordImpression(for: summary, origin: .library)
+        await model.loadNextPage()
+        await model.recordImpression(for: summary, origin: .library)
+        await model.load(query: try Self.query(), catalogRevision: 2)
+        await model.recordImpression(for: summary, origin: .library)
+
+        #expect(await recorder.readAttempts.count == 1)
+        #expect(model.state == .offline(previousValue: Self.feed(
+            items: [summary, Self.item(2)],
+            nextCursor: nil
+        )))
+    }
+
+    @Test("ordinary impression failure is non-blocking and never retries")
+    func impressionFailureIsBounded() async throws {
+        let summary = Self.item(3)
+        let feed = Self.feed(items: [summary], nextCursor: nil)
+        let listing = QueuePublishedContentListing([.success(Self.response(feed))])
+        let recorder = QueueContentStateRecorder([.failure(.offline)])
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "failure"),
+            timeProvider: FixedTimeProvider(value: Date(timeIntervalSince1970: 1_784_071_900)),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        await model.recordImpression(for: summary, origin: .library)
+        await model.recordImpression(for: summary, origin: .library)
+
+        #expect(await recorder.readAttempts.count == 1)
+        #expect(model.state == .loaded(feed))
+    }
+
+    @Test("key creation failure marks the response guard before construction")
+    func impressionKeyFailureIsBounded() async throws {
+        let summary = Self.item(6)
+        let feed = Self.feed(items: [summary], nextCursor: nil)
+        let listing = QueuePublishedContentListing([.success(Self.response(feed))])
+        let recorder = QueueContentStateRecorder()
+        let keyProvider = ThrowingIdempotencyKeyProviderSpy()
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: keyProvider,
+            timeProvider: FixedTimeProvider(
+                value: Date(timeIntervalSince1970: 1_784_071_950)
+            ),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 1)
+        await model.recordImpression(for: summary, origin: .library)
+        await model.recordImpression(for: summary, origin: .library)
+
+        #expect(keyProvider.observedCallCount() == 1)
+        #expect(await recorder.readAttempts.isEmpty)
+        #expect(model.state == .loaded(feed))
+    }
+
+    @Test("version conflict evicts exact cover and reload permits one new impression")
+    func impressionVersionConflictLifecycle() async throws {
+        let summaryV4 = Self.item(9, version: 4)
+        let summaryV5 = Self.item(9, version: 5)
+        let first = Self.feed(items: [summaryV4], nextCursor: nil)
+        let replacement = Self.feed(items: [summaryV5], nextCursor: nil)
+        let listing = QueuePublishedContentListing([
+            .success(Self.response(first)),
+            .success(Self.response(replacement)),
+        ])
+        let recorder = QueueContentStateRecorder([
+            .failure(.contentVersionChanged),
+            .success,
+        ])
+        let invalidationCenter = FeatureInvalidationCenter()
+        let coverLoader = ContentCoverLoadingSpy()
+        let model = PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: recorder,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "version"),
+            timeProvider: FixedTimeProvider(value: Date(timeIntervalSince1970: 1_784_072_000)),
+            invalidationCenter: invalidationCenter,
+            coverLoader: coverLoader
+        )
+
+        await model.load(query: try Self.query(), catalogRevision: 0)
+        await model.recordImpression(for: summaryV4, origin: .library)
+        await model.recordImpression(for: summaryV4, origin: .library)
+
+        #expect(await recorder.readAttempts.count == 1)
+        #expect(await coverLoader.removals == [ContentCoverRemoval(
+            publicationID: "00000000-0000-4000-8000-000000000009",
+            version: 4
+        )])
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 1)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            "00000000-0000-4000-8000-000000000009"
+        )) == 1)
+        #expect(model.state == .loaded(first))
+
+        await model.load(
+            query: try Self.query(),
+            catalogRevision: invalidationCenter.revision(for: .contentCatalog)
+        )
+        #expect(await recorder.readAttempts.count == 1)
+        await model.recordImpression(for: summaryV5, origin: .library)
+        await model.recordImpression(for: summaryV5, origin: .library)
+
+        let attempts = await recorder.readAttempts
+        #expect(attempts.count == 2)
+        #expect(attempts.map(\.payload.body.version) == [4, 5])
+        #expect(await coverLoader.removals.count == 1)
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 1)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            "00000000-0000-4000-8000-000000000009"
+        )) == 1)
+        #expect(model.state == .loaded(replacement))
+    }
 }
 
 private extension PublishedContentFeedViewModelTests {
     enum LatePageOutcome: CaseIterable {
         case value
         case error
+    }
+
+    static func model(
+        listing: any PublishedContentListing
+    ) -> PublishedContentFeedViewModel {
+        PublishedContentFeedViewModel(
+            listing: listing,
+            stateRecorder: QueueContentStateRecorder(),
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "legacy"),
+            timeProvider: FixedTimeProvider(
+                value: Date(timeIntervalSince1970: 1_784_070_800)
+            ),
+            invalidationCenter: FeatureInvalidationCenter(),
+            coverLoader: ContentCoverLoadingSpy()
+        )
     }
 
     static func query(
@@ -807,7 +1124,8 @@ private extension PublishedContentFeedViewModelTests {
 
     static func item(
         _ number: Int,
-        title: String = "A complete article title"
+        title: String = "A complete article title",
+        version: Int? = nil
     ) -> PublishedContentSummary {
         PublishedContentSummary(
             publicationID: String(
@@ -825,7 +1143,7 @@ private extension PublishedContentFeedViewModelTests {
                 value: Date(timeIntervalSince1970: 1_784_070_900 + Double(number))
             ),
             featuredToday: false,
-            version: number,
+            version: version ?? number,
             saved: false,
             completed: false,
             cover: nil
@@ -947,5 +1265,169 @@ private actor ControlledPublishedContentListing: PublishedContentListing {
                 waiter.resume()
             }
         }
+    }
+}
+
+private enum ContentStateRecordingResult: Sendable {
+    case success
+    case failure(BodyFlowCapabilityError)
+}
+
+private actor QueueContentStateRecorder: PublishedContentStateRecording {
+    private var results: [ContentStateRecordingResult]
+    private(set) var readAttempts: [MutationAttempt<ContentReadCommand>] = []
+
+    init(_ results: [ContentStateRecordingResult] = []) {
+        self.results = results
+    }
+
+    func recordRead(
+        _ attempt: MutationAttempt<ContentReadCommand>
+    ) async throws -> PublishedContentStateResponse {
+        readAttempts.append(attempt)
+        let result = results.isEmpty ? .success : results.removeFirst()
+        switch result {
+        case .success:
+            return Self.response(for: attempt)
+        case let .failure(error):
+            throw error
+        }
+    }
+
+    func setSaved(
+        _ attempt: MutationAttempt<ContentSaveCommand>
+    ) async throws -> PublishedContentStateResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    private static func response(
+        for attempt: MutationAttempt<ContentReadCommand>
+    ) -> PublishedContentStateResponse {
+        PublishedContentStateResponse(
+            data: PublishedContentState(
+                publicationID: attempt.payload.publicationID,
+                version: attempt.payload.body.version,
+                saved: false,
+                completed: false,
+                changed: false,
+                replayed: false
+            ),
+            meta: MobileResponseMetadata(
+                apiVersion: "1",
+                requestID: "90000000-0000-4000-8000-000000000016"
+            )
+        )
+    }
+}
+
+private actor ControlledContentStateRecorder: PublishedContentStateRecording {
+    private(set) var readAttempts: [MutationAttempt<ContentReadCommand>] = []
+    private var continuations: [
+        Int: CheckedContinuation<PublishedContentStateResponse, any Error>
+    ] = [:]
+    private var attemptCountWaiters: [
+        Int: [CheckedContinuation<Void, Never>]
+    ] = [:]
+
+    func recordRead(
+        _ attempt: MutationAttempt<ContentReadCommand>
+    ) async throws -> PublishedContentStateResponse {
+        readAttempts.append(attempt)
+        let call = readAttempts.count
+        resumeAttemptCountWaiters()
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations[call] = continuation
+        }
+    }
+
+    func setSaved(
+        _ attempt: MutationAttempt<ContentSaveCommand>
+    ) async throws -> PublishedContentStateResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func waitForReadAttemptCount(_ expectedCount: Int) async {
+        guard readAttempts.count < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            attemptCountWaiters[expectedCount, default: []].append(continuation)
+        }
+    }
+
+    func succeed(call: Int) {
+        guard readAttempts.indices.contains(call - 1) else { return }
+        let attempt = readAttempts[call - 1]
+        continuations.removeValue(forKey: call)?.resume(
+            returning: PublishedContentStateResponse(
+                data: PublishedContentState(
+                    publicationID: attempt.payload.publicationID,
+                    version: attempt.payload.body.version,
+                    saved: false,
+                    completed: false,
+                    changed: false,
+                    replayed: false
+                ),
+                meta: MobileResponseMetadata(
+                    apiVersion: "1",
+                    requestID: "90000000-0000-4000-8000-000000000017"
+                )
+            )
+        )
+    }
+
+    private func resumeAttemptCountWaiters() {
+        let readyCounts = attemptCountWaiters.keys.filter {
+            $0 <= readAttempts.count
+        }
+        for count in readyCounts {
+            let waiters = attemptCountWaiters.removeValue(forKey: count) ?? []
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+}
+
+private struct ContentCoverRemoval: Equatable, Sendable {
+    let publicationID: String
+    let version: Int
+}
+
+private actor ContentCoverLoadingSpy: ContentCoverLoading {
+    private(set) var removals: [ContentCoverRemoval] = []
+
+    func image(
+        publicationID: String,
+        version: Int,
+        cover: PublishedContentCover,
+        target: ContentCoverTargetSize
+    ) async throws -> ContentCoverImage {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func remove(publicationID: String, version: Int) async {
+        removals.append(ContentCoverRemoval(
+            publicationID: publicationID,
+            version: version
+        ))
+    }
+
+    func endSession() async {}
+}
+
+private final class ThrowingIdempotencyKeyProviderSpy:
+    @unchecked Sendable,
+    IdempotencyKeyProviding {
+    private let lock = NSLock()
+    private var callCount = 0
+
+    func nextKey() throws -> IdempotencyKey {
+        lock.withLock {
+            callCount += 1
+        }
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func observedCallCount() -> Int {
+        lock.withLock { callCount }
     }
 }

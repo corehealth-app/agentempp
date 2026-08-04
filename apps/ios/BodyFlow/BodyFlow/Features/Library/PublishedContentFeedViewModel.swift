@@ -10,6 +10,12 @@ enum PublishedContentNextPageState: Equatable, Sendable {
 @MainActor
 @Observable
 final class PublishedContentFeedViewModel {
+    private struct ResponseImpressionIdentity: Hashable {
+        let publicationID: String
+        let version: Int
+        let origin: ContentOrigin
+    }
+
     private struct FirstPageLoadIdentity: Equatable {
         let key: FeedLoadKey
         let sequence: Int
@@ -29,6 +35,11 @@ final class PublishedContentFeedViewModel {
     }
 
     private let listing: any PublishedContentListing
+    private let stateRecorder: any PublishedContentStateRecording
+    private let keyProvider: any IdempotencyKeyProviding
+    private let timeProvider: any TimeProviding
+    private let invalidationCenter: FeatureInvalidationCenter
+    private let coverLoader: any ContentCoverLoading
     private let firstPageController = FeatureKeyedLoadController<
         FeedLoadKey,
         PublishedContentFeedResponse
@@ -41,14 +52,74 @@ final class PublishedContentFeedViewModel {
     private var nextPageAttempt: ContentFeedQuery?
     private var activeFirstPageLoad: FirstPageLoadIdentity?
     private var activePageLoad: ActivePageLoad?
+    private var recordedResponseImpressions: Set<ResponseImpressionIdentity> = []
     private var firstPageSequence = 0
     private var pageSequence = 0
 
     private(set) var state: FeatureReadState<PublishedContentFeed> = .idle
     private(set) var nextPageState: PublishedContentNextPageState = .idle
 
-    init(listing: any PublishedContentListing) {
+    init(
+        listing: any PublishedContentListing,
+        stateRecorder: any PublishedContentStateRecording,
+        keyProvider: any IdempotencyKeyProviding,
+        timeProvider: any TimeProviding,
+        invalidationCenter: FeatureInvalidationCenter,
+        coverLoader: any ContentCoverLoading
+    ) {
         self.listing = listing
+        self.stateRecorder = stateRecorder
+        self.keyProvider = keyProvider
+        self.timeProvider = timeProvider
+        self.invalidationCenter = invalidationCenter
+        self.coverLoader = coverLoader
+    }
+
+    func recordImpression(
+        for summary: PublishedContentSummary,
+        origin: ContentOrigin
+    ) async {
+        let identity = ResponseImpressionIdentity(
+            publicationID: summary.publicationID,
+            version: summary.version,
+            origin: origin
+        )
+        guard recordedResponseImpressions.insert(identity).inserted else {
+            return
+        }
+
+        let attempt: MutationAttempt<ContentReadCommand>
+        do {
+            attempt = MutationAttempt(
+                operation: .contentRead,
+                key: try keyProvider.nextKey(),
+                payload: ContentReadCommand(
+                    publicationID: summary.publicationID,
+                    body: ContentReadBody(
+                        event: .impression,
+                        origin: origin,
+                        version: summary.version
+                    )
+                ),
+                createdAt: timeProvider.now
+            )
+        } catch {
+            return
+        }
+
+        do {
+            _ = try await stateRecorder.recordRead(attempt)
+        } catch BodyFlowCapabilityError.contentVersionChanged {
+            await coverLoader.remove(
+                publicationID: summary.publicationID,
+                version: summary.version
+            )
+            invalidationCenter.record(.contentVersionConflict(
+                publicationID: summary.publicationID
+            ))
+        } catch {
+            return
+        }
     }
 
     func load(query: ContentFeedQuery, catalogRevision: Int) async {
@@ -213,6 +284,7 @@ final class PublishedContentFeedViewModel {
                 ? Self.clearingNextCursor(in: response.data)
                 : response.data
             currentFeed = feed
+            recordedResponseImpressions.removeAll(keepingCapacity: true)
             nextPageCursor = feed.nextCursor
             nextPageAttempt = nil
             nextPageState = hasMalformedCursor ? .reloadFirstPageRequired : .idle

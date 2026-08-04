@@ -568,6 +568,783 @@ struct ContentDetailViewModelTests {
         ])
     }
 
+    // Mutation caught: constructing save from route/origin metadata, skipping
+    // canonical reconciliation, patching feeds, or invalidating unrelated reads.
+    @Test("save uses its exact body and reconciles only canonical detail state")
+    func savesCanonicalDetailState() async throws {
+        let recorder = QueueDetailStateRecorder(
+            [.success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            ))],
+            saveResults: [.success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: true
+            ))]
+        )
+        let invalidationCenter = FeatureInvalidationCenter()
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder,
+            invalidationCenter: invalidationCenter
+        )
+
+        await model.load(revision: 0)
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 0)
+
+        await model.toggleSaved()
+
+        let attempt = try #require(await recorder.saveAttempts.first)
+        #expect(attempt.operation == .contentSave)
+        #expect(attempt.key.value == "detail-0002")
+        #expect(attempt.payload == ContentSaveCommand(
+            publicationID: Self.routePublicationID,
+            body: ContentSaveBody(saved: true, version: 4)
+        ))
+        #expect(attempt.createdAt == Self.fixedNow)
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: true
+        )))
+        #expect(model.contentMutationState.receipt ==
+            Prompt14Fixtures.stateResponse(version: 4, saved: true))
+        #expect(model.contentMutationPresentation == ContentMutationPresentation(
+            message: "Conteúdo salvo",
+            systemImage: "bookmark.fill",
+            allowsRetry: false
+        ))
+        #expect(model.accessibilityFocusTarget == .mutationSummary)
+        model.consumeAccessibilityFocus()
+        #expect(model.accessibilityFocusTarget == nil)
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 1)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 1)
+        #expect(invalidationCenter.revision(for: .today) == 0)
+        #expect(invalidationCenter.revision(for: .coachExperience) == 0)
+    }
+
+    // Mutation caught: providing an uncomplete path, omitting route identity
+    // outside the body, or leaving completion available after canonical success.
+    @Test("completion is one way and uses the detail origin and version")
+    func completesOnlyOnce() async throws {
+        let recorder = QueueDetailStateRecorder([
+            .success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            )),
+            .success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false,
+                completed: true
+            )),
+        ])
+        let invalidationCenter = FeatureInvalidationCenter()
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder,
+            origin: .push,
+            invalidationCenter: invalidationCenter
+        )
+
+        await model.load(revision: 0)
+        #expect(model.showsCompletionAction)
+        #expect(model.canComplete)
+
+        await model.complete()
+
+        let attempts = await recorder.readAttempts
+        #expect(attempts.count == 2)
+        #expect(attempts[1].operation == .contentRead)
+        #expect(attempts[1].key.value == "detail-0002")
+        #expect(attempts[1].payload == ContentReadCommand(
+            publicationID: Self.routePublicationID,
+            body: ContentReadBody(
+                event: .completed,
+                origin: .push,
+                version: 4
+            )
+        ))
+        #expect(!model.showsCompletionAction)
+        #expect(!model.canComplete)
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: false,
+            completed: true
+        )))
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 1)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 1)
+
+        await model.complete()
+        #expect(await recorder.readAttempts.count == 2)
+    }
+
+    // Mutation caught: allowing a second save/completion to create a key while
+    // the first request is suspended instead of guarding synchronously on MainActor.
+    @Test("one content mutation submits at a time and suppresses double taps")
+    func serializesContentMutations() async {
+        let recorder = ControlledContentMutationRecorder(
+            openedResponse: Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            )
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder
+        )
+        await model.load(revision: 0)
+
+        let first = Task { await model.toggleSaved() }
+        await recorder.waitForSaveAttemptCount(1)
+        let doubleTap = Task { await model.toggleSaved() }
+        let competingCompletion = Task { await model.complete() }
+        await doubleTap.value
+        await competingCompletion.value
+
+        #expect(model.isContentMutationSubmitting)
+        #expect(!model.canToggleSaved)
+        #expect(!model.canComplete)
+        #expect(await recorder.saveAttempts.count == 1)
+        #expect(await recorder.readAttempts.count == 1)
+
+        await recorder.succeedSave(
+            call: 1,
+            with: Prompt14Fixtures.stateResponse(version: 4, saved: true)
+        )
+        await first.value
+        #expect(await recorder.saveAttempts.count == 1)
+        #expect(await recorder.readAttempts.count == 1)
+    }
+
+    // Mutation caught: regenerating a failed attempt on Retry or reusing the
+    // failed key/time for a later, distinct user intent.
+    @Test("retry preserves attempt while new intent creates a new key and time")
+    func retriesImmutableSaveAttempt() async throws {
+        let clock = MutableDetailTimeProvider(Self.fixedNow)
+        let recorder = QueueDetailStateRecorder(
+            [.success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            ))],
+            saveResults: [
+                .failure(.offline),
+                .success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: true
+                )),
+                .success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder,
+            timeProvider: clock
+        )
+        await model.load(revision: 0)
+
+        await model.toggleSaved()
+        let failed = try #require(model.contentMutationState.attempt)
+        #expect(model.contentMutationPresentation?.allowsRetry == true)
+        #expect(model.accessibilityFocusTarget == .mutationSummary)
+        clock.advance(by: 3_600)
+        await model.retryContentMutation()
+
+        let saveAttempts = await recorder.saveAttempts
+        #expect(saveAttempts.count == 2)
+        #expect(ContentDetailMutationAttempt.save(saveAttempts[1]) == failed)
+        #expect(model.accessibilityFocusTarget == .mutationSummary)
+
+        clock.advance(by: 60)
+        await model.toggleSaved()
+        let newIntent = try #require(await recorder.saveAttempts.last)
+        #expect(newIntent.key.value == "detail-0003")
+        #expect(newIntent.createdAt == Self.fixedNow.addingTimeInterval(3_660))
+        #expect(ContentDetailMutationAttempt.save(newIntent) != failed)
+    }
+
+    // Mutation caught: accepting a canonical state for another route/version,
+    // mutating the rendered detail, or treating a malformed receipt as success.
+    @Test("save and completion reject canonical identity or version mismatches")
+    func rejectsMutationResponseMismatches() async {
+        let mismatches = [
+            Prompt14Fixtures.stateResponse(
+                publicationID: "10000000-0000-4000-8000-000000000099",
+                version: 4,
+                saved: true
+            ),
+            Prompt14Fixtures.stateResponse(version: 99, saved: true),
+        ]
+
+        for mismatch in mismatches {
+            let invalidationCenter = FeatureInvalidationCenter()
+            let recorder = QueueDetailStateRecorder(
+                [.success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: false
+                ))],
+                saveResults: [.success(mismatch)]
+            )
+            let model = Self.model(
+                detailProvider: QueueContentDetailProvider([
+                    .success(Prompt14Fixtures.detailResponse(
+                        version: 4,
+                        saved: false
+                    )),
+                ]),
+                recorder: recorder,
+                invalidationCenter: invalidationCenter
+            )
+
+            await model.load(revision: 0)
+            await model.toggleSaved()
+
+            #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+                version: 4,
+                saved: false
+            )))
+            #expect(model.contentMutationState == .failed(
+                .save((await recorder.saveAttempts)[0]),
+                .invalidContentContract
+            ))
+            #expect(model.contentMutationPresentation?.allowsRetry == true)
+            #expect(model.accessibilityFocusTarget == .mutationSummary)
+            #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+            #expect(invalidationCenter.revision(for: .contentDetail(
+                Self.routePublicationID
+            )) == 0)
+        }
+    }
+
+    // Mutation caught: invalidating before exact cover eviction, retrying the
+    // stale attempt, recursively loading, or locally patching the new version.
+    @Test("mutation conflict evicts old cover then waits for explicit reload and intent")
+    func mutationVersionConflictRecovery() async throws {
+        let detailProvider = QueueContentDetailProvider([
+            .success(Prompt14Fixtures.detailResponse(
+                version: 4,
+                saved: false
+            )),
+            .success(Prompt14Fixtures.detailResponse(
+                version: 5,
+                saved: false
+            )),
+        ])
+        let recorder = QueueDetailStateRecorder(
+            [.success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            ))],
+            saveResults: [
+                .failure(.contentVersionChanged),
+                .success(Prompt14Fixtures.stateResponse(
+                    version: 5,
+                    saved: true
+                )),
+            ]
+        )
+        let invalidationCenter = FeatureInvalidationCenter()
+        let coverLoader = ControlledDetailCoverLoader()
+        let model = Self.model(
+            detailProvider: detailProvider,
+            recorder: recorder,
+            invalidationCenter: invalidationCenter,
+            coverLoader: coverLoader
+        )
+        await model.load(revision: 0)
+
+        let mutation = Task { await model.toggleSaved() }
+        await coverLoader.waitUntilRemovalStarts()
+
+        #expect(await coverLoader.removals == [ContentDetailCoverRemoval(
+            publicationID: Self.routePublicationID,
+            version: 4
+        )])
+        #expect(model.contentMutationState.attempt != nil)
+        #expect(!model.canRetryContentMutation)
+        #expect(!model.canToggleSaved)
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 0)
+        #expect(await detailProvider.publicationIDs.count == 1)
+
+        await coverLoader.finishRemoval()
+        await mutation.value
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 1)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 1)
+        #expect(model.accessibilityFocusTarget == .mutationSummary)
+
+        await model.retryContentMutation()
+        #expect(await recorder.saveAttempts.count == 1)
+        await model.load(revision: 1)
+
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 5,
+            saved: false
+        )))
+        #expect(model.contentMutationState == .idle)
+        #expect(model.accessibilityFocusTarget == .articleHeading)
+        #expect(await detailProvider.publicationIDs.count == 2)
+
+        await model.toggleSaved()
+        let newAttempt = try #require(await recorder.saveAttempts.last)
+        #expect(newAttempt.payload.body.version == 5)
+        #expect(newAttempt.key.value == "detail-0003")
+        #expect(await recorder.saveAttempts.count == 2)
+    }
+
+    // Mutation caught: claiming only after the async hop into the mutation
+    // runner, so two MainActor intents both consume keys before one is dropped.
+    @Test("competing intents synchronously claim one key and one request")
+    func competingIntentsClaimSynchronously() async {
+        let keyProvider = CountingDetailKeyProvider()
+        let recorder = ControlledContentMutationRecorder(
+            openedResponse: Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            )
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder,
+            keyProvider: keyProvider
+        )
+        await model.load(revision: 0)
+        #expect(keyProvider.callCount == 1)
+
+        let completions = DetailAsyncCompletionCounter()
+        let save = Task {
+            await model.toggleSaved()
+            await completions.recordCompletion()
+        }
+        let completion = Task {
+            await model.complete()
+            await completions.recordCompletion()
+        }
+        await recorder.waitForMutationAttemptCount(1)
+        await completions.waitForCount(1)
+
+        #expect(keyProvider.callCount == 2)
+        #expect(await recorder.mutationAttemptCount == 1)
+
+        await recorder.succeedPendingMutation(
+            with: Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: true,
+                completed: true
+            )
+        )
+        await save.value
+        await completion.value
+    }
+
+    // Mutation caught: delivering a target-only focus value, so Retry assigns
+    // the already-focused target and VoiceOver receives no second transition.
+    @Test("failure and retry result publish distinct one-shot focus events")
+    func retryPublishesDistinctFocusEvents() async throws {
+        let recorder = QueueDetailStateRecorder(
+            [.success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false
+            ))],
+            saveResults: [
+                .failure(.offline),
+                .success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: true
+                )),
+            ]
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false
+                )),
+            ]),
+            recorder: recorder
+        )
+        await model.load(revision: 0)
+
+        await model.toggleSaved()
+        let failureEvent = try #require(model.accessibilityFocusEvent)
+        #expect(failureEvent.target == .mutationSummary)
+        model.consumeAccessibilityFocus(failureEvent)
+        #expect(model.accessibilityFocusEvent == nil)
+
+        await model.retryContentMutation()
+        let retryEvent = try #require(model.accessibilityFocusEvent)
+        #expect(retryEvent.target == .mutationSummary)
+        #expect(retryEvent != failureEvent)
+        model.consumeAccessibilityFocus(failureEvent)
+        #expect(model.accessibilityFocusEvent == retryEvent)
+        model.consumeAccessibilityFocus(retryEvent)
+        #expect(model.accessibilityFocusEvent == nil)
+    }
+
+    // Mutation caught: scheduling same-target refocus with an executor yield
+    // instead of waiting until the real accessibility binding observes nil.
+    @Test("focus coordinator waits for observed nil before same-target refocus")
+    func focusCoordinatorWaitsForObservedNil() {
+        var coordinator = ContentDetailAccessibilityFocusCoordinator()
+        let first = ContentDetailAccessibilityFocusEvent(
+            sequence: 1,
+            target: .mutationSummary
+        )
+        let second = ContentDetailAccessibilityFocusEvent(
+            sequence: 2,
+            target: .mutationSummary
+        )
+
+        #expect(coordinator.receive(first, currentFocus: nil) == .focus(first))
+        #expect(coordinator.focusDidChange(to: .mutationSummary) == nil)
+
+        #expect(coordinator.receive(
+            second,
+            currentFocus: .mutationSummary
+        ) == .clear)
+        #expect(coordinator.focusDidChange(to: .mutationSummary) == nil)
+        #expect(coordinator.focusDidChange(to: nil) == .focus(second))
+        #expect(coordinator.focusDidChange(to: nil) == nil)
+        #expect(coordinator.focusDidChange(to: .mutationSummary) == nil)
+
+        #expect(coordinator.receive(
+            second,
+            currentFocus: .mutationSummary
+        ) == nil)
+        #expect(coordinator.receive(
+            first,
+            currentFocus: .mutationSummary
+        ) == nil)
+    }
+
+    // Mutation caught: publishing an error/conflict after cancellation when the
+    // recorder ignores cancellation and resumes its continuation with an error.
+    @Test("cancelled save and completion errors publish no outcome or side effect")
+    func cancelledMutationErrorsAreDiscarded() async {
+        for action in DetailMutationTestAction.allCases {
+            for error in [
+                BodyFlowCapabilityError.offline,
+                .contentVersionChanged,
+            ] {
+                let recorder = ControlledContentMutationRecorder(
+                    openedResponse: Prompt14Fixtures.stateResponse(
+                        version: 4,
+                        saved: false
+                    )
+                )
+                let invalidationCenter = FeatureInvalidationCenter()
+                let coverLoader = RecordingDetailCoverLoader()
+                let model = Self.model(
+                    detailProvider: QueueContentDetailProvider([
+                        .success(Prompt14Fixtures.detailResponse(
+                            version: 4,
+                            saved: false
+                        )),
+                    ]),
+                    recorder: recorder,
+                    invalidationCenter: invalidationCenter,
+                    coverLoader: coverLoader
+                )
+                await model.load(revision: 0)
+
+                let mutation = Task {
+                    switch action {
+                    case .save: await model.toggleSaved()
+                    case .completion: await model.complete()
+                    }
+                }
+                await recorder.waitForMutationAttemptCount(1)
+                mutation.cancel()
+                await recorder.failPendingMutation(with: error)
+                await mutation.value
+
+                #expect(model.contentMutationState == .idle)
+                #expect(model.accessibilityFocusEvent == nil)
+                #expect(await coverLoader.removals.isEmpty)
+                #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+                #expect(invalidationCenter.revision(for: .contentDetail(
+                    Self.routePublicationID
+                )) == 0)
+            }
+        }
+    }
+
+    // Mutation caught: allowing the stale opened snapshot to overwrite a newer
+    // save receipt after the two same-version requests overlap.
+    @Test("late opened receipt cannot roll back a newer save")
+    func lateOpenedCannotRollbackSave() async {
+        let recorder = OverlappingOpenedMutationRecorder(
+            mutationResponse: Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: true,
+                completed: false
+            )
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false,
+                    completed: false
+                )),
+            ]),
+            recorder: recorder
+        )
+
+        let load = Task { await model.load(revision: 0) }
+        await recorder.waitForOpenedAttempt()
+        await model.toggleSaved()
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: true,
+            completed: false
+        )))
+
+        await recorder.finishOpened(with: Prompt14Fixtures.stateResponse(
+            version: 4,
+            saved: false,
+            completed: false
+        ))
+        await load.value
+
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: true,
+            completed: false
+        )))
+    }
+
+    // Mutation caught: allowing stale opened state to undo completion and make
+    // the one-way Complete action available again.
+    @Test("late opened receipt cannot roll back a newer completion")
+    func lateOpenedCannotRollbackCompletion() async {
+        let recorder = OverlappingOpenedMutationRecorder(
+            mutationResponse: Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false,
+                completed: true
+            )
+        )
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false,
+                    completed: false
+                )),
+            ]),
+            recorder: recorder
+        )
+
+        let load = Task { await model.load(revision: 0) }
+        await recorder.waitForOpenedAttempt()
+        await model.complete()
+        #expect(!model.showsCompletionAction)
+
+        await recorder.finishOpened(with: Prompt14Fixtures.stateResponse(
+            version: 4,
+            saved: false,
+            completed: false
+        ))
+        await load.value
+
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: false,
+            completed: true
+        )))
+        #expect(!model.showsCompletionAction)
+        #expect(!model.canComplete)
+    }
+
+    // Mutation caught: accepting completed=false as completion success instead
+    // of failing closed without reconciliation or invalidation.
+    @Test("completion requires canonical completed true")
+    func completionRequiresCompletedReceipt() async throws {
+        let recorder = QueueDetailStateRecorder([
+            .success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false,
+                completed: false
+            )),
+            .success(Prompt14Fixtures.stateResponse(
+                version: 4,
+                saved: false,
+                completed: false
+            )),
+        ])
+        let invalidationCenter = FeatureInvalidationCenter()
+        let model = Self.model(
+            detailProvider: QueueContentDetailProvider([
+                .success(Prompt14Fixtures.detailResponse(
+                    version: 4,
+                    saved: false,
+                    completed: false
+                )),
+            ]),
+            recorder: recorder,
+            invalidationCenter: invalidationCenter
+        )
+        await model.load(revision: 0)
+
+        await model.complete()
+        let attempt = try #require(await recorder.readAttempts.last)
+
+        #expect(model.contentMutationState == .failed(
+            .completion(attempt),
+            .invalidContentContract
+        ))
+        #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+            version: 4,
+            saved: false,
+            completed: false
+        )))
+        #expect(model.contentMutationPresentation?.message ==
+            "Não foi possível atualizar. Tente novamente.")
+        #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+        #expect(invalidationCenter.revision(for: .contentDetail(
+            Self.routePublicationID
+        )) == 0)
+    }
+
+    // Mutation caught: deriving save/unsave outcome copy from requested intent
+    // when canonical saved state differs from it.
+    @Test("save presentation follows canonical returned state")
+    func savePresentationUsesCanonicalState() async {
+        let cases: [(initial: Bool, canonical: Bool, message: String)] = [
+            (false, false, "Conteúdo removido dos salvos"),
+            (true, true, "Conteúdo salvo"),
+        ]
+
+        for testCase in cases {
+            let recorder = QueueDetailStateRecorder(
+                [.success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: testCase.initial
+                ))],
+                saveResults: [.success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: testCase.canonical
+                ))]
+            )
+            let model = Self.model(
+                detailProvider: QueueContentDetailProvider([
+                    .success(Prompt14Fixtures.detailResponse(
+                        version: 4,
+                        saved: testCase.initial
+                    )),
+                ]),
+                recorder: recorder
+            )
+            await model.load(revision: 0)
+
+            await model.toggleSaved()
+
+            #expect(model.contentMutationPresentation?.message == testCase.message)
+            #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+                version: 4,
+                saved: testCase.canonical
+            )))
+        }
+    }
+
+    // Mutation caught: accepting a completion receipt for another publication
+    // or version and reconciling/invalidation as though it were canonical.
+    @Test("completion rejects canonical ID and version mismatches")
+    func completionRejectsIdentityMismatches() async throws {
+        let mismatches = [
+            Prompt14Fixtures.stateResponse(
+                publicationID: "10000000-0000-4000-8000-000000000099",
+                version: 4,
+                saved: false,
+                completed: true
+            ),
+            Prompt14Fixtures.stateResponse(
+                version: 99,
+                saved: false,
+                completed: true
+            ),
+        ]
+
+        for mismatch in mismatches {
+            let recorder = QueueDetailStateRecorder([
+                .success(Prompt14Fixtures.stateResponse(
+                    version: 4,
+                    saved: false,
+                    completed: false
+                )),
+                .success(mismatch),
+            ])
+            let invalidationCenter = FeatureInvalidationCenter()
+            let model = Self.model(
+                detailProvider: QueueContentDetailProvider([
+                    .success(Prompt14Fixtures.detailResponse(
+                        version: 4,
+                        saved: false,
+                        completed: false
+                    )),
+                ]),
+                recorder: recorder,
+                invalidationCenter: invalidationCenter
+            )
+            await model.load(revision: 0)
+
+            await model.complete()
+            let attempt = try #require(await recorder.readAttempts.last)
+
+            #expect(model.contentMutationState == .failed(
+                .completion(attempt),
+                .invalidContentContract
+            ))
+            #expect(model.state == .loaded(Prompt14Fixtures.renderable(
+                version: 4,
+                saved: false,
+                completed: false
+            )))
+            #expect(invalidationCenter.revision(for: .contentCatalog) == 0)
+            #expect(invalidationCenter.revision(for: .contentDetail(
+                Self.routePublicationID
+            )) == 0)
+        }
+    }
+
     // Mutation caught: giving the rendered OpenURLAction a different handler
     // path, or accepting a non-absolute/non-HTTPS URL in that exact callable.
     @Test("rendered OpenURL handler returns its exact system/discard presentation")
@@ -708,7 +1485,10 @@ private extension ContentDetailViewModelTests {
         recorder: any PublishedContentStateRecording,
         origin: ContentOrigin = .library,
         invalidationCenter: FeatureInvalidationCenter = FeatureInvalidationCenter(),
-        coverLoader: any ContentCoverLoading = ImmediateDetailCoverLoader()
+        coverLoader: any ContentCoverLoading = ImmediateDetailCoverLoader(),
+        timeProvider: any TimeProviding = FixedTimeProvider(value: fixedNow),
+        keyProvider: any IdempotencyKeyProviding =
+            DeterministicIdempotencyKeyProvider(prefix: "detail")
     ) -> ContentDetailViewModel {
         ContentDetailViewModel(
             publicationID: routePublicationID,
@@ -716,8 +1496,8 @@ private extension ContentDetailViewModelTests {
             detailProvider: detailProvider,
             stateRecorder: recorder,
             markdownParser: BodyFlowMarkdownParser(),
-            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "detail"),
-            timeProvider: FixedTimeProvider(value: fixedNow),
+            keyProvider: keyProvider,
+            timeProvider: timeProvider,
             invalidationCenter: invalidationCenter,
             coverLoader: coverLoader
         )
@@ -939,21 +1719,27 @@ private enum DetailStateRecordingResult: Sendable {
 }
 
 private actor QueueDetailStateRecorder: PublishedContentStateRecording {
-    private var results: [DetailStateRecordingResult]
+    private var readResults: [DetailStateRecordingResult]
+    private var saveResults: [DetailStateRecordingResult]
     private(set) var readAttempts: [MutationAttempt<ContentReadCommand>] = []
+    private(set) var saveAttempts: [MutationAttempt<ContentSaveCommand>] = []
 
-    init(_ results: [DetailStateRecordingResult] = []) {
-        self.results = results
+    init(
+        _ readResults: [DetailStateRecordingResult] = [],
+        saveResults: [DetailStateRecordingResult] = []
+    ) {
+        self.readResults = readResults
+        self.saveResults = saveResults
     }
 
     func recordRead(
         _ attempt: MutationAttempt<ContentReadCommand>
     ) async throws -> PublishedContentStateResponse {
         readAttempts.append(attempt)
-        guard !results.isEmpty else {
+        guard !readResults.isEmpty else {
             throw BodyFlowCapabilityError.serviceUnavailable
         }
-        switch results.removeFirst() {
+        switch readResults.removeFirst() {
         case let .success(response):
             return response
         case let .failure(error):
@@ -964,7 +1750,268 @@ private actor QueueDetailStateRecorder: PublishedContentStateRecording {
     func setSaved(
         _ attempt: MutationAttempt<ContentSaveCommand>
     ) async throws -> PublishedContentStateResponse {
+        saveAttempts.append(attempt)
+        guard !saveResults.isEmpty else {
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
+        switch saveResults.removeFirst() {
+        case let .success(response):
+            return response
+        case let .failure(error):
+            throw error
+        }
+    }
+}
+
+private actor ControlledContentMutationRecorder: PublishedContentStateRecording {
+    private let openedResponse: PublishedContentStateResponse
+    private(set) var readAttempts: [MutationAttempt<ContentReadCommand>] = []
+    private(set) var saveAttempts: [MutationAttempt<ContentSaveCommand>] = []
+    private var completionContinuations: [
+        Int: CheckedContinuation<PublishedContentStateResponse, any Error>
+    ] = [:]
+    private var saveContinuations: [
+        Int: CheckedContinuation<PublishedContentStateResponse, any Error>
+    ] = [:]
+    private var saveAttemptWaiters: [
+        Int: [CheckedContinuation<Void, Never>]
+    ] = [:]
+    private var mutationAttemptWaiters: [
+        Int: [CheckedContinuation<Void, Never>]
+    ] = [:]
+
+    init(openedResponse: PublishedContentStateResponse) {
+        self.openedResponse = openedResponse
+    }
+
+    func recordRead(
+        _ attempt: MutationAttempt<ContentReadCommand>
+    ) async throws -> PublishedContentStateResponse {
+        readAttempts.append(attempt)
+        guard attempt.payload.body.event == .completed else {
+            return openedResponse
+        }
+        let call = readAttempts.filter {
+            $0.payload.body.event == .completed
+        }.count
+        resumeMutationAttemptWaiters()
+        return try await withCheckedThrowingContinuation { continuation in
+            completionContinuations[call] = continuation
+        }
+    }
+
+    func setSaved(
+        _ attempt: MutationAttempt<ContentSaveCommand>
+    ) async throws -> PublishedContentStateResponse {
+        saveAttempts.append(attempt)
+        let call = saveAttempts.count
+        resumeSaveAttemptWaiters()
+        resumeMutationAttemptWaiters()
+        return try await withCheckedThrowingContinuation { continuation in
+            saveContinuations[call] = continuation
+        }
+    }
+
+    func waitForSaveAttemptCount(_ expectedCount: Int) async {
+        guard saveAttempts.count < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            saveAttemptWaiters[expectedCount, default: []].append(continuation)
+        }
+    }
+
+    func succeedSave(
+        call: Int,
+        with response: PublishedContentStateResponse
+    ) {
+        saveContinuations.removeValue(forKey: call)?.resume(returning: response)
+    }
+
+    var mutationAttemptCount: Int {
+        saveAttempts.count + readAttempts.filter {
+            $0.payload.body.event == .completed
+        }.count
+    }
+
+    func waitForMutationAttemptCount(_ expectedCount: Int) async {
+        guard mutationAttemptCount < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            mutationAttemptWaiters[expectedCount, default: []].append(continuation)
+        }
+    }
+
+    func succeedPendingMutation(with response: PublishedContentStateResponse) {
+        if let call = saveContinuations.keys.sorted().first {
+            saveContinuations.removeValue(forKey: call)?.resume(returning: response)
+        } else if let call = completionContinuations.keys.sorted().first {
+            completionContinuations.removeValue(forKey: call)?.resume(
+                returning: response
+            )
+        }
+    }
+
+    func failPendingMutation(with error: BodyFlowCapabilityError) {
+        if let call = saveContinuations.keys.sorted().first {
+            saveContinuations.removeValue(forKey: call)?.resume(throwing: error)
+        } else if let call = completionContinuations.keys.sorted().first {
+            completionContinuations.removeValue(forKey: call)?.resume(
+                throwing: error
+            )
+        }
+    }
+
+    private func resumeSaveAttemptWaiters() {
+        let readyCounts = saveAttemptWaiters.keys.filter {
+            $0 <= saveAttempts.count
+        }
+        for count in readyCounts {
+            let waiters = saveAttemptWaiters.removeValue(forKey: count) ?? []
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    private func resumeMutationAttemptWaiters() {
+        let readyCounts = mutationAttemptWaiters.keys.filter {
+            $0 <= mutationAttemptCount
+        }
+        for count in readyCounts {
+            let waiters = mutationAttemptWaiters.removeValue(forKey: count) ?? []
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+}
+
+private enum DetailMutationTestAction: CaseIterable, Sendable {
+    case save
+    case completion
+}
+
+private actor DetailAsyncCompletionCounter {
+    private var count = 0
+    private var waiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
+
+    func recordCompletion() {
+        count += 1
+        let readyCounts = waiters.keys.filter { $0 <= count }
+        for readyCount in readyCounts {
+            let ready = waiters.removeValue(forKey: readyCount) ?? []
+            for waiter in ready { waiter.resume() }
+        }
+    }
+
+    func waitForCount(_ expectedCount: Int) async {
+        guard count < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            waiters[expectedCount, default: []].append(continuation)
+        }
+    }
+}
+
+private final class CountingDetailKeyProvider:
+    @unchecked Sendable,
+    IdempotencyKeyProviding {
+    private let lock = NSLock()
+    private var count = 0
+
+    var callCount: Int { lock.withLock { count } }
+
+    func nextKey() throws -> IdempotencyKey {
+        let sequence = lock.withLock {
+            count += 1
+            return count
+        }
+        return try IdempotencyKey(
+            validating: "counting-\(String(format: "%04d", sequence))"
+        )
+    }
+}
+
+private actor OverlappingOpenedMutationRecorder: PublishedContentStateRecording {
+    private let mutationResponse: PublishedContentStateResponse
+    private var openedContinuation: CheckedContinuation<
+        PublishedContentStateResponse,
+        any Error
+    >?
+    private var openedWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(mutationResponse: PublishedContentStateResponse) {
+        self.mutationResponse = mutationResponse
+    }
+
+    func recordRead(
+        _ attempt: MutationAttempt<ContentReadCommand>
+    ) async throws -> PublishedContentStateResponse {
+        guard attempt.payload.body.event == .opened else {
+            return mutationResponse
+        }
+        let waiters = openedWaiters
+        openedWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+        return try await withCheckedThrowingContinuation { continuation in
+            openedContinuation = continuation
+        }
+    }
+
+    func setSaved(
+        _ attempt: MutationAttempt<ContentSaveCommand>
+    ) async throws -> PublishedContentStateResponse {
+        mutationResponse
+    }
+
+    func waitForOpenedAttempt() async {
+        guard openedContinuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            openedWaiters.append(continuation)
+        }
+    }
+
+    func finishOpened(with response: PublishedContentStateResponse) {
+        openedContinuation?.resume(returning: response)
+        openedContinuation = nil
+    }
+}
+
+private actor RecordingDetailCoverLoader: ContentCoverLoading {
+    private(set) var removals: [ContentDetailCoverRemoval] = []
+
+    func image(
+        publicationID: String,
+        version: Int,
+        cover: PublishedContentCover,
+        target: ContentCoverTargetSize
+    ) async throws -> ContentCoverImage {
         throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func remove(publicationID: String, version: Int) async {
+        removals.append(ContentDetailCoverRemoval(
+            publicationID: publicationID,
+            version: version
+        ))
+    }
+
+    func endSession() async {}
+}
+
+private final class MutableDetailTimeProvider: @unchecked Sendable, TimeProviding {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) {
+        self.value = value
+    }
+
+    var now: Date {
+        lock.withLock { value }
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.withLock {
+            value = value.addingTimeInterval(interval)
+        }
     }
 }
 

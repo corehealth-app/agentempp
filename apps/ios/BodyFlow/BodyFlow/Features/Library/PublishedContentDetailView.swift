@@ -17,6 +17,43 @@ enum ContentDetailRetryRequestPolicy {
     }
 }
 
+enum ContentDetailAccessibilityFocusCommand: Equatable, Sendable {
+    case clear
+    case focus(ContentDetailAccessibilityFocusEvent)
+}
+
+struct ContentDetailAccessibilityFocusCoordinator: Equatable, Sendable {
+    private var latestSequence: UInt64?
+    private var pendingEvent: ContentDetailAccessibilityFocusEvent?
+
+    mutating func receive(
+        _ event: ContentDetailAccessibilityFocusEvent,
+        currentFocus: ContentDetailAccessibilityFocusTarget?
+    ) -> ContentDetailAccessibilityFocusCommand? {
+        if let latestSequence,
+           event.sequence <= latestSequence {
+            return nil
+        }
+        latestSequence = event.sequence
+
+        guard currentFocus == event.target else {
+            pendingEvent = nil
+            return .focus(event)
+        }
+        pendingEvent = event
+        return .clear
+    }
+
+    mutating func focusDidChange(
+        to focus: ContentDetailAccessibilityFocusTarget?
+    ) -> ContentDetailAccessibilityFocusCommand? {
+        guard focus == nil,
+              let pendingEvent else { return nil }
+        self.pendingEvent = nil
+        return .focus(pendingEvent)
+    }
+}
+
 @MainActor
 struct PublishedContentDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -24,6 +61,10 @@ struct PublishedContentDetailView: View {
     @State private var model: ContentDetailViewModel
     @State private var retryRequest: ContentDetailRetryRequest?
     @State private var retrySequence = 0
+    @State private var accessibilityFocusCoordinator =
+        ContentDetailAccessibilityFocusCoordinator()
+    @AccessibilityFocusState private var accessibilityFocus:
+        ContentDetailAccessibilityFocusTarget?
 
     private let publicationID: String
     private let invalidationCenter: FeatureInvalidationCenter
@@ -78,6 +119,20 @@ struct PublishedContentDetailView: View {
             guard let retryRequest else { return }
             await model.retry(revision: retryRequest.revision)
         }
+        .onChange(of: model.accessibilityFocusEvent) { _, event in
+            guard let event else { return }
+            applyAccessibilityFocus(
+                accessibilityFocusCoordinator.receive(
+                    event,
+                    currentFocus: accessibilityFocus
+                )
+            )
+        }
+        .onChange(of: accessibilityFocus) { _, focus in
+            applyAccessibilityFocus(
+                accessibilityFocusCoordinator.focusDidChange(to: focus)
+            )
+        }
     }
 
     private var detailRevision: Int {
@@ -93,6 +148,20 @@ struct PublishedContentDetailView: View {
         retryRequest = request
     }
 
+    private func applyAccessibilityFocus(
+        _ command: ContentDetailAccessibilityFocusCommand?
+    ) {
+        guard let command else { return }
+        switch command {
+        case .clear:
+            accessibilityFocus = nil
+        case let .focus(event):
+            guard model.accessibilityFocusEvent == event else { return }
+            accessibilityFocus = event.target
+            model.consumeAccessibilityFocus(event)
+        }
+    }
+
     private func article(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
@@ -104,6 +173,10 @@ struct PublishedContentDetailView: View {
                     .foregroundStyle(BodyFlowColor.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityFocused(
+                        $accessibilityFocus,
+                        equals: .articleHeading
+                    )
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {
@@ -121,6 +194,12 @@ struct PublishedContentDetailView: View {
                     status(detail)
                 }
 
+                contentActions(detail)
+
+                if let presentation = model.contentMutationPresentation {
+                    mutationSummary(presentation)
+                }
+
                 Divider()
 
                 BodyFlowMarkdownView(document: detail.document)
@@ -129,6 +208,82 @@ struct PublishedContentDetailView: View {
             .padding(.vertical, BodyFlowSpacing.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func contentActions(
+        _ detail: RenderablePublishedContentDetail
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: BodyFlowSpacing.sm) {
+                saveButton(detail)
+                if model.showsCompletionAction {
+                    completionButton
+                }
+            }
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                saveButton(detail)
+                if model.showsCompletionAction {
+                    completionButton
+                }
+            }
+        }
+    }
+
+    private func saveButton(
+        _ detail: RenderablePublishedContentDetail
+    ) -> some View {
+        Button {
+            Task { await model.toggleSaved() }
+        } label: {
+            Label(
+                detail.saved ? "Remover dos salvos" : "Salvar",
+                systemImage: detail.saved ? "bookmark.slash" : "bookmark"
+            )
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
+        .disabled(!model.canToggleSaved)
+        .accessibilityIdentifier("content-detail.save")
+    }
+
+    private var completionButton: some View {
+        Button {
+            Task { await model.complete() }
+        } label: {
+            Label("Concluir", systemImage: "checkmark.circle")
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(!model.canComplete)
+        .accessibilityIdentifier("content-detail.complete")
+    }
+
+    private func mutationSummary(
+        _ presentation: ContentMutationPresentation
+    ) -> some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+            Label(presentation.message, systemImage: presentation.systemImage)
+            if presentation.allowsRetry {
+                Button {
+                    Task { await model.retryContentMutation() }
+                } label: {
+                    Text("Tentar novamente")
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("content-detail.mutation.retry")
+            }
+        }
+        .font(BodyFlowTypography.callout)
+        .foregroundStyle(BodyFlowColor.primaryText)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("content-detail.mutation.summary")
+        .accessibilityFocused(
+            $accessibilityFocus,
+            equals: .mutationSummary
+        )
     }
 
     private func categoryMetadata(

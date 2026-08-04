@@ -9,6 +9,8 @@ enum AppRoute: Hashable, Sendable {
     case routine(RoutineRoute)
     case plan(PlanRoute)
     case progress(ProgressRoute)
+    case content(ContentRoute)
+    case mascot(MascotRoute)
 
     var tab: AppTab {
         switch self {
@@ -22,6 +24,8 @@ enum AppRoute: Hashable, Sendable {
             .plan
         case .progress:
             .progress
+        case .content, .mascot:
+            .today
         }
     }
 
@@ -34,6 +38,27 @@ enum AppRoute: Hashable, Sendable {
         case .profile: "route.perfil.detalhe"
         }
     }
+}
+
+enum LibrarySelection: Hashable, Sendable {
+    case all
+    case saved
+
+    var contentSurface: ContentSurface {
+        switch self {
+        case .all: .library
+        case .saved: .saved
+        }
+    }
+}
+
+enum ContentRoute: Hashable, Sendable {
+    case library(initialSelection: LibrarySelection)
+    case detail(publicationID: String, origin: ContentOrigin)
+}
+
+enum MascotRoute: Hashable, Sendable {
+    case detail
 }
 
 /// Plan navigation intentionally carries no mutable plan snapshot. The
@@ -141,6 +166,7 @@ final class AppRouter {
     }
 
     func navigate(to route: AppRoute, in tab: AppTab) {
+        guard route.tab == tab else { return }
         paths[tab, default: []].append(route)
     }
 

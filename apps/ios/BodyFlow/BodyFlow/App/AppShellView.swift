@@ -12,13 +12,16 @@ struct AppShellView: View {
     @State private var historyCoordinator: HistoryFeatureCoordinator
     let userID: String
     let dependencies: AppDependencies
+    let sessionOwner: Prompt14SessionOwner
 
     init(
         userID: String,
-        dependencies: AppDependencies
+        dependencies: AppDependencies,
+        sessionOwner: Prompt14SessionOwner
     ) {
         self.userID = userID
         self.dependencies = dependencies
+        self.sessionOwner = sessionOwner
         _invalidationCenter = State(
             initialValue: FeatureInvalidationCenter()
         )
@@ -29,7 +32,7 @@ struct AppShellView: View {
             initialValue: PlanViewModel(provider: dependencies.plan)
         )
         _progressViewModel = State(
-            initialValue: ProgressViewModel(provider: dependencies.progress)
+            initialValue: ProgressViewModel(provider: sessionOwner.progress)
         )
         let historyModel = HistoryViewModel(provider: dependencies.history)
         _historyViewModel = State(initialValue: historyModel)
@@ -72,6 +75,9 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
                 .environment(router)
+        }
+        .onDisappear {
+            sessionOwner.invalidateSynchronously()
         }
     }
 
@@ -161,14 +167,21 @@ struct AppShellView: View {
             PlanDetailView(provider: dependencies.plan)
         case .progress:
             Block7700DetailView(today: dependencies.today)
+        case .content, .mascot:
+            FeatureDetailView(route: route)
         }
     }
 }
 
 #Preview("App Shell · Loaded") {
+    let dependencies = AppDependencies.scaffold()
     AppShellView(
         userID: "fixture-user",
-        dependencies: AppDependencies.scaffold()
+        dependencies: dependencies,
+        sessionOwner: Prompt14SessionOwner(
+            userID: "fixture-user",
+            dependencies: dependencies
+        )
     )
-        .installAppDependencies(AppDependencies.scaffold())
+        .installAppDependencies(dependencies)
 }

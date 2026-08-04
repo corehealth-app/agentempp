@@ -167,7 +167,19 @@ struct AppShellView: View {
             PlanDetailView(provider: dependencies.plan)
         case .progress:
             Block7700DetailView(today: dependencies.today)
-        case .content, .mascot:
+        case let .content(contentRoute):
+            switch contentRoute {
+            case let .library(initialSelection):
+                LibraryRootView(
+                    initialSelection: initialSelection,
+                    sessionOwner: sessionOwner,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case .detail:
+                FeatureDetailView(route: route)
+            }
+        case .mascot:
             FeatureDetailView(route: route)
         }
     }

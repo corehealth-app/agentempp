@@ -199,16 +199,19 @@ struct TodayPresentation: Equatable, Sendable {
 struct TodayRootView: View {
     let model: TodayViewModel
     let recommendations: TodayRecommendationsViewModel?
+    let mascot: MascotExperienceViewModel?
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.colorScheme) private var colorScheme
 
     init(
         model: TodayViewModel,
         recommendations: TodayRecommendationsViewModel? = nil,
+        mascot: MascotExperienceViewModel? = nil,
         invalidationCenter: FeatureInvalidationCenter
     ) {
         self.model = model
         self.recommendations = recommendations
+        self.mascot = mascot
         self.invalidationCenter = invalidationCenter
     }
 
@@ -231,6 +234,12 @@ struct TodayRootView: View {
             guard let recommendations else { return }
             let revision = invalidationCenter.revision(for: .contentCatalog)
             await recommendations.load(catalogRevision: revision)
+        }
+        .task(id: invalidationCenter.revision(for: .coachExperience)) {
+            guard let mascot else { return }
+            await mascot.load(
+                revision: invalidationCenter.revision(for: .coachExperience)
+            )
         }
         .toolbar {
             let navigation = TodayRootNavigationPresentation(state: model.state)
@@ -304,6 +313,9 @@ struct TodayRootView: View {
                 }
 
                 TodayHeaderSection(descriptor: presentation.header)
+                if let mascot {
+                    MascotCardView(model: mascot)
+                }
                 TodayAttentionSection(descriptor: presentation.attention)
                 TodayEnergySection(
                     descriptor: presentation.energy,
@@ -356,6 +368,9 @@ struct TodayRootView: View {
         }
         .refreshable {
             await model.retry()
+            if let mascot {
+                await mascot.retry()
+            }
         }
     }
 

@@ -96,42 +96,16 @@ struct CoachPersonaPickerView: View {
             }
 
             Section("Escolha uma opção") {
-                ForEach(CoachPersona.allCases, id: \.self) { persona in
-                    Button {
-                        model.select(persona)
-                    } label: {
-                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                            Image(systemName: model.selected == persona ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(BodyFlowColor.accent)
-                                .accessibilityHidden(true)
-
-                            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                                Text(persona.displayName)
-                                    .font(BodyFlowTypography.headline)
-                                    .foregroundStyle(BodyFlowColor.primaryText)
-
-                                Text(persona.summary)
-                                    .font(BodyFlowTypography.callout)
-                                    .foregroundStyle(BodyFlowColor.secondaryText)
-
-                                Text(
-                                    model.selected == persona
-                                        ? "Selecionado"
-                                        : "Não selecionado"
-                                )
-                                .font(BodyFlowTypography.callout)
-                                .foregroundStyle(BodyFlowColor.secondaryText)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let options = model.pickerOptions {
+                    ForEach(options) { option in
+                        personaRow(option)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving || isUnresolvedLoadFailure)
-                    .accessibilityAddTraits(model.selected == persona ? .isSelected : [])
-                    .accessibilityIdentifier("persona.\(persona.id)")
+                } else {
+                    ContentUnavailableView(
+                        "Indisponível nesta versão",
+                        systemImage: "nosign"
+                    )
+                    .accessibilityIdentifier("persona.options.unavailable")
                 }
             }
         }
@@ -145,6 +119,47 @@ struct CoachPersonaPickerView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+    }
+
+    private func personaRow(
+        _ option: CoachPersonaPickerOption
+    ) -> some View {
+        let persona = option.persona
+        return Button {
+            model.select(persona)
+        } label: {
+            HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                Image(systemName: model.selected == persona ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(BodyFlowColor.accent)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    Text(option.name)
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+
+                    Text(option.description)
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+
+                    Text(
+                        model.selected == persona
+                            ? "Selecionado"
+                            : "Não selecionado"
+                    )
+                    .font(BodyFlowTypography.callout)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isSaving || isUnresolvedLoadFailure)
+        .accessibilityAddTraits(model.selected == persona ? .isSelected : [])
+        .accessibilityIdentifier("persona.\(option.id)")
     }
 
     private var isSaving: Bool {
@@ -161,6 +176,7 @@ struct CoachPersonaPickerView: View {
     private var canSave: Bool {
         !isSaving
             && !isUnresolvedLoadFailure
+            && model.pickerOptions != nil
             && model.selected != nil
             && model.selected != model.persisted
     }
@@ -182,6 +198,24 @@ struct CoachPersonaPickerView: View {
 }
 
 #if DEBUG
+private let profilePersonaPreviewOptions = [
+    CoachPersonaOption(
+        code: .focus,
+        name: "Focus",
+        description: "Direto, firme e objetivo."
+    ),
+    CoachPersonaOption(
+        code: .impulse,
+        name: "Impulse",
+        description: "Motivador, positivo e energético."
+    ),
+    CoachPersonaOption(
+        code: .zen,
+        name: "Zen",
+        description: "Calmo, didático e acolhedor."
+    ),
+]
+
 private actor ProfilePersonaPreviewRepository: CoachPersonaRepository {
     let persona: CoachPersona?
 
@@ -200,6 +234,7 @@ private actor ProfilePersonaPreviewRepository: CoachPersonaRepository {
     CoachPersonaPickerView(model: CoachPersonaEditorModel(
         userID: "preview-user",
         repository: ProfilePersonaPreviewRepository(persona: .focus),
+        serverOptions: profilePersonaPreviewOptions,
         initialSelected: .focus,
         initialPersisted: .focus,
         initialOperationState: .idle
@@ -210,6 +245,7 @@ private actor ProfilePersonaPreviewRepository: CoachPersonaRepository {
     CoachPersonaPickerView(model: CoachPersonaEditorModel(
         userID: "preview-user",
         repository: ProfilePersonaPreviewRepository(persona: .focus),
+        serverOptions: profilePersonaPreviewOptions,
         initialSelected: .zen,
         initialPersisted: .focus,
         initialOperationState: .saving
@@ -220,6 +256,7 @@ private actor ProfilePersonaPreviewRepository: CoachPersonaRepository {
     CoachPersonaPickerView(model: CoachPersonaEditorModel(
         userID: "preview-user",
         repository: ProfilePersonaPreviewRepository(persona: .focus),
+        serverOptions: profilePersonaPreviewOptions,
         initialSelected: .focus,
         initialPersisted: .focus,
         initialOperationState: .failed(.storageUnavailable)

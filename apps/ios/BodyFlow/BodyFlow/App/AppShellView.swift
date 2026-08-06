@@ -11,6 +11,7 @@ struct AppShellView: View {
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
     @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
+    @State private var todayMascotViewModel: MascotExperienceViewModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
     let dependencies: AppDependencies
@@ -48,6 +49,11 @@ struct AppShellView: View {
                 timeProvider: dependencies.timeProvider,
                 invalidationCenter: invalidationCenter,
                 coverLoader: sessionOwner.coverLoader
+            )
+        )
+        _todayMascotViewModel = State(
+            initialValue: MascotExperienceViewModel(
+                provider: sessionOwner.coachExperience
             )
         )
         _contentCoverEnvironment = State(
@@ -127,6 +133,7 @@ struct AppShellView: View {
             TodayRootView(
                 model: todayViewModel,
                 recommendations: todayRecommendationsViewModel,
+                mascot: todayMascotViewModel,
                 invalidationCenter: invalidationCenter
             )
         case .register:
@@ -142,7 +149,11 @@ struct AppShellView: View {
                 selectedTab: $selectedTab
             )
         case .profile:
-            ProfileRootView(userID: userID)
+            ProfileRootView(
+                userID: userID,
+                coachExperienceProvider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
         }
     }
 
@@ -211,8 +222,11 @@ struct AppShellView: View {
                     coverLoader: sessionOwner.coverLoader
                 )
             }
-        case .mascot:
-            FeatureDetailView(route: route)
+        case .mascot(.detail):
+            MascotDetailView(
+                provider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
         }
     }
 }

@@ -3146,6 +3146,28 @@ git commit -m "feat(ios): present official gamification values"
 - Consumes: Debug scenarios, approved semantic presentation states and existing telemetry allowlist.
 - Produces: deterministic previews/test launches and bounded technical classifications only.
 
+**Gate 26A clarified contracts:**
+
+- The added-line Release gate retains its historical base
+  `0e51adebfa8ef718db87096283154c738d8ea0ae` and complete source scope. Its
+  exact pattern is
+  `URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://`.
+  Autonomous `Authorization`/`Bearer` words still fail; safe composite
+  presentation identifiers such as `LibraryCoverAuthorizationRelay` and
+  `ContentDetailCoverAuthorization` do not represent credentials or transport
+  and do not fail.
+- Prompt 14 reuses only event `feature_screen_viewed`. The exact approved
+  metadata vocabulary, derived from `TelemetryClient.swift` and the preserved
+  Task 26 REDs, is: `screen` = `library | content_detail |
+  today_recommendations | mascot | progress`; `outcome` = `success | failure`;
+  `mascot_state_classification` = `evolving | unknown`. The raw value carried
+  by `MascotWireState.unknown` is never emitted. No additional Prompt 14 event,
+  metadata key or value is approved.
+- Free-form values, raw unknown state, title, excerpt, Markdown, badge text,
+  cover capability/URL/token, authorization or bearer value, content/payload,
+  name, email, XP/streak and patient-health data are always discarded. A
+  telemetry failure remains non-blocking.
+
 - [ ] **Step 1: Write RED privacy/Release/previews tests**
 
 Test previews for Library/detail/recommendation/mascot/progress states; Prompt 14 launch flags are exactly one per launch and ignored by Release; fixture factories/fake stream/temporary art cannot be constructed in Release; new factories create only unavailable providers; trusted origin is nil; loader resolution returns `operationUnavailable` before request construction; an outbound-stream spy remains at zero; and telemetry drops title/excerpt/Markdown/cover capability/badge text/name/email/bearer/health values while accepting only allowlisted screen/outcome plus `evolving|unknown` mascot classification.
@@ -3221,6 +3243,17 @@ BODYFLOW_PROMPT14_RELEASE_SOURCE_SCOPE=(
   apps/ios/BodyFlow/BodyFlow/Features/Today
 )
 BODYFLOW_PROMPT14_ADDED_LINES="$BODYFLOW_BOUNDARY_ROOT/prompt14-added-lines.txt"
+BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN='URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://'
+
+! printf '%s\n' \
+  'LibraryCoverAuthorizationRelay' \
+  'ContentDetailCoverAuthorization' \
+  | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
+printf '%s\n' 'Authorization: redacted' | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
+printf '%s\n' 'Bearer token' | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
+printf '%s\n' 'URLSession' | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
+printf '%s\n' 'URLRequest' | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
+printf '%s\n' 'https://' | rg -q "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN"
 
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
@@ -3268,7 +3301,7 @@ git diff --unified=0 0e51adebfa8ef718db87096283154c738d8ea0ae -- \
   "${BODYFLOW_PROMPT14_RELEASE_SOURCE_SCOPE[@]}" \
   | sed -n '/^+++ /d; s/^+//p' > "$BODYFLOW_PROMPT14_ADDED_LINES"
 bodyflow_boundary_require_no_rg_match -n \
-  'URLSession|URLRequest|HTTPClient|APIClient|Authorization|Bearer|baseURL|APIRequest<|https?://' \
+  "$BODYFLOW_PROMPT14_RELEASE_GATE_PATTERN" \
   "$BODYFLOW_PROMPT14_ADDED_LINES"
 bodyflow_boundary_require_no_rg_match -n -i \
   '\b(openai|llm)\b|recurring[[:space:]_]*message|mascot[[:space:]_]*message[[:space:]_]*catalog|xpToNext|levelThreshold|levelForXP|computeProgress|calculate(Level|XP|Streak)|awardXP|restoreStreak' \
@@ -3735,7 +3768,7 @@ git diff --unified=0 0e51adebfa8ef718db87096283154c738d8ea0ae -- \
   "${BODYFLOW_PROMPT14_RELEASE_SOURCE_SCOPE[@]}" \
   | sed -n '/^+++ /d; s/^+//p' > "$BODYFLOW_PROMPT14_ADDED_LINES"
 bodyflow_require_no_rg_match -n \
-  'URLSession|URLRequest|HTTPClient|APIClient|Authorization|Bearer|baseURL|APIRequest<|https?://' \
+  'URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://' \
   "$BODYFLOW_PROMPT14_ADDED_LINES"
 
 xcrun simctl install 27291590-659D-4A29-8F45-CA5CA2D154F9 \

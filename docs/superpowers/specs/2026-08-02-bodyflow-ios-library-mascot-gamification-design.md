@@ -1595,17 +1595,51 @@ reused as mascot/medal art.
 - Locale, plan, protocol, personality and publication eligibility remain
   server-owned.
 - Cover capability paths and article bodies are excluded from telemetry/logs.
-- Telemetry may include bounded technical publication ID, version, surface,
-  event kind, effective persona code, mascot raw state classification,
-  request ID and outcome.
-- Telemetry excludes title, excerpt, Markdown, cover URL/token, message copy,
-  badge text, name, email, bearer, targeting reason and patient health values.
-- Unknown enum telemetry is length-bounded and never emitted as arbitrary
-  unbounded server text.
+- Prompt 14 reuses only the existing `feature_screen_viewed` event and its
+  closed metadata filtering. Its exact approved metadata vocabulary is:
+  `screen` with `library`, `content_detail`, `today_recommendations`, `mascot`
+  or the existing `progress`; `outcome` with the existing `success` or
+  `failure`; and `mascot_state_classification` with only `evolving` or
+  `unknown`.
+- The screen/event/key and outcome literals above come from the existing
+  `TelemetryClient.swift` contract plus the preserved Task 26 REDs. No other
+  Prompt 14 event, key or value is approved. In particular, a future raw
+  mascot state is classified only as `unknown`; its server-provided value is
+  never emitted, truncated, normalized or copied into telemetry.
+- Prompt 14 telemetry excludes free-form values, publication content and
+  identifiers not present in that closed vocabulary, including title,
+  excerpt, Markdown, cover URL/capability/token, message copy, badge text,
+  name, email, authorization/bearer values, raw payloads, targeting reason,
+  XP/streak values and patient health values. Telemetry failure remains
+  non-blocking and cannot change the functional flow.
 - There is no ranking identity exposure or cooperative membership in this
   increment.
 - No runtime LLM is called for recurring messages, mascot copy,
   recommendations, missions or gamification.
+
+### Historical Release Added-Line Gate
+
+The Release source gate continues to inspect every added line since
+`0e51adebfa8ef718db87096283154c738d8ea0ae`. Its exact forbidden-expression
+pattern is:
+
+```text
+URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://
+```
+
+`Authorization` and `Bearer` are intentionally matched only as autonomous
+words. This still rejects credential/header or transport source such as
+`Authorization: redacted`, `Bearer token`, `URLSession`, `URLRequest` and
+`https://`,
+while avoiding false positives for safe composite presentation identifiers.
+For example, `LibraryCoverAuthorizationRelay` and
+`ContentDetailCoverAuthorization` describe in-memory cover-presentation
+authorization; they are neither credentials nor transport and must not fail
+the gate.
+
+The Gate 26A synthetic probes require both safe identifiers to produce no
+match and each prohibited standalone/transport sample above to produce a
+match. The historical base and source scope remain unchanged.
 
 ## Testing Strategy
 

@@ -1641,6 +1641,66 @@ The Gate 26A synthetic probes require both safe identifiers to produce no
 match and each prohibited standalone/transport sample above to produce a
 match. The historical base and source scope remain unchanged.
 
+## Task 27A Deterministic XCUI Prerequisite
+
+Task 27 is blocked on a committed, GREEN prerequisite named Task 27A. The
+existing catalog of exactly 19 Prompt 14 launch scenarios cannot reach every
+mandatory XCUI journey required by Task 27. Task 27A may add only the closed,
+deterministic Debug states needed to make those already-required journeys
+reachable; it does not add product behavior, a live integration or a new
+journey requirement.
+
+The additional deterministic states are limited to:
+
+- stale Today recommendations while official Today remains visible;
+- first next-page failure followed by retry of the same opaque cursor;
+- `invalidContentCursor` followed by a cursor-nil first-page recovery;
+- an incomplete authorized detail that exposes explicit completion;
+- recoverable save/completion failure followed by retry of the same immutable
+  attempt;
+- valid Markdown containing an external absolute HTTPS link;
+- expired, over-byte-limit, MIME-mismatched and abusive-dimension covers;
+- an external cover path rejected before transport;
+- Focus+Active and Zen+Neglected coach/mascot responses;
+- explicit complete progress and duplicate badge strings;
+- bounded observable proof that the real detail GET completed before exactly
+  one real opened mutation.
+
+The exclusive Task 27A implementation allowlist is exactly:
+
+- `apps/ios/BodyFlow/BodyFlow/App/AppLaunchConfiguration.swift`;
+- `apps/ios/BodyFlow/BodyFlow/App/AppDependencies.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Repository.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoContentCoverByteStream.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/Prompt14LaunchConfigurationTests.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/AppDependenciesTests.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/DemoPrompt14RepositoryTests.swift`.
+
+Every additional scenario, fixture, stream and recorder/composition is
+`#if DEBUG` only. Release continues to fail closed with unavailable providers,
+and no journey may introduce a Release success path. The semantics and flags
+of all 19 current scenarios remain unchanged, and every launch must select
+exactly one Prompt 14 scenario flag.
+
+The GET → opened instrumentation observes only actual calls made through the
+real deterministic repository/provider/mutation-ledger flow. It records only
+a bounded technical sequence and excludes body, title, capability, token, URL,
+PII and payload. It cannot bypass providers, decoder or ledger.
+
+Task 27A uses strict TDD in its three authorized test files, followed by
+focused and inherited tests, Debug and Release builds, the corrected Task 26
+historical source gate, Release binary/symbol/privacy audits, Swift 6 strict
+concurrency and iOS 18 checks, `git diff --check`, and independent concurrency,
+privacy and Release reviews. It creates no XCUI file and edits no view or view
+model.
+
+After Task 27A is GREEN and committed, Task 27 retains its existing
+responsibility: it creates the five XCUI files and may make only observed
+minimal corrections in its eight already authorized views. Task 28 remains
+later. Task 27A does not authorize a wire contract, endpoint, network, URL,
+cache, persistence, parallel transport or production/live integration.
+
 ## Testing Strategy
 
 Every future implementation behavior starts with an observed RED test, reaches

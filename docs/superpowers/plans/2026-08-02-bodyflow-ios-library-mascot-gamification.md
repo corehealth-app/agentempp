@@ -3325,6 +3325,181 @@ git add apps/ios/BodyFlow/BodyFlow/Features/PreviewSupport/Prompt14PreviewSuppor
 git commit -m "test(ios): harden prompt 14 release privacy"
 ```
 
+### Task 27A: Add Closed Deterministic Debug States For Mandatory XCUI Journeys
+
+**Files:**
+- Modify: `apps/ios/BodyFlow/BodyFlow/App/AppLaunchConfiguration.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/App/AppDependencies.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Repository.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoContentCoverByteStream.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/Prompt14LaunchConfigurationTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/AppDependenciesTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/DemoPrompt14RepositoryTests.swift`
+
+**Interfaces:**
+- Consumes: the existing catalog of exactly 19 Prompt 14 launch scenarios and
+  the real deterministic repository/provider/mutation-ledger composition.
+- Produces: only the closed deterministic Debug states needed by Task 27;
+  Release remains fail-closed with unavailable providers.
+- Dependency: Task 27 may not start until Task 27A is GREEN and committed.
+
+The exclusive implementation allowlist is exactly the eight paths above.
+Task 27A creates no XCUI file and edits no view or view model. It must not
+invent a wire contract, endpoint, network, URL, cache, persistence or parallel
+transport, and it authorizes no production/live integration.
+
+The current 19 scenarios retain their exact flags and semantics. Every launch
+continues to accept exactly one Prompt 14 scenario flag. Every additional
+scenario, fixture, stream and recorder/composition is `#if DEBUG` only and may
+not introduce a Release success path.
+
+- [ ] **Step 1: Write strict RED tests in the three authorized test files**
+
+Add focused tests, before implementation, for only these missing deterministic
+states:
+
+- stale Today recommendations while official Today remains visible;
+- first next-page failure followed by Retry with the exact same opaque cursor;
+- `invalidContentCursor` followed by a cursor-nil first-page recovery;
+- an incomplete authorized detail that exposes explicit completion;
+- recoverable save/completion failure followed by retry of the exact same
+  immutable attempt;
+- valid Markdown containing an external absolute HTTPS link;
+- expired, over-byte-limit, MIME-mismatched and abusive-dimension covers;
+- an external cover path rejected before transport;
+- Focus+Active and Zen+Neglected coach/mascot responses;
+- explicit complete progress and duplicate badge strings;
+- bounded observable proof that the real detail GET completed before exactly
+  one real opened mutation.
+
+The GET → opened proof must instrument only calls that actually pass through
+the deterministic repository/provider/mutation-ledger flow. Its recorder may
+store only a bounded technical sequence; body, title, capability, token, URL,
+PII and payload are prohibited. The proof must not bypass providers, decoder
+or ledger.
+
+The REDs also lock every one of the 19 existing flags and behaviors, reject
+zero or multiple Prompt 14 scenario flags, prove that all additions are
+unavailable to Release composition and prove that the external cover path is
+rejected before the stream records any transport attempt.
+
+- [ ] **Step 2: Run the focused tests and observe behavior-specific RED**
+
+```bash
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  -only-testing:BodyFlowTests/Prompt14LaunchConfigurationTests \
+  -only-testing:BodyFlowTests/AppDependenciesTests \
+  -only-testing:BodyFlowTests/DemoPrompt14RepositoryTests \
+  test
+```
+
+Expected RED: the new closed state, retry identity, pre-transport rejection or
+real-call ordering assertion fails for its missing implementation. A compile
+failure, unrelated inherited failure or test that bypasses the real
+composition is not an acceptable RED.
+
+- [ ] **Step 3: Implement the minimum Debug-only GREEN composition**
+
+Add only enough launch selection, dependency composition, fixtures,
+repository behavior and bounded cover stream behavior to satisfy the new
+REDs. Preserve every current scenario. Next-page Retry must reuse the same
+opaque cursor; invalid-cursor recovery must issue a cursor-nil first page; and
+save/completion Retry must reuse the complete immutable attempt. The external
+absolute HTTPS link remains article content only and does not authorize a
+transport or trusted origin. External cover input fails before transport.
+
+Rerun the Step 2 command to GREEN. Refactor only while those three focused test
+files remain GREEN.
+
+- [ ] **Step 4: Run focused and inherited tests, then fresh Debug/Release builds**
+
+```bash
+set -euo pipefail
+BODYFLOW_TASK27A_ROOT="$(mktemp -d /tmp/bodyflow-prompt14-task27a.XXXXXX)"
+
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -derivedDataPath "$BODYFLOW_TASK27A_ROOT/tests" \
+  -clonedSourcePackagesDirPath "$BODYFLOW_TASK27A_ROOT/SourcePackages" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  -only-testing:BodyFlowTests/Prompt14LaunchConfigurationTests \
+  -only-testing:BodyFlowTests/AppDependenciesTests \
+  -only-testing:BodyFlowTests/DemoPrompt14RepositoryTests \
+  test
+
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -derivedDataPath "$BODYFLOW_TASK27A_ROOT/inherited-tests" \
+  -clonedSourcePackagesDirPath "$BODYFLOW_TASK27A_ROOT/SourcePackages" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  -only-testing:BodyFlowTests \
+  test
+
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -derivedDataPath "$BODYFLOW_TASK27A_ROOT/debug" \
+  -clonedSourcePackagesDirPath "$BODYFLOW_TASK27A_ROOT/SourcePackages" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  CODE_SIGNING_ALLOWED=NO build
+
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Release \
+  -destination "generic/platform=iOS Simulator" \
+  -derivedDataPath "$BODYFLOW_TASK27A_ROOT/release" \
+  -clonedSourcePackagesDirPath "$BODYFLOW_TASK27A_ROOT/SourcePackages" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Expected: both test runs and both builds succeed. Build settings remain Swift
+6.0 with strict concurrency `complete` and iOS deployment target 18.0.
+
+- [ ] **Step 5: Run the corrected historical gate and Release audits**
+
+Reuse the complete Task 26 Release source scope. The historical added-line
+base remains exactly `0e51adebfa8ef718db87096283154c738d8ea0ae`, and the
+corrected forbidden-expression pattern remains exactly:
+
+```text
+URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://
+```
+
+Run the Task 26 safe/prohibited synthetic probes and the complete added-line
+gate without changing either base, pattern or source scope. Audit the fresh
+Release app binary and symbols against the closed list of every additional
+Task 27A flag, fixture, stream and recorder/composition name, requiring zero
+matches. The Release privacy audit must prove zero captured body, title,
+capability, token, URL, PII or payload; unavailable providers must remain the
+only Release result and the outbound-stream count must remain zero.
+
+Run `git diff --check`. Review the complete diff for the exact eight-path
+allowlist and confirm no XCUI, view, view-model, endpoint, network, URL, cache,
+persistence, parallel transport or production/live integration was added.
+
+- [ ] **Step 6: Obtain independent reviews and commit GREEN Task 27A**
+
+Require independent concurrency, privacy and Release reviews. Concurrency
+review verifies bounded recorder isolation, immutable Retry identity and no
+late cross-session publication. Privacy review verifies the technical-only
+sequence and the complete sensitive-field exclusion. Release review verifies
+`#if DEBUG`, unavailable providers, binary/symbol absence, the corrected
+historical gate and no success path.
+
+Commit all and only the eight authorized files after every gate is GREEN. Task
+27 remains blocked until that commit exists; Task 28 remains later.
+
 ### Task 27: Add UI, Accessibility And Visual-Evidence Journeys
 
 **Files:**
@@ -3345,6 +3520,7 @@ git commit -m "test(ios): harden prompt 14 release privacy"
 **Interfaces:**
 - Consumes: Debug-only Prompt 14 scenarios and stable accessibility identifiers.
 - Produces: deterministic XCUI journeys and named PNG/TXT attachments; no test-only success path in Release.
+- Prerequisite: Task 27A is GREEN and committed before Step 1 begins.
 
 - [ ] **Step 1: Write the UI journeys against a missing support layer (RED)**
 

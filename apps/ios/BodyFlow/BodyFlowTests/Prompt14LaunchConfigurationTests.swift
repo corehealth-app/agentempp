@@ -4,59 +4,64 @@ import Testing
 
 @testable import BodyFlow
 
-private let prompt14Arguments = [
-    "--ui-testing-prompt14-loaded",
-    "--ui-testing-prompt14-loading",
-    "--ui-testing-prompt14-empty",
-    "--ui-testing-prompt14-offline",
-    "--ui-testing-prompt14-error",
-    "--ui-testing-prompt14-stale",
-    "--ui-testing-prompt14-unavailable",
-    "--ui-testing-prompt14-opened-error",
-    "--ui-testing-prompt14-content-not-found",
-    "--ui-testing-prompt14-subscription-required",
-    "--ui-testing-prompt14-markdown-invalid",
-    "--ui-testing-prompt14-cover-invalid",
-    "--ui-testing-prompt14-mascot-variants",
-    "--ui-testing-prompt14-progress-empty",
-    "--ui-testing-prompt14-progress-minimum",
-    "--ui-testing-prompt14-streak-zero",
-    "--ui-testing-prompt14-conflict",
-    "--ui-testing-prompt14-reduce-motion",
-    "--ui-testing-prompt14-differentiate-without-color",
+private let legacyPrompt14Cases: [(String, DemoPrompt14Scenario)] = [
+    ("--ui-testing-prompt14-loaded", .loaded),
+    ("--ui-testing-prompt14-loading", .loading),
+    ("--ui-testing-prompt14-empty", .empty),
+    ("--ui-testing-prompt14-offline", .offline),
+    ("--ui-testing-prompt14-error", .error),
+    ("--ui-testing-prompt14-stale", .stale),
+    ("--ui-testing-prompt14-unavailable", .unavailable),
+    ("--ui-testing-prompt14-opened-error", .openedError),
+    ("--ui-testing-prompt14-content-not-found", .contentNotFound),
+    ("--ui-testing-prompt14-subscription-required", .subscriptionRequired),
+    ("--ui-testing-prompt14-markdown-invalid", .markdownInvalid),
+    ("--ui-testing-prompt14-cover-invalid", .coverInvalid),
+    ("--ui-testing-prompt14-mascot-variants", .mascotVariants),
+    ("--ui-testing-prompt14-progress-empty", .progressEmpty),
+    ("--ui-testing-prompt14-progress-minimum", .progressMinimum),
+    ("--ui-testing-prompt14-streak-zero", .streakZero),
+    ("--ui-testing-prompt14-conflict", .conflict),
+    ("--ui-testing-prompt14-reduce-motion", .reduceMotion),
+    (
+        "--ui-testing-prompt14-differentiate-without-color",
+        .differentiateWithoutColor
+    ),
 ]
+
+private let addedPrompt14Cases: [(String, String)] = [
+    (
+        "--ui-testing-prompt14-today-recommendations-stale",
+        "todayRecommendationsStale"
+    ),
+    ("--ui-testing-prompt14-next-page-failure-once", "nextPageFailureOnce"),
+    ("--ui-testing-prompt14-invalid-cursor-recovery", "invalidCursorRecovery"),
+    ("--ui-testing-prompt14-incomplete-detail", "incompleteDetail"),
+    ("--ui-testing-prompt14-mutation-failure-once", "mutationFailureOnce"),
+    ("--ui-testing-prompt14-markdown-external-link", "markdownExternalLink"),
+    ("--ui-testing-prompt14-cover-expired", "coverExpired"),
+    ("--ui-testing-prompt14-cover-too-large", "coverTooLarge"),
+    ("--ui-testing-prompt14-cover-mime-mismatch", "coverMIMEMismatch"),
+    ("--ui-testing-prompt14-cover-abusive-dimensions", "coverAbusiveDimensions"),
+    ("--ui-testing-prompt14-cover-external-path", "coverExternalPath"),
+    ("--ui-testing-prompt14-mascot-focus-active", "mascotFocusActive"),
+    ("--ui-testing-prompt14-mascot-zen-neglected", "mascotZenNeglected"),
+    (
+        "--ui-testing-prompt14-progress-complete-duplicate-badges",
+        "progressCompleteDuplicateBadges"
+    ),
+]
+
+private let prompt14Arguments = legacyPrompt14Cases.map(\.0)
+    + addedPrompt14Cases.map(\.0)
 
 @Suite("Prompt 14 Launch Configuration")
 struct Prompt14LaunchConfigurationTests {
-    private let scenarios: [DemoPrompt14Scenario] = [
-        .loaded,
-        .loading,
-        .empty,
-        .offline,
-        .error,
-        .stale,
-        .unavailable,
-        .openedError,
-        .contentNotFound,
-        .subscriptionRequired,
-        .markdownInvalid,
-        .coverInvalid,
-        .mascotVariants,
-        .progressEmpty,
-        .progressMinimum,
-        .streakZero,
-        .conflict,
-        .reduceMotion,
-        .differentiateWithoutColor,
-    ]
+    @Test("Debug preserves every exact legacy Prompt 14 flag")
+    func debugPreservesEveryLegacyExactFlag() {
+        #expect(legacyPrompt14Cases.count == 19)
 
-    @Test("Debug maps every exact Prompt 14 flag")
-    func debugMapsEveryExactFlag() {
-        #expect(prompt14Arguments.count == 19)
-        #expect(Set(prompt14Arguments).count == prompt14Arguments.count)
-        #expect(scenarios.count == 19)
-
-        for (argument, scenario) in zip(prompt14Arguments, scenarios) {
+        for (argument, scenario) in legacyPrompt14Cases {
             let configuration = AppLaunchConfiguration.resolve(
                 arguments: ["--ui-testing", argument],
                 buildFlavor: .debug
@@ -64,6 +69,36 @@ struct Prompt14LaunchConfigurationTests {
 
             #expect(configuration.mode == .demo)
             #expect(configuration.prompt14Scenario == scenario)
+            #expect(
+                configuration.prompt14ScenarioSelection
+                    == DemoPrompt14ScenarioSelection(legacyScenario: scenario)
+            )
+            #expect(configuration.prompt13Scenario == nil)
+            #expect(configuration.shouldResetDemoState)
+            #expect(configuration.startsWithCompletedFixture)
+            #expect(configuration.preloadsSyntheticOnboardingValues)
+        }
+    }
+
+    @Test("Debug maps every exact added Prompt 14 flag to its isolated state")
+    func debugMapsEveryAddedExactFlag() {
+        #expect(addedPrompt14Cases.count == 14)
+        #expect(prompt14Arguments.count == 33)
+        #expect(Set(prompt14Arguments).count == prompt14Arguments.count)
+
+        for (argument, expectedName) in addedPrompt14Cases {
+            let configuration = AppLaunchConfiguration.resolve(
+                arguments: ["--ui-testing", argument],
+                buildFlavor: .debug
+            )
+
+            #expect(configuration.mode == .demo)
+            #expect(
+                configuration.prompt14ScenarioSelection.map(
+                    String.init(describing:)
+                ) == expectedName
+            )
+            #expect(configuration.prompt14Scenario == nil)
             #expect(configuration.prompt13Scenario == nil)
             #expect(configuration.shouldResetDemoState)
             #expect(configuration.startsWithCompletedFixture)
@@ -84,6 +119,37 @@ struct Prompt14LaunchConfigurationTests {
         }
     }
 
+    @Test("Zero or multiple Prompt 14 flags select no Prompt 14 scenario")
+    func prompt14SelectionRequiresExactlyOneFlag() {
+        let zero = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing"],
+            buildFlavor: .debug
+        )
+        let twoLegacy = AppLaunchConfiguration.resolve(
+            arguments: [
+                "--ui-testing",
+                legacyPrompt14Cases[0].0,
+                legacyPrompt14Cases[1].0,
+            ],
+            buildFlavor: .debug
+        )
+        let legacyAndAdded = AppLaunchConfiguration.resolve(
+            arguments: [
+                "--ui-testing",
+                legacyPrompt14Cases[0].0,
+                addedPrompt14Cases[0].0,
+            ],
+            buildFlavor: .debug
+        )
+
+        #expect(zero.prompt14Scenario == nil)
+        #expect(zero.prompt14ScenarioSelection == nil)
+        #expect(twoLegacy.prompt14Scenario == nil)
+        #expect(twoLegacy.prompt14ScenarioSelection == nil)
+        #expect(legacyAndAdded.prompt14Scenario == nil)
+        #expect(legacyAndAdded.prompt14ScenarioSelection == nil)
+    }
+
     @Test("Prompt 13 keeps precedence when both generations of flags are present")
     func prompt13KeepsPrecedenceOverPrompt14() {
         let configuration = AppLaunchConfiguration.resolve(
@@ -97,11 +163,12 @@ struct Prompt14LaunchConfigurationTests {
 
         #expect(configuration.prompt13Scenario == .loaded)
         #expect(configuration.prompt14Scenario == nil)
+        #expect(configuration.prompt14ScenarioSelection == nil)
     }
 
     @Test("Only Prompt 14 accessibility flags install their overrides")
     func accessibilityFlagsInstallOnlyTheirOwnOverrides() {
-        for (argument, scenario) in zip(prompt14Arguments, scenarios) {
+        for (argument, scenario) in legacyPrompt14Cases {
             let configuration = AppLaunchConfiguration.resolve(
                 arguments: ["--ui-testing", argument],
                 buildFlavor: .debug
@@ -116,6 +183,16 @@ struct Prompt14LaunchConfigurationTests {
                     == (scenario == .differentiateWithoutColor ? true : nil)
             )
         }
+
+        for (argument, _) in addedPrompt14Cases {
+            let configuration = AppLaunchConfiguration.resolve(
+                arguments: ["--ui-testing", argument],
+                buildFlavor: .debug
+            )
+
+            #expect(configuration.accessibilityReduceMotionOverride == nil)
+            #expect(configuration.differentiateWithoutColorOverride == nil)
+        }
     }
 
     @Test("Release ignores every Prompt 14 flag")
@@ -128,6 +205,7 @@ struct Prompt14LaunchConfigurationTests {
 
             #expect(configuration.mode == .releaseUnavailable)
             #expect(configuration.prompt14Scenario == nil)
+            #expect(configuration.prompt14ScenarioSelection == nil)
             #expect(configuration.prompt13Scenario == nil)
             #expect(configuration.accessibilityReduceMotionOverride == nil)
             #expect(configuration.differentiateWithoutColorOverride == nil)
@@ -146,6 +224,7 @@ struct Prompt14LaunchConfigurationTests {
         )
 
         #expect(configuration.prompt14Scenario == nil)
+        #expect(configuration.prompt14ScenarioSelection == nil)
         #expect(configuration.differentiateWithoutColorOverride == nil)
     }
 

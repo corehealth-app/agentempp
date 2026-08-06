@@ -107,6 +107,23 @@ enum DemoPrompt14Fixtures {
         cover: nil
     )
 
+    static let incompleteSummary = PublishedContentSummary(
+        publicationID: "10000000-0000-4000-8000-000000000007",
+        slug: "conteudo-sintetico-incompleto",
+        locale: .ptBR,
+        title: "Conteúdo Sintético Incompleto",
+        excerpt: "Publicação fictícia e autorizada para validar conclusão explícita sem derivação local.",
+        category: .usingBodyFlow,
+        tags: ["sintetico", "incompleto"],
+        readingTimeMinutes: 3,
+        publishAt: timestamp(1_783_984_500),
+        featuredToday: false,
+        version: 5,
+        saved: false,
+        completed: false,
+        cover: cover("50000000-0000-4000-8000-000000000007")
+    )
+
     static let todayFeed = PublishedContentFeedResponse(
         data: PublishedContentFeed(
             items: [firstSummary, thirdSummary, fifthSummary],
@@ -137,6 +154,23 @@ enum DemoPrompt14Fixtures {
         meta: MobileResponseMetadata(
             apiVersion: "1",
             requestID: "90000000-0000-4000-8000-000000000003"
+        )
+    )
+
+    static let incompleteLibraryFeed = PublishedContentFeedResponse(
+        data: PublishedContentFeed(
+            items: [
+                firstSummary,
+                secondSummary,
+                thirdSummary,
+                fourthSummary,
+                incompleteSummary,
+            ],
+            nextCursor: opaqueCursor
+        ),
+        meta: MobileResponseMetadata(
+            apiVersion: "1",
+            requestID: "90000000-0000-4000-8000-000000000017"
         )
     )
 
@@ -242,6 +276,32 @@ enum DemoPrompt14Fixtures {
         """
     )
 
+    static let incompleteDetail = PublishedContentDetail(
+        summary: incompleteSummary,
+        bodyMarkdown: """
+        ## CONTEÚDO SINTÉTICO INCOMPLETO
+
+        Esta publicação local começa explicitamente incompleta para validar uma ação real de conclusão no fluxo determinístico.
+
+        * O identificador e a versão permanecem imutáveis.
+        * Salvar e concluir usam o ledger real da sessão.
+        * Nenhum progresso é derivado no dispositivo.
+        """ + "\n"
+    )
+
+    static let externalLinkDetail = PublishedContentDetail(
+        summary: firstSummary,
+        bodyMarkdown: """
+        ## CONTEÚDO SINTÉTICO COM REFERÊNCIA
+
+        Este corpo continua sendo uma publicação canônica e inclui somente um destino externo explícito para validar apresentação segura.
+
+        [Referência externa](\("https" + "://example.invalid/prompt14/reference"))
+
+        O destino pertence ao artigo e não concede origem confiável para capas ou qualquer transporte paralelo.
+        """ + "\n"
+    )
+
     static let validDetailResponse = PublishedContentDetailResponse(
         data: validDetail,
         meta: MobileResponseMetadata(
@@ -256,6 +316,68 @@ enum DemoPrompt14Fixtures {
             apiVersion: "1",
             requestID: "91000000-0000-4000-8000-000000000002"
         )
+    )
+
+    static let incompleteDetailResponse = PublishedContentDetailResponse(
+        data: incompleteDetail,
+        meta: MobileResponseMetadata(
+            apiVersion: "1",
+            requestID: "91000000-0000-4000-8000-000000000003"
+        )
+    )
+
+    static let externalLinkDetailResponse = PublishedContentDetailResponse(
+        data: externalLinkDetail,
+        meta: MobileResponseMetadata(
+            apiVersion: "1",
+            requestID: "91000000-0000-4000-8000-000000000004"
+        )
+    )
+
+    static let expiredCoverDetailResponse = coverDetailResponse(
+        summary: replacingCover(
+            in: firstSummary,
+            with: PublishedContentCover(
+                url: "/api/mobile/v1/content/covers/50000000-0000-4000-8000-000000000008",
+                expiresAt: APITimestamp(value: fixedNow)
+            )
+        ),
+        requestID: "91000000-0000-4000-8000-000000000005"
+    )
+
+    static let oversizedCoverDetailResponse = coverDetailResponse(
+        summary: replacingCover(
+            in: firstSummary,
+            with: cover("50000000-0000-4000-8000-000000000009")
+        ),
+        requestID: "91000000-0000-4000-8000-000000000006"
+    )
+
+    static let mimeMismatchCoverDetailResponse = coverDetailResponse(
+        summary: replacingCover(
+            in: firstSummary,
+            with: cover("50000000-0000-4000-8000-000000000010")
+        ),
+        requestID: "91000000-0000-4000-8000-000000000007"
+    )
+
+    static let abusiveDimensionsCoverDetailResponse = coverDetailResponse(
+        summary: replacingCover(
+            in: firstSummary,
+            with: cover("50000000-0000-4000-8000-000000000011")
+        ),
+        requestID: "91000000-0000-4000-8000-000000000008"
+    )
+
+    static let externalCoverDetailResponse = coverDetailResponse(
+        summary: replacingCover(
+            in: firstSummary,
+            with: PublishedContentCover(
+                url: "https" + "://external.invalid/prompt14/private-cover",
+                expiresAt: timestamp(1_816_123_500)
+            )
+        ),
+        requestID: "91000000-0000-4000-8000-000000000009"
     )
 
     static let coachMetadata = MobileResponseMetadata(
@@ -309,6 +431,22 @@ enum DemoPrompt14Fixtures {
         mascot: .unknown("future-synthetic"),
         changedAt: 1_784_546_100,
         requestID: "93000000-0000-4000-8000-000000000006"
+    )
+
+    static let focusActiveCoachResponse = coachResponse(
+        selected: .focus,
+        effective: .focus,
+        mascot: .active,
+        changedAt: 1_784_554_740,
+        requestID: "93000000-0000-4000-8000-000000000007"
+    )
+
+    static let zenNeglectedCoachResponse = coachResponse(
+        selected: .zen,
+        effective: .zen,
+        mascot: .neglected,
+        changedAt: 1_784_563_380,
+        requestID: "93000000-0000-4000-8000-000000000008"
     )
 
     static let coachResponses = [
@@ -394,6 +532,30 @@ enum DemoPrompt14Fixtures {
         )
     )
 
+    static let duplicateBadgeCompleteProgress = ProgressResponse(
+        data: ProgressSnapshot(
+            xpTotal: 2_450,
+            level: 7,
+            currentStreak: 12,
+            longestStreak: 21,
+            blocksCompleted: 2,
+            deficitBlock: 735,
+            currentWeight: Decimal(string: "78.4"),
+            currentBodyFatPercent: Decimal(string: "18.6"),
+            badgesEarned: [
+                "70000000-0000-4000-8000-000000000001",
+                "70000000-0000-4000-8000-000000000001",
+            ],
+            lastActiveDate: "2026-07-20",
+            nextReevaluation: "2026-07-29",
+            updatedAt: timestamp(1_784_589_300)
+        ),
+        meta: MobileResponseMetadata(
+            apiVersion: "1",
+            requestID: "92000000-0000-4000-8000-000000000005"
+        )
+    )
+
     static let validFeedResponses = [
         todayFeed,
         libraryFeed,
@@ -407,9 +569,19 @@ enum DemoPrompt14Fixtures {
         emptySavedFeed,
         emptyNutritionFeed,
         emptySleepFeed,
+        incompleteLibraryFeed,
     ]
 
-    static let validDetailResponses = [validDetailResponse]
+    static let validDetailResponses = [
+        validDetailResponse,
+        incompleteDetailResponse,
+        externalLinkDetailResponse,
+        expiredCoverDetailResponse,
+        oversizedCoverDetailResponse,
+        mimeMismatchCoverDetailResponse,
+        abusiveDimensionsCoverDetailResponse,
+        externalCoverDetailResponse,
+    ]
 
     static let contentStateMetadata = MobileResponseMetadata(
         apiVersion: "1",
@@ -511,6 +683,8 @@ enum DemoPrompt14Fixtures {
 
     static let invalidCoverBytes = Data("SYNTHETIC-NOT-AN-IMAGE".utf8)
 
+    static let abusiveDimensionPNG = pngHeader(width: 16_385, height: 1)
+
     private static let coachOptions = [
         CoachPersonaOption(
             code: .focus,
@@ -549,6 +723,83 @@ enum DemoPrompt14Fixtures {
             ),
             meta: MobileResponseMetadata(apiVersion: "1", requestID: requestID)
         )
+    }
+
+    private static func coverDetailResponse(
+        summary: PublishedContentSummary,
+        requestID: String
+    ) -> PublishedContentDetailResponse {
+        PublishedContentDetailResponse(
+            data: PublishedContentDetail(
+                summary: summary,
+                bodyMarkdown: validDetail.bodyMarkdown
+            ),
+            meta: MobileResponseMetadata(apiVersion: "1", requestID: requestID)
+        )
+    }
+
+    private static func replacingCover(
+        in summary: PublishedContentSummary,
+        with cover: PublishedContentCover
+    ) -> PublishedContentSummary {
+        PublishedContentSummary(
+            publicationID: summary.publicationID,
+            slug: summary.slug,
+            locale: summary.locale,
+            title: summary.title,
+            excerpt: summary.excerpt,
+            category: summary.category,
+            tags: summary.tags,
+            readingTimeMinutes: summary.readingTimeMinutes,
+            publishAt: summary.publishAt,
+            featuredToday: summary.featuredToday,
+            version: summary.version,
+            saved: summary.saved,
+            completed: summary.completed,
+            cover: cover
+        )
+    }
+
+    private static func pngHeader(width: UInt32, height: UInt32) -> Data {
+        var body = Data([137, 80, 78, 71, 13, 10, 26, 10])
+        var header = Data()
+        header.append(contentsOf: bigEndianBytes(width))
+        header.append(contentsOf: bigEndianBytes(height))
+        header.append(contentsOf: [8, 2, 0, 0, 0])
+        body.append(pngChunk(named: "IHDR", payload: header))
+        body.append(pngChunk(named: "IEND", payload: Data()))
+        return body
+    }
+
+    private static func pngChunk(named name: String, payload: Data) -> Data {
+        var chunk = Data(bigEndianBytes(UInt32(payload.count)))
+        let type = Data(name.utf8)
+        chunk.append(type)
+        chunk.append(payload)
+        chunk.append(contentsOf: bigEndianBytes(crc32(type + payload)))
+        return chunk
+    }
+
+    private static func bigEndianBytes(_ value: UInt32) -> [UInt8] {
+        [
+            UInt8(truncatingIfNeeded: value >> 24),
+            UInt8(truncatingIfNeeded: value >> 16),
+            UInt8(truncatingIfNeeded: value >> 8),
+            UInt8(truncatingIfNeeded: value),
+        ]
+    }
+
+    private static func crc32(_ bytes: Data) -> UInt32 {
+        var crc = UInt32.max
+        for byte in bytes {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                crc = crc & 1 == 0
+                    ? crc >> 1
+                    : (crc >> 1) ^ 0xEDB8_8320
+            }
+        }
+        return crc ^ UInt32.max
     }
 
     private static func cover(_ capability: String) -> PublishedContentCover {

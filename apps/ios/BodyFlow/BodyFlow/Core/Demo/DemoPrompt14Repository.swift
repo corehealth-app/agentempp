@@ -1,6 +1,11 @@
 #if DEBUG
 import Foundation
 
+enum DemoPrompt14TechnicalEvent: Equatable, Sendable {
+    case detailGETCompleted
+    case openedMutationStarted
+}
+
 actor DemoPrompt14Repository:
     PublishedContentListing,
     PublishedContentDetailProviding,
@@ -42,12 +47,17 @@ actor DemoPrompt14Repository:
         }
     }
 
+    private struct RecoverableMutationRetry: Equatable {
+        let key: IdempotencyKey
+        let identity: LedgerIdentity
+    }
+
     private enum MutationStart {
         case started(UInt64)
         case replayed(PublishedContentStateResponse)
     }
 
-    private let scenario: DemoPrompt14Scenario
+    private let scenario: DemoPrompt14ScenarioSelection
     private let mutationGate: DemoPrompt14MutationGate?
     private let mutationCommitGate: DemoPrompt14MutationGate?
     private var generation: UInt64 = 0
@@ -64,15 +74,32 @@ actor DemoPrompt14Repository:
     ] = [:]
     private var mutableContentStates: [String: MutableContentState] = [:]
     private var idempotencyLedger: [IdempotencyKey: LedgerEntry] = [:]
+    private var paginationFailureCounts: [ContentFeedQuery: Int] = [:]
     private var didFailOpened = false
     private var didFailStateMutation = false
+    private var didFailRecoverableMutation = false
+    private var recoverableMutationRetry: RecoverableMutationRetry?
+    private var technicalEvents: [DemoPrompt14TechnicalEvent] = []
+    private static let technicalEventCapacity = 8
 
     init(
         scenario: DemoPrompt14Scenario,
         mutationGate: DemoPrompt14MutationGate? = nil,
         mutationCommitGate: DemoPrompt14MutationGate? = nil
     ) {
-        self.scenario = scenario
+        self.scenario = DemoPrompt14ScenarioSelection(
+            legacyScenario: scenario
+        )
+        self.mutationGate = mutationGate
+        self.mutationCommitGate = mutationCommitGate
+    }
+
+    init(
+        selection: DemoPrompt14ScenarioSelection,
+        mutationGate: DemoPrompt14MutationGate? = nil,
+        mutationCommitGate: DemoPrompt14MutationGate? = nil
+    ) {
+        scenario = selection
         self.mutationGate = mutationGate
         self.mutationCommitGate = mutationCommitGate
     }
@@ -81,10 +108,16 @@ actor DemoPrompt14Repository:
         _ query: ContentFeedQuery
     ) async throws -> PublishedContentFeedResponse {
         let operationGeneration = try await prepareRead(.feed(query))
-        let response = try DemoPrompt14Fixtures.feed(
-            for: query,
-            empty: scenario == .empty
-        )
+        let response: PublishedContentFeedResponse
+        if scenario == .incompleteDetail,
+           query == (try DemoPrompt14Fixtures.libraryQuery()) {
+            response = DemoPrompt14Fixtures.incompleteLibraryFeed
+        } else {
+            response = try DemoPrompt14Fixtures.feed(
+                for: query,
+                empty: scenario == .empty
+            )
+        }
         try PublishedContentContractValidator.validate(response.data)
         try requireCurrent(operationGeneration)
         return overlay(response, for: query)
@@ -94,7 +127,11 @@ actor DemoPrompt14Repository:
         publicationID: String
     ) async throws -> PublishedContentDetailResponse {
         let operationGeneration = try await prepareRead(.detail(publicationID))
-        guard publicationID == DemoPrompt14Fixtures.firstSummary.publicationID else {
+        let isLegacyDetail = publicationID
+            == DemoPrompt14Fixtures.firstSummary.publicationID
+        let isIncompleteDetail = scenario == .incompleteDetail
+            && publicationID == DemoPrompt14Fixtures.incompleteSummary.publicationID
+        guard isLegacyDetail || isIncompleteDetail else {
             throw BodyFlowCapabilityError.contentNotFound
         }
 
@@ -107,12 +144,33 @@ actor DemoPrompt14Repository:
             break
         }
 
-        let response = scenario == .markdownInvalid
-            ? DemoPrompt14Fixtures.invalidMarkdownDetailResponse
-            : DemoPrompt14Fixtures.validDetailResponse
+        let response: PublishedContentDetailResponse
+        if isIncompleteDetail {
+            response = DemoPrompt14Fixtures.incompleteDetailResponse
+        } else {
+            response = switch scenario {
+            case .markdownInvalid:
+                DemoPrompt14Fixtures.invalidMarkdownDetailResponse
+            case .markdownExternalLink:
+                DemoPrompt14Fixtures.externalLinkDetailResponse
+            case .coverExpired:
+                DemoPrompt14Fixtures.expiredCoverDetailResponse
+            case .coverTooLarge:
+                DemoPrompt14Fixtures.oversizedCoverDetailResponse
+            case .coverMIMEMismatch:
+                DemoPrompt14Fixtures.mimeMismatchCoverDetailResponse
+            case .coverAbusiveDimensions:
+                DemoPrompt14Fixtures.abusiveDimensionsCoverDetailResponse
+            case .coverExternalPath:
+                DemoPrompt14Fixtures.externalCoverDetailResponse
+            default:
+                DemoPrompt14Fixtures.validDetailResponse
+            }
+        }
         try PublishedContentContractValidator.validate(response.data)
         _ = try BodyFlowMarkdownParser().parse(response.data.bodyMarkdown)
         try requireCurrent(operationGeneration)
+        recordTechnicalEvent(.detailGETCompleted)
         return overlay(response)
     }
 
@@ -150,13 +208,20 @@ actor DemoPrompt14Repository:
 
         do {
             try requireCurrent(operationGeneration)
-            try applyReadScenarioFailure(for: attempt.payload.body.event)
+            try applyReadScenarioFailure(
+                for: attempt.payload.body.event,
+                key: attempt.key,
+                identity: identity
+            )
             try await waitForControlledMutation()
             try requireCurrent(operationGeneration)
             if let mutationCommitGate {
                 try await mutationCommitGate.wait()
             }
             try requireCurrent(operationGeneration)
+            if attempt.payload.body.event == .opened {
+                recordTechnicalEvent(.openedMutationStarted)
+            }
 
             var state = mutableState(for: summary)
             let changed: Bool
@@ -226,7 +291,10 @@ actor DemoPrompt14Repository:
 
         do {
             try requireCurrent(operationGeneration)
-            try applySaveScenarioFailure()
+            try applySaveScenarioFailure(
+                key: attempt.key,
+                identity: identity
+            )
             try await waitForControlledMutation()
             try requireCurrent(operationGeneration)
             if let mutationCommitGate {
@@ -263,8 +331,14 @@ actor DemoPrompt14Repository:
         ended = true
         generation &+= 1
         readCounts.removeAll(keepingCapacity: false)
+        paginationFailureCounts.removeAll(keepingCapacity: false)
         mutableContentStates.removeAll(keepingCapacity: false)
         idempotencyLedger.removeAll(keepingCapacity: false)
+        didFailOpened = false
+        didFailStateMutation = false
+        didFailRecoverableMutation = false
+        recoverableMutationRetry = nil
+        technicalEvents.removeAll(keepingCapacity: false)
         await mutationGate?.cancelAll()
         await mutationCommitGate?.cancelAll()
         let continuations = Array(pendingReads.values)
@@ -298,6 +372,28 @@ actor DemoPrompt14Repository:
             if count > 0 {
                 throw BodyFlowCapabilityError.offline
             }
+        case .todayRecommendationsStale:
+            if case let .feed(query) = key, query.surface == .today {
+                let count = readCounts[key, default: 0]
+                readCounts[key] = count + 1
+                if count > 0 {
+                    throw BodyFlowCapabilityError.offline
+                }
+            }
+        case .nextPageFailureOnce:
+            if case let .feed(query) = key,
+               query == (try DemoPrompt14Fixtures.libraryNextQuery()) {
+                let count = paginationFailureCounts[query, default: 0]
+                paginationFailureCounts[query] = count + 1
+                if count == 0 {
+                    throw BodyFlowCapabilityError.serviceUnavailable
+                }
+            }
+        case .invalidCursorRecovery:
+            if case let .feed(query) = key,
+               query == (try DemoPrompt14Fixtures.libraryNextQuery()) {
+                throw BodyFlowCapabilityError.invalidContentCursor
+            }
         case .loaded,
              .empty,
              .openedError,
@@ -311,7 +407,18 @@ actor DemoPrompt14Repository:
              .streakZero,
              .conflict,
              .reduceMotion,
-             .differentiateWithoutColor:
+             .differentiateWithoutColor,
+             .incompleteDetail,
+             .mutationFailureOnce,
+             .markdownExternalLink,
+             .coverExpired,
+             .coverTooLarge,
+             .coverMIMEMismatch,
+             .coverAbusiveDimensions,
+             .coverExternalPath,
+             .mascotFocusActive,
+             .mascotZenNeglected,
+             .progressCompleteDuplicateBadges:
             break
         }
 
@@ -355,7 +462,14 @@ actor DemoPrompt14Repository:
         publicationID: String,
         version: Int
     ) throws -> PublishedContentSummary {
-        guard let summary = DemoPrompt14Fixtures.summary(publicationID: publicationID) else {
+        let summary: PublishedContentSummary?
+        if scenario == .incompleteDetail,
+           publicationID == DemoPrompt14Fixtures.incompleteSummary.publicationID {
+            summary = DemoPrompt14Fixtures.incompleteSummary
+        } else {
+            summary = DemoPrompt14Fixtures.summary(publicationID: publicationID)
+        }
+        guard let summary else {
             throw BodyFlowCapabilityError.contentNotFound
         }
         guard summary.version == version else {
@@ -365,7 +479,9 @@ actor DemoPrompt14Repository:
     }
 
     private func applyReadScenarioFailure(
-        for event: ContentReadEvent
+        for event: ContentReadEvent,
+        key: IdempotencyKey,
+        identity: LedgerIdentity
     ) throws {
         if scenario == .openedError, event == .opened, !didFailOpened {
             didFailOpened = true
@@ -375,12 +491,34 @@ actor DemoPrompt14Repository:
             didFailStateMutation = true
             throw BodyFlowCapabilityError.contentVersionChanged
         }
+        if scenario == .mutationFailureOnce,
+           event == .completed,
+           !didFailRecoverableMutation {
+            didFailRecoverableMutation = true
+            recoverableMutationRetry = RecoverableMutationRetry(
+                key: key,
+                identity: identity
+            )
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
     }
 
-    private func applySaveScenarioFailure() throws {
-        guard scenario == .conflict, !didFailStateMutation else { return }
-        didFailStateMutation = true
-        throw BodyFlowCapabilityError.contentVersionChanged
+    private func applySaveScenarioFailure(
+        key: IdempotencyKey,
+        identity: LedgerIdentity
+    ) throws {
+        if scenario == .conflict, !didFailStateMutation {
+            didFailStateMutation = true
+            throw BodyFlowCapabilityError.contentVersionChanged
+        }
+        if scenario == .mutationFailureOnce, !didFailRecoverableMutation {
+            didFailRecoverableMutation = true
+            recoverableMutationRetry = RecoverableMutationRetry(
+                key: key,
+                identity: identity
+            )
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
     }
 
     private func beginMutation(
@@ -388,6 +526,7 @@ actor DemoPrompt14Repository:
         identity: LedgerIdentity
     ) throws -> MutationStart {
         guard !ended else { throw CancellationError() }
+        try requireRecoverableRetryIdentity(key: key, identity: identity)
         if let entry = idempotencyLedger[key] {
             guard entry.identity == identity else {
                 throw BodyFlowCapabilityError.idempotencyConflict
@@ -410,6 +549,7 @@ actor DemoPrompt14Repository:
         identity: LedgerIdentity
     ) throws -> PublishedContentStateResponse? {
         guard !ended else { throw CancellationError() }
+        try requireRecoverableRetryIdentity(key: key, identity: identity)
         guard let entry = idempotencyLedger[key] else { return nil }
         guard entry.identity == identity else {
             throw BodyFlowCapabilityError.idempotencyConflict
@@ -419,6 +559,18 @@ actor DemoPrompt14Repository:
             throw BodyFlowCapabilityError.idempotencyRequestInProgress
         case let .completed(_, response):
             return replayedResponse(response)
+        }
+    }
+
+    private func requireRecoverableRetryIdentity(
+        key: IdempotencyKey,
+        identity: LedgerIdentity
+    ) throws {
+        guard let recoverableMutationRetry,
+              recoverableMutationRetry.key == key
+        else { return }
+        guard recoverableMutationRetry.identity == identity else {
+            throw BodyFlowCapabilityError.idempotencyConflict
         }
     }
 
@@ -489,6 +641,12 @@ actor DemoPrompt14Repository:
             mutableContentStates[publicationID] = state
         }
         idempotencyLedger[key] = .completed(identity, response)
+        if recoverableMutationRetry == RecoverableMutationRetry(
+            key: key,
+            identity: identity
+        ) {
+            recoverableMutationRetry = nil
+        }
     }
 
     private func abandonMutation(
@@ -564,6 +722,10 @@ actor DemoPrompt14Repository:
         idempotencyLedger.count
     }
 
+    func technicalEventsForTesting() -> [DemoPrompt14TechnicalEvent] {
+        technicalEvents
+    }
+
     func waitUntilPendingReadCountForTesting(_ count: Int) async {
         precondition(count > 0)
         guard pendingReads.count < count else { return }
@@ -583,16 +745,31 @@ actor DemoPrompt14Repository:
                 .continuation.resume()
         }
     }
+
+    private func recordTechnicalEvent(_ event: DemoPrompt14TechnicalEvent) {
+        if technicalEvents.count == Self.technicalEventCapacity {
+            technicalEvents.removeFirst()
+        }
+        technicalEvents.append(event)
+    }
 }
 
 struct DemoPrompt14PublishedContentSessionFactory:
     PublishedContentSessionCreating
 {
-    let scenario: DemoPrompt14Scenario
+    private let selection: DemoPrompt14ScenarioSelection
+
+    init(scenario: DemoPrompt14Scenario) {
+        selection = DemoPrompt14ScenarioSelection(legacyScenario: scenario)
+    }
+
+    init(selection: DemoPrompt14ScenarioSelection) {
+        self.selection = selection
+    }
 
     func makeSession(userID: String) -> PublishedContentSession {
         _ = userID
-        let repository = DemoPrompt14Repository(scenario: scenario)
+        let repository = DemoPrompt14Repository(selection: selection)
         return PublishedContentSession(
             listing: repository,
             detail: repository,
@@ -603,11 +780,17 @@ struct DemoPrompt14PublishedContentSessionFactory:
 }
 
 actor DemoPrompt14CoachProvider: CoachExperienceProviding {
-    private let scenario: DemoPrompt14Scenario
+    private let scenario: DemoPrompt14ScenarioSelection
     private var nextMascotVariantIndex = 0
 
     init(scenario: DemoPrompt14Scenario) {
-        self.scenario = scenario
+        self.scenario = DemoPrompt14ScenarioSelection(
+            legacyScenario: scenario
+        )
+    }
+
+    init(selection: DemoPrompt14ScenarioSelection) {
+        scenario = selection
     }
 
     func coachExperience() async throws -> CoachExperienceResponse {
@@ -631,6 +814,10 @@ actor DemoPrompt14CoachProvider: CoachExperienceProviding {
             }
             response = DemoPrompt14Fixtures.coachResponses[nextMascotVariantIndex]
             nextMascotVariantIndex += 1
+        } else if scenario == .mascotFocusActive {
+            response = DemoPrompt14Fixtures.focusActiveCoachResponse
+        } else if scenario == .mascotZenNeglected {
+            response = DemoPrompt14Fixtures.zenNeglectedCoachResponse
         } else {
             response = DemoPrompt14Fixtures.balancedCoachResponse
         }
@@ -646,13 +833,21 @@ actor DemoPrompt14CoachProvider: CoachExperienceProviding {
 struct DemoPrompt14CoachExperienceSessionFactory:
     CoachExperienceSessionCreating
 {
-    let scenario: DemoPrompt14Scenario
+    private let selection: DemoPrompt14ScenarioSelection
+
+    init(scenario: DemoPrompt14Scenario) {
+        selection = DemoPrompt14ScenarioSelection(legacyScenario: scenario)
+    }
+
+    init(selection: DemoPrompt14ScenarioSelection) {
+        self.selection = selection
+    }
 
     func makeCoachExperience(
         userID: String
     ) -> any CoachExperienceProviding {
         _ = userID
-        return DemoPrompt14CoachProvider(scenario: scenario)
+        return DemoPrompt14CoachProvider(selection: selection)
     }
 }
 
@@ -665,15 +860,31 @@ struct DemoPrompt14ProgressProvider: ProgressProviding {
 }
 
 struct DemoPrompt14ContentCoverSessionFactory: ContentCoverSessionCreating {
-    let scenario: DemoPrompt14Scenario
+    private let selection: DemoPrompt14ScenarioSelection
     let timeProvider: any TimeProviding
+
+    init(
+        scenario: DemoPrompt14Scenario,
+        timeProvider: any TimeProviding
+    ) {
+        selection = DemoPrompt14ScenarioSelection(legacyScenario: scenario)
+        self.timeProvider = timeProvider
+    }
+
+    init(
+        selection: DemoPrompt14ScenarioSelection,
+        timeProvider: any TimeProviding
+    ) {
+        self.selection = selection
+        self.timeProvider = timeProvider
+    }
 
     func makeLoader(userID: String) -> any ContentCoverLoading {
         _ = userID
         let origin = URL(string: "https://prompt14-fixture.invalid")
             .flatMap { try? ContentCoverTrustedOrigin(validating: $0) }
         return ContentCoverLoader(
-            stream: DemoContentCoverByteStream(scenario: scenario),
+            stream: DemoContentCoverByteStream(selection: selection),
             origin: origin,
             decoder: ContentCoverDecoder(),
             cache: SessionCoverCache(),

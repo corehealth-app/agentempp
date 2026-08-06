@@ -334,6 +334,113 @@ struct AppDependenciesTests {
         #expect(try await loaded.progress.progress() == DemoBodyFlowFixtures.loadedProgress)
     }
 
+    @Test("Every added Prompt 14 state keeps official Today loaded and scopes content to one session actor")
+    func addedPrompt14StatesKeepOfficialGraphAndContentScope() async throws {
+        for argument in addedPrompt14DependencyArguments {
+            let dependencies = prompt14Dependencies(argument)
+            #expect(try await dependencies.today.today() == DemoBodyFlowFixtures.loadedToday)
+
+            let session = dependencies.publishedContentSessions.makeSession(
+                userID: "prompt14-added-scope-user"
+            )
+            let listing = try #require(session.listing as? DemoPrompt14Repository)
+            let detail = try #require(session.detail as? DemoPrompt14Repository)
+            let state = try #require(session.state as? DemoPrompt14Repository)
+            let lifetime = try #require(session.lifetime as? DemoPrompt14Repository)
+
+            #expect(listing === detail)
+            #expect(listing === state)
+            #expect(listing === lifetime)
+        }
+    }
+
+    @Test("Duplicate-badge complete progress replaces only Progress")
+    func duplicateBadgeProgressReplacementIsNarrowAndExplicit() async throws {
+        let dependencies = prompt14Dependencies(
+            "--ui-testing-prompt14-progress-complete-duplicate-badges"
+        )
+        let today = try #require(dependencies.today as? DemoBodyFlowRepository)
+        let history = try #require(dependencies.history as? DemoBodyFlowRepository)
+        let plan = try #require(dependencies.plan as? DemoBodyFlowRepository)
+        let routine = try #require(dependencies.routine as? DemoBodyFlowRepository)
+        let snapshot = try #require(try await dependencies.progress.progress().data)
+
+        #expect(today === history)
+        #expect(today === plan)
+        #expect(today === routine)
+        #expect(dependencies.progress is DemoPrompt14ProgressProvider)
+        #expect(try await dependencies.today.today() == DemoBodyFlowFixtures.loadedToday)
+        #expect(snapshot.xpTotal == 2_450)
+        #expect(snapshot.level == 7)
+        #expect(snapshot.currentStreak == 12)
+        #expect(snapshot.blocksCompleted == 2)
+        #expect(
+            snapshot.badgesEarned == [
+                "70000000-0000-4000-8000-000000000001",
+                "70000000-0000-4000-8000-000000000001",
+            ]
+        )
+    }
+
+    @Test("Added cover and coach states create fresh session-local products")
+    func addedCoverAndCoachStatesRemainSessionLocal() throws {
+        for argument in [
+            "--ui-testing-prompt14-cover-too-large",
+            "--ui-testing-prompt14-mascot-focus-active",
+            "--ui-testing-prompt14-mascot-zen-neglected",
+        ] {
+            let dependencies = prompt14Dependencies(argument)
+            let coachA = try #require(
+                dependencies.coachExperienceSessions.makeCoachExperience(
+                    userID: "prompt14-new-user"
+                ) as? DemoPrompt14CoachProvider
+            )
+            let coachB = try #require(
+                dependencies.coachExperienceSessions.makeCoachExperience(
+                    userID: "prompt14-new-user"
+                ) as? DemoPrompt14CoachProvider
+            )
+            let coverA = try #require(
+                dependencies.contentCoverSessions.makeLoader(
+                    userID: "prompt14-new-user"
+                ) as? ContentCoverLoader
+            )
+            let coverB = try #require(
+                dependencies.contentCoverSessions.makeLoader(
+                    userID: "prompt14-new-user"
+                ) as? ContentCoverLoader
+            )
+
+            #expect(coachA !== coachB)
+            #expect(coverA !== coverB)
+        }
+    }
+
+    @Test("Release ignores every added Prompt 14 state and keeps content unavailable")
+    func releaseIgnoresAddedPrompt14States() async throws {
+        for argument in addedPrompt14DependencyArguments {
+            let dependencies = AppDependencies.make(
+                configuration: .resolve(
+                    arguments: ["--ui-testing", argument],
+                    buildFlavor: .release
+                )
+            )
+            let session = dependencies.publishedContentSessions.makeSession(
+                userID: "prompt14-release-user"
+            )
+
+            await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+                try await dependencies.today.today()
+            }
+            await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+                try await dependencies.progress.progress()
+            }
+            await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+                try await session.listing.content(DemoPrompt14Fixtures.todayQuery())
+            }
+        }
+    }
+
     @Test("Prompt 14 graph installs the exact deterministic clock and idempotency source")
     func prompt14InstallsDeterministicSupport() throws {
         let dependencies = prompt14Dependencies("--ui-testing-prompt14-loaded")
@@ -652,6 +759,23 @@ private func releaseDependencies() -> AppDependencies {
 
 #if DEBUG
 private let dependencyActionDate = Date(timeIntervalSince1970: 1_784_589_300)
+
+private let addedPrompt14DependencyArguments = [
+    "--ui-testing-prompt14-today-recommendations-stale",
+    "--ui-testing-prompt14-next-page-failure-once",
+    "--ui-testing-prompt14-invalid-cursor-recovery",
+    "--ui-testing-prompt14-incomplete-detail",
+    "--ui-testing-prompt14-mutation-failure-once",
+    "--ui-testing-prompt14-markdown-external-link",
+    "--ui-testing-prompt14-cover-expired",
+    "--ui-testing-prompt14-cover-too-large",
+    "--ui-testing-prompt14-cover-mime-mismatch",
+    "--ui-testing-prompt14-cover-abusive-dimensions",
+    "--ui-testing-prompt14-cover-external-path",
+    "--ui-testing-prompt14-mascot-focus-active",
+    "--ui-testing-prompt14-mascot-zen-neglected",
+    "--ui-testing-prompt14-progress-complete-duplicate-badges",
+]
 
 private func prompt14Dependencies(_ argument: String) -> AppDependencies {
     AppDependencies.make(

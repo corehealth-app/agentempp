@@ -2,20 +2,28 @@
 import Foundation
 
 actor DemoContentCoverByteStream: ContentCoverByteStreaming {
-    private let scenario: DemoPrompt14Scenario
+    private let scenario: DemoPrompt14ScenarioSelection
+    private var streamCallCount = 0
     private var nextStreamID: UInt64 = 0
     private var pendingStreams: [
         UInt64: AsyncThrowingStream<Data, any Error>.Continuation
     ] = [:]
 
     init(scenario: DemoPrompt14Scenario) {
-        self.scenario = scenario
+        self.scenario = DemoPrompt14ScenarioSelection(
+            legacyScenario: scenario
+        )
+    }
+
+    init(selection: DemoPrompt14ScenarioSelection) {
+        scenario = selection
     }
 
     func stream(
         _ request: ContentCoverTransportRequest
     ) async throws -> ContentCoverByteStream {
         _ = request
+        streamCallCount += 1
         switch scenario {
         case .offline:
             throw BodyFlowCapabilityError.offline
@@ -28,9 +36,20 @@ actor DemoContentCoverByteStream: ContentCoverByteStreaming {
         }
 
         let statusCode = scenario == .contentNotFound ? 404 : 200
-        let bytes = scenario == .coverInvalid
-            ? DemoPrompt14Fixtures.invalidCoverBytes
-            : DemoPrompt14Fixtures.neutralPNG
+        let bytes: Data = switch scenario {
+        case .coverInvalid:
+            DemoPrompt14Fixtures.invalidCoverBytes
+        case .coverAbusiveDimensions:
+            DemoPrompt14Fixtures.abusiveDimensionPNG
+        default:
+            DemoPrompt14Fixtures.neutralPNG
+        }
+        let declaredLength: Int64 = scenario == .coverTooLarge
+            ? 10_485_761
+            : Int64(bytes.count)
+        let mimeType = scenario == .coverMIMEMismatch
+            ? "image/jpeg"
+            : "image/png"
 
         if scenario == .loading {
             return pendingStream(statusCode: statusCode)
@@ -42,8 +61,8 @@ actor DemoContentCoverByteStream: ContentCoverByteStreaming {
         }
         return ContentCoverByteStream(
             statusCode: statusCode,
-            declaredLength: Int64(bytes.count),
-            mimeType: "image/png",
+            declaredLength: declaredLength,
+            mimeType: mimeType,
             cacheMaxAgeSeconds: 300,
             redirectLocation: nil,
             chunks: chunks,
@@ -54,9 +73,14 @@ actor DemoContentCoverByteStream: ContentCoverByteStreaming {
     func cancelAll() async {
         let continuations = Array(pendingStreams.values)
         pendingStreams.removeAll(keepingCapacity: false)
+        streamCallCount = 0
         for continuation in continuations {
             continuation.finish(throwing: CancellationError())
         }
+    }
+
+    func streamCallCountForTesting() -> Int {
+        streamCallCount
     }
 
     private func pendingStream(statusCode: Int) -> ContentCoverByteStream {

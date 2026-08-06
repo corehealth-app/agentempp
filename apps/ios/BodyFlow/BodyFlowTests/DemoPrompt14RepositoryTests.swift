@@ -1209,10 +1209,663 @@ struct DemoPrompt14RepositoryTests {
                 target: ContentCoverTargetSize(widthPixels: 8, heightPixels: 8)
             )
         }
+
+        let sessionStream = DemoContentCoverByteStream(scenario: .loaded)
+        let sessionLoader = try prompt14CoverLoader(stream: sessionStream)
+        _ = try await sessionLoader.image(
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID,
+            version: DemoPrompt14Fixtures.firstSummary.version,
+            cover: cover,
+            target: ContentCoverTargetSize(widthPixels: 8, heightPixels: 8)
+        )
+        #expect(await sessionStream.streamCallCountForTesting() == 1)
+        await sessionLoader.endSession()
+        #expect(await sessionStream.streamCallCountForTesting() == 0)
+    }
+
+    @Test("Today recommendation staleness is isolated to the second identical content query")
+    func todayRecommendationsBecomeStaleOnlyAfterInitialSuccess() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-today-recommendations-stale"
+            )
+        )
+        let query = try ContentFeedQuery(
+            surface: .today,
+            category: nil,
+            limit: 3,
+            cursor: nil
+        )
+        let unsupportedTodayQuery = try ContentFeedQuery(
+            surface: .today,
+            category: nil,
+            limit: 2,
+            cursor: nil
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.invalidInput) {
+            try await repository.content(unsupportedTodayQuery)
+        }
+        #expect(try await repository.content(query) == DemoPrompt14Fixtures.todayFeed)
+        await #expect(throws: BodyFlowCapabilityError.offline) {
+            try await repository.content(query)
+        }
+    }
+
+    @Test("First next-page failure retries the exact same opaque query successfully")
+    func nextPageFailureRetriesIdenticalOpaqueCursor() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-next-page-failure-once"
+            )
+        )
+        let firstPage = try await repository.content(
+            DemoPrompt14Fixtures.libraryQuery()
+        )
+        let opaqueCursor = try #require(firstPage.data.nextCursor)
+        let retryQuery = try ContentFeedQuery(
+            surface: .library,
+            category: nil,
+            limit: 20,
+            cursor: opaqueCursor
+        )
+
+        #expect(opaqueCursor == "opaque 🧭 / + = ? keep-byte-for-byte")
+        do {
+            _ = try await repository.content(retryQuery)
+            Issue.record("Expected the first exact opaque-cursor request to fail")
+        } catch {
+            #expect(error as? BodyFlowCapabilityError == .serviceUnavailable)
+        }
+
+        let retry = try await repository.content(retryQuery)
+        #expect(retry == DemoPrompt14Fixtures.libraryNextFeed)
+        #expect(retryQuery.cursor == opaqueCursor)
+    }
+
+    @Test("Invalid next-page cursor recovers through a cursor-nil first page")
+    func invalidCursorRecoversWithCursorNilQuery() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-invalid-cursor-recovery"
+            )
+        )
+        let invalidCursorQuery = try DemoPrompt14Fixtures.libraryNextQuery()
+
+        await #expect(throws: BodyFlowCapabilityError.invalidContentCursor) {
+            try await repository.content(invalidCursorQuery)
+        }
+
+        let recoveryQuery = try ContentFeedQuery(
+            surface: .library,
+            category: nil,
+            limit: 20,
+            cursor: nil
+        )
+        #expect(recoveryQuery.cursor == nil)
+        #expect(
+            try await repository.content(recoveryQuery)
+                == DemoPrompt14Fixtures.libraryFeed
+        )
+    }
+
+    @Test("Incomplete authorized detail is reachable saveable and explicitly completable")
+    func incompleteDetailCanBeSavedAndCompleted() async throws {
+        let publicationID = "10000000-0000-4000-8000-000000000007"
+        let version = 5
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-incomplete-detail"
+            )
+        )
+        let feed = try await repository.content(DemoPrompt14Fixtures.libraryQuery())
+        let summary = try #require(
+            feed.data.items.first { $0.publicationID == publicationID }
+        )
+
+        #expect(summary.version == version)
+        #expect(!summary.saved)
+        #expect(!summary.completed)
+        let detail = try await repository.contentDetail(publicationID: publicationID)
+        #expect(detail.data.summary == summary)
+        _ = try BodyFlowMarkdownParser().parse(detail.data.bodyMarkdown)
+
+        let saveAttempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: version,
+            key: "content-incomplete-save-0001"
+        )
+        let completionAttempt = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: version,
+            key: "content-incomplete-complete-0001"
+        )
+        let saved = try await repository.setSaved(saveAttempt)
+        let completed = try await repository.recordRead(completionAttempt)
+
+        #expect(saved.data.saved)
+        #expect(!saved.data.completed)
+        #expect(completed.data.saved)
+        #expect(completed.data.completed)
+        #expect(completed.data.changed)
+    }
+
+    @Test("Recoverable mutation failure retries the same immutable save and completion attempts")
+    func recoverableMutationFailurePreservesExactAttemptIdentity() async throws {
+        let scenario = resolvedPrompt14Selection(
+            "--ui-testing-prompt14-mutation-failure-once"
+        )
+        let publicationID = DemoPrompt14Fixtures.secondSummary.publicationID
+        let version = DemoPrompt14Fixtures.secondSummary.version
+
+        let saveRepository = DemoPrompt14Repository(selection: scenario)
+        let saveAttempt = try Prompt14Attempts.saved(
+            true,
+            publicationID: publicationID,
+            version: version,
+            key: "content-recoverable-save-0001"
+        )
+        do {
+            _ = try await saveRepository.setSaved(saveAttempt)
+            Issue.record("Expected the first immutable save attempt to fail")
+        } catch {
+            #expect(error as? BodyFlowCapabilityError == .serviceUnavailable)
+        }
+        let saved = try await saveRepository.setSaved(saveAttempt)
+        #expect(saved.data.changed)
+        #expect(saved.data.saved)
+        #expect(!saved.data.replayed)
+
+        let completionRepository = DemoPrompt14Repository(selection: scenario)
+        let completionAttempt = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: publicationID,
+            version: version,
+            key: "content-recoverable-completion-0001"
+        )
+        do {
+            _ = try await completionRepository.recordRead(completionAttempt)
+            Issue.record("Expected the first immutable completion attempt to fail")
+        } catch {
+            #expect(error as? BodyFlowCapabilityError == .serviceUnavailable)
+        }
+        let completed = try await completionRepository.recordRead(completionAttempt)
+        #expect(completed.data.changed)
+        #expect(completed.data.completed)
+        #expect(!completed.data.replayed)
+    }
+
+    @Test(
+        "Recoverable save rejects a regenerated identity before the exact retry",
+        arguments: RecoverableMutationIdentityDivergence.allCases
+    )
+    func recoverableSaveRejectsRegeneratedIdentity(
+        _ divergence: RecoverableMutationIdentityDivergence
+    ) async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-mutation-failure-once"
+            )
+        )
+        let original = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-recoverable-save-identity-0001"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.setSaved(original)
+        }
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.setSaved(
+                divergence.regeneratedSave(from: original)
+            )
+        }
+
+        let retried = try await repository.setSaved(original)
+        #expect(retried.data.changed)
+        #expect(retried.data.saved)
+        #expect(!retried.data.replayed)
+    }
+
+    @Test(
+        "Recoverable completion rejects a regenerated identity before the exact retry",
+        arguments: RecoverableMutationIdentityDivergence.allCases
+    )
+    func recoverableCompletionRejectsRegeneratedIdentity(
+        _ divergence: RecoverableMutationIdentityDivergence
+    ) async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-mutation-failure-once"
+            )
+        )
+        let original = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-recoverable-completion-identity-0001"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.recordRead(original)
+        }
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.recordRead(
+                divergence.regeneratedCompletion(from: original)
+            )
+        }
+
+        let retried = try await repository.recordRead(original)
+        #expect(retried.data.changed)
+        #expect(retried.data.completed)
+        #expect(!retried.data.replayed)
+    }
+
+    @Test("Independent save key does not consume the original recoverable retry")
+    func recoverableSaveAllowsIndependentKey() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-mutation-failure-once"
+            )
+        )
+        let original = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-recoverable-save-key-a-0001"
+        )
+        let independent = try Prompt14Attempts.saved(
+            true,
+            publicationID: DemoPrompt14Fixtures.fourthSummary.publicationID,
+            version: DemoPrompt14Fixtures.fourthSummary.version,
+            key: "content-recoverable-save-key-b-0001"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.setSaved(original)
+        }
+
+        let independentResult = try await repository.setSaved(independent)
+        #expect(independentResult.data.changed)
+        #expect(independentResult.data.saved)
+        #expect(!independentResult.data.replayed)
+
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.setSaved(
+                RecoverableMutationIdentityDivergence.payload
+                    .regeneratedSave(from: original)
+            )
+        }
+
+        let retried = try await repository.setSaved(original)
+        #expect(retried.data.changed)
+        #expect(retried.data.saved)
+        #expect(!retried.data.replayed)
+    }
+
+    @Test("Independent completion key does not consume the original recoverable retry")
+    func recoverableCompletionAllowsIndependentKey() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-mutation-failure-once"
+            )
+        )
+        let original = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.secondSummary.publicationID,
+            version: DemoPrompt14Fixtures.secondSummary.version,
+            key: "content-recoverable-completion-key-a-0001"
+        )
+        let independent = try Prompt14Attempts.read(
+            .completed,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.fourthSummary.publicationID,
+            version: DemoPrompt14Fixtures.fourthSummary.version,
+            key: "content-recoverable-completion-key-b-0001"
+        )
+
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await repository.recordRead(original)
+        }
+
+        let independentResult = try await repository.recordRead(independent)
+        #expect(independentResult.data.changed)
+        #expect(independentResult.data.completed)
+        #expect(!independentResult.data.replayed)
+
+        await #expect(throws: BodyFlowCapabilityError.idempotencyConflict) {
+            try await repository.recordRead(
+                RecoverableMutationIdentityDivergence.payload
+                    .regeneratedCompletion(from: original)
+            )
+        }
+
+        let retried = try await repository.recordRead(original)
+        #expect(retried.data.changed)
+        #expect(retried.data.completed)
+        #expect(!retried.data.replayed)
+    }
+
+    @Test("External absolute HTTPS link remains valid article Markdown")
+    func externalHTTPSLinkIsOnlyCanonicalArticleContent() async throws {
+        let repository = DemoPrompt14Repository(
+            selection: resolvedPrompt14Selection(
+                "--ui-testing-prompt14-markdown-external-link"
+            )
+        )
+        let expectedDestination = "https" + "://example.invalid/prompt14/reference"
+
+        let detail = try await repository.contentDetail(
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+        )
+
+        #expect(detail.data.bodyMarkdown.contains("[Referência externa](\(expectedDestination))"))
+        _ = try BodyFlowMarkdownParser().parse(detail.data.bodyMarkdown)
+        #expect(detail.data.summary.cover?.url.hasPrefix("/api/mobile/v1/content/covers/") == true)
+    }
+
+    @Test("Expired oversized MIME-mismatched and abusive-dimension covers fail at their real boundaries")
+    func addedCoverScenariosFailAtRealLoaderAndDecoderBoundaries() async throws {
+        let cases: [(String, BodyFlowCapabilityError, Int)] = [
+            ("--ui-testing-prompt14-cover-expired", .contentCoverNotFound, 0),
+            ("--ui-testing-prompt14-cover-too-large", .contentCoverTooLarge, 1),
+            ("--ui-testing-prompt14-cover-mime-mismatch", .invalidContentCover, 1),
+            ("--ui-testing-prompt14-cover-abusive-dimensions", .invalidContentCover, 1),
+        ]
+
+        for (argument, expectedError, expectedStreamCalls) in cases {
+            let scenario = resolvedPrompt14Selection(argument)
+            let repository = DemoPrompt14Repository(selection: scenario)
+            let detail = try await repository.contentDetail(
+                publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+            )
+            let cover = try #require(detail.data.summary.cover)
+            let stream = DemoContentCoverByteStream(selection: scenario)
+            let loader = try prompt14CoverLoader(stream: stream)
+
+            await #expect(throws: expectedError) {
+                try await loader.image(
+                    publicationID: detail.data.summary.publicationID,
+                    version: detail.data.summary.version,
+                    cover: cover,
+                    target: ContentCoverTargetSize(widthPixels: 8, heightPixels: 8)
+                )
+            }
+            #expect(await reflectedStreamCallCount(stream) == expectedStreamCalls)
+        }
+    }
+
+    @Test("External absolute cover path is rejected before any stream attempt")
+    func externalCoverPathNeverReachesTransport() async throws {
+        let scenario = resolvedPrompt14Selection(
+            "--ui-testing-prompt14-cover-external-path"
+        )
+        let repository = DemoPrompt14Repository(selection: scenario)
+        let detail = try await repository.contentDetail(
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+        )
+        let cover = try #require(detail.data.summary.cover)
+        let stream = DemoContentCoverByteStream(selection: scenario)
+        let loader = try prompt14CoverLoader(stream: stream)
+
+        #expect(cover.url.hasPrefix("https" + "://"))
+        await #expect(throws: BodyFlowCapabilityError.invalidContentCover) {
+            try await loader.image(
+                publicationID: detail.data.summary.publicationID,
+                version: detail.data.summary.version,
+                cover: cover,
+                target: ContentCoverTargetSize(widthPixels: 8, heightPixels: 8)
+            )
+        }
+        #expect(await reflectedStreamCallCount(stream) == 0)
+    }
+
+    @Test("Focus Active and Zen Neglected coach responses are explicit authored pairs")
+    func addedCoachPairsAreExplicitAndContractValid() async throws {
+        let cases: [(
+            String,
+            SelectableCoachPersona,
+            EffectiveCoachPersona,
+            MascotWireState
+        )] = [
+            (
+                "--ui-testing-prompt14-mascot-focus-active",
+                .focus,
+                .focus,
+                .active
+            ),
+            (
+                "--ui-testing-prompt14-mascot-zen-neglected",
+                .zen,
+                .zen,
+                .neglected
+            ),
+        ]
+
+        for (argument, selected, effective, mascot) in cases {
+            let provider = DemoPrompt14CoachProvider(
+                selection: resolvedPrompt14Selection(argument)
+            )
+            let response = try await provider.coachExperience()
+
+            #expect(response.data.selected == selected)
+            #expect(response.data.effective == effective)
+            #expect(response.data.mascot.state == mascot)
+            #expect(response.data.options.map(\.code) == [.focus, .impulse, .zen])
+            #expect(
+                CoachExperienceV1PresentationContract.validatedSnapshot(
+                    from: response
+                ) == response.data
+            )
+        }
+    }
+
+    @Test("Real detail GET completion precedes exactly one real opened mutation")
+    func technicalObserverProvesRealGETBeforeOneOpenedMutation() async throws {
+        let factory = DemoPrompt14PublishedContentSessionFactory(scenario: .loaded)
+        let session = factory.makeSession(userID: "prompt14-observer-user")
+        let repository = try #require(session.state as? DemoPrompt14Repository)
+        #expect(repository === (session.detail as? DemoPrompt14Repository))
+        let publicationID = DemoPrompt14Fixtures.firstSummary.publicationID
+
+        _ = try await session.detail.contentDetail(publicationID: publicationID)
+        let opened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: publicationID,
+            version: DemoPrompt14Fixtures.firstSummary.version,
+            key: "content-observed-opened-0001"
+        )
+        _ = try await session.state.recordRead(opened)
+
+        #expect(
+            await reflectedTechnicalEventNames(repository)
+                == ["detailGETCompleted", "openedMutationStarted"]
+        )
+
+        _ = try await session.state.recordRead(opened)
+        #expect(
+            await reflectedTechnicalEventNames(repository)
+                == ["detailGETCompleted", "openedMutationStarted"]
+        )
+    }
+
+    @Test("Technical observer is bounded and clears on failures replay and session end")
+    func technicalObserverIsBoundedAndSessionLocal() async throws {
+        let bounded = DemoPrompt14Repository(scenario: .loaded)
+        for _ in 0..<12 {
+            _ = try await bounded.contentDetail(
+                publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+            )
+        }
+        #expect(await reflectedTechnicalEventNames(bounded).count == 8)
+
+        let failedDetail = DemoPrompt14Repository(scenario: .markdownInvalid)
+        await #expect(throws: BodyFlowCapabilityError.unsupportedMarkdown) {
+            try await failedDetail.contentDetail(
+                publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+            )
+        }
+        #expect(await reflectedTechnicalEventNames(failedDetail).isEmpty)
+
+        let failedOpened = DemoPrompt14Repository(scenario: .openedError)
+        _ = try await failedOpened.contentDetail(
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID
+        )
+        let opened = try Prompt14Attempts.read(
+            .opened,
+            origin: .library,
+            publicationID: DemoPrompt14Fixtures.firstSummary.publicationID,
+            version: DemoPrompt14Fixtures.firstSummary.version,
+            key: "content-observer-failed-opened-0001"
+        )
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await failedOpened.recordRead(opened)
+        }
+        #expect(
+            await reflectedTechnicalEventNames(failedOpened)
+                == ["detailGETCompleted"]
+        )
+
+        await failedOpened.endSession()
+        #expect(await reflectedTechnicalEventNames(failedOpened).isEmpty)
     }
 }
 
 private let prompt14AttemptDate = Date(timeIntervalSince1970: 1_784_589_300)
+
+enum RecoverableMutationIdentityDivergence:
+    CaseIterable,
+    Sendable,
+    CustomTestStringConvertible
+{
+    case route
+    case payload
+    case createdAt
+
+    var testDescription: String {
+        switch self {
+        case .route: "route"
+        case .payload: "payload"
+        case .createdAt: "createdAt"
+        }
+    }
+
+    func regeneratedSave(
+        from original: MutationAttempt<ContentSaveCommand>
+    ) -> MutationAttempt<ContentSaveCommand> {
+        switch self {
+        case .route:
+            MutationAttempt(
+                operation: .contentRead,
+                key: original.key,
+                payload: original.payload,
+                createdAt: original.createdAt
+            )
+        case .payload:
+            MutationAttempt(
+                operation: original.operation,
+                key: original.key,
+                payload: ContentSaveCommand(
+                    publicationID: original.payload.publicationID,
+                    body: ContentSaveBody(
+                        saved: false,
+                        version: original.payload.body.version
+                    )
+                ),
+                createdAt: original.createdAt
+            )
+        case .createdAt:
+            MutationAttempt(
+                operation: original.operation,
+                key: original.key,
+                payload: original.payload,
+                createdAt: original.createdAt.addingTimeInterval(1)
+            )
+        }
+    }
+
+    func regeneratedCompletion(
+        from original: MutationAttempt<ContentReadCommand>
+    ) -> MutationAttempt<ContentReadCommand> {
+        switch self {
+        case .route:
+            MutationAttempt(
+                operation: .contentSave,
+                key: original.key,
+                payload: original.payload,
+                createdAt: original.createdAt
+            )
+        case .payload:
+            MutationAttempt(
+                operation: original.operation,
+                key: original.key,
+                payload: ContentReadCommand(
+                    publicationID: original.payload.publicationID,
+                    body: ContentReadBody(
+                        event: original.payload.body.event,
+                        origin: .today,
+                        version: original.payload.body.version
+                    )
+                ),
+                createdAt: original.createdAt
+            )
+        case .createdAt:
+            MutationAttempt(
+                operation: original.operation,
+                key: original.key,
+                payload: original.payload,
+                createdAt: original.createdAt.addingTimeInterval(1)
+            )
+        }
+    }
+}
+
+private func resolvedPrompt14Selection(
+    _ argument: String
+) -> DemoPrompt14ScenarioSelection {
+    let configuration = AppLaunchConfiguration.resolve(
+        arguments: ["--ui-testing", argument],
+        buildFlavor: .debug
+    )
+    #expect(configuration.prompt14ScenarioSelection != nil)
+    return configuration.prompt14ScenarioSelection ?? .loaded
+}
+
+private func prompt14CoverLoader(
+    stream: DemoContentCoverByteStream
+) throws -> ContentCoverLoader {
+    let originURL = try #require(
+        URL(string: "https" + "://prompt14-fixture.invalid")
+    )
+    return ContentCoverLoader(
+        stream: stream,
+        origin: try ContentCoverTrustedOrigin(validating: originURL),
+        decoder: ContentCoverDecoder(),
+        cache: SessionCoverCache(),
+        timeProvider: FixedTimeProvider(value: DemoPrompt14Fixtures.fixedNow)
+    )
+}
+
+private func reflectedStreamCallCount(
+    _ stream: DemoContentCoverByteStream
+) async -> Int {
+    await stream.streamCallCountForTesting()
+}
+
+private func reflectedTechnicalEventNames(
+    _ repository: DemoPrompt14Repository
+) async -> [String] {
+    await repository.technicalEventsForTesting().map(String.init(describing:))
+}
 
 private enum Prompt14Attempts {
     static func read(

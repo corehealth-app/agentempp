@@ -72,11 +72,47 @@ enum DemoPrompt14Scenario: Equatable, Sendable {
     case conflict
     case reduceMotion
     case differentiateWithoutColor
+}
+
+enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
+    case loaded
+    case loading
+    case empty
+    case offline
+    case error
+    case stale
+    case unavailable
+    case openedError
+    case contentNotFound
+    case subscriptionRequired
+    case markdownInvalid
+    case coverInvalid
+    case mascotVariants
+    case progressEmpty
+    case progressMinimum
+    case streakZero
+    case conflict
+    case reduceMotion
+    case differentiateWithoutColor
+    case todayRecommendationsStale
+    case nextPageFailureOnce
+    case invalidCursorRecovery
+    case incompleteDetail
+    case mutationFailureOnce
+    case markdownExternalLink
+    case coverExpired
+    case coverTooLarge
+    case coverMIMEMismatch
+    case coverAbusiveDimensions
+    case coverExternalPath
+    case mascotFocusActive
+    case mascotZenNeglected
+    case progressCompleteDuplicateBadges
 
     fileprivate static func resolve(
         arguments: [String]
-    ) -> DemoPrompt14Scenario? {
-        let mappings: [(String, DemoPrompt14Scenario)] = [
+    ) -> DemoPrompt14ScenarioSelection? {
+        let mappings: [(String, DemoPrompt14ScenarioSelection)] = [
             ("--ui-testing-prompt14-loaded", .loaded),
             ("--ui-testing-prompt14-loading", .loading),
             ("--ui-testing-prompt14-empty", .empty),
@@ -99,9 +135,123 @@ enum DemoPrompt14Scenario: Equatable, Sendable {
                 "--ui-testing-prompt14-differentiate-without-color",
                 .differentiateWithoutColor
             ),
+            (
+                "--ui-testing-prompt14-today-recommendations-stale",
+                .todayRecommendationsStale
+            ),
+            (
+                "--ui-testing-prompt14-next-page-failure-once",
+                .nextPageFailureOnce
+            ),
+            (
+                "--ui-testing-prompt14-invalid-cursor-recovery",
+                .invalidCursorRecovery
+            ),
+            ("--ui-testing-prompt14-incomplete-detail", .incompleteDetail),
+            (
+                "--ui-testing-prompt14-mutation-failure-once",
+                .mutationFailureOnce
+            ),
+            (
+                "--ui-testing-prompt14-markdown-external-link",
+                .markdownExternalLink
+            ),
+            ("--ui-testing-prompt14-cover-expired", .coverExpired),
+            ("--ui-testing-prompt14-cover-too-large", .coverTooLarge),
+            (
+                "--ui-testing-prompt14-cover-mime-mismatch",
+                .coverMIMEMismatch
+            ),
+            (
+                "--ui-testing-prompt14-cover-abusive-dimensions",
+                .coverAbusiveDimensions
+            ),
+            (
+                "--ui-testing-prompt14-cover-external-path",
+                .coverExternalPath
+            ),
+            (
+                "--ui-testing-prompt14-mascot-focus-active",
+                .mascotFocusActive
+            ),
+            (
+                "--ui-testing-prompt14-mascot-zen-neglected",
+                .mascotZenNeglected
+            ),
+            (
+                "--ui-testing-prompt14-progress-complete-duplicate-badges",
+                .progressCompleteDuplicateBadges
+            ),
         ]
 
-        return mappings.first { arguments.contains($0.0) }?.1
+        let matches = arguments.compactMap { argument in
+            mappings.first { $0.0 == argument }?.1
+        }
+        guard matches.count == 1 else { return nil }
+        return matches[0]
+    }
+
+    init(legacyScenario: DemoPrompt14Scenario) {
+        self = switch legacyScenario {
+        case .loaded: .loaded
+        case .loading: .loading
+        case .empty: .empty
+        case .offline: .offline
+        case .error: .error
+        case .stale: .stale
+        case .unavailable: .unavailable
+        case .openedError: .openedError
+        case .contentNotFound: .contentNotFound
+        case .subscriptionRequired: .subscriptionRequired
+        case .markdownInvalid: .markdownInvalid
+        case .coverInvalid: .coverInvalid
+        case .mascotVariants: .mascotVariants
+        case .progressEmpty: .progressEmpty
+        case .progressMinimum: .progressMinimum
+        case .streakZero: .streakZero
+        case .conflict: .conflict
+        case .reduceMotion: .reduceMotion
+        case .differentiateWithoutColor: .differentiateWithoutColor
+        }
+    }
+
+    var legacyScenario: DemoPrompt14Scenario? {
+        switch self {
+        case .loaded: .loaded
+        case .loading: .loading
+        case .empty: .empty
+        case .offline: .offline
+        case .error: .error
+        case .stale: .stale
+        case .unavailable: .unavailable
+        case .openedError: .openedError
+        case .contentNotFound: .contentNotFound
+        case .subscriptionRequired: .subscriptionRequired
+        case .markdownInvalid: .markdownInvalid
+        case .coverInvalid: .coverInvalid
+        case .mascotVariants: .mascotVariants
+        case .progressEmpty: .progressEmpty
+        case .progressMinimum: .progressMinimum
+        case .streakZero: .streakZero
+        case .conflict: .conflict
+        case .reduceMotion: .reduceMotion
+        case .differentiateWithoutColor: .differentiateWithoutColor
+        case .todayRecommendationsStale,
+             .nextPageFailureOnce,
+             .invalidCursorRecovery,
+             .incompleteDetail,
+             .mutationFailureOnce,
+             .markdownExternalLink,
+             .coverExpired,
+             .coverTooLarge,
+             .coverMIMEMismatch,
+             .coverAbusiveDimensions,
+             .coverExternalPath,
+             .mascotFocusActive,
+             .mascotZenNeglected,
+             .progressCompleteDuplicateBadges:
+            nil
+        }
     }
 }
 #endif
@@ -122,6 +272,7 @@ struct AppLaunchConfiguration: Sendable {
     #if DEBUG
     let prompt13Scenario: DemoBodyFlowScenario?
     let prompt14Scenario: DemoPrompt14Scenario?
+    let prompt14ScenarioSelection: DemoPrompt14ScenarioSelection?
     #endif
 
     #if DEBUG
@@ -134,7 +285,8 @@ struct AppLaunchConfiguration: Sendable {
         demoStorageBoundary: DemoStorageBoundary = .memory,
         demoKeychainService: String = DemoStorageService.development,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
-        prompt14Scenario: DemoPrompt14Scenario? = nil
+        prompt14Scenario: DemoPrompt14Scenario? = nil,
+        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil
     ) {
         self.mode = mode
         self.shouldResetDemoState = shouldResetDemoState
@@ -145,6 +297,12 @@ struct AppLaunchConfiguration: Sendable {
         self.demoKeychainService = demoKeychainService
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
         self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
+        self.prompt14ScenarioSelection = mode == .demo
+            ? prompt14ScenarioSelection
+                ?? prompt14Scenario.map {
+                    DemoPrompt14ScenarioSelection(legacyScenario: $0)
+                }
+            : nil
     }
 
     var patientTimeZoneForPrompt13: PatientTimeZoneContext? {
@@ -244,11 +402,14 @@ struct AppLaunchConfiguration: Sendable {
             )
         }
 
-        if let scenario = DemoPrompt14Scenario.resolve(arguments: arguments) {
+        if let selection = DemoPrompt14ScenarioSelection.resolve(
+            arguments: arguments
+        ) {
             return uiTestingConfiguration(
                 startsWithCompletedFixture: true,
                 authBehavior: .succeed(after: nil),
-                prompt14Scenario: scenario
+                prompt14Scenario: selection.legacyScenario,
+                prompt14ScenarioSelection: selection
             )
         }
 
@@ -312,7 +473,8 @@ struct AppLaunchConfiguration: Sendable {
         startsWithCompletedFixture: Bool,
         authBehavior: DemoOperationBehavior<AuthenticationError>,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
-        prompt14Scenario: DemoPrompt14Scenario? = nil
+        prompt14Scenario: DemoPrompt14Scenario? = nil,
+        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil
     ) -> AppLaunchConfiguration {
         AppLaunchConfiguration(
             mode: .demo,
@@ -323,7 +485,8 @@ struct AppLaunchConfiguration: Sendable {
             demoStorageBoundary: .keychain,
             demoKeychainService: DemoStorageService.uiTesting,
             prompt13Scenario: prompt13Scenario,
-            prompt14Scenario: prompt14Scenario
+            prompt14Scenario: prompt14Scenario,
+            prompt14ScenarioSelection: prompt14ScenarioSelection
         )
     }
     #endif

@@ -104,7 +104,7 @@ struct AppDependencies: Sendable {
             weight = repository
             routine = repository
         } else if configuration.mode == .demo,
-                  let scenario = configuration.prompt14Scenario {
+                  let scenario = configuration.prompt14ScenarioSelection {
             let repository = DemoBodyFlowRepository(scenario: .loaded)
             let prompt14TimeProvider = FixedTimeProvider(
                 value: DemoPrompt14Fixtures.fixedNow
@@ -132,6 +132,10 @@ struct AppDependencies: Sendable {
                 DemoPrompt14ProgressProvider(
                     response: DemoPrompt14Fixtures.streakZeroProgress
                 )
+            case .progressCompleteDuplicateBadges:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.duplicateBadgeCompleteProgress
+                )
             default:
                 repository
             }
@@ -141,13 +145,13 @@ struct AppDependencies: Sendable {
             weight = repository
             routine = repository
             publishedContentSessions = DemoPrompt14PublishedContentSessionFactory(
-                scenario: scenario
+                selection: scenario
             )
             coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
-                scenario: scenario
+                selection: scenario
             )
             contentCoverSessions = DemoPrompt14ContentCoverSessionFactory(
-                scenario: scenario,
+                selection: scenario,
                 timeProvider: prompt14TimeProvider
             )
         } else {

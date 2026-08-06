@@ -109,6 +109,21 @@ struct LibraryPresentation: Equatable, Sendable {
     }
 }
 
+struct LibraryCardCoverInput: Equatable, Sendable {
+    let publicationID: String
+    let version: Int
+    let cover: PublishedContentCover?
+
+    init(
+        summary: PublishedContentSummary,
+        authorizedCover: PublishedContentCover?
+    ) {
+        publicationID = summary.publicationID
+        version = summary.version
+        cover = authorizedCover
+    }
+}
+
 enum LibraryPagingAction: Equatable, Sendable {
     case none
     case loadMore
@@ -150,7 +165,12 @@ struct LibraryPagingPresentation: Equatable, Sendable {
 
 @MainActor
 struct PublishedContentCard: View {
+    @Environment(\.refresh) private var refresh
+
     let presentation: LibraryCardPresentation
+    let coverInput: LibraryCardCoverInput
+    let requestedCoverRevision: Int
+    let authorizedCoverRevision: Int?
 
     var body: some View {
         NavigationLink(value: AppRoute.content(presentation.route)) {
@@ -195,15 +215,23 @@ struct PublishedContentCard: View {
     }
 
     private var decorativeCover: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(BodyFlowColor.accent.opacity(0.12))
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .overlay {
-                Image(systemName: "book.closed")
-                    .font(BodyFlowTypography.largeTitle)
-                    .foregroundStyle(BodyFlowColor.accent)
+        ContentCoverView(
+            publicationID: coverInput.publicationID,
+            version: coverInput.version,
+            cover: coverInput.cover,
+            parentRevision: requestedCoverRevision,
+            authorizedParentRevision: authorizedCoverRevision,
+            onParentRevisionChanged: {},
+            onCapabilityInvalidated: {
+                await refreshParent()
             }
-            .accessibilityHidden(true)
+        )
+    }
+
+    private func refreshParent() async {
+        if let refresh {
+            await refresh()
+        }
     }
 
     private var categoryMetadata: some View {

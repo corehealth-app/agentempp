@@ -10,6 +10,7 @@ struct AppShellView: View {
     @State private var progressViewModel: ProgressViewModel
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
+    @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
@@ -22,9 +23,8 @@ struct AppShellView: View {
         self.userID = userID
         self.dependencies = dependencies
         self.sessionOwner = sessionOwner
-        _invalidationCenter = State(
-            initialValue: FeatureInvalidationCenter()
-        )
+        let invalidationCenter = FeatureInvalidationCenter()
+        _invalidationCenter = State(initialValue: invalidationCenter)
         _todayViewModel = State(
             initialValue: TodayViewModel(provider: dependencies.today)
         )
@@ -38,6 +38,13 @@ struct AppShellView: View {
         _historyViewModel = State(initialValue: historyModel)
         _historyCoordinator = State(
             initialValue: HistoryFeatureCoordinator(model: historyModel)
+        )
+        _contentCoverEnvironment = State(
+            initialValue: ContentCoverEnvironment.make(
+                loader: sessionOwner.coverLoader,
+                session: ContentCoverSessionToken(),
+                invalidationCenter: invalidationCenter
+            )
         )
     }
 
@@ -68,6 +75,10 @@ struct AppShellView: View {
             .frame(width: 0, height: 0)
         }
         .environment(router)
+        .environment(
+            \.contentCoverEnvironment,
+            contentCoverEnvironment
+        )
         .sheet(item: presentedSheetBinding) { sheet in
             RegistrationSheet(
                 sheet: sheet,

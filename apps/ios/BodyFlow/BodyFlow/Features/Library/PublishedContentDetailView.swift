@@ -1,4 +1,543 @@
+import Observation
 import SwiftUI
+
+struct ContentDetailCoverLoadToken: Equatable, Hashable, Sendable {
+    let rawValue: UUID
+
+    init(rawValue: UUID = UUID()) {
+        self.rawValue = rawValue
+    }
+}
+
+struct ContentDetailCoverIdentity: Equatable, Hashable, Sendable {
+    let publicationID: String
+    let version: Int
+}
+
+enum ContentDetailCoverCommitPolicy {
+    static func canCommit(
+        candidateIdentity: ContentDetailCoverIdentity,
+        renderedIdentity: ContentDetailCoverIdentity,
+        candidateToken: ContentDetailCoverLoadToken,
+        latestToken: ContentDetailCoverLoadToken,
+        capturedRevision: Int,
+        currentRevision: Int,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled
+            && candidateIdentity == renderedIdentity
+            && candidateToken == latestToken
+            && capturedRevision == currentRevision
+    }
+}
+
+struct ContentDetailCoverCandidate: Sendable {
+    let identity: ContentDetailCoverIdentity
+    let cover: PublishedContentCover?
+    let token: ContentDetailCoverLoadToken
+}
+
+enum ContentDetailCoverLoadContext {
+    @TaskLocal static var token: ContentDetailCoverLoadToken?
+
+    @MainActor
+    static func withToken<Value: Sendable>(
+        _ token: ContentDetailCoverLoadToken,
+        operation: @MainActor () async throws -> Value
+    ) async rethrows -> Value {
+        try await $token.withValue(token, operation: operation)
+    }
+}
+
+protocol ContentDetailCoverCandidateProviding: Sendable {
+    func takeCandidate(
+        for token: ContentDetailCoverLoadToken
+    ) async -> (ContentDetailCoverCandidate, ContentDetailCoverLoadToken)?
+}
+
+actor ContentDetailCoverCapturingProvider:
+    PublishedContentDetailProviding,
+    ContentDetailCoverCandidateProviding {
+    private let provider: any PublishedContentDetailProviding
+    private var latestToken: ContentDetailCoverLoadToken?
+    private var candidates: [
+        ContentDetailCoverLoadToken: ContentDetailCoverCandidate
+    ] = [:]
+
+    init(provider: any PublishedContentDetailProviding) {
+        self.provider = provider
+    }
+
+    func contentDetail(
+        publicationID: String
+    ) async throws -> PublishedContentDetailResponse {
+        guard let token = ContentDetailCoverLoadContext.token else {
+            return try await provider.contentDetail(
+                publicationID: publicationID
+            )
+        }
+
+        latestToken = token
+        candidates.removeAll(keepingCapacity: true)
+        let response = try await provider.contentDetail(
+            publicationID: publicationID
+        )
+        try Task.checkCancellation()
+        guard latestToken == token else {
+            throw CancellationError()
+        }
+        let summary = response.data.summary
+        candidates[token] = ContentDetailCoverCandidate(
+            identity: ContentDetailCoverIdentity(
+                publicationID: summary.publicationID,
+                version: summary.version
+            ),
+            cover: summary.cover,
+            token: token
+        )
+        return response
+    }
+
+    func takeCandidate(
+        for token: ContentDetailCoverLoadToken
+    ) async -> (ContentDetailCoverCandidate, ContentDetailCoverLoadToken)? {
+        guard let latestToken,
+              latestToken == token,
+              let candidate = candidates.removeValue(forKey: token)
+        else {
+            return nil
+        }
+        return (candidate, latestToken)
+    }
+
+    func isLatest(_ token: ContentDetailCoverLoadToken) -> Bool {
+        latestToken == token
+    }
+}
+
+struct ContentDetailCoverAuthorization: Equatable, Sendable {
+    let identity: ContentDetailCoverIdentity
+    let cover: PublishedContentCover?
+    let revision: Int
+}
+
+enum ContentDetailCoverAuthorizationCoordinator {
+    static func authorization(
+        candidate: ContentDetailCoverCandidate,
+        latestToken: ContentDetailCoverLoadToken,
+        state: FeatureReadState<RenderablePublishedContentDetail>,
+        capturedRevision: Int,
+        currentRevision: Int,
+        isCancelled: Bool
+    ) -> ContentDetailCoverAuthorization? {
+        guard case let .loaded(detail) = state else { return nil }
+        let renderedIdentity = ContentDetailCoverIdentity(
+            publicationID: detail.publicationID,
+            version: detail.version
+        )
+        guard ContentDetailCoverCommitPolicy.canCommit(
+            candidateIdentity: candidate.identity,
+            renderedIdentity: renderedIdentity,
+            candidateToken: candidate.token,
+            latestToken: latestToken,
+            capturedRevision: capturedRevision,
+            currentRevision: currentRevision,
+            isCancelled: isCancelled
+        ) else {
+            return nil
+        }
+        return ContentDetailCoverAuthorization(
+            identity: candidate.identity,
+            cover: candidate.cover,
+            revision: capturedRevision
+        )
+    }
+}
+
+@MainActor
+@Observable
+final class ContentDetailCoverRelay {
+    private var storedAuthorization: ContentDetailCoverAuthorization?
+
+    func commit(
+        _ candidate: ContentDetailCoverCandidate,
+        latestToken: ContentDetailCoverLoadToken,
+        state: FeatureReadState<RenderablePublishedContentDetail>,
+        capturedRevision: Int,
+        currentRevision: Int,
+        isCancelled: Bool
+    ) -> Bool {
+        guard let authorization =
+                ContentDetailCoverAuthorizationCoordinator.authorization(
+            candidate: candidate,
+            latestToken: latestToken,
+            state: state,
+            capturedRevision: capturedRevision,
+            currentRevision: currentRevision,
+            isCancelled: isCancelled
+        ) else { return false }
+        storedAuthorization = authorization
+        return true
+    }
+
+    func authorization(
+        for renderedIdentity: ContentDetailCoverIdentity
+    ) -> ContentDetailCoverAuthorization? {
+        guard storedAuthorization?.identity == renderedIdentity else {
+            return nil
+        }
+        return storedAuthorization
+    }
+
+    func cover(for renderedIdentity: ContentDetailCoverIdentity)
+        -> PublishedContentCover? {
+        authorization(for: renderedIdentity)?.cover
+    }
+
+    func clear() {
+        storedAuthorization = nil
+    }
+
+    func hasAuthorization(
+        for renderedIdentity: ContentDetailCoverIdentity
+    ) -> Bool {
+        authorization(for: renderedIdentity) != nil
+    }
+}
+
+@MainActor
+enum ContentDetailCoverResolution: Equatable {
+    case missing
+    case discarded
+    case committed
+}
+
+struct ContentDetailCoverCommitContext: Equatable, Sendable {
+    let activeToken: ContentDetailCoverLoadToken?
+    let currentRevision: Int
+    let state: FeatureReadState<RenderablePublishedContentDetail>
+    let isCancelled: Bool
+}
+
+@MainActor
+enum ContentDetailCoverObservationCoordinator {
+    @discardableResult
+    static func resolve(
+        token: ContentDetailCoverLoadToken,
+        capturedRevision: Int,
+        provider: any ContentDetailCoverCandidateProviding,
+        relay: ContentDetailCoverRelay,
+        currentContext: @escaping @MainActor ()
+            -> ContentDetailCoverCommitContext
+    ) async -> ContentDetailCoverResolution {
+        guard let (candidate, latestToken) =
+                await provider.takeCandidate(for: token)
+        else {
+            return .missing
+        }
+        let context = currentContext()
+        return relay.commit(
+            candidate,
+            latestToken: latestToken,
+            state: context.state,
+            capturedRevision: capturedRevision,
+            currentRevision: context.currentRevision,
+            isCancelled: context.isCancelled
+                || context.activeToken != token
+        ) ? .committed : .discarded
+    }
+}
+
+@MainActor
+struct ContentDetailCoverCompositionIdentity: Equatable {
+    let model: ObjectIdentifier
+    let provider: ObjectIdentifier
+    let relay: ObjectIdentifier
+}
+
+@MainActor
+struct ContentDetailCoverTaskIdentity: Equatable {
+    let composition: ContentDetailCoverCompositionIdentity
+    let revision: Int
+}
+
+@MainActor
+@Observable
+final class ContentDetailCoverComposition {
+    let model: ContentDetailViewModel
+    let coverProvider: ContentDetailCoverCapturingProvider
+    private let coverRelay: ContentDetailCoverRelay
+
+    private var activeToken: ContentDetailCoverLoadToken?
+    private var activeRevision: Int?
+    private var completedAuthorizedRevision: Int?
+    private var stateObservationContinuations: [
+        ContentDetailCoverLoadToken: AsyncStream<Void>.Continuation
+    ] = [:]
+
+    var identity: ContentDetailCoverCompositionIdentity {
+        ContentDetailCoverCompositionIdentity(
+            model: ObjectIdentifier(model),
+            provider: ObjectIdentifier(coverProvider),
+            relay: ObjectIdentifier(coverRelay)
+        )
+    }
+
+    var taskOwnerIdentity: ContentDetailCoverCompositionIdentity { identity }
+    var coverRelayIdentity: ObjectIdentifier { ObjectIdentifier(coverRelay) }
+
+    static func make(
+        publicationID: String,
+        origin: ContentOrigin,
+        detailProvider: any PublishedContentDetailProviding,
+        stateRecorder: any PublishedContentStateRecording,
+        keyProvider: any IdempotencyKeyProviding,
+        timeProvider: any TimeProviding,
+        invalidationCenter: FeatureInvalidationCenter,
+        coverLoader: any ContentCoverLoading
+    ) -> ContentDetailCoverComposition {
+        let coverProvider = ContentDetailCoverCapturingProvider(
+            provider: detailProvider
+        )
+        let relay = ContentDetailCoverRelay()
+        let model = ContentDetailViewModel(
+            publicationID: publicationID,
+            origin: origin,
+            detailProvider: coverProvider,
+            stateRecorder: stateRecorder,
+            markdownParser: BodyFlowMarkdownParser(),
+            keyProvider: keyProvider,
+            timeProvider: timeProvider,
+            invalidationCenter: invalidationCenter,
+            coverLoader: coverLoader
+        )
+        return ContentDetailCoverComposition(
+            model: model,
+            coverProvider: coverProvider,
+            coverRelay: relay
+        )
+    }
+
+    private init(
+        model: ContentDetailViewModel,
+        coverProvider: ContentDetailCoverCapturingProvider,
+        coverRelay: ContentDetailCoverRelay
+    ) {
+        self.model = model
+        self.coverProvider = coverProvider
+        self.coverRelay = coverRelay
+    }
+
+    func cover(
+        for renderedIdentity: ContentDetailCoverIdentity
+    ) -> PublishedContentCover? {
+        coverRelay.cover(for: renderedIdentity)
+    }
+
+    func coverAuthorization(
+        for renderedIdentity: ContentDetailCoverIdentity
+    ) -> ContentDetailCoverAuthorization? {
+        coverRelay.authorization(for: renderedIdentity)
+    }
+
+    func hasCoverAuthorization(
+        for renderedIdentity: ContentDetailCoverIdentity
+    ) -> Bool {
+        coverRelay.hasAuthorization(for: renderedIdentity)
+    }
+
+    func performLoad(
+        revision: Int,
+        isRetry: Bool,
+        currentRevision: @escaping @MainActor () -> Int
+    ) async {
+        guard !Task.isCancelled else { return }
+
+        if !isRetry,
+           completedAuthorizedRevision == revision,
+           case let .loaded(detail) = model.state,
+           coverRelay.hasAuthorization(for: ContentDetailCoverIdentity(
+               publicationID: detail.publicationID,
+               version: detail.version
+           )) {
+            return
+        }
+
+        let token = ContentDetailCoverLoadToken()
+        activeToken = token
+        activeRevision = revision
+        completedAuthorizedRevision = nil
+        coverRelay.clear()
+
+        let observer = Task { @MainActor [weak self] in
+            await self?.observeLoad(
+                token: token,
+                revision: revision,
+                currentRevision: currentRevision
+            )
+        }
+
+        await withTaskCancellationHandler {
+            await ContentDetailCoverLoadContext.withToken(token) {
+                if isRetry {
+                    await model.retry(revision: revision)
+                } else {
+                    await model.load(revision: revision)
+                }
+            }
+
+            finishStateObservation(for: token)
+            observer.cancel()
+            await observer.value
+            _ = await resolve(
+                token: token,
+                revision: revision,
+                currentRevision: currentRevision,
+                isCancelled: { Task.isCancelled }
+            )
+        } onCancel: {
+            observer.cancel()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.finishStateObservation(for: token)
+                _ = await self.resolve(
+                    token: token,
+                    revision: revision,
+                    currentRevision: currentRevision,
+                    isCancelled: { true }
+                )
+            }
+        }
+    }
+
+    func cancelActiveLoad() {
+        guard let activeToken,
+              let activeRevision else { return }
+        self.activeToken = nil
+        self.activeRevision = nil
+        completedAuthorizedRevision = nil
+        finishStateObservation(for: activeToken)
+        coverRelay.clear()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.resolve(
+                token: activeToken,
+                revision: activeRevision,
+                currentRevision: { activeRevision },
+                isCancelled: { true }
+            )
+        }
+    }
+
+    private func observeLoad(
+        token: ContentDetailCoverLoadToken,
+        revision: Int,
+        currentRevision: @escaping @MainActor () -> Int
+    ) async {
+        while !Task.isCancelled,
+              activeToken == token,
+              activeRevision == revision {
+            if await resolveIfTerminal(
+                token: token,
+                revision: revision,
+                currentRevision: currentRevision
+            ) {
+                return
+            }
+            let changes = nextModelStateMutation(for: token)
+            for await _ in changes {
+                break
+            }
+        }
+        if Task.isCancelled {
+            _ = await resolve(
+                token: token,
+                revision: revision,
+                currentRevision: currentRevision,
+                isCancelled: { true }
+            )
+        }
+    }
+
+    private func resolveIfTerminal(
+        token: ContentDetailCoverLoadToken,
+        revision: Int,
+        currentRevision: @escaping @MainActor () -> Int
+    ) async -> Bool {
+        switch model.state {
+        case .idle, .loading:
+            return false
+        case .loaded, .empty, .offline, .failed, .unavailable:
+            let resolution = await resolve(
+                token: token,
+                revision: revision,
+                currentRevision: currentRevision,
+                isCancelled: { Task.isCancelled }
+            )
+            return resolution != .missing
+        }
+    }
+
+    private func resolve(
+        token: ContentDetailCoverLoadToken,
+        revision: Int,
+        currentRevision: @escaping @MainActor () -> Int,
+        isCancelled: @escaping @MainActor () -> Bool
+    ) async -> ContentDetailCoverResolution {
+        let resolution = await ContentDetailCoverObservationCoordinator.resolve(
+            token: token,
+            capturedRevision: revision,
+            provider: coverProvider,
+            relay: coverRelay,
+            currentContext: { [weak self] in
+                guard let self else {
+                    return ContentDetailCoverCommitContext(
+                        activeToken: nil,
+                        currentRevision: currentRevision(),
+                        state: .idle,
+                        isCancelled: true
+                    )
+                }
+                return ContentDetailCoverCommitContext(
+                    activeToken: self.activeToken,
+                    currentRevision: currentRevision(),
+                    state: self.model.state,
+                    isCancelled: isCancelled()
+                )
+            }
+        )
+        if resolution == .committed,
+           activeToken == token,
+           activeRevision == revision {
+            activeToken = nil
+            activeRevision = nil
+            completedAuthorizedRevision = revision
+            finishStateObservation(for: token)
+        }
+        return resolution
+    }
+
+    private func nextModelStateMutation(
+        for token: ContentDetailCoverLoadToken
+    ) -> AsyncStream<Void> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            finishStateObservation(for: token)
+            stateObservationContinuations[token] = continuation
+            withObservationTracking {
+                _ = model.state
+            } onChange: {
+                continuation.yield()
+                continuation.finish()
+            }
+        }
+    }
+
+    private func finishStateObservation(
+        for token: ContentDetailCoverLoadToken
+    ) {
+        stateObservationContinuations.removeValue(forKey: token)?.finish()
+    }
+}
 
 struct ContentDetailRetryRequest: Equatable, Hashable, Sendable {
     let revision: Int
@@ -58,7 +597,7 @@ struct ContentDetailAccessibilityFocusCoordinator: Equatable, Sendable {
 struct PublishedContentDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppRouter.self) private var router
-    @State private var model: ContentDetailViewModel
+    @State private var composition: ContentDetailCoverComposition
     @State private var retryRequest: ContentDetailRetryRequest?
     @State private var retrySequence = 0
     @State private var accessibilityFocusCoordinator =
@@ -81,12 +620,11 @@ struct PublishedContentDetailView: View {
     ) {
         self.publicationID = publicationID
         self.invalidationCenter = invalidationCenter
-        _model = State(initialValue: ContentDetailViewModel(
+        _composition = State(initialValue: ContentDetailCoverComposition.make(
             publicationID: publicationID,
             origin: origin,
             detailProvider: detailProvider,
             stateRecorder: stateRecorder,
-            markdownParser: BodyFlowMarkdownParser(),
             keyProvider: keyProvider,
             timeProvider: timeProvider,
             invalidationCenter: invalidationCenter,
@@ -112,12 +650,16 @@ struct PublishedContentDetailView: View {
         .navigationTitle("Conteúdo")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("screen.content-detail.\(publicationID)")
-        .task(id: detailRevision) {
-            await model.load(revision: detailRevision)
+        .task(id: detailLoadIdentity) {
+            let revision = detailRevision
+            await performDetailLoad(revision: revision, isRetry: false)
         }
         .task(id: retryRequest) {
             guard let retryRequest else { return }
-            await model.retry(revision: retryRequest.revision)
+            await performDetailLoad(
+                revision: retryRequest.revision,
+                isRetry: true
+            )
         }
         .onChange(of: model.accessibilityFocusEvent) { _, event in
             guard let event else { return }
@@ -133,10 +675,22 @@ struct PublishedContentDetailView: View {
                 accessibilityFocusCoordinator.focusDidChange(to: focus)
             )
         }
+        .onDisappear {
+            composition.cancelActiveLoad()
+        }
     }
+
+    private var model: ContentDetailViewModel { composition.model }
 
     private var detailRevision: Int {
         invalidationCenter.revision(for: .contentDetail(publicationID))
+    }
+
+    private var detailLoadIdentity: ContentDetailCoverTaskIdentity {
+        ContentDetailCoverTaskIdentity(
+            composition: composition.taskOwnerIdentity,
+            revision: detailRevision
+        )
     }
 
     private func retry() {
@@ -146,6 +700,17 @@ struct PublishedContentDetailView: View {
         )
         retrySequence = request.sequence
         retryRequest = request
+    }
+
+    private func performDetailLoad(
+        revision: Int,
+        isRetry: Bool
+    ) async {
+        await composition.performLoad(
+            revision: revision,
+            isRetry: isRetry,
+            currentRevision: { detailRevision }
+        )
     }
 
     private func applyAccessibilityFocus(
@@ -165,7 +730,15 @@ struct PublishedContentDetailView: View {
     private func article(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
-        ScrollView {
+        let coverIdentity = ContentDetailCoverIdentity(
+            publicationID: detail.publicationID,
+            version: detail.version
+        )
+        let coverAuthorization = composition.coverAuthorization(
+            for: coverIdentity
+        )
+
+        return ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                 Text(detail.title)
                     .font(BodyFlowTypography.largeTitle)
@@ -177,6 +750,16 @@ struct PublishedContentDetailView: View {
                         $accessibilityFocus,
                         equals: .articleHeading
                     )
+
+                ContentCoverView(
+                    publicationID: detail.publicationID,
+                    version: detail.version,
+                    cover: coverAuthorization?.cover,
+                    parentRevision: detailRevision,
+                    authorizedParentRevision: coverAuthorization?.revision,
+                    onParentRevisionChanged: {},
+                    onCapabilityInvalidated: { retry() }
+                )
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {

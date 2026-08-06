@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 
 enum LibraryCopy {
@@ -133,6 +134,393 @@ enum LibraryRefreshPolicy {
     }
 }
 
+struct LibraryCoverLoadToken: Equatable, Hashable, Sendable {
+    let rawValue: UUID
+
+    init(rawValue: UUID = UUID()) {
+        self.rawValue = rawValue
+    }
+}
+
+struct LibraryCoverResponseCandidate: Equatable, Sendable {
+    let token: LibraryCoverLoadToken
+    let query: ContentFeedQuery
+    let feed: PublishedContentFeed
+}
+
+enum LibraryCoverLoadContext {
+    @TaskLocal static var token: LibraryCoverLoadToken?
+
+    @MainActor
+    static func withToken<Value: Sendable>(
+        _ token: LibraryCoverLoadToken,
+        operation: @MainActor () async throws -> Value
+    ) async rethrows -> Value {
+        try await $token.withValue(token, operation: operation)
+    }
+}
+
+protocol LibraryCoverCandidateProviding: Sendable {
+    func takeCandidate(
+        for token: LibraryCoverLoadToken
+    ) async -> LibraryCoverResponseCandidate?
+}
+
+actor LibraryCoverCapturingListing:
+    PublishedContentListing,
+    LibraryCoverCandidateProviding {
+    private let listing: any PublishedContentListing
+    private var candidates: [
+        LibraryCoverLoadToken: LibraryCoverResponseCandidate
+    ] = [:]
+
+    init(listing: any PublishedContentListing) {
+        self.listing = listing
+    }
+
+    func content(
+        _ query: ContentFeedQuery
+    ) async throws -> PublishedContentFeedResponse {
+        guard let token = LibraryCoverLoadContext.token else {
+            return try await listing.content(query)
+        }
+
+        let response = try await listing.content(query)
+        try Task.checkCancellation()
+        candidates[token] = LibraryCoverResponseCandidate(
+            token: token,
+            query: query,
+            feed: response.data
+        )
+        return response
+    }
+
+    func takeCandidate(
+        for token: LibraryCoverLoadToken
+    ) -> LibraryCoverResponseCandidate? {
+        candidates.removeValue(forKey: token)
+    }
+}
+
+@MainActor
+enum LibraryCoverLoadCoordinator {
+    @discardableResult
+    static func perform(
+        requestedKey: FeedLoadKey,
+        relay: LibraryCoverAuthorizationRelay,
+        candidateProvider: any LibraryCoverCandidateProviding,
+        allowsSupersession: Bool = true,
+        reusesCompletedAuthorization: Bool = false,
+        currentKey: @escaping @MainActor () -> FeedLoadKey?,
+        ownsOperation: @escaping @MainActor () -> Bool = { true },
+        state: @escaping @MainActor ()
+            -> FeatureReadState<PublishedContentFeed>,
+        recoveryOperation: (@MainActor () async -> Void)? = nil,
+        operation: @escaping @MainActor () async -> Void
+    ) async -> Bool {
+        if reusesCompletedAuthorization {
+            await relay.waitForPendingLoadToFinish()
+        }
+
+        guard !Task.isCancelled,
+              currentKey() == requestedKey,
+              ownsOperation(),
+              allowsSupersession || !relay.hasPendingLoad else {
+            return false
+        }
+
+        if reusesCompletedAuthorization,
+           currentKey() == requestedKey,
+           ownsOperation(),
+           relay.canReuseCompletedAuthorization(
+               for: requestedKey,
+               state: state()
+           ) {
+            return true
+        }
+
+        let recoversExistingRequest = reusesCompletedAuthorization
+            && relay.requiresFirstPageRecovery(for: requestedKey)
+        let token = relay.begin(requestedKey: requestedKey)
+        await LibraryCoverLoadContext.withToken(token) {
+            if recoversExistingRequest, let recoveryOperation {
+                await recoveryOperation()
+            } else {
+                await operation()
+            }
+        }
+
+        guard let candidate = await candidateProvider.takeCandidate(
+            for: token
+        ) else {
+            relay.discard(token: token)
+            return false
+        }
+
+        return relay.commit(
+            candidate: candidate,
+            capturedKey: requestedKey,
+            currentKey: currentKey(),
+            state: state(),
+            isCancelled: Task.isCancelled || !ownsOperation()
+        )
+    }
+}
+
+@MainActor
+enum LibraryCoverFirstPageRecovery {
+    static func perform(
+        model: PublishedContentFeedViewModel,
+        key: FeedLoadKey
+    ) async {
+        if model.nextPageState == .reloadFirstPageRequired {
+            await model.reloadFirstPageAfterInvalidCursor()
+        } else {
+            await model.retryFirstPage()
+        }
+
+        guard !Task.isCancelled else { return }
+        await model.load(
+            query: key.query,
+            catalogRevision: key.catalogRevision
+        )
+    }
+}
+
+private struct LibraryCoverIdentity: Equatable, Hashable, Sendable {
+    let publicationID: String
+    let version: Int
+}
+
+private struct LibraryAuthorizedCover: Equatable, Sendable {
+    let cover: PublishedContentCover?
+}
+
+struct LibraryCoverAuthorization: Equatable, Sendable {
+    let revision: Int
+    let cover: PublishedContentCover?
+}
+
+@MainActor
+@Observable
+final class LibraryCoverAuthorizationRelay {
+    private(set) var requestedKey: FeedLoadKey?
+    private(set) var authorizedKey: FeedLoadKey?
+    private var latestToken: LibraryCoverLoadToken?
+    private var invalidatedToken: LibraryCoverLoadToken?
+    private var pendingLoadWaiters: [
+        UUID: AsyncStream<Void>.Continuation
+    ] = [:]
+    private var covers: [LibraryCoverIdentity: LibraryAuthorizedCover] = [:]
+
+    var requestedRevision: Int? { requestedKey?.catalogRevision }
+    var authorizedRevision: Int? { authorizedKey?.catalogRevision }
+    var hasPendingLoad: Bool { latestToken != nil }
+
+    @discardableResult
+    func begin(requestedKey: FeedLoadKey) -> LibraryCoverLoadToken {
+        let token = LibraryCoverLoadToken()
+        latestToken = token
+        invalidatedToken = nil
+        self.requestedKey = requestedKey
+        authorizedKey = nil
+        covers.removeAll(keepingCapacity: true)
+        return token
+    }
+
+    @discardableResult
+    func commit(
+        candidate: LibraryCoverResponseCandidate,
+        capturedKey: FeedLoadKey,
+        currentKey: FeedLoadKey?,
+        state: FeatureReadState<PublishedContentFeed>,
+        isCancelled: Bool
+    ) -> Bool {
+        guard latestToken == candidate.token else { return false }
+        defer { finishPendingLoad(token: candidate.token) }
+
+        guard invalidatedToken != candidate.token,
+              !isCancelled,
+              requestedKey == capturedKey,
+              currentKey == capturedKey,
+              candidate.query == capturedKey.query,
+              didPublish(candidate.feed, in: state)
+        else {
+            return false
+        }
+
+        replaceCovers(with: candidate.feed.items)
+        authorizedKey = capturedKey
+        return true
+    }
+
+    func discard(token: LibraryCoverLoadToken) {
+        finishPendingLoad(token: token)
+    }
+
+    func cancelPendingLoad() {
+        invalidatedToken = latestToken
+    }
+
+    func waitForPendingLoadToFinish() async {
+        while latestToken != nil, !Task.isCancelled {
+            let waiterID = UUID()
+            let channel = AsyncStream<Void>.makeStream()
+            pendingLoadWaiters[waiterID] = channel.continuation
+
+            await withTaskCancellationHandler {
+                for await _ in channel.stream {
+                    break
+                }
+            } onCancel: {
+                channel.continuation.finish()
+            }
+
+            pendingLoadWaiters.removeValue(forKey: waiterID)?.finish()
+        }
+    }
+
+    func canReuseCompletedAuthorization(
+        for key: FeedLoadKey,
+        state: FeatureReadState<PublishedContentFeed>
+    ) -> Bool {
+        guard latestToken == nil,
+              requestedKey == key,
+              authorizedKey == key,
+              let items = successfulItems(in: state)
+        else {
+            return false
+        }
+        var publishedCovers: [
+            LibraryCoverIdentity: LibraryAuthorizedCover
+        ] = [:]
+        for summary in items {
+            let identity = LibraryCoverIdentity(
+                publicationID: summary.publicationID,
+                version: summary.version
+            )
+            guard publishedCovers.updateValue(
+                LibraryAuthorizedCover(cover: summary.cover),
+                forKey: identity
+            ) == nil else {
+                return false
+            }
+        }
+        return publishedCovers == covers
+    }
+
+    func requiresFirstPageRecovery(for key: FeedLoadKey) -> Bool {
+        latestToken == nil && requestedKey == key
+    }
+
+    func reconcilePublishedState(
+        for key: FeedLoadKey,
+        state: FeatureReadState<PublishedContentFeed>,
+        isCancelled: Bool
+    ) {
+        guard !isCancelled,
+              requestedKey == key,
+              authorizedKey == key,
+              let items = successfulItems(in: state)
+        else {
+            return
+        }
+        replaceCovers(with: items)
+    }
+
+    func authorization(
+        for summary: PublishedContentSummary,
+        requestedKey: FeedLoadKey?
+    ) -> LibraryCoverAuthorization? {
+        guard let requestedKey,
+              self.requestedKey == requestedKey,
+              authorizedKey == requestedKey,
+              let authorized = covers[LibraryCoverIdentity(
+                  publicationID: summary.publicationID,
+                  version: summary.version
+              )]
+        else {
+            return nil
+        }
+        return LibraryCoverAuthorization(
+            revision: requestedKey.catalogRevision,
+            cover: authorized.cover
+        )
+    }
+
+    func cover(
+        for summary: PublishedContentSummary,
+        requestedKey: FeedLoadKey?
+    ) -> PublishedContentCover? {
+        authorization(for: summary, requestedKey: requestedKey)?.cover
+    }
+
+    func invalidate() {
+        latestToken = nil
+        invalidatedToken = nil
+        finishPendingLoadWaiters()
+        requestedKey = nil
+        authorizedKey = nil
+        covers.removeAll(keepingCapacity: false)
+    }
+
+    private func successfulItems(
+        in state: FeatureReadState<PublishedContentFeed>
+    ) -> [PublishedContentSummary]? {
+        switch state {
+        case let .loaded(feed):
+            feed.items
+        case .empty:
+            []
+        case .idle, .loading, .offline, .failed, .unavailable:
+            nil
+        }
+    }
+
+    private func didPublish(
+        _ candidate: PublishedContentFeed,
+        in state: FeatureReadState<PublishedContentFeed>
+    ) -> Bool {
+        switch state {
+        case let .loaded(feed):
+            feed == candidate
+        case .empty:
+            candidate.items.isEmpty
+        case .idle, .loading, .offline, .failed, .unavailable:
+            false
+        }
+    }
+
+    private func replaceCovers(with items: [PublishedContentSummary]) {
+        covers = Dictionary(
+            uniqueKeysWithValues: items.map { summary in
+                (
+                    LibraryCoverIdentity(
+                        publicationID: summary.publicationID,
+                        version: summary.version
+                    ),
+                    LibraryAuthorizedCover(cover: summary.cover)
+                )
+            }
+        )
+    }
+
+    private func finishPendingLoad(token: LibraryCoverLoadToken) {
+        guard latestToken == token else { return }
+        latestToken = nil
+        invalidatedToken = nil
+        finishPendingLoadWaiters()
+    }
+
+    private func finishPendingLoadWaiters() {
+        let waiters = Array(pendingLoadWaiters.values)
+        pendingLoadWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters {
+            waiter.finish()
+        }
+    }
+}
+
 enum LibraryAccessibilityFocusEvent: Hashable, Sendable, CaseIterable {
     case initialLoadCompleted
     case filterLoadCompleted
@@ -169,10 +557,41 @@ enum LibraryAccessibilityFocusReducer {
 }
 
 @MainActor
+@Observable
+final class LibraryCoverFeedComposition {
+    let model: PublishedContentFeedViewModel
+    let candidateProvider: LibraryCoverCapturingListing
+    let authorizationRelay: LibraryCoverAuthorizationRelay
+
+    init(
+        listing: any PublishedContentListing,
+        stateRecorder: any PublishedContentStateRecording,
+        keyProvider: any IdempotencyKeyProviding,
+        timeProvider: any TimeProviding,
+        invalidationCenter: FeatureInvalidationCenter,
+        coverLoader: any ContentCoverLoading
+    ) {
+        let candidateProvider = LibraryCoverCapturingListing(
+            listing: listing
+        )
+        self.candidateProvider = candidateProvider
+        authorizationRelay = LibraryCoverAuthorizationRelay()
+        model = PublishedContentFeedViewModel(
+            listing: candidateProvider,
+            stateRecorder: stateRecorder,
+            keyProvider: keyProvider,
+            timeProvider: timeProvider,
+            invalidationCenter: invalidationCenter,
+            coverLoader: coverLoader
+        )
+    }
+}
+
+@MainActor
 struct LibraryRootView: View {
     @State private var selection: LibrarySelection
     @State private var category: ContentCategory?
-    @State private var model: PublishedContentFeedViewModel
+    @State private var composition: LibraryCoverFeedComposition
     @State private var nextTaskFocusEvent: LibraryAccessibilityFocusEvent?
     @State private var actionRequest: LibraryActionRequest?
     @State private var actionSequence: Int
@@ -189,7 +608,7 @@ struct LibraryRootView: View {
     ) {
         _selection = State(initialValue: initialSelection)
         _category = State(initialValue: nil)
-        _model = State(initialValue: PublishedContentFeedViewModel(
+        _composition = State(initialValue: LibraryCoverFeedComposition(
             listing: sessionOwner.contentListing,
             stateRecorder: sessionOwner.contentState,
             keyProvider: dependencies.idempotencyKeyProvider,
@@ -203,6 +622,12 @@ struct LibraryRootView: View {
         self.invalidationCenter = invalidationCenter
     }
 
+    private var model: PublishedContentFeedViewModel { composition.model }
+
+    private var coverAuthorizationRelay: LibraryCoverAuthorizationRelay {
+        composition.authorizationRelay
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             filters
@@ -214,11 +639,28 @@ struct LibraryRootView: View {
         .navigationTitle("Biblioteca")
         .accessibilityIdentifier("screen.library")
         .task(id: taskKey) {
-            guard let capturedKey = taskKey else { return }
+            guard !Task.isCancelled,
+                  let capturedKey = taskKey else { return }
             let focusEvent = nextTaskFocusEvent
-            await model.load(
-                query: capturedKey.query,
-                catalogRevision: capturedKey.catalogRevision
+            _ = await LibraryCoverLoadCoordinator.perform(
+                requestedKey: capturedKey,
+                relay: coverAuthorizationRelay,
+                candidateProvider: composition.candidateProvider,
+                reusesCompletedAuthorization: true,
+                currentKey: { taskKey },
+                state: { model.state },
+                recoveryOperation: {
+                    await LibraryCoverFirstPageRecovery.perform(
+                        model: model,
+                        key: capturedKey
+                    )
+                },
+                operation: {
+                    await model.load(
+                        query: capturedKey.query,
+                        catalogRevision: capturedKey.catalogRevision
+                    )
+                }
             )
             guard !Task.isCancelled,
                   LibraryFocusOwnership.canPublish(
@@ -240,6 +682,7 @@ struct LibraryRootView: View {
         }
         .onDisappear {
             cancelPendingAction()
+            coverAuthorizationRelay.cancelPendingLoad()
             accessibilityFocus = nil
         }
     }
@@ -469,7 +912,10 @@ struct LibraryRootView: View {
                     ForEach(feed.items) { summary in
                         LibraryContentRow(
                             summary: summary,
-                            model: model
+                            model: model,
+                            coverAuthorizationRelay:
+                                coverAuthorizationRelay,
+                            requestedKey: taskKey
                         )
                     }
                 }
@@ -682,8 +1128,18 @@ struct LibraryRootView: View {
     }
 
     private func refreshFirstPage() async {
-        let capturedKey = taskKey
-        await model.retryFirstPage()
+        guard !Task.isCancelled,
+              let capturedKey = taskKey else { return }
+        _ = await LibraryCoverLoadCoordinator.perform(
+            requestedKey: capturedKey,
+            relay: coverAuthorizationRelay,
+            candidateProvider: composition.candidateProvider,
+            allowsSupersession: false,
+            reusesCompletedAuthorization: false,
+            currentKey: { taskKey },
+            state: { model.state },
+            operation: { await model.retryFirstPage() }
+        )
         guard !Task.isCancelled,
               LibraryFocusOwnership.canPublish(
                   capturedKey: capturedKey,
@@ -713,13 +1169,47 @@ struct LibraryRootView: View {
     private func perform(_ request: LibraryActionRequest) async {
         switch request.kind {
         case .retryFirstPage:
-            await model.retryFirstPage()
+            _ = await LibraryCoverLoadCoordinator.perform(
+                requestedKey: request.key,
+                relay: coverAuthorizationRelay,
+                candidateProvider: composition.candidateProvider,
+                allowsSupersession: false,
+                reusesCompletedAuthorization: false,
+                currentKey: { taskKey },
+                ownsOperation: {
+                    LibraryActionRequestPolicy.owns(
+                        request,
+                        activeRequest: actionRequest,
+                        currentTaskKey: taskKey
+                    )
+                },
+                state: { model.state },
+                operation: { await model.retryFirstPage() }
+            )
         case .loadNextPage:
             await model.loadNextPage()
         case .retryNextPage:
             await model.retryNextPage()
         case .reloadFirstPage:
-            await model.reloadFirstPageAfterInvalidCursor()
+            _ = await LibraryCoverLoadCoordinator.perform(
+                requestedKey: request.key,
+                relay: coverAuthorizationRelay,
+                candidateProvider: composition.candidateProvider,
+                allowsSupersession: false,
+                reusesCompletedAuthorization: false,
+                currentKey: { taskKey },
+                ownsOperation: {
+                    LibraryActionRequestPolicy.owns(
+                        request,
+                        activeRequest: actionRequest,
+                        currentTaskKey: taskKey
+                    )
+                },
+                state: { model.state },
+                operation: {
+                    await model.reloadFirstPageAfterInvalidCursor()
+                }
+            )
         }
 
         guard !Task.isCancelled,
@@ -729,6 +1219,17 @@ struct LibraryRootView: View {
                   currentTaskKey: taskKey
               ) else {
             return
+        }
+
+        switch request.kind {
+        case .loadNextPage, .retryNextPage:
+            coverAuthorizationRelay.reconcilePublishedState(
+                for: request.key,
+                state: model.state,
+                isCancelled: Task.isCancelled
+            )
+        case .retryFirstPage, .reloadFirstPage:
+            break
         }
 
         switch request.kind {
@@ -770,6 +1271,8 @@ struct LibraryRootView: View {
 private struct LibraryContentRow: View {
     let summary: PublishedContentSummary
     let model: PublishedContentFeedViewModel
+    let coverAuthorizationRelay: LibraryCoverAuthorizationRelay
+    let requestedKey: FeedLoadKey?
 
     @State private var isVisible = false
 
@@ -782,8 +1285,18 @@ private struct LibraryContentRow: View {
     }
 
     var body: some View {
+        let coverAuthorization = coverAuthorizationRelay.authorization(
+            for: summary,
+            requestedKey: requestedKey
+        )
         PublishedContentCard(
-            presentation: LibraryCardPresentation(summary: summary)
+            presentation: LibraryCardPresentation(summary: summary),
+            coverInput: LibraryCardCoverInput(
+                summary: summary,
+                authorizedCover: coverAuthorization?.cover
+            ),
+            requestedCoverRevision: requestedKey?.catalogRevision ?? 0,
+            authorizedCoverRevision: coverAuthorization?.revision
         )
         .onScrollVisibilityChange(
             threshold: LibraryCardVisibilityPolicy.threshold

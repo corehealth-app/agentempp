@@ -10,6 +10,7 @@ struct AppShellView: View {
     @State private var progressViewModel: ProgressViewModel
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
+    @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
     let dependencies: AppDependencies
@@ -38,6 +39,16 @@ struct AppShellView: View {
         _historyViewModel = State(initialValue: historyModel)
         _historyCoordinator = State(
             initialValue: HistoryFeatureCoordinator(model: historyModel)
+        )
+        _todayRecommendationsViewModel = State(
+            initialValue: TodayRecommendationsViewModel(
+                listing: sessionOwner.contentListing,
+                stateRecorder: sessionOwner.contentState,
+                keyProvider: dependencies.idempotencyKeyProvider,
+                timeProvider: dependencies.timeProvider,
+                invalidationCenter: invalidationCenter,
+                coverLoader: sessionOwner.coverLoader
+            )
         )
         _contentCoverEnvironment = State(
             initialValue: ContentCoverEnvironment.make(
@@ -115,6 +126,7 @@ struct AppShellView: View {
         case .today:
             TodayRootView(
                 model: todayViewModel,
+                recommendations: todayRecommendationsViewModel,
                 invalidationCenter: invalidationCenter
             )
         case .register:

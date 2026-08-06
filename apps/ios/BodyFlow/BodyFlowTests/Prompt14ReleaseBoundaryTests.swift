@@ -69,6 +69,48 @@ struct Prompt14ReleaseBoundaryTests {
         #expect(await stream.cancelAllCallCount == 0)
     }
 
+    @Test("Release dependency construction uses only unavailable Prompt 14 factories")
+    func releaseDependencyConstructionStaysUnavailable() async throws {
+        let dependencies = releaseDependencies()
+        let session = dependencies.publishedContentSessions.makeSession(
+            userID: "release-user"
+        )
+        let coach = dependencies.coachExperienceSessions.makeCoachExperience(
+            userID: "release-user"
+        )
+        let cover = dependencies.contentCoverSessions.makeLoader(
+            userID: "release-user"
+        )
+        let query = try ContentFeedQuery(
+            surface: .today,
+            category: nil,
+            limit: 3,
+            cursor: nil
+        )
+
+        #expect(type(of: dependencies.timeProvider) == SystemTimeProvider.self)
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await session.listing.content(query)
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await coach.coachExperience()
+        }
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await cover.image(
+                publicationID: "publication-1",
+                version: 1,
+                cover: PublishedContentCover(
+                    url: "/api/mobile/v1/content/covers/AbC_123-xyz",
+                    expiresAt: APITimestamp(value: .distantFuture)
+                ),
+                target: ContentCoverTargetSize(
+                    widthPixels: 120,
+                    heightPixels: 80
+                )
+            )
+        }
+    }
+
     @Test("Unavailable cover stream rejects an already-resolved request")
     func unavailableCoverStreamFailsClosedWhenCalledDirectly() async throws {
         let origin = try ContentCoverTrustedOrigin(

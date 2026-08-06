@@ -53,6 +53,7 @@ struct Prompt14LaunchConfigurationTests {
     @Test("Debug maps every exact Prompt 14 flag")
     func debugMapsEveryExactFlag() {
         #expect(prompt14Arguments.count == 19)
+        #expect(Set(prompt14Arguments).count == prompt14Arguments.count)
         #expect(scenarios.count == 19)
 
         for (argument, scenario) in zip(prompt14Arguments, scenarios) {
@@ -67,6 +68,19 @@ struct Prompt14LaunchConfigurationTests {
             #expect(configuration.shouldResetDemoState)
             #expect(configuration.startsWithCompletedFixture)
             #expect(configuration.preloadsSyntheticOnboardingValues)
+        }
+    }
+
+    @Test("Each Prompt 14 scenario launch uses one Prompt 14 flag")
+    func eachScenarioLaunchUsesOnePrompt14Flag() {
+        for argument in prompt14Arguments {
+            let launchArguments = ["--ui-testing", argument]
+
+            #expect(
+                launchArguments.filter {
+                    $0.hasPrefix("--ui-testing-prompt14-")
+                }.count == 1
+            )
         }
     }
 

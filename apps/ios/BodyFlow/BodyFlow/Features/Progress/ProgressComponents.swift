@@ -243,6 +243,8 @@ struct ProgressContentView: View {
                 FixtureMetricRow(title: "Déficit informado", value: presentation.deficitBlockText, systemImage: "arrow.down.circle")
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Resumo do progresso")
         .accessibilityIdentifier("progress.summary")
     }
 
@@ -289,6 +291,7 @@ struct ProgressContentView: View {
                 .accessibilityIdentifier("progress.streak.resume-today")
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.streak.restart")
     }
 
@@ -319,6 +322,7 @@ struct ProgressContentView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.badges")
     }
 

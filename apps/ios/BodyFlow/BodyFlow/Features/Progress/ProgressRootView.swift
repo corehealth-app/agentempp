@@ -7,7 +7,10 @@ struct ProgressRootView: View {
 
     var body: some View {
         ZStack {
-            BodyFlowColor.background.ignoresSafeArea()
+            BodyFlowColor.background
+                .ignoresSafeArea()
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(AppTab.progress.rootAccessibilityIdentifier)
             FeatureReadStateView(state: model.state, retryAction: retry) { snapshot in
                 let presentation = ProgressPresentation(snapshot: snapshot)
                 ScrollView {
@@ -32,8 +35,6 @@ struct ProgressRootView: View {
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(AppTab.progress.rootAccessibilityIdentifier)
         .navigationTitle("Progresso")
         .task(id: selectedTab) {
             guard selectedTab == .progress else { return }

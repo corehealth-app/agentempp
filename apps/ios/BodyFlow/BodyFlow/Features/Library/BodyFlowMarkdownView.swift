@@ -208,16 +208,86 @@ struct BodyFlowMarkdownView: View {
 
 @MainActor
 private struct MarkdownInlineText: View {
+    @Environment(\.openURL) private var openURL
+
     let children: [BodyFlowMarkdownInline]
 
+    @ViewBuilder
     var body: some View {
         let presentation = BodyFlowMarkdownInlinePresentation.make(children)
         let openURLHandler = BodyFlowMarkdownOpenURLHandler()
 
-        return Text(presentation.text)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityHint(presentation.accessibilityHint)
-            .environment(\.openURL, openURLHandler.openURLAction)
+        if let link = BodyFlowMarkdownStandaloneLink.make(children) {
+            Text(presentation.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "\(link.label), "
+                        + BodyFlowMarkdownLinkPolicy
+                            .accessibilityAnnouncement
+                )
+                .accessibilityIdentifier(link.label)
+                .accessibilityAddTraits(.isLink)
+                .accessibilityAction {
+                    openValidated(link.destination)
+                }
+                .environment(\.openURL, openURLHandler.openURLAction)
+        } else {
+            Text(presentation.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHint(presentation.accessibilityHint)
+                .environment(\.openURL, openURLHandler.openURLAction)
+        }
+    }
+
+    private func openValidated(_ destination: URL) {
+        guard let approvedURL =
+                BodyFlowMarkdownLinkPolicy.validatedHTTPSURL(
+                    destination.absoluteString
+                ) else {
+            return
+        }
+        openURL(approvedURL)
+    }
+}
+
+private struct BodyFlowMarkdownStandaloneLink: Equatable, Sendable {
+    let label: String
+    let destination: URL
+
+    static func make(
+        _ inlines: [BodyFlowMarkdownInline]
+    ) -> Self? {
+        guard inlines.count == 1,
+              case let .link(destination, children) = inlines[0],
+              let url = BodyFlowMarkdownLinkPolicy.validatedHTTPSURL(
+                  destination
+              ) else {
+            return nil
+        }
+
+        let label = plainText(children)
+        guard !label.isEmpty else { return nil }
+        return Self(label: label, destination: url)
+    }
+
+    private static func plainText(
+        _ inlines: [BodyFlowMarkdownInline]
+    ) -> String {
+        inlines.map(plainText).joined()
+    }
+
+    private static func plainText(
+        _ inline: BodyFlowMarkdownInline
+    ) -> String {
+        switch inline {
+        case let .text(value):
+            value
+        case let .strong(children),
+             let .emphasis(children),
+             let .link(_, children):
+            plainText(children)
+        }
     }
 }
 

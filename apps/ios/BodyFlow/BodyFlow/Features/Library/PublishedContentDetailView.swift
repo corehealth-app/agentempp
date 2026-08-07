@@ -633,7 +633,14 @@ struct PublishedContentDetailView: View {
     }
 
     var body: some View {
-        Group {
+        ZStack {
+            BodyFlowColor.background
+                .ignoresSafeArea()
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(
+                    "screen.content-detail.\(publicationID)"
+                )
+
             if let boundedPresentation = model.boundedPresentation {
                 boundedState(boundedPresentation)
             } else {
@@ -649,7 +656,6 @@ struct PublishedContentDetailView: View {
         .background(BodyFlowColor.background)
         .navigationTitle("Conteúdo")
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("screen.content-detail.\(publicationID)")
         .task(id: detailLoadIdentity) {
             let revision = detailRevision
             await performDetailLoad(revision: revision, isRetry: false)
@@ -778,6 +784,17 @@ struct PublishedContentDetailView: View {
                 }
 
                 contentActions(detail)
+
+                if case let .failed(error) = model.openedEventState,
+                   error != .contentVersionChanged {
+                    Label(
+                        "Não foi possível atualizar. Tente novamente.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(BodyFlowTypography.callout)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
 
                 if let presentation = model.contentMutationPresentation {
                     mutationSummary(presentation)

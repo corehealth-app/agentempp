@@ -188,6 +188,7 @@ struct MascotSemanticContent: View {
                 Text(descriptor.personaText)
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
+                    .accessibilityLabel("personalidade \(descriptor.personaName)")
                 Text(descriptor.stateText)
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)

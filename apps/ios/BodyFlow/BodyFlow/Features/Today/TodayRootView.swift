@@ -220,6 +220,34 @@ struct TodayRootView: View {
             BodyFlowColor.background.ignoresSafeArea()
             stateContent
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            let navigation = TodayRootNavigationPresentation(state: model.state)
+            HStack {
+                Spacer(minLength: 0)
+                NavigationLink(value: navigation.toolbarRoutes[0]) {
+                    HStack(spacing: BodyFlowSpacing.xs) {
+                        Image(systemName: "books.vertical")
+                        Text("Biblioteca")
+                    }
+                    .font(BodyFlowTypography.headline)
+                    .foregroundStyle(BodyFlowColor.accent)
+                    .padding(.horizontal, BodyFlowSpacing.sm)
+                    .padding(.vertical, BodyFlowSpacing.sm)
+                    .background(
+                        BodyFlowColor.surface,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .accessibilityRepresentation {
+                        EmptyView()
+                    }
+                }
+                .accessibilityLabel("Biblioteca")
+                .accessibilityIdentifier("today.library")
+            }
+            .padding(.horizontal, BodyFlowSpacing.md)
+            .padding(.vertical, BodyFlowSpacing.xs)
+            .background(BodyFlowColor.background)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.today.rootAccessibilityIdentifier)
 #if DEBUG
@@ -243,14 +271,6 @@ struct TodayRootView: View {
         }
         .toolbar {
             let navigation = TodayRootNavigationPresentation(state: model.state)
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(
-                    value: navigation.toolbarRoutes[0]
-                ) {
-                    Label("Biblioteca", systemImage: "books.vertical")
-                }
-                .accessibilityIdentifier("today.library")
-            }
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {

@@ -79,6 +79,7 @@ struct TodayRecommendationsSection: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("today.recommendations.library")
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("today.recommendations")
     }
 
@@ -133,10 +134,15 @@ struct TodayRecommendationsSection: View {
     }
 
     private var retryButton: some View {
-        Button("Tentar novamente") { Task { await model.retry() } }
-            .font(BodyFlowTypography.headline)
-            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-            .accessibilityIdentifier("today.recommendations.retry")
+        Button {
+            Task { await model.retry() }
+        } label: {
+            Text("Tentar novamente")
+                .font(BodyFlowTypography.headline)
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityIdentifier("today.recommendations.retry")
     }
 }
 

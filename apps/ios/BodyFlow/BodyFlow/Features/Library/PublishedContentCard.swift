@@ -165,6 +165,7 @@ struct LibraryPagingPresentation: Equatable, Sendable {
 
 @MainActor
 struct PublishedContentCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.refresh) private var refresh
 
     let presentation: LibraryCardPresentation
@@ -173,36 +174,20 @@ struct PublishedContentCard: View {
     let authorizedCoverRevision: Int?
 
     var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibilityCard
+            } else {
+                standardCard
+            }
+        }
+    }
+
+    private var standardCard: some View {
         NavigationLink(value: AppRoute.content(presentation.route)) {
             BodyFlowCard {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                    decorativeCover
-
-                    Text(presentation.title)
-                        .font(BodyFlowTypography.headline)
-                        .foregroundStyle(BodyFlowColor.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(presentation.excerpt)
-                        .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline) {
-                            categoryMetadata
-                            Spacer(minLength: BodyFlowSpacing.sm)
-                            readingTimeMetadata
-                        }
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                            categoryMetadata
-                            readingTimeMetadata
-                        }
-                    }
-
-                    if presentation.saved || presentation.completed {
-                        statusRow
-                    }
+                    cardContent
                 }
             }
             .contentShape(Rectangle())
@@ -212,6 +197,65 @@ struct PublishedContentCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+
+    private var accessibilityCard: some View {
+        BodyFlowCard {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                NavigationLink(value: AppRoute.content(presentation.route)) {
+                    HStack(spacing: BodyFlowSpacing.xs) {
+                        Text("Abrir conteúdo")
+                            .font(BodyFlowTypography.headline)
+                        Spacer(minLength: BodyFlowSpacing.sm)
+                        Image(systemName: "chevron.right")
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(BodyFlowColor.accent)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: BodyFlowSpacing.minimumTapTarget,
+                        alignment: .leading
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Abrir \(presentation.title)")
+                .accessibilityIdentifier(presentation.accessibilityIdentifier)
+
+                cardContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        decorativeCover
+
+        Text(presentation.title)
+            .font(BodyFlowTypography.headline)
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Text(presentation.excerpt)
+            .font(BodyFlowTypography.body)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                categoryMetadata
+                Spacer(minLength: BodyFlowSpacing.sm)
+                readingTimeMetadata
+            }
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                categoryMetadata
+                readingTimeMetadata
+            }
+        }
+
+        if presentation.saved || presentation.completed {
+            statusRow
+        }
     }
 
     private var decorativeCover: some View {

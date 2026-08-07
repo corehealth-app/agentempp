@@ -589,11 +589,13 @@ final class LibraryCoverFeedComposition {
 
 @MainActor
 struct LibraryRootView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selection: LibrarySelection
     @State private var category: ContentCategory?
     @State private var composition: LibraryCoverFeedComposition
     @State private var nextTaskFocusEvent: LibraryAccessibilityFocusEvent?
     @State private var actionRequest: LibraryActionRequest?
+    @State private var firstPageScrollRequest: LibraryActionRequest?
     @State private var actionSequence: Int
     @AccessibilityFocusState private var accessibilityFocus:
         LibraryAccessibilityFocusTarget?
@@ -618,6 +620,7 @@ struct LibraryRootView: View {
         ))
         _nextTaskFocusEvent = State(initialValue: .initialLoadCompleted)
         _actionRequest = State(initialValue: nil)
+        _firstPageScrollRequest = State(initialValue: nil)
         _actionSequence = State(initialValue: 0)
         self.invalidationCenter = invalidationCenter
     }
@@ -630,13 +633,16 @@ struct LibraryRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            filters
-            Divider()
+            if !embedsFiltersInFeed {
+                filters
+                Divider()
+            }
             readStateContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
         .navigationTitle("Biblioteca")
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.library")
         .task(id: taskKey) {
             guard !Task.isCancelled,
@@ -687,6 +693,11 @@ struct LibraryRootView: View {
         }
     }
 
+    private var embedsFiltersInFeed: Bool {
+        dynamicTypeSize.isAccessibilitySize
+            && model.state.presentation.value != nil
+    }
+
     private var filters: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             Text(LibraryCopy.description)
@@ -694,20 +705,25 @@ struct LibraryRootView: View {
                 .foregroundStyle(BodyFlowColor.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Picker("Conteúdo", selection: selectionBinding) {
-                Text(LibrarySelection.all.title)
-                    .tag(LibrarySelection.all)
-                    .accessibilityIdentifier(
-                        LibrarySelection.all.accessibilityIdentifier
-                    )
-                Text(LibrarySelection.saved.title)
-                    .tag(LibrarySelection.saved)
-                    .accessibilityIdentifier(
-                        LibrarySelection.saved.accessibilityIdentifier
+            HStack(spacing: 0) {
+                selectionButton(.all)
+
+                Divider()
+
+                selectionButton(.saved)
+            }
+            .background(BodyFlowColor.surface)
+            .clipShape(
+                RoundedRectangle(cornerRadius: BodyFlowSpacing.xs)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: BodyFlowSpacing.xs)
+                    .stroke(
+                        BodyFlowColor.secondaryText.opacity(0.25),
+                        lineWidth: 1
                     )
             }
-            .pickerStyle(.segmented)
-            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            .accessibilityElement(children: .contain)
 
             Menu {
                 Button {
@@ -864,68 +880,110 @@ struct LibraryRootView: View {
     ) -> some View {
         let presentation = LibraryPresentation(feed: feed)
 
-        return ScrollView {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                if showsStaleBanner {
-                    StaleDataBanner()
-                        .accessibilityFocused(
-                            $accessibilityFocus,
-                            equals: .firstPageResultSummary
-                        )
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    if embedsFiltersInFeed {
+                        filters
+                        Divider()
+                    }
 
-                    if LibraryRecoveryPolicy.action(
-                        allowsFirstPageRetry: true,
-                        nextPageState: model.nextPageState
-                    ) == .retryFirstPage {
-                        Button {
-                            requestAction(.retryFirstPage)
-                        } label: {
-                            Text("Tentar novamente")
-                                .font(BodyFlowTypography.headline)
-                                .frame(
-                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                        if showsStaleBanner {
+                            StaleDataBanner()
+                                .accessibilityFocused(
+                                    $accessibilityFocus,
+                                    equals: .firstPageResultSummary
                                 )
-                                .contentShape(Rectangle())
+
+                            if LibraryRecoveryPolicy.action(
+                                allowsFirstPageRetry: true,
+                                nextPageState: model.nextPageState
+                            ) == .retryFirstPage {
+                                Button {
+                                    requestAction(.retryFirstPage)
+                                } label: {
+                                    Text("Tentar novamente")
+                                        .font(BodyFlowTypography.headline)
+                                        .frame(
+                                            minHeight:
+                                                BodyFlowSpacing.minimumTapTarget
+                                        )
+                                        .contentShape(Rectangle())
+                                }
+                                .accessibilityIdentifier("state.retry")
+                            }
                         }
-                        .accessibilityIdentifier("state.retry")
-                    }
-                }
 
-                Text(resultsHeading)
-                    .font(BodyFlowTypography.title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("library.results-heading")
-                    .accessibilityFocused(
-                        $accessibilityFocus,
-                        equals: .resultsHeading
-                    )
+                        Text(resultsHeading)
+                            .font(BodyFlowTypography.title)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityIdentifier("library.results-heading")
+                            .accessibilityFocused(
+                                $accessibilityFocus,
+                                equals: .resultsHeading
+                            )
+                            .id("library.results-heading.scroll-target")
 
-                resultCount(
-                    presentation.cards.count,
-                    showsStaleDisclosure: showsStaleBanner
-                )
-
-                LazyVStack(spacing: BodyFlowSpacing.md) {
-                    ForEach(feed.items) { summary in
-                        LibraryContentRow(
-                            summary: summary,
-                            model: model,
-                            coverAuthorizationRelay:
-                                coverAuthorizationRelay,
-                            requestedKey: taskKey
+                        resultCount(
+                            presentation.cards.count,
+                            showsStaleDisclosure: showsStaleBanner
                         )
-                    }
-                }
 
-                pagingControls(for: feed)
+                        cardRows(for: feed)
+
+                        pagingControls(for: feed)
+                    }
+                    .padding(BodyFlowSpacing.md)
+                }
             }
-            .padding(BodyFlowSpacing.md)
+            .refreshable {
+                await refreshFirstPage()
+            }
+            .onChange(of: firstPageScrollRequest) { _, request in
+                guard let request,
+                      request.kind == .reloadFirstPage,
+                      request.key == taskKey,
+                      LibraryActionRequestPolicy.owns(
+                          request,
+                          activeRequest: actionRequest,
+                          currentTaskKey: taskKey
+                      ) else {
+                    return
+                }
+                proxy.scrollTo(
+                    "library.results-heading.scroll-target",
+                    anchor: .top
+                )
+            }
         }
-        .refreshable {
-            await refreshFirstPage()
+    }
+
+    @ViewBuilder
+    private func cardRows(for feed: PublishedContentFeed) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: BodyFlowSpacing.md) {
+                contentRows(for: feed)
+            }
+        } else {
+            LazyVStack(spacing: BodyFlowSpacing.md) {
+                contentRows(for: feed)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contentRows(for feed: PublishedContentFeed) -> some View {
+        ForEach(feed.items) { summary in
+            LibraryContentRow(
+                summary: summary,
+                model: model,
+                coverAuthorizationRelay: coverAuthorizationRelay,
+                requestedKey: taskKey
+            )
         }
     }
 
@@ -1066,15 +1124,37 @@ struct LibraryRootView: View {
             .accessibilityIdentifier("library.results-summary")
     }
 
-    private var selectionBinding: Binding<LibrarySelection> {
-        Binding(
-            get: { selection },
-            set: { newSelection in
-                guard selection != newSelection else { return }
-                cancelPendingAction()
-                nextTaskFocusEvent = .filterLoadCompleted
-                selection = newSelection
-            }
+    private func selectionButton(
+        _ option: LibrarySelection
+    ) -> some View {
+        Button {
+            guard selection != option else { return }
+            cancelPendingAction()
+            nextTaskFocusEvent = .filterLoadCompleted
+            selection = option
+        } label: {
+            Label(
+                option.title,
+                systemImage: selection == option
+                    ? "checkmark.circle.fill"
+                    : "circle"
+            )
+            .font(BodyFlowTypography.headline)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: BodyFlowSpacing.minimumTapTarget
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            selection == option
+                ? BodyFlowColor.accent
+                : BodyFlowColor.primaryText
+        )
+        .accessibilityIdentifier(option.accessibilityIdentifier)
+        .accessibilityAddTraits(
+            selection == option ? .isSelected : []
         )
     }
 
@@ -1124,7 +1204,9 @@ struct LibraryRootView: View {
     }
 
     private func resultSummary(for count: Int) -> String {
-        count == 1 ? "1 conteúdo" : "\(count) conteúdos"
+        count == 1
+            ? "1 conteúdo disponível"
+            : "\(count) conteúdos disponíveis"
     }
 
     private func refreshFirstPage() async {
@@ -1167,6 +1249,7 @@ struct LibraryRootView: View {
     }
 
     private func perform(_ request: LibraryActionRequest) async {
+        var didCommitReload = false
         switch request.kind {
         case .retryFirstPage:
             _ = await LibraryCoverLoadCoordinator.perform(
@@ -1191,7 +1274,7 @@ struct LibraryRootView: View {
         case .retryNextPage:
             await model.retryNextPage()
         case .reloadFirstPage:
-            _ = await LibraryCoverLoadCoordinator.perform(
+            didCommitReload = await LibraryCoverLoadCoordinator.perform(
                 requestedKey: request.key,
                 relay: coverAuthorizationRelay,
                 candidateProvider: composition.candidateProvider,
@@ -1238,6 +1321,8 @@ struct LibraryRootView: View {
         case .loadNextPage, .retryNextPage:
             focusForNextPageState()
         case .reloadFirstPage:
+            guard didCommitReload else { return }
+            firstPageScrollRequest = request
             applyFirstPageFocus(after: .firstPageRetryCompleted)
         }
     }

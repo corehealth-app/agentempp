@@ -29,22 +29,6 @@ struct MascotDetailView: View {
                 revision: invalidationCenter.revision(for: .coachExperience)
             )
         }
-        .toolbar {
-            if model.state.presentation.value != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        retry()
-                    } label: {
-                        Label("Atualizar", systemImage: "arrow.clockwise")
-                            .frame(
-                                width: BodyFlowSpacing.minimumTapTarget,
-                                height: BodyFlowSpacing.minimumTapTarget
-                            )
-                    }
-                    .accessibilityIdentifier("mascot.refresh")
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -75,6 +59,19 @@ struct MascotDetailView: View {
                 if showsStaleBanner {
                     StaleDataBanner()
                 }
+
+                Button(action: retry) {
+                    Label("Atualizar", systemImage: "arrow.clockwise")
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.accent)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("mascot.refresh")
 
                 BodyFlowCard {
                     MascotSemanticContent(descriptor: descriptor)

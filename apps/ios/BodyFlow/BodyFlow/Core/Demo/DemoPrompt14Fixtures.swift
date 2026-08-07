@@ -637,6 +637,15 @@ enum DemoPrompt14Fixtures {
         )
     }
 
+    static func savedSleepQuery() throws -> ContentFeedQuery {
+        try ContentFeedQuery(
+            surface: .saved,
+            category: .sleep,
+            limit: 20,
+            cursor: nil
+        )
+    }
+
     static func nutritionQuery() throws -> ContentFeedQuery {
         try ContentFeedQuery(
             surface: .library,
@@ -668,6 +677,8 @@ enum DemoPrompt14Fixtures {
             empty ? emptyLibraryNextFeed : libraryNextFeed
         case try savedQuery():
             empty ? emptySavedFeed : savedFeed
+        case try savedSleepQuery():
+            empty ? emptySleepFeed : sleepFeed
         case try nutritionQuery():
             empty ? emptyNutritionFeed : nutritionFeed
         case try sleepQuery():

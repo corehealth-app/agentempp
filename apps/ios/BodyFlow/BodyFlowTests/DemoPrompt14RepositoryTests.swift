@@ -314,6 +314,22 @@ struct DemoPrompt14RepositoryTests {
         }
     }
 
+    @Test("Empty saved sleep initial query returns its authored empty envelope")
+    func emptySavedSleepInitialQueryReturnsAuthoredEmptyEnvelope() async throws {
+        let repository = DemoPrompt14Repository(scenario: .empty)
+        let query = try ContentFeedQuery(
+            surface: .saved,
+            category: .sleep,
+            limit: 20,
+            cursor: nil
+        )
+
+        #expect(
+            try await repository.content(query)
+                == DemoPrompt14Fixtures.emptySleepFeed
+        )
+    }
+
     @Test("Ending a loading session cancels late reads and prevents all later publication")
     func endSessionCancelsLateRead() async throws {
         let repository = DemoPrompt14Repository(scenario: .loading)

@@ -282,6 +282,69 @@ struct AppDependenciesTests {
         #expect(coverA !== coverOtherUser)
     }
 
+    @Test("Stateful persona graph shares mutation state and resets per graph")
+    func statefulPersonaGraphSharesAndResetsState() async throws {
+        let first = prompt14Dependencies(
+            "--ui-testing-prompt14-persona-stateful"
+        )
+        let firstCoach = first.coachExperienceSessions.makeCoachExperience(
+            userID: DemoUser.id
+        )
+
+        #expect(try await first.coachPersona.selectedPersona(for: DemoUser.id) == nil)
+        #expect(
+            try await firstCoach.coachExperience()
+                == DemoPrompt14Fixtures.balancedCoachResponse
+        )
+
+        try await first.coachPersona.setPersona(.zen, for: DemoUser.id)
+
+        #expect(try await first.coachPersona.selectedPersona(for: DemoUser.id) == .zen)
+        #expect(
+            try await firstCoach.coachExperience()
+                == DemoPrompt14Fixtures.zenCoachResponse
+        )
+        #expect(
+            try await first.coachExperienceSessions.makeCoachExperience(
+                userID: DemoUser.id
+            ).coachExperience() == DemoPrompt14Fixtures.zenCoachResponse
+        )
+
+        let second = prompt14Dependencies(
+            "--ui-testing-prompt14-persona-stateful"
+        )
+        let secondCoach = second.coachExperienceSessions.makeCoachExperience(
+            userID: DemoUser.id
+        )
+
+        #expect(try await second.coachPersona.selectedPersona(for: DemoUser.id) == nil)
+        #expect(
+            try await secondCoach.coachExperience()
+                == DemoPrompt14Fixtures.balancedCoachResponse
+        )
+    }
+
+    @Test("Release ignores the stateful persona launch state")
+    func releaseStatefulPersonaRemainsFailClosed() async {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: [
+                "--ui-testing",
+                "--ui-testing-prompt14-persona-stateful",
+            ],
+            buildFlavor: .release
+        )
+        let dependencies = AppDependencies.make(configuration: configuration)
+        let coach = dependencies.coachExperienceSessions.makeCoachExperience(
+            userID: DemoUser.id
+        )
+
+        #expect(configuration.mode == .releaseUnavailable)
+        #expect(configuration.prompt14ScenarioSelection == nil)
+        await #expect(throws: BodyFlowCapabilityError.operationUnavailable) {
+            try await coach.coachExperience()
+        }
+    }
+
     @Test("Prompt 14 failures do not replace the complete loaded Prompt 13 graph")
     func prompt14KeepsOfficialGraphIndependent() async throws {
         let dependencies = prompt14Dependencies("--ui-testing-prompt14-offline")
@@ -775,6 +838,7 @@ private let addedPrompt14DependencyArguments = [
     "--ui-testing-prompt14-mascot-focus-active",
     "--ui-testing-prompt14-mascot-zen-neglected",
     "--ui-testing-prompt14-progress-complete-duplicate-badges",
+    "--ui-testing-prompt14-persona-stateful",
 ]
 
 private func prompt14Dependencies(_ argument: String) -> AppDependencies {

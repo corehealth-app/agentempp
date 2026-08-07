@@ -108,6 +108,7 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
     case mascotFocusActive
     case mascotZenNeglected
     case progressCompleteDuplicateBadges
+    case personaStateful
 
     fileprivate static func resolve(
         arguments: [String]
@@ -182,6 +183,10 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
                 "--ui-testing-prompt14-progress-complete-duplicate-badges",
                 .progressCompleteDuplicateBadges
             ),
+            (
+                "--ui-testing-prompt14-persona-stateful",
+                .personaStateful
+            ),
         ]
 
         let matches = arguments.compactMap { argument in
@@ -249,7 +254,8 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
              .coverExternalPath,
              .mascotFocusActive,
              .mascotZenNeglected,
-             .progressCompleteDuplicateBadges:
+             .progressCompleteDuplicateBadges,
+             .personaStateful:
             nil
         }
     }

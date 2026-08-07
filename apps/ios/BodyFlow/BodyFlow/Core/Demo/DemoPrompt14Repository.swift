@@ -418,7 +418,8 @@ actor DemoPrompt14Repository:
              .coverExternalPath,
              .mascotFocusActive,
              .mascotZenNeglected,
-             .progressCompleteDuplicateBadges:
+             .progressCompleteDuplicateBadges,
+             .personaStateful:
             break
         }
 
@@ -779,18 +780,54 @@ struct DemoPrompt14PublishedContentSessionFactory:
     }
 }
 
+actor DemoPrompt14PersonaSessionState: CoachPersonaRepository {
+    private var selected: CoachPersona?
+
+    init(selected: CoachPersona? = nil) {
+        self.selected = selected
+    }
+
+    func selectedPersona(for userID: String) async throws -> CoachPersona? {
+        guard userID == DemoUser.id else {
+            throw CoachPersonaRepositoryError.serviceUnavailable
+        }
+        return selected
+    }
+
+    func setPersona(
+        _ persona: CoachPersona,
+        for userID: String
+    ) async throws {
+        guard userID == DemoUser.id else {
+            throw CoachPersonaRepositoryError.serviceUnavailable
+        }
+        try Task.checkCancellation()
+        selected = persona
+    }
+}
+
 actor DemoPrompt14CoachProvider: CoachExperienceProviding {
     private let scenario: DemoPrompt14ScenarioSelection
+    private let personaState: DemoPrompt14PersonaSessionState?
+    private let userID: String
     private var nextMascotVariantIndex = 0
 
     init(scenario: DemoPrompt14Scenario) {
         self.scenario = DemoPrompt14ScenarioSelection(
             legacyScenario: scenario
         )
+        personaState = nil
+        userID = DemoUser.id
     }
 
-    init(selection: DemoPrompt14ScenarioSelection) {
+    init(
+        selection: DemoPrompt14ScenarioSelection,
+        personaState: DemoPrompt14PersonaSessionState? = nil,
+        userID: String = DemoUser.id
+    ) {
         scenario = selection
+        self.personaState = personaState
+        self.userID = userID
     }
 
     func coachExperience() async throws -> CoachExperienceResponse {
@@ -808,7 +845,18 @@ actor DemoPrompt14CoachProvider: CoachExperienceProviding {
         }
 
         let response: CoachExperienceResponse
-        if scenario == .mascotVariants {
+        if scenario == .personaStateful {
+            guard let personaState else {
+                throw BodyFlowCapabilityError.operationUnavailable
+            }
+            let selected = try await personaState.selectedPersona(for: userID)
+            response = switch selected {
+            case nil: DemoPrompt14Fixtures.balancedCoachResponse
+            case .focus: DemoPrompt14Fixtures.focusCoachResponse
+            case .impulse: DemoPrompt14Fixtures.impulseCoachResponse
+            case .zen: DemoPrompt14Fixtures.zenCoachResponse
+            }
+        } else if scenario == .mascotVariants {
             if nextMascotVariantIndex == DemoPrompt14Fixtures.coachResponses.count {
                 nextMascotVariantIndex = 0
             }
@@ -834,20 +882,29 @@ struct DemoPrompt14CoachExperienceSessionFactory:
     CoachExperienceSessionCreating
 {
     private let selection: DemoPrompt14ScenarioSelection
+    private let personaState: DemoPrompt14PersonaSessionState?
 
     init(scenario: DemoPrompt14Scenario) {
         selection = DemoPrompt14ScenarioSelection(legacyScenario: scenario)
+        personaState = nil
     }
 
-    init(selection: DemoPrompt14ScenarioSelection) {
+    init(
+        selection: DemoPrompt14ScenarioSelection,
+        personaState: DemoPrompt14PersonaSessionState? = nil
+    ) {
         self.selection = selection
+        self.personaState = personaState
     }
 
     func makeCoachExperience(
         userID: String
     ) -> any CoachExperienceProviding {
-        _ = userID
-        return DemoPrompt14CoachProvider(selection: selection)
+        DemoPrompt14CoachProvider(
+            selection: selection,
+            personaState: personaState,
+            userID: userID
+        )
     }
 }
 

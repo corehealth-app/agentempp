@@ -50,6 +50,7 @@ private let addedPrompt14Cases: [(String, String)] = [
         "--ui-testing-prompt14-progress-complete-duplicate-badges",
         "progressCompleteDuplicateBadges"
     ),
+    ("--ui-testing-prompt14-persona-stateful", "personaStateful"),
 ]
 
 private let prompt14Arguments = legacyPrompt14Cases.map(\.0)
@@ -82,8 +83,8 @@ struct Prompt14LaunchConfigurationTests {
 
     @Test("Debug maps every exact added Prompt 14 flag to its isolated state")
     func debugMapsEveryAddedExactFlag() {
-        #expect(addedPrompt14Cases.count == 14)
-        #expect(prompt14Arguments.count == 33)
+        #expect(addedPrompt14Cases.count == 15)
+        #expect(prompt14Arguments.count == 34)
         #expect(Set(prompt14Arguments).count == prompt14Arguments.count)
 
         for (argument, expectedName) in addedPrompt14Cases {

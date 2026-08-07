@@ -47,6 +47,8 @@ struct AppDependencies: Sendable {
             )
         }
         let stateStore = DemoStateStore(secureStore: secureStore)
+        var coachPersona: any CoachPersonaRepository =
+            DemoCoachPersonaRepository(stateStore: stateStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
         let unavailable = UnavailableBodyFlowCapabilities()
         var publishedContentSessions: any PublishedContentSessionCreating =
@@ -147,9 +149,18 @@ struct AppDependencies: Sendable {
             publishedContentSessions = DemoPrompt14PublishedContentSessionFactory(
                 selection: scenario
             )
-            coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
-                selection: scenario
-            )
+            if scenario == .personaStateful {
+                let personaState = DemoPrompt14PersonaSessionState()
+                coachPersona = personaState
+                coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
+                    selection: scenario,
+                    personaState: personaState
+                )
+            } else {
+                coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
+                    selection: scenario
+                )
+            }
             contentCoverSessions = DemoPrompt14ContentCoverSessionFactory(
                 selection: scenario,
                 timeProvider: prompt14TimeProvider
@@ -199,7 +210,7 @@ struct AppDependencies: Sendable {
                 buildFlavor: buildFlavor,
                 preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues
             ),
-            coachPersona: DemoCoachPersonaRepository(stateStore: stateStore),
+            coachPersona: coachPersona,
             secureStore: secureStore,
             telemetry: InMemoryTelemetryClient(),
             today: today,

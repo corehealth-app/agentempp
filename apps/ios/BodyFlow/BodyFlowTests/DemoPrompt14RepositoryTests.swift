@@ -224,6 +224,60 @@ struct DemoPrompt14RepositoryTests {
         )
     }
 
+    @Test("Stateful persona provider reads the same persisted session state")
+    func statefulPersonaProviderReadsPersistedSessionState() async throws {
+        let state = DemoPrompt14PersonaSessionState()
+        let factory = DemoPrompt14CoachExperienceSessionFactory(
+            selection: .personaStateful,
+            personaState: state
+        )
+        let provider = factory.makeCoachExperience(userID: DemoUser.id)
+
+        #expect(try await state.selectedPersona(for: DemoUser.id) == nil)
+        #expect(
+            try await provider.coachExperience()
+                == DemoPrompt14Fixtures.balancedCoachResponse
+        )
+
+        try await state.setPersona(.zen, for: DemoUser.id)
+
+        #expect(try await state.selectedPersona(for: DemoUser.id) == .zen)
+        #expect(
+            try await provider.coachExperience()
+                == DemoPrompt14Fixtures.zenCoachResponse
+        )
+    }
+
+    @Test("A new stateful persona session resets while loaded stays static")
+    func statefulPersonaResetsWithoutChangingLoaded() async throws {
+        let firstState = DemoPrompt14PersonaSessionState()
+        let secondState = DemoPrompt14PersonaSessionState()
+        let firstProvider = DemoPrompt14CoachExperienceSessionFactory(
+            selection: .personaStateful,
+            personaState: firstState
+        ).makeCoachExperience(userID: DemoUser.id)
+        let secondProvider = DemoPrompt14CoachExperienceSessionFactory(
+            selection: .personaStateful,
+            personaState: secondState
+        ).makeCoachExperience(userID: DemoUser.id)
+        let loaded = DemoPrompt14CoachProvider(scenario: .loaded)
+
+        try await firstState.setPersona(.zen, for: DemoUser.id)
+
+        #expect(
+            try await firstProvider.coachExperience()
+                == DemoPrompt14Fixtures.zenCoachResponse
+        )
+        #expect(
+            try await secondProvider.coachExperience()
+                == DemoPrompt14Fixtures.balancedCoachResponse
+        )
+        #expect(
+            try await loaded.coachExperience()
+                == DemoPrompt14Fixtures.balancedCoachResponse
+        )
+    }
+
     @Test("Mascot variants provider cycles through the six authored snapshots")
     func mascotVariantsProviderCyclesAuthoredSnapshots() async throws {
         let variants = DemoPrompt14CoachProvider(scenario: .mascotVariants)

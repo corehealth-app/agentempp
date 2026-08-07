@@ -391,7 +391,10 @@ final class BodyFlowUITests: XCTestCase {
 
     @MainActor
     func testProfilePersonaChangeIsReflected() {
-        let app = launchApp(arguments: ["--ui-testing"])
+        let app = launchApp(arguments: [
+            "--ui-testing",
+            "--ui-testing-prompt14-persona-stateful",
+        ])
         XCTAssertTrue(
             element("screen.hoje", in: app)
                 .waitForExistence(timeout: 5)

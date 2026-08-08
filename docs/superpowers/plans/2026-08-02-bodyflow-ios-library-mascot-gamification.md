@@ -3731,6 +3731,7 @@ Keep this as one shell block: every task-specific path is declared, validated an
 
 ```bash
 set -euo pipefail
+BODYFLOW_SIMULATOR_UDID="27291590-659D-4A29-8F45-CA5CA2D154F9"
 BODYFLOW_GATE_ROOT="$(mktemp -d /tmp/bodyflow-prompt14-gate.XXXXXX)"
 BODYFLOW_RESULT_BUNDLE="$BODYFLOW_GATE_ROOT/BodyFlowPrompt14.xcresult"
 BODYFLOW_TEST_ROOT="$BODYFLOW_GATE_ROOT/test"
@@ -3743,7 +3744,8 @@ BODYFLOW_SOURCE_PACKAGES="$BODYFLOW_GATE_ROOT/SourcePackages"
 BODYFLOW_EVIDENCE_ROOT="/Users/eduardohenrique/Developer/bodyflow/docs/superpowers/evidence/2026-08-02-bodyflow-ios-library-mascot-gamification"
 
 for value in \
-  "$BODYFLOW_GATE_ROOT" "$BODYFLOW_RESULT_BUNDLE" "$BODYFLOW_TEST_ROOT" "$BODYFLOW_DEBUG_ROOT" \
+  "$BODYFLOW_SIMULATOR_UDID" "$BODYFLOW_GATE_ROOT" "$BODYFLOW_RESULT_BUNDLE" \
+  "$BODYFLOW_TEST_ROOT" "$BODYFLOW_DEBUG_ROOT" \
   "$BODYFLOW_RELEASE_ROOT" "$BODYFLOW_RUN_ROOT" "$BODYFLOW_ATTACHMENT_ROOT" \
   "$BODYFLOW_VARIANT_ROOT" "$BODYFLOW_SOURCE_PACKAGES" "$BODYFLOW_EVIDENCE_ROOT"; do
   test -n "$value"
@@ -3778,6 +3780,23 @@ bodyflow_require_no_rg_match() {
   esac
 }
 
+bodyflow_require_booted_simulator() {
+  xcrun simctl bootstatus "$BODYFLOW_SIMULATOR_UDID" -b
+  xcrun simctl list devices available \
+    | rg -F "iPhone 17 Pro ($BODYFLOW_SIMULATOR_UDID) (Booted)"
+}
+
+bodyflow_simulator_ui() {
+  bodyflow_require_booted_simulator
+  xcrun simctl ui "$BODYFLOW_SIMULATOR_UDID" "$@"
+}
+
+bodyflow_restore_simulator() {
+  bodyflow_simulator_ui appearance light
+  bodyflow_simulator_ui content_size large
+  bodyflow_simulator_ui increase_contrast disabled
+}
+
 BODYFLOW_PROMPT14_RELEASE_SOURCE_SCOPE=(
   apps/ios/BodyFlow/BodyFlow/App
   apps/ios/BodyFlow/BodyFlow/Core/Content
@@ -3798,10 +3817,11 @@ bodyflow_run_accessibility_variant() {
   local variant_name="$1"
   local test_selector="$2"
   local result_bundle="$BODYFLOW_VARIANT_ROOT/$variant_name.xcresult"
+  bodyflow_require_booted_simulator
   xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
     -scheme BodyFlow \
     -configuration Debug \
-    -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+    -destination "platform=iOS Simulator,id=$BODYFLOW_SIMULATOR_UDID" \
     -derivedDataPath "$BODYFLOW_TEST_ROOT" \
     -clonedSourcePackagesDirPath "$BODYFLOW_SOURCE_PACKAGES" \
     -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
@@ -3844,15 +3864,14 @@ pnpm --filter @mpp/admin typecheck
 git diff --exit-code -- pnpm-workspace.yaml pnpm-lock.yaml
 trap - EXIT
 
-xcrun simctl bootstatus 27291590-659D-4A29-8F45-CA5CA2D154F9 -b
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 appearance light
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 content_size large
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 increase_contrast disabled
+trap bodyflow_restore_simulator EXIT
+bodyflow_restore_simulator
 
+bodyflow_require_booted_simulator
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -configuration Debug \
-  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -destination "platform=iOS Simulator,id=$BODYFLOW_SIMULATOR_UDID" \
   -derivedDataPath "$BODYFLOW_TEST_ROOT" \
   -clonedSourcePackagesDirPath "$BODYFLOW_SOURCE_PACKAGES" \
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
@@ -3866,24 +3885,24 @@ xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
 
 bodyflow_assert_test_summary "$BODYFLOW_RESULT_BUNDLE"
 
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 appearance dark
+bodyflow_simulator_ui appearance dark
 bodyflow_run_accessibility_variant \
   dark \
   BodyFlowUITests/Prompt14AccessibilityUITests/testDarkModeEvidence
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 appearance light
+bodyflow_simulator_ui appearance light
 
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+bodyflow_simulator_ui \
   content_size accessibility-extra-extra-extra-large
 bodyflow_run_accessibility_variant \
   accessibility-xxxl \
   BodyFlowUITests/Prompt14AccessibilityUITests/testAccessibilityXXXLEvidence
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 content_size large
+bodyflow_simulator_ui content_size large
 
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 increase_contrast enabled
+bodyflow_simulator_ui increase_contrast enabled
 bodyflow_run_accessibility_variant \
   increase-contrast \
   BodyFlowUITests/Prompt14AccessibilityUITests/testIncreaseContrastEvidence
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 increase_contrast disabled
+bodyflow_simulator_ui increase_contrast disabled
 
 bodyflow_run_accessibility_variant \
   differentiate-without-color \
@@ -3895,7 +3914,7 @@ bodyflow_run_accessibility_variant \
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -configuration Debug \
-  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -destination "platform=iOS Simulator,id=$BODYFLOW_SIMULATOR_UDID" \
   -derivedDataPath "$BODYFLOW_DEBUG_ROOT" \
   -clonedSourcePackagesDirPath "$BODYFLOW_SOURCE_PACKAGES" \
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
@@ -3913,7 +3932,7 @@ xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -configuration Debug \
-  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -destination "platform=iOS Simulator,id=$BODYFLOW_SIMULATOR_UDID" \
   -derivedDataPath "$BODYFLOW_RUN_ROOT" \
   -clonedSourcePackagesDirPath "$BODYFLOW_SOURCE_PACKAGES" \
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
@@ -3947,9 +3966,11 @@ bodyflow_require_no_rg_match -n \
   'URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://' \
   "$BODYFLOW_PROMPT14_ADDED_LINES"
 
-xcrun simctl install 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+bodyflow_require_booted_simulator
+xcrun simctl install "$BODYFLOW_SIMULATOR_UDID" \
   "$BODYFLOW_RUN_ROOT/Build/Products/Debug-iphonesimulator/BodyFlow.app"
-xcrun simctl launch 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+bodyflow_require_booted_simulator
+xcrun simctl launch "$BODYFLOW_SIMULATOR_UDID" \
   com.bodyflow.app --ui-testing --ui-testing-prompt14-loaded
 
 mkdir -p "$BODYFLOW_ATTACHMENT_ROOT/main" "$BODYFLOW_EVIDENCE_ROOT"
@@ -4002,7 +4023,7 @@ done
 echo "Gate artifacts: $BODYFLOW_GATE_ROOT"
 ```
 
-Expected: the complete core/admin backend suites (including Tasks 0, 6 and 8) and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured; three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual backend logical-test count, native logical/execution/UI-test counts and durations; never predict counts. The live content audit is not run, and both that clean-audit prerequisite and a successful Release compile remain insufficient without explicit TestFlight authorization.
+Expected: the complete core/admin backend suites (including Tasks 0, 6 and 8) and every inherited/Prompt 14 unit/UI test pass with zero failures/skips under a fresh test DerivedData root; each dedicated accessibility selector also passes with zero skips after its real/approved variant is configured. Every Simulator-dependent boundary first boots, waits for and confirms the single configured device, including after any `xcodebuild` that may leave it shut down; resets remain fail-fast, and the exit trap restores Light/Large/normal contrast without masking lifecycle failures. Three builds report `** BUILD SUCCEEDED **`; Release has no Prompt 14 live/fixture success path; the Debug app is running in the loaded scenario; and exactly 21 PNG + 21 matching TXT attachments are curated from the correct result bundle. Record actual backend logical-test count, native logical/execution/UI-test counts and durations; never predict counts. The live content audit is not run, and both that clean-audit prerequisite and a successful Release compile remain insufficient without explicit TestFlight authorization.
 
 - [ ] **Step 3: Perform manual visual and interaction inspection across deterministic scenarios**
 
@@ -4023,24 +4044,49 @@ For each state family, terminate and relaunch the installed Debug app with exact
 
 - [ ] **Step 4: Inspect accessibility variants and focus behavior**
 
-Run representative journeys under Dark Mode, Accessibility XXXL, real Increase Contrast, Debug-only Differentiate Without Color and deterministic Reduce Motion:
+Run representative journeys under Dark Mode, Accessibility XXXL, real Increase Contrast, Debug-only Differentiate Without Color and deterministic Reduce Motion. This is a separate fail-fast shell boundary, so it declares the same reviewed non-empty UDID once locally and never assumes that Step 2 left the Simulator booted:
 
 ```bash
 set -euo pipefail
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 appearance dark
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 content_size accessibility-extra-extra-extra-large
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 increase_contrast enabled
-xcrun simctl terminate 27291590-659D-4A29-8F45-CA5CA2D154F9 com.bodyflow.app || true
-xcrun simctl launch 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+BODYFLOW_SIMULATOR_UDID="27291590-659D-4A29-8F45-CA5CA2D154F9"
+test -n "$BODYFLOW_SIMULATOR_UDID"
+
+bodyflow_require_booted_simulator() {
+  xcrun simctl bootstatus "$BODYFLOW_SIMULATOR_UDID" -b
+  xcrun simctl list devices available \
+    | rg -F "iPhone 17 Pro ($BODYFLOW_SIMULATOR_UDID) (Booted)"
+}
+
+bodyflow_simulator_ui() {
+  bodyflow_require_booted_simulator
+  xcrun simctl ui "$BODYFLOW_SIMULATOR_UDID" "$@"
+}
+
+bodyflow_restore_simulator() {
+  bodyflow_simulator_ui appearance light
+  bodyflow_simulator_ui content_size large
+  bodyflow_simulator_ui increase_contrast disabled
+}
+
+trap bodyflow_restore_simulator EXIT
+bodyflow_simulator_ui appearance dark
+bodyflow_simulator_ui content_size accessibility-extra-extra-extra-large
+bodyflow_simulator_ui increase_contrast enabled
+bodyflow_require_booted_simulator
+xcrun simctl terminate "$BODYFLOW_SIMULATOR_UDID" com.bodyflow.app
+bodyflow_require_booted_simulator
+xcrun simctl launch "$BODYFLOW_SIMULATOR_UDID" \
   com.bodyflow.app --ui-testing --ui-testing-prompt14-differentiate-without-color
-xcrun simctl terminate 27291590-659D-4A29-8F45-CA5CA2D154F9 com.bodyflow.app
-xcrun simctl launch 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+bodyflow_require_booted_simulator
+xcrun simctl terminate "$BODYFLOW_SIMULATOR_UDID" com.bodyflow.app
+bodyflow_require_booted_simulator
+xcrun simctl launch "$BODYFLOW_SIMULATOR_UDID" \
   com.bodyflow.app --ui-testing --ui-testing-prompt14-reduce-motion
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 increase_contrast disabled
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 appearance light
-xcrun simctl ui 27291590-659D-4A29-8F45-CA5CA2D154F9 content_size large
-xcrun simctl terminate 27291590-659D-4A29-8F45-CA5CA2D154F9 com.bodyflow.app
-xcrun simctl launch 27291590-659D-4A29-8F45-CA5CA2D154F9 \
+bodyflow_restore_simulator
+bodyflow_require_booted_simulator
+xcrun simctl terminate "$BODYFLOW_SIMULATOR_UDID" com.bodyflow.app
+bodyflow_require_booted_simulator
+xcrun simctl launch "$BODYFLOW_SIMULATOR_UDID" \
   com.bodyflow.app --ui-testing --ui-testing-prompt14-loaded
 ```
 

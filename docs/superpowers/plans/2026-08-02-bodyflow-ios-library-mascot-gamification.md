@@ -3834,24 +3834,60 @@ bodyflow_run_accessibility_variant() {
 bodyflow_copy_attachment_pair() {
   local attachment_root="$1"
   local base_name="$2"
-  local extension expected_name exported_name_count exported_name source_path
+  local resolved_attachment_root
+  local extension expected_name exported_names exported_name_count
+  local exported_name source_path
+  resolved_attachment_root="$(cd "$attachment_root" && pwd -P)" || return 1
   for extension in png txt; do
     expected_name="$base_name.$extension"
-    exported_name_count="$(
-      jq -r --arg name "$expected_name" \
-        '.. | objects | select(.suggestedHumanReadableName? == $name) | .exportedFileName' \
-        "$attachment_root/manifest.json" \
-        | sed '/^$/d' | wc -l | tr -d ' '
-    )"
-    test "$exported_name_count" -eq 1
-    exported_name="$(
-      jq -er --arg name "$expected_name" \
-        'first(.. | objects | select(.suggestedHumanReadableName? == $name) | .exportedFileName)' \
-        "$attachment_root/manifest.json"
-    )"
-    source_path="$attachment_root/$exported_name"
-    test -s "$source_path"
-    cp "$source_path" "$BODYFLOW_EVIDENCE_ROOT/$expected_name"
+    exported_names="$(
+      jq -cer \
+        --arg expected_name "$expected_name" \
+        --arg suffixed_prefix "${base_name}_" \
+        --arg extension_suffix ".$extension" '
+          def matches_expected_name:
+            type == "string"
+            and (
+              . == $expected_name
+              or (
+                startswith($suffixed_prefix)
+                and endswith($extension_suffix)
+                and (
+                  ltrimstr($suffixed_prefix)
+                  | rtrimstr($extension_suffix)
+                  | test(
+                      "\\A[0-9]+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\z"
+                    )
+                )
+              )
+            );
+
+          [
+            ..
+            | objects
+            | select((.exportedFileName? | type) == "string")
+            | select(.exportedFileName | endswith($extension_suffix))
+            | select(
+                ((.suggestedHumanReadableName? // null) | matches_expected_name)
+                or (.exportedFileName | matches_expected_name)
+              )
+            | .exportedFileName
+          ]
+          | unique
+        ' "$resolved_attachment_root/manifest.json"
+    )" || return 1
+    exported_name_count="$(jq -er 'length' <<<"$exported_names")" \
+      || return 1
+    test "$exported_name_count" -eq 1 || return 1
+    exported_name="$(jq -er '.[0]' <<<"$exported_names")" || return 1
+    case "$exported_name" in
+      ""|"."|".."|*/*|*\\*) return 1 ;;
+    esac
+    source_path="$resolved_attachment_root/$exported_name"
+    test -f "$source_path" || return 1
+    test ! -L "$source_path" || return 1
+    test -s "$source_path" || return 1
+    cp "$source_path" "$BODYFLOW_EVIDENCE_ROOT/$expected_name" || return 1
   done
 }
 

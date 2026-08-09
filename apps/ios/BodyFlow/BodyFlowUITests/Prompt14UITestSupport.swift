@@ -300,6 +300,200 @@ struct Prompt14UITestSupport {
         )
     }
 
+    func revealFully(
+        _ targets: [XCUIElement],
+        in scrollView: XCUIElement,
+        within window: XCUIElement,
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement,
+        attempts: Int = 8
+    ) -> CGRect {
+        var gestureBudget = Prompt14RevealGestureBudget(
+            requested: attempts
+        )
+        let identifiers = targets.map(\.identifier).joined(separator: ", ")
+
+        guard !targets.isEmpty else {
+            XCTFail("At least one element is required for a shared reveal")
+            return usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+        }
+
+        while true {
+            let viewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard targets.allSatisfy(\.exists) else {
+                XCTFail(
+                    "Elements [\(identifiers)] must all exist before a shared reveal"
+                )
+                return viewport
+            }
+
+            let frames = targets.map(\.frame)
+            let combinedFrame = frames.dropFirst().reduce(frames[0]) {
+                $0.union($1)
+            }
+            guard combinedFrame.width <= viewport.width,
+                  combinedFrame.height <= viewport.height else {
+                XCTFail(
+                    "Combined frame \(combinedFrame) for [\(identifiers)] is larger "
+                        + "than viewport \(viewport)"
+                )
+                return viewport
+            }
+
+            let allContainedAndHittable = zip(targets, frames).allSatisfy {
+                element,
+                frame in
+                element.isHittable && viewport.contains(frame)
+            }
+            if allContainedAndHittable {
+                return viewport
+            }
+
+            let containmentDeficit = verticalContainmentDeficit(
+                of: combinedFrame,
+                inside: viewport
+            )
+            guard containmentDeficit > 0 else {
+                XCTFail(
+                    "Elements [\(identifiers)] are geometrically inside \(viewport) "
+                        + "but at least one is not hittable"
+                )
+                return viewport
+            }
+            guard gestureBudget.consume() else {
+                XCTFail(
+                    "Unable to reveal [\(identifiers)] together inside \(viewport) "
+                        + "after \(gestureBudget.used) controlled gestures; final "
+                        + "combined frame \(combinedFrame)"
+                )
+                return viewport
+            }
+            let gestureIndex = gestureBudget.used
+
+            let gestureBounds = viewport.intersection(scrollView.frame)
+            guard !gestureBounds.isNull,
+                  gestureBounds.width > 0,
+                  gestureBounds.height > 0 else {
+                XCTFail(
+                    "ScrollView frame \(scrollView.frame) does not intersect "
+                        + "viewport \(viewport)"
+                )
+                return viewport
+            }
+
+            let desiredTranslation = viewport.midY - combinedFrame.midY
+            let movesContentUp = desiredTranslation < 0
+            let requiredDistance = abs(desiredTranslation)
+            guard requiredDistance > 0 else {
+                XCTFail(
+                    "Elements [\(identifiers)] have containment deficit "
+                        + "\(containmentDeficit) without a vertical correction"
+                )
+                return viewport
+            }
+            let activationThreshold = gestureBounds.height * 0.04
+            let activationDistance = requiredDistance < activationThreshold
+                ? gestureBounds.height * 0.02
+                : 0
+            let gestureDistance = min(
+                requiredDistance + activationDistance,
+                gestureBounds.height * 0.6
+            )
+            let startY = gestureBounds.midY
+                + (movesContentUp ? gestureDistance / 2 : -gestureDistance / 2)
+            let endY = gestureBounds.midY
+                + (movesContentUp ? -gestureDistance / 2 : gestureDistance / 2)
+            let start = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: startY
+            )
+            let end = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: endY
+            )
+            let velocity = XCUIGestureVelocity(
+                rawValue: min(max(requiredDistance, 50), 2_500)
+            )
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: end,
+                withVelocity: velocity,
+                thenHoldForDuration: 0
+            )
+
+            let updatedViewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard targets.allSatisfy(\.exists) else {
+                XCTFail(
+                    "Elements [\(identifiers)] changed after gesture \(gestureIndex)"
+                )
+                return updatedViewport
+            }
+            let updatedFrames = targets.map(\.frame)
+            let updatedCombinedFrame = updatedFrames.dropFirst().reduce(
+                updatedFrames[0]
+            ) {
+                $0.union($1)
+            }
+            guard updatedCombinedFrame.width <= updatedViewport.width,
+                  updatedCombinedFrame.height <= updatedViewport.height else {
+                XCTFail(
+                    "Combined frame \(updatedCombinedFrame) for [\(identifiers)] "
+                        + "is larger than updated viewport \(updatedViewport)"
+                )
+                return updatedViewport
+            }
+            let updatedAllContainedAndHittable = zip(
+                targets,
+                updatedFrames
+            ).allSatisfy { element, frame in
+                element.isHittable && updatedViewport.contains(frame)
+            }
+            if updatedAllContainedAndHittable {
+                return updatedViewport
+            }
+
+            let updatedContainmentDeficit = verticalContainmentDeficit(
+                of: updatedCombinedFrame,
+                inside: updatedViewport
+            )
+            let progressThreshold = max(0.5, viewport.height * 0.001)
+            guard containmentDeficit - updatedContainmentDeficit
+                    > progressThreshold else {
+                XCTFail(
+                    "Gesture \(gestureIndex) did not reduce the shared containment "
+                        + "deficit for [\(identifiers)]: before "
+                        + "\(containmentDeficit) in \(viewport), after "
+                        + "\(updatedContainmentDeficit) in \(updatedViewport); frames "
+                        + "\(combinedFrame) -> \(updatedCombinedFrame)"
+                )
+                return updatedViewport
+            }
+            let movement = updatedCombinedFrame.minY - combinedFrame.minY
+            guard movesContentUp ? movement < 0 : movement > 0 else {
+                XCTFail(
+                    "Gesture \(gestureIndex) moved [\(identifiers)] in the wrong "
+                        + "direction: before \(combinedFrame), after "
+                        + "\(updatedCombinedFrame)"
+                )
+                return updatedViewport
+            }
+        }
+    }
+
     private func revealFully(
         _ target: XCUIElement,
         in scrollView: XCUIElement,

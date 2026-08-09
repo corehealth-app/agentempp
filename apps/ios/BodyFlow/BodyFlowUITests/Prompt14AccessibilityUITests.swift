@@ -240,16 +240,44 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                 + "its control \(category.frame)"
         )
         support.assertMinimumTapTarget(category)
-        var viewport = support.revealFully(
+        _ = support.revealFully(
             category,
             in: scrollView,
             within: window,
             below: [brand, navigationBar],
-            above: tabBar,
-            clearingUpperChromeFor: selectionAll
+            above: tabBar
         )
-        XCTAssertTrue(category.isHittable)
-        XCTAssertTrue(viewport.contains(category.frame))
+        let firstCard = support.element(
+            "library.card.\(firstPublicationID)",
+            in: app
+        )
+        XCTAssertTrue(firstCard.waitForExistence(timeout: 5))
+        var viewport = support.revealFully(
+            [category, firstCard],
+            in: scrollView,
+            within: window,
+            below: [brand, navigationBar],
+            above: tabBar
+        )
+        let evidenceFrame = category.frame.union(firstCard.frame)
+        XCTAssertLessThanOrEqual(
+            evidenceFrame.height,
+            viewport.height,
+            "Category and first card union \(evidenceFrame) must fit inside "
+                + "the shared viewport \(viewport)"
+        )
+        XCTAssertTrue(
+            category.isHittable && viewport.contains(category.frame),
+            "The category must remain fully contained before evidence capture"
+        )
+        XCTAssertTrue(
+            firstCard.isHittable && viewport.contains(firstCard.frame),
+            "The first card must be fully contained before evidence capture; "
+                + "firstCard.maxY=\(firstCard.frame.maxY) must be <= "
+                + "tabBar.minY=\(tabBar.frame.minY)"
+        )
+        XCTAssertTrue(category.frame.intersection(tabBar.frame).isNull)
+        XCTAssertTrue(firstCard.frame.intersection(tabBar.frame).isNull)
         XCTAssertTrue(category.frame.intersection(brand.frame).isNull)
         XCTAssertTrue(category.frame.intersection(navigationBar.frame).isNull)
         XCTAssertLessThanOrEqual(
@@ -267,11 +295,6 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
         support.captureEvidence(.accessibilityXXXL, of: app)
 
-        let firstCard = support.element(
-            "library.card.\(firstPublicationID)",
-            in: app
-        )
-        XCTAssertTrue(firstCard.waitForExistence(timeout: 5))
         viewport = support.revealFully(
             firstCard,
             in: scrollView,

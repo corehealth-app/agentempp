@@ -77,6 +77,33 @@ final class Prompt14LibraryUITests: XCTestCase {
         support.reveal(lastCard, in: app)
         XCTAssertTrue(lastCard.waitForExistence(timeout: 5))
         XCTAssertFalse(support.element("library.load-more", in: app).exists)
+
+        let navigationBar = app.navigationBars["Biblioteca"]
+        XCTAssertTrue(navigationBar.waitForExistence(timeout: 5))
+        let titles = navigationBar.staticTexts.matching(
+            NSPredicate(format: "label == %@", "Biblioteca")
+        )
+        XCTAssertEqual(titles.count, 1)
+        let title = titles.element(boundBy: 0)
+        XCTAssertFalse(title.label.isEmpty)
+        XCTAssertFalse(title.frame.isEmpty)
+        XCTAssertTrue(
+            navigationBar.frame.contains(title.frame),
+            "The Library title \(title.frame) must remain inside "
+                + "the collapsed navigation bar \(navigationBar.frame)"
+        )
+
+        let backButton = navigationBar.buttons["BackButton"]
+        XCTAssertTrue(backButton.exists)
+        XCTAssertTrue(backButton.isEnabled)
+        XCTAssertTrue(backButton.isHittable)
+        support.assertMinimumTapTarget(backButton)
+        XCTAssertTrue(navigationBar.frame.contains(backButton.frame))
+        XCTAssertTrue(
+            title.frame.intersection(backButton.frame).isNull,
+            "The Library title \(title.frame) must not overlap "
+                + "the back button \(backButton.frame)"
+        )
         support.captureEvidence(.libraryCategoryPagination, of: app)
     }
 

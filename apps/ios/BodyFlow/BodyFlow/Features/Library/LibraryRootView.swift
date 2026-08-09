@@ -644,6 +644,7 @@ struct LibraryRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
         .navigationTitle("Biblioteca")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BodyFlowColor.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .accessibilityElement(children: .contain)

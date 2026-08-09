@@ -1,0 +1,292 @@
+Attributes: Application, 0x10681c280, pid: 18606, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x10681c280, pid: 18606, label: 'BodyFlow'
+    Window (Main), 0x10681f340, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x10681f480, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x10681f5c0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x10681f700, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x10681f840, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x10681fac0, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x10681fc00, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x10681c000, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10681c140, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x10681fd40, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x10681fe80, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x1068348c0, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x106834f00, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x1068357c0, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x106835b80, {{0.0, 116.0}, {402.0, 54.0}}, identifier: 'Hoje'
+                              StaticText, 0x106834280, {{182.7, 127.7}, {36.7, 20.7}}, label: 'Hoje'
+                              Other, 0x1068343c0, {{338.0, 120.0}, {44.0, 36.0}}, identifier: 'today.refresh', label: 'Atualizar'
+                                Other, 0x106834500, {{338.0, 120.0}, {44.0, 36.0}}
+                                  Button, 0x106834640, {{338.0, 116.0}, {44.0, 44.0}}, identifier: 'today.refresh', label: 'Atualizar'
+                            Other, 0x106834780, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x106834a00, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x106834b40, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x106834c80, {{0.0, 106.0}, {402.0, 768.0}}
+                                    Other, 0x106837c00, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.hoje', value: dark
+                                      ScrollView, 0x106837d40, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x106837e80, {{0.0, 106.0}, {402.0, 768.0}}
+                                          Other, 0x106835040, {{0.0, 106.0}, {402.0, 118.8}}
+                                          Other, 0x106835180, {{0.0, 726.2}, {402.0, 147.8}}
+                                        Other, 0x1068352c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                          Other, 0x106835400, {{0.0, 106.0}, {402.0, 118.8}}
+                                            Image, 0x106835540, {{-120.0, -8.0}, {642.0, 228.0}}, identifier: 'AdditionalDimmingOverlay'
+                                            Other, 0x106834dc0, {{0.0, 106.0}, {402.0, 54.0}}
+                                            Other, 0x106837480, {{0.0, 106.0}, {402.0, 118.8}}
+                                              Other, 0x1068375c0, {{0.0, 106.0}, {402.0, 118.8}}
+                                            Other, 0x106837700, {{0.0, 106.0}, {402.0, 118.8}}
+                                              Other, 0x106837840, {{0.0, 106.0}, {402.0, 118.8}}
+                                            Other, 0x106837980, {{0.0, 106.0}, {402.0, 118.8}}
+                                              Other, 0x106837ac0, {{0.0, 106.0}, {402.0, 118.8}}
+                                              Other, 0x106834000, {{0.0, 106.0}, {402.0, 118.8}}
+                                          Other, 0x106834140, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Image, 0x106835cc0, {{-120.0, 731.0}, {642.0, 286.0}}, identifier: 'AdditionalDimmingOverlay'
+                                            Other, 0x106835e00, {{0.0, 726.2}, {402.0, 147.8}}
+                                              Other, 0x106835f40, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x106836080, {{0.0, 726.2}, {402.0, 147.8}}
+                                              Other, 0x1068361c0, {{0.0, 726.2}, {402.0, 147.8}}
+                                              Other, 0x106836300, {{0.0, 726.2}, {402.0, 147.8}}
+                                        Other, 0x106836440, {{0.0, 212.0}, {402.0, 4739.0}}
+                                          Other, 0x106836580, {{16.0, 228.0}, {328.7, 145.0}}
+                                            StaticText, 0x1068366c0, {{16.0, 228.0}, {33.0, 14.3}}, label: 'HOJE'
+                                            StaticText, 0x106836800, {{16.0, 250.3}, {328.7, 40.7}}, label: 'Seu dia, com clareza.'
+                                            Image, 0x106836940, {{18.0, 301.3}, {15.7, 14.7}}, identifier: 'today.header.local-date', label: 'Calendário'
+                                            StaticText, 0x106836a80, {{18.0, 299.0}, {196.3, 19.3}}, identifier: 'today.header.local-date', label: 'Data local: 2026-07-20'
+                                            Image, 0x106836bc0, {{18.0, 327.3}, {13.3, 17.0}}, identifier: 'today.header.protocol', label: 'Documento De Texto Simples'
+                                            StaticText, 0x106836d00, {{18.0, 326.3}, {204.3, 19.3}}, identifier: 'today.header.protocol', label: 'Protocolo: recomposicao'
+                                            Image, 0x106836e40, {{17.3, 355.3}, {16.0, 16.0}}, identifier: 'today.header.updated-at', label: 'Relógio'
+                                            StaticText, 0x106836f80, {{17.3, 353.7}, {196.0, 19.3}}, identifier: 'today.header.updated-at', label: 'Atualizado: Indisponível'
+                                          Button, 0x1068370c0, {{15.5, 396.5}, {371.0, 372.0}}, identifier: 'today.mascot', label: 'Mascote BodyFlow, personalidade Foco, estado Ativo, Ver mascote'
+                                            Other, 0x106837200, {{48.0, 426.2}, {306.0, 151.0}}
+                                            Other, 0x106837340, {{32.0, 609.0}, {189.3, 83.0}}, label: 'Mascote BodyFlow, personalidade Foco, estado Ativo'
+                                              StaticText, 0x106835680, {{32.0, 609.0}, {189.3, 26.3}}, label: 'Mascote BodyFlow'
+                                              StaticText, 0x10325f0c0, {{32.0, 643.3}, {154.3, 20.3}}, label: 'personalidade Foco'
+                                              StaticText, 0x10325ef80, {{32.0, 671.7}, {40.7, 20.3}}, label: 'Ativo'
+                                            StaticText, 0x10325ee40, {{32.0, 719.8}, {99.3, 20.3}}, label: 'Ver mascote'
+                                            Image, 0x10325f200, {{360.7, 722.7}, {8.3, 14.7}}, identifier: 'chevron.right', label: 'Avançar'
+                                          Other, 0x10325f340, {{15.5, 791.5}, {371.0, 352.7}}, identifier: 'today.attention'
+                                            Image, 0x10325f480, {{33.7, 809.3}, {17.0, 18.7}}, identifier: 'bell.badge', label: 'bell.badge'
+                                            StaticText, 0x10325f5c0, {{33.7, 809.0}, {209.3, 20.3}}, label: 'Precisa da sua atenção'
+                                            StaticText, 0x10325f700, {{34.0, 845.3}, {177.7, 43.7}}, identifier: 'today.pending', label: 'Proposta de refeição, jantar'
+                                              Image, 0x10325f840, {{34.0, 848.0}, {10.0, 15.3}}, identifier: 'hourglass', label: 'Duração'
+                                              StaticText, 0x10325f980, {{54.0, 845.3}, {157.7, 20.3}}, label: 'Proposta de refeição'
+                                              StaticText, 0x10325fac0, {{54.0, 869.7}, {41.0, 19.3}}, label: 'jantar'
+                                            StaticText, 0x10325fc00, {{34.0, 905.0}, {186.0, 43.7}}, identifier: 'today.pending', label: 'Proposta de treino, Confirmação pendente'
+                                              Image, 0x10325fd40, {{34.0, 907.7}, {10.0, 15.3}}, identifier: 'hourglass', label: 'Duração'
+                                              StaticText, 0x10325fe80, {{54.0, 905.0}, {140.3, 20.3}}, label: 'Proposta de treino'
+                                              StaticText, 0x106874000, {{54.0, 929.3}, {166.0, 19.3}}, label: 'Confirmação pendente'
+                                            StaticText, 0x106874140, {{33.3, 964.7}, {142.0, 43.7}}, label: 'Item informado, snoozed'
+                                              Image, 0x106874280, {{33.3, 966.3}, {21.3, 18.3}}, identifier: 'clock.badge.exclamationmark', label: 'clock.badge.exclamationmark'
+                                              StaticText, 0x1068743c0, {{60.0, 964.7}, {115.3, 20.3}}, label: 'Item informado'
+                                              StaticText, 0x106874500, {{60.0, 989.0}, {61.7, 19.3}}, label: 'snoozed'
+                                            StaticText, 0x106874640, {{33.3, 1024.3}, {142.0, 43.7}}, label: 'Item informado, pending'
+                                              Image, 0x106874780, {{33.3, 1026.0}, {21.3, 18.3}}, identifier: 'clock.badge.exclamationmark', label: 'clock.badge.exclamationmark'
+                                              StaticText, 0x1068748c0, {{60.0, 1024.3}, {115.3, 20.3}}, label: 'Item informado'
+                                              StaticText, 0x106874a00, {{60.0, 1048.7}, {59.0, 19.3}}, label: 'pending'
+                                            StaticText, 0x106874b40, {{33.3, 1084.0}, {212.3, 43.7}}, label: 'Medicamento informado, pending'
+                                              Image, 0x106874c80, {{33.3, 1085.7}, {21.3, 18.3}}, identifier: 'clock.badge.exclamationmark', label: 'clock.badge.exclamationmark'
+                                              StaticText, 0x106874dc0, {{60.0, 1084.0}, {185.7, 20.3}}, label: 'Medicamento informado'
+                                              StaticText, 0x106874f00, {{60.0, 1108.3}, {59.0, 19.3}}, label: 'pending'
+                                          StaticText, 0x106875040, {{18.7, 1167.7}, {108.0, 26.3}}, label: 'Energia'
+                                          StaticText, 0x106875180, {{15.5, 1209.5}, {180.0, 131.0}}, identifier: 'today.energy.remaining-food', label: 'Restam para comida, 731 kcal, Exercício excluído', value: 731 quilocalorias;...
+                                            Image, 0x1068752c0, {{34.0, 1227.0}, {11.0, 18.3}}, identifier: 'fork.knife', label: 'Comida'
+                                            StaticText, 0x106875400, {{34.0, 1227.0}, {110.7, 40.3}}, label: 'Restam para comida'
+                                            StaticText, 0x106875540, {{32.0, 1275.3}, {83.7, 26.3}}, label: '731 kcal'
+                                            StaticText, 0x106875680, {{32.0, 1309.6}, {101.3, 14.3}}, label: 'Exercício excluído'
+                                          StaticText, 0x1068757c0, {{206.5, 1209.5}, {180.0, 109.0}}, identifier: 'today.energy.net-balance', label: 'Déficit líquido, -83 kcal, Exercício incluído', value: menos 83 quilocalo...
+                                            Image, 0x106875900, {{225.0, 1229.0}, {9.7, 13.3}}, identifier: 'plusminus', label: 'Mais Ou Menos'
+                                            StaticText, 0x106875a40, {{225.0, 1226.0}, {119.3, 19.3}}, label: 'Déficit líquido'
+                                            StaticText, 0x106875b80, {{223.0, 1253.3}, {85.0, 26.3}}, label: '-83 kcal'
+                                            StaticText, 0x106875cc0, {{223.0, 1287.7}, {98.7, 14.3}}, label: 'Exercício incluído'
+                                          StaticText, 0x106875e00, {{32.0, 1372.0}, {338.0, 20.3}}, label: 'Meta, 1.935 kcal'
+                                            StaticText, 0x106875f40, {{32.0, 1372.0}, {38.7, 20.3}}, label: 'Meta'
+                                            StaticText, 0x106876080, {{289.7, 1372.0}, {80.3, 20.3}}, label: '1.935 kcal'
+                                          StaticText, 0x1068761c0, {{32.0, 1416.6}, {338.0, 20.3}}, label: 'Consumido, 1.200 kcal'
+                                            StaticText, 0x106876300, {{32.0, 1416.6}, {86.7, 20.3}}, label: 'Consumido'
+                                            StaticText, 0x106876440, {{289.3, 1416.6}, {80.7, 20.3}}, label: '1.200 kcal'
+                                          StaticText, 0x106876580, {{32.0, 1461.3}, {338.0, 20.3}}, label: 'Excesso alimentar, 17 kcal'
+                                            StaticText, 0x1068766c0, {{32.0, 1461.3}, {137.3, 20.3}}, label: 'Excesso alimentar'
+                                            StaticText, 0x106876800, {{316.0, 1461.3}, {54.0, 20.3}}, label: '17 kcal'
+                                          StaticText, 0x106876940, {{32.0, 1506.0}, {338.0, 20.3}}, label: 'Exercício, 419 kcal'
+                                            StaticText, 0x106876a80, {{32.0, 1506.0}, {68.3, 20.3}}, label: 'Exercício'
+                                            StaticText, 0x106876bc0, {{304.0, 1506.0}, {66.0, 20.3}}, label: '419 kcal'
+                                          StaticText, 0x106876d00, {{32.0, 1550.6}, {338.0, 20.3}}, label: 'Status do balanço, provisional'
+                                            StaticText, 0x106876e40, {{32.0, 1550.6}, {137.3, 20.3}}, label: 'Status do balanço'
+                                            StaticText, 0x106876f80, {{283.3, 1550.6}, {86.7, 20.3}}, label: 'provisional'
+                                          Other, 0x1068770c0, {{15.5, 1610.5}, {371.0, 247.7}}, identifier: 'today.protein'
+                                            Image, 0x106877200, {{33.3, 1629.0}, {18.3, 16.3}}, identifier: 'leaf', label: 'leaf'
+                                            StaticText, 0x106877340, {{33.3, 1627.0}, {94.3, 20.3}}, label: 'Proteína'
+                                            StaticText, 0x106877480, {{32.0, 1663.3}, {338.0, 20.3}}, label: 'Consumido, 90.5 g'
+                                              StaticText, 0x1068775c0, {{32.0, 1663.3}, {86.7, 20.3}}, label: 'Consumido'
+                                              StaticText, 0x106877700, {{319.3, 1663.3}, {50.7, 20.3}}, label: '90.5 g'
+                                            StaticText, 0x106877840, {{32.0, 1716.0}, {338.0, 20.3}}, label: 'Meta, Indisponível'
+                                              StaticText, 0x106877980, {{32.0, 1716.0}, {38.7, 20.3}}, label: 'Meta'
+                                              StaticText, 0x106877ac0, {{274.3, 1716.0}, {95.7, 20.3}}, label: 'Indisponível'
+                                            StaticText, 0x106877c00, {{32.0, 1768.6}, {338.0, 20.3}}, label: 'Restante, Indisponível'
+                                              StaticText, 0x106877d40, {{32.0, 1768.6}, {67.3, 20.3}}, label: 'Restante'
+                                              StaticText, 0x106877e80, {{274.3, 1768.6}, {95.7, 20.3}}, label: 'Indisponível'
+                                            StaticText, 0x106bc0000, {{32.0, 1821.3}, {338.0, 20.3}}, label: 'Status, unavailable'
+                                              StaticText, 0x106bc0140, {{32.0, 1821.3}, {49.0, 20.3}}, label: 'Status'
+                                              StaticText, 0x106bc0280, {{280.3, 1821.3}, {89.7, 20.3}}, label: 'unavailable'
+                                          Other, 0x106bc03c0, {{15.5, 1883.7}, {371.0, 313.2}}, identifier: 'today.meals'
+                                            Image, 0x106bc0500, {{18.7, 1883.7}, {15.7, 26.0}}, identifier: 'fork.knife', label: 'Comida'
+                                            StaticText, 0x106bc0640, {{18.7, 1883.7}, {254.7, 26.9}}, label: 'Refeições confirmadas'
+                                            StaticText, 0x106bc0780, {{15.5, 1923.2}, {371.0, 131.3}}, identifier: 'today.meal.meal-z', label: 'Item sintético Z, jantar, 407 kcal, Origem não informada'
+                                              StaticText, 0x106bc08c0, {{32.0, 1939.6}, {123.3, 20.3}}, label: 'Item sintético Z'
+                                              StaticText, 0x106bc0a00, {{32.0, 1968.0}, {41.0, 19.3}}, label: 'jantar'
+                                              StaticText, 0x106bc0b40, {{32.0, 1995.3}, {64.3, 20.3}}, label: '407 kcal'
+                                              Image, 0x106bc0c80, {{33.0, 2024.7}, {12.0, 12.0}}, identifier: 'info.circle', label: 'Informações'
+                                              StaticText, 0x106bc0dc0, {{33.0, 2023.6}, {147.0, 14.3}}, label: 'Origem não informada'
+                                            StaticText, 0x106bc0f00, {{15.5, 2065.5}, {371.0, 131.3}}, identifier: 'today.meal.meal-a', label: 'Item sintético A, cafe, 211 kcal, Referência confirmada'
+                                              StaticText, 0x106bc1040, {{32.0, 2082.0}, {124.0, 20.3}}, label: 'Item sintético A'
+                                              StaticText, 0x106bc1180, {{32.0, 2110.3}, {31.3, 19.3}}, label: 'cafe'
+                                              StaticText, 0x106bc12c0, {{32.0, 2137.6}, {59.7, 20.3}}, label: '211 kcal'
+                                              Image, 0x106bc1400, {{33.0, 2167.0}, {12.0, 12.0}}, identifier: 'info.circle', label: 'Informações'
+                                              StaticText, 0x106bc1540, {{33.0, 2166.0}, {148.3, 14.3}}, label: 'Referência confirmada'
+                                          Other, 0x106bc1680, {{15.5, 2221.6}, {371.0, 267.9}}, identifier: 'today.workouts'
+                                            Image, 0x106bc17c0, {{18.7, 2222.3}, {19.0, 24.7}}, identifier: 'figure.run', label: 'Corrida'
+                                            StaticText, 0x106bc1900, {{18.7, 2221.6}, {233.7, 26.3}}, label: 'Treinos confirmados'
+                                            StaticText, 0x106bc1a40, {{15.5, 2260.5}, {371.0, 109.0}}, identifier: 'today.workout.workout-z', label: 'musculacao, 40 min · moderada, 301 kcal'
+                                              StaticText, 0x106bc1b80, {{32.0, 2277.0}, {95.7, 20.3}}, label: 'musculacao'
+                                              StaticText, 0x106bc1cc0, {{32.0, 2305.3}, {136.7, 19.3}}, label: '40 min · moderada'
+                                              StaticText, 0x106bc1e00, {{32.0, 2332.6}, {62.7, 20.3}}, label: '301 kcal'
+                                            StaticText, 0x106bc1f40, {{15.5, 2380.5}, {371.0, 109.0}}, identifier: 'today.workout.workout-a', label: 'caminhada, 25 min · leve, 118 kcal'
+                                              StaticText, 0x106bc2080, {{32.0, 2397.0}, {87.3, 20.3}}, label: 'caminhada'
+                                              StaticText, 0x106bc21c0, {{32.0, 2425.3}, {91.7, 19.3}}, label: '25 min · leve'
+                                              StaticText, 0x106bc2300, {{32.0, 2452.6}, {60.0, 20.3}}, label: '118 kcal'
+                                          Other, 0x106bc2440, {{15.5, 2512.5}, {371.0, 246.7}}, identifier: 'today.hydration', value: 1.250 ml; meta Ind...
+                                            Image, 0x106bc2580, {{33.3, 2530.7}, {12.3, 17.3}}, identifier: 'drop', label: 'drop'
+                                            StaticText, 0x106bc26c0, {{33.3, 2529.0}, {109.3, 20.3}}, label: 'Hidratação'
+                                            StaticText, 0x106bc2800, {{32.0, 2565.3}, {338.0, 20.3}}, label: 'Consumido, 1.250 ml'
+                                              StaticText, 0x106bc2940, {{32.0, 2565.3}, {86.7, 20.3}}, label: 'Consumido'
+                                              StaticText, 0x106bc2a80, {{302.3, 2565.3}, {67.7, 20.3}}, label: '1.250 ml'
+                                            StaticText, 0x106bc2bc0, {{32.0, 2618.0}, {338.0, 20.3}}, label: 'Meta, Indisponível'
+                                              StaticText, 0x106bc2d00, {{32.0, 2618.0}, {38.7, 20.3}}, label: 'Meta'
+                                              StaticText, 0x106bc2e40, {{274.3, 2618.0}, {95.7, 20.3}}, label: 'Indisponível'
+                                            StaticText, 0x106bc2f80, {{32.0, 2670.6}, {338.0, 20.3}}, label: 'Restante, Indisponível'
+                                              StaticText, 0x106bc30c0, {{32.0, 2670.6}, {67.3, 20.3}}, label: 'Restante'
+                                              StaticText, 0x106bc3200, {{274.3, 2670.6}, {95.7, 20.3}}, label: 'Indisponível'
+                                            Image, 0x106bc3340, {{33.3, 2725.0}, {16.0, 16.0}}, identifier: 'info.circle', label: 'Informações'
+                                            StaticText, 0x106bc3480, {{33.3, 2723.3}, {194.3, 19.3}}, label: 'tracked_without_target'
+                                          Other, 0x106bc35c0, {{15.5, 2782.2}, {371.0, 373.3}}, identifier: 'today.routines'
+                                            Image, 0x106bc3700, {{34.0, 2800.3}, {19.7, 17.3}}, identifier: 'checklist', label: 'checklist'
+                                            StaticText, 0x106bc3840, {{34.0, 2798.6}, {80.3, 20.3}}, label: 'Rotina'
+                                            StaticText, 0x106bc3980, {{32.0, 2835.0}, {104.7, 20.3}}, label: 'Suplementos'
+                                            Button, 0x106bc3ac0, {{32.0, 2872.7}, {110.0, 33.3}}, identifier: 'routine.list.supplement', label: 'Ver lista'
+                                              Image, 0x106bc3c00, {{46.0, 2883.3}, {16.0, 11.7}}, identifier: 'list.bullet', label: 'Lista'
+                                              StaticText, 0x106bc3d40, {{32.0, 2872.7}, {110.0, 33.3}}, label: 'Ver lista'
+                                            Button, 0x106bc3e80, {{32.0, 2923.3}, {115.3, 67.6}}, identifier: 'routine.supplement-1', label: 'Item informado, snoozed, pending'
+                                              StaticText, 0x106bcc000, {{32.0, 2923.3}, {115.3, 20.3}}, label: 'Item informado'
+                                              Image, 0x106bcc140, {{33.3, 2948.7}, {18.0, 17.3}}, identifier: 'clock.badge', label: 'clock.badge'
+                                              StaticText, 0x106bcc280, {{33.3, 2948.3}, {87.0, 19.3}}, label: 'snoozed'
+                                              Image, 0x106bcc3c0, {{33.3, 2973.3}, {16.0, 16.0}}, identifier: 'clock', label: 'Relógio'
+                                              StaticText, 0x106bcc500, {{33.3, 2971.6}, {84.3, 19.3}}, label: 'pending'
+                                            StaticText, 0x106bcc640, {{32.0, 3007.0}, {117.7, 20.3}}, label: 'Medicamentos'
+                                            Button, 0x106bcc780, {{32.0, 3044.7}, {110.0, 33.3}}, identifier: 'routine.list.medication', label: 'Ver lista'
+                                              Image, 0x106bcc8c0, {{46.0, 3055.3}, {16.0, 11.7}}, identifier: 'list.bullet', label: 'Lista'
+                                              StaticText, 0x106bcca00, {{32.0, 3044.7}, {110.0, 33.3}}, label: 'Ver lista'
+                                            Button, 0x106bccb40, {{32.0, 3095.3}, {185.7, 43.7}}, identifier: 'routine.medication-1', label: 'Medicamento informado, pending'
+                                              StaticText, 0x106bccc80, {{32.0, 3095.3}, {185.7, 20.3}}, label: 'Medicamento informado'
+                                              Image, 0x106bccdc0, {{33.3, 3121.3}, {16.0, 16.0}}, identifier: 'clock', label: 'Relógio'
+                                              StaticText, 0x106bccf00, {{33.3, 3119.6}, {84.3, 19.3}}, label: 'pending'
+                                          Other, 0x106bcd040, {{15.5, 3178.5}, {371.0, 335.7}}, identifier: 'today.block', value: Meta 7.700 kcal; a...
+                                            Image, 0x106bcd180, {{33.3, 3196.7}, {18.7, 17.3}}, identifier: 'circle.hexagongrid', label: 'circle.hexagongrid'
+                                            StaticText, 0x106bcd2c0, {{33.3, 3195.0}, {120.3, 20.3}}, label: 'Bloco 7.700'
+                                            StaticText, 0x106bcd400, {{32.0, 3231.3}, {338.0, 20.3}}, label: 'Meta, 7.700 kcal'
+                                              StaticText, 0x106bcd540, {{32.0, 3231.3}, {38.7, 20.3}}, label: 'Meta'
+                                              StaticText, 0x106bcd680, {{290.3, 3231.3}, {79.7, 20.3}}, label: '7.700 kcal'
+                                            StaticText, 0x106bcd7c0, {{32.0, 3284.0}, {338.0, 20.3}}, label: 'Atual, 2.500 kcal'
+                                              StaticText, 0x106bcd900, {{32.0, 3284.0}, {38.7, 20.3}}, label: 'Atual'
+                                              StaticText, 0x106bcda40, {{286.7, 3284.0}, {83.3, 20.3}}, label: '2.500 kcal'
+                                            StaticText, 0x106bcdb80, {{32.0, 3336.6}, {338.0, 20.3}}, label: 'Percentual informado, 32%'
+                                              StaticText, 0x106bcdcc0, {{32.0, 3336.6}, {163.0, 20.3}}, label: 'Percentual informado'
+                                              StaticText, 0x106bcde00, {{332.3, 3336.6}, {37.7, 20.3}}, label: '32%'
+                                            StaticText, 0x106bcdf40, {{32.0, 3389.3}, {338.0, 20.3}}, label: 'Blocos concluídos, 1'
+                                              StaticText, 0x106bce080, {{32.0, 3389.3}, {138.3, 20.3}}, label: 'Blocos concluídos'
+                                              StaticText, 0x106bce1c0, {{362.0, 3389.3}, {8.0, 20.3}}, label: '1'
+                                            StaticText, 0x106bce300, {{32.0, 3442.0}, {338.0, 20.3}}, label: 'Total creditado, 10.200 kcal'
+                                              StaticText, 0x106bce440, {{32.0, 3442.0}, {113.7, 20.3}}, label: 'Total creditado'
+                                              StaticText, 0x106bce580, {{278.7, 3442.0}, {91.3, 20.3}}, label: '10.200 kcal'
+                                            Image, 0x106bce6c0, {{33.3, 3480.0}, {16.0, 16.0}}, identifier: 'checkmark.circle', label: 'Selecionado', Selected
+                                            StaticText, 0x106bce800, {{33.3, 3478.3}, {88.3, 19.3}}, label: 'available'
+                                          Other, 0x106bce940, {{16.0, 3537.6}, {370.0, 1176.7}}, identifier: 'today.recommendations'
+                                            StaticText, 0x106bcea80, {{16.0, 3537.6}, {197.7, 26.3}}, label: 'Conteúdos para hoje'
+                                            Button, 0x106bcebc0, {{16.0, 3580.0}, {370.0, 340.0}}, identifier: 'today.recommendations.card.10000000-0000-4000-8000-000000000001', label: 'Nutrição Sintética Prompt 14, Amostra sintética e neutra para validar a leitura de conteúdo no aplicativo., 4 min de leitura'
+                                              Image, 0x106bced00, {{32.0, 3522.0}, {338.0, 338.0}}
+                                              StaticText, 0x106bcee40, {{32.0, 3798.1}, {228.3, 20.3}}, label: 'Nutrição Sintética Prompt 14'
+                                              StaticText, 0x106bcef80, {{32.0, 3830.4}, {310.0, 42.3}}, label: 'Amostra sintética e neutra para validar a leitura de conteúdo no aplicativo.'
+                                              Image, 0x106bcf0c0, {{33.3, 3886.3}, {16.0, 16.0}}, identifier: 'clock', label: 'Relógio'
+                                              StaticText, 0x106bcf200, {{33.3, 3884.8}, {137.7, 19.3}}, label: '4 min de leitura'
+                                            Button, 0x106bcf340, {{16.0, 3936.0}, {370.0, 340.3}}, identifier: 'today.recommendations.card.10000000-0000-4000-8000-000000000003', label: 'Sono Sintético Consistente, Leitura demonstrativa sobre uma rotina de sono inteiramente fictícia e controlada., 5 min de leitura'
+                                              Image, 0x106bcf480, {{32.0, 3878.0}, {338.0, 338.0}}
+                                              StaticText, 0x106bcf5c0, {{32.0, 4154.2}, {215.0, 20.3}}, label: 'Sono Sintético Consistente'
+                                              StaticText, 0x106bcf700, {{32.0, 4186.6}, {325.7, 42.3}}, label: 'Leitura demonstrativa sobre uma rotina de sono inteiramente fictícia e controlada.'
+                                              Image, 0x106bcf840, {{33.3, 4242.7}, {16.0, 16.0}}, identifier: 'clock', label: 'Relógio'
+                                              StaticText, 0x106bcf980, {{33.3, 4240.9}, {137.3, 19.3}}, label: '5 min de leitura'
+                                            Button, 0x106bcfac0, {{16.0, 4292.3}, {370.0, 362.0}}, identifier: 'today.recommendations.card.10000000-0000-4000-8000-000000000005', label: 'Hábito Sintético Pequeno, Publicação inventada para conferir ordem recomendada já fornecida pelo servidor fictício., 3 min de leitura'
+                                              Image, 0x106bcfc00, {{32.0, 4234.3}, {338.0, 338.0}}
+                                              StaticText, 0x106bcfd40, {{32.0, 4510.3}, {201.7, 20.3}}, label: 'Hábito Sintético Pequeno'
+                                              StaticText, 0x106bcfe80, {{32.0, 4542.7}, {320.3, 64.3}}, label: 'Publicação inventada para conferir ordem recomendada já fornecida pelo servidor fictício.'
+                                              Image, 0x106be0000, {{33.3, 4620.7}, {16.0, 16.0}}, identifier: 'clock', label: 'Relógio'
+                                              StaticText, 0x106be0140, {{33.3, 4619.0}, {137.3, 19.3}}, label: '3 min de leitura'
+                                            Button, 0x106be0280, {{16.0, 4670.3}, {143.0, 44.0}}, identifier: 'today.recommendations.library', label: 'Ver biblioteca'
+                                              Image, 0x106be03c0, {{18.0, 4683.0}, {22.0, 19.0}}, identifier: 'books.vertical', label: 'books.vertical'
+                                              StaticText, 0x106be0500, {{16.0, 4670.3}, {143.0, 44.0}}, label: 'Ver biblioteca'
+                                          Button, 0x106be0640, {{15.5, 4737.8}, {371.0, 97.7}}, identifier: 'today.history', label: 'Histórico, Refeições e treinos confirmados'
+                                            Image, 0x106be0780, {{40.7, 4775.7}, {24.3, 22.0}}, identifier: 'clock.arrow.circlepath', label: 'clock.arrow.circlepath'
+                                            StaticText, 0x106be08c0, {{92.0, 4754.3}, {72.0, 20.3}}, label: 'Histórico'
+                                            StaticText, 0x106be0a00, {{92.0, 4778.7}, {142.3, 40.3}}, label: 'Refeições e treinos confirmados'
+                                            Image, 0x106be0b40, {{363.3, 4781.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                          Button, 0x106be0c80, {{15.5, 4858.5}, {371.0, 77.0}}, identifier: 'today.next-action', label: 'Resumo do dia, Consultar detalhes recebidos'
+                                            Image, 0x106be0dc0, {{44.7, 4884.0}, {21.3, 26.3}}, identifier: 'doc.text.magnifyingglass', label: 'Buscar Documento'
+                                            StaticText, 0x106be0f00, {{92.0, 4875.2}, {117.0, 20.3}}, label: 'Resumo do dia'
+                                            StaticText, 0x106be1040, {{92.0, 4899.5}, {212.3, 19.3}}, label: 'Consultar detalhes recebidos'
+                                            Image, 0x106be1180, {{363.3, 4892.0}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                        Other, 0x106be12c0, {{369.0, 160.0}, {30.0, 631.0}}, label: 'Barra de rolagem vertical, 9 páginas', value: 0%
+                                          Other, 0x106be1400, {{396.0, 165.3}, {3.0, 97.0}}
+                                        Other, 0x106be1540, {{369.0, 160.0}, {30.0, 631.0}}, label: 'Barra de rolagem vertical, 9 páginas', value: 0%
+                                          Other, 0x106be1680, {{396.0, 165.3}, {3.0, 97.0}}
+                                      Button, 0x106be17c0, {{249.0, 178.0}, {137.0, 45.7}}, identifier: 'today.library', label: 'Biblioteca'
+                            Other, 0x106be1900, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x106be1a40, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x106be1b80, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x106be1cc0, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x106be1e00, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x106be1f40, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x106be2080, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x106be21c0, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x106be2300, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje', Selected
+                            Image, 0x106be2440, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x106be2580, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x106be26c0, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x106be2800, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x106be2940, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x106be2a80, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x106be2bc0, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x106be2d00, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x106be2e40, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x106be2f80, {{25.0, 795.0}, {74.0, 54.0}}
+                          Other, 0x106be30c0, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x106be3200, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x106be3340, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x106be3480, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x106be35c0, {{25.0, 795.0}, {74.0, 54.0}}
+                                  Other, 0x106be3700, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x106be3840, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x106be3980, {{25.0, 795.0}, {74.0, 54.0}}
+                  Other, 0x106be3ac0, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x106be3c00, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x106be3d40, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x106be3e80, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x106bec000, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x106bec140, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x106bec280, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x106bec3c0, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x10681c280, pid: 18606, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x106bec500, pid: 18606, label: 'BodyFlow'
+  }

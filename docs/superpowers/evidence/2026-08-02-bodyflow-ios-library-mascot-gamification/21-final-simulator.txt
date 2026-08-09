@@ -1,0 +1,122 @@
+Attributes: Application, 0x116a31f40, pid: 17699, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x116a31f40, pid: 17699, label: 'BodyFlow'
+    Window (Main), 0x116a33ac0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x116a33840, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x116a33340, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x116a33700, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x116a32080, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x116a33e80, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x116a335c0, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x116a32e40, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x116a32580, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x116a32f80, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x116a32440, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x116a33480, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x116a31e00, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x116a33d40, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x116a30140, {{0.0, 116.0}, {402.0, 106.0}}, identifier: 'Detalhes do plano'
+                              Button, 0x116a30280, {{16.0, 116.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Plano'
+                              StaticText, 0x116a33c00, {{16.0, 173.7}, {283.7, 40.7}}, label: 'Detalhes do plano'
+                            Other, 0x116a326c0, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116a32300, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x116a32a80, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x116a30000, {{0.0, 106.0}, {402.0, 768.0}}
+                                    ScrollView, 0x116a33980, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.plan.detail'
+                                      Other, 0x116a32940, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116a32bc0, {{0.0, 106.0}, {402.0, 118.8}}
+                                        Other, 0x116a32d00, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116a330c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116a33200, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Image, 0x116a321c0, {{-120.0, 731.0}, {642.0, 286.0}}, identifier: 'AdditionalDimmingOverlay'
+                                          Other, 0x1169df700, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x1169dd900, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Other, 0x1169def80, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x1169df340, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x1169dcdc0, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x1169df200, {{0.0, 222.0}, {402.0, 804.0}}
+                                        Other, 0x1169dcc80, {{15.5, 237.5}, {371.0, 773.0}}
+                                          StaticText, 0x1169dfc00, {{32.0, 254.0}, {119.0, 20.3}}, identifier: 'plan.training', label: 'Plano de treino'
+                                          StaticText, 0x1169dfe80, {{32.0, 290.3}, {338.0, 20.3}}, identifier: 'plan.training', label: 'Tipo de treino, strength'
+                                            StaticText, 0x1169dca00, {{32.0, 290.3}, {105.3, 20.3}}, label: 'Tipo de treino'
+                                            StaticText, 0x1169dfd40, {{302.0, 290.3}, {68.0, 20.3}}, label: 'strength'
+                                          StaticText, 0x1169dc8c0, {{32.0, 343.0}, {338.0, 20.3}}, identifier: 'plan.training', label: 'Dias por semana, 4'
+                                            StaticText, 0x1169dcf00, {{32.0, 343.0}, {127.0, 20.3}}, label: 'Dias por semana'
+                                            StaticText, 0x1169dc780, {{359.0, 343.0}, {11.0, 20.3}}, label: '4'
+                                          StaticText, 0x1169dc280, {{32.0, 395.7}, {338.0, 42.3}}, identifier: 'plan.training', label: 'Equipamentos, Halteres e peso corporal'
+                                            StaticText, 0x1169df5c0, {{32.0, 395.7}, {108.7, 20.3}}, label: 'Equipamentos'
+                                            StaticText, 0x1169dd680, {{256.3, 395.7}, {113.7, 42.3}}, label: 'Halteres e peso corporal'
+                                          StaticText, 0x1169dcb40, {{32.0, 470.3}, {338.0, 20.3}}, identifier: 'plan.training', label: 'Gerado em, 20/07/2026'
+                                            StaticText, 0x1169dd540, {{32.0, 470.3}, {84.3, 20.3}}, label: 'Gerado em'
+                                            StaticText, 0x116a73200, {{276.7, 470.3}, {93.3, 20.3}}, label: '20/07/2026'
+                                          StaticText, 0x116a72bc0, {{32.0, 523.0}, {338.0, 20.3}}, identifier: 'plan.training', label: 'Válido até, 19/08/2026'
+                                            StaticText, 0x116a71a40, {{32.0, 523.0}, {74.7, 20.3}}, label: 'Válido até'
+                                            StaticText, 0x116a721c0, {{276.7, 523.0}, {93.3, 20.3}}, label: '19/08/2026'
+                                          StaticText, 0x116a73480, {{32.0, 575.7}, {338.0, 20.3}}, identifier: 'plan.training', label: 'Versão, 3'
+                                            StaticText, 0x116a712c0, {{32.0, 575.7}, {52.7, 20.3}}, label: 'Versão'
+                                            StaticText, 0x116a71680, {{359.0, 575.7}, {11.0, 20.3}}, label: '3'
+                                          StaticText, 0x116a72300, {{32.0, 628.3}, {338.0, 42.3}}, identifier: 'plan.training', label: 'Observações, Plano sintético para demonstração'
+                                            StaticText, 0x116a73980, {{32.0, 628.3}, {100.7, 20.3}}, label: 'Observações'
+                                            StaticText, 0x116a72440, {{209.0, 628.3}, {161.0, 42.3}}, label: 'Plano sintético para demonstração'
+                                          StaticText, 0x116a73c00, {{32.0, 726.7}, {173.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Prescrição nutricional'
+                                          StaticText, 0x116a73ac0, {{32.0, 763.0}, {338.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Tipo de prescrição, macro_targets'
+                                            StaticText, 0x116a735c0, {{32.0, 763.0}, {141.7, 20.3}}, label: 'Tipo de prescrição'
+                                            StaticText, 0x116a72d00, {{253.3, 763.0}, {116.7, 20.3}}, label: 'macro_targets'
+                                          StaticText, 0x116a72f80, {{32.0, 815.7}, {338.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Gerado em, 20/07/2026'
+                                            StaticText, 0x116a71540, {{32.0, 815.7}, {84.3, 20.3}}, label: 'Gerado em'
+                                            StaticText, 0x116a73840, {{276.7, 815.7}, {93.3, 20.3}}, label: '20/07/2026'
+                                          StaticText, 0x116a717c0, {{32.0, 868.3}, {338.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Válido até, 19/08/2026'
+                                            StaticText, 0x116a71900, {{32.0, 868.3}, {74.7, 20.3}}, label: 'Válido até'
+                                            StaticText, 0x116a71400, {{276.7, 868.3}, {93.3, 20.3}}, label: '19/08/2026'
+                                          StaticText, 0x116a71f40, {{32.0, 921.0}, {338.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Versão, 2'
+                                            StaticText, 0x116a72080, {{32.0, 921.0}, {52.7, 20.3}}, label: 'Versão'
+                                            StaticText, 0x116a72a80, {{359.7, 921.0}, {10.3, 20.3}}, label: '2'
+                                          StaticText, 0x116a71cc0, {{32.0, 973.7}, {338.0, 20.3}}, identifier: 'plan.nutrition.demo-nutrition-plan-1', label: 'Observações, Payload opaco sintético'
+                                            StaticText, 0x116a72580, {{32.0, 973.7}, {100.7, 20.3}}, label: 'Observações'
+                                            StaticText, 0x116a726c0, {{181.0, 973.7}, {189.0, 20.3}}, label: 'Payload opaco sintético'
+                                      Other, 0x116a73d40, {{369.0, 160.0}, {30.0, 631.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116a73e80, {{396.0, 225.0}, {3.0, 431.0}}
+                                      Other, 0x116a71b80, {{369.0, 160.0}, {30.0, 631.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116a71e00, {{396.0, 225.0}, {3.0, 431.0}}
+                            Other, 0x116a73340, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116a73700, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x116a730c0, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x116a72e40, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x116a2ad00, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x116a2b0c0, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x116a2ae40, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x116a2b480, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x116a2b340, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje'
+                            Image, 0x116a2aa80, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x116a2a580, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x116a2be80, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x116a2b700, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano', Selected
+                            Image, 0x116a2a440, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x116a2a940, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x116a2abc0, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x116a2b200, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x116a2b5c0, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x116a2a800, {{161.5, 795.0}, {74.0, 54.0}}
+                          Other, 0x116a2b840, {{161.5, 795.0}, {74.0, 54.0}}
+                            Other, 0x116a2b980, {{161.5, 795.0}, {74.0, 54.0}}
+                            Other, 0x116a2af80, {{161.5, 795.0}, {74.0, 54.0}}
+                              Other, 0x1169db980, {{161.5, 795.0}, {74.0, 54.0}}
+                                Other, 0x1169dbc00, {{161.5, 795.0}, {74.0, 54.0}}
+                                  Other, 0x1169db5c0, {{161.5, 795.0}, {74.0, 54.0}}
+                                Other, 0x1169d9040, {{161.5, 795.0}, {74.0, 54.0}}
+                              Other, 0x1169d92c0, {{161.5, 795.0}, {74.0, 54.0}}
+                  Other, 0x1169d8b40, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x1169d9a40, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x1169daa80, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x1169d9180, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x1169dbe80, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x1169dae40, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x1169daf80, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x1169dad00, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x116a31f40, pid: 17699, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x1169d9400, pid: 17699, label: 'BodyFlow'
+  }

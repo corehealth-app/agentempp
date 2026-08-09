@@ -1,0 +1,89 @@
+Attributes: Application, 0x116bbc000, pid: 17947, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x116bbc000, pid: 17947, label: 'BodyFlow'
+    Window (Main), 0x116bbc140, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x116bbc280, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x116bbc3c0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x116bbc500, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x116bbc640, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x116bbc780, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x116bbc8c0, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x116bbca00, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x116bbcb40, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x116bbcc80, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x116bbcdc0, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x116bbcf00, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x116bbd040, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x116bbd180, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x116bbd2c0, {{0.0, 116.0}, {402.0, 54.0}}, identifier: 'Biblioteca'
+                              Button, 0x116bbd400, {{16.0, 116.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Hoje'
+                              StaticText, 0x116bbee40, {{161.3, 127.7}, {79.0, 20.7}}, label: 'Biblioteca'
+                            Other, 0x116bbef80, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116bbf0c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x116bbf200, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x116bbf340, {{0.0, 106.0}, {402.0, 768.0}}
+                                    Other, 0x116bbf480, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.library'
+                                      StaticText, 0x116bbf5c0, {{16.0, 182.0}, {359.3, 42.3}}, label: 'Explore conteúdos educativos publicados para apoiar sua jornada.'
+                                      Other, 0x116bbf700, {{15.5, 235.8}, {371.0, 177.0}}
+                                        Button, 0x116bbf840, {{16.0, 302.3}, {185.0, 44.0}}, identifier: 'library.selection.all', label: 'Todos'
+                                          Image, 0x116bbf980, {{71.7, 316.0}, {17.3, 17.3}}, identifier: 'circle', label: 'circle'
+                                          StaticText, 0x116bbfac0, {{16.0, 302.3}, {185.0, 44.0}}, label: 'Todos'
+                                        Button, 0x116bbfc00, {{201.3, 302.3}, {184.7, 44.0}}, identifier: 'library.selection.saved', label: 'Salvos', Selected
+                                          Image, 0x116bbfd40, {{254.7, 316.0}, {17.3, 17.3}}, identifier: 'checkmark.circle.fill', label: 'Selecionado', Selected
+                                          StaticText, 0x116bbfe80, {{201.3, 302.3}, {184.7, 44.0}}, label: 'Salvos'
+                                      Button, 0x116be3c00, {{16.0, 424.3}, {370.0, 44.0}}, identifier: 'library.category', label: 'Todas as categorias'
+                                        Image, 0x116be3d40, {{17.3, 438.0}, {17.3, 17.3}}, identifier: 'line.3.horizontal.decrease.circle', label: 'Filtro'
+                                        StaticText, 0x116be3e80, {{16.0, 424.3}, {370.0, 44.0}}, label: 'Todas as categorias'
+                                      ScrollView, 0x116c48000, {{0.0, 480.7}, {402.0, 393.3}}, identifier: 'state.empty'
+                                        Other, 0x116c48140, {{0.0, 480.7}, {402.0, 310.3}}
+                                          StaticText, 0x116c48280, {{112.0, 618.2}, {178.0, 26.3}}, identifier: 'library.results-heading', label: 'Conteúdos salvos'
+                                          StaticText, 0x116c483c0, {{55.3, 660.5}, {291.3, 42.3}}, identifier: 'library.results-summary', label: 'Você ainda não tem conteúdos salvos disponíveis.'
+                                        Other, 0x116c48500, {{0.0, 480.7}, {402.0, 393.3}}
+                                          Other, 0x116c48640, {{0.0, 726.2}, {402.0, 147.8}}
+                                        Other, 0x116c48780, {{0.0, 480.7}, {402.0, 393.3}}
+                                        Other, 0x116c488c0, {{369.0, 508.7}, {30.0, 282.3}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                          Other, 0x116c48a00, {{396.0, 511.7}, {3.0, 276.3}}
+                                        Other, 0x116c48b40, {{369.0, 508.7}, {30.0, 282.3}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                          Other, 0x116c48c80, {{396.0, 511.7}, {3.0, 276.3}}
+                            Other, 0x116c48dc0, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116c48f00, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x116c49040, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x116c49180, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x116c492c0, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x116c49400, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x116c49540, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x116c49680, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x116c497c0, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje', Selected
+                            Image, 0x116c49900, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x116c49a40, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x116c49b80, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x116c49cc0, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x116c49e00, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x116c49f40, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x116c4a080, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x116c4a1c0, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x116c4a300, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x116c4a440, {{25.0, 795.0}, {74.0, 54.0}}
+                          Other, 0x116c4a580, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x116c4a6c0, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x116c4a800, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116c4a940, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116c4aa80, {{25.0, 795.0}, {74.0, 54.0}}
+                                  Other, 0x116c4abc0, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116c4ad00, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116c4ae40, {{25.0, 795.0}, {74.0, 54.0}}
+                  Other, 0x116c4af80, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x116c4b0c0, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x116c4b200, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116c4b340, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116c4b480, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x116c4b5c0, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116c4b700, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116c4b840, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x116bbc000, pid: 17947, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x116c4b980, pid: 17947, label: 'BodyFlow'
+  }

@@ -75,7 +75,6 @@ struct AppShellView: View {
             }
         }
         .tint(BodyFlowColor.accent)
-        .bodyFlowBrandIdentity()
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -124,6 +123,8 @@ struct AppShellView: View {
                     destination(for: route)
                 }
         }
+        .bodyFlowBrandIdentity()
+        .accessibilityHidden(selectedTab != tab)
     }
 
     @ViewBuilder

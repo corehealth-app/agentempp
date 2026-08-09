@@ -597,6 +597,7 @@ struct LibraryRootView: View {
     @State private var actionRequest: LibraryActionRequest?
     @State private var firstPageScrollRequest: LibraryActionRequest?
     @State private var actionSequence: Int
+    @State private var isCategorySelectorPresented: Bool
     @AccessibilityFocusState private var accessibilityFocus:
         LibraryAccessibilityFocusTarget?
 
@@ -622,6 +623,7 @@ struct LibraryRootView: View {
         _actionRequest = State(initialValue: nil)
         _firstPageScrollRequest = State(initialValue: nil)
         _actionSequence = State(initialValue: 0)
+        _isCategorySelectorPresented = State(initialValue: false)
         self.invalidationCenter = invalidationCenter
     }
 
@@ -642,6 +644,8 @@ struct LibraryRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
         .navigationTitle("Biblioteca")
+        .toolbarBackground(BodyFlowColor.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.library")
         .task(id: taskKey) {
@@ -725,32 +729,15 @@ struct LibraryRootView: View {
             }
             .accessibilityElement(children: .contain)
 
-            Menu {
-                Button {
-                    select(category: nil)
-                } label: {
-                    categoryMenuLabel(
-                        title: "Todas as categorias",
-                        isSelected: category == nil
-                    )
-                }
-
-                ForEach(ContentCategory.allCases, id: \.self) { option in
-                    Button {
-                        select(category: option)
-                    } label: {
-                        categoryMenuLabel(
-                            title: option.libraryDisplayName,
-                            isSelected: category == option
-                        )
-                    }
-                }
+            Button {
+                isCategorySelectorPresented = true
             } label: {
                 Label(
                     category?.libraryDisplayName ?? "Todas as categorias",
                     systemImage: "line.3.horizontal.decrease.circle"
                 )
                 .font(BodyFlowTypography.headline)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(
                     maxWidth: .infinity,
                     minHeight: BodyFlowSpacing.minimumTapTarget,
@@ -758,7 +745,31 @@ struct LibraryRootView: View {
                 )
                 .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(BodyFlowColor.accent)
+            .accessibilityLabel(
+                category?.libraryDisplayName ?? "Todas as categorias"
+            )
             .accessibilityIdentifier("library.category")
+            .confirmationDialog(
+                "Selecionar categoria",
+                isPresented: $isCategorySelectorPresented,
+                titleVisibility: .visible
+            ) {
+                categoryDialogButton(
+                    title: "Todas as categorias",
+                    option: nil
+                )
+
+                ForEach(ContentCategory.allCases, id: \.self) { option in
+                    categoryDialogButton(
+                        title: option.libraryDisplayName,
+                        option: option
+                    )
+                }
+
+                Button("Cancelar", role: .cancel) {}
+            }
         }
         .padding(.horizontal, BodyFlowSpacing.md)
         .padding(.vertical, BodyFlowSpacing.sm)
@@ -1186,21 +1197,22 @@ struct LibraryRootView: View {
         }
     }
 
-    private func categoryMenuLabel(
-        title: String,
-        isSelected: Bool
-    ) -> some View {
-        Label(
-            title,
-            systemImage: isSelected ? "checkmark" : "circle"
-        )
-    }
-
     private func select(category newCategory: ContentCategory?) {
         guard category != newCategory else { return }
         cancelPendingAction()
         nextTaskFocusEvent = .filterLoadCompleted
         category = newCategory
+    }
+
+    private func categoryDialogButton(
+        title: String,
+        option: ContentCategory?
+    ) -> some View {
+        let isSelected = category == option
+
+        return Button(isSelected ? "\(title), selecionada" : title) {
+            select(category: option)
+        }
     }
 
     private func resultSummary(for count: Int) -> String {

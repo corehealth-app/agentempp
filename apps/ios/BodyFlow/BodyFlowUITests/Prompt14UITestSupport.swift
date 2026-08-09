@@ -71,6 +71,23 @@ enum Prompt14UIEvidenceName: String, CaseIterable {
     case finalSimulator = "21-final-simulator.png"
 }
 
+struct Prompt14RevealGestureBudget {
+    let limit: Int
+    private(set) var used = 0
+
+    init(requested: Int) {
+        limit = min(max(requested, 0), 8)
+    }
+
+    mutating func consume() -> Bool {
+        guard used < limit else {
+            return false
+        }
+        used += 1
+        return true
+    }
+}
+
 @MainActor
 struct Prompt14UITestSupport {
     let testCase: XCTestCase
@@ -188,19 +205,366 @@ struct Prompt14UITestSupport {
         in app: XCUIApplication,
         attempts: Int = 8
     ) {
-        for _ in 0..<attempts where !target.isHittable {
+        var gestureBudget = Prompt14RevealGestureBudget(
+            requested: attempts
+        )
+        let resolvedTarget = target.firstMatch
+        let window = app.windows.firstMatch
+        let scrollView = app.scrollViews.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        let brand = element("brand.product-name", in: app)
+        let navigationBar = app.navigationBars.firstMatch
+        guard window.exists,
+              scrollView.exists,
+              tabBar.exists else {
+            XCTFail(
+                "Cannot reveal \(resolvedTarget.identifier) without an authenticated viewport"
+            )
+            return
+        }
+
+        while !resolvedTarget.exists, gestureBudget.consume() {
             app.swipeUp()
         }
+        guard resolvedTarget.exists else {
+            XCTFail(
+                "\(resolvedTarget.identifier) did not appear after "
+                    + "\(gestureBudget.used) discovery gestures"
+            )
+            return
+        }
+        let viewport = usableViewport(
+            within: window,
+            below: [brand, navigationBar].filter(\.exists),
+            above: tabBar
+        )
+        let revealTarget: XCUIElement
+        let targetFitsViewport = resolvedTarget.frame.width <= viewport.width
+            && resolvedTarget.frame.height <= viewport.height
+        if targetFitsViewport
+            || !Self.allowsSemanticRepresentative(
+                for: resolvedTarget.elementType
+            ) {
+            revealTarget = resolvedTarget
+        } else {
+            let representatives = [
+                resolvedTarget.buttons.firstMatch,
+                resolvedTarget.links.firstMatch,
+                resolvedTarget.staticTexts.firstMatch,
+            ]
+            guard let representative = representatives.first(where: \.exists) else {
+                XCTFail(
+                    "\(resolvedTarget.identifier) is larger than viewport \(viewport) "
+                        + "and has no semantic descendant to reveal"
+                )
+                return
+            }
+            revealTarget = representative
+        }
+        _ = revealFully(
+            revealTarget,
+            in: scrollView,
+            within: window,
+            below: [brand, navigationBar].filter(\.exists),
+            above: tabBar,
+            gestureBudget: &gestureBudget
+        )
+    }
+
+    nonisolated static func allowsSemanticRepresentative(
+        for elementType: XCUIElement.ElementType
+    ) -> Bool {
+        elementType != .button && elementType != .link
     }
 
     func revealFully(
         _ target: XCUIElement,
-        in app: XCUIApplication,
+        in scrollView: XCUIElement,
         within window: XCUIElement,
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement,
+        clearingUpperChromeFor leadingContent: XCUIElement? = nil,
         attempts: Int = 8
+    ) -> CGRect {
+        var gestureBudget = Prompt14RevealGestureBudget(
+            requested: attempts
+        )
+        return revealFully(
+            target,
+            in: scrollView,
+            within: window,
+            below: topObstructions,
+            above: bottomObstruction,
+            clearingUpperChromeFor: leadingContent,
+            gestureBudget: &gestureBudget
+        )
+    }
+
+    private func revealFully(
+        _ target: XCUIElement,
+        in scrollView: XCUIElement,
+        within window: XCUIElement,
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement,
+        clearingUpperChromeFor leadingContent: XCUIElement? = nil,
+        gestureBudget: inout Prompt14RevealGestureBudget
+    ) -> CGRect {
+        let identifier = target.identifier
+
+        while true {
+            let viewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard target.exists else {
+                XCTFail("\(identifier) disappeared before it could be revealed")
+                return viewport
+            }
+
+            let frame = target.frame
+            guard frame.width <= viewport.width,
+                  frame.height <= viewport.height else {
+                XCTFail(
+                    "\(identifier) frame \(frame) is larger than viewport \(viewport)"
+                )
+                return viewport
+            }
+            let targetIsContained = target.isHittable
+                && viewport.contains(frame)
+            let topChromeStart = viewport.minY
+            let leadingFrame = leadingContent.flatMap { content in
+                content.exists ? content.frame : nil
+            }
+            let leadingContentCrossesChrome = leadingFrame.map {
+                $0.maxY > topChromeStart
+            } ?? false
+            if targetIsContained, !leadingContentCrossesChrome {
+                return viewport
+            }
+
+            let containmentDeficit = verticalContainmentDeficit(
+                of: frame,
+                inside: viewport
+            )
+            let safeInset = min(
+                max(0, viewport.height - frame.height) * 0.25,
+                viewport.height * 0.08
+            )
+            let requiredDistance: CGFloat
+            let movesContentUp: Bool
+            let clearsUpperChrome = targetIsContained
+                && leadingContentCrossesChrome
+            if clearsUpperChrome, let leadingFrame {
+                let clearanceMargin = min(10, viewport.height * 0.02)
+                requiredDistance = leadingFrame.maxY - topChromeStart
+                    + clearanceMargin
+                movesContentUp = true
+                guard frame.minY - requiredDistance >= viewport.minY else {
+                    XCTFail(
+                        "Clearing upper chrome for \(leadingContent?.identifier ?? "content") "
+                            + "would move \(identifier) outside viewport \(viewport)"
+                    )
+                    return viewport
+                }
+            } else if frame.maxY > viewport.maxY {
+                requiredDistance = frame.maxY - viewport.maxY + safeInset
+                movesContentUp = true
+            } else if frame.minY < viewport.minY {
+                requiredDistance = viewport.minY - frame.minY + safeInset
+                movesContentUp = false
+            } else {
+                XCTFail(
+                    "\(identifier) is inside viewport \(viewport) but is not hittable"
+                )
+                return viewport
+            }
+
+            guard gestureBudget.consume() else {
+                XCTFail(
+                    "Unable to reveal \(identifier) inside \(viewport) after "
+                        + "\(gestureBudget.used) controlled gestures; final frame "
+                        + "\(target.frame)"
+                )
+                return viewport
+            }
+            let gestureIndex = gestureBudget.used
+
+            let gestureBounds = viewport.intersection(scrollView.frame)
+            guard !gestureBounds.isNull,
+                  gestureBounds.width > 0,
+                  gestureBounds.height > 0 else {
+                XCTFail(
+                    "ScrollView frame \(scrollView.frame) does not intersect viewport \(viewport)"
+                )
+                return viewport
+            }
+
+            let gestureDistance = min(
+                requiredDistance,
+                gestureBounds.height * 0.6
+            )
+            let startY = gestureBounds.midY
+                + (movesContentUp ? gestureDistance / 2 : -gestureDistance / 2)
+            let endY = gestureBounds.midY
+                + (movesContentUp ? -gestureDistance / 2 : gestureDistance / 2)
+            let start = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: startY
+            )
+            let end = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: endY
+            )
+            let velocity = XCUIGestureVelocity(
+                rawValue: min(max(requiredDistance, 50), 2_500)
+            )
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: end,
+                withVelocity: velocity,
+                thenHoldForDuration: 0
+            )
+
+            let updatedViewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard target.exists else {
+                XCTFail(
+                    "\(identifier) disappeared after gesture \(gestureIndex)"
+                )
+                return updatedViewport
+            }
+
+            let updatedFrame = target.frame
+            guard updatedFrame.width <= updatedViewport.width,
+                  updatedFrame.height <= updatedViewport.height else {
+                XCTFail(
+                    "\(identifier) frame \(updatedFrame) is larger than updated "
+                        + "viewport \(updatedViewport)"
+                )
+                return updatedViewport
+            }
+            let updatedTargetIsContained = target.isHittable
+                && updatedViewport.contains(updatedFrame)
+            let updatedTopChromeStart = updatedViewport.minY
+            let updatedLeadingFrame = leadingContent.flatMap { content in
+                content.exists ? content.frame : nil
+            }
+            let leadingContentIsClear = updatedLeadingFrame.map {
+                $0.maxY <= updatedTopChromeStart
+            } ?? true
+            if updatedTargetIsContained,
+               leadingContent == nil || leadingContentIsClear {
+                return updatedViewport
+            }
+
+            let movement = updatedFrame.minY - frame.minY
+            let progressThreshold = max(0.5, viewport.height * 0.001)
+            if clearsUpperChrome, let leadingFrame {
+                guard let updatedLeadingFrame else {
+                    continue
+                }
+                let leadingMovement =
+                    updatedLeadingFrame.maxY - leadingFrame.maxY
+                guard leadingMovement < -progressThreshold else {
+                    XCTFail(
+                        "Gesture \(gestureIndex) did not move "
+                            + "\(leadingContent?.identifier ?? "content") above the "
+                            + "upper chrome: frames \(leadingFrame) -> "
+                            + "\(updatedLeadingFrame)"
+                    )
+                    return updatedViewport
+                }
+                guard updatedTargetIsContained else {
+                    XCTFail(
+                        "Clearing upper chrome moved \(identifier) outside "
+                            + "viewport \(updatedViewport): \(updatedFrame)"
+                    )
+                    return updatedViewport
+                }
+            } else {
+                let updatedContainmentDeficit = verticalContainmentDeficit(
+                    of: updatedFrame,
+                    inside: updatedViewport
+                )
+                guard containmentDeficit - updatedContainmentDeficit
+                        > progressThreshold else {
+                    XCTFail(
+                        "Gesture \(gestureIndex) did not reduce the containment "
+                            + "deficit for \(identifier): before \(containmentDeficit) "
+                            + "in \(viewport), after \(updatedContainmentDeficit) "
+                            + "in \(updatedViewport); frames \(frame) -> \(updatedFrame)"
+                    )
+                    return updatedViewport
+                }
+            }
+            guard movesContentUp ? movement < 0 : movement > 0 else {
+                XCTFail(
+                    "Gesture \(gestureIndex) moved \(identifier) in the wrong "
+                        + "direction: before \(frame), after \(updatedFrame)"
+                )
+                return updatedViewport
+            }
+        }
+    }
+
+    func usableViewport(
+        within window: XCUIElement,
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement
+    ) -> CGRect {
+        let windowFrame = window.frame
+        let top = topObstructions.reduce(windowFrame.minY) {
+            currentTop,
+            obstruction in
+            obstruction.exists
+                ? max(currentTop, obstruction.frame.maxY)
+                : currentTop
+        }
+        let bottom = bottomObstruction.exists
+            ? min(windowFrame.maxY, bottomObstruction.frame.minY)
+            : windowFrame.maxY
+
+        guard bottom > top else {
+            XCTFail(
+                "Invalid usable viewport between top \(top) and bottom \(bottom)"
+            )
+            return .null
+        }
+        return CGRect(
+            x: windowFrame.minX,
+            y: top,
+            width: windowFrame.width,
+            height: bottom - top
+        )
+    }
+
+    func assertAccessibilityOrder(
+        _ orderedFragments: [String],
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
     ) {
-        for _ in 0..<attempts where !window.frame.contains(target.frame) {
-            app.swipeUp()
+        let hierarchy = app.debugDescription
+        var lowerBound = hierarchy.startIndex
+        for fragment in orderedFragments {
+            guard let range = hierarchy.range(
+                of: fragment,
+                range: lowerBound..<hierarchy.endIndex
+            ) else {
+                XCTFail(
+                    "Accessibility hierarchy is missing or misorders \(fragment)",
+                    file: file,
+                    line: line
+                )
+                return
+            }
+            lowerBound = range.upperBound
         }
     }
 
@@ -230,6 +594,28 @@ struct Prompt14UITestSupport {
             44,
             file: file,
             line: line
+        )
+    }
+
+    private func verticalContainmentDeficit(
+        of frame: CGRect,
+        inside viewport: CGRect
+    ) -> CGFloat {
+        max(0, viewport.minY - frame.minY)
+            + max(0, frame.maxY - viewport.maxY)
+    }
+
+    private func scrollCoordinate(
+        in scrollView: XCUIElement,
+        x: CGFloat,
+        y: CGFloat
+    ) -> XCUICoordinate {
+        let frame = scrollView.frame
+        return scrollView.coordinate(
+            withNormalizedOffset: CGVector(
+                dx: (x - frame.minX) / frame.width,
+                dy: (y - frame.minY) / frame.height
+            )
         )
     }
 

@@ -121,11 +121,39 @@ final class Prompt14TodayMascotUITests: XCTestCase {
             "today.recommendations.unavailable",
             in: app
         )
-        support.reveal(unavailable, in: app, attempts: 16)
         XCTAssertTrue(unavailable.waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            support.element("today.recommendations.library", in: app).exists
+        let library = support.element(
+            "today.recommendations.library",
+            in: app
         )
+        XCTAssertTrue(library.waitForExistence(timeout: 5))
+
+        let window = app.windows.firstMatch
+        let scrollView = app.scrollViews.firstMatch
+        let brand = support.element("brand.product-name", in: app)
+        let navigationBar = app.navigationBars.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        for element in [window, scrollView, brand, navigationBar, tabBar] {
+            XCTAssertTrue(element.exists)
+        }
+        let viewport = support.revealFully(
+            [unavailable, library],
+            in: scrollView,
+            within: window,
+            below: [brand, navigationBar],
+            above: tabBar
+        )
+        let combinedFrame = unavailable.frame.union(library.frame)
+        XCTAssertLessThanOrEqual(combinedFrame.height, viewport.height)
+        XCTAssertTrue(
+            library.isHittable && viewport.contains(library.frame),
+            "Unavailable action maxY=\(library.frame.maxY) must be <= "
+                + "tabBar.minY=\(tabBar.frame.minY)"
+        )
+        XCTAssertTrue(
+            unavailable.isHittable && viewport.contains(unavailable.frame)
+        )
+        XCTAssertTrue(viewport.contains(combinedFrame))
         support.captureEvidence(.unavailable, of: app)
     }
 

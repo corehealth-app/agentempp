@@ -64,5 +64,313 @@
       "contains_text": false
     }
   ],
-  "exports": []
+  "exports": [
+    {
+      "id": "symbol-vector",
+      "path": "design/brand/exports/bodyflow-symbol.svg",
+      "media_type": "image/svg+xml",
+      "role": "symbol",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9"
+    },
+    {
+      "id": "symbol-png-44",
+      "path": "design/brand/exports/bodyflow-symbol-44.png",
+      "media_type": "image/png",
+      "role": "symbol",
+      "width": 44,
+      "height": 44,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "d1fd4fb65559fd794b1a825a2da48e354011a4bb1551b87c42fccbe749cd7725"
+    },
+    {
+      "id": "symbol-png-88",
+      "path": "design/brand/exports/bodyflow-symbol-88.png",
+      "media_type": "image/png",
+      "role": "symbol",
+      "width": 88,
+      "height": 88,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "6221f43bf532380524cba828aabe50a75d88c3b658b346250f291c70b87e5f97"
+    },
+    {
+      "id": "symbol-png-132",
+      "path": "design/brand/exports/bodyflow-symbol-132.png",
+      "media_type": "image/png",
+      "role": "symbol",
+      "width": 132,
+      "height": 132,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "89eee28f8c122ac7188995a80fc46a8f04578e03f68548f7c568406d04fd29c0"
+    },
+    {
+      "id": "symbol-png-512",
+      "path": "design/brand/exports/bodyflow-symbol-512.png",
+      "media_type": "image/png",
+      "role": "symbol",
+      "width": 512,
+      "height": 512,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "d272fc80e6d0592e67aac29bb752fcd9f516024a6c9793bb18225130a93c3412"
+    },
+    {
+      "id": "symbol-png-1024",
+      "path": "design/brand/exports/bodyflow-symbol-1024.png",
+      "media_type": "image/png",
+      "role": "symbol",
+      "width": 1024,
+      "height": 1024,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "c1b3211e35b5e14345f90ed40ce26fadaec241bcf8ab621a0ddf0245749088e3"
+    },
+    {
+      "id": "wordmark-vector",
+      "path": "design/brand/exports/bodyflow-wordmark.svg",
+      "media_type": "image/svg+xml",
+      "role": "wordmark",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "57503318200bf68e5e76665675b6a8a7bf743f8ceb754e9599ec9754a9bf163d"
+    },
+    {
+      "id": "wordmark-png-320",
+      "path": "design/brand/exports/bodyflow-wordmark-320.png",
+      "media_type": "image/png",
+      "role": "wordmark",
+      "width": 320,
+      "height": 85,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "f30910270bbd82cc78359ee4b6bf857c8f69f48773a15555f1b540da007f754b"
+    },
+    {
+      "id": "wordmark-png-640",
+      "path": "design/brand/exports/bodyflow-wordmark-640.png",
+      "media_type": "image/png",
+      "role": "wordmark",
+      "width": 640,
+      "height": 171,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "b324e888da5998fa7aa03b2cf1230ff5e7bda875ab53b2c314424c49cbd6e2e0"
+    },
+    {
+      "id": "wordmark-png-960",
+      "path": "design/brand/exports/bodyflow-wordmark-960.png",
+      "media_type": "image/png",
+      "role": "wordmark",
+      "width": 960,
+      "height": 256,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "71690737047267eb3ac8891206538bb3e40f4cf41bd698fa1de909ec881fd5bc"
+    },
+    {
+      "id": "horizontal-vector",
+      "path": "design/brand/exports/bodyflow-horizontal.svg",
+      "media_type": "image/svg+xml",
+      "role": "horizontal",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "cb88d3af9c6687573f06c34349c9c8bda2e602f8862cc728ca564ed880708cb0"
+    },
+    {
+      "id": "horizontal-png-360",
+      "path": "design/brand/exports/bodyflow-horizontal-360.png",
+      "media_type": "image/png",
+      "role": "horizontal",
+      "width": 360,
+      "height": 120,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "36c11814729657d6c7194b23e9dcb7fc050c6c263f304fd489587ff802ed27d5"
+    },
+    {
+      "id": "horizontal-png-720",
+      "path": "design/brand/exports/bodyflow-horizontal-720.png",
+      "media_type": "image/png",
+      "role": "horizontal",
+      "width": 720,
+      "height": 240,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "4510f7b318841b4a5f9760dc84e724b18dda7f17bd0b81ac22cccb6e790ccb8a"
+    },
+    {
+      "id": "horizontal-png-1080",
+      "path": "design/brand/exports/bodyflow-horizontal-1080.png",
+      "media_type": "image/png",
+      "role": "horizontal",
+      "width": 1080,
+      "height": 360,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "8019c4b6305d5a3468987ef27ae05ec914848fe4e1e1509db237a6547a45f105"
+    },
+    {
+      "id": "monochrome-vector",
+      "path": "design/brand/exports/bodyflow-symbol-monochrome.svg",
+      "media_type": "image/svg+xml",
+      "role": "monochrome",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36"
+    },
+    {
+      "id": "monochrome-png-44",
+      "path": "design/brand/exports/bodyflow-monochrome-44.png",
+      "media_type": "image/png",
+      "role": "monochrome",
+      "width": 44,
+      "height": 44,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "6677b8ae8b3a4fe152e48cf6b0e0999121d04e7dc1d9ff8a69213f82a0ab3807"
+    },
+    {
+      "id": "monochrome-png-88",
+      "path": "design/brand/exports/bodyflow-monochrome-88.png",
+      "media_type": "image/png",
+      "role": "monochrome",
+      "width": 88,
+      "height": 88,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "8ef78c14517bc118282de9848e7572b0ec405136ead1fcda1a9cacbf3b2534a9"
+    },
+    {
+      "id": "monochrome-png-132",
+      "path": "design/brand/exports/bodyflow-monochrome-132.png",
+      "media_type": "image/png",
+      "role": "monochrome",
+      "width": 132,
+      "height": 132,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "0c7ab08351e7d21e6a43f67591c4f2bf040f9a0a9dc030172bad06f4e0776f94"
+    },
+    {
+      "id": "negative-vector",
+      "path": "design/brand/exports/bodyflow-symbol-negative.svg",
+      "media_type": "image/svg+xml",
+      "role": "negative",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647"
+    },
+    {
+      "id": "negative-png-44",
+      "path": "design/brand/exports/bodyflow-negative-44.png",
+      "media_type": "image/png",
+      "role": "negative",
+      "width": 44,
+      "height": 44,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "27954fd7666e1ba108a7f47e0f351df6c0136c0ef310b32bcc0cfaaba6d657da"
+    },
+    {
+      "id": "negative-png-88",
+      "path": "design/brand/exports/bodyflow-negative-88.png",
+      "media_type": "image/png",
+      "role": "negative",
+      "width": 88,
+      "height": 88,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "a69f656631e3d88fb3e3a2f966a1c1848c92d02924a8364d08a15c1b4a05de8b"
+    },
+    {
+      "id": "negative-png-132",
+      "path": "design/brand/exports/bodyflow-negative-132.png",
+      "media_type": "image/png",
+      "role": "negative",
+      "width": 132,
+      "height": 132,
+      "alpha": "transparent",
+      "color_space": "sRGB",
+      "sha256": "d99817a75434d5ceb752f86a5ac79b0a792d070603be655fc5ddf3ba22167729"
+    },
+    {
+      "id": "launch-vector",
+      "path": "design/brand/exports/bodyflow-launch.svg",
+      "media_type": "image/svg+xml",
+      "role": "launch",
+      "alpha": "vector",
+      "color_space": "sRGB",
+      "sha256": "06580ac994f24363ae04f767c0c9068043cae1a2d6af5946361b8e9ac2095e38"
+    },
+    {
+      "id": "app-icon-default",
+      "path": "design/brand/exports/bodyflow-app-icon-default-1024.png",
+      "media_type": "image/png",
+      "role": "app_icon",
+      "width": 1024,
+      "height": 1024,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8"
+    },
+    {
+      "id": "app-icon-dark",
+      "path": "design/brand/exports/bodyflow-app-icon-dark-1024.png",
+      "media_type": "image/png",
+      "role": "app_icon",
+      "width": 1024,
+      "height": 1024,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc"
+    },
+    {
+      "id": "app-icon-tinted",
+      "path": "design/brand/exports/bodyflow-app-icon-tinted-1024.png",
+      "media_type": "image/png",
+      "role": "app_icon",
+      "width": 1024,
+      "height": 1024,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703"
+    },
+    {
+      "id": "review-comparison",
+      "path": "design/brand/exports/brand-comparison.png",
+      "media_type": "image/png",
+      "role": "review",
+      "width": 1600,
+      "height": 1000,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "822011b4478e1af322ab83c0be24d8d1a4fbbe27a57a03279cf7300822be64f4"
+    },
+    {
+      "id": "review-reduced-sizes",
+      "path": "design/brand/exports/brand-reduced-sizes.png",
+      "media_type": "image/png",
+      "role": "review",
+      "width": 1600,
+      "height": 1000,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "263b48460df5b12fd800ccaad55768d2a17c691b397f371ba67c80e0cf67f1e1"
+    },
+    {
+      "id": "review-light-dark",
+      "path": "design/brand/exports/brand-light-dark.png",
+      "media_type": "image/png",
+      "role": "review",
+      "width": 1600,
+      "height": 1000,
+      "alpha": "opaque",
+      "color_space": "sRGB",
+      "sha256": "cfca072081070b3cb94ceea8a6105c57d80bb64dceb45143e3dc740750c2d5c8"
+    }
+  ]
 }

@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import sharp from "sharp";
+
 import { validateBrandContract } from "./bodyflow-brand-contract.mjs";
 
 const repositoryRoot = path.resolve(
@@ -24,6 +26,33 @@ const requiredMasterIds = [
   "horizontal",
   "monochrome",
   "negative",
+];
+const assetsCatalogPath = path.join(
+  repositoryRoot,
+  "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets",
+);
+const expectedExportMatrix = [
+  vectorExport("symbol-vector", "bodyflow-symbol.svg", "symbol"),
+  ...squareRasterExports("symbol", [44, 88, 132, 512, 1024]),
+  vectorExport("wordmark-vector", "bodyflow-wordmark.svg", "wordmark"),
+  ...widthRasterExports("wordmark", [320, 640, 960], 960, 256),
+  vectorExport("horizontal-vector", "bodyflow-horizontal.svg", "horizontal"),
+  ...widthRasterExports("horizontal", [360, 720, 1080], 1536, 512),
+  vectorExport(
+    "monochrome-vector",
+    "bodyflow-symbol-monochrome.svg",
+    "monochrome",
+  ),
+  ...squareRasterExports("monochrome", [44, 88, 132]),
+  vectorExport("negative-vector", "bodyflow-symbol-negative.svg", "negative"),
+  ...squareRasterExports("negative", [44, 88, 132]),
+  vectorExport("launch-vector", "bodyflow-launch.svg", "launch"),
+  appIconExport("app-icon-default", "bodyflow-app-icon-default-1024.png"),
+  appIconExport("app-icon-dark", "bodyflow-app-icon-dark-1024.png"),
+  appIconExport("app-icon-tinted", "bodyflow-app-icon-tinted-1024.png"),
+  reviewExport("review-comparison", "brand-comparison.png", 1600, 1000),
+  reviewExport("review-reduced-sizes", "brand-reduced-sizes.png", 1600, 1000),
+  reviewExport("review-light-dark", "brand-light-dark.png", 1600, 1000),
 ];
 
 test("validates the immutable approved BodyFlow source", async () => {
@@ -178,6 +207,107 @@ test("rejects fixed dimensions, undeclared colors, and missing path geometry", a
   assert.match(errors, /must contain outlined path geometry/i);
 });
 
+test("declares the exact deterministic production export matrix", async () => {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+  assert.deepEqual(
+    manifest.exports.map(({ sha256: _sha256, ...asset }) => asset),
+    expectedExportMatrix,
+  );
+  for (const asset of manifest.exports) {
+    assert.match(asset.sha256, /^[0-9a-f]{64}$/);
+  }
+});
+
+test("renders production PNGs with exact dimensions, sRGB, and alpha policy", async () => {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const rasterExports = manifest.exports.filter(
+    (asset) => asset.media_type === "image/png",
+  );
+
+  assert.ok(rasterExports.length > 0, "expected raster exports");
+  for (const asset of rasterExports) {
+    const metadata = await sharp(path.join(repositoryRoot, asset.path)).metadata();
+    assert.equal(metadata.format, "png", asset.id);
+    assert.equal(metadata.width, asset.width, asset.id);
+    assert.equal(metadata.height, asset.height, asset.id);
+    assert.equal(metadata.space, "srgb", asset.id);
+    assert.equal(metadata.hasAlpha, asset.alpha === "transparent", asset.id);
+  }
+});
+
+test("populates six vector image sets with explicit rendering intent", async () => {
+  const expectedImageSets = [
+    ["BodyFlowSymbol", "bodyflow-symbol.svg", "original"],
+    ["BodyFlowWordmark", "bodyflow-wordmark.svg", "original"],
+    ["BodyFlowHorizontal", "bodyflow-horizontal.svg", "original"],
+    ["BodyFlowMonochrome", "bodyflow-symbol-monochrome.svg", "template"],
+    ["BodyFlowNegative", "bodyflow-symbol-negative.svg", "template"],
+    ["BodyFlowLaunch", "bodyflow-launch.svg", "original"],
+  ];
+
+  for (const [name, filename, intent] of expectedImageSets) {
+    const imageSetPath = path.join(assetsCatalogPath, `${name}.imageset`);
+    const contents = JSON.parse(
+      await readFile(path.join(imageSetPath, "Contents.json"), "utf8"),
+    );
+    assert.deepEqual(contents.images, [{ filename, idiom: "universal" }], name);
+    assert.equal(contents.properties["preserves-vector-representation"], true, name);
+    assert.equal(contents.properties["template-rendering-intent"], intent, name);
+    const vector = await readFile(path.join(imageSetPath, filename));
+    assert.ok(vector.length > 0, name);
+  }
+});
+
+test("populates opaque default, dark, and tinted App Icons plus semantic accents", async () => {
+  const appIcon = JSON.parse(
+    await readFile(
+      path.join(assetsCatalogPath, "AppIcon.appiconset/Contents.json"),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(
+    appIcon.images.map(({ filename, appearances }) => ({ filename, appearances })),
+    [
+      {
+        filename: "bodyflow-app-icon-default-1024.png",
+        appearances: undefined,
+      },
+      {
+        filename: "bodyflow-app-icon-dark-1024.png",
+        appearances: [{ appearance: "luminosity", value: "dark" }],
+      },
+      {
+        filename: "bodyflow-app-icon-tinted-1024.png",
+        appearances: [{ appearance: "luminosity", value: "tinted" }],
+      },
+    ],
+  );
+
+  const accents = JSON.parse(
+    await readFile(
+      path.join(assetsCatalogPath, "AccentColor.colorset/Contents.json"),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(
+    accents.colors.map((entry) => ({
+      appearance: entry.appearances?.[0]?.value ?? "light",
+      components: entry.color.components,
+    })),
+    [
+      {
+        appearance: "light",
+        components: { alpha: "1.000", blue: "0.403922", green: "0.427451", red: "0.000000" },
+      },
+      {
+        appearance: "dark",
+        components: { alpha: "1.000", blue: "0.478431", green: "0.686275", red: "0.831373" },
+      },
+    ],
+  );
+});
+
 async function createFixtureRoot(context, transform = (manifest) => manifest) {
   const root = await mkdtemp(path.join(tmpdir(), "bodyflow-brand-contract-"));
   context.after(async () => {
@@ -259,4 +389,67 @@ async function createSvgFixtureRoot(context) {
 
 function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function vectorExport(id, filename, role) {
+  return {
+    id,
+    path: `design/brand/exports/${filename}`,
+    media_type: "image/svg+xml",
+    role,
+    alpha: "vector",
+    color_space: "sRGB",
+  };
+}
+
+function squareRasterExports(role, sizes) {
+  return sizes.map((size) => ({
+    id: `${role}-png-${size}`,
+    path: `design/brand/exports/bodyflow-${role}-${size}.png`,
+    media_type: "image/png",
+    role,
+    width: size,
+    height: size,
+    alpha: "transparent",
+    color_space: "sRGB",
+  }));
+}
+
+function widthRasterExports(role, widths, sourceWidth, sourceHeight) {
+  return widths.map((width) => ({
+    id: `${role}-png-${width}`,
+    path: `design/brand/exports/bodyflow-${role}-${width}.png`,
+    media_type: "image/png",
+    role,
+    width,
+    height: Math.round((width * sourceHeight) / sourceWidth),
+    alpha: "transparent",
+    color_space: "sRGB",
+  }));
+}
+
+function appIconExport(id, filename) {
+  return {
+    id,
+    path: `design/brand/exports/${filename}`,
+    media_type: "image/png",
+    role: "app_icon",
+    width: 1024,
+    height: 1024,
+    alpha: "opaque",
+    color_space: "sRGB",
+  };
+}
+
+function reviewExport(id, filename, width, height) {
+  return {
+    id,
+    path: `design/brand/exports/${filename}`,
+    media_type: "image/png",
+    role: "review",
+    width,
+    height,
+    alpha: "opaque",
+    color_space: "sRGB",
+  };
 }

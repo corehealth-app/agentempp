@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "brand_version": "1.0.0-candidate.1",
+  "approval_state": "candidate",
+  "source": {
+    "path": "design/brand/source/bodyflow-approved-board.jpg",
+    "sha256": "af44d4b2036638720eaaf58c05fa6098f69b21c7639b91bb4a60bc85c64c15b7",
+    "width": 1491,
+    "height": 1055,
+    "color_space": "sRGB"
+  },
+  "masters": [],
+  "exports": []
+}

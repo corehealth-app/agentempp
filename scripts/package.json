@@ -13,7 +13,9 @@
     "repair:nutrition-provenance": "tsx repair-nutrition-provenance-2026-07-11.ts",
     "repair:sorvete-aa557bdf": "tsx repair-sorvete-aa557bdf-2026-07-13.ts",
     "repair:kumis-meal-loss": "tsx repair-kumis-meal-loss-2026-07-13.ts",
-    "repair:roberto-calabresa": "tsx repair-roberto-calabresa-2026-07-16.ts"
+    "repair:roberto-calabresa": "tsx repair-roberto-calabresa-2026-07-16.ts",
+    "brand:validate": "node brand/bodyflow-brand-contract.mjs --check",
+    "brand:test": "node --test brand/bodyflow-brand-contract.test.mjs"
   },
   "dependencies": {
     "@mpp/db": "workspace:*",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "sharp": "0.34.5",
     "tsx": "^4.20.6",
     "typescript": "^5.7.3"
   }

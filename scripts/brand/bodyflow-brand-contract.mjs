@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
+import { canonicalBrandRenderer } from "./bodyflow-brand-renderer-contract.mjs";
+
 const manifestRelativePath = "design/brand/bodyflow-brand-assets.json";
 const exportsRelativePath = "design/brand/exports";
 const runFile = promisify(execFile);
@@ -17,6 +19,37 @@ const requiredMasterIds = [
   "monochrome",
   "negative",
 ];
+const approvedExportHashes = new Map([
+  ["symbol-vector", "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9"],
+  ["symbol-png-44", "d1fd4fb65559fd794b1a825a2da48e354011a4bb1551b87c42fccbe749cd7725"],
+  ["symbol-png-88", "6221f43bf532380524cba828aabe50a75d88c3b658b346250f291c70b87e5f97"],
+  ["symbol-png-132", "89eee28f8c122ac7188995a80fc46a8f04578e03f68548f7c568406d04fd29c0"],
+  ["symbol-png-512", "d272fc80e6d0592e67aac29bb752fcd9f516024a6c9793bb18225130a93c3412"],
+  ["symbol-png-1024", "c1b3211e35b5e14345f90ed40ce26fadaec241bcf8ab621a0ddf0245749088e3"],
+  ["wordmark-vector", "57503318200bf68e5e76665675b6a8a7bf743f8ceb754e9599ec9754a9bf163d"],
+  ["wordmark-png-320", "f30910270bbd82cc78359ee4b6bf857c8f69f48773a15555f1b540da007f754b"],
+  ["wordmark-png-640", "b324e888da5998fa7aa03b2cf1230ff5e7bda875ab53b2c314424c49cbd6e2e0"],
+  ["wordmark-png-960", "71690737047267eb3ac8891206538bb3e40f4cf41bd698fa1de909ec881fd5bc"],
+  ["horizontal-vector", "cb88d3af9c6687573f06c34349c9c8bda2e602f8862cc728ca564ed880708cb0"],
+  ["horizontal-png-360", "36c11814729657d6c7194b23e9dcb7fc050c6c263f304fd489587ff802ed27d5"],
+  ["horizontal-png-720", "4510f7b318841b4a5f9760dc84e724b18dda7f17bd0b81ac22cccb6e790ccb8a"],
+  ["horizontal-png-1080", "8019c4b6305d5a3468987ef27ae05ec914848fe4e1e1509db237a6547a45f105"],
+  ["monochrome-vector", "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36"],
+  ["monochrome-png-44", "6677b8ae8b3a4fe152e48cf6b0e0999121d04e7dc1d9ff8a69213f82a0ab3807"],
+  ["monochrome-png-88", "8ef78c14517bc118282de9848e7572b0ec405136ead1fcda1a9cacbf3b2534a9"],
+  ["monochrome-png-132", "0c7ab08351e7d21e6a43f67591c4f2bf040f9a0a9dc030172bad06f4e0776f94"],
+  ["negative-vector", "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647"],
+  ["negative-png-44", "27954fd7666e1ba108a7f47e0f351df6c0136c0ef310b32bcc0cfaaba6d657da"],
+  ["negative-png-88", "a69f656631e3d88fb3e3a2f966a1c1848c92d02924a8364d08a15c1b4a05de8b"],
+  ["negative-png-132", "d99817a75434d5ceb752f86a5ac79b0a792d070603be655fc5ddf3ba22167729"],
+  ["launch-vector", "06580ac994f24363ae04f767c0c9068043cae1a2d6af5946361b8e9ac2095e38"],
+  ["app-icon-default", "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8"],
+  ["app-icon-dark", "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc"],
+  ["app-icon-tinted", "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703"],
+  ["review-comparison", "822011b4478e1af322ab83c0be24d8d1a4fbbe27a57a03279cf7300822be64f4"],
+  ["review-reduced-sizes", "263b48460df5b12fd800ccaad55768d2a17c691b397f371ba67c80e0cf67f1e1"],
+  ["review-light-dark", "cfca072081070b3cb94ceea8a6105c57d80bb64dceb45143e3dc740750c2d5c8"],
+]);
 
 export async function validateBrandContract(rootDirectory) {
   const errors = [];
@@ -51,6 +84,7 @@ export async function validateBrandContract(rootDirectory) {
   if (!["candidate", "approved"].includes(manifest.approval_state)) {
     errors.push("manifest approval_state must be candidate or approved");
   }
+  validateRendererContract(manifest.renderer, errors);
   if (!Array.isArray(manifest.masters)) {
     errors.push("manifest masters must be an array");
   }
@@ -80,6 +114,41 @@ export async function validateBrandContract(rootDirectory) {
   });
 
   return result;
+}
+
+function validateRendererContract(renderer, errors) {
+  if (!isPlainObject(renderer)) {
+    errors.push("manifest renderer must be an object");
+    return;
+  }
+
+  compareRendererContract(errors, canonicalBrandRenderer, renderer);
+}
+
+function compareRendererContract(errors, expected, received, prefix = "") {
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    const field = prefix ? `${prefix}.${key}` : key;
+    const receivedValue = received[key];
+    if (isPlainObject(expectedValue)) {
+      if (isPlainObject(receivedValue)) {
+        compareRendererContract(errors, expectedValue, receivedValue, field);
+      } else {
+        errors.push(
+          `renderer contract mismatch: ${field}; expected object, received ${receivedValue}`,
+        );
+      }
+    } else if (receivedValue !== expectedValue) {
+      errors.push(
+        `renderer contract mismatch: ${field}; expected ${expectedValue}, received ${receivedValue}`,
+      );
+    }
+  }
+
+  for (const key of Object.keys(received)) {
+    if (Object.hasOwn(expected, key)) continue;
+    const field = prefix ? `${prefix}.${key}` : key;
+    errors.push(`renderer contract mismatch: ${field}; unexpected field`);
+  }
 }
 
 async function validateSource({
@@ -188,6 +257,26 @@ async function validateAssets({
       .filter((asset) => isPlainObject(asset) && isNonEmptyString(asset.path))
       .map((asset) => toPosixPath(asset.path)),
   );
+
+  for (const asset of exports) {
+    if (!isPlainObject(asset) || !isNonEmptyString(asset.id)) continue;
+    const approvedHash = approvedExportHashes.get(asset.id);
+    if (approvedHash === undefined) {
+      errors.push("approved export baseline is missing: " + asset.id);
+    } else if (asset.sha256 !== approvedHash) {
+      errors.push("approved export sha256 mismatch: " + asset.id);
+    }
+  }
+  const declaredExportIds = new Set(
+    exports
+      .filter((asset) => isPlainObject(asset) && isNonEmptyString(asset.id))
+      .map((asset) => asset.id),
+  );
+  for (const approvedId of approvedExportHashes.keys()) {
+    if (!declaredExportIds.has(approvedId)) {
+      errors.push(`approved export is missing: ${approvedId}`);
+    }
+  }
 
   for (const asset of assets) {
     if (!isPlainObject(asset)) {

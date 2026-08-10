@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
+import { assertCanonicalBrandRenderer } from "./bodyflow-brand-renderer-contract.mjs";
+
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultRepositoryRoot = path.resolve(moduleDirectory, "../..");
 const manifestRelativePath = "design/brand/bodyflow-brand-assets.json";
@@ -106,6 +108,7 @@ function assetsForRole(role) {
 export async function renderBodyFlowBrandAssets(
   repositoryRoot = defaultRepositoryRoot,
 ) {
+  assertCanonicalBrandRenderer();
   const root = path.resolve(repositoryRoot);
   const manifestPath = path.join(root, manifestRelativePath);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

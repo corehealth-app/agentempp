@@ -153,6 +153,112 @@ test("rejects asset paths that escape the repository", async (context) => {
   assert.match(result.errors.join("\n"), /path escapes repository/i);
 });
 
+test("rejects a noncanonical renderer declaration", async (context) => {
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    renderer: {
+      ...manifest.renderer,
+      node: "different",
+    },
+  }));
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(result.errors.join("\n"), /renderer contract mismatch: node/i);
+});
+
+test("rejects unexpected renderer declaration fields", async (context) => {
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    renderer: {
+      ...manifest.renderer,
+      unverifiedRuntime: "allowed-by-partial-comparison",
+    },
+  }));
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(
+    result.errors.join("\n"),
+    /renderer contract mismatch: unverifiedRuntime/i,
+  );
+});
+
+test("rejects unexpected empty renderer declaration objects", async (context) => {
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    renderer: {
+      ...manifest.renderer,
+      unverifiedRuntime: {},
+    },
+  }));
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(
+    result.errors.join("\n"),
+    /renderer contract mismatch: unverifiedRuntime/i,
+  );
+});
+
+test("rejects unexpected dotted renderer declaration keys", async (context) => {
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    renderer: {
+      ...manifest.renderer,
+      "sharp.aom": manifest.renderer.sharp.aom,
+    },
+  }));
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(
+    result.errors.join("\n"),
+    /renderer contract mismatch: sharp\.aom; unexpected field/i,
+  );
+});
+
+test("rejects a self-consistent export hash rebaseline", async (context) => {
+  const replacement = Buffer.from("replacement approved export bytes");
+  const replacementHash = createHash("sha256").update(replacement).digest("hex");
+  const originalManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const originalExport = originalManifest.exports.find(
+    (asset) => asset.id === "app-icon-default",
+  );
+  assert.ok(originalExport);
+
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    exports: [{ ...originalExport, sha256: replacementHash }],
+  }));
+  const replacementPath = path.join(fixture, originalExport.path);
+  await mkdir(path.dirname(replacementPath), { recursive: true });
+  await writeFile(replacementPath, replacement);
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(
+    result.errors.join("\n"),
+    /approved export sha256 mismatch: app-icon-default/i,
+  );
+});
+
+test("rejects removal of an approved export baseline", async (context) => {
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    exports: manifest.exports.filter(
+      (asset) => asset.id !== "app-icon-default",
+    ),
+  }));
+
+  const result = await validateBrandContract(fixture);
+
+  assert.match(
+    result.errors.join("\n"),
+    /approved export is missing: app-icon-default/i,
+  );
+});
+
 test("declares the complete path-only SVG master family", async () => {
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const result = await validateBrandContract(repositoryRoot);

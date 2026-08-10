@@ -611,6 +611,113 @@ git commit -m "feat(ios): add typed BodyFlow brand assets"
 
 ---
 
+### Task 4.5: Pin The Canonical Brand Renderer
+
+**Files:**
+
+- Modify: `design/brand/bodyflow-brand-assets.json`
+- Modify: `docs/superpowers/plans/2026-08-10-bodyflow-ios-brand-masters-assets.md`
+- Modify: `scripts/package.json`
+- Modify: `scripts/brand/bodyflow-brand-contract.mjs`
+- Modify: `scripts/brand/bodyflow-brand-contract.test.mjs`
+- Modify: `scripts/brand/render-bodyflow-brand-assets.mjs`
+- Modify: `scripts/brand/render-bodyflow-brand-review.mjs`
+- Create: `scripts/brand/bodyflow-brand-renderer-contract.mjs`
+- Create: `scripts/brand/bodyflow-brand-renderer-contract.test.mjs`
+- Create: `scripts/brand/run-bodyflow-brand-renderer.sh`
+- Create: `scripts/brand/canonical-renderer/Dockerfile`
+- Create: `scripts/brand/canonical-renderer/package.json`
+- Create: `scripts/brand/canonical-renderer/package-lock.json`
+
+No PNG, SVG, App Icon copy, or Task 5 evidence file may change in this task.
+
+**Interfaces:**
+
+- Consumes: the historical Task 3 outputs and their committed SHA-256 values.
+- Produces: a Linux/amd64 renderer with a pinned base-image digest, locked Sharp
+  packages, complete native-library fingerprint, exact system packages and font
+  files, immutable per-build image ID, an immutable input snapshot, validation in
+  the staged repository, and a locked/reversible promotion after both renderers
+  succeed.
+- Exposes: `brand:render` for an explicit write and `brand:render:check` for a
+  temporary byte-for-byte comparison that never writes to the worktree.
+
+- [ ] **Step 1: Add failing renderer-contract and runner tests**
+
+Require the manifest and runtime observation to match the complete canonical
+identity, including every `sharp.versions` entry, Sharp concurrency/SIMD state,
+Debian package versions, and font-file checksums. Run the shell runner against a
+controlled fake Docker boundary and prove that it executes the immutable image
+ID returned by `docker build --iidfile`, never a shared mutable tag.
+
+Also prove that check mode never promotes, a failed review or validation leaves
+the original design and asset catalog trees byte-identical, concurrent edits are
+preserved, a failed directory swap rolls back both trees, and the
+renderer-contract tests pass both on a noncanonical host and inside the
+canonical container.
+
+- [ ] **Step 2: Run the focused tests and verify RED**
+
+```bash
+node --test scripts/brand/bodyflow-brand-renderer-contract.test.mjs
+```
+
+Expected: FAIL because the partial fingerprint, mutable image tag, direct-write
+path, and ambient-host rejection test do not satisfy the contract.
+
+- [ ] **Step 3: Implement the canonical contract and two-phase runner**
+
+The runtime assertion executes before either renderer writes. It validates the
+complete observed Sharp/native stack, configured concurrency/SIMD state, exact
+installed Debian packages, and exact font paths/checksums. The Dockerfile uses
+the recorded base-image digest and locked dependency/package versions.
+
+The runner captures the built image ID from `--iidfile`, renders product and
+review outputs only in a temporary repository copy, then runs the full brand
+validator in that copy. Check mode compares the temporary trees recursively and
+never promotes them. Write mode serializes runners with a repository lock,
+revalidates the immutable snapshot, and swaps same-filesystem candidate
+directories through a reversible transaction. A missing Docker runtime,
+unavailable pinned package, identity mismatch, render/validation failure,
+concurrent edit, promotion failure, or byte difference fails closed.
+Ordinary errors and capturable signals roll back automatically. An uncatchable
+termination or host failure preserves the dead lock and transaction directories;
+the next run refuses to continue until that recovery state is inspected.
+
+- [ ] **Step 4: Run GREEN and prove historical invariance**
+
+```bash
+pnpm --filter @mpp/scripts brand:test
+pnpm --filter @mpp/scripts brand:validate
+pnpm --filter @mpp/scripts brand:render:check
+git diff --exit-code -- design/brand/exports \
+  apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets
+git diff --check
+```
+
+Expected: all tests pass, the canonical render is byte-identical, and no PNG,
+SVG, catalog output, or App Icon copy changes.
+
+- [ ] **Step 5: Review and commit only the prerequisite**
+
+```bash
+git add design/brand/bodyflow-brand-assets.json \
+  docs/superpowers/plans/2026-08-10-bodyflow-ios-brand-masters-assets.md \
+  scripts/package.json scripts/brand/bodyflow-brand-contract.mjs \
+  scripts/brand/bodyflow-brand-contract.test.mjs \
+  scripts/brand/render-bodyflow-brand-assets.mjs \
+  scripts/brand/render-bodyflow-brand-review.mjs \
+  scripts/brand/bodyflow-brand-renderer-contract.mjs \
+  scripts/brand/bodyflow-brand-renderer-contract.test.mjs \
+  scripts/brand/run-bodyflow-brand-renderer.sh \
+  scripts/brand/canonical-renderer
+git commit -m "build(brand): pin canonical renderer"
+```
+
+Do not push or create a PR in this task.
+
+---
+
 ### Task 5: Complete The Brand Approval And Integrity Gate
 
 **Files:**
@@ -632,6 +739,7 @@ git commit -m "feat(ios): add typed BodyFlow brand assets"
 ```bash
 pnpm --filter @mpp/scripts brand:test
 pnpm --filter @mpp/scripts brand:validate
+pnpm --filter @mpp/scripts brand:render:check
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
@@ -647,7 +755,8 @@ git diff --check
 ```
 
 Expected: all tests and builds pass, every manifest hash matches, and no catalog
-warning is emitted.
+warning is emitted. The canonical rerender must report that all product and
+review outputs are byte-identical.
 
 - [ ] **Step 2: Run the prohibited-content audit**
 
@@ -692,8 +801,8 @@ After explicit approval, set:
 }
 ```
 
-Re-render once and prove that every output hash remains unchanged except the
-manifest's own checksum field if present.
+Run `brand:render:check` once and prove that every output hash remains
+unchanged. Do not replace approved files with host-native output.
 
 - [ ] **Step 6: Final review and commit**
 

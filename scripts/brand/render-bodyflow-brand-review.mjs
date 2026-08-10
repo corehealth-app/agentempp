@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
+import { assertCanonicalBrandRenderer } from "./bodyflow-brand-renderer-contract.mjs";
 import {
   atomicWrite,
   productExportAssets,
@@ -18,6 +19,7 @@ const manifestRelativePath = "design/brand/bodyflow-brand-assets.json";
 export async function renderBodyFlowBrandReview(
   repositoryRoot = defaultRepositoryRoot,
 ) {
+  assertCanonicalBrandRenderer();
   const root = path.resolve(repositoryRoot);
   const manifest = JSON.parse(
     await readFile(path.join(root, manifestRelativePath), "utf8"),

@@ -2,7 +2,10 @@
 
 **Date:** 2026-08-09
 
-**Status:** awaiting final approval
+**Status:** approved for implementation planning
+
+**Approved:** 2026-08-10, including the competitive motion, mascot, and
+gamification direction
 
 **Stacked branch:** `codex/bodyflow-ios-brand-design-system-v1`
 
@@ -66,6 +69,16 @@ hierarchy, light/dark mood, icon direction, coach-card language, dashboard
 character, and overall polish. It is not an executable product contract and
 is not authoritative for displayed data, calculations, tab names, feature
 availability, or backend behavior.
+
+The supporting behavior and motion research is:
+
+- `docs/superpowers/research/2026-08-10-bodyflow-competitive-motion-gamification.md`.
+
+It is authoritative for the approved BodyFlow experience principles, motion
+hierarchy, mascot boundaries, accessibility gates, and renderer-selection
+process. Competitor products are references for interaction principles only.
+Their trade dress, characters, choreography, sounds, copy, reward systems, and
+proprietary feature models must not be reproduced.
 
 ## Verified Current State
 
@@ -193,6 +206,11 @@ The implementation plan must produce or explicitly reject each of these:
 - launch/splash composition;
 - production mascot base;
 - Focus, Impulse, and Zen mascot/coach visual variants;
+- one static key pose for every supported mascot personality and lifecycle
+  state;
+- versioned mascot animation-state manifest with semantic state, event,
+  playback behavior, fallback asset, revision, and checksum;
+- production animation artboards only after the renderer spike is approved;
 - image-source manifest with source, version, dimensions, color space, and
   checksum.
 
@@ -277,10 +295,115 @@ contracts. Existing working flows remain authoritative. Visual work may improve
 composition, hierarchy, spacing, labels, feedback, and discoverability, but may
 not invent a backend operation or recalculate official values.
 
-Motion uses native SwiftUI where practical, remains interruptible, never blocks
-navigation, does not imply false calculation precision, and has a static
-`Reduce Motion` path. Generated Lottie/Rive dependencies are not introduced
-without a separate approval.
+### Experience Position
+
+BodyFlow combines **calm precision with earned warmth**:
+
+- official data and primary actions remain sober, stable, and deterministic;
+- the coach remains clear, useful, and actionable;
+- the mascot creates emotional continuity without judging the user;
+- celebration is proportional to confirmed progress;
+- rest, interruption, and resumption are legitimate states rather than
+  failures.
+
+The app must not become a calorie game, a guilt-driven streak system, or an
+always-animated dashboard.
+
+### Motion Principles
+
+Every animation must preserve context, confirm an action, explain a state
+change, direct attention, acknowledge a meaningful milestone, or express an
+authorized mascot state. Motion that only delays navigation, decorates a wait,
+repeats in the periphery, or implies a calculation that did not happen is
+rejected.
+
+BodyFlow uses four motion tiers:
+
+1. immediate control feedback;
+2. bounded component transitions;
+3. native navigation transitions;
+4. rare milestone celebration.
+
+The same large celebration may not run after every meal, glass of water,
+routine item, or message. Official values may transition in place, but the app
+may not count through fabricated intermediate values or display fake typing
+duration.
+
+Motion uses native SwiftUI for navigation, controls, values, progress, sheets,
+and ordinary feedback. It remains interruptible, never blocks the next action,
+and preserves scroll position and accessibility focus when content changes.
+
+Short system haptics may reinforce selection, success, warning, and failure,
+but never carry information alone. Utility flows are silent by default. Future
+celebration audio requires separate approval and a mute path.
+
+### Mascot Contract
+
+The BodyFlow mascot is a companion and progress witness. It is not a medical
+authority, calorie judge, punishment system, food police, or replacement for
+the coach. It reacts only to approved server-owned state and confirmed events.
+
+Focus, Impulse, and Zen alter posture, pacing, amplitude, and expression while
+preserving the same character identity and product semantics. Personality may
+not alter calculations, control placement, recommendations, or task
+difficulty.
+
+Supported lifecycle behavior is fail-closed:
+
+- `inactive`: restful, with no sadness or deterioration;
+- `reactivating`: attentive return and gentle acknowledgement;
+- `active`: alert idle and small confirmed-action response;
+- `neglected`: quiet pause without hunger, illness, tears, guilt, or alarm;
+- `evolving`: rare server-authorized milestone sequence;
+- `unknown`: static neutral fallback with ordinary text explanation.
+
+The production vocabulary is `idle_primary`, `idle_alternate`, `acknowledge`,
+`success_small`, `milestone`, `reactivating`, `rest`, and `evolving`, plus a
+static key pose for every supported state and personality. Idle animation pauses
+offscreen, in the background, under resource pressure, and whenever Reduce
+Motion applies.
+
+The product must never animate pet suffering, streak loss as personal failure,
+fabricated scarcity, or rewards for under-eating, overtraining, or ignoring
+recovery.
+
+### Renderer Boundary
+
+Views consume an engine-neutral mascot contract containing semantic state,
+personality, event, intensity, playback mode, static fallback, accessibility
+label, and server authorization/revision. They do not select animation files
+directly. The same manifest is intended to support a future Android renderer
+without making this an Android implementation.
+
+Rive is the leading candidate for an interactive production renderer, not an
+approved dependency. Before it enters the app, a pinned spike must validate
+deterministic state transitions, Swift 6 strict concurrency, lifecycle and
+cancellation, Reduce Motion, static fallbacks, VoiceOver isolation, binary
+size, startup, memory, CPU, frame delivery, energy, Release fail-closed
+behavior, Apple/Android asset compatibility, licensing, update policy, and
+vulnerability handling.
+
+If the spike fails, the same contract renders bundled static/vector key poses
+with native SwiftUI transitions. Lottie is not the default because the mascot
+requires interactive state transitions rather than only linear playback.
+
+### Accessibility, Localization, And Energy
+
+- Reduce Motion replaces movement across axes, scaling, parallax, blur, and
+  repeating mascot loops with static poses or short fades.
+- VoiceOver never announces idle frames, and animation never creates or removes
+  the only accessible control.
+- Important feedback always has persistent visual/text state; haptics remain
+  optional reinforcement.
+- No visible `pt-BR` or `en-US` text may be baked into animation artwork.
+- Both locales are exercised before motion evidence is accepted; geometry may
+  not assume a fixed label width.
+- Mascot core states render without network access and fall back to a valid
+  static pose on renderer or memory failure.
+- No independent repeating timer is created per card.
+- Simulator smoothness is insufficient: renderer approval requires measured
+  on-device asset-size, memory, startup, CPU, energy, and frame-delivery
+  evidence.
 
 ## Delivery Decomposition
 
@@ -297,8 +420,10 @@ executed as independently reviewable increments:
    onboarding, persona selection, and consent surfaces.
 5. **Authenticated-product application:** Today, Register, Routine, Progress,
    Library, Mascot, and Profile using current contracts.
-6. **Motion and illustration:** approved microinteractions, mascot states,
-   coach/educational artwork, and `Reduce Motion` evidence.
+6. **Motion and illustration:** centralized motion/haptic tokens, native
+   microinteractions, engine-neutral mascot contract, pinned renderer spike,
+   approved mascot states and coach/educational artwork, static fallbacks,
+   non-manipulation checks, and `Reduce Motion` evidence.
 7. **Design QA:** Light/Dark, both locales, supported device sizes, Dynamic
    Type, VoiceOver, Increase Contrast, Differentiate Without Color, and visual
    comparison against the board.
@@ -357,6 +482,12 @@ side by side with the approved JPEG. The user approves or rejects the asset set.
 - user-facing copy passes the localization audit;
 - existing contracts, feature behavior, tests, and Release fail-closed rules
   remain intact;
+- motion uses centralized semantic events and never reads animation filenames
+  directly from feature views;
+- mascot idle work stops offscreen and in the background, and every animated
+  state has a bundled static fallback;
+- renderer choice passes measured on-device performance, energy, accessibility,
+  dependency, and Release gates before production adoption;
 - Debug and Release build on the Mac/Xcode environment;
 - focused unit, presentation, snapshot/UI, and accessibility tests pass;
 - no secret, PII, production URL, WhatsApp dependency, or unapproved transport
@@ -370,6 +501,12 @@ side by side with the approved JPEG. The user approves or rejects the asset set.
 - no Balu, MPP, CoreFlow, blue-dominant, purple-neon, or generic gym theme;
 - no clipping, overlap, nested actionable controls, inaccessible hit areas, or
   unreadable text in either locale;
+- motion is proportional to the event, preserves context and focus, and does
+  not compete with official data or primary actions;
+- the mascot never expresses suffering, guilt, fabricated urgency, or a health
+  judgment;
+- representative motion and static-fallback evidence exists in Light/Dark,
+  `pt-BR`/`en-US`, Reduce Motion, and supported accessibility configurations;
 - no fabricated values in screenshots or previews presented as real data;
 - no final-status claim while any mandatory real-beta gate is open.
 

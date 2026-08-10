@@ -1,0 +1,87 @@
+Attributes: Application, 0x116825680, pid: 18844, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x116825680, pid: 18844, label: 'BodyFlow'
+    Window (Main), 0x116827d40, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x116827e80, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x116824780, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x1168248c0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x116826e40, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x106a6ae40, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x106a6af80, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x106a6b0c0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x106a6b200, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x106a6b340, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x106a6b480, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x106a6b5c0, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x106a6b700, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x106a6b840, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x106a6b980, {{0.0, 116.0}, {402.0, 54.0}}, identifier: 'Mascote BodyFlow'
+                              Button, 0x106a6bac0, {{16.0, 116.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Hoje'
+                              StaticText, 0x106a6bc00, {{125.7, 127.7}, {150.3, 20.7}}, label: 'Mascote BodyFlow'
+                            Other, 0x106a6bd40, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x106a6be80, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x116810000, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x116810140, {{0.0, 106.0}, {402.0, 768.0}}
+                                    ScrollView, 0x116810280, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.mascot.detail'
+                                      Other, 0x1168103c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116810500, {{0.0, 106.0}, {402.0, 118.8}}
+                                        Other, 0x116810640, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116810780, {{0.0, 106.0}, {402.0, 768.0}}
+                                      Other, 0x1168108c0, {{0.0, 170.0}, {402.0, 603.3}}
+                                        Button, 0x116810a00, {{16.0, 186.0}, {370.0, 44.0}}, identifier: 'mascot.refresh', label: 'Atualizar'
+                                          Image, 0x116810b40, {{154.3, 198.7}, {15.0, 18.3}}, identifier: 'arrow.clockwise', label: 'Atualizar'
+                                          StaticText, 0x116810c80, {{16.0, 186.0}, {370.0, 44.0}}, label: 'Atualizar'
+                                        Other, 0x116810dc0, {{32.0, 466.0}, {201.3, 83.0}}, label: 'Mascote BodyFlow, personalidade Equilibrada, estado Em repouso'
+                                          StaticText, 0x116810f00, {{32.0, 466.0}, {189.3, 26.3}}, label: 'Mascote BodyFlow'
+                                          StaticText, 0x116811040, {{32.0, 500.3}, {201.3, 20.3}}, label: 'personalidade Equilibrada'
+                                          StaticText, 0x116811180, {{32.0, 528.7}, {94.3, 20.3}}, label: 'Em repouso'
+                                        StaticText, 0x1168112c0, {{32.0, 605.0}, {144.3, 20.3}}, label: 'Sobre este estado'
+                                        StaticText, 0x116811400, {{32.0, 637.3}, {90.7, 20.3}}, label: 'Em repouso'
+                                        StaticText, 0x116811540, {{32.0, 669.7}, {237.3, 19.3}}, label: 'Atualizado em 19/07/2026, 23:15'
+                                        StaticText, 0x116811680, {{32.0, 701.0}, {290.0, 40.3}}, label: 'O estado e a personalidade vêm do seu coach BodyFlow.'
+                                      Other, 0x1168117c0, {{369.0, 170.0}, {30.0, 621.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x116811900, {{396.0, 190.7}, {3.0, 597.3}}
+                                      Other, 0x116811a40, {{369.0, 170.0}, {30.0, 621.0}}, label: 'Barra de rolagem vertical, 1 página', value: 0%
+                                        Other, 0x116811b80, {{396.0, 190.7}, {3.0, 597.3}}
+                            Other, 0x116811cc0, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116811e00, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x116811f40, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x116812080, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x1168121c0, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x116812300, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x116812440, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x116812580, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x1168126c0, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje', Selected
+                            Image, 0x116812800, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x116812940, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x116812a80, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x116812bc0, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x116812d00, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x116812e40, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x116812f80, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x1168130c0, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x116813200, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x116813340, {{25.0, 795.0}, {74.0, 54.0}}
+                          Other, 0x116813480, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x1168135c0, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x116813700, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116813840, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116813980, {{25.0, 795.0}, {74.0, 54.0}}
+                                  Other, 0x116813ac0, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116813c00, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116813d40, {{25.0, 795.0}, {74.0, 54.0}}
+                  Other, 0x116813e80, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x116b88000, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x116b88140, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116b88280, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116b883c0, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x116b88500, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116b88640, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116b88780, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x116825680, pid: 18844, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x116b888c0, pid: 18844, label: 'BodyFlow'
+  }

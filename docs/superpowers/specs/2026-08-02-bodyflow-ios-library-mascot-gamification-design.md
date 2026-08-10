@@ -1,0 +1,2115 @@
+# BodyFlow iOS Library, Mascot And Gamification Design
+
+**Date:** 2026-08-02
+
+**Status:** approved
+
+**Stacked branch:** `codex/bodyflow-ios-library-mascot-gamification-v1`
+
+**Stacked base:** `codex/bodyflow-ios-today-records-progress-v1` at
+`94c5dd1e5a62d2948eb5e56a1c63d2dfaf689123`
+
+## Objective
+
+Design the next native BodyFlow iOS increment for:
+
+- the educational Library and published-content detail;
+- published CMS recommendations on Today;
+- a first-party BodyFlow mascot whose presentation reflects the current coach
+  personality and server-owned mascot state;
+- the existing XP, level, earned-badge and streak data;
+- a non-punitive return experience when the current streak is zero;
+- honest unavailable treatment for daily missions whose backend contract does
+  not yet exist.
+
+The design uses only contracts already implemented under
+`/api/mobile/v1`. It does not infer a new endpoint from database tables, admin
+screens, internal RPCs, legacy product documents, or desired future behavior.
+It does not calculate official gamification values in iOS.
+
+This document is the complete Prompt 14 design. Together with its documentary
+TDD plan, it does not authorize implementation until a later explicit user
+instruction.
+
+## Verified Evidence And Constraints
+
+The design was derived from the executable BFF, shared schemas, migrations,
+mobile API documentation, prior accepted ADRs/specifications, and the current
+iOS app. Primary sources include:
+
+- `docs/mobile/api-v1.md`;
+- `docs/adr/015-bodyflow-educational-content-cms.md`;
+- `docs/superpowers/specs/2026-07-21-bodyflow-content-cms-design.md`;
+- `docs/superpowers/specs/2026-07-20-bodyflow-personalities-messages-mascot-design.md`;
+- `packages/core/src/content.ts`;
+- `packages/core/src/coach-messages.ts`;
+- `apps/admin/src/lib/content/admin-service.ts`;
+- `apps/admin/src/lib/content/supabase-repository.ts`;
+- `apps/admin/src/lib/mobile-api/content-service.ts`;
+- `apps/admin/src/lib/mobile-api/supabase-content.ts`;
+- `apps/admin/src/lib/mobile-api/coach-service.ts`;
+- `apps/admin/src/lib/mobile-api/supabase-coach.ts`;
+- `apps/admin/src/lib/mobile-api/read-model.ts`;
+- `supabase/migrations/20260721124600_bodyflow_content_cms_domain.sql`;
+- `supabase/migrations/20260721141618_bodyflow_content_delivery.sql`;
+- `supabase/migrations/20260722123000_bodyflow_content_visibility_order.sql`;
+- route handlers under `apps/admin/src/app/api/mobile/v1`;
+- Swift project's `swift-markdown` 0.8.0 release, manifest and public AST APIs;
+- `apps/ios/BodyFlow/BodyFlow` and its unit/UI test targets.
+
+### Real Mobile Operations
+
+| Capability | Existing operation | Prompt 14 use |
+| --- | --- | --- |
+| Published feed | `GET /api/mobile/v1/content` | Today, Library and Saved feeds |
+| Published detail | `GET /api/mobile/v1/content/:id` | Article detail |
+| Read state | `POST /api/mobile/v1/content/:id/read` | Impression, opened and explicit completion |
+| Saved state | `POST /api/mobile/v1/content/:id/save` | Save and unsave |
+| Private cover | `GET /api/mobile/v1/content/covers/:token` | Authenticated, short-lived cover image |
+| Coach snapshot | `GET /api/mobile/v1/coach/persona` | Effective persona, public options and mascot state |
+| Persona update | `PATCH /api/mobile/v1/coach/persona` | Existing server capability; not broadened by this workpack |
+| Gamification snapshot | `GET /api/mobile/v1/progress` | XP, level, streaks and earned badge strings |
+
+Every operation requires the established authenticated patient envelope. Content
+operations are entitlement-protected by the current route policy. The client
+does not send locale, plan, protocol, personality, patient ID, publication
+eligibility, or publication status.
+
+The staging base URL is not currently defined in `docs/mobile/api-v1.md`, and
+the native app has no live authenticated HTTP transport. Prompt 14 must not
+hardcode a host, bearer, secret, service-role credential, or staging/production
+environment. Deterministic adapters remain limited to Debug, previews and
+tests. Release continues to fail closed with `operationUnavailable` until a
+separate live-transport workpack is approved.
+
+### Confirmed Contract Gaps
+
+No patient mobile endpoint or DTO currently exists for:
+
+- daily missions, mission completion, mission rewards, or mission history;
+- streak restoration, freeze, grace eligibility, recovery currency, or a
+  recovery mutation;
+- a patient ranking or leaderboard;
+- cooperative missions or teams;
+- XP event history or XP breakdown;
+- level names, level thresholds, XP-to-next-level, or level percentage;
+- badge IDs, catalog metadata, description, image, earned timestamp, or locked
+  badges;
+- mascot transition, mascot history, mascot asset, or animation;
+- a rendered recurring coach message for the native app;
+- a recommendation score, reason, model, related-content endpoint, search, or
+  category catalog;
+- content embedded in `GET /today`.
+
+Admin-only “Top XP” data and service-role database RPCs are not mobile
+contracts. They must not be reused by iOS. The design does not declare
+`MissionDTO`, `RankingDTO`, `CooperativeMissionDTO`, a streak-recovery command,
+or an assumed route for any of them.
+
+### Mascot State Contract Mismatch
+
+The requested visual scope names four states: inactive, reactivating, active and
+neglected. The real v1 wire contract contains five values:
+
+- `inactive`;
+- `reactivating`;
+- `active`;
+- `evolving`;
+- `neglected`.
+
+The iOS wire model must decode all five, plus preserve an unknown future raw
+value safely. It may not omit `evolving`, fail a valid v1 response, or silently
+map it to `active`. The four requested states receive approved presentations in
+this workpack. `evolving` and unknown values receive a neutral unsupported
+presentation until product supplies a specific visual contract.
+
+## Considered Delivery Strategies
+
+### 1. Capability composition using the existing BFF — chosen
+
+Library, content mutations, coach snapshot and progress remain separate small
+capabilities. Today composes its official daily state and a separate
+`surface=today` published-content feed without changing `TodayResponse`.
+Progress renders only persisted values returned by `/progress`. Mascot renders
+only the server snapshot returned by `/coach/persona`.
+
+This approach preserves failure isolation, matches the existing iOS dependency
+graph, and allows missing capabilities to remain explicitly unavailable.
+
+### 2. A new aggregated “engagement dashboard” endpoint — rejected
+
+Combining Today, recommendations, mascot, XP and missions would require a route
+and DTO that do not exist. It would also couple independent loading, error and
+cache policies. Prompt 14 will not describe or simulate this contract.
+
+### 3. Local-first gamification and recommendation engine — rejected
+
+Calculating XP, level progress, streak recovery, recommendations or missions in
+iOS would duplicate backend authority and invent rules not present in the
+mobile API. Persisting a local content catalog would also bypass publication,
+locale, targeting, archive and entitlement checks.
+
+## Execution Boundary
+
+After this specification is approved, a later TDD plan may implement native
+models and surfaces subject to all of the following:
+
+- Swift 6, SwiftUI and iOS 18 remain unchanged;
+- the five existing tabs and their independent navigation stacks remain
+  unchanged;
+- no application behavior is implemented before a focused RED test;
+- no live URL, provider session, secret, CMS table access, Supabase client, or
+  production configuration is added;
+- no article body, recommendation, mascot state, XP, badge, streak or mission
+  is invented in Release;
+- synthetic fixtures are visibly deterministic and are compiled/constructed
+  only for Debug, previews and tests;
+- Release adapters return `operationUnavailable` and surfaces display
+  “Indisponível nesta versão” rather than fixture success;
+- no migration, deploy, merge, TestFlight, production change or WhatsApp-based
+  architecture is part of the workpack.
+
+### Mandatory Pre-TestFlight Release Gate
+
+A live-capable Release or any TestFlight distribution is blocked until these
+three dependencies are designed, security-reviewed, implemented and tested
+together in a separately approved workpack:
+
+1. an authenticated HTTP transport that trusts only the configured BodyFlow
+   BFF HTTPS origin, defines a strict redirect policy, applies `no-store`
+   behavior and proves that a bearer can never be sent to another origin;
+2. an approved, configuration-injected staging base URL with no hard-coded
+   production fallback and no host inferred from content payloads;
+3. a session bridge that supplies the current bearer from the authentication
+   boundary, handles token refresh/rotation, clears credentials and cancels
+   patient-scoped work on sign-out or session change, and never copies a bearer
+   into fixtures or feature state.
+
+Prompt 14 does not approve or implement this gate. Its fixtures may be
+constructed only under `#if DEBUG`, SwiftUI previews and test targets. Until
+the gate receives explicit approval, every Prompt 14 Release provider remains
+`operationUnavailable`, the UI says “Indisponível nesta versão”, and Release
+contains no Prompt 14 base URL, outbound request, bearer injection or fixture
+fallback. A successful Release compile is necessary verification, not
+authorization for TestFlight.
+
+The published-Markdown compatibility audit defined below is an additional,
+independent TestFlight blocker. Even after the three transport/session
+dependencies pass, TestFlight remains prohibited while any `current` or
+already-approved `scheduled` visibility candidate is incompatible with the
+approved Markdown subset.
+
+## Architecture
+
+### Feature Boundaries
+
+Prompt 14 adds three independent native feature domains:
+
+1. `Core/Content` and `Features/Library` own published content, detail, read
+   state and saved state.
+2. `Core/CoachExperience` and `Features/Mascot` own the read-only coach/mascot
+   snapshot and its presentation.
+3. The existing `Core/Progress` and `Features/Progress` remain the sole native
+   owner of XP, level, badges and streaks.
+
+`TodayRootView` composes a separate recommendations view model. It does not add
+content fields to `TodaySnapshot`, and `TodayProviding` remains unchanged.
+
+`AppDependencies` receives small `Sendable` capabilities. A single monolithic
+“engagement repository” is prohibited because it would couple unrelated
+contracts and failure states.
+
+### Capability Protocols
+
+The stable native boundaries are:
+
+```swift
+protocol PublishedContentListing: Sendable {
+    func content(_ query: ContentFeedQuery) async throws
+        -> PublishedContentFeedResponse
+}
+
+protocol PublishedContentDetailProviding: Sendable {
+    func contentDetail(publicationID: String) async throws
+        -> PublishedContentDetailResponse
+}
+
+protocol PublishedContentStateRecording: Sendable {
+    func recordRead(_ attempt: MutationAttempt<ContentReadCommand>) async throws
+        -> PublishedContentStateResponse
+
+    func setSaved(_ attempt: MutationAttempt<ContentSaveCommand>) async throws
+        -> PublishedContentStateResponse
+}
+
+protocol CoachExperienceProviding: Sendable {
+    func coachExperience() async throws -> CoachExperienceResponse
+}
+```
+
+These are native capability boundaries, not new HTTP endpoints. A deterministic
+Debug repository may implement several protocols, as the current Prompt 13
+repository does, while production dependencies remain protocol-oriented.
+
+The existing `ProgressProviding` remains authoritative. No mission, ranking,
+cooperative or streak-recovery provider is declared.
+
+### Ownership And Session Lifetime
+
+`AppRootView` creates `AppShellView` only for the authenticated user. Prompt 14
+view models and their in-memory state are owned under that shell and therefore
+have one authenticated-session lifetime.
+
+On sign-out or user-ID change:
+
+- the shell is destroyed;
+- content snapshots and cover images are discarded;
+- active loads and mutations are cancelled;
+- late results may not publish into the next session;
+- no patient-targeted content remains in a global singleton.
+
+### Loading And Publication Safety
+
+Feature owners reuse:
+
+- `@MainActor @Observable` view models;
+- `FeatureReadState` for idle, loading, loaded, empty, stale offline, stale
+  error and unavailable states;
+- immutable mutation attempts and `FeatureMutationState`;
+- `FeatureRevisionLoadController` or equivalent ownership checks;
+- `.task(id:)` revisions for one complete load per revision;
+- cancellation-safe publication and latest-intent-wins behavior.
+
+An older page, detail, coach or progress result must never replace a newer
+filter, revision, route or user session.
+
+### Injected Time
+
+Prompt 14 reuses the existing `TimeProviding` dependency from
+`AppDependencies`. Feature code reads `timeProvider.now` for:
+
+- `MutationAttempt.createdAt` when a new content intent is created;
+- the receipt instant used to turn cover `private, max-age` into an in-memory
+  expiry;
+- comparisons with `cover.expires_at`.
+
+No content, cover, mascot or gamification feature calls `Date()` directly.
+`SystemTimeProvider` remains the only Release implementation allowed to read
+wall-clock time; Debug/previews/tests use the existing fixed provider. Retrying
+an intent reuses the complete immutable attempt, including its original
+`createdAt`, rather than consulting the clock again.
+
+## Exact Native Contract Models
+
+### Standard Envelope
+
+Every JSON success preserves the existing envelope:
+
+```swift
+struct MobileResponse<Payload: Codable & Sendable>: Codable, Sendable {
+    let data: Payload
+    let meta: MobileResponseMetadata
+}
+
+extension MobileResponse: Equatable where Payload: Equatable {}
+```
+
+The implementation must preserve `api_version` and `request_id`. It must not
+add a client-computed `published`, `eligible`, recommendation score or source.
+
+### Content Query
+
+```swift
+enum ContentSurface: String, Codable, Hashable, Sendable {
+    case today
+    case library
+    case saved
+}
+
+enum ContentLocale: String, Codable, Hashable, Sendable {
+    case ptBR = "pt-BR"
+    case enUS = "en-US"
+}
+
+enum ContentCategory: String, Codable, CaseIterable, Hashable, Sendable {
+    case weightLoss = "weight_loss"
+    case hypertrophy
+    case nutrition
+    case training
+    case neuroscience
+    case habitFormation = "habit_formation"
+    case cardiovascularHealth = "cardiovascular_health"
+    case hydration
+    case supplementation
+    case sleep
+    case usingBodyFlow = "using_bodyflow"
+}
+
+struct ContentFeedQuery: Equatable, Hashable, Sendable {
+    let surface: ContentSurface
+    let category: ContentCategory?
+    let limit: Int
+    let cursor: String?
+}
+```
+
+The real endpoint accepts `limit` in `1...50`, defaulting to 20, and a server
+cursor of 1...512 characters. `cursor` is opaque: iOS stores and returns the
+exact value and never decodes, derives, sorts or edits it.
+
+The raw values above are the eleven v1 categories. Localized category labels
+are presentation copy owned by iOS. They are not claimed to come from the API,
+and there is no category-discovery endpoint:
+
+- `weight_loss`;
+- `hypertrophy`;
+- `nutrition`;
+- `training`;
+- `neuroscience`;
+- `habit_formation`;
+- `cardiovascular_health`;
+- `hydration`;
+- `supplementation`;
+- `sleep`;
+- `using_bodyflow`.
+
+### Published Content Summary
+
+The item DTO mirrors the BFF exactly:
+
+```swift
+struct PublishedContentSummary: Codable, Equatable, Sendable, Identifiable {
+    let publicationID: String
+    let slug: String
+    let locale: ContentLocale
+    let title: String
+    let excerpt: String
+    let category: ContentCategory
+    let tags: [String]
+    let readingTimeMinutes: Int
+    let publishAt: APITimestamp
+    let featuredToday: Bool
+    let version: Int
+    let saved: Bool
+    let completed: Bool
+    let cover: PublishedContentCover?
+
+    var id: String { publicationID }
+}
+
+struct PublishedContentCover: Codable, Equatable, Sendable {
+    let url: String
+    let expiresAt: APITimestamp
+}
+```
+
+`url` is the exact wire field. Its value is a relative authenticated BFF
+capability, not a public URL or Storage path. The app never persists or logs
+it, and no request may be built until it passes the strict `ContentCoverPath`
+validation defined under Covers.
+
+The list response is:
+
+```swift
+struct PublishedContentFeed: Codable, Equatable, Sendable {
+    let items: [PublishedContentSummary]
+    let nextCursor: String?
+}
+
+typealias PublishedContentFeedResponse = MobileResponse<PublishedContentFeed>
+```
+
+There is no total count, recommendation reason, author, reviewer, rating,
+popularity, public share URL or related-content field.
+
+Published values are decoded against the existing contract invariants; iOS
+does not truncate or repair malformed server values:
+
+| Field | Existing invariant |
+| --- | --- |
+| `publication_id` | UUID |
+| `slug` | 3...120 lowercase ASCII letters/digits separated by hyphens |
+| `locale` | exactly `pt-BR` or `en-US` |
+| `title` | 3...120 characters |
+| `excerpt` | 20...280 characters |
+| `tags` | at most 20 unique lowercase slugs, each 1...40 characters |
+| `reading_time_minutes` | integer in 1...500 |
+| `version` | integer in 1...2,147,483,647 |
+| `body_markdown` | canonical backend Markdown in 100...50,000 UTF-16 code units, including the terminal LF emitted by `toMarkdown`; iOS applies its transport-safety bound after CRLF/CR → LF only |
+
+### Published Content Detail
+
+Detail repeats every summary field and adds only `body_markdown`:
+
+```swift
+struct PublishedContentDetail: Codable, Equatable, Sendable {
+    let summary: PublishedContentSummary
+    let bodyMarkdown: String
+}
+
+typealias PublishedContentDetailResponse = MobileResponse<PublishedContentDetail>
+```
+
+This nested native representation may use a custom decoder to flatten the wire
+object. It does not imply a nested server object.
+
+The route is identified only by `publication_id` UUID. Slug navigation and
+detail-by-slug are not supported.
+
+### Content Read And Saved State
+
+```swift
+enum ContentReadEvent: String, Codable, Hashable, Sendable {
+    case impression
+    case opened
+    case completed
+}
+
+enum ContentOrigin: String, Codable, Hashable, Sendable {
+    case today
+    case library
+    case push
+}
+
+struct ContentReadBody: Codable, Equatable, Hashable, Sendable {
+    let event: ContentReadEvent
+    let origin: ContentOrigin
+    let version: Int
+}
+
+struct ContentReadCommand: Equatable, Hashable, Sendable {
+    let publicationID: String
+    let body: ContentReadBody
+}
+
+struct ContentSaveBody: Codable, Equatable, Hashable, Sendable {
+    let saved: Bool
+    let version: Int
+}
+
+struct ContentSaveCommand: Equatable, Hashable, Sendable {
+    let publicationID: String
+    let body: ContentSaveBody
+}
+
+struct PublishedContentState: Codable, Equatable, Sendable {
+    let publicationID: String
+    let version: Int
+    let saved: Bool
+    let completed: Bool
+    let changed: Bool
+    let replayed: Bool
+}
+
+typealias PublishedContentStateResponse = MobileResponse<PublishedContentState>
+```
+
+Only each command's `body` is encoded as JSON; `publicationID` identifies the
+route and must not be emitted as an unknown body field. `origin` is not
+included in the save body; the BFF fixes it to `library`. The client supplies
+no event timestamp. Completion is one-way because no uncomplete operation
+exists.
+
+`MutationOperation` gains only `.contentRead` and `.contentSave`. The immutable
+attempt payload contains the event/save intent and version, so retries keep the
+same route, JSON body and idempotency key without creating event-specific
+operation cases.
+
+### Coach And Mascot Snapshot
+
+```swift
+struct CoachExperienceSnapshot: Codable, Equatable, Sendable {
+    let selected: SelectableCoachPersona?
+    let effective: EffectiveCoachPersona
+    let options: [CoachPersonaOption]
+    let mascot: MascotSnapshot
+    let contractVersion: String
+}
+
+struct CoachPersonaOption: Codable, Equatable, Sendable, Identifiable {
+    let code: SelectableCoachPersona
+    let name: String
+    let description: String
+
+    var id: SelectableCoachPersona { code }
+}
+
+struct MascotSnapshot: Codable, Equatable, Sendable {
+    let state: MascotWireState
+    let changedAt: APITimestamp?
+}
+
+typealias CoachExperienceResponse = MobileResponse<CoachExperienceSnapshot>
+```
+
+`SelectableCoachPersona` contains exactly `focus`, `impulse` and `zen`.
+`EffectiveCoachPersona` contains those values plus internal `balanced`.
+`selected` is selectable or `null`; `balanced` is never shown as a fourth
+choice. Option names and descriptions come from the server response rather
+than the current hard-coded Swift summaries.
+
+`MascotWireState` is lossless and supports:
+
+```text
+inactive | reactivating | active | evolving | neglected | unknown(rawValue)
+```
+
+`contract_version` must equal `bodyflow.coach-persona.v1` for the v1 presenter.
+An unsupported version fails closed instead of guessing semantics.
+
+### Gamification Snapshot
+
+The existing `/progress` fields remain exact:
+
+```swift
+struct ProgressSnapshot: Codable, Equatable, Sendable {
+    let xpTotal: Int
+    let level: Int
+    let currentStreak: Int
+    let longestStreak: Int
+    let blocksCompleted: Int
+    let deficitBlock: Int
+    let currentWeight: Decimal?
+    let currentBodyFatPercent: Decimal?
+    let badgesEarned: [String]
+    let lastActiveDate: String?
+    let nextReevaluation: String?
+    let updatedAt: APITimestamp
+}
+
+typealias ProgressResponse = MobileResponse<ProgressSnapshot?>
+```
+
+The BFF uses `maybeSingle()`, so `data` may be `null` when no `user_progress`
+row exists. Only `data == null` publishes an empty state. Every non-null
+snapshot is official and publishes `.loaded`. The persisted minimum snapshot
+has `xp_total=0`, `level=1`, both streaks and `blocks_completed` at zero,
+`deficit_block=0`, nullable weight/body-fat/date fields at null, an empty
+`badges_earned` array and a valid `updated_at`. Absence may not become that
+minimum official snapshot; conversely, minimum official values may not be
+reclassified as absence.
+
+No additional gamification field is added to the native wire model.
+
+## Navigation
+
+The app retains exactly these five tabs and stable accessibility identifiers:
+
+1. Today;
+2. Register;
+3. Plan;
+4. Progress;
+5. Profile.
+
+Library is not a sixth tab. It is a typed destination in the Today navigation
+stack. New routes carry identity and origin, not mutable response snapshots:
+
+```swift
+enum LibrarySelection: Hashable, Sendable {
+    case all
+    case saved
+
+    var contentSurface: ContentSurface {
+        switch self {
+        case .all: .library
+        case .saved: .saved
+        }
+    }
+}
+
+enum ContentRoute: Hashable, Sendable {
+    case library(initialSelection: LibrarySelection)
+    case detail(publicationID: String, origin: ContentOrigin)
+}
+
+enum MascotRoute: Hashable, Sendable {
+    case detail
+}
+
+// New cases on the existing router enum; all inherited cases remain.
+enum AppRoute: Hashable, Sendable {
+    // ...existing Prompt 13 cases...
+    case content(ContentRoute)
+    case mascot(MascotRoute)
+}
+```
+
+The presentation-only `LibrarySelection` prevents `surface=today` from becoming
+an unsupported third Library segment while mapping exactly to the two real feed
+surfaces used by that screen.
+
+The real router continues to store `[AppRoute]`. Both `.content` and `.mascot`
+map to `.today` in `AppRoute.tab`. Because the current
+`AppRouter.navigate(to:in:)` receives an explicit tab, every content/mascot call
+site must pass `.today`; router tests prohibit appending either route to another
+stack. `AppShellView.destination(for:)` dispatches content routes to
+Library/detail destinations and `.mascot(.detail)` to a mascot detail that
+reloads `CoachExperienceProviding`. No route carries an article, coach or
+mascot response snapshot.
+
+Entry points are:
+
+- a persistent Library toolbar action or card in Today;
+- “Ver biblioteca” from the Today recommendations section;
+- selecting a Today recommendation, Library item or Saved item performs no
+  read mutation and navigates to content detail with only `publicationID` and
+  `origin`;
+- selecting the Today mascot card opens `.mascot(.detail)`.
+
+The detail route always reloads `GET /content/:id` to revalidate version,
+entitlement, locale, targeting, schedule and archive state. It does not trust a
+list snapshot as the full detail contract, and it never carries or uses the
+card's version for `opened`.
+
+## Educational Library
+
+### Information Architecture
+
+The Library screen contains:
+
+- a title and concise description;
+- a segmented selection for `Todos` (`surface=library`) and `Salvos`
+  (`surface=saved`);
+- one optional category filter using the fixed v1 category values;
+- published cards in server order;
+- load-more only when `next_cursor` is non-null;
+- pull to refresh;
+- explicit loading, empty, stale, offline, recoverable-error and unavailable
+  states.
+
+There is no search box, tag filter, sort control, total count, popularity label
+or “recommended because” explanation because the API provides none.
+
+Initial Library/Saved reads use `limit=20`. Changing surface or category:
+
+- cancels the prior request;
+- resets the cursor and visible page chain;
+- starts a complete first-page read;
+- prevents late publication from the old query.
+
+Subsequent pages reuse the exact same surface, category and limit plus the
+opaque `next_cursor`. A next-page failure keeps the already loaded rows and
+offers an inline Retry using the same cursor. A first-page failure uses the
+normal full-screen/stale state.
+
+### Card Content
+
+A card may display only:
+
+- the returned private cover or a neutral first-party placeholder;
+- returned title and excerpt;
+- a localized presentation label for returned category;
+- returned reading time;
+- returned saved/completed state.
+
+Cards do not display unpublished labels, authorship, publication workflow,
+scores, health promises or inferred audience targeting. A cover has no alt text
+in the contract, so it is decorative when title and excerpt already convey the
+card identity.
+
+### Empty States
+
+- Empty Library: “Nenhum conteúdo publicado está disponível para você agora.”
+- Empty Saved: “Você ainda não tem conteúdos salvos disponíveis.”
+- Empty category: “Nenhum conteúdo disponível nesta categoria.”
+
+These messages do not reveal whether absence is caused by locale, targeting,
+schedule, archive, entitlement history or editorial availability.
+
+## Published Content Detail
+
+### Loading And Presentation
+
+Detail loads by publication ID. It renders:
+
+- title;
+- category and reading time;
+- optional cover;
+- saved/completed state;
+- backend-accepted canonical published Markdown;
+- Save/Unsave action;
+- an explicit “Marcar como concluído” action when not completed.
+
+The article title is the screen heading. The Markdown body never supplies an H1.
+
+### Editorial Source, Canonical Delivery And Native Boundaries
+
+The three Markdown boundaries are deliberately different:
+
+1. The CMS and editorial workflow submit source Markdown to the backend.
+   `validateContentMarkdown` parses that source, applies the portable semantic
+   rejections and the backend AST allowlist, serializes an accepted tree with
+   `toMarkdown`, and validates the complete canonical serialization.
+2. Editorial and historical rows are not silently rewritten. On a mobile
+   detail read, the backend revalidates the stored source and returns only the
+   resulting canonical `normalized` value as `body_markdown`; it never returns
+   an uncanonicalized editorial source to iOS.
+3. iOS consumes that canonical payload. It normalizes CRLF and isolated CR to
+   LF only, applies its local UTF-16 transport-safety bound and parses the
+   result. It does not trim, escape, append a terminal LF, reproduce or port
+   the backend's `toMarkdown` serializer.
+
+The backend's publication bound is `100...50,000` UTF-16 code units over the
+complete `toMarkdown` result, including its terminal LF. The iOS safety bound
+is independently `100...50,000` UTF-16 code units over the received payload
+after CRLF/CR → LF. A source rejected only because backend canonicalization
+changes its size does not become a portable semantic rejection and is never
+required to be passed to the native parser.
+
+### Native Markdown Policy
+
+The concrete implementation is `BodyFlowMarkdownParser`, a fail-closed adapter
+over the Swift project's `swift-markdown` AST package. SwiftPM pins exact
+version `0.8.0`, resolved commit
+`3c6f9523da3a1ec2fd829673e472d95b8097a3b8`; `Package.resolved` is versioned and
+also locks the transitive `swift-cmark` resolution. Branch, `from:` and other
+floating requirements are prohibited. Any package update requires a separate
+dependency review and a complete compatibility-corpus run.
+
+Version 0.8.0 requires Swift Tools 6.2 and is compatible with the approved
+Xcode 26.6 / Swift 6.3.3 toolchain and iOS 18 deployment target. The pinned
+primary sources are:
+
+- `https://github.com/swiftlang/swift-markdown/releases/tag/0.8.0`;
+- `https://github.com/swiftlang/swift-markdown/blob/0.8.0/Package.swift`;
+- the public `Document`, `MarkupVisitor` and `ParseOptions` APIs at that tag.
+
+The parser first converts CRLF and isolated CR to LF, enforces the inclusive
+`100...50,000` bound with `normalizedPayload.utf16.count`, then creates
+`Document(parsing: normalizedPayload, options: [.disableSmartOpts])`. Smart
+punctuation is disabled so iOS cannot rewrite quotes or dashes that the backend
+normalized differently. Block directives, symbol links and Doxygen parsing are
+not enabled. The parser performs no editorial canonicalization or second
+post-serialization size check.
+
+An exhaustive visitor converts the complete library tree into an immutable
+BodyFlow-owned AST before the detail can enter loaded state. Rendering consumes
+only that AST, never the package's `Markup` tree or raw source. The exact
+allowlist is:
+
+- blocks: `Document`, `Paragraph`, H2/H3 `Heading`, `BlockQuote`,
+  `OrderedList` with `startIndex == 1`, `UnorderedList`, and `ListItem` whose
+  checkbox is absent;
+- inline: `Text`, `SoftBreak`, `Strong`, `Emphasis`, and `Link` with no title
+  and an absolute HTTPS destination with a non-empty host;
+- container and inline nesting: no deeper than eight, matching the backend.
+
+`SoftBreak` becomes the ordinary textual separation represented by the
+backend's multiline text node. The visitor has no permissive/default rendering
+branch: every unrecognized current or future node returns
+`unsupportedMarkdown`. Actual HTML block/inline, H1/H4-H6, code block/inline,
+image, hard `LineBreak`, thematic break, table, strikethrough,
+task-list/checkbox, symbol-link, `Directive`, inline-attribute, custom and
+Doxygen nodes are explicitly rejected.
+
+Source spelling alone does not create one of those nodes. Canonical payloads
+are accepted when the configured parser produces only allowlisted `Text` and
+the complete source is structurally owned:
+
+| Canonical/source case | Contract result |
+| --- | --- |
+| ordinary pipe prose | accepted safe text |
+| escaped editorial pipe whose canonical form is a literal pipe | accepted safe text |
+| block-directive spelling parsed only as `Text` | accepted safe text |
+| inline-directive spelling parsed only as `Text` | accepted safe text |
+| Doxygen command spelling parsed only as `Text` | accepted safe text |
+| Doxygen source spelling parsed only as `Text` | accepted safe text |
+| actual `Directive` or Doxygen node | rejected |
+| strikethrough | portable semantic rejection |
+| task-list/checkbox in editorial source | portable semantic rejection |
+| corpus-defined malformed strong source | portable semantic rejection |
+| table or any unknown/future node | rejected |
+
+`swift-markdown` recognizes GFM tables, strikethrough and task lists
+internally. After mandatory Task 0, the backend also recognizes the GFM
+`table` node through its narrowly configured table extension solely to reject
+it. Before the compatibility corpus can complete, the backend additionally
+rejects strikethrough, editorial task-list/checkbox source and the exact
+malformed-strong form represented in the corpus; it must not canonicalize any
+of those into publishable text. It uses exact
+`micromark-extension-gfm-strikethrough` `2.1.0`,
+`mdast-util-gfm-strikethrough` `2.0.0`,
+`micromark-extension-gfm-task-list-item` `2.1.0` and
+`mdast-util-gfm-task-list-item` `2.0.0` pins only to expose the first two AST
+forms for rejection; no broad GFM bundle or rendering extension is added. The
+malformed-strong guard uses exact source ranges and a bounded deterministic
+scanner. The native visitor independently rejects the corresponding AST forms.
+The package also resolves a reference-style link into
+`Link` and omits its definition node. To avoid accepting syntax the backend
+rejects, `BodyFlowMarkdownParser` adds two bounded, non-regex checks based on
+the parser's source ranges:
+
+1. `InlineLinkSourceGuard` uses a deterministic Unicode-scalar state machine to
+   accept the inline/autolink source forms represented by an approved `Link`
+   and reject reference forms; semantic URL validation still comes only from
+   the AST destination.
+2. `DocumentSourceCoverageGuard` recursively verifies each container's source
+   slice against accepted child ranges and its known structural delimiters. Any
+   unowned non-whitespace span fails, including a reference definition removed
+   by the package AST at any nesting level.
+
+These guards do not parse or render Markdown and cannot make a rejected AST
+node acceptable. They must not globally ban `|`, `@` or backslash. A backend-
+emitted escape may be accepted only when the resulting AST is entirely in the
+allowlist and exact source-range coverage accounts for every byte. Unowned
+spans, removed reference definitions, unknown structural delimiters and
+semantically prohibited structures still fail closed; no raw-text or default
+fallback may turn an unknown node into `Text`. Regex,
+`AttributedString(markdown:)`, `WKWebView`, HTML, remote scripts and
+permissive/raw fallback rendering are prohibited.
+
+Compatibility is locked with a golden corpus sourced from the real
+`validateContentMarkdown` implementation and tests in
+`packages/core/src/content.ts` and `packages/core/src/content.test.ts`. Every
+fixture has an explicit `native_expectation` and only these combinations are
+valid:
+
+| `accepted` | `native_expectation` | Required accepted fields | Backend assertion | iOS assertion |
+| --- | --- | --- | --- | --- |
+| `true` | `parse_normalized` | `normalized`, `document` | accepts source and matches canonical Markdown/document | parses `normalized` and matches the exact BodyFlow AST |
+| `false` | `reject_source` | no accepted canonical document | semantically rejects source | parses source and requires `unsupportedMarkdown` |
+| `false` | `backend_canonicalization_only` | no accepted canonical document | rejects only after canonicalization/size validation | native parser is not invoked |
+
+`accepted=true` requires `parse_normalized`, `normalized` and `document`.
+`accepted=false` permits only `reject_source` or
+`backend_canonicalization_only`. An unknown expectation or any other field
+combination is invalid. `backend_canonicalization_only` is restricted by name
+to exactly:
+
+- `normalized-body-under-100-characters`;
+- `normalized-body-over-50000-characters`;
+- `normalized-crlf-over-50000-utf16-units`.
+
+The reconciled corpus contains exactly 50 unique fixtures: 11
+`parse_normalized`, 36 `reject_source` and 3
+`backend_canonicalization_only`, with no unexplained divergence. Coverage
+includes CRLF normalization, soft breaks, depth 8/9, ordered-list start,
+titled/reference links, tables, strikethrough and task lists. In the CRLF
+boundary fixture, iOS legitimately accepts the 50,000-unit payload after line-
+ending normalization while the backend legitimately rejects the editorial
+source after `toMarkdown` adds its terminal LF and reaches 50,001 units. Any
+divergence outside the explicit expectation matrix blocks the package or
+backend-parser upgrade.
+
+The reconciliation sequence is mandatory: Task 6 first commits backend
+hardening for the three portable semantic rejections and canonical mobile-
+detail delivery; Task 7 separately aligns native source guards and parser
+tests; only after both commits may Task 8 resume the shared corpus. Task 9
+remains blocked until Task 8 is GREEN and committed.
+
+#### Approved Backend Pipe-Table Contract
+
+Pipe tables in GFM form are outside the BodyFlow content contract. Before any
+native Prompt 14 implementation begins, the backend validator must detect them
+from an AST and reject them fail-closed. The implementation plan names this
+mandatory prerequisite `Task 0`; it must be GREEN and committed before Task 1.
+`packages/core` keeps its exact
+`mdast-util-from-markdown` `2.0.3` pin and adds exactly
+`micromark-extension-gfm-table` `2.1.1` plus `mdast-util-gfm-table` `2.0.0`.
+Those versions are compatible with the existing mdast parser line and are
+recorded exactly in `packages/core/package.json` and `pnpm-lock.yaml`.
+
+`validateContentMarkdown` configures `fromMarkdown` with the GFM-table
+micromark extension and its matching mdast extension solely so a valid pipe
+table becomes an explicit `table` node. Its exhaustive block conversion then
+rejects that node with a clear `Invalid content Markdown` table error. It does
+not use a regex, a line-shape heuristic, the broader GFM bundle or a
+table-to-Markdown serializer. It does not escape, rewrite or reinterpret a
+table as literal prose. Existing canonical normalization remains applicable
+only after the AST has passed the complete allowlist.
+
+The pipe character alone is not table syntax. An ordinary paragraph such as
+`Proteína | contexto` remains valid, and an escaped pipe such as
+`Proteína \| contexto` remains valid. Tests must exercise the real AST result
+for both cases and prove the canonical literal pipe is accepted by iOS, so a
+later implementation cannot replace AST classification with a broad pipe
+search or treat serializer removal of an escape as unsafe.
+
+#### Approved Portable Semantic Rejections
+
+Before producing publishable canonical Markdown, `validateContentMarkdown`
+also rejects strikethrough and task-list/checkbox through their narrowly
+enabled, exact-pinned AST extensions, plus the malformed-strong source
+identified by the shared corpus through exact source ranges and bounded
+deterministic inspection. The checks are structural and fail closed: they
+never use regex, delimiter-wide blacklists, silent escaping, repair or
+rewriting. Valid strong markup and safe literal text containing pipes, `@` or
+backslash remain eligible when their AST belongs to the backend allowlist.
+
+Because every editorial boundary uses the same validator, these portable
+semantic rejections protect `saveDraft`, source-version clone, `submit`,
+`review(approve)`, `publish` and mobile detail. `review(reject)` remains
+available for withdrawal of incompatible content, and the existing stale,
+lifecycle and database-concurrency guarantees remain unchanged.
+
+The same shared validator continues to apply at both author-input CMS write
+boundaries:
+
+- the untrusted `saveDraft` action input parsed by
+  `apps/admin/src/app/(admin)/content/actions-core.ts`;
+- the service input parsed again by
+  `apps/admin/src/lib/content/admin-service.ts` before repository persistence.
+
+These two boundaries cover untrusted author entry and later editing. They are
+not sufficient for legacy rows: `create_content_draft` copies
+`v_source.body_markdown` directly when `sourceVersionId` is present, while the
+current admin service delegates `createDraft`, `submit`, `review` and `publish`
+without revalidating stored Markdown. Task 0 therefore adds a narrow
+repository read instead of reusing `ContentAdminRepository.get(publicationId)`:
+
+```typescript
+interface ContentVersionValidationSnapshot {
+  versionId: string
+  publicationId: string
+  locale: 'pt-BR' | 'en-US'
+  state: 'draft' | 'in_review' | 'approved' | 'rejected'
+  bodyMarkdown: string | null
+  updatedAt: string
+  publishAt: string | null
+}
+
+getVersionValidationSnapshot(
+  versionId: string,
+  expectedUpdatedAt?: string,
+): Promise<ContentVersionValidationSnapshot | null>
+```
+
+The Supabase implementation queries only `content_versions` and selects
+exactly `id`, `publication_id`, `locale`, `state`, `body_markdown`,
+`updated_at` and `publish_at`. The optional `expectedUpdatedAt` is only an
+equality predicate for the submit preflight; it does not expand the selected
+data. The guard must not load publication history, targets, assets or admin
+identities, and it must not call the existing detail repository method.
+
+The service validates stored `bodyMarkdown` before any successful transition
+that could propagate or expose it:
+
+- `createDraft` validates an immutable `approved` or `rejected` source before
+  calling `repository.createDraft` when `sourceVersionId` is present; a draft
+  without a source remains unchanged;
+- `submit` validates the `draft` snapshot selected for the exact
+  `expectedUpdatedAt` before calling `repository.submit` with that same,
+  unchanged precondition;
+- `review` with `decision=approve` validates the immutable `in_review`
+  snapshot before calling `repository.review`;
+- `review` with `decision=reject` deliberately bypasses Markdown validation so
+  an incompatible version can still be removed from the workflow;
+- `publish` validates the immutable `approved` snapshot before calling
+  `repository.publish`.
+
+The service uses the snapshot metadata only to recognize the exact lifecycle
+that could succeed: matching publication/locale and `approved` or `rejected`
+for a clone source, `draft` for submit, `in_review` for approval, and
+`approved` with null `publishAt` for publish. For the unfiltered source,
+approval and publish reads, an absent snapshot fails closed as the existing
+bounded `not_found` admin error. A source publication/locale/state mismatch,
+an approval state other than `in_review`, or a publish snapshot other than
+`approved` with null `publishAt` fails as the existing bounded `lifecycle`
+error; none of those paths calls a mutation. In particular, an incompatible
+`in_review` clone source cannot race with an allowed reject transition and
+become an eligible `rejected` source before `create_content_draft` copies it.
+Submit is the deliberate exception:
+absence from its `expectedUpdatedAt`-filtered snapshot can mean not-found or a
+concurrent draft revision, and a present snapshot can already have changed
+state, so only the locked submit RPC distinguishes `not_found`, lifecycle and
+`stale`. This ensures every transition that can succeed has first validated the
+stored body.
+
+The guard does not redefine the database lifecycle and is not a concurrency
+authority: its local source/approve/publish stops mirror existing RPC
+preconditions solely to fail closed. When a draft revision no longer
+corresponds to `expectedUpdatedAt` but remains a draft, the original submit RPC
+performs its locked timestamp comparison and returns the existing `stale`
+result. A missing row or intervening lifecycle transition retains the submit
+RPC's not-found/lifecycle result, and a race after a valid preflight is rejected
+by that same RPC. After any eligible snapshot has passed validation, the
+database remains the final authority for the mutation; its immutability rules
+keep source, `in_review` and `approved` bodies stable between preflight and RPC.
+At editorial transition guards, the normalized validator result is discarded:
+no stored body or historical version is rewritten, and no invalid body is
+cloned, persisted, approved or published. This does not apply to the mobile
+read DTO, whose contract is canonical delivery. No route, migration or
+alternate parser is added. Preview inherits the same validator and cannot
+render rejected Markdown.
+
+As defense in depth, `getContent` in
+`apps/admin/src/lib/mobile-api/content-service.ts` validates the repository's
+stored `bodyMarkdown` again before constructing any detail DTO or requesting a
+cover capability. A valid body contributes exactly the validator's canonical
+`normalized` result to the DTO's `body_markdown`; the stored row is not
+rewritten and its editorial source is never returned to iOS. A legacy-invalid
+body produces only the existing opaque mobile internal error. No
+`body_markdown`, source excerpt, canonical fragment, partially constructed
+detail or cover capability may be returned or logged. The iOS
+`BodyFlowMarkdownParser` remains independently fail-closed and still rejects
+every `Table` node.
+
+#### Planned Read-Only Published-Content Audit
+
+Before TestFlight, a separately authorized live read-only audit must evaluate
+both the currently visible candidates and every already approved, future
+scheduled candidate that can become visible. It freezes one
+`audit_timestamp`, reads only non-archived publications and approved versions
+with non-null `publish_at`, and reproduces the mobile repository rule per
+`(publication_id, locale)`:
+
+1. evaluate the winner at `audit_timestamp` from rows with
+   `publish_at <= audit_timestamp`, ordered by
+   `version DESC, publish_at DESC`, and label it
+   `candidate_class=current`;
+2. treat each distinct future `publish_at` as an activation point, evaluate
+   all rows with `publish_at <= activation_at` with that same ordering, and
+   label every newly winning version `candidate_class=scheduled`;
+3. deduplicate unchanged winners and exclude historical or future rows that
+   provably never win at any activation point.
+
+An approved version with null `publish_at` is not an automatic visibility
+candidate; any later publish attempt is protected by the new publish guard.
+The activation calculation is evaluated from one read-only snapshot so a
+moving clock cannot change membership halfway through the audit.
+
+The audit is deliberately not patient-specific. It scans the conservative
+union of all current and scheduled winners before the repository applies
+protocol, plan and personality targeting, so it neither queries a patient nor
+misses a targeted version. It must not query or print users, subscriptions,
+profiles, preferences, health data or any other PII.
+
+The audit may read each selected `body_markdown` only in memory and must pass it
+through the same `validateContentMarkdown` rule. A candidate is compatible only
+when its editorial source passes every portable semantic and AST rejection,
+`toMarkdown` produces the canonical representation, and that complete
+canonical value—including its terminal LF—contains `100...50,000` UTF-16 code
+units. The audit must never print, persist or include the source, canonical
+body, title, excerpt, tags or a content fragment in an error. Its complete
+output is limited to aggregate compatible/incompatible counts separated by
+candidate class and, for affected rows, `version_id`, `publication_id`, numeric
+`version`, `locale`, `state` and `candidate_class` whose value is only
+`current` or `scheduled`. `publish_at`, activation times and Markdown remain
+internal and are never emitted. It has no apply mode and performs no insert,
+update, delete, RPC mutation, migration or editorial transition. This
+specification plans that audit; it does not authorize or execute a live read.
+
+If the later authorized audit finds an affected current or scheduled
+candidate, historical rows remain immutable. Editors must create a new version
+through the existing draft, edit, review, approval and publication workflow;
+an incompatible source is not cloned. Direct database repair, silent body
+rewriting and mutation of a historical version are prohibited. TestFlight
+remains blocked until a fresh audit reports zero incompatible candidates in
+both `current` and `scheduled` classes.
+
+Parsing, source-guard or conversion failure for the canonical payload received
+by iOS publishes one recoverable content-rendering error, no partial body and
+no `opened` event. A `backend_canonicalization_only` source never reaches that
+native parser. Raw Markdown is never displayed as trusted health content.
+Approved links use the system open-URL path only after the HTTPS check; the app
+does not rewrite, track or decorate a link as a BodyFlow endorsement.
+
+### Read Events
+
+- `impression` is created only after a card is actually visible.
+- selecting a card creates no `opened` attempt; it only navigates with
+  `publicationID` and `origin`;
+- `opened` is created by the detail owner only after `GET /content/:id` has
+  returned the current authorized detail and that response has been decoded,
+  contract-validated and parsed into the approved renderable Markdown AST;
+- `completed` requires an explicit user action at the article detail.
+
+The feed owner deduplicates only `impression`, keeping one immutable attempt per
+publication/version/origin for the current visible response. The detail owner
+has a separate route-lifetime guard. On `@MainActor`, after successful detail
+validation, it commits the loaded state and marks that guard atomically without
+suspension; only then does it dispatch one logical `opened` attempt from:
+
+- `publicationID` carried by the route;
+- `origin` carried by the route;
+- `version` returned by that successful detail response.
+
+The card/feed version is never read for `opened`. The guard prevents SwiftUI
+re-rendering, refresh, a later detail reload or an `opened` mutation failure from
+creating another attempt during the same route presentation. Leaving and
+explicitly navigating to detail again creates a new route presentation and one
+new logical opening.
+
+If detail loading fails, returns `operationUnavailable`, is cancelled or
+superseded, fails contract decoding, or fails the approved Markdown validation,
+no `opened` attempt is created. An `opened` POST failure is non-blocking: the
+authorized article remains visible, the failure is presented as a bounded
+recoverable event state, and Prompt 14 does not automatically retry or enqueue
+it offline. If `opened` returns `content_version_changed`, the approved content
+invalidation/reload runs without dispatching a second `opened`; only a later
+explicit navigation can create another opening. Save and completion operations
+continue to show submitting, success, recoverable failure and unavailable
+states and prevent double submission.
+
+No event is persisted into an offline queue. The server owns event time, so a
+later replay after another session could misrepresent when a card was visible.
+
+### Version Conflict
+
+On `409 content_version_changed`:
+
+1. preserve the failed immutable attempt for diagnostics;
+2. invalidate and reload the current detail plus every resident Today, Library,
+   Saved and category-filtered feed;
+3. discard the old version's cover capability and bytes unconditionally,
+   regardless of their wall-clock expiry;
+4. do not rewrite the old payload to the new version;
+5. require a new explicit Save/Complete action for the new version.
+
+Cover capabilities are version-bound, so a version conflict makes the prior
+cover invalid immediately. The client never marks a replacement article
+completed because an older version was completed.
+
+### Not Found
+
+`404 content_not_found` produces one generic “Este conteúdo não está mais
+disponível” state with a Back/Library action. It does not distinguish missing,
+archived, future, wrong locale, lost entitlement or changed targeting.
+
+## Today Recommendations
+
+Recommendations are a separate CMS read:
+
+```text
+GET /api/mobile/v1/content?surface=today&limit=3
+```
+
+They are not fields in `TodayResponse`, and their failure must not hide or
+degrade official Today nutrition/routine state.
+
+The section title is “Conteúdos para hoje”. “Recommended” means only content
+that the BFF has already filtered as published, localized, eligible and
+`featured_today=true`. The app does not calculate relevance or claim an AI
+recommendation.
+
+Behavior:
+
+- show at most the three items returned in server order;
+- use `origin=today` for the visible-card impression and carry that origin into
+  the detail route; only the authorized detail owner may use it for `opened`;
+- expose “Ver biblioteca” regardless of recommendation count;
+- do not paginate the compact Today section;
+- when its response contains `next_cursor`, the CTA opens the normal Library
+  rather than deriving or consuming another Today page;
+- empty state says “Nenhum conteúdo selecionado para hoje” without implying an
+  error;
+- offline/error/unavailable treatment remains inside the section.
+
+Save/unsave and completion mutations invalidate the affected Today
+recommendation list, Library list, Saved list and open detail. Successful
+impression/opened events do not invalidate content feeds; an opened version
+conflict follows the explicit conflict rule above. No content event or mutation
+invalidates or patches official `TodaySnapshot` nutrition values.
+
+## BodyFlow Mascot
+
+### Source Of Truth
+
+The mascot is a read-only native presentation of:
+
+```text
+GET /api/mobile/v1/coach/persona
+```
+
+The iOS client does not call `transition_user_mascot_state`, access mascot
+tables, infer a transition from inactivity, or add a state mutation route. A
+refresh can only render the next snapshot returned by the BFF.
+
+The primary mascot card appears in Today and navigates through
+`.mascot(.detail)` to a lightweight destination that reloads the coach snapshot
+and explains its current state and communication personality. It must not block
+Today when unavailable.
+
+### Requested State Presentations
+
+| Wire state | User-facing presentation | Behavioral rule |
+| --- | --- | --- |
+| `inactive` | “Em repouso” | Neutral readiness; no claim that the patient failed |
+| `reactivating` | “Retomando com você” | Gentle return presentation; no promised timer |
+| `active` | “Ativo” | Stable companion presentation; no reward inference |
+| `neglected` | “Em pausa” | Non-shaming language; never call the patient negligent |
+
+`changed_at` may be displayed as a server-provided timestamp. It is never used
+to calculate days inactive or to trigger another state.
+
+### Evolving And Unknown Values
+
+`evolving` is a valid backend state but has no approved Prompt 14 visual
+semantics. It renders a neutral first-party placeholder and “Estado do mascote
+em atualização”. An unknown raw value uses the same neutral presentation and
+bounded telemetry. Neither is mapped to another state.
+
+### Personality Variations
+
+The effective persona controls visual tone only:
+
+- Focus: stable geometry, clear alignment and restrained accent;
+- Impulse: energetic composition and brighter BodyFlow accent variation;
+- Zen: calm composition, softer spacing and restrained motion;
+- Balanced fallback: neutral BodyFlow composition.
+
+The state remains independent from the persona. A Focus mascot is not more
+“active” than a Zen mascot, and a visual variation cannot award XP or change
+backend state.
+
+Persona names/descriptions shown to the user come from the `options` response.
+No recurring personalized speech bubble is generated locally.
+
+### Recurring Messages
+
+The backend has a deterministic, human-reviewed message catalog with no runtime
+LLM fallback, but no mobile route currently returns a rendered message. Prompt
+14 therefore does not:
+
+- call the internal claim RPC;
+- copy the 1,080-message catalog into iOS;
+- generate recurring copy with an LLM;
+- invent a rendered-message endpoint;
+- silently use a local dynamic fallback.
+
+Only short, static and reviewed interface labels are part of this native
+increment. Dynamic recurring mascot messages remain backend work.
+
+## XP, Levels, Badges And Streaks
+
+### Authority
+
+`GET /progress` remains the only source. iOS does not port `global_config`, XP
+rules, daily-close logic, legacy spreadsheets, database functions or admin
+ranking code.
+
+### XP And Level
+
+The screen displays only:
+
+- returned `xp_total` as “N XP”;
+- returned `level` as “Nível N”.
+
+It does not show a next-level progress bar, threshold, level name, XP forecast,
+award animation, or event breakdown because none is returned by the API.
+
+### Earned Badges / Medals
+
+`badges_earned` is an ordered array of strings. The app may label the section
+“Medalhas conquistadas” and pair each received string with one generic
+first-party medal treatment. It must:
+
+- preserve text and order exactly;
+- use positional identity so duplicate strings do not collide in SwiftUI;
+- provide no invented description, rarity, image, date or locked catalog;
+- show a neutral empty state when the returned array is empty.
+
+### Streaks
+
+The app displays current and longest streak exactly as returned. It does not
+derive a gap from `last_active_date`, alter a streak, or claim a grace period.
+
+When `current_streak == 0`, the presentation may say:
+
+> Sua sequência pode recomeçar hoje. O que você já construiu continua contando.
+
+The CTA “Retomar em Hoje” navigates to the Today tab. It does not restore a
+number, create XP, mark a mission complete, or promise that a future action will
+preserve the prior streak. After normal server-owned activity, Progress reloads
+the next official snapshot.
+
+The UI contains no red loss state, countdown, guilt, punishment, paid recovery,
+freeze token or destructive animation.
+
+### Daily Missions
+
+Daily missions are named in product scope but have no mobile contract. Prompt
+14 may show only a bounded section-level unavailable state:
+
+> Missões diárias — Indisponível nesta versão.
+
+It does not show mission cards, completion, rewards, progress, deadlines or
+sample data. Existing Today actions are not renamed as missions and do not
+claim XP. No mission DTO/provider is created.
+
+### Ranking And Cooperative Missions
+
+No patient endpoint exists. Ranking and cooperative missions are completely
+omitted. They may be added only after a reviewed mobile contract defines
+privacy, identity/alias exposure, consent, pagination, membership, scoring,
+moderation, reward and error semantics.
+
+## Cache And Offline Behavior
+
+### JSON
+
+Patient JSON responses declare `Cache-Control: no-store`. Prompt 14 adds no
+persistent HTTP cache, SQLite/Core Data store, file cache, sync token or offline
+content catalog.
+
+The last visible value in an authenticated feature view model may remain in
+memory to support the existing stale offline/error presentation. This is
+session view state, not durable cache. It is cleared with the authenticated
+shell.
+
+No stale snapshot may be presented as freshly updated XP, streak, mascot or
+publication state. Stale surfaces display the existing stale-data disclosure.
+
+### Covers
+
+`ContentCoverLoader` is a session-owned actor with an injectable byte-stream
+transport. Debug/tests use a deterministic fake stream; Release receives an
+unavailable transport until the mandatory pre-TestFlight gate is approved.
+
+#### Capability Path And Bearer Boundary
+
+A failable `ContentCoverPath` value owns validation. The only accepted raw
+`cover.url` shape is:
+
+```text
+^/api/mobile/v1/content/covers/[A-Za-z0-9_-]+$
+```
+
+Validation happens on the raw string before URL resolution. The loader rejects
+an empty token, percent encoding, backslash, extra path segment, `.`/`..`
+traversal, scheme, host, user info, port, protocol-relative form, query,
+fragment and every external URL. It then resolves the validated path against
+the separately configured trusted HTTPS BFF base URL and rechecks that scheme,
+host and effective port exactly match the trusted origin.
+
+A future authenticated transport may attach the bearer only after both checks.
+Cover requests reject every redirect rather than following it, because the
+real proxy contract does not redirect. The loader never forwards or retries an
+Authorization header to a different origin. Its future URL session must be
+ephemeral, have no disk `URLCache`, ignore local cache data and rely only on the
+bounded session cache below.
+
+#### Bounded Download And Decode
+
+The backend admits cover objects up to exactly 10 MiB (10,485,760 bytes). The
+iOS stream rejects a declared `Content-Length` above that bound and also counts
+actual chunks, cancelling at byte 10,485,761 when the header is absent, false or
+smaller than the body. It never uses an API that must materialize an unbounded
+response before checking the limit.
+
+The response `Content-Type` must be exactly `image/jpeg`, `image/png` or
+`image/webp`. ImageIO must independently recognize bytes of the corresponding
+type; a missing, different, unsupported or header/bytes-mismatched type fails
+closed. `X-Content-Type-Options: nosniff` is honored rather than emulated by a
+permissive decoder.
+
+Before decoding, ImageIO reads image properties with source caching disabled.
+As an explicit iOS decode-safety policy, not a new backend contract, the loader
+rejects a zero/invalid size, either source dimension above 16,384 pixels, an
+overflowing dimension product or more than 64,000,000 source pixels. It never
+calls `UIImage(data:)` or decodes the full raster. It uses
+`CGImageSourceCreateThumbnailAtIndex` with transform enabled and a maximum pixel
+dimension derived from the actual displayed point size times display scale.
+Only that downsampled result crosses into SwiftUI.
+
+#### Session Memory Cache
+
+A `SessionCoverCache` wrapper owns `NSCache` plus a deterministic LRU cost
+ledger. Its production limits are fixed at:
+
+```text
+totalCostLimit = 33,554,432 bytes (32 MiB)
+countLimit = 64 images
+```
+
+The key is `(publicationID, version, targetPixelSize)` within one authenticated
+session. Entry cost is the downsampled `CGImage.bytesPerRow * height`, using
+overflow-checked arithmetic. The ledger evicts least-recently-used entries
+before insertion so both limits remain true independently of `NSCache`'s own
+non-deterministic pressure eviction.
+
+An entry expires at the earlier of `cover.expires_at` and the response
+`private, max-age` deadline calculated with injected `TimeProviding`. Raw
+download bytes are discarded after the bounded decode. Capability strings,
+raw bytes and decoded images are never written to disk, Keychain, telemetry or
+logs.
+
+On sign-out, user/session replacement or authenticated-shell destruction, the
+owner cancels every download/decode task, invalidates the ephemeral session,
+clears the LRU ledger and calls `removeAllObjects()`. A memory warning clears the
+same cache. Content version invalidation and cover 404 remove the affected
+entry; expiry/404 triggers only the bounded parent list/detail refresh needed to
+obtain a new capability. Offline stale text may remain visible while the cover
+falls back to the neutral placeholder.
+
+## Refresh And Invalidation
+
+`FeatureInvalidationCenter` remains `@MainActor @Observable`. Prompt 14 adds
+content-scoped keys without broad feature coupling:
+
+```text
+contentCatalog
+contentDetail(publicationID)
+coachExperience
+```
+
+Every feed owner drives `.task(id:)` with a composite of its exact
+`ContentFeedQuery` and the observed `contentCatalog` revision. A query change
+therefore reloads only that feed, while one catalog revision performs exactly
+one complete first-page reload in every resident Today, Library, Saved or
+category-filtered feed and safely cancels its older load. Detail and coach use
+their own observed revisions.
+
+Invalidation behavior:
+
+| Event | Invalidates |
+| --- | --- |
+| impression success | nothing; card state does not change |
+| opened success | no invalidation; reconcile only the returned canonical state for that item/version |
+| completed success | `contentCatalog` and affected detail |
+| save/unsave success | `contentCatalog` and affected detail |
+| content version conflict | `contentCatalog` and affected detail; discard the old cover unconditionally |
+| cover expiry/404 | parent list/detail only |
+| persona change through existing flow | coach experience and `contentCatalog` |
+| manual content refresh | only the selected feed/detail |
+
+No content invalidation patches Today nutrition, routine or history providers.
+No existing Today mutation is assumed to change XP or mascot state. Progress and
+coach snapshots reload on their own entry/refresh lifecycle because the backend
+does not document an immediate cross-feature mutation contract.
+
+Each observed revision triggers at most one complete reload. A newer revision
+cancels the older load, and a cancelled load never publishes a late stale value
+or error.
+
+## Idempotency
+
+Read/save mutations reuse the approved `IdempotencyKeyProviding` and immutable
+`MutationAttempt` pattern.
+
+- Key length: 8...128.
+- Allowed characters: `[A-Za-z0-9._:-]`.
+- Retry of the same intent preserves key, path and payload exactly.
+- A new user intent receives a new key.
+- `idempotency_request_in_progress` retains the same attempt for retry.
+- `idempotency_key_conflict` is recoverable but never rewrites a payload under
+  the same key.
+- `content_version_changed` ends the old attempt; after reload, a new explicit
+  action creates a new attempt for the new version.
+
+There is no durable offline mutation queue.
+
+## Error And Empty-State Matrix
+
+| Condition | Native behavior |
+| --- | --- |
+| initial loading | skeleton/progress with accessible label |
+| empty feed | surface-specific neutral empty message |
+| offline, no prior value | offline state with Retry |
+| offline, prior value | stale disclosure plus prior in-memory value |
+| service/internal failure | recoverable error; preserve prior value if present |
+| `operationUnavailable` | “Indisponível nesta versão”; never show fixture success |
+| `subscription_required` | content unavailable for current subscription; no fake purchase flow |
+| `content_not_found` | generic no-longer-available detail |
+| `content_cover_not_found` | placeholder, then bounded parent refresh |
+| `content_version_changed` | reload; require new explicit mutation |
+| invalid cursor | discard only the invalid page attempt and offer first-page reload |
+| coach locale unsupported | coach/mascot unavailable with Retry/profile-language guidance |
+| unsupported coach contract version | fail closed with neutral unsupported state |
+| `/progress` data `null` | empty, not zeroed official progress |
+| missing mission/ranking capability | no data model; approved unavailable/omitted treatment |
+
+Authentication expiry continues through the existing root authentication
+boundary. Content errors never disclose publication targeting or editorial
+state.
+
+## Accessibility And Inclusive Behavior
+
+All new screens must pass:
+
+- Dynamic Type through Accessibility XXXL without clipping or horizontal
+  scrolling for primary content;
+- VoiceOver labels, values, headings and stable accessibility identifiers;
+- 44-by-44-point minimum interactive targets;
+- Light and Dark Mode using semantic BodyFlow tokens;
+- Increase Contrast and Differentiate Without Color;
+- Reduce Motion;
+- logical focus after load, filter change, mutation success/error and Retry;
+- external-link identification before opening an HTTPS link.
+
+Specific rules:
+
+- mascot art is decorative and hidden from accessibility; a sibling semantic
+  element announces “Mascote BodyFlow, personalidade <name>, estado <state>”;
+- state and persona are never conveyed by color, pose or motion alone;
+- Focus, Impulse and Zen retain the same information and control hierarchy;
+- `evolving`/unknown announces the neutral unsupported state;
+- badge rows announce the exact returned text, without invented rarity;
+- streak zero copy remains neutral and non-judgmental;
+- covers are decorative when the card already exposes title/excerpt;
+- Markdown headings become native accessibility headings;
+- list semantics and link traits are preserved;
+- Save is not nested inside a tappable navigation card;
+- repeating mascot animation stops under Reduce Motion and the static end state
+  preserves meaning.
+
+## Temporary Asset Strategy
+
+The repository currently has no approved mascot asset pack. Prompt 14 must not
+imitate a third-party character, fitness brand, game, palette, silhouette,
+animation or trademark.
+
+### Debug, Previews And UI Tests
+
+A temporary `MascotPlaceholderArtwork` may be built from original, abstract
+SwiftUI vector primitives and BodyFlow semantic colors. It must:
+
+- be clearly first-party and generic;
+- remain presentational, outside domain models;
+- resolve through `(effectivePersona, mascotPresentationState)`;
+- include neutral Balanced, Evolving and Unknown fallbacks;
+- avoid storing asset names in server-shaped fixtures;
+- use deterministic motion only when Reduce Motion is off;
+- be structurally limited to Debug/previews/UI tests.
+
+Synthetic content covers use neutral first-party placeholders and are labeled
+as demonstration context by launch configuration, not by adding a non-contract
+field to the DTO.
+
+### Release
+
+Prompt 14 fixtures, placeholder-success scenarios and fake byte streams exist
+only under `#if DEBUG`, previews and tests. Release shows the normal unavailable
+text treatment and no successful fixture mascot/content. This remains true even
+when approved BodyFlow-owned art exists: live Prompt 14 providers stay
+fail-closed until the authenticated transport, approved staging base URL and
+session bridge pass the mandatory pre-TestFlight gate.
+
+Future final art must:
+
+- be owned or licensed for BodyFlow;
+- include a provenance manifest;
+- use semantic asset names independent of transport models;
+- support vector/PDF or appropriately scaled raster variants;
+- pass light/dark, contrast, Dynamic Type context and Reduce Motion review;
+- replace placeholder providers without changing wire/domain contracts.
+
+CMS covers remain the only remote content images. They are not bundled or
+reused as mascot/medal art.
+
+## Privacy, Security And Telemetry
+
+- iOS accesses content only through the authenticated mobile BFF.
+- It never accesses CMS tables, RPCs, buckets, object paths or service-role
+  credentials.
+- Locale, plan, protocol, personality and publication eligibility remain
+  server-owned.
+- Cover capability paths and article bodies are excluded from telemetry/logs.
+- Prompt 14 reuses only the existing `feature_screen_viewed` event and its
+  closed metadata filtering. Its exact approved metadata vocabulary is:
+  `screen` with `library`, `content_detail`, `today_recommendations`, `mascot`
+  or the existing `progress`; `outcome` with the existing `success` or
+  `failure`; and `mascot_state_classification` with only `evolving` or
+  `unknown`.
+- The screen/event/key and outcome literals above come from the existing
+  `TelemetryClient.swift` contract plus the preserved Task 26 REDs. No other
+  Prompt 14 event, key or value is approved. In particular, a future raw
+  mascot state is classified only as `unknown`; its server-provided value is
+  never emitted, truncated, normalized or copied into telemetry.
+- Prompt 14 telemetry excludes free-form values, publication content and
+  identifiers not present in that closed vocabulary, including title,
+  excerpt, Markdown, cover URL/capability/token, message copy, badge text,
+  name, email, authorization/bearer values, raw payloads, targeting reason,
+  XP/streak values and patient health values. Telemetry failure remains
+  non-blocking and cannot change the functional flow.
+- There is no ranking identity exposure or cooperative membership in this
+  increment.
+- No runtime LLM is called for recurring messages, mascot copy,
+  recommendations, missions or gamification.
+
+### Historical Release Added-Line Gate
+
+The Release source gate continues to inspect every added line since
+`0e51adebfa8ef718db87096283154c738d8ea0ae`. Its exact forbidden-expression
+pattern is:
+
+```text
+URLSession|URLRequest|HTTPClient|APIClient|\bAuthorization\b|\bBearer\b|baseURL|APIRequest<|https?://
+```
+
+`Authorization` and `Bearer` are intentionally matched only as autonomous
+words. This still rejects credential/header or transport source such as
+`Authorization: redacted`, `Bearer token`, `URLSession`, `URLRequest` and
+`https://`,
+while avoiding false positives for safe composite presentation identifiers.
+For example, `LibraryCoverAuthorizationRelay` and
+`ContentDetailCoverAuthorization` describe in-memory cover-presentation
+authorization; they are neither credentials nor transport and must not fail
+the gate.
+
+The Gate 26A synthetic probes require both safe identifiers to produce no
+match and each prohibited standalone/transport sample above to produce a
+match. The historical base and source scope remain unchanged.
+
+## Task 27A Deterministic XCUI Prerequisite
+
+Task 27 is blocked on a committed, GREEN prerequisite named Task 27A. The
+existing catalog of exactly 19 Prompt 14 launch scenarios cannot reach every
+mandatory XCUI journey required by Task 27. Task 27A may add only the closed,
+deterministic Debug states needed to make those already-required journeys
+reachable; it does not add product behavior, a live integration or a new
+journey requirement.
+
+The additional deterministic states are limited to:
+
+- stale Today recommendations while official Today remains visible;
+- first next-page failure followed by retry of the same opaque cursor;
+- `invalidContentCursor` followed by a cursor-nil first-page recovery;
+- an incomplete authorized detail that exposes explicit completion;
+- recoverable save/completion failure followed by retry of the same immutable
+  attempt;
+- valid Markdown containing an external absolute HTTPS link;
+- expired, over-byte-limit, MIME-mismatched and abusive-dimension covers;
+- an external cover path rejected before transport;
+- Focus+Active and Zen+Neglected coach/mascot responses;
+- explicit complete progress and duplicate badge strings;
+- bounded observable proof that the real detail GET completed before exactly
+  one real opened mutation.
+
+The exclusive Task 27A implementation allowlist is exactly:
+
+- `apps/ios/BodyFlow/BodyFlow/App/AppLaunchConfiguration.swift`;
+- `apps/ios/BodyFlow/BodyFlow/App/AppDependencies.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Repository.swift`;
+- `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoContentCoverByteStream.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/Prompt14LaunchConfigurationTests.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/AppDependenciesTests.swift`;
+- `apps/ios/BodyFlow/BodyFlowTests/DemoPrompt14RepositoryTests.swift`.
+
+Every additional scenario, fixture, stream and recorder/composition is
+`#if DEBUG` only. Release continues to fail closed with unavailable providers,
+and no journey may introduce a Release success path. The semantics and flags
+of all 19 current scenarios remain unchanged, and every launch must select
+exactly one Prompt 14 scenario flag.
+
+The GET → opened instrumentation observes only actual calls made through the
+real deterministic repository/provider/mutation-ledger flow. It records only
+a bounded technical sequence and excludes body, title, capability, token, URL,
+PII and payload. It cannot bypass providers, decoder or ledger.
+
+Task 27A uses strict TDD in its three authorized test files, followed by
+focused and inherited tests, Debug and Release builds, the corrected Task 26
+historical source gate, Release binary/symbol/privacy audits, Swift 6 strict
+concurrency and iOS 18 checks, `git diff --check`, and independent concurrency,
+privacy and Release reviews. It creates no XCUI file and edits no view or view
+model.
+
+After Task 27A is GREEN and committed, Task 27 retains its existing
+responsibility: it creates the five XCUI files and may make only observed
+minimal corrections in its eight already authorized views. Task 28 remains
+later. Task 27A does not authorize a wire contract, endpoint, network, URL,
+cache, persistence, parallel transport or production/live integration.
+
+## Testing Strategy
+
+Every future implementation behavior starts with an observed RED test, reaches
+focused GREEN, passes `git diff --check`, and receives its own logical
+Conventional Commit checkpoint.
+
+### Contract Tests
+
+Test literal decoding/encoding for:
+
+- all content summary fields, snake-case keys, null cover and relative cover
+  URL;
+- all eleven categories and three surfaces;
+- exact list default/limits and opaque cursor round-trip without decoding;
+- detail flattening and `body_markdown`;
+- impression/opened/completed bodies and origin, without publication ID in
+  JSON;
+- save body without publication ID or origin;
+- content state response fields including `changed` and `replayed`;
+- selected-null/effective-balanced coach snapshot;
+- server-localized persona options;
+- all five real mascot states and an unknown raw state;
+- exact `bodyflow.coach-persona.v1` handling;
+- `/progress` data-null, complete literal snapshots and the non-null minimum
+  official snapshot with `level=1` and `deficit_block=0`;
+- absence of next-level, mission, ranking and recovery fields.
+
+### Markdown Tests
+
+- backend dependency manifests and the lockfile contain exact compatible pins:
+  `mdast-util-from-markdown` `2.0.3`,
+  `micromark-extension-gfm-table` `2.1.1` and
+  `mdast-util-gfm-table` `2.0.0`, plus rejection-only
+  `micromark-extension-gfm-strikethrough` `2.1.0`,
+  `mdast-util-gfm-strikethrough` `2.0.0`,
+  `micromark-extension-gfm-task-list-item` `2.1.0` and
+  `mdast-util-gfm-task-list-item` `2.0.0`;
+- the real backend AST rejects a valid GFM pipe table with a clear table error,
+  while ordinary paragraph text containing `|` and escaped `\|` remain valid;
+- the CMS untrusted action and service write boundaries both reject the same
+  pipe-table draft before repository persistence;
+- the minimal version-validation snapshot selects exactly the seven approved
+  fields from `content_versions`, never calls publication detail/history and
+  exposes no targets, assets or admin identities;
+- `createDraft(sourceVersionId:)`, `submit`, `review(approve)` and `publish`
+  each reject a legacy pipe table before their repository mutation is called,
+  while `review(reject)` for the same `in_review` version remains allowed;
+- absent source/approve/publish snapshots call no mutation; source
+  publication/locale/state mismatch and approve/publish lifecycle mismatch
+  likewise stop locally, specifically preventing an incompatible `in_review`
+  source from racing an allowed reject into a successful clone;
+- an ordinary pipe paragraph advances through clone, submit, approval and
+  publish guards unchanged; a concurrent draft revision before or after
+  preflight still returns `stale` from the timestamp-authoritative RPC and
+  persists no transition, while a concurrent lifecycle change retains its
+  lifecycle error;
+- backend source hardening rejects strikethrough, editorial task-list/checkbox
+  and the corpus-defined malformed strong before save, clone, submit, approval,
+  publish or mobile serving, while valid strong, ordinary/escaped pipes and
+  block/inline directive plus Doxygen spellings that parse only as `Text`
+  remain valid;
+- backend canonical-size tests prove that trailing spaces can serialize below
+  100, a 50,000-unit paragraph can serialize to 50,001 with terminal LF, and a
+  CRLF/CR source can normalize to 50,000 before serializing to 50,001; all three
+  are editorial canonicalization failures rather than portable native rejects;
+- the mobile detail service revalidates a legacy stored body before cover/DTO
+  construction, returns exactly the validator's canonical `normalized` body
+  for valid content, returns only an opaque error for invalid content and
+  exposes no source body, fragment or partial detail;
+- exact SwiftPM resolution is `swift-markdown` 0.8.0 at
+  `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`, with no floating requirement;
+- parsing uses `.disableSmartOpts` and enables no block-directive, symbol-link
+  or Doxygen option;
+- paragraphs, H2/H3, strong, emphasis, ordered/unordered lists, quotes and
+  HTTPS links plus soft breaks produce the exact BodyFlow AST;
+- ordinary pipe, canonical escaped-pipe text, `@` and backslash in approved
+  canonical text, and block/inline directive or Doxygen spellings parsed only
+  as `Text` produce the exact BodyFlow AST;
+- nested content respects depth eight;
+- HTML, H1, inline image, code, embed, thematic break, link title,
+  hard line break, reference-style link, non-HTTPS URL and malformed
+  structures fail closed;
+- table, strikethrough, task-list/checkbox, symbol-link, actual Directive or
+  Doxygen, attributes, custom and unknown/future AST nodes fail closed;
+- source-range guards reject a reference-form link and its removed definition
+  plus every unowned span without regex or permissive source parsing, while no
+  broad `|`, `@` or backslash ban rejects safe canonical text;
+- iOS applies its safety limit only after CRLF/CR → LF and never invokes or
+  reproduces `toMarkdown`;
+- the shared-corpus decoder rejects every invalid `accepted`/
+  `native_expectation`/field combination and requires exactly 50 unique rows:
+  11 `parse_normalized`, 36 `reject_source` and 3 allowlisted
+  `backend_canonicalization_only`;
+- all 11 `parse_normalized` rows produce exact BodyFlow ASTs, all 36
+  `reject_source` rows fail on both authorities, the three canonicalization-only
+  rows make zero native-parser calls, and no unexplained divergence remains;
+- headings/lists/links expose native accessibility semantics;
+- parser/adapter failure exposes no partial/raw body and emits no `opened`;
+- no regex parser, `AttributedString(markdown:)`, WebView or executable content
+  path exists.
+
+### Audit Gate Review Tests
+
+The later separately authorized audit workpack must prove its selection logic
+with non-live fixtures before any read-only run: current highest-version
+winner; first scheduled winner when no current row exists; a higher future
+winner; a lower future version permanently shadowed by a higher current
+version; a lower later schedule shadowed by an earlier higher version; ties at
+one activation resolved by `version DESC, publish_at DESC`; unchanged-winner
+deduplication; and exclusion of archived, unscheduled and non-approved rows.
+Its output-schema test allows only separated counts plus `version_id`,
+`publication_id`, `version`, `locale`, `state` and `candidate_class` for
+incompatible rows, and proves that Markdown, `publish_at`, activation times and
+PII cannot be emitted. These are requirements for the future authorized
+workpack; this Prompt 14 documentary/implementation plan creates no audit
+executable and performs no live read.
+
+### Cover Loader Tests
+
+- the exact relative path
+  `/api/mobile/v1/content/covers/<base64url-capability>` is accepted;
+- absolute/protocol-relative/external URLs, scheme, host, user info, port,
+  query, fragment, percent encoding, backslash, extra segments and traversal
+  are rejected before request construction;
+- a trusted-origin request may receive a bearer only after validation, and
+  every redirect is cancelled without forwarding Authorization;
+- 10,485,760 streamed bytes are accepted while a declared or actual
+  10,485,761-byte body is cancelled and rejected;
+- missing/incorrect MIME, unsupported MIME and header/ImageIO-type mismatch
+  fail closed;
+- zero/invalid dimensions, a dimension above 16,384 and more than 64,000,000
+  source pixels are rejected without full raster decode;
+- ImageIO downsampling produces the requested point-size × display-scale
+  thumbnail rather than the source dimensions;
+- cache insertion never exceeds `totalCostLimit=33,554,432` or
+  `countLimit=64`, and deterministic LRU overflow evicts before insertion;
+- expiry uses the earlier capability/header deadline; cover 404 and content
+  version invalidation remove the affected entry;
+- session replacement/sign-out cancels in-flight stream/decode work and clears
+  `NSCache`, LRU state and the ephemeral session, so no late image publishes;
+- Release's unavailable stream performs no request and exposes no bearer/base
+  URL.
+
+### Provider And State Tests
+
+- Today recommendations send only `surface=today`, no locale or score;
+- Library/Saved initial requests use exact surface/category/limit;
+- next-page requests preserve the opaque cursor and all query dimensions;
+- category/surface changes cancel old loads and suppress late publication;
+- `AppRoute.content` and `AppRoute.mascot` map only to the Today stack and
+  destinations carry no mutable response snapshots;
+- a content-detail route contains only `publicationID` and `origin`, never a
+  card summary or version;
+- first-page and next-page loading/error behavior remain distinct;
+- stale offline content is memory-only and visibly stale;
+- detail always loads by publication ID;
+- impression emits only for an actually visible card and deduplicates a single
+  rendered response;
+- tapping a card records no `opened` before the detail GET resolves;
+- detail GET success at version N emits exactly one `opened` at version N even
+  when the originating card carried N-1;
+- re-render, refresh, detail reload and mutation failure do not create a second
+  `opened` in the same route presentation; a new explicit navigation does;
+- failed, unavailable, cancelled, superseded, contract-invalid or
+  Markdown-invalid detail emits zero `opened` attempts;
+- `opened` failure keeps authorized detail visible, remains non-blocking and is
+  neither automatically retried nor queued offline;
+- `opened` version conflict invalidates/reloads content without emitting a
+  second opening;
+- save/complete retry preserves the exact idempotency attempt;
+- version conflict drops the old cover, reloads every resident feed plus detail
+  and never reapplies the old mutation;
+- cover expiry/404 discards the token and performs a bounded parent refresh;
+- fixed time proves the earlier cover expiry wins and no feature calls `Date()`
+  directly;
+- retry preserves the original attempt key, payload, route and `createdAt`
+  even after the fixed clock advances;
+- sign-out/user change cancels and clears every patient-scoped value;
+- Release dependencies return `operationUnavailable` for every new capability;
+- Release ignores Prompt 14 launch arguments, cannot construct fixtures, has
+  no Prompt 14 base URL/bearer/outbound request, and contains no fixture
+  repository or Prompt 14 launch symbol.
+
+### Release And Distribution Gate Tests
+
+- current Prompt 14 Release resolves every new provider/transport as
+  `operationUnavailable` and only presents “Indisponível nesta versão”;
+- fixture factories are structurally Debug/preview/test-only and cannot link
+  into Release;
+- a future gate cannot be approved until tests prove the configured staging
+  HTTPS origin, same-origin/no-redirect bearer policy and absence of a
+  production/hard-coded fallback;
+- session-bridge tests must prove current-token injection, refresh/rotation,
+  sign-out/session-change clearing, request cancellation and suppression of
+  late patient-scoped publication;
+- a Release build passing without all three approved live dependencies remains
+  explicitly ineligible for TestFlight.
+
+### Mascot And Gamification Tests
+
+- effective Focus, Impulse, Zen and Balanced select only their presentation
+  descriptor;
+- inactive, reactivating, active and neglected use approved neutral copy;
+- evolving and unknown use the neutral unsupported descriptor;
+- no local transition is performed from time, activity, XP, weight or streak;
+- `changed_at` is displayed but never used as a behavior threshold;
+- XP, level, current/longest streak and badge strings are literal;
+- a non-null minimum progress snapshot (`xp_total=0`, `level=1`,
+  `deficit_block=0`) is loaded official data, never the empty state;
+- duplicate badge strings render as separate rows without identity collision;
+- data-null is empty, not zero;
+- current streak zero exposes supportive copy and Today navigation only;
+- no threshold, next-level percentage, XP award, mission completion, ranking or
+  cooperative data is calculated or displayed;
+- no recurring message endpoint, LLM or local dynamic catalog is called.
+
+### UI And Accessibility Tests
+
+Deterministic Debug journeys cover:
+
+- all five original tabs still open and preserve independent stacks;
+- Today recommendations loaded, empty, offline, error and unavailable;
+- Today continues to render when recommendations fail;
+- Library all/saved/category filters and opaque load-more;
+- content detail loads before its one `opened`, while an opened-event failure
+  leaves the full authorized article usable;
+- approved Markdown, parser failure without raw fallback, save, unsave,
+  completion and conflict reload;
+- cover success, nil, expiry, oversized/invalid placeholder and no external
+  navigation/request;
+- Focus/Impulse/Zen plus Balanced fallback;
+- four requested mascot presentations plus Evolving/Unknown fallback;
+- Today mascot navigation to its snapshot-reloading typed detail;
+- progress data, data-null empty response, non-null minimum official response,
+  streak-zero recovery copy and mission unavailable state;
+- no ranking/cooperative surface;
+- VoiceOver, 44-point controls, Dark Mode, Accessibility XXXL and Reduce Motion;
+- visual evidence for representative Library, detail, Today recommendation,
+  mascot personalities/states and gamification states.
+
+The full inherited unit/UI suite, Debug build and Release build remain mandatory
+at the final implementation gate.
+
+## Future Backend Work
+
+The following require separately reviewed backend contracts before native
+implementation:
+
+1. Daily mission definition, assignment, date/timezone, progress, completion,
+   reward, idempotency and history.
+2. Streak recovery/freeze/grace eligibility and an explicit mutation/receipt.
+3. Patient-safe ranking with consent, alias/privacy rules, cohort, score,
+   pagination, moderation and opt-out.
+4. Cooperative mission membership, ownership, contribution, reward and abuse
+   handling.
+5. XP event history, level names/thresholds and badge metadata if those details
+   should appear in iOS.
+6. A rendered recurring-message mobile contract if the mascot should speak
+   dynamic approved catalog copy.
+7. An approved mascot-state mobile transition command if the patient is ever
+   allowed to trigger transitions.
+8. Approved BodyFlow-owned final mascot and medal assets.
+
+All additions must be additive. Prompt 14 reserves no speculative wire shape
+for them. Authenticated HTTP transport, staging base URL and session bridge are
+not optional backlog items: they are the mandatory Release/TestFlight gate
+defined above and require explicit approval before any live-capable build.
+
+## Deliberately Out Of Scope
+
+- sixth tab or replacement of the existing tab shell;
+- admin CMS editing/review/publication UI on iOS;
+- draft, scheduled, rejected or archived content exposure;
+- search, related articles, comments, reactions, sharing or social feed;
+- local recommendation scoring or AI recommendation;
+- local XP, level, streak, badge or mission calculations;
+- mission/ranking/cooperative mock success;
+- automatic or client-written mascot transitions;
+- dynamic recurring mascot messages;
+- LLM dependency for recurring copy;
+- third-party brands, characters, visual references or unreviewed assets;
+- persistent content/cache/offline mutation queue;
+- live Supabase/BFF wiring, secrets or real service configuration;
+- migration, deploy, merge, TestFlight or production change;
+- a live `public.content_versions` audit without separate explicit
+  authorization, or any write/repair mode in that audit;
+- WhatsApp or another messaging transport in the native architecture.
+
+## Acceptance Criteria
+
+The later implementation is acceptable only when all of the following are true:
+
+- the app still has exactly five tabs;
+- Library is reachable in the Today navigation stack;
+- content and mascot destinations are typed `AppRoute` cases mapped to Today
+  and carry no mutable response snapshot;
+- all content shown in a live-capable contract path comes only from the
+  published, localized and eligible `/content` BFF responses;
+- Today recommendations use a separate `surface=today` request and never modify
+  `TodayResponse`;
+- Library and Saved use exact real surfaces and opaque server pagination;
+- detail navigation carries only publication ID and origin, never a card
+  version or response snapshot, and loads only the real detail DTO;
+- a card tap emits no `opened`; one current authorized/renderable detail emits
+  exactly one route-lifetime `opened` using the detail response version, while
+  failed/unavailable/cancelled/invalid detail emits none;
+- `opened` failure remains non-blocking and cannot cause an automatic retry,
+  offline queue or duplicate event in the same route presentation;
+- the native Markdown parser is exact-pinned `swift-markdown` 0.8.0 behind an
+  exhaustive fail-closed BodyFlow AST adapter and source-range guards;
+- the backend detects GFM pipe tables through exact-pinned AST extensions and
+  rejects the `table` node clearly, without regex, escaping or rewriting;
+- editorial source, backend-canonical mobile Markdown and native payload are
+  distinct boundaries: backend limits the complete `toMarkdown` result,
+  including terminal LF, while iOS limits only the received payload after
+  CRLF/CR → LF and never implements `toMarkdown`;
+- ordinary text containing `|`, escaped `\|` and its canonical literal form
+  remain valid, while CMS action/service writes reject a real pipe table before
+  persistence;
+- block/inline directive and Doxygen spellings are accepted when configured
+  parsers produce only allowlisted `Text`; actual Directive and Doxygen nodes
+  remain prohibited;
+- strikethrough, editorial task-list/checkbox and the corpus-defined malformed
+  strong are portable semantic rejections at backend and native boundaries;
+- cloning with `sourceVersionId`, submitting, approving and publishing each
+  revalidate the minimal stored-version snapshot and never call their mutation
+  repository for an incompatible body in the eligible lifecycle; rejecting the
+  same incompatible `in_review` row remains possible;
+- absent source/approve/publish snapshots stop locally with the existing
+  bounded not-found error; source publication/locale/state and approve/publish
+  lifecycle mismatches stop with the bounded lifecycle error and no mutation,
+  closing the `in_review` source-to-rejected clone race;
+- submit validates only the snapshot corresponding to its
+  `expectedUpdatedAt`; the locked RPC remains the concurrency authority and
+  continues to return `stale` for a concurrent draft revision before or after
+  preflight, while lifecycle races retain their lifecycle error;
+- the mobile detail service revalidates stored source before DTO/cover work,
+  returns only the validator's canonical `normalized` body when valid, never
+  rewrites the stored row, and yields no body, partial detail or cover
+  capability for invalid content;
+- native source guards never globally ban `|`, `@` or backslash; backend-emitted
+  escapes are accepted only with an allowlisted AST and complete source
+  coverage, while unowned spans, removed references, tables and unknown/future
+  nodes remain fail-closed;
+- the shared corpus validates every expectation combination and contains
+  exactly 50 fixtures: 11 `parse_normalized`, 36 `reject_source` and the three
+  named `backend_canonicalization_only` rows, which never invoke the iOS parser;
+- the iOS adapter parses exactly the approved canonical mobile subset, portable
+  source rejections and editorial-only canonicalization failures follow their
+  explicit corpus expectations, and no unexplained divergence, regex parser,
+  raw/permissive fallback or WebView remains;
+- backend hardening, iOS source-guard alignment and corpus resumption complete
+  as Tasks 6, 7 and 8 with separate ordered commits before Task 9 begins;
+- impression/completed/save mutations and the post-detail `opened` preserve
+  exact version and idempotency semantics;
+- version conflicts invalidate every resident content feed and detail, discard
+  the prior version's cover and never auto-apply an old intent to new content;
+- JSON and private cover data are not persisted across sessions;
+- cover paths match only the exact relative capability shape; external,
+  redirected, traversal, query and fragment forms are rejected before bearer
+  attachment, and Authorization never crosses the trusted BFF origin;
+- cover bodies are stream-bounded to 10 MiB, MIME and ImageIO type agree,
+  abusive dimensions fail closed, and ImageIO downsamples to displayed pixels;
+- the session cover cache enforces 32 MiB/64-image limits, expiry and
+  deterministic overflow, and session change cancels work and clears all
+  entries;
+- cover expiry never exposes a Storage path or stale capability;
+- mascot state/personality come only from the coach snapshot;
+- all five real mascot wire states decode, while only the four requested states
+  receive dedicated visual semantics;
+- Evolving/Unknown remain neutral and explicit;
+- no time/activity/health threshold changes mascot state locally;
+- Focus, Impulse and Zen vary presentation without changing data or reward;
+- Balanced remains internal and neutral;
+- no runtime LLM or local recurring-message catalog exists;
+- XP, level, streaks and earned badge strings are rendered literally from
+  `/progress`;
+- only `/progress` `data: null` is empty; every non-null snapshot, including
+  the minimum official `level=1`/`deficit_block=0` snapshot, is loaded data;
+- no next-level formula, badge metadata or XP award is invented;
+- a zero streak receives supportive, non-punitive copy and Today navigation,
+  not a fake restoration;
+- daily missions show only the approved unavailable state until a contract
+  exists;
+- ranking and cooperative missions are absent because no endpoint exists;
+- loading, empty, offline, stale, error, conflict, unavailable and retry states
+  are deterministic and accessible;
+- cover expiry and mutation attempt creation use injected `TimeProviding`, and
+  retry preserves the original attempt timestamp;
+- Dynamic Type, Dark Mode, VoiceOver, 44-point targets and Reduce Motion pass;
+- temporary visuals, content fixtures and fake streams are first-party,
+  deterministic and Debug/preview/test-only;
+- Release contains no Prompt 14 fixture success, base URL, bearer or outbound
+  request and remains fail-closed;
+- authenticated HTTP transport, an approved staging base URL and the session
+  bridge must pass a separately approved security/test gate before TestFlight;
+- a separately authorized read-only audit must report zero incompatible
+  `current` and `scheduled` visibility candidates before TestFlight; it uses
+  the real `version DESC, publish_at DESC` winner at the frozen timestamp and
+  at each future activation, without blocking rows that can provably never
+  become visible;
+- audit output is limited to separated counts and technical
+  version/publication identifiers, version, locale, state and
+  `candidate_class`, never Markdown, activation time, `publish_at` or PII;
+- an affected current or scheduled version is replaced only by a new version
+  through the existing editorial workflow; historical versions are never
+  mutated or used as an incompatible clone source;
+- a passing Release build alone never authorizes TestFlight;
+- full tests, Debug/Release builds, simulator and visual evidence pass before
+  any publication action;
+- no live service, secret, migration, deploy, merge, TestFlight, production or
+  WhatsApp architecture is introduced.

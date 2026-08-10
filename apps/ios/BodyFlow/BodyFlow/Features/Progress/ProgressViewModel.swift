@@ -63,27 +63,18 @@ final class ProgressViewModel {
             let response = try await provider.progress()
             try Task.checkCancellation()
             guard canPublish(identity) else { return }
-            state = isEmpty(response.data) ? .empty : .loaded(response.data)
+            switch response.data {
+            case let .some(snapshot):
+                state = .loaded(snapshot)
+            case .none:
+                state = .empty
+            }
         } catch is CancellationError {
             restoreCancelledLoad(identity)
         } catch {
             guard !Task.isCancelled, canPublish(identity) else { return }
             publish(error: error, previousValue: visibleSnapshot)
         }
-    }
-
-    private func isEmpty(_ snapshot: ProgressSnapshot) -> Bool {
-        snapshot.xpTotal == 0
-            && snapshot.level == 0
-            && snapshot.currentStreak == 0
-            && snapshot.longestStreak == 0
-            && snapshot.blocksCompleted == 0
-            && snapshot.deficitBlock == nil
-            && snapshot.currentWeight == nil
-            && snapshot.currentBodyFatPercent == nil
-            && snapshot.badgesEarned.isEmpty
-            && snapshot.lastActiveDate == nil
-            && snapshot.nextReevaluation == nil
     }
 
     private func restoreCancelledLoad(_ identity: LoadIdentity) {

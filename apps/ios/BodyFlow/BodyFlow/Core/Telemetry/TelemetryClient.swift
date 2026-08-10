@@ -39,6 +39,7 @@ enum TelemetryErrorCategory: String, CaseIterable, Sendable {
 
 enum TelemetryFeatureScreen: String, CaseIterable, Sendable {
     case today
+    case todayRecommendations = "today_recommendations"
     case register
     case mealCapture = "meal_capture"
     case mealProposal = "meal_proposal"
@@ -55,6 +56,14 @@ enum TelemetryFeatureScreen: String, CaseIterable, Sendable {
     case history
     case historyMealLog = "history_meal_log"
     case historyWorkout = "history_workout"
+    case library
+    case contentDetail = "content_detail"
+    case mascot
+}
+
+enum TelemetryMascotStateClassification: String, CaseIterable, Sendable {
+    case evolving
+    case unknown
 }
 
 enum TelemetryRegistrationKind: String, CaseIterable, Sendable {
@@ -109,6 +118,13 @@ enum TelemetryValue: Equatable, Sendable {
 }
 
 struct TelemetryEvent: Equatable, Sendable {
+    private static let contextExclusivePrompt14Screens: Set<String> = [
+        TelemetryFeatureScreen.library.rawValue,
+        TelemetryFeatureScreen.contentDetail.rawValue,
+        TelemetryFeatureScreen.todayRecommendations.rawValue,
+        TelemetryFeatureScreen.mascot.rawValue,
+    ]
+
     private static let allowedMetadataValues: [String: Set<String>] = [
         "screen": Set(TelemetryAuthScreen.allCases.map(\.rawValue))
             .union(TelemetryFeatureScreen.allCases.map(\.rawValue)),
@@ -122,6 +138,9 @@ struct TelemetryEvent: Equatable, Sendable {
         "capture_source": Set(
             TelemetryMealCaptureSource.allCases.map(\.rawValue)
         ),
+        "mascot_state_classification": Set(
+            TelemetryMascotStateClassification.allCases.map(\.rawValue)
+        ),
     ]
 
     let name: TelemetryEventName
@@ -132,7 +151,9 @@ struct TelemetryEvent: Equatable, Sendable {
         metadata: [String: any Sendable] = [:]
     ) {
         self.name = name
-        self.metadata = metadata.reduce(into: [:]) { filtered, entry in
+        let allowlisted = metadata.reduce(into: [String: TelemetryValue]()) {
+            filtered,
+            entry in
             if entry.key == "calculation_version",
                let value = entry.value as? String,
                Self.isValidCalculationVersion(value) {
@@ -145,6 +166,46 @@ struct TelemetryEvent: Equatable, Sendable {
                 filtered[entry.key] = .string(value)
             }
         }
+        self.metadata = Self.contextualMetadata(
+            for: name,
+            from: allowlisted
+        )
+    }
+
+    private static func contextualMetadata(
+        for name: TelemetryEventName,
+        from metadata: [String: TelemetryValue]
+    ) -> [String: TelemetryValue] {
+        var contextual = metadata
+        let screen = contextual["screen"].flatMap { value -> String? in
+            guard case let .string(rawValue) = value else { return nil }
+            return rawValue
+        }
+
+        guard name == .featureScreenViewed else {
+            contextual.removeValue(forKey: "mascot_state_classification")
+            if let screen,
+               contextExclusivePrompt14Screens.contains(screen) {
+                contextual.removeValue(forKey: "screen")
+            }
+            return contextual
+        }
+
+        guard let screen else {
+            contextual.removeValue(forKey: "mascot_state_classification")
+            return contextual
+        }
+
+        guard contextExclusivePrompt14Screens.contains(screen) else {
+            contextual.removeValue(forKey: "mascot_state_classification")
+            return contextual
+        }
+
+        let allowedKeys: Set<String> = screen
+            == TelemetryFeatureScreen.mascot.rawValue
+            ? ["screen", "outcome", "mascot_state_classification"]
+            : ["screen", "outcome"]
+        return contextual.filter { allowedKeys.contains($0.key) }
     }
 
     private static func isValidCalculationVersion(_ value: String) -> Bool {
@@ -336,9 +397,23 @@ extension BodyFlowCapabilityError {
             .offline
         case .serviceUnavailable:
             .serviceUnavailable
-        case .invalidInput, .invalidIdempotencyKey:
+        case .invalidInput,
+             .invalidIdempotencyKey,
+             .invalidContentContract,
+             .invalidContentCursor,
+             .unsupportedMarkdown,
+             .unsupportedCoachContract,
+             .invalidContentCover,
+             .contentCoverTooLarge,
+             .coachLocaleUnsupported:
             .invalidInput
-        case .idempotencyConflict:
+        case .contentNotFound,
+             .contentCoverNotFound,
+             .subscriptionRequired:
+            .operationUnavailable
+        case .idempotencyConflict,
+             .contentVersionChanged,
+             .idempotencyRequestInProgress:
             .idempotencyConflict
         case .registrationNotPending:
             .registrationNotPending
@@ -348,6 +423,19 @@ extension BodyFlowCapabilityError {
             .routineTransitionInvalid
         case .routineSnoozeInvalid:
             .routineSnoozeInvalid
+        }
+    }
+}
+
+extension MascotWireState {
+    var telemetryClassification: TelemetryMascotStateClassification? {
+        switch self {
+        case .evolving:
+            .evolving
+        case .unknown:
+            .unknown
+        case .inactive, .reactivating, .active, .neglected:
+            nil
         }
     }
 }

@@ -16,6 +16,9 @@ struct AppDependencies: Sendable {
     let hydration: any HydrationRecording
     let weight: any WeightRecording
     let routine: any RoutineProviding
+    let publishedContentSessions: any PublishedContentSessionCreating
+    let coachExperienceSessions: any CoachExperienceSessionCreating
+    let contentCoverSessions: any ContentCoverSessionCreating
     let timeProvider: any TimeProviding
     let idempotencyKeyProvider: any IdempotencyKeyProviding
     let patientTimeZone: PatientTimeZoneContext
@@ -44,8 +47,16 @@ struct AppDependencies: Sendable {
             )
         }
         let stateStore = DemoStateStore(secureStore: secureStore)
+        var coachPersona: any CoachPersonaRepository =
+            DemoCoachPersonaRepository(stateStore: stateStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
         let unavailable = UnavailableBodyFlowCapabilities()
+        var publishedContentSessions: any PublishedContentSessionCreating =
+            UnavailablePublishedContentSessionFactory()
+        var coachExperienceSessions: any CoachExperienceSessionCreating =
+            UnavailableCoachExperienceSessionFactory()
+        var contentCoverSessions: any ContentCoverSessionCreating =
+            UnavailableContentCoverSessionFactory()
         #if DEBUG
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
         let apiClient: any APIClient = switch configuration.mode {
@@ -94,6 +105,66 @@ struct AppDependencies: Sendable {
             hydration = repository
             weight = repository
             routine = repository
+        } else if configuration.mode == .demo,
+                  let scenario = configuration.prompt14ScenarioSelection {
+            let repository = DemoBodyFlowRepository(scenario: .loaded)
+            let prompt14TimeProvider = FixedTimeProvider(
+                value: DemoPrompt14Fixtures.fixedNow
+            )
+            timeProvider = prompt14TimeProvider
+            idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
+                prefix: "prompt14-key"
+            )
+            patientTimeZone = PatientTimeZoneContext(
+                documentedIANAIdentifier: nil
+            )
+            today = repository
+            history = repository
+            plan = repository
+            progress = switch scenario {
+            case .progressEmpty:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.emptyProgress
+                )
+            case .progressMinimum:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.minimumProgress
+                )
+            case .streakZero:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.streakZeroProgress
+                )
+            case .progressCompleteDuplicateBadges:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.duplicateBadgeCompleteProgress
+                )
+            default:
+                repository
+            }
+            mealDetection = repository
+            registration = repository
+            hydration = repository
+            weight = repository
+            routine = repository
+            publishedContentSessions = DemoPrompt14PublishedContentSessionFactory(
+                selection: scenario
+            )
+            if scenario == .personaStateful {
+                let personaState = DemoPrompt14PersonaSessionState()
+                coachPersona = personaState
+                coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
+                    selection: scenario,
+                    personaState: personaState
+                )
+            } else {
+                coachExperienceSessions = DemoPrompt14CoachExperienceSessionFactory(
+                    selection: scenario
+                )
+            }
+            contentCoverSessions = DemoPrompt14ContentCoverSessionFactory(
+                selection: scenario,
+                timeProvider: prompt14TimeProvider
+            )
         } else {
             timeProvider = SystemTimeProvider()
             idempotencyKeyProvider = UnavailableIdempotencyKeyProvider()
@@ -139,7 +210,7 @@ struct AppDependencies: Sendable {
                 buildFlavor: buildFlavor,
                 preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues
             ),
-            coachPersona: DemoCoachPersonaRepository(stateStore: stateStore),
+            coachPersona: coachPersona,
             secureStore: secureStore,
             telemetry: InMemoryTelemetryClient(),
             today: today,
@@ -151,6 +222,9 @@ struct AppDependencies: Sendable {
             hydration: hydration,
             weight: weight,
             routine: routine,
+            publishedContentSessions: publishedContentSessions,
+            coachExperienceSessions: coachExperienceSessions,
+            contentCoverSessions: contentCoverSessions,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
             patientTimeZone: patientTimeZone

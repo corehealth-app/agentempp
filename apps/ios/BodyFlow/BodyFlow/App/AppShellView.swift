@@ -10,18 +10,23 @@ struct AppShellView: View {
     @State private var progressViewModel: ProgressViewModel
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
+    @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
+    @State private var todayMascotViewModel: MascotExperienceViewModel
+    @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
     let dependencies: AppDependencies
+    let sessionOwner: Prompt14SessionOwner
 
     init(
         userID: String,
-        dependencies: AppDependencies
+        dependencies: AppDependencies,
+        sessionOwner: Prompt14SessionOwner
     ) {
         self.userID = userID
         self.dependencies = dependencies
-        _invalidationCenter = State(
-            initialValue: FeatureInvalidationCenter()
-        )
+        self.sessionOwner = sessionOwner
+        let invalidationCenter = FeatureInvalidationCenter()
+        _invalidationCenter = State(initialValue: invalidationCenter)
         _todayViewModel = State(
             initialValue: TodayViewModel(provider: dependencies.today)
         )
@@ -29,12 +34,34 @@ struct AppShellView: View {
             initialValue: PlanViewModel(provider: dependencies.plan)
         )
         _progressViewModel = State(
-            initialValue: ProgressViewModel(provider: dependencies.progress)
+            initialValue: ProgressViewModel(provider: sessionOwner.progress)
         )
         let historyModel = HistoryViewModel(provider: dependencies.history)
         _historyViewModel = State(initialValue: historyModel)
         _historyCoordinator = State(
             initialValue: HistoryFeatureCoordinator(model: historyModel)
+        )
+        _todayRecommendationsViewModel = State(
+            initialValue: TodayRecommendationsViewModel(
+                listing: sessionOwner.contentListing,
+                stateRecorder: sessionOwner.contentState,
+                keyProvider: dependencies.idempotencyKeyProvider,
+                timeProvider: dependencies.timeProvider,
+                invalidationCenter: invalidationCenter,
+                coverLoader: sessionOwner.coverLoader
+            )
+        )
+        _todayMascotViewModel = State(
+            initialValue: MascotExperienceViewModel(
+                provider: sessionOwner.coachExperience
+            )
+        )
+        _contentCoverEnvironment = State(
+            initialValue: ContentCoverEnvironment.make(
+                loader: sessionOwner.coverLoader,
+                session: ContentCoverSessionToken(),
+                invalidationCenter: invalidationCenter
+            )
         )
     }
 
@@ -48,7 +75,6 @@ struct AppShellView: View {
             }
         }
         .tint(BodyFlowColor.accent)
-        .bodyFlowBrandIdentity()
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -65,6 +91,10 @@ struct AppShellView: View {
             .frame(width: 0, height: 0)
         }
         .environment(router)
+        .environment(
+            \.contentCoverEnvironment,
+            contentCoverEnvironment
+        )
         .sheet(item: presentedSheetBinding) { sheet in
             RegistrationSheet(
                 sheet: sheet,
@@ -72,6 +102,9 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
                 .environment(router)
+        }
+        .onDisappear {
+            sessionOwner.invalidateSynchronously()
         }
     }
 
@@ -90,6 +123,8 @@ struct AppShellView: View {
                     destination(for: route)
                 }
         }
+        .bodyFlowBrandIdentity()
+        .accessibilityHidden(selectedTab != tab)
     }
 
     @ViewBuilder
@@ -98,6 +133,8 @@ struct AppShellView: View {
         case .today:
             TodayRootView(
                 model: todayViewModel,
+                recommendations: todayRecommendationsViewModel,
+                mascot: todayMascotViewModel,
                 invalidationCenter: invalidationCenter
             )
         case .register:
@@ -113,7 +150,11 @@ struct AppShellView: View {
                 selectedTab: $selectedTab
             )
         case .profile:
-            ProfileRootView(userID: userID)
+            ProfileRootView(
+                userID: userID,
+                coachExperienceProvider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
         }
     }
 
@@ -161,14 +202,45 @@ struct AppShellView: View {
             PlanDetailView(provider: dependencies.plan)
         case .progress:
             Block7700DetailView(today: dependencies.today)
+        case let .content(contentRoute):
+            switch contentRoute {
+            case let .library(initialSelection):
+                LibraryRootView(
+                    initialSelection: initialSelection,
+                    sessionOwner: sessionOwner,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case let .detail(publicationID, origin):
+                PublishedContentDetailView(
+                    publicationID: publicationID,
+                    origin: origin,
+                    detailProvider: sessionOwner.contentDetail,
+                    stateRecorder: sessionOwner.contentState,
+                    keyProvider: dependencies.idempotencyKeyProvider,
+                    timeProvider: dependencies.timeProvider,
+                    invalidationCenter: invalidationCenter,
+                    coverLoader: sessionOwner.coverLoader
+                )
+            }
+        case .mascot(.detail):
+            MascotDetailView(
+                provider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
         }
     }
 }
 
 #Preview("App Shell · Loaded") {
+    let dependencies = AppDependencies.scaffold()
     AppShellView(
         userID: "fixture-user",
-        dependencies: AppDependencies.scaffold()
+        dependencies: dependencies,
+        sessionOwner: Prompt14SessionOwner(
+            userID: "fixture-user",
+            dependencies: dependencies
+        )
     )
-        .installAppDependencies(AppDependencies.scaffold())
+        .installAppDependencies(dependencies)
 }

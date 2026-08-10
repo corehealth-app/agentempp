@@ -198,13 +198,55 @@ struct TodayPresentation: Equatable, Sendable {
 @MainActor
 struct TodayRootView: View {
     let model: TodayViewModel
+    let recommendations: TodayRecommendationsViewModel?
+    let mascot: MascotExperienceViewModel?
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        model: TodayViewModel,
+        recommendations: TodayRecommendationsViewModel? = nil,
+        mascot: MascotExperienceViewModel? = nil,
+        invalidationCenter: FeatureInvalidationCenter
+    ) {
+        self.model = model
+        self.recommendations = recommendations
+        self.mascot = mascot
+        self.invalidationCenter = invalidationCenter
+    }
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
             stateContent
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            let navigation = TodayRootNavigationPresentation(state: model.state)
+            HStack {
+                Spacer(minLength: 0)
+                NavigationLink(value: navigation.toolbarRoutes[0]) {
+                    HStack(spacing: BodyFlowSpacing.xs) {
+                        Image(systemName: "books.vertical")
+                        Text("Biblioteca")
+                    }
+                    .font(BodyFlowTypography.headline)
+                    .foregroundStyle(BodyFlowColor.accent)
+                    .padding(.horizontal, BodyFlowSpacing.sm)
+                    .padding(.vertical, BodyFlowSpacing.sm)
+                    .background(
+                        BodyFlowColor.surface,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .accessibilityRepresentation {
+                        EmptyView()
+                    }
+                }
+                .accessibilityLabel("Biblioteca")
+                .accessibilityIdentifier("today.library")
+            }
+            .padding(.horizontal, BodyFlowSpacing.md)
+            .padding(.vertical, BodyFlowSpacing.xs)
+            .background(BodyFlowColor.background)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.today.rootAccessibilityIdentifier)
@@ -216,7 +258,19 @@ struct TodayRootView: View {
             let revision = invalidationCenter.revision(for: .today)
             await model.load(revision: revision)
         }
+        .task(id: invalidationCenter.revision(for: .contentCatalog)) {
+            guard let recommendations else { return }
+            let revision = invalidationCenter.revision(for: .contentCatalog)
+            await recommendations.load(catalogRevision: revision)
+        }
+        .task(id: invalidationCenter.revision(for: .coachExperience)) {
+            guard let mascot else { return }
+            await mascot.load(
+                revision: invalidationCenter.revision(for: .coachExperience)
+            )
+        }
         .toolbar {
+            let navigation = TodayRootNavigationPresentation(state: model.state)
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
@@ -230,7 +284,7 @@ struct TodayRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("today.refresh")
                 }
-            } else {
+            } else if navigation.toolbarRoutes.contains(.mainHistory) {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: AppRoute.mainHistory) {
                         Label("Histórico", systemImage: "clock.arrow.circlepath")
@@ -279,6 +333,9 @@ struct TodayRootView: View {
                 }
 
                 TodayHeaderSection(descriptor: presentation.header)
+                if let mascot {
+                    MascotCardView(model: mascot)
+                }
                 TodayAttentionSection(descriptor: presentation.attention)
                 TodayEnergySection(
                     descriptor: presentation.energy,
@@ -294,6 +351,12 @@ struct TodayRootView: View {
                     collections: presentation.routineCollections
                 )
                 TodayBlockCard(descriptor: presentation.block)
+                if let recommendations {
+                    TodayRecommendationsSection(
+                        model: recommendations,
+                        catalogRevision: invalidationCenter.revision(for: .contentCatalog)
+                    )
+                }
 
                 NavigationLink(value: AppRoute.mainHistory) {
                     BodyFlowCard {
@@ -325,6 +388,9 @@ struct TodayRootView: View {
         }
         .refreshable {
             await model.retry()
+            if let mascot {
+                await mascot.retry()
+            }
         }
     }
 
@@ -332,5 +398,14 @@ struct TodayRootView: View {
         Task {
             await model.retry()
         }
+    }
+}
+
+struct TodayRootNavigationPresentation: Equatable, Sendable {
+    let toolbarRoutes: [AppRoute]
+
+    init(state: FeatureReadState<TodaySnapshot>) {
+        toolbarRoutes = [.content(.library(initialSelection: .all))]
+            + (state.presentation.value == nil ? [.mainHistory] : [])
     }
 }

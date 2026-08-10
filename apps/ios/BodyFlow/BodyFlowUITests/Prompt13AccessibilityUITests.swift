@@ -138,26 +138,49 @@ final class Prompt13AccessibilityUITests: XCTestCase {
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 3))
         let navigationBar = app.navigationBars["Hoje"]
+        let library = element("today.library", in: app)
         let tabBar = app.tabBars.element(boundBy: 0)
+        let scrollView = app.scrollViews.element(boundBy: 0)
         XCTAssertTrue(navigationBar.waitForExistence(timeout: 3))
+        XCTAssertTrue(library.waitForExistence(timeout: 3))
         XCTAssertTrue(tabBar.waitForExistence(timeout: 3))
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 3))
         let remaining = element("today.energy.remaining-food", in: app)
-        revealFully(remaining, in: app, within: window)
+        let remainingViewport = revealFully(
+            remaining,
+            in: scrollView,
+            within: window,
+            below: [navigationBar, library],
+            above: tabBar
+        )
         XCTAssertTrue(remaining.isHittable)
         XCTAssertFalse(remaining.label.isEmpty)
-        XCTAssertTrue(window.frame.contains(remaining.frame))
+        XCTAssertTrue(remainingViewport.contains(remaining.frame))
 
         let history = element("today.history", in: app)
-        revealFully(history, in: app, within: window, attempts: 16)
+        let historyViewport = revealFully(
+            history,
+            in: scrollView,
+            within: window,
+            below: [navigationBar, library],
+            above: tabBar
+        )
         XCTAssertTrue(history.isHittable)
-        XCTAssertTrue(window.frame.contains(history.frame))
+        XCTAssertTrue(historyViewport.contains(history.frame))
         support.assertMinimumTapTarget(history)
 
         let nextAction = element("today.next-action", in: app)
-        revealFully(nextAction, in: app, within: window)
+        let nextActionViewport = revealFully(
+            nextAction,
+            in: scrollView,
+            within: window,
+            below: [navigationBar, library],
+            above: tabBar
+        )
         XCTAssertTrue(nextAction.isHittable)
         XCTAssertFalse(nextAction.label.isEmpty)
         support.assertMinimumTapTarget(nextAction)
+        XCTAssertTrue(nextActionViewport.contains(nextAction.frame))
         XCTAssertGreaterThanOrEqual(
             nextAction.frame.minY,
             navigationBar.frame.maxY,
@@ -262,12 +285,208 @@ final class Prompt13AccessibilityUITests: XCTestCase {
     @MainActor
     private func revealFully(
         _ element: XCUIElement,
-        in app: XCUIApplication,
+        in scrollView: XCUIElement,
         within window: XCUIElement,
-        attempts: Int = 8
-    ) {
-        for _ in 0..<attempts where !window.frame.contains(element.frame) {
-            app.swipeUp()
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement
+    ) -> CGRect {
+        let maximumGestureCount = 8
+        let identifier = element.identifier
+
+        for gestureIndex in 0..<maximumGestureCount {
+            let viewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard element.exists else {
+                XCTFail("\(identifier) disappeared before it could be revealed")
+                return viewport
+            }
+
+            let frame = element.frame
+            guard frame.width <= viewport.width, frame.height <= viewport.height else {
+                XCTFail(
+                    "\(identifier) frame \(frame) is larger than viewport \(viewport)"
+                )
+                return viewport
+            }
+
+            if element.isHittable, viewport.contains(frame) {
+                return viewport
+            }
+
+            let containmentDeficit = verticalContainmentDeficit(
+                of: frame,
+                inside: viewport
+            )
+
+            let safeInset = min(
+                max(0, viewport.height - frame.height) * 0.25,
+                viewport.height * 0.08
+            )
+            let requiredDistance: CGFloat
+            let movesContentUp: Bool
+            if frame.maxY > viewport.maxY {
+                requiredDistance = frame.maxY - viewport.maxY + safeInset
+                movesContentUp = true
+            } else if frame.minY < viewport.minY {
+                requiredDistance = viewport.minY - frame.minY + safeInset
+                movesContentUp = false
+            } else {
+                XCTFail(
+                    "\(identifier) is inside viewport \(viewport) but is not hittable"
+                )
+                return viewport
+            }
+
+            let gestureBounds = viewport.intersection(scrollView.frame)
+            guard !gestureBounds.isNull, gestureBounds.height > 0 else {
+                XCTFail(
+                    "ScrollView frame \(scrollView.frame) does not intersect viewport \(viewport)"
+                )
+                return viewport
+            }
+
+            let gestureDistance = min(
+                requiredDistance,
+                gestureBounds.height * 0.6
+            )
+            let startY = gestureBounds.midY
+                + (movesContentUp ? gestureDistance / 2 : -gestureDistance / 2)
+            let endY = gestureBounds.midY
+                + (movesContentUp ? -gestureDistance / 2 : gestureDistance / 2)
+            let start = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: startY
+            )
+            let end = scrollCoordinate(
+                in: scrollView,
+                x: gestureBounds.midX,
+                y: endY
+            )
+            let velocity = XCUIGestureVelocity(
+                rawValue: min(
+                    max(requiredDistance, 50),
+                    2_500
+                )
+            )
+
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: end,
+                withVelocity: velocity,
+                thenHoldForDuration: 0
+            )
+
+            let updatedViewport = usableViewport(
+                within: window,
+                below: topObstructions,
+                above: bottomObstruction
+            )
+            guard element.exists else {
+                XCTFail("\(identifier) disappeared after gesture \(gestureIndex + 1)")
+                return updatedViewport
+            }
+
+            let updatedFrame = element.frame
+            guard updatedFrame.width <= updatedViewport.width,
+                  updatedFrame.height <= updatedViewport.height else {
+                XCTFail(
+                    "\(identifier) frame \(updatedFrame) is larger than updated "
+                        + "viewport \(updatedViewport)"
+                )
+                return updatedViewport
+            }
+            if element.isHittable, updatedViewport.contains(updatedFrame) {
+                return updatedViewport
+            }
+
+            let updatedContainmentDeficit = verticalContainmentDeficit(
+                of: updatedFrame,
+                inside: updatedViewport
+            )
+            let movement = updatedFrame.minY - frame.minY
+            let progressThreshold = max(0.5, viewport.height * 0.001)
+            guard containmentDeficit - updatedContainmentDeficit > progressThreshold else {
+                XCTFail(
+                    "Gesture \(gestureIndex + 1) did not reduce the containment "
+                        + "deficit for \(identifier): before \(containmentDeficit) "
+                        + "in \(viewport), after \(updatedContainmentDeficit) "
+                        + "in \(updatedViewport); frames \(frame) -> \(updatedFrame)"
+                )
+                return updatedViewport
+            }
+            guard movesContentUp ? movement < 0 : movement > 0 else {
+                XCTFail(
+                    "Gesture \(gestureIndex + 1) moved \(identifier) in the wrong "
+                        + "direction: before \(frame), after \(updatedFrame)"
+                )
+                return updatedViewport
+            }
         }
+
+        let finalViewport = usableViewport(
+            within: window,
+            below: topObstructions,
+            above: bottomObstruction
+        )
+        XCTFail(
+            "Unable to reveal \(identifier) inside \(finalViewport) after "
+                + "\(maximumGestureCount) controlled gestures; final frame \(element.frame)"
+        )
+        return finalViewport
+    }
+
+    @MainActor
+    private func usableViewport(
+        within window: XCUIElement,
+        below topObstructions: [XCUIElement],
+        above bottomObstruction: XCUIElement
+    ) -> CGRect {
+        let windowFrame = window.frame
+        let top = topObstructions.reduce(windowFrame.minY) { currentTop, obstruction in
+            obstruction.exists ? max(currentTop, obstruction.frame.maxY) : currentTop
+        }
+        let bottom = bottomObstruction.exists
+            ? min(windowFrame.maxY, bottomObstruction.frame.minY)
+            : windowFrame.maxY
+
+        guard bottom > top else {
+            XCTFail(
+                "Invalid usable viewport between top \(top) and bottom \(bottom)"
+            )
+            return .null
+        }
+        return CGRect(
+            x: windowFrame.minX,
+            y: top,
+            width: windowFrame.width,
+            height: bottom - top
+        )
+    }
+
+    private func verticalContainmentDeficit(
+        of frame: CGRect,
+        inside viewport: CGRect
+    ) -> CGFloat {
+        max(0, viewport.minY - frame.minY)
+            + max(0, frame.maxY - viewport.maxY)
+    }
+
+    @MainActor
+    private func scrollCoordinate(
+        in scrollView: XCUIElement,
+        x: CGFloat,
+        y: CGFloat
+    ) -> XCUICoordinate {
+        let frame = scrollView.frame
+        return scrollView.coordinate(
+            withNormalizedOffset: CGVector(
+                dx: (x - frame.minX) / frame.width,
+                dy: (y - frame.minY) / frame.height
+            )
+        )
     }
 }

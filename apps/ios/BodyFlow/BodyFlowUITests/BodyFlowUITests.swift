@@ -391,7 +391,10 @@ final class BodyFlowUITests: XCTestCase {
 
     @MainActor
     func testProfilePersonaChangeIsReflected() {
-        let app = launchApp(arguments: ["--ui-testing"])
+        let app = launchApp(arguments: [
+            "--ui-testing",
+            "--ui-testing-prompt14-persona-stateful",
+        ])
         XCTAssertTrue(
             element("screen.hoje", in: app)
                 .waitForExistence(timeout: 5)
@@ -545,30 +548,24 @@ final class BodyFlowUITests: XCTestCase {
     private func enterSecure(
         _ text: String,
         in field: XCUIElement,
-        app: XCUIApplication
+        app _: XCUIApplication
     ) {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap()
         XCTAssertTrue(waitForKeyboardFocus(field))
 
         // iOS 26.5 retains only the final character when XCUI bulk-types
-        // into the first new-password field. The edit menu preserves the
-        // complete synthetic credential while exercising the real field.
+        // into the first new-password field. Dismiss its system strong-password
+        // sheet before using a keyboard paste on the real focused field.
+        if field.identifier == "auth.password" {
+            field.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+            XCTAssertTrue(waitForKeyboardFocus(field))
+        }
+
         UIPasteboard.general.string = text
         defer { UIPasteboard.general.string = nil }
-        field.press(forDuration: 1)
-
-        let paste = app.descendants(matching: .any)
-            .matching(
-                NSPredicate(
-                    format: "label == %@ OR label == %@",
-                    "Colar",
-                    "Paste"
-                )
-            )
-            .firstMatch
-        XCTAssertTrue(paste.waitForExistence(timeout: 3))
-        paste.tap()
+        field.typeKey("v", modifierFlags: .command)
+        XCTAssertTrue(waitForSecureEntry(field, characterCount: text.count))
     }
 
     @MainActor
@@ -578,6 +575,27 @@ final class BodyFlowUITests: XCTestCase {
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForSecureEntry(
+        _ field: XCUIElement,
+        characterCount: Int,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                guard
+                    let element = object as? XCUIElement,
+                    let value = element.value as? String
+                else {
+                    return false
+                }
+                return value.count == characterCount
+            },
             object: field
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed

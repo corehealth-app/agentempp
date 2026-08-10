@@ -9,4 +9,16 @@ enum BodyFlowCapabilityError: Error, Equatable, Sendable {
     case routineTransitionInvalid
     case routineSnoozeInvalid
     case invalidIdempotencyKey
+    case invalidContentContract
+    case invalidContentCursor
+    case unsupportedMarkdown
+    case unsupportedCoachContract
+    case contentNotFound
+    case contentCoverNotFound
+    case invalidContentCover
+    case contentCoverTooLarge
+    case subscriptionRequired
+    case contentVersionChanged
+    case idempotencyRequestInProgress
+    case coachLocaleUnsupported
 }

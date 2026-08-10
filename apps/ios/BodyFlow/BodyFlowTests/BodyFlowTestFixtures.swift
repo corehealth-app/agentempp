@@ -27,6 +27,14 @@ enum BodyFlowTestFixtures {
         )
     )
 
+    static let emptyProgressResponse = ProgressResponse(
+        data: nil,
+        meta: MobileResponseMetadata(
+            apiVersion: "v1",
+            requestID: "progress-empty-0001"
+        )
+    )
+
     static let todayBlock = TodayBlock7700(
         enabled: true,
         availability: "available",

@@ -5,6 +5,7 @@ import {
   contentCoverInputSchema,
   contentDraftInputSchema,
   contentLocaleSchema,
+  validateContentMarkdown,
 } from '@mpp/core'
 import { z } from 'zod'
 
@@ -213,10 +214,24 @@ export interface InternalContentAsset {
   status: 'pending_upload' | 'uploaded' | 'deleted'
 }
 
+export interface ContentVersionValidationSnapshot {
+  versionId: string
+  publicationId: string
+  locale: 'pt-BR' | 'en-US'
+  state: 'draft' | 'in_review' | 'approved' | 'rejected'
+  bodyMarkdown: string | null
+  updatedAt: string
+  publishAt: string | null
+}
+
 export interface ContentAdminRepository {
   list(filters: ContentAdminFilters): Promise<ContentPublicationSummary[]>
   listWithMetadata?(filters: ContentAdminFilters): Promise<ContentPublicationListResult>
   get(publicationId: string): Promise<ContentPublicationDetail | null>
+  getVersionValidationSnapshot(
+    versionId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<ContentVersionValidationSnapshot | null>
   createPublication(input: { actorId: string; slug: string }): Promise<unknown>
   createDraft(input: {
     actorId: string
@@ -292,6 +307,15 @@ function parseInput<T>(schema: z.ZodType<T>, value: unknown, operation: string):
   const parsed = schema.safeParse(value)
   if (!parsed.success) throw validationFailure(operation)
   return parsed.data
+}
+
+function validateStoredMarkdown(bodyMarkdown: string | null, operation: string): void {
+  if (bodyMarkdown === null) throw validationFailure(operation)
+  try {
+    validateContentMarkdown(bodyMarkdown)
+  } catch {
+    throw validationFailure(operation)
+  }
 }
 
 function extensionFor(mimeType: 'image/jpeg' | 'image/png' | 'image/webp'): string {
@@ -370,7 +394,20 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
     },
 
     async createDraft(input: unknown) {
-      return repository.createDraft(parseInput(createDraftSchema, input, 'createDraft'))
+      const parsed = parseInput(createDraftSchema, input, 'createDraft')
+      if (!parsed.sourceVersionId) return repository.createDraft(parsed)
+
+      const source = await repository.getVersionValidationSnapshot(parsed.sourceVersionId)
+      if (!source) throw new ContentAdminError('not_found', 'createDraft')
+      if (
+        source.publicationId !== parsed.publicationId ||
+        source.locale !== parsed.locale ||
+        (source.state !== 'approved' && source.state !== 'rejected')
+      ) {
+        throw new ContentAdminError('lifecycle', 'createDraft')
+      }
+      validateStoredMarkdown(source.bodyMarkdown, 'createDraft')
+      return repository.createDraft(parsed)
     },
 
     async saveDraft(input: unknown) {
@@ -378,11 +415,23 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
     },
 
     async submit(input: unknown) {
-      return repository.submit(parseInput(preconditionSchema, input, 'submit'))
+      const parsed = parseInput(preconditionSchema, input, 'submit')
+      const snapshot = await repository.getVersionValidationSnapshot(
+        parsed.versionId,
+        parsed.expectedUpdatedAt,
+      )
+      if (snapshot?.state === 'draft') validateStoredMarkdown(snapshot.bodyMarkdown, 'submit')
+      return repository.submit(parsed)
     },
 
     async review(input: unknown) {
       const parsed = parseInput(reviewSchema, input, 'review')
+      if (parsed.decision === 'approve') {
+        const snapshot = await repository.getVersionValidationSnapshot(parsed.versionId)
+        if (!snapshot) throw new ContentAdminError('not_found', 'review')
+        if (snapshot.state !== 'in_review') throw new ContentAdminError('lifecycle', 'review')
+        validateStoredMarkdown(snapshot.bodyMarkdown, 'review')
+      }
       return repository.review({
         ...parsed,
         rejectionReason: parsed.rejectionReason ?? null,
@@ -390,7 +439,14 @@ export function createContentAdminService(dependencies: ContentAdminServiceDepen
     },
 
     async publish(input: unknown) {
-      return repository.publish(parseInput(publishSchema, input, 'publish'))
+      const parsed = parseInput(publishSchema, input, 'publish')
+      const snapshot = await repository.getVersionValidationSnapshot(parsed.versionId)
+      if (!snapshot) throw new ContentAdminError('not_found', 'publish')
+      if (snapshot.state !== 'approved' || snapshot.publishAt !== null) {
+        throw new ContentAdminError('lifecycle', 'publish')
+      }
+      validateStoredMarkdown(snapshot.bodyMarkdown, 'publish')
+      return repository.publish(parsed)
     },
 
     async archive(input: unknown) {

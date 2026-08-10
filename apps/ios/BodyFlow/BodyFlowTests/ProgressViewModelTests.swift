@@ -17,22 +17,39 @@ struct ProgressViewModelTests {
         #expect(model.state == .loaded(BodyFlowTestFixtures.progressSnapshot))
     }
 
-    @Test("an all-absent progress snapshot is the feature empty state")
+    @Test("only a null progress payload is the feature empty state")
     func empty() async {
-        let empty = ProgressResponse(
-            data: ProgressSnapshot(
-                xpTotal: 0, level: 0, currentStreak: 0, longestStreak: 0,
-                blocksCompleted: 0, deficitBlock: nil, currentWeight: nil,
-                currentBodyFatPercent: nil, badgesEarned: [], lastActiveDate: nil,
-                nextReevaluation: nil, updatedAt: BodyFlowTestFixtures.progressSnapshot.updatedAt
-            ),
-            meta: BodyFlowTestFixtures.progressResponse.meta
+        let model = ProgressViewModel(
+            provider: ProgressQueueProvider([
+                .success(BodyFlowTestFixtures.emptyProgressResponse),
+            ])
         )
-        let model = ProgressViewModel(provider: ProgressQueueProvider([.success(empty)]))
 
         await model.load()
 
         #expect(model.state == .empty)
+    }
+
+    @Test("minimum persisted progress remains loaded official data")
+    func minimumProgressIsLoaded() async {
+        let snapshot = ProgressSnapshot(
+            xpTotal: 0, level: 1, currentStreak: 0, longestStreak: 0,
+            blocksCompleted: 0, deficitBlock: 0, currentWeight: nil,
+            currentBodyFatPercent: nil, badgesEarned: [], lastActiveDate: nil,
+            nextReevaluation: nil,
+            updatedAt: BodyFlowTestFixtures.progressSnapshot.updatedAt
+        )
+        let response = ProgressResponse(
+            data: snapshot,
+            meta: BodyFlowTestFixtures.progressResponse.meta
+        )
+        let model = ProgressViewModel(
+            provider: ProgressQueueProvider([.success(response)])
+        )
+
+        await model.load()
+
+        #expect(model.state == .loaded(snapshot))
     }
 
     @Test("offline and recoverable failures retain exactly the received snapshot")

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5575FA00301658E900FB4722 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 5575FA01301658E900FB4722 /* Markdown */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		5575F9DE301658E900FB4722 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5575FA00301658E900FB4722 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = BodyFlow;
 			packageProductDependencies = (
+				5575FA01301658E900FB4722 /* Markdown */,
 			);
 			productName = BodyFlow;
 			productReference = 5575F9D0301658E800FB4722 /* BodyFlow.app */;
@@ -197,6 +203,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5575F9D1301658E800FB4722 /* Products */;
+			packageReferences = (
+				5575FA02301658E900FB4722 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -230,6 +239,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5575FA02301658E900FB4722 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5575FA01301658E900FB4722 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5575FA02301658E900FB4722 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXSourcesBuildPhase section */
 		5575F9CC301658E800FB4722 /* Sources */ = {

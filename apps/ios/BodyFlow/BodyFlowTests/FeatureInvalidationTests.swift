@@ -89,6 +89,88 @@ struct FeatureInvalidationTests {
         )) == 0)
     }
 
+    // Mutation caught: adding Today, coach, or unrelated-detail invalidation to
+    // a content save, completion, or version-conflict event, or omitting either
+    // the catalog or affected-detail invalidation.
+    @Test(
+        "content mutation invalidation never patches Today",
+        arguments: [
+            FeatureInvalidation.contentSaved(publicationID: "publication-1"),
+            .contentCompleted(publicationID: "publication-1"),
+            .contentVersionConflict(publicationID: "publication-1"),
+        ]
+    )
+    func contentInvalidationMatrix(event: FeatureInvalidation) {
+        let center = FeatureInvalidationCenter()
+
+        center.record(event)
+
+        #expect(center.revision(for: .contentCatalog) == 1)
+        #expect(center.revision(for: .contentDetail("publication-1")) == 1)
+        #expect(center.revision(for: .contentDetail("publication-2")) == 0)
+        #expect(center.revision(for: .coachExperience) == 0)
+        #expect(center.revision(for: .today) == 0)
+        #expect(center.revision(for: .history) == 0)
+        #expect(center.revision(for: .routineList(kind: .supplement)) == 0)
+        #expect(center.revision(for: .routineHistory(
+            kind: .supplement,
+            itemID: "item-a"
+        )) == 0)
+    }
+
+    // Mutation caught: invalidating Today or a detail for a persona change, or
+    // omitting either coach-experience or catalog invalidation.
+    @Test("coach persona changes invalidate coach experience and catalog only")
+    func coachPersonaInvalidationMatrix() {
+        let center = FeatureInvalidationCenter()
+
+        center.record(.coachPersonaChanged)
+
+        #expect(center.revision(for: .coachExperience) == 1)
+        #expect(center.revision(for: .contentCatalog) == 1)
+        #expect(center.revision(for: .contentDetail("publication-1")) == 0)
+        #expect(center.revision(for: .today) == 0)
+        #expect(center.revision(for: .history) == 0)
+    }
+
+    // Mutation caught: adding any global cover, impression, opened, or other
+    // invalidation event outside the four approved Prompt 14 events.
+    @Test("global invalidation contract contains only approved events")
+    func globalInvalidationContractContainsOnlyApprovedEvents() {
+        let events: [FeatureInvalidation] = [
+            .proposalCreated,
+            .proposalEdited,
+            .proposalCancelled,
+            .registrationConfirmed,
+            .hydrationRecorded,
+            .routineAction(kind: .supplement, itemID: "item-a"),
+            .weightRecorded,
+            .contentSaved(publicationID: "publication-1"),
+            .contentCompleted(publicationID: "publication-1"),
+            .contentVersionConflict(publicationID: "publication-1"),
+            .coachPersonaChanged,
+        ]
+
+        for event in events {
+            switch event {
+            case .proposalCreated,
+                 .proposalEdited,
+                 .proposalCancelled,
+                 .registrationConfirmed,
+                 .hydrationRecorded,
+                 .routineAction,
+                 .weightRecorded,
+                 .contentSaved,
+                 .contentCompleted,
+                 .contentVersionConflict,
+                 .coachPersonaChanged:
+                break
+            }
+        }
+
+        #expect(events.count == 11)
+    }
+
     @Test("cancellation before publication claim wins atomically")
     func cancellationWinsBeforePublicationClaim() {
         let ownership = FeatureLoadOwnership()

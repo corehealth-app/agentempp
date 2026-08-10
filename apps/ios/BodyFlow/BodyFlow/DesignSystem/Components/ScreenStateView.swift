@@ -6,8 +6,8 @@ struct BodyFlowBrandIdentityView: View {
             .font(BodyFlowTypography.headline)
             .fontWeight(.bold)
             .foregroundStyle(BodyFlowColor.accent)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("brand.product-name")
     }
@@ -15,15 +15,19 @@ struct BodyFlowBrandIdentityView: View {
 
 extension View {
     func bodyFlowBrandIdentity() -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
             BodyFlowBrandIdentityView()
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, BodyFlowSpacing.lg)
                 .padding(.vertical, BodyFlowSpacing.xs)
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .background(BodyFlowColor.background)
                 .overlay(alignment: .bottom) {
                     Divider()
                 }
+
+            self
+                .clipped()
         }
     }
 }

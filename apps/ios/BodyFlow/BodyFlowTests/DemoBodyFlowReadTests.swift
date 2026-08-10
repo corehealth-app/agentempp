@@ -39,7 +39,8 @@ struct DemoBodyFlowReadTests {
 
         #expect(today.data.meals.map(\.id) == ["meal-z", "meal-a"])
         #expect(plan.data.training?.daysPerWeek == 4)
-        #expect(progress.data.xpTotal == 7_420)
+        let progressSnapshot = try #require(progress.data)
+        #expect(progressSnapshot.xpTotal == 7_420)
         #expect(history.data.meals.map(\.id) == ["demo-history-meal-row-1", "demo-history-meal-row-2"])
         #expect(supplements.data.items.map(\.id) == ["supplement-1"])
         #expect(medications.data.items.map(\.id) == ["medication-1"])

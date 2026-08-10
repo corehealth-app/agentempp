@@ -98,7 +98,7 @@ struct PlanProgressContractTests {
     @Test("progress preserves every server value without normalization")
     func preservesProgressValues() throws {
         let response = try decodeProgress()
-        let progress = response.data
+        let progress = try #require(response.data)
 
         #expect(response.meta.requestID == "request-progress-contract-0001")
         #expect(progress.xpTotal == 12_345)
@@ -117,7 +117,7 @@ struct PlanProgressContractTests {
         assertContract(response)
     }
 
-    @Test("progress preserves nullable measurements dates and deficit block")
+    @Test("progress preserves nullable measurements and dates")
     func preservesNullableProgressValues() throws {
         let response = try JSONDecoder().decode(
             ProgressResponse.self,
@@ -130,7 +130,7 @@ struct PlanProgressContractTests {
                     "current_streak": 0,
                     "longest_streak": 5,
                     "blocks_completed": 0,
-                    "deficit_block": null,
+                    "deficit_block": 0,
                     "current_weight": null,
                     "current_bf_percent": null,
                     "badges_earned": [],
@@ -145,20 +145,79 @@ struct PlanProgressContractTests {
             )
         )
 
-        #expect(response.data.xpTotal == 9)
-        #expect(response.data.level == 2)
-        #expect(response.data.currentStreak == 0)
-        #expect(response.data.blocksCompleted == 0)
-        #expect(response.data.deficitBlock == nil)
-        #expect(response.data.currentWeight == nil)
-        #expect(response.data.currentBodyFatPercent == nil)
-        #expect(response.data.lastActiveDate == nil)
-        #expect(response.data.nextReevaluation == nil)
+        let progress = try #require(response.data)
+        #expect(progress.xpTotal == 9)
+        #expect(progress.level == 2)
+        #expect(progress.currentStreak == 0)
+        #expect(progress.blocksCompleted == 0)
+        #expect(progress.deficitBlock == 0)
+        #expect(progress.currentWeight == nil)
+        #expect(progress.currentBodyFatPercent == nil)
+        #expect(progress.lastActiveDate == nil)
+        #expect(progress.nextReevaluation == nil)
+    }
+
+    @Test("only a null progress payload is empty")
+    func decodesEmptyProgress() throws {
+        let response = try JSONDecoder().decode(
+            ProgressResponse.self,
+            from: Data(
+                """
+                {
+                  "data": null,
+                  "meta": {"api_version": "v1", "request_id": "request-empty-progress"}
+                }
+                """.utf8
+            )
+        )
+
+        #expect(response.data == nil)
+    }
+
+    @Test("minimum persisted progress is non-null official data")
+    func decodesMinimumProgress() throws {
+        let response = try JSONDecoder().decode(
+            ProgressResponse.self,
+            from: Data(
+                """
+                {
+                  "data": {
+                    "xp_total": 0,
+                    "level": 1,
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "blocks_completed": 0,
+                    "deficit_block": 0,
+                    "current_weight": null,
+                    "current_bf_percent": null,
+                    "badges_earned": [],
+                    "last_active_date": null,
+                    "next_reevaluation": null,
+                    "updated_at": "2026-07-29T22:15:16Z"
+                  },
+                  "meta": {"api_version": "v1", "request_id": "request-minimum-progress"}
+                }
+                """.utf8
+            )
+        )
+        let snapshot = try #require(response.data)
+
+        #expect(snapshot.xpTotal == 0)
+        #expect(snapshot.level == 1)
+        #expect(snapshot.currentStreak == 0)
+        #expect(snapshot.longestStreak == 0)
+        #expect(snapshot.blocksCompleted == 0)
+        #expect(snapshot.deficitBlock == 0)
+        #expect(snapshot.currentWeight == nil)
+        #expect(snapshot.currentBodyFatPercent == nil)
+        #expect(snapshot.badgesEarned.isEmpty)
+        #expect(snapshot.lastActiveDate == nil)
+        #expect(snapshot.nextReevaluation == nil)
     }
 
     @Test("progress values stay independent from a divergent Today block")
     func keepsProgressSeparateFromTodayBlock() throws {
-        let progress = try decodeProgress().data
+        let progress = try #require(decodeProgress().data)
         let todayBlock = TodayBlock7700(
             enabled: true,
             availability: "available",

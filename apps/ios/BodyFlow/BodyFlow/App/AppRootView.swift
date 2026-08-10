@@ -6,8 +6,26 @@ struct AppRootView: View {
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor)
+    private var systemDifferentiateWithoutColor
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
+    @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
     @State private var onboardingRetryTask: Task<Void, Never>?
+
+    init(
+        model: AppFlowModel,
+        dependencies: AppDependencies,
+        configuration: AppLaunchConfiguration
+    ) {
+        self.model = model
+        self.dependencies = dependencies
+        self.configuration = configuration
+        _authenticatedShellCoordinator = State(
+            initialValue: Prompt14AuthenticatedShellCoordinator(
+                dependencies: dependencies
+            )
+        )
+    }
 
     var body: some View {
         Group {
@@ -21,11 +39,21 @@ struct AppRootView: View {
                 override: configuration.accessibilityReduceMotionOverride
             )
         )
+        .environment(
+            \.bodyFlowDifferentiateWithoutColor,
+            configuration.differentiateWithoutColorOverride
+                ?? systemDifferentiateWithoutColor
+        )
         .task {
             await model.start()
         }
         .task(id: onboardingTaskID) {
             await synchronizeOnboardingModel()
+        }
+        .task(id: requestedAuthenticatedUserID) {
+            await authenticatedShellCoordinator.transition(
+                to: requestedAuthenticatedUserID
+            )
         }
         .onDisappear {
             onboardingRetryTask?.cancel()
@@ -35,43 +63,69 @@ struct AppRootView: View {
 
     @ViewBuilder
     private var rootContent: some View {
-        switch model.state {
-        case .launching:
-            SplashView()
-        case .signedOut(.signIn):
-            SignInView(model: model)
-        case .signedOut(.signUp):
-            SignUpView(model: model)
-        case .signedOut(.passwordRecovery):
-            PasswordRecoveryView(model: model)
-        case .awaitingEmailConfirmation(let email):
-            EmailConfirmationView(
-                email: email,
-                allowsDevelopmentConfirmation: configuration.mode == .demo,
-                model: model
-            )
-        case .onboarding(let userID, _):
-            if let onboardingFlowModel = onboardingCoordinator.flowModel,
-               OnboardingRootLoadState.canRender(
-                   modelUserID: onboardingFlowModel.userID,
-                   activeUserID: userID
-               ) {
-                OnboardingContainerView(model: onboardingFlowModel)
-            } else if onboardingCoordinator.flowModel == nil,
-                      onboardingCoordinator.loadFailed {
-                onboardingLoadError
-            } else {
-                ProgressView("Carregando onboarding")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(BodyFlowColor.background)
-                    .accessibilityLabel("Carregando onboarding")
+        if authenticatedShellCoordinator.requiresNeutralRoot(
+            for: requestedAuthenticatedUserID
+        ) {
+            authenticatedSessionLoading
+        } else {
+            switch model.state {
+            case .launching:
+                SplashView()
+            case .signedOut(.signIn):
+                SignInView(model: model)
+            case .signedOut(.signUp):
+                SignUpView(model: model)
+            case .signedOut(.passwordRecovery):
+                PasswordRecoveryView(model: model)
+            case .awaitingEmailConfirmation(let email):
+                EmailConfirmationView(
+                    email: email,
+                    allowsDevelopmentConfirmation: configuration.mode == .demo,
+                    model: model
+                )
+            case .onboarding(let userID, _):
+                if let onboardingFlowModel = onboardingCoordinator.flowModel,
+                   OnboardingRootLoadState.canRender(
+                       modelUserID: onboardingFlowModel.userID,
+                       activeUserID: userID
+                   ) {
+                    OnboardingContainerView(model: onboardingFlowModel)
+                } else if onboardingCoordinator.flowModel == nil,
+                          onboardingCoordinator.loadFailed {
+                    onboardingLoadError
+                } else {
+                    ProgressView("Carregando onboarding")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BodyFlowColor.background)
+                        .accessibilityLabel("Carregando onboarding")
+                }
+            case .authenticated(let userID):
+                if let owner = authenticatedShellCoordinator.renderableOwner(
+                    for: userID
+                ) {
+                    AppShellView(
+                        userID: userID,
+                        dependencies: dependencies,
+                        sessionOwner: owner
+                    )
+                    .id(userID)
+                } else {
+                    authenticatedSessionLoading
+                }
             }
-        case .authenticated(let userID):
-            AppShellView(
-                userID: userID,
-                dependencies: dependencies
-            )
         }
+    }
+
+    private var authenticatedSessionLoading: some View {
+        ProgressView("Carregando sessão")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(BodyFlowColor.background)
+            .accessibilityLabel("Carregando sessão")
+    }
+
+    private var requestedAuthenticatedUserID: String? {
+        guard case let .authenticated(userID) = model.state else { return nil }
+        return userID
     }
 
     private var onboardingUserID: String? {
@@ -144,6 +198,20 @@ extension EnvironmentValues {
     var bodyFlowReduceMotion: Bool {
         get { self[BodyFlowReduceMotionEnvironmentKey.self] }
         set { self[BodyFlowReduceMotionEnvironmentKey.self] = newValue }
+    }
+}
+
+private struct BodyFlowDifferentiateWithoutColorEnvironmentKey:
+    EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var bodyFlowDifferentiateWithoutColor: Bool {
+        get { self[BodyFlowDifferentiateWithoutColorEnvironmentKey.self] }
+        set {
+            self[BodyFlowDifferentiateWithoutColorEnvironmentKey.self] = newValue
+        }
     }
 }
 

@@ -79,6 +79,64 @@ test("rejects a one-byte source mutation", async (context) => {
   assert.match(result.errors.join("\n"), /source sha256 mismatch/i);
 });
 
+test("rejects a coordinated approved source and manifest rebaseline", async (context) => {
+  const fixture = await createFixtureRoot(context);
+  const fixtureManifestPath = path.join(
+    fixture,
+    "design/brand/bodyflow-brand-assets.json",
+  );
+  const sourcePath = path.join(
+    fixture,
+    "design/brand/source/bodyflow-approved-board.jpg",
+  );
+  const replacement = await sharp(await readFile(sourcePath))
+    .resize(1490, 1055, { fit: "fill" })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  const metadata = await sharp(replacement).metadata();
+  const manifest = JSON.parse(await readFile(fixtureManifestPath, "utf8"));
+
+  await writeFile(sourcePath, replacement);
+  manifest.source.sha256 = createHash("sha256")
+    .update(replacement)
+    .digest("hex");
+  manifest.source.width = metadata.width;
+  manifest.source.height = metadata.height;
+  manifest.source.color_space = "sRGB";
+  await writeFile(fixtureManifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const result = await validateBrandContract(fixture);
+  const errors = result.errors.join("\n");
+
+  assert.match(errors, /approved source sha256 mismatch/i);
+  assert.match(errors, /approved source dimensions mismatch/i);
+});
+
+test("rejects rebaselining the approved source path or color-space declaration", async (context) => {
+  const alternatePath = "design/brand/source/rebaselined-board.jpg";
+  const fixture = await createFixtureRoot(context, (manifest) => ({
+    ...manifest,
+    source: {
+      ...manifest.source,
+      path: alternatePath,
+      color_space: "srgb",
+    },
+  }));
+  const approvedSource = await readFile(path.join(
+    fixture,
+    "design/brand/source/bodyflow-approved-board.jpg",
+  ));
+  const alternateAbsolutePath = path.join(fixture, alternatePath);
+  await mkdir(path.dirname(alternateAbsolutePath), { recursive: true });
+  await writeFile(alternateAbsolutePath, approvedSource);
+
+  const result = await validateBrandContract(fixture);
+  const errors = result.errors.join("\n");
+
+  assert.match(errors, /approved source contract mismatch: path/i);
+  assert.match(errors, /approved source contract mismatch: color_space/i);
+});
+
 test("rejects a declared export that is missing", async (context) => {
   const fixture = await createFixtureRoot(context, (manifest) => ({
     ...manifest,
@@ -296,6 +354,67 @@ test("rejects external images in an SVG master", async (context) => {
 
   assert.match(errors, /forbidden svg element <image>/i);
   assert.match(errors, /external svg reference/i);
+});
+
+test("rejects a prefixed SVG namespace that hides live text", async (context) => {
+  const { root, replaceMaster } = await createSvgFixtureRoot(context);
+  await replaceMaster(
+    "wordmark",
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="#007C78" d="M64 256C128 64 384 64 448 256C384 448 128 448 64 256Z"/><s:text fill="#007C78">BodyFlow</s:text></svg>\n',
+  );
+
+  const result = await validateBrandContract(root);
+
+  assert.match(
+    result.errors.join("\n"),
+    /prefixed SVG namespace|element outside the SVG allowlist/i,
+  );
+});
+
+test("rejects UTF-16 SVG bytes that hide a document type declaration", async (context) => {
+  const { root, replaceMaster } = await createSvgFixtureRoot(context);
+  const xml = [
+    '<?xml version="1.0" encoding="UTF-16"?>',
+    '<!DOCTYPE svg [<!ENTITY brand "BodyFlow">]>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">',
+    '<path fill="#007C78" d="M64 256C128 64 384 64 448 256C384 448 128 448 64 256Z"/>',
+    "</svg>",
+  ].join("");
+  const utf16 = Buffer.concat([
+    Buffer.from([0xff, 0xfe]),
+    Buffer.from(xml, "utf16le"),
+  ]);
+  await replaceMaster("symbol", utf16);
+
+  const result = await validateBrandContract(root);
+
+  assert.match(result.errors.join("\n"), /canonical UTF-8/i);
+});
+
+test("rejects noncanonical SVG paint syntax", async (context) => {
+  const { root, replaceMaster } = await createSvgFixtureRoot(context);
+  await replaceMaster(
+    "symbol",
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="rgb(0, 124, 120)" d="M64 256C128 64 384 64 448 256C384 448 128 448 64 256Z"/></svg>\n',
+  );
+
+  const result = await validateBrandContract(root);
+
+  assert.match(result.errors.join("\n"), /paint outside the SVG allowlist/i);
+});
+
+test("rejects SVG elements and attributes outside the positive allowlist", async (context) => {
+  const { root, replaceMaster } = await createSvgFixtureRoot(context);
+  await replaceMaster(
+    "symbol",
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="#007C78" onclick="alert(1)" d="M64 256C128 64 384 64 448 256C384 448 128 448 64 256Z"/><circle fill="#007C78" cx="256" cy="256" r="32"/></svg>\n',
+  );
+
+  const result = await validateBrandContract(root);
+  const errors = result.errors.join("\n");
+
+  assert.match(errors, /element outside the SVG allowlist/i);
+  assert.match(errors, /attribute outside the SVG allowlist/i);
 });
 
 test("rejects fixed dimensions, undeclared colors, and missing path geometry", async (context) => {

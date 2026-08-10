@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { promisify, TextDecoder } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
@@ -12,6 +12,41 @@ import { canonicalBrandRenderer } from "./bodyflow-brand-renderer-contract.mjs";
 const manifestRelativePath = "design/brand/bodyflow-brand-assets.json";
 const exportsRelativePath = "design/brand/exports";
 const runFile = promisify(execFile);
+const approvedSource = Object.freeze({
+  path: "design/brand/source/bodyflow-approved-board.jpg",
+  sha256: "af44d4b2036638720eaaf58c05fa6098f69b21c7639b91bb4a60bc85c64c15b7",
+  width: 1491,
+  height: 1055,
+  color_space: "sRGB",
+});
+const svgNamespace = "http://www.w3.org/2000/svg";
+const allowedSvgElements = Object.freeze([
+  "svg",
+  "defs",
+  "linearGradient",
+  "stop",
+  "g",
+  "path",
+]);
+const allowedSvgAttributes = Object.freeze([
+  "viewBox",
+  "id",
+  "x1",
+  "y1",
+  "x2",
+  "y2",
+  "offset",
+  "stop-color",
+  "transform",
+  "fill",
+  "stroke",
+  "d",
+]);
+const allowedSvgPaintReferences = Object.freeze([
+  "url(#upper-ribbon)",
+  "url(#lower-ribbon)",
+  "url(#arrow-ribbon)",
+]);
 const requiredMasterIds = [
   "symbol",
   "wordmark",
@@ -163,15 +198,15 @@ async function validateSource({
     return;
   }
 
-  const sourcePath = resolveRepositoryPathOrError(
-    root,
-    declaredSource.path,
-    "source",
-    errors,
-  );
-  if (!sourcePath) {
-    return;
+  for (const [field, expected] of Object.entries(approvedSource)) {
+    if (declaredSource[field] !== expected) {
+      errors.push(
+        `approved source contract mismatch: ${field}; expected ${expected}, received ${declaredSource[field]}`,
+      );
+    }
   }
+
+  const sourcePath = resolveRepositoryPath(root, approvedSource.path);
 
   const source = await readRepositoryFile({
     rootRealPath,
@@ -185,9 +220,9 @@ async function validateSource({
 
   const sha256 = hashBuffer(source);
   result.source.sha256 = sha256;
-  if (sha256 !== declaredSource.sha256) {
+  if (sha256 !== approvedSource.sha256) {
     errors.push(
-      `source sha256 mismatch: expected ${declaredSource.sha256}, received ${sha256}`,
+      `approved source sha256 mismatch: expected ${approvedSource.sha256}, received ${sha256}`,
     );
   }
 
@@ -198,19 +233,19 @@ async function validateSource({
       height: metadata.height ?? null,
     };
     if (
-      metadata.width !== declaredSource.width
-      || metadata.height !== declaredSource.height
+      metadata.width !== approvedSource.width
+      || metadata.height !== approvedSource.height
     ) {
       errors.push(
-        `source dimensions mismatch: expected ${declaredSource.width}x${declaredSource.height}, received ${metadata.width}x${metadata.height}`,
+        `approved source dimensions mismatch: expected ${approvedSource.width}x${approvedSource.height}, received ${metadata.width}x${metadata.height}`,
       );
     }
     if (
       typeof metadata.space !== "string"
-      || metadata.space.toLowerCase() !== String(declaredSource.color_space).toLowerCase()
+      || metadata.space.toLowerCase() !== approvedSource.color_space.toLowerCase()
     ) {
       errors.push(
-        `source color space mismatch: expected ${declaredSource.color_space}, received ${metadata.space ?? "unknown"}`,
+        `approved source color space mismatch: expected ${approvedSource.color_space}, received ${metadata.space ?? "unknown"}`,
       );
     }
   } catch (error) {
@@ -370,8 +405,18 @@ async function validateSvgMaster({
   errors,
 }) {
   const label = `SVG master ${asset.id ?? "unknown"}`;
-  const source = contents.toString("utf8");
   const localErrors = [];
+  let source;
+
+  try {
+    source = decodeCanonicalUtf8(contents);
+  } catch (error) {
+    localErrors.push(
+      `${label} must use canonical UTF-8 bytes: ${errorMessage(error)}`,
+    );
+    errors.push(...localErrors);
+    return;
+  }
 
   if (!toPosixPath(asset.path).startsWith("design/brand/masters/")
     || path.extname(asset.path).toLowerCase() !== ".svg") {
@@ -387,28 +432,61 @@ async function validateSvgMaster({
     localErrors.push(`${label} contains_text must be false`);
   }
 
-  try {
-    await runFile("xmllint", ["--noout", absolutePath], {
-      timeout: 5_000,
-      maxBuffer: 256 * 1024,
-    });
-  } catch (error) {
-    localErrors.push(`${label} is not valid XML: ${errorMessage(error)}`);
+  const palettePaints = isPlainObject(palette)
+    ? Object.values(palette).filter(isHexColor)
+    : [];
+  const allowedPaints = [
+    ...palettePaints,
+    "none",
+    ...allowedSvgPaintReferences,
+  ];
+  let structure;
+  if (/<!DOCTYPE\b|<!ENTITY\b/i.test(source)) {
+    localErrors.push(`${label} contains a forbidden XML declaration`);
+  } else {
+    try {
+      structure = await inspectSvgStructure(absolutePath, allowedPaints);
+    } catch (error) {
+      localErrors.push(`${label} is not valid XML: ${errorMessage(error)}`);
+    }
   }
 
-  const rootMatch = source.match(/<svg\b([^>]*)>/i);
-  if (!rootMatch) {
-    localErrors.push(`${label} must contain an svg root element`);
-  } else {
-    const attributes = rootMatch[1];
-    const viewBox = attributeValue(attributes, "viewBox");
-    if (!viewBox || viewBox !== asset.view_box) {
+  if (structure) {
+    if (structure.rootName !== "svg" || structure.rootNamespace !== svgNamespace) {
+      localErrors.push(`${label} must contain an svg root in the canonical namespace`);
+    }
+    if (structure.viewBox !== asset.view_box) {
       localErrors.push(
         `${label} viewBox must equal manifest view_box ${asset.view_box ?? "unknown"}`,
       );
     }
-    if (hasAttribute(attributes, "width") || hasAttribute(attributes, "height")) {
+    if (structure.fixedDimensionCount > 0) {
       localErrors.push(`${label} must not declare width or height`);
+    }
+    if (structure.prefixedElementCount > 0
+      || structure.prefixedNamespaceCount > 0) {
+      localErrors.push(`${label} contains a prefixed SVG namespace`);
+    }
+    if (structure.disallowedElementCount > 0) {
+      localErrors.push(`${label} contains an element outside the SVG allowlist`);
+    }
+    if (structure.disallowedAttributeCount > 0) {
+      localErrors.push(`${label} contains an attribute outside the SVG allowlist`);
+    }
+    if (structure.disallowedPaintCount > 0) {
+      localErrors.push(`${label} contains paint outside the SVG allowlist`);
+    }
+    if (structure.pathCount === 0 || structure.invalidPathCount > 0) {
+      localErrors.push(`${label} must contain outlined path geometry`);
+    }
+    if (structure.unpaintedPathCount > 0) {
+      localErrors.push(`${label} contains path geometry without an allowlisted fill`);
+    }
+    if (structure.unpaintedStopCount > 0) {
+      localErrors.push(`${label} contains a gradient stop without an allowlisted paint`);
+    }
+    if (structure.processingInstructionCount > 0) {
+      localErrors.push(`${label} contains a forbidden XML processing instruction`);
     }
   }
 
@@ -430,15 +508,8 @@ async function validateSvgMaster({
     localErrors.push(`${label} contains a non-local paint reference`);
   }
 
-  const paths = [...source.matchAll(/<path\b[^>]*\bd\s*=\s*["']([^"']+)["'][^>]*>/gi)];
-  if (paths.length === 0 || paths.every((match) => match[1].trim().length === 0)) {
-    localErrors.push(`${label} must contain outlined path geometry`);
-  }
-
   const allowedColors = new Set(
-    isPlainObject(palette)
-      ? Object.values(palette).filter(isHexColor).map((color) => color.toUpperCase())
-      : [],
+    palettePaints.map((color) => color.toUpperCase()),
   );
   for (const match of source.matchAll(/#[0-9a-f]{3,8}\b/gi)) {
     const color = match[0].toUpperCase();
@@ -470,6 +541,114 @@ async function validateSvgMaster({
   }
 
   errors.push(...localErrors);
+}
+
+async function inspectSvgStructure(absolutePath, allowedPaints) {
+  const options = {
+    encoding: "utf8",
+    timeout: 5_000,
+    maxBuffer: 256 * 1024,
+  };
+  await runFile("xmllint", ["--nonet", "--noout", absolutePath], options);
+
+  const allowedElementPredicate = allowedSvgElements
+    .map((name) => `local-name() = '${name}'`)
+    .join(" or ");
+  const allowedAttributePredicate = allowedSvgAttributes
+    .map((name) => `local-name() = '${name}'`)
+    .join(" or ");
+  const allowedPaintPredicate = allowedPaints
+    .map((paint) => `. = '${paint}'`)
+    .join(" or ");
+  const pathSelector =
+    `//*[namespace-uri() = '${svgNamespace}' and local-name() = 'path']`;
+  const stopSelector =
+    `//*[namespace-uri() = '${svgNamespace}' and local-name() = 'stop']`;
+  const countExpressions = [
+    "count(/*/@width | /*/@height)",
+    "count(//*[name() != local-name()])",
+    "count(//namespace::*[name() != 'xml' and name() != ''])",
+    `count(//*[not(namespace-uri() = '${svgNamespace}' and (${allowedElementPredicate}))])`,
+    `count(//@*[not(namespace-uri() = '' and (${allowedAttributePredicate}))])`,
+    `count((//@fill | //@stroke | //@stop-color)[not(${allowedPaintPredicate})])`,
+    `count(${pathSelector})`,
+    `count(${pathSelector}[not(@d) or normalize-space(@d) = ''])`,
+    `count(${pathSelector}[not(@fill) and not(ancestor::*[@fill])])`,
+    `count(${stopSelector}[not(@stop-color)])`,
+    "count(//processing-instruction())",
+  ];
+  const countXPath = `concat(${countExpressions.join(", ' ', ")})`;
+  const [rootName, rootNamespace, viewBox, countsOutput] = await Promise.all([
+    runXmlXPath(absolutePath, "local-name(/*)", options),
+    runXmlXPath(absolutePath, "namespace-uri(/*)", options),
+    runXmlXPath(absolutePath, "string(/*/@viewBox)", options),
+    runXmlXPath(absolutePath, countXPath, options),
+  ]);
+  const counts = countsOutput.split(" ").map(Number);
+  if (counts.length !== countExpressions.length
+    || counts.some((count) => !Number.isSafeInteger(count) || count < 0)) {
+    throw new Error("xmllint returned an invalid structural count vector");
+  }
+
+  const [
+    fixedDimensionCount,
+    prefixedElementCount,
+    prefixedNamespaceCount,
+    disallowedElementCount,
+    disallowedAttributeCount,
+    disallowedPaintCount,
+    pathCount,
+    invalidPathCount,
+    unpaintedPathCount,
+    unpaintedStopCount,
+    processingInstructionCount,
+  ] = counts;
+  return {
+    rootName,
+    rootNamespace,
+    viewBox,
+    fixedDimensionCount,
+    prefixedElementCount,
+    prefixedNamespaceCount,
+    disallowedElementCount,
+    disallowedAttributeCount,
+    disallowedPaintCount,
+    pathCount,
+    invalidPathCount,
+    unpaintedPathCount,
+    unpaintedStopCount,
+    processingInstructionCount,
+  };
+}
+
+function decodeCanonicalUtf8(contents) {
+  if (contents.length >= 3
+    && contents[0] === 0xef
+    && contents[1] === 0xbb
+    && contents[2] === 0xbf) {
+    throw new Error("UTF-8 byte-order marks are not permitted");
+  }
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(contents);
+  if (source.includes("\0") || !Buffer.from(source, "utf8").equals(contents)) {
+    throw new Error("input is not a canonical UTF-8 encoding");
+  }
+  const declaration = source.match(/^\s*<\?xml\b([\s\S]*?)\?>/i);
+  const declaredEncoding = declaration?.[1].match(
+    /\bencoding\s*=\s*["']([^"']+)["']/i,
+  )?.[1];
+  if (declaredEncoding !== undefined && declaredEncoding.toUpperCase() !== "UTF-8") {
+    throw new Error(`XML encoding declaration is ${declaredEncoding}, not UTF-8`);
+  }
+  return source;
+}
+
+async function runXmlXPath(absolutePath, expression, options) {
+  const { stdout } = await runFile(
+    "xmllint",
+    ["--nonet", "--xpath", expression, absolutePath],
+    options,
+  );
+  return stdout.trim();
 }
 
 async function readRepositoryFile({
@@ -592,17 +771,6 @@ function isSha256(value) {
 
 function isHexColor(value) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
-}
-
-function hasAttribute(attributes, name) {
-  return new RegExp(`(?:^|\\s)${name}\\s*=`, "i").test(attributes);
-}
-
-function attributeValue(attributes, name) {
-  const match = attributes.match(
-    new RegExp(`(?:^|\\s)${name}\\s*=\\s*["']([^"']+)["']`, "i"),
-  );
-  return match?.[1] ?? null;
 }
 
 function errorMessage(error) {

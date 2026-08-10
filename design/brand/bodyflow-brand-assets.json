@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "brand_version": "1.0.0-candidate.1",
-  "approval_state": "candidate",
+  "brand_version": "1.0.0",
+  "approval_state": "approved",
   "renderer": {
     "schemaVersion": 1,
     "baseImage": "node@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436",

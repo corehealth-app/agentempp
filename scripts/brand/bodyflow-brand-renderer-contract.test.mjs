@@ -335,6 +335,56 @@ test("preserves a concurrent edit instead of overwriting its snapshot", async (c
   assert.equal(await readFile(fixture.assetsSentinel, "utf8"), "original assets\n");
 });
 
+test("builds and runs from one snapshot and rejects a concurrent renderer edit", async (context) => {
+  const fixture = await createRunnerFixture(context);
+
+  await assert.rejects(
+    runFixtureRunner(fixture, {
+      mode: "--write",
+      concurrentRendererInput: "scripts/brand/renderer-input.txt",
+    }),
+    (error) => {
+      assert.match(`${error.stderr ?? ""}`, /renderer inputs changed/i);
+      return true;
+    },
+  );
+
+  assert.equal(
+    await readFile(fixture.rendererInputPath, "utf8"),
+    "concurrent renderer input\n",
+  );
+  assert.match(await readFile(fixture.dockerLog, "utf8"), /^build-context-is-live=0$/m);
+  assert.match(
+    await readFile(fixture.dockerLog, "utf8"),
+    /^run-renderer-input=original renderer input$/m,
+  );
+  await assertOriginalRunnerOutputs(fixture);
+});
+
+test("treats package and lock files as renderer snapshot inputs", async (context) => {
+  for (const relativePath of ["scripts/package.json", "pnpm-lock.yaml"]) {
+    const fixture = await createRunnerFixture(context);
+
+    await assert.rejects(
+      runFixtureRunner(fixture, {
+        mode: "--write",
+        concurrentRendererInput: relativePath,
+      }),
+      (error) => {
+        assert.match(`${error.stderr ?? ""}`, /renderer inputs changed/i);
+        return true;
+      },
+      relativePath,
+    );
+    assert.equal(
+      await readFile(path.join(fixture.root, relativePath), "utf8"),
+      "concurrent renderer input\n",
+      relativePath,
+    );
+    await assertOriginalRunnerOutputs(fixture);
+  }
+});
+
 test("rolls back both trees when the second candidate install fails", async (context) => {
   const fixture = await createRunnerFixture(context);
 
@@ -405,6 +455,53 @@ test("preserves an edit made through an open descriptor to the captured tree", a
   await assertNoRunnerTransactions(fixture);
 });
 
+test("quarantines originals when an open descriptor writes after the final check", async (context) => {
+  const fixture = await createRunnerFixture(context);
+
+  await runFixtureRunner(fixture, {
+    mode: "--write",
+    mutateQuarantineAfterRenameAt: 5,
+  });
+
+  assert.equal(await readFile(fixture.designSentinel, "utf8"), "rendered design\n");
+  assert.equal(await readFile(fixture.assetsSentinel, "utf8"), "rendered assets\n");
+  const recoveries = await runnerRecoveryPaths(fixture);
+  assert.equal(recoveries.design.length, 1);
+  assert.equal(recoveries.assets.length, 1);
+  assert.equal(
+    await readFile(path.join(recoveries.design[0], "old/generated.txt"), "utf8"),
+    "concurrent post-check design\n",
+  );
+  assert.equal(
+    await readFile(path.join(recoveries.assets[0], "old/generated.txt"), "utf8"),
+    "original assets\n",
+  );
+  assert.match(
+    await readFile(path.join(recoveries.design[0], "RECOVERY.txt"), "utf8"),
+    /inspect before removal/i,
+  );
+  await assertNoRunnerTransactions(fixture);
+});
+
+test("allows checks but blocks another write until quarantines are inspected", async (context) => {
+  const fixture = await createRunnerFixture(context);
+
+  await runFixtureRunner(fixture, { mode: "--write" });
+  await runFixtureRunner(fixture, { mode: "--check", renderIdentical: true });
+  await assert.rejects(
+    runFixtureRunner(fixture, { mode: "--write" }),
+    (error) => {
+      assert.match(`${error.stderr ?? ""}`, /quarantine requires inspection/i);
+      return true;
+    },
+  );
+
+  const recoveries = await runnerRecoveryPaths(fixture);
+  assert.equal(recoveries.design.length, 1);
+  assert.equal(recoveries.assets.length, 1);
+  await assertNoRunnerTransactions(fixture);
+});
+
 test("promotes staged outputs after both renderers succeed", async (context) => {
   const fixture = await createRunnerFixture(context);
 
@@ -415,22 +512,19 @@ test("promotes staged outputs after both renderers succeed", async (context) => 
   await assertNoRunnerTransactions(fixture);
 });
 
-test("reports cleanup failure and preserves the recovery transaction", async (context) => {
+test("reports cleanup failure and preserves the recovery quarantines", async (context) => {
   const fixture = await createRunnerFixture(context);
 
   await assert.rejects(
-    runFixtureRunner(fixture, { mode: "--write", failTransactionCleanup: true }),
+    runFixtureRunner(fixture, { mode: "--write", failSnapshotCleanup: true }),
   );
 
   assert.equal(await readFile(fixture.designSentinel, "utf8"), "rendered design\n");
   assert.equal(await readFile(fixture.assetsSentinel, "utf8"), "rendered assets\n");
   assert.equal((await stat(fixture.lockPath)).isDirectory(), true);
-  assert.equal(
-    (await readdir(path.join(fixture.root, "design"))).some((name) =>
-      name.startsWith(".bodyflow-brand-transaction."),
-    ),
-    true,
-  );
+  const recoveries = await runnerRecoveryPaths(fixture);
+  assert.equal(recoveries.design.length, 1);
+  assert.equal(recoveries.assets.length, 1);
 });
 
 test("promotes complete trees and removes obsolete generated files", async (context) => {
@@ -602,6 +696,19 @@ async function assertNoRunnerTransactions(fixture) {
   await assert.rejects(stat(fixture.lockPath), { code: "ENOENT" });
 }
 
+async function runnerRecoveryPaths(fixture) {
+  const designParent = path.join(fixture.root, "design");
+  const assetsParent = path.dirname(fixture.assetsRoot);
+  return {
+    design: (await readdir(designParent))
+      .filter((name) => name.startsWith(".bodyflow-brand-recovery."))
+      .map((name) => path.join(designParent, name)),
+    assets: (await readdir(assetsParent))
+      .filter((name) => name.startsWith(".bodyflow-assets-recovery."))
+      .map((name) => path.join(assetsParent, name)),
+  };
+}
+
 async function rendererLockPath(root) {
   const { stdout } = await execFileAsync(
     "sh",
@@ -641,6 +748,21 @@ async function createRunnerFixture(context) {
     runnerPath,
   );
 
+  const rendererInputPath = path.join(
+    fixtureModuleDirectory,
+    "renderer-input.txt",
+  );
+  await writeFile(rendererInputPath, "original renderer input\n");
+  await writeFile(
+    path.join(fixtureContainerDirectory, "context-input.txt"),
+    "original context input\n",
+  );
+  await writeFile(
+    path.join(root, "scripts/package.json"),
+    '{"name":"fixture-renderer"}\n',
+  );
+  await writeFile(path.join(root, "pnpm-lock.yaml"), "lockfileVersion: fixture\n");
+
   const designSentinel = path.join(root, "design/brand/generated.txt");
   const assetsSentinel = path.join(assetsRoot, "generated.txt");
   await writeFile(designSentinel, "original design\n");
@@ -669,6 +791,7 @@ async function createRunnerFixture(context) {
     fakeBin,
     dockerLog,
     renameCounter,
+    rendererInputPath,
     designSentinel,
     assetsSentinel,
     assetsRoot,
@@ -685,11 +808,13 @@ async function runFixtureRunner(
     failReview = false,
     failValidation = false,
     concurrentDesignEdit = false,
+    concurrentRendererInput = "",
     failRenameAt = 0,
     failAfterRenameAt = 0,
     mutateOldAfterRenameAt = 0,
+    mutateQuarantineAfterRenameAt = 0,
     signalAfterRenameAt = 0,
-    failTransactionCleanup = false,
+    failSnapshotCleanup = false,
     removeObsolete = false,
     temporaryRoot,
   },
@@ -703,14 +828,18 @@ async function runFixtureRunner(
     FAKE_NODE_FAIL_RENAME_AT: String(failRenameAt),
     FAKE_NODE_FAIL_AFTER_RENAME_AT: String(failAfterRenameAt),
     FAKE_NODE_MUTATE_OLD_AFTER_RENAME_AT: String(mutateOldAfterRenameAt),
+    FAKE_NODE_MUTATE_QUARANTINE_AFTER_RENAME_AT: String(
+      mutateQuarantineAfterRenameAt,
+    ),
     FAKE_NODE_SIGNAL_AFTER_RENAME_AT: String(signalAfterRenameAt),
-    FAKE_RM_FAIL_TRANSACTION: failTransactionCleanup ? "1" : "0",
+    FAKE_RM_FAIL_SNAPSHOT: failSnapshotCleanup ? "1" : "0",
     FAKE_DOCKER_LOG: fixture.dockerLog,
     FAKE_DOCKER_IMAGE_ID: imageId,
     FAKE_DOCKER_RENDER_IDENTICAL: renderIdentical ? "1" : "0",
     FAKE_DOCKER_FAIL_REVIEW: failReview ? "1" : "0",
     FAKE_DOCKER_FAIL_VALIDATION: failValidation ? "1" : "0",
     FAKE_DOCKER_CONCURRENT_DESIGN_EDIT: concurrentDesignEdit ? "1" : "0",
+    FAKE_DOCKER_CONCURRENT_RENDERER_INPUT: concurrentRendererInput,
     FAKE_DOCKER_REMOVE_OBSOLETE: removeObsolete ? "1" : "0",
     FAKE_DOCKER_LIVE_ROOT: fixture.root,
   };
@@ -730,16 +859,36 @@ function fakeDockerSource() {
     "shift",
     'if [ "$command_name" = "build" ]; then',
     "  iidfile=",
+    "  build_context=",
     '  while [ "$#" -gt 0 ]; do',
-    '    if [ "$1" = "--iidfile" ]; then',
-    "      shift",
-    '      iidfile="$1"',
-    "    fi",
+    '    case "$1" in',
+    "      --iidfile)",
+    "        shift",
+    '        iidfile="$1"',
+    "        ;;",
+    "      --platform | --file)",
+    "        shift",
+    "        ;;",
+    "      -*) ;;",
+    "      *)",
+    '        build_context="$1"',
+    "        ;;",
+    "    esac",
     "    shift",
     "  done",
     '  test -n "$iidfile"',
+    '  test -n "$build_context"',
     '  printf "%s\\n" "$FAKE_DOCKER_IMAGE_ID" > "$iidfile"',
     '  printf "build-image=%s\\n" "$FAKE_DOCKER_IMAGE_ID" >> "$FAKE_DOCKER_LOG"',
+    '  if [ "$build_context" = "$FAKE_DOCKER_LIVE_ROOT/scripts/brand/canonical-renderer" ]; then',
+    '    printf "build-context-is-live=1\\n" >> "$FAKE_DOCKER_LOG"',
+    "  else",
+    '    printf "build-context-is-live=0\\n" >> "$FAKE_DOCKER_LOG"',
+    "  fi",
+    '  test "$(cat "$build_context/context-input.txt")" = "original context input"',
+    '  if [ -n "$FAKE_DOCKER_CONCURRENT_RENDERER_INPUT" ]; then',
+    '    printf "concurrent renderer input\\n" > "$FAKE_DOCKER_LIVE_ROOT/$FAKE_DOCKER_CONCURRENT_RENDERER_INPUT"',
+    "  fi",
     "  exit 0",
     "fi",
     'if [ "$command_name" != "run" ]; then',
@@ -791,6 +940,7 @@ function fakeDockerSource() {
     'printf "run-image=%s\\n" "$run_image" >> "$FAKE_DOCKER_LOG"',
     'printf "run-network=%s\\n" "$network" >> "$FAKE_DOCKER_LOG"',
     'printf "payload-order=assets,review,validate\\n" >> "$FAKE_DOCKER_LOG"',
+    'printf "run-renderer-input=%s\\n" "$(cat "$target_root/scripts/brand/renderer-input.txt")" >> "$FAKE_DOCKER_LOG"',
     'if [ "$FAKE_DOCKER_RENDER_IDENTICAL" != "1" ]; then',
     '  printf "rendered design\\n" > "$target_root/design/brand/generated.txt"',
     '  if [ "$FAKE_DOCKER_REMOVE_OBSOLETE" = "1" ]; then',
@@ -842,6 +992,9 @@ function fakeNodeSource() {
     '  old_root=$' + '{3%/new}/old',
     '  printf "concurrent captured design\\n" > "$old_root/generated.txt"',
     "fi",
+    'if [ "$rename_count" -gt 0 ] && [ "$rename_count" -eq "$FAKE_NODE_MUTATE_QUARANTINE_AFTER_RENAME_AT" ]; then',
+    '  printf "concurrent post-check design\\n" > "$4/old/generated.txt"',
+    "fi",
     'if [ "$rename_count" -gt 0 ] && [ "$rename_count" -eq "$FAKE_NODE_FAIL_AFTER_RENAME_AT" ]; then',
     "  exit 75",
     "fi",
@@ -856,10 +1009,10 @@ function fakeRmSource() {
   return [
     "#!/bin/sh",
     "set -eu",
-    'if [ "$FAKE_RM_FAIL_TRANSACTION" = "1" ]; then',
+    'if [ "$FAKE_RM_FAIL_SNAPSHOT" = "1" ]; then',
     '  for argument in "$@"; do',
     '    case "$argument" in',
-    "      */.bodyflow-brand-transaction.*) exit 76 ;;",
+    "      /tmp/bodyflow-brand-render.*) exit 76 ;;",
     "    esac",
     "  done",
     "fi",

@@ -4,11 +4,12 @@ set -eu
 mode="${1:---check}"
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_directory/../.." && pwd)
-container_context="$script_directory/canonical-renderer"
 design_root="$repository_root/design/brand"
 assets_root="$repository_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets"
 design_parent="$repository_root/design"
 assets_parent="$repository_root/apps/ios/BodyFlow/BodyFlow/Resources"
+scripts_package="$repository_root/scripts/package.json"
+workspace_lock="$repository_root/pnpm-lock.yaml"
 
 case "$mode" in
   --check | --write) ;;
@@ -37,6 +38,8 @@ lock_directory="/tmp/bodyflow-brand-renderer.${repository_key}.lock"
 temporary_directory=""
 design_transaction=""
 assets_transaction=""
+design_quarantine=""
+assets_quarantine=""
 design_captured=0
 assets_captured=0
 design_installed=0
@@ -73,6 +76,37 @@ assert_no_recovery_transactions() {
   fi
 }
 
+assert_no_uninspected_quarantines() {
+  quarantine_found=0
+  for quarantine_path in \
+    "$design_parent"/.bodyflow-brand-recovery.* \
+    "$assets_parent"/.bodyflow-assets-recovery.*; do
+    if [ -e "$quarantine_path" ]; then
+      printf 'Uninspected BodyFlow brand quarantine requires inspection: %s\n' \
+        "$quarantine_path" >&2
+      quarantine_found=1
+    fi
+  done
+  if [ "$quarantine_found" -ne 0 ]; then
+    exit 74
+  fi
+}
+
+snapshot_tooling_matches_live() {
+  diff -qr "$baseline_root/scripts/brand" "$repository_root/scripts/brand" \
+    >/dev/null && \
+    cmp -s "$baseline_root/scripts/package.json" "$scripts_package" && \
+    cmp -s "$baseline_root/pnpm-lock.yaml" "$workspace_lock"
+}
+
+snapshot_inputs_match_live() {
+  diff -qr "$baseline_root/design/brand" "$design_root" >/dev/null && \
+    diff -qr \
+      "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets" \
+      "$assets_root" >/dev/null && \
+    snapshot_tooling_matches_live
+}
+
 acquire_renderer_lock() {
   if mkdir "$lock_directory" 2>/dev/null; then
     lock_acquired=1
@@ -104,6 +138,7 @@ acquire_renderer_lock() {
     fi
   fi
   assert_no_recovery_transactions
+  assert_no_uninspected_quarantines
   lock_entries=$(ls -A "$lock_directory")
   expected_entries=$(printf 'pid\nstart')
   if [ "$lock_entries" != "pid" ] && [ "$lock_entries" != "$expected_entries" ]; then
@@ -275,6 +310,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 acquire_renderer_lock
 assert_no_recovery_transactions
+if [ "$mode" = "--write" ]; then
+  assert_no_uninspected_quarantines
+fi
 owner_start=$(process_start_time "$$")
 if [ -z "$owner_start" ]; then
   printf 'Unable to record renderer lock process identity.\n' >&2
@@ -288,6 +326,26 @@ image_id_file="$temporary_directory/image-id"
 baseline_root="$temporary_directory/baseline"
 probe_root="$temporary_directory/probe"
 
+mkdir -p \
+  "$baseline_root/design" \
+  "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources" \
+  "$baseline_root/scripts" \
+  "$probe_root/design" \
+  "$probe_root/apps/ios/BodyFlow/BodyFlow/Resources" \
+  "$probe_root/scripts"
+cp -R "$design_root" "$baseline_root/design/brand"
+cp -R "$assets_root" \
+  "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets"
+cp -R "$repository_root/scripts/brand" "$baseline_root/scripts/brand"
+cp "$scripts_package" "$baseline_root/scripts/package.json"
+cp "$workspace_lock" "$baseline_root/pnpm-lock.yaml"
+
+if ! snapshot_inputs_match_live; then
+  printf 'Renderer inputs changed while the immutable snapshot was created.\n' >&2
+  exit 73
+fi
+
+container_context="$baseline_root/scripts/brand/canonical-renderer"
 docker build \
   --platform linux/amd64 \
   --file "$container_context/Dockerfile" \
@@ -303,29 +361,13 @@ case "$image_id" in
     ;;
 esac
 
-mkdir -p \
-  "$baseline_root/design" \
-  "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources" \
-  "$probe_root/design" \
-  "$probe_root/apps/ios/BodyFlow/BodyFlow/Resources" \
-  "$probe_root/scripts"
-cp -R "$design_root" "$baseline_root/design/brand"
-cp -R "$assets_root" \
-  "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets"
-
-if ! diff -qr "$baseline_root/design/brand" "$design_root" >/dev/null || \
-  ! diff -qr \
-    "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets" \
-    "$assets_root" >/dev/null; then
-  printf 'Brand inputs changed while the immutable snapshot was created.\n' >&2
-  exit 73
-fi
-
 cp -R "$baseline_root/design/brand" "$probe_root/design/brand"
 cp -R \
   "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets" \
   "$probe_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets"
-cp -R "$repository_root/scripts/brand" "$probe_root/scripts/brand"
+cp -R "$baseline_root/scripts/brand" "$probe_root/scripts/brand"
+cp "$baseline_root/scripts/package.json" "$probe_root/scripts/package.json"
+cp "$baseline_root/pnpm-lock.yaml" "$probe_root/pnpm-lock.yaml"
 
 mkdir -p "$probe_root/scripts/node_modules"
 docker run --rm \
@@ -342,6 +384,11 @@ docker run --rm \
     node scripts/brand/render-bodyflow-brand-review.mjs
     node scripts/brand/bodyflow-brand-contract.mjs --check
   '
+
+if ! snapshot_inputs_match_live; then
+  printf 'Renderer inputs changed after the immutable snapshot; result refused.\n' >&2
+  exit 73
+fi
 
 if [ "$mode" = "--check" ]; then
   if ! diff -qr "$design_root" "$probe_root/design/brand"; then
@@ -374,11 +421,8 @@ if ! diff -qr "$probe_root/design/brand" "$design_transaction/new" >/dev/null ||
   exit 74
 fi
 
-if ! diff -qr "$baseline_root/design/brand" "$design_root" >/dev/null || \
-  ! diff -qr \
-    "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets" \
-    "$assets_root" >/dev/null; then
-  printf 'Brand inputs changed after the render snapshot; promotion refused.\n' >&2
+if ! snapshot_inputs_match_live; then
+  printf 'Renderer inputs changed after the render snapshot; promotion refused.\n' >&2
   exit 73
 fi
 
@@ -427,11 +471,54 @@ fi
 if ! diff -qr "$baseline_root/design/brand" "$design_transaction/old" >/dev/null || \
   ! diff -qr \
     "$baseline_root/apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets" \
-    "$assets_transaction/old" >/dev/null; then
+    "$assets_transaction/old" >/dev/null || \
+  ! snapshot_tooling_matches_live; then
   printf 'Captured brand inputs changed during promotion; rolling back.\n' >&2
   exit 73
 fi
 
+quarantine_token=${temporary_directory##*.}
+design_recovery="$design_parent/.bodyflow-brand-recovery.${quarantine_token}.$$"
+assets_recovery="$assets_parent/.bodyflow-assets-recovery.${quarantine_token}.$$"
+if [ -e "$design_recovery" ] || [ -e "$assets_recovery" ]; then
+  printf 'Unable to reserve unique BodyFlow recovery quarantine paths.\n' >&2
+  exit 74
+fi
+printf '%s\n' \
+  'BodyFlow original design tree retained after a successful promotion.' \
+  'Inspect before removal for writes made through descriptors opened before promotion.' \
+  "Promoted path: $design_root" \
+  "Paired asset quarantine: $assets_recovery" \
+  > "$design_transaction/RECOVERY.txt"
+printf '%s\n' \
+  'BodyFlow original asset tree retained after a successful promotion.' \
+  'Inspect before removal for writes made through descriptors opened before promotion.' \
+  "Promoted path: $assets_root" \
+  "Paired design quarantine: $design_recovery" \
+  > "$assets_transaction/RECOVERY.txt"
+
 trap '' HUP INT TERM
+if ! rename_path "$design_transaction" "$design_recovery"; then
+  printf 'Unable to quarantine the original design tree; rolling back.\n' >&2
+  exit 74
+fi
+design_transaction="$design_recovery"
+if ! rename_path "$assets_transaction" "$assets_recovery"; then
+  printf 'Unable to quarantine the original asset tree; rolling back.\n' >&2
+  exit 74
+fi
+assets_transaction="$assets_recovery"
+printf 'promotion committed; manual inspection required before removal\n' \
+  > "$design_transaction/PROMOTION-COMMITTED"
+printf 'promotion committed; manual inspection required before removal\n' \
+  > "$assets_transaction/PROMOTION-COMMITTED"
+design_quarantine="$design_transaction"
+assets_quarantine="$assets_transaction"
+design_transaction=""
+assets_transaction=""
 promotion_committed=1
 printf 'Canonical BodyFlow brand render promoted after staged validation.\n'
+printf 'Original design quarantine (inspect before removal): %s\n' \
+  "$design_quarantine"
+printf 'Original asset quarantine (inspect before removal): %s\n' \
+  "$assets_quarantine"

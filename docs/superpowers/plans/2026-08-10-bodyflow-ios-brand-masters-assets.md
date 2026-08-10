@@ -672,17 +672,22 @@ complete observed Sharp/native stack, configured concurrency/SIMD state, exact
 installed Debian packages, and exact font paths/checksums. The Dockerfile uses
 the recorded base-image digest and locked dependency/package versions.
 
-The runner captures the built image ID from `--iidfile`, renders product and
-review outputs only in a temporary repository copy, then runs the full brand
-validator in that copy. Check mode compares the temporary trees recursively and
-never promotes them. Write mode serializes runners with a repository lock,
-revalidates the immutable snapshot, and swaps same-filesystem candidate
-directories through a reversible transaction. A missing Docker runtime,
-unavailable pinned package, identity mismatch, render/validation failure,
-concurrent edit, promotion failure, or byte difference fails closed.
+The runner first captures one immutable snapshot containing the brand and asset
+trees, `scripts/brand` (including the Docker build context), `scripts/package.json`,
+and `pnpm-lock.yaml`. It builds from that context, captures the image ID from
+`--iidfile`, renders product and review outputs only from the snapshot, then runs
+the full brand validator there. Check mode compares the temporary trees
+recursively and never promotes them. Write mode serializes runners with a
+repository lock, revalidates every live snapshot input, and swaps same-filesystem
+candidate directories through a reversible transaction. A missing Docker
+runtime, unavailable pinned package, identity mismatch, render/validation
+failure, concurrent edit, promotion failure, or byte difference fails closed.
 Ordinary errors and capturable signals roll back automatically. An uncatchable
-termination or host failure preserves the dead lock and transaction directories;
-the next run refuses to continue until that recovery state is inspected.
+termination or host failure preserves the dead lock and transaction directories.
+After a successful write, the captured originals remain in paired, explicitly
+named recovery quarantines outside the promoted trees; check mode remains
+available, but another write refuses to start until those exact quarantines are
+manually inspected and removed.
 
 - [ ] **Step 4: Run GREEN and prove historical invariance**
 

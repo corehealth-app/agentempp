@@ -80,6 +80,14 @@ process. Competitor products are references for interaction principles only.
 Their trade dress, characters, choreography, sounds, copy, reward systems, and
 proprietary feature models must not be reproduced.
 
+The eight user-provided Cal AI onboarding montages recorded in that research
+are a secondary interaction reference only. They rank below the approved
+BodyFlow board and below the current auth/onboarding domain contracts. They may
+inform pacing, hierarchy, selection controls, progress disclosure, and
+permission timing. They are not authoritative for branding, data collection,
+claims, authentication order, calculations, entitlements, copy, artwork, or
+screen composition, and the third-party images must not enter the app bundle.
+
 ## Verified Current State
 
 ### Correctly Constructed Foundation
@@ -309,6 +317,91 @@ BodyFlow combines **calm precision with earned warmth**:
 The app must not become a calorie game, a guilt-driven streak system, or an
 always-animated dashboard.
 
+### Onboarding Interaction Direction
+
+The visual application increment will preserve the seven implemented domain
+steps: welcome, body data, objective, routine, persona, consent, and completion.
+The reference montages support a more focused presentation, but they do not
+replace `OnboardingDraft`, `OnboardingStep`, repository idempotency, email-first
+authentication, or the server bounds already enforced by the app.
+
+The onboarding shell must provide:
+
+- one question or one tightly related decision cluster per viewport;
+- one large, left-aligned title and one concise data-use explanation;
+- a quiet progress indicator based on the real eligible presentation pages;
+- Back navigation that preserves every accepted answer;
+- a stable safe-area-aware bottom action area;
+- an obvious selected state using shape, text, border or symbol in addition to
+  color;
+- disabled Continue only while the visible input is invalid or an operation is
+  in flight;
+- a visible retry path for recoverable persistence errors;
+- no layout jump when validation, keyboard, localization, or Dynamic Type
+  changes the content height.
+
+A large existing domain step may be presented as smaller internal pages. This
+is a view-layer adapter, not a new API contract. Each accepted page writes to
+the existing draft. Resume behavior is derived deterministically from the
+persisted domain step and the first required value that remains invalid or
+missing. Optional values may expose Skip only when the existing contract can
+distinguish a legitimate omission without fabricating data.
+
+The BodyFlow-specific mapping is fixed:
+
+- welcome retains display name, `pt-BR` or `en-US`, country, and confirmed IANA
+  timezone;
+- body data retains biological sex, birth date, height, weight, and optional
+  body-fat percentage within the existing bounds;
+- objective retains body recomposition, muscle gain, and maintenance;
+- routine retains activity level, training frequency, water, hunger, wake and
+  bedtime, and food organization;
+- persona retains Focus, Impulse, and Zen, while Balanced remains internal;
+- consent retains versioned BodyFlow documents and cannot use synthetic
+  development consent in Release;
+- completion displays only values present in the validated draft or returned
+  by an approved server operation.
+
+Metric and Imperial are presentation choices. The selected display system may
+default from confirmed country and remain editable, but stored and transported
+measurements keep the current canonical units. Conversion must be reversible,
+bounded, locale-aware, and covered by tests. The control may not produce a
+second source of truth.
+
+The screenshot option labelled `Other` does not authorize an extra biological
+sex value because the current domain enum has only masculine and feminine.
+Changing that vocabulary requires a separate domain, calculation, API,
+privacy, localization, and migration decision before the UI changes.
+
+Permission education is just in time. Notifications, Health access, tracking,
+camera, microphone, and photos are requested only immediately before the user
+invokes the approved capability, after a plain explanation and with an honest
+optional path where the product permits one. A visual onboarding screen cannot
+bypass the technical readiness gates for APNs, HealthKit, media, entitlements,
+or live authentication.
+
+The following are explicitly prohibited in the visual application:
+
+- copied Cal AI trade dress, typography, spacing, icons, charts, photography,
+  illustrations, motion choreography, or text;
+- acquisition surveys or prior-app questions without a real analytics contract
+  and approved data purpose;
+- speculative target dates, target speed, local calorie plans, or fabricated
+  plan-generation progress;
+- unsubstantiated percentages, testimonials, ratings, comparative claims, or
+  guaranteed outcomes;
+- calorie rollover, exercise-credit behavior, store pricing, social sign-in,
+  or Health integration not supported by approved BodyFlow contracts;
+- a paywall or permission prompt inserted only to imitate the reference flow.
+
+Onboarding motion follows the same four-tier system as the rest of BodyFlow.
+Selection feedback is brief; forward/back transitions preserve orientation and
+focus; a completed section may acknowledge progress once; the completion
+screen may use one bounded brand/mascot response only after the operation is
+confirmed. Reduce Motion replaces spatial movement and scaling with a static
+state or short fade. No animation delays Continue, Back, Skip, consent review,
+or account access.
+
 ### Motion Principles
 
 Every animation must preserve context, confirm an action, explain a state
@@ -417,7 +510,9 @@ executed as independently reviewable increments:
 3. **Localization foundation:** String Catalog, `pt-BR`, `en-US`, formatting,
    migration guard, and bilingual smoke tests.
 4. **Authentication and onboarding application:** splash, login, recovery,
-   onboarding, persona selection, and consent surfaces.
+   onboarding, persona selection, and consent surfaces. This increment applies
+   the approved BodyFlow identity to the focused onboarding interaction
+   direction without changing the seven-step domain contract.
 5. **Authenticated-product application:** Today, Register, Routine, Progress,
    Library, Mascot, and Profile using current contracts.
 6. **Motion and illustration:** centralized motion/haptic tokens, native

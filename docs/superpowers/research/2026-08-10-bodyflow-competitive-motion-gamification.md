@@ -37,6 +37,106 @@ The visual review separated two groups:
 The research screenshots are temporary references outside the repository. They
 are not production assets and must not be shipped.
 
+## User-Provided Onboarding Reference
+
+On 2026-08-10, the user provided eight Cal AI onboarding screenshot montages
+as an additional interaction reference. The montages remain outside the
+repository because they contain third-party interface imagery. Their role is
+limited to studying pacing, hierarchy, form ergonomics, permission timing, and
+progressive disclosure. They are not brand masters and must not be bundled,
+traced, reproduced, or used as production artwork.
+
+The reference set is identified by these immutable hashes:
+
+| Montage | Dimensions | SHA-256 |
+| --- | --- | --- |
+| 1 | `1694x926` | `4c9cfce7af4b2544d35af0e96ec7065da8f1fbf4b74307c5e49485f413144f16` |
+| 2 | `2102x974` | `a744849a4688f505adb21413c5845d5ccbeecef531585bfacaceac2c4d8b5bd4` |
+| 3 | `2104x1018` | `0a45c9328b68e530e718c755298fd97254c2a4b6da7b2fd68a98054ddba7cc3a` |
+| 4 | `2068x968` | `b0d24674e71cd4780d4f5069cbb8e2b0c0bf504a7ab7f3c781fa8004b8e31fd6` |
+| 5 | `2128x958` | `5135fa8df832dc182daf2cd438906aeb95fbb4960dddc401ccec17f5817e68eb` |
+| 6 | `2148x980` | `05f31028e83b54573bb88f4dda19609f6ca2bb137859fb6ed2e5441198f2c3f9` |
+| 7 | `2150x980` | `30ceb5e4ce6bef77b274bb93b8c1b4e37e9a725ddc2dc5700f245af474ea0430` |
+| 8 | `2134x964` | `b959d856f1db50e7cc0f01a7f5afbdf731640cd524e5cdebf2f1259d3ab3b139` |
+
+### Interaction Patterns Worth Adapting
+
+- one decision or one tightly related decision cluster per viewport;
+- a persistent but visually quiet progress indicator;
+- a clear Back action that preserves prior answers;
+- large, left-aligned questions with one short explanation of why the value is
+  needed;
+- full-width options with a selected state that is obvious without relying on
+  color alone;
+- a stable bottom action area with Continue disabled until the current input is
+  valid;
+- native, accessible value entry for dates and measurements;
+- an editable Metric/Imperial presentation choice while the domain model keeps
+  canonical units;
+- short, honest interstitials only when they explain the next permission or
+  summarize values already returned by the product;
+- contextual permission education before the system notification or Health
+  prompt;
+- explicit `Not now` or `Skip` only for capabilities that are genuinely
+  optional;
+- a final summary based on official values, followed by one clear next action.
+
+These patterns fit BodyFlow's approved experience position when rendered with
+the BodyFlow palette, typography, brand assets, coach language, accessibility
+rules, and calm motion hierarchy. The black-and-white Cal AI trade dress,
+spacing, typography, icons, illustrations, charts, photography, animation,
+copy, and exact screen composition are not reusable.
+
+### Mapping To The Existing BodyFlow Contract
+
+BodyFlow already has seven domain steps: welcome, body data, objective,
+routine, persona, consent, and completion. The reference does not authorize a
+new API or a new patient-data model. A future visual implementation may split a
+large domain step into smaller presentation pages, but each page must write to
+the existing `OnboardingDraft`, preserve Back navigation, and derive resumption
+from the persisted draft without changing server semantics.
+
+The valid mappings are:
+
+| Reference pattern | BodyFlow mapping |
+| --- | --- |
+| Name and local context | Existing welcome fields: display name, locale, country, and IANA timezone |
+| Sex selection | Existing `BiologicalSex` contract only; expanding its values requires a separate domain decision |
+| Height and weight | Existing canonical `heightCM` and `weightKG`, with optional display-unit conversion |
+| Birth date | Existing bounded `birthDate`, entered with an accessible native control |
+| Goal cards | Existing body recomposition, muscle gain, and maintenance objectives |
+| Weekly exercise | Existing activity level and training frequency fields |
+| Habit questions | Existing water, hunger, wake time, bedtime, and food-organization fields |
+| Coach choice | Existing Focus, Impulse, and Zen selection; Balanced remains internal |
+| Completion summary | Existing completion operation and server-owned values only |
+
+The following reference screens do not map to current BodyFlow contracts and
+must not be copied into the onboarding merely because they exist in the
+reference:
+
+- acquisition-source and prior-app surveys;
+- target-weight speed, speculative timelines, or a locally calculated plan;
+- numerical outcome claims, ratings, testimonials, comparative multipliers,
+  or success percentages without approved legal evidence;
+- calorie rollover or exercise-calorie policy not returned by BodyFlow;
+- Apple Health, notifications, social sign-in, and store prompts before their
+  respective product and technical gates are approved;
+- a paywall position, price, entitlement promise, or restore flow borrowed from
+  another product;
+- late authentication after onboarding, because BodyFlow's approved flow
+  confirms the email account before creating the patient domain profile;
+- any option that the current BodyFlow schema cannot represent safely.
+
+### Onboarding Motion Direction
+
+The reference supports a restrained wizard rhythm, not a copied transition
+system. BodyFlow should use native, interruptible transitions with stable
+geometry: short selection feedback, a bounded forward/back page transition,
+and a static or cross-fade alternative under Reduce Motion. The primary action
+must remain available immediately after validation. Decorative progress,
+fabricated plan-generation delays, fake typing, and animations that postpone a
+permission or purchase decision are rejected.
+
 ## Landscape
 
 ### Direct Nutrition And Fitness Products

@@ -37,6 +37,10 @@ and XCUI visual evidence.
   asset fetch is permitted.
 - No third-party mark, competitor character, fake value, health claim, secret,
   PII, external URL, or credential may be embedded in an asset.
+- The eight user-provided Cal AI onboarding montages are interaction references
+  for Increment 4 only. They are not source artwork, are not committed to this
+  repository, and do not alter the approved BodyFlow brand-master contract in
+  this plan.
 - The app remains app-first. No new architecture or asset depends on WhatsApp.
 - The asset family contains no baked-in `pt-BR` or `en-US` product copy.
 - This increment does not implement Android, screen redesign, localization,
@@ -721,6 +725,7 @@ authorization.
 | Mascot and animation assets | Explicitly assigned to Motion And Illustration |
 | `pt-BR` and `en-US` text | No text baked into assets; String Catalog is Increment 3 |
 | Android reuse | Masters and manifest are platform-neutral; Android remains separate |
+| Onboarding screenshot references | Recorded for Increment 4; no third-party image enters Increment 1 |
 
 ## Plan Self-Review
 

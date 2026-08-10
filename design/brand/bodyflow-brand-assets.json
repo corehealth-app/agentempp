@@ -9,6 +9,60 @@
     "height": 1055,
     "color_space": "sRGB"
   },
-  "masters": [],
+  "palette": {
+    "teal_dark": "#006C6A",
+    "teal": "#008B87",
+    "aqua": "#65D2C4",
+    "coral_dark": "#D95542",
+    "coral": "#FF735F",
+    "coral_light": "#FF9B7A",
+    "gold": "#D5A15D",
+    "gold_light": "#F0D09B",
+    "ink": "#142C33",
+    "white": "#FFFFFF",
+    "cream": "#F7F1E7"
+  },
+  "masters": [
+    {
+      "id": "symbol",
+      "path": "design/brand/masters/bodyflow-symbol.svg",
+      "sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9",
+      "view_box": "0 0 512 512",
+      "role": "primary_symbol",
+      "contains_text": false
+    },
+    {
+      "id": "wordmark",
+      "path": "design/brand/masters/bodyflow-wordmark.svg",
+      "sha256": "57503318200bf68e5e76665675b6a8a7bf743f8ceb754e9599ec9754a9bf163d",
+      "view_box": "0 0 960 256",
+      "role": "outlined_wordmark",
+      "contains_text": false
+    },
+    {
+      "id": "horizontal",
+      "path": "design/brand/masters/bodyflow-horizontal.svg",
+      "sha256": "cb88d3af9c6687573f06c34349c9c8bda2e602f8862cc728ca564ed880708cb0",
+      "view_box": "0 0 1536 512",
+      "role": "horizontal_lockup",
+      "contains_text": false
+    },
+    {
+      "id": "monochrome",
+      "path": "design/brand/masters/bodyflow-symbol-monochrome.svg",
+      "sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36",
+      "view_box": "0 0 512 512",
+      "role": "single_color_symbol",
+      "contains_text": false
+    },
+    {
+      "id": "negative",
+      "path": "design/brand/masters/bodyflow-symbol-negative.svg",
+      "sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647",
+      "view_box": "0 0 512 512",
+      "role": "negative_symbol",
+      "contains_text": false
+    }
+  ],
   "exports": []
 }

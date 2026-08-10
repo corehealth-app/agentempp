@@ -1,12 +1,22 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
 const manifestRelativePath = "design/brand/bodyflow-brand-assets.json";
 const exportsRelativePath = "design/brand/exports";
+const runFile = promisify(execFile);
+const requiredMasterIds = [
+  "symbol",
+  "wordmark",
+  "horizontal",
+  "monochrome",
+  "negative",
+];
 
 export async function validateBrandContract(rootDirectory) {
   const errors = [];
@@ -58,10 +68,13 @@ export async function validateBrandContract(rootDirectory) {
 
   const masters = Array.isArray(manifest.masters) ? manifest.masters : [];
   const exports = Array.isArray(manifest.exports) ? manifest.exports : [];
+  validateMasterFamily(masters, manifest.palette, errors);
   await validateAssets({
     root,
     rootRealPath,
     assets: [...masters, ...exports],
+    masters,
+    palette: manifest.palette,
     exports,
     errors,
   });
@@ -136,9 +149,45 @@ async function validateSource({
   }
 }
 
-async function validateAssets({ root, rootRealPath, assets, exports, errors }) {
+function validateMasterFamily(masters, palette, errors) {
+  const declaredIds = masters
+    .filter((asset) => isPlainObject(asset) && isNonEmptyString(asset.id))
+    .map((asset) => asset.id);
+
+  if (declaredIds.join("|") !== requiredMasterIds.join("|")) {
+    errors.push(
+      `manifest masters must declare exactly: ${requiredMasterIds.join(", ")}`,
+    );
+  }
+
+  if (!isPlainObject(palette) || Object.keys(palette).length === 0) {
+    errors.push("manifest palette must be a non-empty object");
+    return;
+  }
+
+  for (const [name, color] of Object.entries(palette)) {
+    if (!isNonEmptyString(name) || !isHexColor(color)) {
+      errors.push(`manifest palette color is invalid: ${name}`);
+    }
+  }
+}
+
+async function validateAssets({
+  root,
+  rootRealPath,
+  assets,
+  masters,
+  palette,
+  exports,
+  errors,
+}) {
   const ids = new Set();
   const paths = new Set();
+  const masterPaths = new Set(
+    masters
+      .filter((asset) => isPlainObject(asset) && isNonEmptyString(asset.path))
+      .map((asset) => toPosixPath(asset.path)),
+  );
 
   for (const asset of assets) {
     if (!isPlainObject(asset)) {
@@ -193,6 +242,16 @@ async function validateAssets({ root, rootRealPath, assets, exports, errors }) {
         errors.push(`declared asset sha256 mismatch: ${normalizedPath}`);
       }
     }
+
+    if (masterPaths.has(normalizedPath)) {
+      await validateSvgMaster({
+        asset,
+        absolutePath,
+        contents,
+        palette,
+        errors,
+      });
+    }
   }
 
   const declaredExports = new Set(
@@ -212,6 +271,116 @@ async function validateAssets({ root, rootRealPath, assets, exports, errors }) {
       errors.push(`undeclared export: ${diskExport}`);
     }
   }
+}
+
+async function validateSvgMaster({
+  asset,
+  absolutePath,
+  contents,
+  palette,
+  errors,
+}) {
+  const label = `SVG master ${asset.id ?? "unknown"}`;
+  const source = contents.toString("utf8");
+  const localErrors = [];
+
+  if (!toPosixPath(asset.path).startsWith("design/brand/masters/")
+    || path.extname(asset.path).toLowerCase() !== ".svg") {
+    localErrors.push(`${label} must be an SVG below design/brand/masters`);
+  }
+  if (!isNonEmptyString(asset.view_box)) {
+    localErrors.push(`${label} must declare view_box metadata`);
+  }
+  if (!isNonEmptyString(asset.role)) {
+    localErrors.push(`${label} must declare a semantic role`);
+  }
+  if (asset.contains_text !== false) {
+    localErrors.push(`${label} contains_text must be false`);
+  }
+
+  try {
+    await runFile("xmllint", ["--noout", absolutePath], {
+      timeout: 5_000,
+      maxBuffer: 256 * 1024,
+    });
+  } catch (error) {
+    localErrors.push(`${label} is not valid XML: ${errorMessage(error)}`);
+  }
+
+  const rootMatch = source.match(/<svg\b([^>]*)>/i);
+  if (!rootMatch) {
+    localErrors.push(`${label} must contain an svg root element`);
+  } else {
+    const attributes = rootMatch[1];
+    const viewBox = attributeValue(attributes, "viewBox");
+    if (!viewBox || viewBox !== asset.view_box) {
+      localErrors.push(
+        `${label} viewBox must equal manifest view_box ${asset.view_box ?? "unknown"}`,
+      );
+    }
+    if (hasAttribute(attributes, "width") || hasAttribute(attributes, "height")) {
+      localErrors.push(`${label} must not declare width or height`);
+    }
+  }
+
+  for (const tag of ["text", "image", "script", "foreignObject", "style"]) {
+    if (new RegExp(`<${tag}\\b`, "i").test(source)) {
+      localErrors.push(`${label} contains forbidden SVG element <${tag}>`);
+    }
+  }
+  if (/\bfont(?:-family|-face)?\s*=|\bfont-family\s*:|<font\b/i.test(source)) {
+    localErrors.push(`${label} contains a live font declaration`);
+  }
+  if (/\sstyle\s*=|@import\b/i.test(source)) {
+    localErrors.push(`${label} contains an imported or inline style declaration`);
+  }
+  if (/\b(?:href|xlink:href)\s*=\s*["'](?!#)/i.test(source)) {
+    localErrors.push(`${label} contains an external SVG reference`);
+  }
+  if (/url\(\s*["']?(?!#)/i.test(source)) {
+    localErrors.push(`${label} contains a non-local paint reference`);
+  }
+
+  const paths = [...source.matchAll(/<path\b[^>]*\bd\s*=\s*["']([^"']+)["'][^>]*>/gi)];
+  if (paths.length === 0 || paths.every((match) => match[1].trim().length === 0)) {
+    localErrors.push(`${label} must contain outlined path geometry`);
+  }
+
+  const allowedColors = new Set(
+    isPlainObject(palette)
+      ? Object.values(palette).filter(isHexColor).map((color) => color.toUpperCase())
+      : [],
+  );
+  for (const match of source.matchAll(/#[0-9a-f]{3,8}\b/gi)) {
+    const color = match[0].toUpperCase();
+    if (!allowedColors.has(color)) {
+      localErrors.push(`${label} color is not declared in manifest palette: ${color}`);
+    }
+  }
+
+  if (localErrors.length === 0) {
+    try {
+      const { data, info } = await sharp(contents, { density: 144 })
+        .resize(256, 256, { fit: "contain" })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      let hasVisiblePixel = false;
+      for (let offset = info.channels - 1; offset < data.length; offset += info.channels) {
+        if (data[offset] > 0) {
+          hasVisiblePixel = true;
+          break;
+        }
+      }
+      if (!hasVisiblePixel) {
+        localErrors.push(`${label} has empty visible bounds`);
+      }
+    } catch (error) {
+      localErrors.push(`${label} could not be rendered: ${errorMessage(error)}`);
+    }
+  }
+
+  errors.push(...localErrors);
 }
 
 async function readRepositoryFile({
@@ -330,6 +499,21 @@ function isNonEmptyString(value) {
 
 function isSha256(value) {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isHexColor(value) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function hasAttribute(attributes, name) {
+  return new RegExp(`(?:^|\\s)${name}\\s*=`, "i").test(attributes);
+}
+
+function attributeValue(attributes, name) {
+  const match = attributes.match(
+    new RegExp(`(?:^|\\s)${name}\\s*=\\s*["']([^"']+)["']`, "i"),
+  );
+  return match?.[1] ?? null;
 }
 
 function errorMessage(error) {

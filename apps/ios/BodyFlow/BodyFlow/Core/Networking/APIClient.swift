@@ -7,9 +7,18 @@ protocol APIClient: Sendable {
 }
 
 enum APIClientError: Error, Equatable, Sendable {
+    case operationUnavailable
     case fixtureFailure
     case missingPayload(APIRequestKey)
     case decodingFailure
+}
+
+struct UnavailableAPIClient: APIClient {
+    func send<Response: Decodable & Sendable>(
+        _ request: APIRequest<Response>
+    ) async throws -> Response {
+        throw APIClientError.operationUnavailable
+    }
 }
 
 actor MockAPIClient: APIClient {

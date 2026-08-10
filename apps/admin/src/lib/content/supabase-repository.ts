@@ -172,6 +172,17 @@ const internalAssetRowSchema = z
     status: assetStatusSchema,
   })
   .strict()
+const versionValidationSnapshotRowSchema = z
+  .object({
+    id: uuidSchema,
+    publication_id: uuidSchema,
+    locale: localeSchema,
+    state: stateSchema,
+    body_markdown: z.string().nullable(),
+    updated_at: timestampSchema,
+    publish_at: nullableTimestampSchema,
+  })
+  .strict()
 
 const publicationResultSchema = z
   .object({ publication_id: uuidSchema, slug: z.string(), created_at: timestampSchema })
@@ -295,6 +306,8 @@ const VERSION_SELECTION =
 const SAFE_ASSET_SELECTION = 'id, mime_type, declared_size_bytes, actual_size_bytes, status'
 const INTERNAL_ASSET_SELECTION =
   'id, bucket_id, object_path, mime_type, declared_size_bytes, actual_size_bytes, etag, status'
+const VERSION_VALIDATION_SNAPSHOT_SELECTION =
+  'id, publication_id, locale, state, body_markdown, updated_at, publish_at'
 const LIST_SCAN_BATCH_SIZE = 100
 const LIST_SCAN_MAX_OFFSET = 10_000
 const DETAIL_VERSION_LIMIT = 50
@@ -302,6 +315,7 @@ const DETAIL_VERSION_LIMIT = 50
 type Operation =
   | 'list'
   | 'get'
+  | 'getVersionValidationSnapshot'
   | 'createPublication'
   | 'createDraft'
   | 'saveDraft'
@@ -496,6 +510,35 @@ function createRepository(client: ContentSupabaseClient): ContentAdminRepository
     },
 
     listWithMetadata,
+
+    async getVersionValidationSnapshot(versionId, expectedUpdatedAt) {
+      let query = client
+        .from('content_versions')
+        .select(VERSION_VALIDATION_SNAPSHOT_SELECTION)
+        .eq('id', versionId)
+      if (expectedUpdatedAt !== undefined) {
+        query = query.eq('updated_at', expectedUpdatedAt)
+      }
+      const data = await queryResult(
+        query.maybeSingle(),
+        'getVersionValidationSnapshot',
+      )
+      if (data === null) return null
+      const row = parseDatabase(
+        versionValidationSnapshotRowSchema,
+        data,
+        'getVersionValidationSnapshot',
+      )
+      return {
+        versionId: row.id,
+        publicationId: row.publication_id,
+        locale: row.locale,
+        state: row.state,
+        bodyMarkdown: row.body_markdown,
+        updatedAt: row.updated_at,
+        publishAt: row.publish_at,
+      }
+    },
 
     async get(publicationId: string) {
       const publicationData = await queryResult(

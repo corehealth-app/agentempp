@@ -1,0 +1,141 @@
+Attributes: Application, 0x116c52080, pid: 18055, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x116c52080, pid: 18055, label: 'BodyFlow'
+    Window (Main), 0x116c53200, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x116c530c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x116c53c00, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x116c52bc0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x116c51f40, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x116c53e80, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x116c52440, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x116c52f80, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x116c52e40, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x116c53d40, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x116c52940, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x116c52300, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x116c52d00, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x116c526c0, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x116c52a80, {{0.0, 116.0}, {402.0, 106.0}}, identifier: 'Progresso'
+                              StaticText, 0x116c53340, {{16.0, 173.7}, {161.0, 40.7}}, label: 'Progresso'
+                            Other, 0x116c52800, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116c53480, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x116c521c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x116c535c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                    Other, 0x116c52580, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.progresso'
+                                    ScrollView, 0x116c53ac0, {{0.0, 106.0}, {402.0, 768.0}}
+                                      Other, 0x116c53700, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116c73d40, {{0.0, 106.0}, {402.0, 118.8}}
+                                        Other, 0x116c73c00, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116c73980, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116c73840, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Image, 0x116c73480, {{-120.0, 731.0}, {642.0, 286.0}}, identifier: 'AdditionalDimmingOverlay'
+                                          Other, 0x116c735c0, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116c73ac0, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Other, 0x116c73e80, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116c73700, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116bbd900, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116bbe580, {{0.0, 222.0}, {402.0, 1066.0}}
+                                        Other, 0x116bbdcc0, {{15.5, 238.0}, {371.0, 913.8}}, identifier: 'progress.received-values'
+                                          StaticText, 0x116bbe440, {{16.0, 238.0}, {92.0, 14.3}}, label: 'CONSISTÊNCIA'
+                                          StaticText, 0x116bbed00, {{16.0, 260.3}, {228.3, 40.7}}, label: 'Seu progresso'
+                                          Other, 0x116bbdf40, {{15.5, 324.5}, {371.0, 279.3}}, identifier: 'progress.summary', label: 'Resumo do progresso'
+                                            StaticText, 0x116bbe800, {{33.7, 341.3}, {336.3, 20.3}}, label: 'XP total, 2.450 XP'
+                                              Image, 0x116bbda40, {{33.7, 342.0}, {15.7, 19.0}}, identifier: 'sparkles', label: 'Brilho'
+                                              StaticText, 0x116bbde00, {{59.0, 341.3}, {59.7, 20.3}}, label: 'XP total'
+                                              StaticText, 0x116bbe6c0, {{296.0, 341.3}, {74.0, 20.3}}, label: '2.450 XP'
+                                            Other, 0x116bbea80, {{34.0, 386.3}, {77.3, 20.3}}, label: 'Nível 7'
+                                              Image, 0x116bbd7c0, {{34.0, 387.3}, {16.0, 19.0}}, identifier: 'medal', label: 'medal'
+                                              StaticText, 0x116bbe080, {{34.0, 386.3}, {77.3, 20.3}}, label: 'Nível 7'
+                                            StaticText, 0x116bbe1c0, {{33.3, 431.7}, {336.7, 20.3}}, label: 'Sequência atual, 12 dias'
+                                              Image, 0x116bbe940, {{33.3, 433.0}, {14.0, 18.0}}, identifier: 'flame', label: 'Chama'
+                                              StaticText, 0x116bbd680, {{56.7, 431.7}, {121.3, 20.3}}, label: 'Sequência atual'
+                                              StaticText, 0x116bbdb80, {{314.7, 431.7}, {55.3, 20.3}}, label: '12 dias'
+                                            StaticText, 0x116bbe300, {{34.0, 476.3}, {336.0, 20.3}}, label: 'Maior sequência, 21 dias'
+                                              Image, 0x116c74000, {{34.0, 477.3}, {16.3, 18.3}}, identifier: 'trophy', label: 'trophy'
+                                              StaticText, 0x116c74140, {{60.3, 476.3}, {125.0, 20.3}}, label: 'Maior sequência'
+                                              StaticText, 0x116c74280, {{314.7, 476.3}, {55.3, 20.3}}, label: '21 dias'
+                                            StaticText, 0x116c743c0, {{33.3, 521.7}, {336.7, 20.3}}, label: 'Blocos concluídos, 2'
+                                              Image, 0x116c74500, {{33.3, 522.0}, {19.7, 19.7}}, identifier: 'checkmark.seal', label: 'Verificado', Selected
+                                              StaticText, 0x116c74640, {{62.3, 521.7}, {138.3, 20.3}}, label: 'Blocos concluídos'
+                                              StaticText, 0x116c74780, {{359.7, 521.7}, {10.3, 20.3}}, label: '2'
+                                            StaticText, 0x116c748c0, {{33.3, 567.0}, {336.7, 20.3}}, label: 'Déficit informado, 735 kcal'
+                                              Image, 0x116c74a00, {{33.3, 568.7}, {17.0, 17.0}}, identifier: 'arrow.down.circle', label: 'Círculo De Seta Para Baixo'
+                                              StaticText, 0x116c74b40, {{59.7, 567.0}, {131.0, 20.3}}, label: 'Déficit informado'
+                                              StaticText, 0x116c74c80, {{303.0, 567.0}, {67.0, 20.3}}, label: '735 kcal'
+                                          Other, 0x116c74dc0, {{15.5, 626.8}, {371.0, 162.0}}, identifier: 'progress.badges'
+                                            StaticText, 0x116c74f00, {{32.0, 643.3}, {188.0, 20.3}}, label: 'Medalhas conquistadas'
+                                            StaticText, 0x116c75040, {{34.0, 675.7}, {326.7, 42.3}}, identifier: 'progress.medal.0', label: '70000000-0000-4000-8000-000000000001'
+                                              Image, 0x116c75180, {{34.0, 676.7}, {16.0, 19.0}}, identifier: 'medal', label: 'medal'
+                                              StaticText, 0x116c752c0, {{64.0, 675.7}, {296.7, 42.3}}, label: '70000000-0000-4000-8000-000000000001'
+                                            StaticText, 0x116c75400, {{34.0, 730.0}, {326.7, 42.3}}, identifier: 'progress.medal.1', label: '70000000-0000-4000-8000-000000000001'
+                                              Image, 0x116c75540, {{34.0, 731.0}, {16.0, 19.0}}, identifier: 'medal', label: 'medal'
+                                              StaticText, 0x116c75680, {{64.0, 730.0}, {296.7, 42.3}}, label: '70000000-0000-4000-8000-000000000001'
+                                          StaticText, 0x116c757c0, {{15.5, 811.8}, {371.0, 53.3}}, identifier: 'progress.missions.unavailable', label: 'Missões diárias — Indisponível nesta versão.'
+                                          StaticText, 0x116c75900, {{33.7, 904.7}, {336.3, 20.3}}, identifier: 'progress.measurements', label: 'Peso atual, 78,4 kg'
+                                            Image, 0x116c75a40, {{33.7, 906.0}, {17.3, 17.7}}, identifier: 'scalemass', label: 'scalemass'
+                                            StaticText, 0x116c75b80, {{60.7, 904.7}, {79.0, 20.3}}, label: 'Peso atual'
+                                            StaticText, 0x116c75cc0, {{311.0, 904.7}, {59.0, 20.3}}, label: '78,4 kg'
+                                          StaticText, 0x116c75e00, {{34.0, 949.3}, {336.0, 20.3}}, identifier: 'progress.measurements', label: 'Gordura corporal, 18,6%'
+                                            Image, 0x116c75f40, {{34.0, 950.3}, {14.7, 18.3}}, identifier: 'figure', label: 'figure'
+                                            StaticText, 0x116c76080, {{58.7, 949.3}, {130.0, 20.3}}, label: 'Gordura corporal'
+                                            StaticText, 0x116c761c0, {{319.7, 949.3}, {50.3, 20.3}}, label: '18,6%'
+                                          StaticText, 0x116c76300, {{32.0, 1025.7}, {338.0, 20.3}}, identifier: 'progress.dates', label: 'Última atividade, 20/07/2026'
+                                            StaticText, 0x116c76440, {{32.0, 1025.7}, {122.7, 20.3}}, label: 'Última atividade'
+                                            StaticText, 0x116c76580, {{276.7, 1025.7}, {93.3, 20.3}}, label: '20/07/2026'
+                                          StaticText, 0x116c766c0, {{32.0, 1070.3}, {338.0, 20.3}}, identifier: 'progress.dates', label: 'Próxima reavaliação, 29/07/2026'
+                                            StaticText, 0x116c76800, {{32.0, 1070.3}, {150.7, 20.3}}, label: 'Próxima reavaliação'
+                                            StaticText, 0x116c76940, {{276.7, 1070.3}, {93.3, 20.3}}, label: '29/07/2026'
+                                          StaticText, 0x116c76a80, {{32.0, 1115.0}, {338.0, 20.3}}, identifier: 'progress.dates', label: 'Atualizado em, 20/07/2026'
+                                            StaticText, 0x116c76bc0, {{32.0, 1115.0}, {107.7, 20.3}}, label: 'Atualizado em'
+                                            StaticText, 0x116c76d00, {{276.7, 1115.0}, {93.3, 20.3}}, label: '20/07/2026'
+                                        Button, 0x116c76e40, {{15.5, 1174.8}, {371.0, 97.7}}, identifier: 'progress.block.detail', label: 'Bloco 7.700 kcal, Ver o bloco persistido no resumo de hoje'
+                                          Image, 0x116c76f80, {{42.7, 1213.0}, {23.0, 21.3}}, identifier: 'circle.hexagongrid', label: 'circle.hexagongrid'
+                                          StaticText, 0x116c770c0, {{92.0, 1191.3}, {128.3, 20.3}}, label: 'Bloco 7.700 kcal'
+                                          StaticText, 0x116c77200, {{92.0, 1215.7}, {184.3, 40.3}}, label: 'Ver o bloco persistido no resumo de hoje'
+                                          Image, 0x116c77340, {{363.3, 1218.7}, {6.0, 10.3}}, identifier: 'chevron.right', label: 'Avançar'
+                                      Other, 0x116c77480, {{369.0, 222.0}, {30.0, 569.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116c775c0, {{396.0, 225.0}, {3.0, 341.7}}
+                                      Other, 0x116c77700, {{369.0, 222.0}, {30.0, 569.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116c77840, {{396.0, 225.0}, {3.0, 341.7}}
+                            Other, 0x116c77980, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116c77ac0, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x116c77c00, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x116c77d40, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x116c77e80, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x116c78000, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x116c78140, {{21.0, 791.0}, {82.3, 54.0}}
+                        Other, 0x116c78280, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x116c783c0, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje'
+                            Image, 0x116c78500, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x116c78640, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x116c78780, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x116c788c0, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x116c78a00, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x116c78b40, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso', Selected
+                            Image, 0x116c78c80, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x116c78dc0, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x116c78f00, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x116c79040, {{228.1, 795.0}, {82.3, 54.0}}
+                          Other, 0x116c79180, {{228.1, 795.0}, {82.3, 54.0}}
+                            Other, 0x116c792c0, {{228.1, 795.0}, {82.3, 54.0}}
+                            Other, 0x116c79400, {{228.1, 795.0}, {82.3, 54.0}}
+                              Other, 0x116c79540, {{228.1, 795.0}, {82.3, 54.0}}
+                                Other, 0x116c79680, {{228.1, 795.0}, {82.3, 54.0}}
+                                  Other, 0x116c797c0, {{228.1, 795.0}, {82.3, 54.0}}
+                                Other, 0x116c79900, {{228.1, 795.0}, {82.3, 54.0}}
+                              Other, 0x116c79a40, {{228.1, 795.0}, {82.3, 54.0}}
+                  Other, 0x116c79b80, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x116c79cc0, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x116c79e00, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116c79f40, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116c7a080, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x116c7a1c0, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116c7a300, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116c7a440, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x116c52080, pid: 18055, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x116c7a580, pid: 18055, label: 'BodyFlow'
+  }

@@ -6,8 +6,8 @@ struct BodyFlowBrandIdentityView: View {
             .font(BodyFlowTypography.headline)
             .fontWeight(.bold)
             .foregroundStyle(BodyFlowColor.accent)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("brand.product-name")
     }
@@ -15,15 +15,19 @@ struct BodyFlowBrandIdentityView: View {
 
 extension View {
     func bodyFlowBrandIdentity() -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
             BodyFlowBrandIdentityView()
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, BodyFlowSpacing.lg)
                 .padding(.vertical, BodyFlowSpacing.xs)
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .background(BodyFlowColor.background)
                 .overlay(alignment: .bottom) {
                     Divider()
                 }
+
+            self
+                .clipped()
         }
     }
 }
@@ -34,6 +38,7 @@ enum ScreenContentState: Equatable, Sendable {
     case empty
     case recoverableError
     case offline
+    case unavailable
 
     var screenState: ScreenState? {
         switch self {
@@ -47,6 +52,8 @@ enum ScreenContentState: Equatable, Sendable {
             .recoverableError
         case .offline:
             .offline
+        case .unavailable:
+            .unavailable
         }
     }
 }
@@ -56,6 +63,7 @@ enum ScreenState: Equatable, Sendable {
     case empty
     case recoverableError
     case offline
+    case unavailable
 
     struct Descriptor: Equatable, Sendable {
         let title: String
@@ -94,6 +102,28 @@ enum ScreenState: Equatable, Sendable {
                 systemImage: "wifi.slash",
                 showsRetry: true
             )
+        case .unavailable:
+            Descriptor(
+                title: "Indisponível nesta versão",
+                message: "",
+                systemImage: "nosign",
+                showsRetry: false
+            )
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .loading:
+            "state.loading"
+        case .empty:
+            "state.empty"
+        case .recoverableError:
+            "state.error"
+        case .offline:
+            "state.offline"
+        case .unavailable:
+            "state.unavailable"
         }
     }
 }
@@ -101,13 +131,19 @@ enum ScreenState: Equatable, Sendable {
 struct ScreenStateView: View {
     let state: ScreenState
     private let retryAction: @MainActor () -> Void
+    private let identifier: String
+    private let titleIdentifier: String?
 
     init(
         state: ScreenState,
-        retryAction: @escaping @MainActor () -> Void
+        retryAction: @escaping @MainActor () -> Void,
+        accessibilityIdentifier: String? = nil,
+        titleAccessibilityIdentifier: String? = nil
     ) {
         self.state = state
         self.retryAction = retryAction
+        identifier = accessibilityIdentifier ?? state.accessibilityIdentifier
+        titleIdentifier = titleAccessibilityIdentifier
     }
 
     var body: some View {
@@ -116,20 +152,35 @@ struct ScreenStateView: View {
                 VStack(spacing: BodyFlowSpacing.md) {
                     stateGraphic
 
-                    Text(state.descriptor.title)
-                        .font(BodyFlowTypography.title)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(BodyFlowColor.primaryText)
+                    if let titleIdentifier {
+                        Text(state.descriptor.title)
+                            .font(BodyFlowTypography.title)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                            .accessibilityIdentifier(titleIdentifier)
+                    } else {
+                        Text(state.descriptor.title)
+                            .font(BodyFlowTypography.title)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                    }
 
-                    Text(state.descriptor.message)
-                        .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
+                    if !state.descriptor.message.isEmpty {
+                        Text(state.descriptor.message)
+                            .font(BodyFlowTypography.body)
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    }
 
                     if state.descriptor.showsRetry {
-                        Button("Tentar novamente", action: triggerRetry)
-                            .font(BodyFlowTypography.headline)
-                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .accessibilityIdentifier("state.retry")
+                        Button(action: triggerRetry) {
+                            Text("Tentar novamente")
+                                .font(BodyFlowTypography.headline)
+                                .frame(
+                                    minHeight: BodyFlowSpacing.minimumTapTarget
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("state.retry")
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -144,6 +195,7 @@ struct ScreenStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
+        .accessibilityIdentifier(identifier)
     }
 
     @MainActor

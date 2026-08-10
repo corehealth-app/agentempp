@@ -17,6 +17,24 @@ import {
 
 const UUID = '9baf14c8-6376-4a47-a9b8-9fcf2e5cefc1'
 const LONG_BODY = 'A alimentação consistente apoia decisões graduais e sustentáveis. '.repeat(3)
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const ORDINARY_PIPE_MARKDOWN =
+  'Proteína | contexto ajuda a comparar escolhas alimentares sem transformar esta frase em uma tabela ou alterar o texto editorial.'
+const ESCAPED_PIPE_MARKDOWN =
+  'Proteína \\| contexto ajuda a explicar o caractere literal sem transformar esta frase em uma tabela ou perder o conteúdo editorial.'
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${LONG_BODY}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${LONG_BODY}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${LONG_BODY}`],
+] as const
 
 function nestedList(depth: number): string {
   return Array.from(
@@ -181,6 +199,72 @@ describe('content contracts', () => {
 })
 
 describe('validateContentMarkdown', () => {
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'rejects portable-invalid %s with a bounded Markdown error before canonicalization',
+    (_description, value) => {
+      expect(value.length).toBeGreaterThanOrEqual(100)
+      expect(value.length).toBeLessThanOrEqual(50_000)
+      expect(() => validateContentMarkdown(value)).toThrow('Invalid content Markdown')
+    },
+  )
+
+  it.each([
+    ['valid strong', `Texto com **ênfase válida** e ${LONG_BODY}`],
+    ['ordinary pipe', ORDINARY_PIPE_MARKDOWN],
+    ['escaped pipe', ESCAPED_PIPE_MARKDOWN],
+    ['escaped literal delimiters', `Texto com \\*asteriscos\\* e \\~tils\\~. ${LONG_BODY}`],
+    ['block directive spelling', `:::aviso\nTexto literal seguro para o leitor.\n:::\n\n${LONG_BODY}`],
+    ['inline directive spelling', `Texto com :aviso[orientação segura] como texto literal. ${LONG_BODY}`],
+    ['Doxygen command spelling', `Texto com \\param escolha e \\brief orientação segura. ${LONG_BODY}`],
+  ])('accepts safe text containing %s', (_description, value) => {
+    expect(() => validateContentMarkdown(value)).not.toThrow()
+  })
+
+  it('preserves the audited canonical size boundaries', () => {
+    expect(() => validateContentMarkdown(`palavra${' '.repeat(100)}`)).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+    expect(() => validateContentMarkdown('a'.repeat(50_000))).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+    expect(() => validateContentMarkdown(`${'a'.repeat(24_999)}\r\n${'a'.repeat(25_000)}`)).toThrow(
+      'normalized body must be between 100 and 50000 characters',
+    )
+  })
+
+  it('rejects a length-valid GFM pipe table with the bounded table error', () => {
+    expect(PIPE_TABLE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+    expect(PIPE_TABLE_MARKDOWN.length).toBeLessThanOrEqual(50_000)
+
+    expect(() => validateContentMarkdown(PIPE_TABLE_MARKDOWN)).toThrow(
+      'Invalid content Markdown: tables are not supported',
+    )
+  })
+
+  it('accepts an ordinary pipe as one paragraph text AST instead of scanning raw pipes', () => {
+    expect(ORDINARY_PIPE_MARKDOWN).toContain('|')
+    expect(ORDINARY_PIPE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+
+    expect(validateContentMarkdown(ORDINARY_PIPE_MARKDOWN).blocks).toEqual([
+      {
+        type: 'paragraph',
+        children: [{ type: 'text', value: ORDINARY_PIPE_MARKDOWN }],
+      },
+    ])
+  })
+
+  it('accepts an escaped pipe as one paragraph text AST instead of scanning raw pipes', () => {
+    expect(ESCAPED_PIPE_MARKDOWN).toContain('\\|')
+    expect(ESCAPED_PIPE_MARKDOWN.length).toBeGreaterThanOrEqual(100)
+
+    expect(validateContentMarkdown(ESCAPED_PIPE_MARKDOWN).blocks).toEqual([
+      {
+        type: 'paragraph',
+        children: [{ type: 'text', value: ESCAPED_PIPE_MARKDOWN.replace('\\|', '|') }],
+      },
+    ])
+  })
+
   it('normalizes CRLF and produces the portable allowed AST', () => {
     const result = validateContentMarkdown(
       '## Título\r\n\r\nTexto com **força**, *ênfase* e [fonte](https://bodyflow.app).\r\n\r\n> Conselho seguro.\r\n\r\n1. Primeiro\r\n2. Segundo\r\n\r\n- Terceiro\r\n\r\n' +
@@ -303,6 +387,30 @@ describe('validateContentMarkdown', () => {
     expect(() =>
       validateContentMarkdown(`[source](https://bodyflow.app "Official site")\n\n${LONG_BODY}`),
     ).toThrow()
+  })
+
+  it('rejects a hostless HTTPS source instead of repairing it into an authority', () => {
+    const validAbsoluteHTTPS = `[fonte](HTTPS://bodyflow.app/conteudo)\n\n${LONG_BODY}`
+    const hostlessHTTPS = `[fonte](https:///conteudo/local)\n\n${LONG_BODY}`
+
+    expect(validAbsoluteHTTPS.length).toBeGreaterThanOrEqual(100)
+    expect(hostlessHTTPS.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(validAbsoluteHTTPS)).not.toThrow()
+    expect(() => validateContentMarkdown(hostlessHTTPS)).toThrow()
+  })
+
+  it('rejects a backslash authority instead of repairing it into a host', () => {
+    const backslashAuthority = `[fonte](https://\\conteudo/local)\n\n${LONG_BODY}`
+
+    expect(backslashAuthority.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(backslashAuthority)).toThrow()
+  })
+
+  it('rejects whitespace in the original authority instead of repairing it into a host', () => {
+    const whitespaceAuthority = `[fonte](https://&#x09;/conteudo/local)\n\n${LONG_BODY}`
+
+    expect(whitespaceAuthority.length).toBeGreaterThanOrEqual(100)
+    expect(() => validateContentMarkdown(whitespaceAuthority)).toThrow()
   })
 
   it('rejects more than eight nested inline nodes', () => {

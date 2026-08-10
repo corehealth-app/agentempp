@@ -1,0 +1,102 @@
+Attributes: Application, 0x116bfd400, pid: 17932, label: 'BodyFlow'
+Element subtree:
+ →Application, 0x116bfd400, pid: 17932, label: 'BodyFlow'
+    Window (Main), 0x116bfd540, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x116bfd680, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x116bfd7c0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x116bfd900, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x116bfc8c0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x116bffe80, {{201.0, 451.0}, {0.0, 0.0}}
+              Other, 0x116bfe080, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x116bff700, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x116bff840, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x116bff980, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x116bffac0, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x116bfca00, {{0.0, 0.0}, {402.0, 874.0}}
+                          StaticText, 0x116bfcb40, {{161.0, 73.8}, {80.0, 20.3}}, identifier: 'brand.product-name', label: 'BodyFlow'
+                          Other, 0x116bfcc80, {{0.0, 106.0}, {402.0, 768.0}}
+                            NavigationBar, 0x116bfcdc0, {{0.0, 116.0}, {402.0, 54.0}}, identifier: 'Conteúdo'
+                              Button, 0x116bfe1c0, {{16.0, 116.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Biblioteca'
+                              StaticText, 0x116bfe300, {{162.0, 127.7}, {78.0, 20.7}}, label: 'Conteúdo'
+                            Other, 0x116bfd180, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116bfd2c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                Other, 0x116bfc3c0, {{0.0, 106.0}, {402.0, 768.0}}
+                                  Other, 0x116bfc500, {{0.0, 106.0}, {402.0, 768.0}}
+                                    Other, 0x116bfc640, {{0.0, 106.0}, {402.0, 768.0}}, identifier: 'screen.content-detail.10000000-0000-4000-8000-000000000001'
+                                    ScrollView, 0x116bfe440, {{0.0, 106.0}, {402.0, 768.0}}
+                                      Other, 0x116bfdcc0, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116bfdf40, {{0.0, 106.0}, {402.0, 118.8}}
+                                        Other, 0x116bffc00, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116bfde00, {{0.0, 106.0}, {402.0, 768.0}}
+                                        Other, 0x116bfd040, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Image, 0x116bfc000, {{-120.0, 731.0}, {642.0, 286.0}}, identifier: 'AdditionalDimmingOverlay'
+                                          Other, 0x116bfc140, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116bfda40, {{0.0, 726.2}, {402.0, 147.8}}
+                                          Other, 0x116bfdb80, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116bfc280, {{0.0, 726.2}, {402.0, 147.8}}
+                                            Other, 0x116bfc780, {{0.0, 726.2}, {402.0, 147.8}}
+                                      Other, 0x116bffd40, {{0.0, 170.0}, {402.0, 902.0}}
+                                        StaticText, 0x116bc3200, {{24.0, 201.9}, {291.3, 81.7}}, label: 'Nutrição Sintética Prompt 14'
+                                        StaticText, 0x116bc2940, {{26.0, 531.0}, {91.7, 19.3}}, label: 'Nutrição'
+                                        StaticText, 0x116bc2a80, {{240.3, 531.0}, {137.7, 19.3}}, label: '4 min de leitura'
+                                        StaticText, 0x116bc2bc0, {{27.0, 574.4}, {61.0, 19.3}}, label: 'Salvo'
+                                        StaticText, 0x116bc2d00, {{105.3, 574.4}, {98.3, 19.3}}, label: 'Concluído'
+                                        Button, 0x116bc30c0, {{24.0, 617.7}, {201.7, 58.0}}, identifier: 'content-detail.save', label: 'Remover dos salvos'
+                                          Image, 0x116bc3c00, {{35.7, 637.7}, {18.3, 18.3}}, identifier: 'bookmark.slash', label: 'bookmark.slash'
+                                          StaticText, 0x116bc3d40, {{24.0, 617.7}, {201.7, 58.0}}, label: 'Remover dos salvos'
+                                        StaticText, 0x116bc3700, {{24.0, 724.1}, {244.0, 54.3}}, label: 'CONTEÚDO SINTÉTICO PROMPT 14'
+                                        StaticText, 0x116bc35c0, {{24.0, 794.4}, {341.3, 64.3}}, label: 'Este texto é uma amostra inteiramente sintética, criada apenas para validar a leitura determinística no aplicativo BodyFlow.'
+                                        Other, 0x116bc3840, {{24.0, 874.7}, {337.3, 65.0}}, label: 'Lista'
+                                          Other, 0x116bc3340, {{68.3, 874.7}, {248.7, 20.3}}, value: Item 1 de 3
+                                            StaticText, 0x116bc3ac0, {{68.3, 874.7}, {248.7, 20.3}}, label: 'Nenhuma pessoa real é descrita.'
+                                          Other, 0x116bc3480, {{24.0, 897.1}, {337.3, 20.3}}, value: Item 2 de 3
+                                            StaticText, 0x116bc3e80, {{24.0, 897.1}, {337.3, 20.3}}, label: 'Nenhuma recomendação clínica é oferecida.'
+                                          Other, 0x116bc3980, {{50.2, 919.4}, {285.0, 20.3}}, value: Item 3 de 3
+                                            StaticText, 0x116bc2f80, {{50.2, 919.4}, {285.0, 20.3}}, label: 'Nenhum dado sai deste cenário local.'
+                                        StaticText, 0x116bc2e40, {{24.0, 997.7}, {313.0, 42.3}}, label: 'Resultado esperado: uma apresentação visivelmente fictícia e segura para testes.'
+                                      Other, 0x116bf4640, {{369.0, 170.0}, {30.0, 621.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116bf4780, {{396.0, 173.0}, {3.0, 450.3}}
+                                      Other, 0x116bf48c0, {{369.0, 170.0}, {30.0, 621.0}}, label: 'Barra de rolagem vertical, 2 páginas', value: 0%
+                                        Other, 0x116bf4a00, {{396.0, 173.0}, {3.0, 450.3}}
+                            Other, 0x116bf4b40, {{0.0, 106.0}, {402.0, 768.0}}
+                              Other, 0x116bf4c80, {{0.0, 106.0}, {402.0, 768.0}}
+                Other, 0x116bf4dc0, {{0.0, 791.0}, {402.0, 83.0}}
+                  Other, 0x116bf4f00, {{0.0, 0.0}, {402.0, 874.0}}
+                    TabBar, 0x116bf5040, {{0.0, 791.0}, {402.0, 83.0}}, label: 'Barra de Abas'
+                      Other, 0x116bf5180, {{21.0, 791.0}, {360.0, 62.0}}
+                        Other, 0x116bf52c0, {{21.0, 791.0}, {74.0, 54.0}}
+                        Other, 0x116bf5400, {{21.0, 791.0}, {360.0, 62.0}}
+                          Button, 0x116bf5540, {{25.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.hoje', label: 'Hoje', Selected
+                            Image, 0x116bf5680, {{45.0, 801.0}, {33.3, 28.0}}, identifier: 'house.fill', label: 'casa'
+                          Button, 0x116bf57c0, {{91.6, 795.0}, {77.3, 54.0}}, identifier: 'tab.registrar', label: 'Registrar'
+                            Image, 0x116beb700, {{116.6, 801.3}, {27.3, 27.3}}, identifier: 'plus.circle.fill', label: 'adicionar'
+                          Button, 0x116beb840, {{161.5, 795.0}, {74.0, 54.0}}, identifier: 'tab.plano', label: 'Plano'
+                            Image, 0x116bebac0, {{185.5, 797.0}, {25.3, 33.0}}, identifier: 'list.clipboard.fill', label: 'list.clipboard.fill'
+                          Button, 0x116bebe80, {{228.1, 795.0}, {82.3, 54.0}}, identifier: 'tab.progresso', label: 'Progresso'
+                            Image, 0x116bea940, {{254.1, 802.0}, {31.0, 25.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'gráfico de linha'
+                          Button, 0x116beb0c0, {{303.0, 795.0}, {74.0, 54.0}}, identifier: 'tab.perfil', label: 'Perfil'
+                            Image, 0x116bea6c0, {{326.0, 801.3}, {27.3, 27.3}}, identifier: 'person.crop.circle.fill', label: 'conta'
+                        Other, 0x116beb980, {{25.0, 795.0}, {74.0, 54.0}}
+                          Other, 0x116beb340, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x116beb480, {{25.0, 795.0}, {74.0, 54.0}}
+                            Other, 0x116bebd40, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116beae40, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116beaa80, {{25.0, 795.0}, {74.0, 54.0}}
+                                  Other, 0x116bebc00, {{25.0, 795.0}, {74.0, 54.0}}
+                                Other, 0x116beb5c0, {{25.0, 795.0}, {74.0, 54.0}}
+                              Other, 0x116beb200, {{25.0, 795.0}, {74.0, 54.0}}
+                  Other, 0x116beaf80, {{0.0, 791.0}, {402.0, 83.0}}
+                    Other, 0x116beabc0, {{0.0, 791.0}, {402.0, 83.0}}
+                      Other, 0x116bea800, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116bec000, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116bec140, {{0.0, 791.0}, {402.0, 83.0}}
+                            Other, 0x116bec280, {{0.0, 791.0}, {402.0, 83.0}}
+                        Other, 0x116bec3c0, {{0.0, 791.0}, {402.0, 83.0}}
+                          Other, 0x116bec500, {{0.0, 791.0}, {402.0, 83.0}}
+Path to element:
+ →Application, 0x116bfd400, pid: 17932, label: 'BodyFlow'
+Query chain:
+ →Find: Target Application 'com.bodyflow.app'
+  Output: {
+    Application, 0x116bec640, pid: 17932, label: 'BodyFlow'
+  }

@@ -2,13 +2,67 @@ import SwiftUI
 
 @MainActor
 struct AppShellView: View {
-    @Environment(\.appDependencies) private var dependencies
     @State private var selectedTab = AppTab.today
     @State private var router = AppRouter()
+    @State private var invalidationCenter: FeatureInvalidationCenter
+    @State private var todayViewModel: TodayViewModel
+    @State private var planViewModel: PlanViewModel
+    @State private var progressViewModel: ProgressViewModel
+    @State private var historyViewModel: HistoryViewModel
+    @State private var historyCoordinator: HistoryFeatureCoordinator
+    @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
+    @State private var todayMascotViewModel: MascotExperienceViewModel
+    @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
+    let dependencies: AppDependencies
+    let sessionOwner: Prompt14SessionOwner
 
-    init(userID: String = "fixture-user") {
+    init(
+        userID: String,
+        dependencies: AppDependencies,
+        sessionOwner: Prompt14SessionOwner
+    ) {
         self.userID = userID
+        self.dependencies = dependencies
+        self.sessionOwner = sessionOwner
+        let invalidationCenter = FeatureInvalidationCenter()
+        _invalidationCenter = State(initialValue: invalidationCenter)
+        _todayViewModel = State(
+            initialValue: TodayViewModel(provider: dependencies.today)
+        )
+        _planViewModel = State(
+            initialValue: PlanViewModel(provider: dependencies.plan)
+        )
+        _progressViewModel = State(
+            initialValue: ProgressViewModel(provider: sessionOwner.progress)
+        )
+        let historyModel = HistoryViewModel(provider: dependencies.history)
+        _historyViewModel = State(initialValue: historyModel)
+        _historyCoordinator = State(
+            initialValue: HistoryFeatureCoordinator(model: historyModel)
+        )
+        _todayRecommendationsViewModel = State(
+            initialValue: TodayRecommendationsViewModel(
+                listing: sessionOwner.contentListing,
+                stateRecorder: sessionOwner.contentState,
+                keyProvider: dependencies.idempotencyKeyProvider,
+                timeProvider: dependencies.timeProvider,
+                invalidationCenter: invalidationCenter,
+                coverLoader: sessionOwner.coverLoader
+            )
+        )
+        _todayMascotViewModel = State(
+            initialValue: MascotExperienceViewModel(
+                provider: sessionOwner.coachExperience
+            )
+        )
+        _contentCoverEnvironment = State(
+            initialValue: ContentCoverEnvironment.make(
+                loader: sessionOwner.coverLoader,
+                session: ContentCoverSessionToken(),
+                invalidationCenter: invalidationCenter
+            )
+        )
     }
 
     var body: some View {
@@ -21,7 +75,15 @@ struct AppShellView: View {
             }
         }
         .tint(BodyFlowColor.accent)
-        .bodyFlowBrandIdentity()
+#if DEBUG
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
+                return
+            }
+            await historyViewModel.load(revision: 0)
+            await historyViewModel.retry()
+        }
+#endif
         .background {
             TabBarAccessibilityConfigurator(
                 identifiers: AppTab.allCases.map(\.accessibilityIdentifier)
@@ -29,9 +91,20 @@ struct AppShellView: View {
             .frame(width: 0, height: 0)
         }
         .environment(router)
+        .environment(
+            \.contentCoverEnvironment,
+            contentCoverEnvironment
+        )
         .sheet(item: presentedSheetBinding) { sheet in
-            RegistrationSheet(sheet: sheet)
+            RegistrationSheet(
+                sheet: sheet,
+                dependencies: dependencies,
+                invalidationCenter: invalidationCenter
+            )
                 .environment(router)
+        }
+        .onDisappear {
+            sessionOwner.invalidateSynchronously()
         }
     }
 
@@ -47,29 +120,127 @@ struct AppShellView: View {
         NavigationStack(path: router.binding(for: tab)) {
             rootView(for: tab)
                 .navigationDestination(for: AppRoute.self) { route in
-                    FeatureDetailView(route: route)
+                    destination(for: route)
                 }
         }
+        .bodyFlowBrandIdentity()
+        .accessibilityHidden(selectedTab != tab)
     }
 
     @ViewBuilder
     private func rootView(for tab: AppTab) -> some View {
         switch tab {
         case .today:
-            TodayRootView()
+            TodayRootView(
+                model: todayViewModel,
+                recommendations: todayRecommendationsViewModel,
+                mascot: todayMascotViewModel,
+                invalidationCenter: invalidationCenter
+            )
         case .register:
             RegisterRootView()
         case .plan:
-            PlanRootView()
+            PlanRootView(
+                model: planViewModel,
+                selectedTab: $selectedTab
+            )
         case .progress:
-            ProgressRootView()
+            ProgressRootView(
+                model: progressViewModel,
+                selectedTab: $selectedTab
+            )
         case .profile:
-            ProfileRootView(userID: userID)
+            ProfileRootView(
+                userID: userID,
+                coachExperienceProvider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: AppRoute) -> some View {
+        switch route {
+        case .detail:
+            FeatureDetailView(route: route)
+        case .mainHistory:
+            MainHistoryView(
+                model: historyViewModel,
+                invalidationCenter: invalidationCenter
+            )
+        case .historyMealLog:
+            HistoryMealLogDetailView(
+                row: historyCoordinator.mealLogRow(for: route)
+            )
+        case .historyWorkout:
+            HistoryWorkoutDetailView(
+                row: historyCoordinator.workoutLogRow(for: route)
+            )
+        case let .routine(routineRoute):
+            switch routineRoute.destination {
+            case .list:
+                RoutineListView(
+                    kind: routineRoute.kind,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case .detail:
+                RoutineDetailRouteView(
+                    route: routineRoute,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case .history:
+                RoutineHistoryView(
+                    kind: routineRoute.kind,
+                    itemID: routineRoute.itemID ?? "",
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            }
+        case .plan:
+            PlanDetailView(provider: dependencies.plan)
+        case .progress:
+            Block7700DetailView(today: dependencies.today)
+        case let .content(contentRoute):
+            switch contentRoute {
+            case let .library(initialSelection):
+                LibraryRootView(
+                    initialSelection: initialSelection,
+                    sessionOwner: sessionOwner,
+                    dependencies: dependencies,
+                    invalidationCenter: invalidationCenter
+                )
+            case let .detail(publicationID, origin):
+                PublishedContentDetailView(
+                    publicationID: publicationID,
+                    origin: origin,
+                    detailProvider: sessionOwner.contentDetail,
+                    stateRecorder: sessionOwner.contentState,
+                    keyProvider: dependencies.idempotencyKeyProvider,
+                    timeProvider: dependencies.timeProvider,
+                    invalidationCenter: invalidationCenter,
+                    coverLoader: sessionOwner.coverLoader
+                )
+            }
+        case .mascot(.detail):
+            MascotDetailView(
+                provider: sessionOwner.coachExperience,
+                invalidationCenter: invalidationCenter
+            )
         }
     }
 }
 
 #Preview("App Shell · Loaded") {
-    AppShellView()
-        .installAppDependencies(AppDependencies.scaffold())
+    let dependencies = AppDependencies.scaffold()
+    AppShellView(
+        userID: "fixture-user",
+        dependencies: dependencies,
+        sessionOwner: Prompt14SessionOwner(
+            userID: "fixture-user",
+            dependencies: dependencies
+        )
+    )
+        .installAppDependencies(dependencies)
 }

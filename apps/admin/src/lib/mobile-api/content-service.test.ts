@@ -28,6 +28,22 @@ const NEXT_CURSOR = encodeContentCursor({
   publishAt: PUBLISH_AT,
   publicationId: PUBLICATION_ID,
 })
+const PIPE_TABLE_MARKDOWN = `## Plano alimentar
+
+| Refeição | Escolha possível |
+| --- | --- |
+| Café da manhã | Aveia, fruta e iogurte natural |
+
+Ajuste as escolhas com calma para manter uma rotina alimentar possível e sustentável.`
+const ESCAPED_PIPE_MARKDOWN =
+  'Proteína \\| contexto ajuda a explicar o caractere literal sem transformar esta frase em uma tabela ou perder o conteúdo editorial.'
+const PORTABLE_INVALID_MARKDOWN = [
+  ['strikethrough', `Texto com ~~conteúdo removido~~ e ${'orientação segura '.repeat(6)}`],
+  ['checked task list', `- [x] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['uppercase checked task list', `- [X] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unchecked task list', `- [ ] Conclua este passo editorial com cuidado.\n\n${'orientação segura '.repeat(6)}`],
+  ['unclosed strong delimiter', `Texto com **ênfase sem fechamento ${'orientação segura '.repeat(6)}`],
+] as const
 
 const auth = {
   accessToken: 'redacted-test-token',
@@ -214,6 +230,51 @@ describe('mobile educational content service', () => {
     expect(JSON.stringify(result)).not.toContain('bucketId')
     expect(JSON.stringify(result)).not.toContain('objectPath')
   })
+
+  it('returns canonical escaped-pipe Markdown without rewriting the stored record', async () => {
+    const get = vi.fn(async () => contentRecord({ bodyMarkdown: ESCAPED_PIPE_MARKDOWN }))
+    const deps = dependencies({ get })
+
+    const result = await getContent(deps, auth, PUBLICATION_ID)
+
+    expect(result.body_markdown).toBe(
+      'Proteína | contexto ajuda a explicar o caractere literal sem transformar esta frase em uma tabela ou perder o conteúdo editorial.\n',
+    )
+    expect(get).toHaveBeenCalledOnce()
+    expect(deps.covers.issue).toHaveBeenCalledOnce()
+  })
+
+  it('fails a legacy pipe-table detail opaquely before issuing its cover capability', async () => {
+    const deps = dependencies({
+      get: vi.fn(async () => contentRecord({ bodyMarkdown: PIPE_TABLE_MARKDOWN })),
+    })
+
+    await expect(getContent(deps, auth, PUBLICATION_ID)).rejects.toMatchObject({
+      status: 500,
+      code: 'internal_error',
+      message: 'Unexpected server error',
+    })
+    expect(deps.covers.issue).not.toHaveBeenCalled()
+  })
+
+  it.each(PORTABLE_INVALID_MARKDOWN)(
+    'fails a legacy portable-invalid %s detail opaquely before issuing its cover capability',
+    async (_description, bodyMarkdown) => {
+      const deps = dependencies({
+        get: vi.fn(async () => contentRecord({ bodyMarkdown })),
+      })
+
+      const error = await getContent(deps, auth, PUBLICATION_ID).catch((caught: unknown) => caught)
+
+      expect(error).toMatchObject({
+        status: 500,
+        code: 'internal_error',
+        message: 'Unexpected server error',
+      })
+      expect(JSON.stringify(error)).not.toContain(bodyMarkdown)
+      expect(deps.covers.issue).not.toHaveBeenCalled()
+    },
+  )
 
   it('returns the same non-disclosing 404 for missing or ineligible content', async () => {
     const deps = dependencies({ get: vi.fn(async () => null) })

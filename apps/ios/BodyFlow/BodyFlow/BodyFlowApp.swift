@@ -16,7 +16,7 @@ struct BodyFlowApp: App {
 
     init() {
         let configuration = AppLaunchConfiguration.current()
-        let dependencies = AppDependencies.demo(configuration: configuration)
+        let dependencies = AppDependencies.make(configuration: configuration)
         self.configuration = configuration
         self.dependencies = dependencies
         _model = State(initialValue: AppFlowModel(

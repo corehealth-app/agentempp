@@ -8,6 +8,14 @@ enum CoachPersonaEditorOperationState: Equatable, Sendable {
     case failed(AppPresentationError)
 }
 
+struct CoachPersonaPickerOption: Identifiable, Equatable, Sendable {
+    let persona: CoachPersona
+    let name: String
+    let description: String
+
+    var id: String { persona.id }
+}
+
 @MainActor
 @Observable
 final class CoachPersonaEditorModel: Identifiable {
@@ -17,8 +25,10 @@ final class CoachPersonaEditorModel: Identifiable {
     private let repository: any CoachPersonaRepository
     private let telemetry: any TelemetryClient
     private let cancellationCheck: @MainActor () -> Bool
+    private let onPersistedPersonaChanged: @MainActor () -> Void
     private var activeOperationID: UUID?
 
+    private(set) var pickerOptions: [CoachPersonaPickerOption]?
     private(set) var selected: CoachPersona?
     private(set) var persisted: CoachPersona?
     private(set) var operationState: CoachPersonaEditorOperationState
@@ -27,18 +37,22 @@ final class CoachPersonaEditorModel: Identifiable {
         userID: String,
         repository: any CoachPersonaRepository,
         telemetry: any TelemetryClient = DisabledTelemetryClient(),
+        serverOptions: [CoachPersonaOption] = [],
         initialSelected: CoachPersona? = nil,
         initialPersisted: CoachPersona? = nil,
         initialOperationState: CoachPersonaEditorOperationState = .loading,
-        cancellationCheck: @escaping @MainActor () -> Bool = { false }
+        cancellationCheck: @escaping @MainActor () -> Bool = { false },
+        onPersistedPersonaChanged: @escaping @MainActor () -> Void = {}
     ) {
         self.userID = userID
         self.repository = repository
         self.telemetry = telemetry
+        pickerOptions = Self.validatedPickerOptions(serverOptions)
         selected = initialSelected
         persisted = initialPersisted
         operationState = initialOperationState
         self.cancellationCheck = cancellationCheck
+        self.onPersistedPersonaChanged = onPersistedPersonaChanged
     }
 
     func load() async {
@@ -77,6 +91,10 @@ final class CoachPersonaEditorModel: Identifiable {
         }
     }
 
+    func updateServerOptions(_ serverOptions: [CoachPersonaOption]) {
+        pickerOptions = Self.validatedPickerOptions(serverOptions)
+    }
+
     func save() async -> Bool {
         guard operationState != .loading,
               operationState != .saving,
@@ -102,6 +120,7 @@ final class CoachPersonaEditorModel: Identifiable {
             persisted = selectedPersona
             activeOperationID = nil
             operationState = .idle
+            onPersistedPersonaChanged()
             await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))
             return true
         } catch is CancellationError {
@@ -116,6 +135,37 @@ final class CoachPersonaEditorModel: Identifiable {
             activeOperationID = nil
             operationState = .failed(presentationError(for: error))
             return false
+        }
+    }
+
+    static func validatedPickerOptions(
+        _ serverOptions: [CoachPersonaOption]
+    ) -> [CoachPersonaPickerOption]? {
+        guard serverOptions.count == 3 else { return nil }
+
+        let codes = serverOptions.map(\.code)
+        guard Set(codes) == Set(SelectableCoachPersona.allCases),
+              Set(codes).count == serverOptions.count
+        else {
+            return nil
+        }
+
+        return serverOptions.map { option in
+            CoachPersonaPickerOption(
+                persona: persona(for: option.code),
+                name: option.name,
+                description: option.description
+            )
+        }
+    }
+
+    private static func persona(
+        for selectable: SelectableCoachPersona
+    ) -> CoachPersona {
+        switch selectable {
+        case .focus: .focus
+        case .impulse: .impulse
+        case .zen: .zen
         }
     }
 

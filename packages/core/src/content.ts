@@ -1,5 +1,11 @@
 import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfmStrikethroughFromMarkdown } from 'mdast-util-gfm-strikethrough'
+import { gfmTaskListItemFromMarkdown } from 'mdast-util-gfm-task-list-item'
+import { gfmTableFromMarkdown } from 'mdast-util-gfm-table'
 import { toMarkdown } from 'mdast-util-to-markdown'
+import { gfmStrikethrough } from 'micromark-extension-gfm-strikethrough'
+import { gfmTaskListItem } from 'micromark-extension-gfm-task-list-item'
+import { gfmTable } from 'micromark-extension-gfm-table'
 import { z } from 'zod'
 
 const MAX_CONTENT_BODY_LENGTH = 50_000
@@ -215,6 +221,66 @@ function isMarkdownNode(value: unknown): value is MarkdownNode {
   )
 }
 
+function textSourceRange(node: MarkdownNode, source: string): string {
+  const position = node.position
+  if (
+    typeof position !== 'object' ||
+    position === null ||
+    !('start' in position) ||
+    !('end' in position) ||
+    typeof position.start !== 'object' ||
+    position.start === null ||
+    !('offset' in position.start) ||
+    typeof position.start.offset !== 'number' ||
+    typeof position.end !== 'object' ||
+    position.end === null ||
+    !('offset' in position.end) ||
+    typeof position.end.offset !== 'number'
+  ) {
+    invalidMarkdown('text has no source range')
+  }
+
+  return source.slice(position.start.offset, position.end.offset)
+}
+
+function hasUnescapedStrongDelimiter(value: string): boolean {
+  let escaped = false
+  let previousWasUnescapedAsterisk = false
+
+  for (const scalar of value) {
+    if (escaped) {
+      escaped = false
+      previousWasUnescapedAsterisk = false
+      continue
+    }
+    if (scalar === '\\') {
+      escaped = true
+      previousWasUnescapedAsterisk = false
+      continue
+    }
+    if (scalar === '*') {
+      if (previousWasUnescapedAsterisk) return true
+      previousWasUnescapedAsterisk = true
+      continue
+    }
+    previousWasUnescapedAsterisk = false
+  }
+
+  return false
+}
+
+function rejectLiteralStrongDelimiters(node: MarkdownNode, source: string): void {
+  if (node.type === 'text' && hasUnescapedStrongDelimiter(textSourceRange(node, source))) {
+    invalidMarkdown('unclosed strong delimiter')
+  }
+
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      if (isMarkdownNode(child)) rejectLiteralStrongDelimiters(child, source)
+    }
+  }
+}
+
 function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline {
   switch (node.type) {
     case 'text':
@@ -227,6 +293,8 @@ function convertInline(node: MarkdownNode, depth: number): ContentMarkdownInline
         type: node.type,
         children: nodeChildren(node).map((child) => convertInline(child, depth + 1)),
       }
+    case 'delete':
+      return invalidMarkdown('strikethrough is not supported')
     case 'link': {
       if (typeof node.url !== 'string' || !isHttpsUrl(node.url)) {
         invalidMarkdown('links must use an absolute HTTPS URL')
@@ -274,16 +342,23 @@ function convertBlock(node: MarkdownNode, containerDepth: number): ContentMarkdo
       if (containerDepth >= MAX_CONTENT_DEPTH) invalidMarkdown('maximum nesting depth is eight')
       const items = nodeChildren(node).map((item) => {
         if (item.type !== 'listItem') invalidMarkdown('list contains a malformed item')
+        if (item.checked !== null) invalidMarkdown('task-list items are not supported')
         return nodeChildren(item).map((child) => convertBlock(child, containerDepth + 1))
       })
       return { type: 'list', ordered: node.ordered, items }
     }
+    case 'table':
+      return invalidMarkdown('tables are not supported')
     default:
       return invalidMarkdown(`unsupported block node: ${node.type}`)
   }
 }
 
 function isHttpsUrl(value: string): boolean {
+  const hasOriginalHttpsAuthority =
+    /^https:\/\/[^/?#\\\s\u0000-\u001f\u007f]+(?:[/?#]|$)/i.test(value)
+  if (!hasOriginalHttpsAuthority) return false
+
   try {
     const url = new URL(value)
     return url.protocol === 'https:' && url.hostname.length > 0
@@ -304,11 +379,20 @@ export function validateContentMarkdown(value: string): ValidatedContentMarkdown
     )
   }
 
-  const root = fromMarkdown(source)
+  const root = fromMarkdown(source, {
+    extensions: [gfmTable(), gfmStrikethrough(), gfmTaskListItem()],
+    mdastExtensions: [
+      gfmTableFromMarkdown(),
+      gfmStrikethroughFromMarkdown(),
+      gfmTaskListItemFromMarkdown(),
+    ],
+  })
   const rootChildren: unknown[] = root.children
   if (!rootChildren.every(isMarkdownNode)) {
     invalidMarkdown('root has malformed children')
   }
+
+  for (const child of rootChildren) rejectLiteralStrongDelimiters(child, source)
 
   const blocks = rootChildren.map((child) => convertBlock(child, 0))
   const normalized = toMarkdown(root).replace(/\r\n?/g, '\n')

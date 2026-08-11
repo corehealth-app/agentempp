@@ -15,7 +15,8 @@ server-owned domain values unchanged. Preserve the approved BodyFlow asset
 manifest as historical provenance; create a separate, narrow Better Ahead
 manifest and renderer that can only write new wordmark/lockup/review outputs.
 Perform all implementation in a clean isolated worktree based on the approved
-asset tip, never in the Mac worktree that holds the nine diagnostic files.
+asset tip. The clean Git-manager repository creates that worktree; the separate
+Mac worktree that holds the nine diagnostic files is read-only evidence.
 
 **Tech Stack:** Swift 6, SwiftUI, Swift Testing, XCTest/XCUIAutomation, Xcode
 String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
@@ -85,10 +86,23 @@ String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
 - Previously verified native environment: Xcode 26.6 (`17F113`), Swift 6.3.3,
   macOS 26.5.2 (`25F84`), iPhone 17 Pro simulator, iOS 26.5 (`23F77`), UDID
   `27291590-659D-4A29-8F45-CA5CA2D154F9`.
-- Original Mac repository reported earlier:
-  `/Users/eduardohenrique/Developer/bodyflow`.
-- The original Mac worktree contains nine diagnostic asset changes. They are
-  evidence, not the baseline, and must remain unstaged and untouched.
+- Git-manager repository (clean at the corrected preflight):
+  `/Users/eduardohenrique/Developer/bodyflow`, observed HEAD
+  `0ce7f20f22b0e66a6de0544d4a46345181f2fccb`. Use it only for fetch, Git object
+  lookup, and isolated-worktree creation; do not treat it as diagnostic input.
+- Diagnostic worktree:
+  `/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1`, required
+  HEAD `03df7894e4cdb37db08351aafb6dd20ad4cb4103`. It contains the nine diagnostic
+  asset changes, with empty staging. They are evidence, not the baseline, and
+  must remain unstaged and physically untouched. The interrupted preflight
+  reported combined diagnostic fingerprint
+  `f42572fbb61c48c150a58ea8c144455ecae7cf373f369820a9140f6b58dff45d`;
+  record it as audit metadata, while the deterministic physical-state JSON is
+  the authoritative before/after comparison. The previously preserved exact
+  porcelain SHA-256 is
+  `4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c`.
+- `GIT_REPO` and `DIAGNOSTIC_REPO` are distinct required roles throughout Tasks
+  0, 1, and 10. A single path may never satisfy both roles.
 
 ## Preserved Asset Contract
 
@@ -118,58 +132,85 @@ invariant.
 
 **Files:**
 
-- Read only: original Mac worktree and its nine diagnostic files
+- Read only: clean Git-manager repository
+- Read only: separate diagnostic worktree and its nine diagnostic files
 - Read only: `design/brand/bodyflow-brand-assets.json` at the approved base
 - Create outside the repository: preflight command logs and status snapshots
 - Create branch: `codex/better-ahead-ios-rebrand-v1`
 
-**Step 1: Capture the original worktree without changing it**
+**Step 1: Capture both source worktrees without changing either**
 
 Run from the Mac session:
 
 ```bash
 set -euo pipefail
-SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+GIT_REPO_PHYSICAL=$(cd -- "$GIT_REPO" && pwd -P)
+DIAGNOSTIC_REPO_PHYSICAL=$(cd -- "$DIAGNOSTIC_REPO" && pwd -P)
+test "$GIT_REPO_PHYSICAL" != "$DIAGNOSTIC_REPO_PHYSICAL"
+test "$(git -C "$GIT_REPO" rev-parse --show-toplevel)" = "$GIT_REPO_PHYSICAL"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse --show-toplevel)" = "$DIAGNOSTIC_REPO_PHYSICAL"
 PREFLIGHT_POINTER=/tmp/better-ahead-preflight-root.txt
 test ! -e "$PREFLIGHT_POINTER"
 PREFLIGHT_ROOT=$(mktemp -d /tmp/better-ahead-preflight.XXXXXX)
+git -C "$GIT_REPO" rev-parse HEAD | tee "$PREFLIGHT_ROOT/git-repo-head.txt"
+test "$(tr -d '\n' < "$PREFLIGHT_ROOT/git-repo-head.txt")" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" status --porcelain=v1 -uall \
+  | tee "$PREFLIGHT_ROOT/git-repo-status.before.txt"
+git -C "$GIT_REPO" diff --cached --quiet
+test ! -s "$PREFLIGHT_ROOT/git-repo-status.before.txt"
+shasum -a 256 "$PREFLIGHT_ROOT/git-repo-status.before.txt" \
+  | awk '{print $1}' | tee "$PREFLIGHT_ROOT/git-repo-status.before.sha256"
+git -C "$DIAGNOSTIC_REPO" rev-parse HEAD \
+  | tee "$PREFLIGHT_ROOT/diagnostic-head.txt"
+test "$(tr -d '\n' < "$PREFLIGHT_ROOT/diagnostic-head.txt")" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  | tee "$PREFLIGHT_ROOT/diagnostic-status.before.txt"
+git -C "$DIAGNOSTIC_REPO" diff --cached --quiet
+DIAGNOSTIC_COUNT=$(wc -l < "$PREFLIGHT_ROOT/diagnostic-status.before.txt" \
+  | tr -d '[:space:]')
+test "$DIAGNOSTIC_COUNT" = "9"
+shasum -a 256 "$PREFLIGHT_ROOT/diagnostic-status.before.txt" \
+  | awk '{print $1}' | tee "$PREFLIGHT_ROOT/diagnostic-status.before.sha256"
+test "$(tr -d '\n' < "$PREFLIGHT_ROOT/diagnostic-status.before.sha256")" \
+  = "4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c"
 printf '%s\n' "$PREFLIGHT_ROOT" > "$PREFLIGHT_POINTER"
-git -C "$SOURCE_REPO" rev-parse HEAD | tee "$PREFLIGHT_ROOT/original-head.txt"
-git -C "$SOURCE_REPO" status --porcelain=v1 -uall \
-  | tee "$PREFLIGHT_ROOT/original-status.before.txt"
-git -C "$SOURCE_REPO" diff --cached --quiet
-shasum -a 256 "$PREFLIGHT_ROOT/original-status.before.txt" \
-  | awk '{print $1}' | tee "$PREFLIGHT_ROOT/original-status.before.sha256"
 ```
 
-Expected: staging is empty. Do not clean, stash, restore, checkout, stage, or
-copy any of the nine files.
+Expected: `GIT_REPO` is at the exact reported clean HEAD with empty staging;
+`DIAGNOSTIC_REPO` is at the required diagnostic HEAD with exactly nine
+porcelain entries and empty staging. The pointer is written only after every
+capture assertion succeeds. Do not clean, stash, restore, checkout, stage, or
+copy any diagnostic file.
 
 **Step 2: Verify the approved remote tip**
 
 ```bash
 set -euo pipefail
-SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
-git -C "$SOURCE_REPO" fetch origin codex/bodyflow-ios-brand-design-system-v1
-test "$(git -C "$SOURCE_REPO" rev-parse origin/codex/bodyflow-ios-brand-design-system-v1)" \
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+git -C "$GIT_REPO" fetch origin codex/bodyflow-ios-brand-design-system-v1
+test "$(git -C "$GIT_REPO" rev-parse origin/codex/bodyflow-ios-brand-design-system-v1)" \
   = "11f5a7cec331d4fc683b6cee5cdf046d3e89623d"
 ```
 
 Expected: equality succeeds. If the remote tip differs, stop and report both
-SHAs; do not silently choose a newer base or rebase the diagnostic worktree.
+SHAs; do not silently choose a newer implementation base.
 
 **Step 3: Create a clean worktree at that exact commit**
 
 ```bash
 set -euo pipefail
-SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
 IMPLEMENTATION_POINTER=/tmp/better-ahead-implementation-repo.txt
 test ! -e "$IMPLEMENTATION_POINTER"
 IMPLEMENTATION_ROOT=$(mktemp -d /tmp/better-ahead-ios.XXXXXX)
-EXISTING_BRANCH=$(git -C "$SOURCE_REPO" show-ref --verify --hash \
+EXISTING_BRANCH=$(git -C "$GIT_REPO" show-ref --verify --hash \
   refs/heads/codex/better-ahead-ios-rebrand-v1 2>/dev/null || test "$?" -eq 1)
 test -z "$EXISTING_BRANCH"
-git -C "$SOURCE_REPO" worktree add \
+git -C "$GIT_REPO" worktree add \
   -b codex/better-ahead-ios-rebrand-v1 \
   "$IMPLEMENTATION_ROOT/worktree" \
   11f5a7cec331d4fc683b6cee5cdf046d3e89623d
@@ -186,8 +227,9 @@ test -z "$(git status --porcelain=v1 -uall)"
 
 Expected: the isolated worktree prints no porcelain output and has empty
 staging. Keep this worktree for the full plan. Record the physical
-`IMPLEMENTATION_REPO` path in preflight evidence. At the start of every later
-task and every resumed shell session, `cd` to that recorded path and assert its
+`GIT_REPO`, `DIAGNOSTIC_REPO`, and `IMPLEMENTATION_REPO` paths in preflight
+evidence. At the start of every later task and every resumed shell session,
+`cd` to that recorded path and assert its
 top-level path and branch before any relative command. Never infer the
 implementation repository from the current terminal directory.
 
@@ -292,7 +334,7 @@ test -z "$(git status --porcelain=v1 -uall)"
 ```
 
 Expected: all assertions pass before a task mutates anything. A failure stops
-that task; never continue relative-path commands from the original worktree.
+that task; never continue relative-path commands from either source worktree.
 
 ---
 
@@ -306,10 +348,14 @@ that task; never continue relative-path commands from the original worktree.
 - Create: `scripts/brand/better-ahead-worktree-state.mjs`
 - Create: `scripts/brand/better-ahead-worktree-state.test.mjs`
 - Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
-- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt`
-- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256`
-- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt`
-- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.sha256`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-head.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-worktree.before.json`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.sha256`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-head.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-worktree.before.json`
 - Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json`
 - Modify: `scripts/package.json`
 
@@ -411,9 +457,10 @@ intentional_new_roles[]
 new_assets[] (initially empty)
 ```
 
-Read physical bytes from the clean worktree only. Never read the original Mac
-worktree or accept an expected hash from its nine diagnostic files. Fail closed
-before writing anything if the tracked manifest and physical bytes disagree.
+Read baseline bytes from `IMPLEMENTATION_REPO` only. Never read an expected
+asset hash from `GIT_REPO`, `DIAGNOSTIC_REPO`, or the nine diagnostic files.
+Fail closed before writing anything if the tracked manifest and physical bytes
+disagree.
 
 Add these scripts to `scripts/package.json`:
 
@@ -426,9 +473,11 @@ Add these scripts to `scripts/package.json`:
 
 **Step 4: Record preflight evidence**
 
-The evidence file records the exact implementation base SHA, historical
-manifest SHA, every complete preserved SHA-256, original porcelain hash,
-isolated worktree path, commands/results, and this classification:
+The evidence file records all three repository roles/paths, both source
+HEADs/status checksums/staging states, the reported diagnostic fingerprint, the
+exact implementation base SHA, historical manifest SHA, every complete
+preserved SHA-256, isolated worktree path, commands/results, and this
+classification:
 
 ```text
 preserved: symbol, monochrome symbol, negative symbol, App Icons
@@ -437,33 +486,68 @@ historical/excluded: BodyFlow wordmark, horizontal lockup, launch composition
 ```
 
 Do not copy the nine diagnostic files into evidence or the isolated worktree.
-Copy only the already captured porcelain text/checksum to the two
-`original-status.before.*` evidence files, copy `original-head.txt` to
-`original-head.before.txt`, then capture their physical state:
+Copy only the captured diagnostic and Git-manager HEAD/status/checksum records,
+then capture both physical worktree states with their correct repository roles:
 
 ```bash
 set -euo pipefail
 PREFLIGHT_ROOT=$(tr -d '\n' < /tmp/better-ahead-preflight-root.txt)
 EVIDENCE_ROOT=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+test "$(cd -- "$GIT_REPO" && pwd -P)" != "$(cd -- "$DIAGNOSTIC_REPO" && pwd -P)"
 test -d "$PREFLIGHT_ROOT"
+
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+test "$(tr -d '\n' < "$PREFLIGHT_ROOT/diagnostic-head.txt")" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$PREFLIGHT_ROOT/diagnostic-status.task1.txt"
+cmp "$PREFLIGHT_ROOT/diagnostic-status.before.txt" \
+  "$PREFLIGHT_ROOT/diagnostic-status.task1.txt"
+git -C "$DIAGNOSTIC_REPO" diff --cached --quiet
+
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+test "$(tr -d '\n' < "$PREFLIGHT_ROOT/git-repo-head.txt")" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" status --porcelain=v1 -uall \
+  > "$PREFLIGHT_ROOT/git-repo-status.task1.txt"
+cmp "$PREFLIGHT_ROOT/git-repo-status.before.txt" \
+  "$PREFLIGHT_ROOT/git-repo-status.task1.txt"
+git -C "$GIT_REPO" diff --cached --quiet
+
 mkdir -p "$EVIDENCE_ROOT"
-cp -- "$PREFLIGHT_ROOT/original-status.before.txt" \
-  "$EVIDENCE_ROOT/original-status.before.txt"
-cp -- "$PREFLIGHT_ROOT/original-status.before.sha256" \
-  "$EVIDENCE_ROOT/original-status.before.sha256"
-cp -- "$PREFLIGHT_ROOT/original-head.txt" \
-  "$EVIDENCE_ROOT/original-head.before.txt"
-test "$(shasum -a 256 "$EVIDENCE_ROOT/original-status.before.txt" | awk '{print $1}')" \
-  = "$(tr -d '\n' < "$EVIDENCE_ROOT/original-status.before.sha256")"
+cp -- "$PREFLIGHT_ROOT/diagnostic-status.before.txt" \
+  "$EVIDENCE_ROOT/diagnostic-status.before.txt"
+cp -- "$PREFLIGHT_ROOT/diagnostic-status.before.sha256" \
+  "$EVIDENCE_ROOT/diagnostic-status.before.sha256"
+cp -- "$PREFLIGHT_ROOT/diagnostic-head.txt" \
+  "$EVIDENCE_ROOT/diagnostic-head.before.txt"
+cp -- "$PREFLIGHT_ROOT/git-repo-status.before.txt" \
+  "$EVIDENCE_ROOT/git-repo-status.before.txt"
+cp -- "$PREFLIGHT_ROOT/git-repo-status.before.sha256" \
+  "$EVIDENCE_ROOT/git-repo-status.before.sha256"
+cp -- "$PREFLIGHT_ROOT/git-repo-head.txt" \
+  "$EVIDENCE_ROOT/git-repo-head.before.txt"
+test "$(shasum -a 256 "$EVIDENCE_ROOT/diagnostic-status.before.txt" | awk '{print $1}')" \
+  = "$(tr -d '\n' < "$EVIDENCE_ROOT/diagnostic-status.before.sha256")"
+test "$(shasum -a 256 "$EVIDENCE_ROOT/git-repo-status.before.txt" | awk '{print $1}')" \
+  = "$(tr -d '\n' < "$EVIDENCE_ROOT/git-repo-status.before.sha256")"
 node scripts/brand/better-ahead-worktree-state.mjs \
-  --repository /Users/eduardohenrique/Developer/bodyflow \
-  > docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json
+  --repository "$DIAGNOSTIC_REPO" \
+  > "$EVIDENCE_ROOT/diagnostic-worktree.before.json"
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository "$GIT_REPO" \
+  > "$EVIDENCE_ROOT/git-repo-worktree.before.json"
 ```
 
-Verify the JSON enumerates the same nine diagnostic paths reported by porcelain
-and contains a physical SHA-256 for every present regular file. These evidence
-files are stable Task 10 comparison inputs even if the shell session or `/tmp`
-directory no longer exists.
+Verify the diagnostic JSON enumerates the same nine paths reported by diagnostic
+porcelain and contains a physical SHA-256 for every present regular file.
+Verify the Git-manager JSON contains zero changed-path entries because that
+worktree is clean. These evidence files are stable Task 10 comparison inputs
+even if the shell session or `/tmp` directory no longer exists.
 
 Also write the deterministic committed-byte map used by the final invariant
 comparison:
@@ -492,10 +576,14 @@ git add design/brand/better-ahead-brand-assets.json \
   scripts/brand/better-ahead-worktree-state.test.mjs \
   scripts/package.json \
   docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md \
-  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt \
-  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256 \
-  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt \
-  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.sha256 \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-head.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-worktree.before.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.sha256 \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-head.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-worktree.before.json \
   docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json
 git commit -m "test(brand): lock Better Ahead preserved asset baseline"
 ```
@@ -2279,41 +2367,61 @@ semantic catalog/AppIcon source bytes pass; the complete historical map is
 byte-identical to Task 1 evidence. Pixel comparison may be supplementary but
 does not replace byte equality.
 
-**Step 6: Prove the original Mac worktree was preserved**
+**Step 6: Prove both source worktrees were preserved**
 
 ```bash
 set -euo pipefail
 FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
 test -d "$FINAL_ROOT"
-SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
-test "$(git -C "$SOURCE_REPO" rev-parse HEAD)" \
-  = "$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt)"
-git -C "$SOURCE_REPO" status --porcelain=v1 -uall \
-  | tee /tmp/better-ahead-original-status.after.txt
-shasum -a 256 /tmp/better-ahead-original-status.after.txt \
-  | awk '{print $1}' | tee /tmp/better-ahead-original-status.after.sha256
-cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt \
-  /tmp/better-ahead-original-status.after.txt
-cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256 \
-  /tmp/better-ahead-original-status.after.sha256
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+test "$(cd -- "$GIT_REPO" && pwd -P)" != "$(cd -- "$DIAGNOSTIC_REPO" && pwd -P)"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-head.before.txt)"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  | tee "$FINAL_ROOT/diagnostic-status.after.txt"
+shasum -a 256 "$FINAL_ROOT/diagnostic-status.after.txt" \
+  | awk '{print $1}' | tee "$FINAL_ROOT/diagnostic-status.after.sha256"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.txt \
+  "$FINAL_ROOT/diagnostic-status.after.txt"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-status.before.sha256 \
+  "$FINAL_ROOT/diagnostic-status.after.sha256"
 node scripts/brand/better-ahead-worktree-state.mjs \
-  --repository "$SOURCE_REPO" \
-  > "$FINAL_ROOT/original-diagnostics.after.json"
-cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json \
-  "$FINAL_ROOT/original-diagnostics.after.json"
-git -C "$SOURCE_REPO" diff --cached --quiet
+  --repository "$DIAGNOSTIC_REPO" \
+  > "$FINAL_ROOT/diagnostic-worktree.after.json"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/diagnostic-worktree.before.json \
+  "$FINAL_ROOT/diagnostic-worktree.after.json"
+git -C "$DIAGNOSTIC_REPO" diff --cached --quiet
+
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-head.before.txt)"
+git -C "$GIT_REPO" status --porcelain=v1 -uall \
+  | tee "$FINAL_ROOT/git-repo-status.after.txt"
+shasum -a 256 "$FINAL_ROOT/git-repo-status.after.txt" \
+  | awk '{print $1}' | tee "$FINAL_ROOT/git-repo-status.after.sha256"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.txt \
+  "$FINAL_ROOT/git-repo-status.after.txt"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-status.before.sha256 \
+  "$FINAL_ROOT/git-repo-status.after.sha256"
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository "$GIT_REPO" \
+  > "$FINAL_ROOT/git-repo-worktree.after.json"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/git-repo-worktree.before.json \
+  "$FINAL_ROOT/git-repo-worktree.after.json"
+git -C "$GIT_REPO" diff --cached --quiet
 ```
 
-Expected: HEAD, porcelain, each path/status/type/size/SHA-256, and empty staging
-all match. A remote `behind` marker from fetch is not porcelain content and
-does not imply a worktree change.
+Expected: diagnostic HEAD, its nine path/status/type/size/SHA-256 records, and
+empty staging all match. The Git-manager HEAD, empty porcelain/physical map,
+and empty staging also match. Remote refs and shared worktree metadata may have
+changed because of fetch/worktree creation; neither is worktree content.
 
 **Step 7: Record final evidence and commit**
 
 The README records base/final SHAs, exact tool versions, commands/results,
 preserved and new asset hashes, human approval, localization coverage, public
-content allowlist, both bundle audits, warnings, UI screenshots, original
-worktree preservation, and these remaining gates:
+content allowlist, both bundle audits, warnings, UI screenshots, preservation
+of both source worktrees, and these remaining gates:
 
 ```text
 Workstream 2 backend public language: still required
@@ -2347,7 +2455,7 @@ file a trademark without separate authorization.
 
 | Approved requirement | Implemented by |
 | --- | --- |
-| Clean exact base and preservation of nine diagnostic files | Tasks 0, 1, 10 |
+| Distinct clean Git manager, exact implementation base, and preserved diagnostic worktree | Tasks 0, 1, 10 |
 | Historical manifest remains authority for preserved bytes | Tasks 1, 4, 5, 10 |
 | Symbol and App Icons byte-identical | Tasks 1, 4, 5, 10 |
 | Better Ahead wordmark/lockup generated separately | Tasks 3, 4 |

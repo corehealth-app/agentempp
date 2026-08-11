@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "product": "Better Ahead",
+  "brand_version": "1.0.0-candidate.1",
+  "approval_state": "candidate",
+  "historical_manifest": {
+    "path": "design/brand/bodyflow-brand-assets.json",
+    "sha256": "7f729f2221f95c6023fb98a01db4eae469c17568725eb96b6b5ead2ab2448b07",
+    "brand_version": "1.0.0",
+    "approval_state": "approved"
+  },
+  "preserved": [
+    {
+      "role": "approved_source",
+      "historical_path": "design/brand/source/bodyflow-approved-board.jpg",
+      "historical_sha256": "af44d4b2036638720eaaf58c05fa6098f69b21c7639b91bb4a60bc85c64c15b7"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/masters/bodyflow-symbol.svg",
+      "historical_sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol.svg",
+      "historical_sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/BrandSymbol.imageset/brand-symbol.svg"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol-44.png",
+      "historical_sha256": "d1fd4fb65559fd794b1a825a2da48e354011a4bb1551b87c42fccbe749cd7725"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol-88.png",
+      "historical_sha256": "6221f43bf532380524cba828aabe50a75d88c3b658b346250f291c70b87e5f97"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol-132.png",
+      "historical_sha256": "89eee28f8c122ac7188995a80fc46a8f04578e03f68548f7c568406d04fd29c0"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol-512.png",
+      "historical_sha256": "d272fc80e6d0592e67aac29bb752fcd9f516024a6c9793bb18225130a93c3412"
+    },
+    {
+      "role": "symbol",
+      "historical_path": "design/brand/exports/bodyflow-symbol-1024.png",
+      "historical_sha256": "c1b3211e35b5e14345f90ed40ce26fadaec241bcf8ab621a0ddf0245749088e3"
+    },
+    {
+      "role": "monochrome",
+      "historical_path": "design/brand/masters/bodyflow-symbol-monochrome.svg",
+      "historical_sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36"
+    },
+    {
+      "role": "monochrome",
+      "historical_path": "design/brand/exports/bodyflow-symbol-monochrome.svg",
+      "historical_sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/BrandMonochrome.imageset/brand-symbol-monochrome.svg"
+    },
+    {
+      "role": "monochrome",
+      "historical_path": "design/brand/exports/bodyflow-monochrome-44.png",
+      "historical_sha256": "6677b8ae8b3a4fe152e48cf6b0e0999121d04e7dc1d9ff8a69213f82a0ab3807"
+    },
+    {
+      "role": "monochrome",
+      "historical_path": "design/brand/exports/bodyflow-monochrome-88.png",
+      "historical_sha256": "8ef78c14517bc118282de9848e7572b0ec405136ead1fcda1a9cacbf3b2534a9"
+    },
+    {
+      "role": "monochrome",
+      "historical_path": "design/brand/exports/bodyflow-monochrome-132.png",
+      "historical_sha256": "0c7ab08351e7d21e6a43f67591c4f2bf040f9a0a9dc030172bad06f4e0776f94"
+    },
+    {
+      "role": "negative",
+      "historical_path": "design/brand/masters/bodyflow-symbol-negative.svg",
+      "historical_sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647"
+    },
+    {
+      "role": "negative",
+      "historical_path": "design/brand/exports/bodyflow-symbol-negative.svg",
+      "historical_sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/BrandNegative.imageset/brand-symbol-negative.svg"
+    },
+    {
+      "role": "negative",
+      "historical_path": "design/brand/exports/bodyflow-negative-44.png",
+      "historical_sha256": "27954fd7666e1ba108a7f47e0f351df6c0136c0ef310b32bcc0cfaaba6d657da"
+    },
+    {
+      "role": "negative",
+      "historical_path": "design/brand/exports/bodyflow-negative-88.png",
+      "historical_sha256": "a69f656631e3d88fb3e3a2f966a1c1848c92d02924a8364d08a15c1b4a05de8b"
+    },
+    {
+      "role": "negative",
+      "historical_path": "design/brand/exports/bodyflow-negative-132.png",
+      "historical_sha256": "d99817a75434d5ceb752f86a5ac79b0a792d070603be655fc5ddf3ba22167729"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "design/brand/exports/bodyflow-app-icon-default-1024.png",
+      "historical_sha256": "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "design/brand/exports/bodyflow-app-icon-dark-1024.png",
+      "historical_sha256": "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "design/brand/exports/bodyflow-app-icon-tinted-1024.png",
+      "historical_sha256": "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-default-1024.png",
+      "historical_sha256": "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-default-1024.png"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-dark-1024.png",
+      "historical_sha256": "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-dark-1024.png"
+    },
+    {
+      "role": "app_icon",
+      "historical_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png",
+      "historical_sha256": "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703",
+      "neutral_catalog_path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png"
+    }
+  ],
+  "intentional_new_roles": [
+    "wordmark",
+    "horizontal",
+    "launch"
+  ],
+  "new_assets": []
+}

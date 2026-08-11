@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "paths": [
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-dark-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 29958,
+      "sha256": "79a996bc6932f31834bd8812bb7b8eacc64d5929c041493f62cca8f1e2234363"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-default-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 28605,
+      "sha256": "62661e4f9bef48ab83ae27f0987d80cd4ab5d6540bb80ffd8096170ffd512b4a"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 20046,
+      "sha256": "ad83a0da0e499ecedc3e5b8f55e5f4d4cde0dbfee42c228c939e73921afd73ca"
+    },
+    {
+      "path": "design/brand/bodyflow-brand-assets.json",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 11945,
+      "sha256": "13e6d1f1a01414c35b4f615dc7cd6957511804156a447399f949913ee315510e"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-dark-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 29958,
+      "sha256": "79a996bc6932f31834bd8812bb7b8eacc64d5929c041493f62cca8f1e2234363"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-default-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 28605,
+      "sha256": "62661e4f9bef48ab83ae27f0987d80cd4ab5d6540bb80ffd8096170ffd512b4a"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-tinted-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 20046,
+      "sha256": "ad83a0da0e499ecedc3e5b8f55e5f4d4cde0dbfee42c228c939e73921afd73ca"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-1024.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 42786,
+      "sha256": "e0f5ca3fcf2db7b5b8d9cac11f3e861363c3f13c57f1587b0c38956f8ba12c8f"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-512.png",
+      "status": " M",
+      "state": "present",
+      "fileType": "regular_file",
+      "byteSize": 21098,
+      "sha256": "34ddac425809a269700c5d6305f7958669277b7e16ae30b5c556cee774b799a3"
+    }
+  ]
+}

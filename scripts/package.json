@@ -18,7 +18,9 @@
     "brand:review": "sh brand/run-bodyflow-brand-renderer.sh --write",
     "brand:render:check": "sh brand/run-bodyflow-brand-renderer.sh --check",
     "brand:validate": "node brand/bodyflow-brand-contract.mjs --check",
-    "brand:test": "node --test brand/bodyflow-brand-contract.test.mjs brand/bodyflow-brand-renderer-contract.test.mjs"
+    "brand:test": "node --test brand/bodyflow-brand-contract.test.mjs brand/bodyflow-brand-renderer-contract.test.mjs",
+    "brand:better-ahead:baseline": "node brand/better-ahead-preserved-assets.mjs --check",
+    "brand:better-ahead:test": "node --test brand/better-ahead-preserved-assets.test.mjs brand/better-ahead-worktree-state.test.mjs"
   },
   "dependencies": {
     "@mpp/db": "workspace:*",

@@ -1,0 +1,9 @@
+ M apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-dark-1024.png
+ M apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-default-1024.png
+ M apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png
+ M design/brand/bodyflow-brand-assets.json
+ M design/brand/exports/bodyflow-app-icon-dark-1024.png
+ M design/brand/exports/bodyflow-app-icon-default-1024.png
+ M design/brand/exports/bodyflow-app-icon-tinted-1024.png
+ M design/brand/exports/bodyflow-symbol-1024.png
+ M design/brand/exports/bodyflow-symbol-512.png

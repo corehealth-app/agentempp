@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-dark-1024.png",
+      "sha256": "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-default-1024.png",
+      "sha256": "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png",
+      "sha256": "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-dark-1024.png",
+      "sha256": "361e42e33a442a961a34d38b61847d88287424d210c17721068fae0c4b10c2fc"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-default-1024.png",
+      "sha256": "400f0b86753226cc26e682b073689311d4086a50594b0f61e1b114d901d2dab8"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-app-icon-tinted-1024.png",
+      "sha256": "10c3e7af9f15e4209c79002df05495d9709c3b1c4577ce1f94c129899cc04703"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-monochrome-132.png",
+      "sha256": "0c7ab08351e7d21e6a43f67591c4f2bf040f9a0a9dc030172bad06f4e0776f94"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-monochrome-44.png",
+      "sha256": "6677b8ae8b3a4fe152e48cf6b0e0999121d04e7dc1d9ff8a69213f82a0ab3807"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-monochrome-88.png",
+      "sha256": "8ef78c14517bc118282de9848e7572b0ec405136ead1fcda1a9cacbf3b2534a9"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-negative-132.png",
+      "sha256": "d99817a75434d5ceb752f86a5ac79b0a792d070603be655fc5ddf3ba22167729"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-negative-44.png",
+      "sha256": "27954fd7666e1ba108a7f47e0f351df6c0136c0ef310b32bcc0cfaaba6d657da"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-negative-88.png",
+      "sha256": "a69f656631e3d88fb3e3a2f966a1c1848c92d02924a8364d08a15c1b4a05de8b"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-1024.png",
+      "sha256": "c1b3211e35b5e14345f90ed40ce26fadaec241bcf8ab621a0ddf0245749088e3"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-132.png",
+      "sha256": "89eee28f8c122ac7188995a80fc46a8f04578e03f68548f7c568406d04fd29c0"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-44.png",
+      "sha256": "d1fd4fb65559fd794b1a825a2da48e354011a4bb1551b87c42fccbe749cd7725"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-512.png",
+      "sha256": "d272fc80e6d0592e67aac29bb752fcd9f516024a6c9793bb18225130a93c3412"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-88.png",
+      "sha256": "6221f43bf532380524cba828aabe50a75d88c3b658b346250f291c70b87e5f97"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-monochrome.svg",
+      "sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol-negative.svg",
+      "sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647"
+    },
+    {
+      "path": "design/brand/exports/bodyflow-symbol.svg",
+      "sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9"
+    },
+    {
+      "path": "design/brand/masters/bodyflow-symbol-monochrome.svg",
+      "sha256": "6809439b3b5de85682665d65c26c9088159420eab55b92606878776501d6ce36"
+    },
+    {
+      "path": "design/brand/masters/bodyflow-symbol-negative.svg",
+      "sha256": "a8f1ff09714181cb64d66c3bdf8481ec298d425adca514636c4ffd9d3eeb9647"
+    },
+    {
+      "path": "design/brand/masters/bodyflow-symbol.svg",
+      "sha256": "01343fcb7aa4a52b303bb9a602180f13973c74d2b53704eaa817ce1b9a9f5eb9"
+    },
+    {
+      "path": "design/brand/source/bodyflow-approved-board.jpg",
+      "sha256": "af44d4b2036638720eaaf58c05fa6098f69b21c7639b91bb4a60bc85c64c15b7"
+    }
+  ]
+}

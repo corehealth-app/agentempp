@@ -1,0 +1,2385 @@
+# Better Ahead iOS Controlled Rebrand Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Replace every customer-facing BodyFlow identity in the native iOS
+client with Better Ahead and Flow, provide complete `pt-BR` and English client
+localization, preserve the approved symbol and App Icons byte for byte, and
+integrate visually approved Better Ahead wordmark assets without changing
+stable technical contracts.
+
+**Architecture:** Add one neutral `BrandIdentity`/`BrandAsset` boundary and one
+String Catalog-backed localization boundary. Keep target, scheme, module,
+bundle identifier, API contracts, persistence keys, telemetry identifiers, and
+server-owned domain values unchanged. Preserve the approved BodyFlow asset
+manifest as historical provenance; create a separate, narrow Better Ahead
+manifest and renderer that can only write new wordmark/lockup/review outputs.
+Perform all implementation in a clean isolated worktree based on the approved
+asset tip, never in the Mac worktree that holds the nine diagnostic files.
+
+**Tech Stack:** Swift 6, SwiftUI, Swift Testing, XCTest/XCUIAutomation, Xcode
+String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
+0.34.5 inside the already pinned Linux/amd64 renderer, shell, `plutil`, and
+`xcrun assetutil`.
+
+**Authoritative specification:**
+`docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md`
+
+## Fixed Decisions And Safety Boundaries
+
+- Public product name: **Better Ahead**.
+- Public agent/guide name: **Flow**.
+- Portuguese slogan: **Melhor a cada dia.**
+- English slogan: **Better every day.**
+- Portuguese descriptor: **Sua jornada personalizada para uma vida mais saudável.**
+- English descriptor: **Your personalized journey to a healthier life.**
+- Portuguese role line: **Flow, seu guia em cada etapa.**
+- English role line: **Flow, your guide every step of the way.**
+- Preserve target, scheme, module, and source root named `BodyFlow`.
+- Preserve `PRODUCT_BUNDLE_IDENTIFIER = com.bodyflow.app` and the test bundle
+  identifiers.
+- Preserve API payload names such as `using_bodyflow`, stored keys beginning
+  with `bodyflow.`, internal `Coach*`/`Mascot*` types, telemetry event names,
+  accessibility identifiers, and test launch arguments unless they are shown
+  to the user.
+- `Focus`, `Impulse`, and `Zen` may remain public only as named styles of Flow;
+  public labels must establish that relationship. Their display names are
+  stable in both languages and their descriptions are client-owned localized
+  copy keyed by the existing persona code. Raw server `name`/`description`
+  fields and internal enum/wire values remain unchanged but are not rendered
+  for these three known controls.
+- No database, API, signing, entitlement, deployment, TestFlight, App Store,
+  push-provider, email, or support-system change belongs to this plan.
+- There is no local iOS notification scheduler at the approved base. Record the
+  local-notification portion as audited/not applicable; do not invent one.
+- Exact committed symbol colors and gradients outrank prose/token
+  approximations for invariant assets. Compose new vector lockups with colors
+  declared by the historical asset manifest; leave the existing
+  `BodyFlowColor` UI tokens unchanged. Do not recolor the symbol to reconcile a
+  one-channel hex difference.
+- Do not edit `project.pbxproj` to register new Swift or resource files because
+  the project uses file-system-synchronized groups. Edit it only for the two
+  public bundle-name values, the English region declaration, and changing
+  `SWIFT_EMIT_LOC_STRINGS` from `YES` to `NO` in the two application
+  configurations described below.
+- Do not invoke legacy `brand:render` or `brand:review` in write mode during the
+  rebrand. Those commands reconstruct all BodyFlow outputs and the entire Asset
+  Catalog. Legacy `brand:test`, `brand:validate`, and `brand:render:check` are
+  valid only as a read-only preflight against an untouched snapshot of the
+  approved historical tree.
+
+## Confirmed Baseline
+
+- Approved iOS/asset tip:
+  `11f5a7cec331d4fc683b6cee5cdf046d3e89623d` on
+  `codex/bodyflow-ios-brand-design-system-v1`.
+- Approved historical manifest:
+  `design/brand/bodyflow-brand-assets.json`, state `1.0.0 / approved`.
+- Design specification tip at plan time:
+  `326ae714ae15a1f722acf01c0f2297ea8c5129cd` on
+  `codex/better-ahead-rebranding-design`.
+- Those two tips diverge at
+  `b5f1d1c31993e160c0c9d7bc32c0dca77094b62f`; the implementation branch must
+  start at the approved iOS tip and explicitly add this specification and plan.
+  Never treat the design branch as if it already contained the iOS asset tree.
+- Previously verified native environment: Xcode 26.6 (`17F113`), Swift 6.3.3,
+  macOS 26.5.2 (`25F84`), iPhone 17 Pro simulator, iOS 26.5 (`23F77`), UDID
+  `27291590-659D-4A29-8F45-CA5CA2D154F9`.
+- Original Mac repository reported earlier:
+  `/Users/eduardohenrique/Developer/bodyflow`.
+- The original Mac worktree contains nine diagnostic asset changes. They are
+  evidence, not the baseline, and must remain unstaged and untouched.
+
+## Preserved Asset Contract
+
+The implementation must resolve these values from committed bytes at the
+approved base and prove them again after every asset-affecting task. The short
+prefixes below are orientation only; the tracked historical manifest is the
+authority for the complete SHA-256 values.
+
+| Asset family | Approved SHA-256 prefix | Classification |
+| --- | --- | --- |
+| Symbol SVG | `01343fcb` | preserved, byte-invariant |
+| Symbol PNG 44/88/132/512/1024 | `d1fd4fb6`, `6221f43b`, `89eee28f`, `d272fc80`, `c1b3211e` | preserved if copied or retained |
+| Monochrome SVG | `6809439b` | preserved, byte-invariant |
+| Monochrome PNG 44/88/132 | `6677b8ae`, `8ef78c14`, `0c7ab083` | preserved if copied or retained |
+| Negative SVG | `a8f1ff09` | preserved, byte-invariant |
+| Negative PNG 44/88/132 | `27954fd7`, `a69f6566`, `d99817a7` | preserved if copied or retained |
+| App Icon default/dark/tinted | `400f0b86`, `361e42e3`, `10c3e7af` | preserved, byte-invariant |
+| BodyFlow wordmark/horizontal/launch | `57503318`, `cb88d3af`, `06580ac9` | historical only; prohibited from app target |
+
+The Better Ahead wordmark, horizontal lockup, and launch composition are new
+assets. Never compare them to the last three historical hashes or call them
+invariant.
+
+---
+
+### Task 0: Create The Isolated Implementation Worktree And Prove The Base
+
+**Files:**
+
+- Read only: original Mac worktree and its nine diagnostic files
+- Read only: `design/brand/bodyflow-brand-assets.json` at the approved base
+- Create outside the repository: preflight command logs and status snapshots
+- Create branch: `codex/better-ahead-ios-rebrand-v1`
+
+**Step 1: Capture the original worktree without changing it**
+
+Run from the Mac session:
+
+```bash
+set -euo pipefail
+SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+PREFLIGHT_POINTER=/tmp/better-ahead-preflight-root.txt
+test ! -e "$PREFLIGHT_POINTER"
+PREFLIGHT_ROOT=$(mktemp -d /tmp/better-ahead-preflight.XXXXXX)
+printf '%s\n' "$PREFLIGHT_ROOT" > "$PREFLIGHT_POINTER"
+git -C "$SOURCE_REPO" rev-parse HEAD | tee "$PREFLIGHT_ROOT/original-head.txt"
+git -C "$SOURCE_REPO" status --porcelain=v1 -uall \
+  | tee "$PREFLIGHT_ROOT/original-status.before.txt"
+git -C "$SOURCE_REPO" diff --cached --quiet
+shasum -a 256 "$PREFLIGHT_ROOT/original-status.before.txt" \
+  | awk '{print $1}' | tee "$PREFLIGHT_ROOT/original-status.before.sha256"
+```
+
+Expected: staging is empty. Do not clean, stash, restore, checkout, stage, or
+copy any of the nine files.
+
+**Step 2: Verify the approved remote tip**
+
+```bash
+set -euo pipefail
+SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+git -C "$SOURCE_REPO" fetch origin codex/bodyflow-ios-brand-design-system-v1
+test "$(git -C "$SOURCE_REPO" rev-parse origin/codex/bodyflow-ios-brand-design-system-v1)" \
+  = "11f5a7cec331d4fc683b6cee5cdf046d3e89623d"
+```
+
+Expected: equality succeeds. If the remote tip differs, stop and report both
+SHAs; do not silently choose a newer base or rebase the diagnostic worktree.
+
+**Step 3: Create a clean worktree at that exact commit**
+
+```bash
+set -euo pipefail
+SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+IMPLEMENTATION_POINTER=/tmp/better-ahead-implementation-repo.txt
+test ! -e "$IMPLEMENTATION_POINTER"
+IMPLEMENTATION_ROOT=$(mktemp -d /tmp/better-ahead-ios.XXXXXX)
+EXISTING_BRANCH=$(git -C "$SOURCE_REPO" show-ref --verify --hash \
+  refs/heads/codex/better-ahead-ios-rebrand-v1 2>/dev/null || test "$?" -eq 1)
+test -z "$EXISTING_BRANCH"
+git -C "$SOURCE_REPO" worktree add \
+  -b codex/better-ahead-ios-rebrand-v1 \
+  "$IMPLEMENTATION_ROOT/worktree" \
+  11f5a7cec331d4fc683b6cee5cdf046d3e89623d
+git -C "$IMPLEMENTATION_ROOT/worktree" status --porcelain=v1 -uall
+git -C "$IMPLEMENTATION_ROOT/worktree" diff --cached --quiet
+IMPLEMENTATION_REPO="$IMPLEMENTATION_ROOT/worktree"
+printf '%s\n' "$IMPLEMENTATION_REPO" > "$IMPLEMENTATION_POINTER"
+cd -- "$IMPLEMENTATION_REPO"
+test "$(git rev-parse --show-toplevel)" = "$(pwd -P)"
+test "$(git rev-parse HEAD)" = "11f5a7cec331d4fc683b6cee5cdf046d3e89623d"
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+Expected: the isolated worktree prints no porcelain output and has empty
+staging. Keep this worktree for the full plan. Record the physical
+`IMPLEMENTATION_REPO` path in preflight evidence. At the start of every later
+task and every resumed shell session, `cd` to that recorded path and assert its
+top-level path and branch before any relative command. Never infer the
+implementation repository from the current terminal directory.
+
+**Step 4: Add the approved design documents explicitly**
+
+Bring these exact files from the approved planning branch into the isolated
+worktree without merging the unrelated design-branch history:
+
+```text
+docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md
+docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+```
+
+The execution handoff supplies an exact 40-character `DOCUMENTATION_COMMIT` and
+makes that commit reachable through a separately authorized read-only fetch or
+Git bundle. Do not reconstruct either document from chat text. Verify the
+commit object and blob identity, then restore only the two absent documentation
+paths:
+
+```bash
+set -euo pipefail
+IMPLEMENTATION_REPO=$(tr -d '\n' < /tmp/better-ahead-implementation-repo.txt)
+cd -- "$IMPLEMENTATION_REPO"
+test "$(git rev-parse --show-toplevel)" = "$(pwd -P)"
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+: "${DOCUMENTATION_COMMIT:?execution handoff must supply the exact documentation commit}"
+test "${#DOCUMENTATION_COMMIT}" -eq 40
+test -z "$(printf '%s' "$DOCUMENTATION_COMMIT" | tr -d '0-9a-f')"
+git cat-file -e "$DOCUMENTATION_COMMIT^{commit}"
+for DOCUMENT_PATH in \
+  docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md \
+  docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md; do
+  test ! -e "$DOCUMENT_PATH"
+  git cat-file -e "$DOCUMENTATION_COMMIT:$DOCUMENT_PATH"
+done
+git restore --source="$DOCUMENTATION_COMMIT" -- \
+  docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md \
+  docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+for DOCUMENT_PATH in \
+  docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md \
+  docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md; do
+  test "$(git hash-object "$DOCUMENT_PATH")" \
+    = "$(git rev-parse "$DOCUMENTATION_COMMIT:$DOCUMENT_PATH")"
+done
+rg -F '**Status:** Written specification approved on 2026-08-11' \
+  docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md
+rg -F '11f5a7cec331d4fc683b6cee5cdf046d3e89623d' \
+  docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+git add docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md \
+  docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+git commit -m "docs(brand): add Better Ahead iOS rebrand plan"
+```
+
+If the exact documentation commit is not reachable, stop before restoring or
+staging anything and request the approved transport. The commit and its two
+verified blob IDs are the content checksum.
+
+**Step 5: Install the locked workspace dependencies**
+
+```bash
+set -euo pipefail
+LOCKFILE_BEFORE=$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')
+node --version
+pnpm --version
+pnpm install --frozen-lockfile
+test "$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')" = "$LOCKFILE_BEFORE"
+git diff --exit-code -- pnpm-lock.yaml package.json scripts/package.json
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+Expected: the locked install succeeds, provides Sharp to the scripts workspace,
+and changes no tracked dependency declaration or lockfile.
+
+**Step 6: Run the historical read-only gate**
+
+```bash
+pnpm --filter @mpp/scripts brand:test
+pnpm --filter @mpp/scripts brand:validate
+pnpm --filter @mpp/scripts brand:render:check
+git diff --check
+```
+
+Expected: all legacy checks pass and `brand:render:check` says the historical
+BodyFlow render is byte-identical. It must not alter tracked files. If Docker is
+unavailable, record that condition but continue only after direct committed
+byte-to-manifest verification in Task 1 succeeds; never run a host-native
+renderer as a substitute.
+
+Before **every** Task 1-10 starts (and after any shell/session resume), run this
+mandatory re-anchoring preamble:
+
+```bash
+set -euo pipefail
+IMPLEMENTATION_REPO=$(tr -d '\n' < /tmp/better-ahead-implementation-repo.txt)
+cd -- "$IMPLEMENTATION_REPO"
+test "$(git rev-parse --show-toplevel)" = "$(pwd -P)"
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+git merge-base --is-ancestor \
+  11f5a7cec331d4fc683b6cee5cdf046d3e89623d HEAD
+git diff --cached --quiet
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+Expected: all assertions pass before a task mutates anything. A failure stops
+that task; never continue relative-path commands from the original worktree.
+
+---
+
+### Task 1: Lock The Better Ahead Provenance And Preserved-Byte Gate
+
+**Files:**
+
+- Create: `design/brand/better-ahead-brand-assets.json`
+- Create: `scripts/brand/better-ahead-preserved-assets.mjs`
+- Create: `scripts/brand/better-ahead-preserved-assets.test.mjs`
+- Create: `scripts/brand/better-ahead-worktree-state.mjs`
+- Create: `scripts/brand/better-ahead-worktree-state.test.mjs`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json`
+- Modify: `scripts/package.json`
+
+**Interfaces:**
+
+- `betterAheadPreservedAssets(root)` returns the historical manifest entry,
+  committed hash, physical hash, future neutral-catalog path, and
+  classification for each preserved artifact.
+- `brand:better-ahead:baseline` performs a read-only check.
+- `brand:better-ahead:catalog` adds a physical bundle-source check once the
+  semantic catalog exists. It requires the exact historical hashes for
+  `BrandSymbol`, `BrandMonochrome`, and `BrandNegative`; the approved Better
+  Ahead manifest hashes for `BrandWordmark`, `BrandLogoHorizontal`, and
+  `BrandLaunch`; and the baseline bytes plus `Contents.json` for every AppIcon
+  payload. Missing, extra, misnamed, or re-encoded files fail the gate.
+- `better-ahead-worktree-state.mjs --repository PATH` parses NUL-delimited
+  porcelain and emits deterministic JSON containing each changed/untracked
+  relative path, status, file type, byte size, and SHA-256 (or explicit missing
+  state). It emits no timestamp or absolute path so before/after output can be
+  compared byte for byte.
+- `--exclude-exact RELATIVE_PATH` may exclude one explicitly named path for a
+  controlled mutation check; it rejects absolute paths, traversal, globs, and
+  directory-wide exclusions.
+- `--require-only-prefix RELATIVE_DIRECTORY` fails unless every reported path
+  is a regular file below that one non-root directory; it is used only to prove
+  Task 10 has evidence changes and no application/tooling changes.
+- The Better Ahead manifest is separate from
+  `bodyflow-brand-assets.json`; it never rewrites historical approval.
+
+**Step 1: Write failing baseline tests**
+
+Cover all of the following:
+
+```javascript
+test("historical approved manifest is the only baseline", async () => {
+  const audit = await betterAheadPreservedAssets(repositoryRoot);
+  assert.equal(audit.historicalBrandVersion, "1.0.0");
+  assert.equal(audit.historicalApprovalState, "approved");
+  assert.equal(audit.mismatches.length, 0);
+});
+
+test("wordmark lockups are never classified as preserved", async () => {
+  const audit = await betterAheadPreservedAssets(repositoryRoot);
+  assert.deepEqual(
+    audit.intentionalNewRoles.toSorted(),
+    ["horizontal", "launch", "wordmark"],
+  );
+});
+```
+
+Also require exact full SHA-256 equality for the symbol, monochrome symbol,
+negative symbol, all corresponding declared PNG exports, and all three App Icon
+exports/copies. Require each future catalog alias to be neutral. Reject a
+missing historical manifest, non-approved state, diagnostic path, wildcard
+allowance, or changed expected hash.
+
+Pin the historical manifest independently of any Better Ahead declaration:
+
+```text
+path: design/brand/bodyflow-brand-assets.json
+Git baseline: 11f5a7cec331d4fc683b6cee5cdf046d3e89623d
+SHA-256: 7f729f2221f95c6023fb98a01db4eae469c17568725eb96b6b5ead2ab2448b07
+```
+
+The auditor reads the baseline blob with Git, hashes the current clean-tree
+file, and requires both to equal this pinned value. It must not learn the
+expected value from `better-ahead-brand-assets.json`.
+
+Test the worktree-state helper with spaces, non-ASCII paths, untracked files,
+modified files, symlinks, deletion, and rename records. Its parser must consume
+`git status --porcelain=v1 -z -uall`; line-delimited parsing is prohibited.
+Also prove exact-path exclusion ignores only that file and rejects wildcard or
+ancestor-directory exclusions. Prove the required-prefix mode rejects a root,
+traversal, a sibling path, and symlinks.
+
+**Step 2: Run RED**
+
+```bash
+node --test scripts/brand/better-ahead-preserved-assets.test.mjs
+```
+
+Expected: FAIL because the audit module and Better Ahead manifest do not exist.
+
+**Step 3: Implement the minimal read-only audit**
+
+The new manifest begins at schema version 1, product `Better Ahead`, version
+`1.0.0-candidate.1`, and approval state `candidate`. It records:
+
+```text
+historical_manifest.path
+historical_manifest.sha256
+historical_manifest.brand_version
+historical_manifest.approval_state
+preserved[].role
+preserved[].historical_path
+preserved[].historical_sha256
+preserved[].neutral_catalog_path (when bundled)
+intentional_new_roles[]
+new_assets[] (initially empty)
+```
+
+Read physical bytes from the clean worktree only. Never read the original Mac
+worktree or accept an expected hash from its nine diagnostic files. Fail closed
+before writing anything if the tracked manifest and physical bytes disagree.
+
+Add these scripts to `scripts/package.json`:
+
+```json
+{
+  "brand:better-ahead:baseline": "node brand/better-ahead-preserved-assets.mjs --check",
+  "brand:better-ahead:test": "node --test brand/better-ahead-preserved-assets.test.mjs brand/better-ahead-worktree-state.test.mjs"
+}
+```
+
+**Step 4: Record preflight evidence**
+
+The evidence file records the exact implementation base SHA, historical
+manifest SHA, every complete preserved SHA-256, original porcelain hash,
+isolated worktree path, commands/results, and this classification:
+
+```text
+preserved: symbol, monochrome symbol, negative symbol, App Icons
+new: Better Ahead wordmark, horizontal lockup, launch composition
+historical/excluded: BodyFlow wordmark, horizontal lockup, launch composition
+```
+
+Do not copy the nine diagnostic files into evidence or the isolated worktree.
+Copy only the already captured porcelain text/checksum to the two
+`original-status.before.*` evidence files, copy `original-head.txt` to
+`original-head.before.txt`, then capture their physical state:
+
+```bash
+set -euo pipefail
+PREFLIGHT_ROOT=$(tr -d '\n' < /tmp/better-ahead-preflight-root.txt)
+EVIDENCE_ROOT=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+test -d "$PREFLIGHT_ROOT"
+mkdir -p "$EVIDENCE_ROOT"
+cp -- "$PREFLIGHT_ROOT/original-status.before.txt" \
+  "$EVIDENCE_ROOT/original-status.before.txt"
+cp -- "$PREFLIGHT_ROOT/original-status.before.sha256" \
+  "$EVIDENCE_ROOT/original-status.before.sha256"
+cp -- "$PREFLIGHT_ROOT/original-head.txt" \
+  "$EVIDENCE_ROOT/original-head.before.txt"
+test "$(shasum -a 256 "$EVIDENCE_ROOT/original-status.before.txt" | awk '{print $1}')" \
+  = "$(tr -d '\n' < "$EVIDENCE_ROOT/original-status.before.sha256")"
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository /Users/eduardohenrique/Developer/bodyflow \
+  > docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json
+```
+
+Verify the JSON enumerates the same nine diagnostic paths reported by porcelain
+and contains a physical SHA-256 for every present regular file. These evidence
+files are stable Task 10 comparison inputs even if the shell session or `/tmp`
+directory no longer exists.
+
+Also write the deterministic committed-byte map used by the final invariant
+comparison:
+
+```bash
+node scripts/brand/better-ahead-preserved-assets.mjs --emit-historical-map \
+  > docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json
+```
+
+`--emit-historical-map` contains only the stable historical
+source/master/export and AppIcon baseline paths/hashes, sorted
+deterministically. It does not add future semantic alias paths; those are
+checked independently by `brand:better-ahead:catalog`, so the Task 1 and Task
+10 maps have identical schemas.
+
+**Step 5: Run GREEN and commit**
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+git diff --check
+git add design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-preserved-assets.mjs \
+  scripts/brand/better-ahead-preserved-assets.test.mjs \
+  scripts/brand/better-ahead-worktree-state.mjs \
+  scripts/brand/better-ahead-worktree-state.test.mjs \
+  scripts/package.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256 \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json
+git commit -m "test(brand): lock Better Ahead preserved asset baseline"
+```
+
+---
+
+### Task 2: Add The Bilingual Brand-Content Boundary And Public Bundle Name
+
+**Files:**
+
+- Create: `apps/ios/BodyFlow/BodyFlow/DesignSystem/BrandIdentity.swift`
+- Create: `apps/ios/BodyFlow/BodyFlow/Core/Localization/AppLocalization.swift`
+- Create: `apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings`
+- Create: `apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings`
+- Create: `apps/ios/BodyFlow/BodyFlowTests/BrandIdentityTests.swift`
+- Create: `apps/ios/BodyFlow/BodyFlowTests/LocalizationContractTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentModels.swift`
+- Audit: `apps/ios/BodyFlow/BodyFlow/Core/Onboarding/OnboardingModels.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow.xcodeproj/project.pbxproj`
+
+**Interfaces:**
+
+```swift
+enum SupportedAppLanguage: String, CaseIterable, Sendable {
+    case portugueseBrazil = "pt-BR"
+    case englishUnitedStates = "en-US"
+
+    var catalogLocalization: String { get } // pt-BR or en
+    var formattingLocale: Locale { get }   // pt_BR or en_US
+    var contentLocale: ContentLocale { get }
+}
+
+enum AppLocalization {
+    static func localizedBundle(
+        for language: SupportedAppLanguage,
+        in bundle: Bundle = .main
+    ) throws -> Bundle
+
+    static func string(
+        _ key: String.LocalizationValue,
+        for language: SupportedAppLanguage,
+        in bundle: Bundle = .main
+    ) throws -> String
+}
+
+struct BrandCopy: Equatable, Sendable {
+    let slogan: String
+    let descriptor: String
+    let flowRoleLine: String
+}
+
+enum BrandIdentity {
+    static let productName = "Better Ahead"
+    static let agentName = "Flow"
+    static func copy(
+        for language: SupportedAppLanguage,
+        bundle: Bundle = .main
+    ) -> BrandCopy
+}
+```
+
+`Better Ahead` and `Flow` are constants and are not looked up from
+`Localizable.xcstrings`. `InfoPlist.xcstrings` repeats Better Ahead unchanged
+for OS-owned metadata in both locales. Only slogan, descriptor, role line, and
+surrounding UI copy are translated.
+`SupportedAppLanguage.englishUnitedStates` resolves the catalog localization
+`en`; its persisted/onboarding identifier remains `en-US`. Portuguese resolves
+`pt-BR` in both places. Tests require
+`Set(SupportedAppLanguage.allCases.map(\.rawValue)) ==
+OnboardingLocalePolicy.supportedIdentifiers`. Add `CaseIterable` to
+`ContentLocale`, require the same raw-value set from `ContentLocale.allCases`,
+and do not introduce a third independent locale list.
+
+`AppLocalization` is the single boundary for every client-owned dynamic string
+whose language is selected independently from the process locale. It maps
+`en-US` to the committed `en.lproj` catalog and `pt-BR` to `pt-BR.lproj`, then
+performs lookup in that localized bundle. A caller may instead construct a
+`LocalizedStringResource` only when its `locale` is set from the same mapping.
+Passing `locale:` only to a `String(localized:)` formatting overload is not an
+accepted language-selection mechanism. Static SwiftUI localized keys continue
+to follow the app's active locale.
+
+**Step 1: Write failing identity/localization tests**
+
+```swift
+@Test(arguments: SupportedAppLanguage.allCases)
+func properNamesNeverChange(_ language: SupportedAppLanguage) {
+    #expect(BrandIdentity.productName == "Better Ahead")
+    #expect(BrandIdentity.agentName == "Flow")
+}
+
+@Test
+func approvedPortugueseCopy() {
+    #expect(BrandIdentity.copy(for: .portugueseBrazil) == BrandCopy(
+        slogan: "Melhor a cada dia.",
+        descriptor: "Sua jornada personalizada para uma vida mais saudável.",
+        flowRoleLine: "Flow, seu guia em cada etapa."
+    ))
+}
+
+@Test
+func approvedEnglishCopy() {
+    #expect(BrandIdentity.copy(for: .englishUnitedStates) == BrandCopy(
+        slogan: "Better every day.",
+        descriptor: "Your personalized journey to a healthier life.",
+        flowRoleLine: "Flow, your guide every step of the way."
+    ))
+}
+```
+
+Also test that a missing brand key is reported by the localization contract and
+that fallback output equals the approved Portuguese copy and contains neither
+`BodyFlow` nor another agent name. Test
+the `en-US` -> `en` catalog mapping directly, force the process language to the
+opposite locale, and prove `AppLocalization` still returns the requested
+language. Add a fixture for a dynamic computed/interpolated presentation string
+so the boundary is not treated as brand-copy-only.
+
+Declare `@Suite struct BrandIdentityTests` and
+`@Suite struct LocalizationContractTests` so the documented `-only-testing`
+selectors address real suite names. Runtime tests exercise `Bundle.main` or an
+injected fixture bundle; only the Node catalog contract introduced in Task 7
+reads source JSON.
+
+**Step 2: Run focused tests and verify RED**
+
+```bash
+set -euo pipefail
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/BrandIdentityTests \
+  -only-testing:BodyFlowTests/LocalizationContractTests test
+```
+
+Expected: FAIL because the boundary/catalogs do not exist.
+
+**Step 3: Implement the boundary and exact catalog entries**
+
+The String Catalog must contain reviewed `pt-BR` and `en` localizations for:
+
+```text
+brand.slogan
+brand.descriptor
+brand.flow.role-line
+brand.logo.accessibility-label
+brand.logo.fallback.accessibility-label
+```
+
+Use an explicit bundle/localization lookup in tests so host language cannot
+make expectations nondeterministic. Missing keys fail tests; the runtime safe
+fallback follows the project's established `pt-BR` development region and uses
+the approved Portuguese value, never the former brand. `AppLocalization.string`
+may throw for a missing localized bundle/key; `BrandIdentity.copy` catches that
+failure and returns the complete approved Portuguese `BrandCopy`, preserving its
+non-throwing interface. Other dynamic presentation boundaries apply the same
+explicit pt-BR fallback and report the missing key to diagnostics.
+
+The existing project enables `SWIFT_EMIT_LOC_STRINGS`. Once the reviewed String
+Catalogs exist, set `SWIFT_EMIT_LOC_STRINGS = NO` in both application Debug and
+Release configurations. The catalogs are manually reviewed inputs and the Node
+inventory contract in Tasks 7-8 owns discovery; an ordinary build/test must
+never autoedit them. Any future extraction experiment must run in a disposable
+worktree and enter through a separately reviewed catalog diff.
+
+**Step 4: Set both public bundle names without renaming technical targets**
+
+In Debug and Release application build settings set exactly:
+
+```text
+INFOPLIST_KEY_CFBundleDisplayName = "Better Ahead";
+INFOPLIST_KEY_CFBundleName = "Better Ahead";
+```
+
+Add `en` to `knownRegions`; keep `developmentRegion = "pt-BR"`, target/scheme
+names, `PRODUCT_NAME = "$(TARGET_NAME)"`, and bundle identifiers unchanged.
+Add `CFBundleDisplayName` and `CFBundleName` to `InfoPlist.xcstrings` with the
+same Better Ahead value for `pt-BR` and English.
+
+**Step 5: Run GREEN, inspect generated plists, and commit**
+
+```bash
+set -euo pipefail
+CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-catalogs.XXXXXX)
+find apps/ios/BodyFlow/BodyFlow/Resources \
+  -name '*.xcstrings' -type f -print0 \
+  | sort -z | xargs -0 shasum -a 256 > "$CATALOG_SNAPSHOT"
+DERIVED_DATA=$(mktemp -d /tmp/better-ahead-identity-derived.XXXXXX)
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Debug \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" build
+test "$(plutil -extract CFBundleDisplayName raw -o - \
+  "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist")" \
+  = "Better Ahead"
+test "$(plutil -extract CFBundleName raw -o - \
+  "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist")" \
+  = "Better Ahead"
+for APP_LOCALE in pt-BR en; do
+  LOCALIZED_INFO="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/$APP_LOCALE.lproj/InfoPlist.strings"
+  test -f "$LOCALIZED_INFO"
+  test "$(plutil -extract CFBundleDisplayName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
+  test "$(plutil -extract CFBundleName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
+done
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/BrandIdentityTests \
+  -only-testing:BodyFlowTests/LocalizationContractTests test
+find apps/ios/BodyFlow/BodyFlow/Resources \
+  -name '*.xcstrings' -type f -print0 \
+  | sort -z | xargs -0 shasum -a 256 | cmp "$CATALOG_SNAPSHOT" -
+git diff --check
+git add apps/ios/BodyFlow/BodyFlow/DesignSystem/BrandIdentity.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Localization/AppLocalization.swift \
+  apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  apps/ios/BodyFlow/BodyFlowTests/BrandIdentityTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LocalizationContractTests.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentModels.swift \
+  apps/ios/BodyFlow/BodyFlow.xcodeproj/project.pbxproj
+git commit -m "feat(ios): add Better Ahead bilingual identity boundary"
+```
+
+Expected: both plist keys resolve to Better Ahead. No target, module, executable,
+or bundle identifier rename appears in the diff. The catalog checksum comparison
+must pass, and the project diff must show `SWIFT_EMIT_LOC_STRINGS = NO` in both
+application build configurations.
+
+---
+
+### Task 3: Lock A Narrow Renderer And The New Wordmark Inputs
+
+**Files:**
+
+- Create: `design/brand/better-ahead/masters/better-ahead-wordmark.svg`
+- Create: `design/brand/better-ahead/masters/better-ahead-horizontal.svg`
+- Create: `design/brand/better-ahead/environment.json`
+- Create: `scripts/brand/better-ahead-brand-contract.mjs`
+- Create: `scripts/brand/better-ahead-brand-contract.test.mjs`
+- Create: `scripts/brand/capture-better-ahead-environment.mjs`
+- Create: `scripts/brand/render-better-ahead-brand-assets.mjs`
+- Create: `scripts/brand/render-better-ahead-brand-review.mjs`
+- Create: `scripts/brand/run-better-ahead-brand-renderer.sh`
+- Modify: `design/brand/better-ahead-brand-assets.json`
+- Modify: `scripts/package.json`
+
+**Interfaces:**
+
+- `capture-better-ahead-environment.mjs --write|--check` records or validates
+  the exact host and pinned renderer fingerprint.
+- `run-better-ahead-brand-renderer.sh --write|--check|--recover EXACT_TRANSACTION_PATH`
+  snapshots inputs and can
+  promote only `design/brand/better-ahead/exports`,
+  `design/brand/better-ahead/review`, and the new
+  `design/brand/better-ahead-brand-assets.json` manifest; it has no write path
+  to legacy exports, source, masters, AppIcon, or the Asset Catalog.
+- New production masters are self-contained, path-only SVGs. They contain no
+  live `<text>`, font reference, external URL, script, raster payload, product
+  descriptor, slogan, or localized copy.
+
+Environment check exit codes are contractual: `0` means the recorded
+fingerprint is recreated exactly; `78` means a complete, non-writing diagnostic
+proved that the recorded environment is unavailable or differs; every other
+nonzero code is a checker/tool failure. Exit `78` permits canonical committed
+bytes to be used without a reproducibility claim, never a rerender or hash
+replacement.
+
+**Step 1: Write failing renderer/input tests**
+
+Require:
+
+- exact master IDs `wordmark` and `horizontal`;
+- manifest identity `Better Ahead`, non-empty outlined glyph geometry, and
+  bytes distinct from the historical BodyFlow wordmark;
+- horizontal lockup containing the preserved B symbol geometry plus new
+  wordmark geometry;
+- allowed SVG elements/attributes only;
+- historical symbol/AppIcon hashes unchanged before and after fake renderer
+  runs;
+- a per-run Docker image ID captured with `--iidfile`, `--network none`, and the
+  pinned `scripts/brand/canonical-renderer` context; the exact ID built for a
+  run must be the ID passed to `docker run`;
+- check mode never writes;
+- write mode refuses a dirty input, concurrent edit, missing fingerprint,
+  fingerprint mismatch, existing recovery quarantine, or target outside the two
+  new output directories and the single new manifest;
+- rollback preserves candidates and originals on failure, with an exact
+  recovery record and no glob-based cleanup;
+- no call to `render-bodyflow-brand-assets.mjs` or legacy `brand:render`.
+
+Machine tests cannot prove that arbitrary paths visually spell the intended
+name. Spelling, letterform quality, and absence of visual remnants of the old
+wordmark remain blocking human assertions in Task 4; the machine gate proves
+only path safety, declared role, composition, and byte provenance.
+
+**Step 2: Run RED**
+
+```bash
+node --test scripts/brand/better-ahead-brand-contract.test.mjs
+```
+
+Expected: FAIL because the narrow pipeline and masters do not exist.
+
+**Step 3: Author the new master geometry**
+
+Reuse the approved symbol without modifying its geometry, colors, gradients, or
+arrow. Create a new outlined Better Ahead wordmark with the existing premium,
+forward-moving visual direction. Use the approved palette and existing system
+font fallbacks as optical references only; no unlicensed font file enters the
+repository. The horizontal master is self-contained and copies the preserved
+symbol geometry into a new composition; it is therefore correctly classified
+as new rather than invariant.
+
+Before review, inspect at 96, 160, 320, and 960 point wordmark widths and at
+44, 88, 132, 360, 720, and 1080 point lockup widths. Reject clipped glyphs,
+ambiguous word separation, excessive slant, or a symbol smaller than its
+historical clear-space rule.
+
+**Step 4: Implement the narrow renderer**
+
+Expose these commands without changing the existing `brand:*` commands:
+
+```json
+{
+  "brand:better-ahead:environment": "node brand/capture-better-ahead-environment.mjs --check",
+  "brand:better-ahead:catalog": "node brand/better-ahead-preserved-assets.mjs --check --require-catalog",
+  "brand:better-ahead:render": "sh brand/run-better-ahead-brand-renderer.sh --write",
+  "brand:better-ahead:render:check": "sh brand/run-better-ahead-brand-renderer.sh --check",
+  "brand:better-ahead:validate": "node brand/better-ahead-brand-contract.mjs --check",
+  "brand:better-ahead:validate:inputs": "node brand/better-ahead-brand-contract.mjs --check --inputs-only",
+  "brand:better-ahead:test": "node --test brand/better-ahead-preserved-assets.test.mjs brand/better-ahead-worktree-state.test.mjs brand/better-ahead-brand-contract.test.mjs"
+}
+```
+
+The renderer produces only:
+
+```text
+design/brand/better-ahead/exports/better-ahead-wordmark.svg
+design/brand/better-ahead/exports/better-ahead-horizontal.svg
+design/brand/better-ahead/exports/better-ahead-launch.svg
+design/brand/better-ahead/review/better-ahead-comparison.png
+design/brand/better-ahead/review/better-ahead-reduced-sizes.png
+design/brand/better-ahead/review/better-ahead-light-dark.png
+```
+
+The production SVG exports are byte copies/controlled compositions of the new
+masters. Sharp is used only for review PNGs. No symbol or App Icon raster is
+rendered.
+
+Before the first Task 3 commit, set the manifest's immutable
+`environment.path = design/brand/better-ahead/environment.json`. The bounded
+input digest covers the two masters, all new renderer/contract scripts, the
+unchanged canonical-renderer Docker context, `pnpm-lock.yaml`, and a canonical
+projection of only the renderer-related dependency versions and
+`brand:better-ahead:{environment,render,render:check,validate,validate:inputs}`
+commands from `scripts/package.json`. It also covers a canonical immutable
+manifest projection: product identity, historical/preserved references, role
+and output-path declarations, and `environment.path`. It does not hash
+unrelated package-script entries that Tasks 7 or 9 add later. It explicitly
+excludes `environment.json` and mutable manifest candidate version,
+approval/receipt, and generated-output hash fields, avoiding both a
+self-referential hash and false invalidation from unrelated tooling.
+
+The normative renderer identity is the pinned base-image digest, the bounded
+canonical-renderer context/package-lock digest, and complete runtime versions
+observed inside the container. The image ID from `--iidfile` is per-run
+execution evidence: tests prove the same freshly built ID is used by
+`docker run`, but do not require separately rebuilt image IDs to be equal.
+
+Transactions use one exact lock path and a unique transaction directory under
+`design/brand`, both validated as descendants of the repository. A successful
+promotion validates every destination, records a promotion receipt in the new
+manifest (including the exact run IID), then removes only its own transaction
+directory and lock; no recovery
+quarantine remains. A failed promotion retains its exact lock, candidates,
+originals, and `recovery.json`, and blocks another write. Recovery is permitted
+only through a tested `--recover EXACT_TRANSACTION_PATH` operation after the
+paths/hashes are audited and a new render is explicitly authorized; it restores
+or removes only paths named in `recovery.json`, never a wildcard or broad
+directory.
+
+**Step 5: Commit the complete renderer inputs before fingerprint capture**
+
+Run the input-only tests, then commit masters and tooling without any generated
+export, review PNG, or environment file:
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:validate:inputs
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+git diff --check
+git add design/brand/better-ahead/masters \
+  design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-brand-contract.mjs \
+  scripts/brand/better-ahead-brand-contract.test.mjs \
+  scripts/brand/capture-better-ahead-environment.mjs \
+  scripts/brand/render-better-ahead-brand-assets.mjs \
+  scripts/brand/render-better-ahead-brand-review.mjs \
+  scripts/brand/run-better-ahead-brand-renderer.sh scripts/package.json
+git commit -m "build(brand): add Better Ahead asset pipeline"
+```
+
+The contract CLI must explicitly support `--inputs-only`; this mode validates
+masters, preserved references, path boundaries, and tooling without requiring
+outputs that do not exist yet.
+
+**Step 6: Capture and commit the fingerprint before rendering**
+
+The environment capture records exact values for:
+
+```text
+implementation base SHA
+exact Task 3 input commit SHA
+digest of the bounded master/tooling/lockfile input set
+macOS product/build version
+host CPU architecture
+Xcode and Swift versions
+Node and pnpm versions
+pnpm-lock.yaml SHA-256
+Sharp, libvips, and librsvg versions from the pinned container contract
+canonical Docker base digest and per-run built image ID (execution evidence)
+new master SHA-256 values
+exact command: pnpm --filter @mpp/scripts brand:better-ahead:render
+```
+
+Run the capture in write mode once, then validate it without rendering:
+
+`--write` may create only `environment.json`; it must fail if it would mutate
+the manifest, masters, scripts, lockfile, or any output path.
+
+```bash
+node scripts/brand/capture-better-ahead-environment.mjs --write
+pnpm --filter @mpp/scripts brand:better-ahead:environment
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:validate:inputs
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+git diff --check
+git add design/brand/better-ahead/environment.json
+git commit -m "build(brand): pin Better Ahead render environment"
+```
+
+The checker permits later output/evidence commits but requires the recorded
+input commit to be an ancestor and the bounded input digest to remain exact.
+Expected: no generated export/review file exists in either Task 3 commit. The
+committed fingerprint predates the first render.
+
+---
+
+### Task 4: Render Once, Preserve The Candidate, And Obtain Visual Approval
+
+**Files:**
+
+- Create: `design/brand/better-ahead/exports/*`
+- Create: `design/brand/better-ahead/review/*`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/brand-*.png`
+- Modify: `design/brand/better-ahead-brand-assets.json`
+- Modify: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
+
+**Step 1: Snapshot every preserved byte before the one authorized render**
+
+```bash
+set -euo pipefail
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+find design/brand/exports \
+  apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets \
+  -type f -print0 | sort -z | xargs -0 shasum -a 256 \
+  | tee /tmp/better-ahead-preserved.before.sha256
+git status --porcelain=v1 -uall
+```
+
+Expected: only intentional Task 4 output paths will become dirty.
+
+**Step 2: Run the new renderer exactly once in write mode**
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:environment
+pnpm --filter @mpp/scripts brand:better-ahead:render
+```
+
+If rendering fails or produces a fingerprint mismatch, preserve all transaction
+and candidate paths plus `recovery.json`, report their exact paths/hashes, and
+stop. Do not rerun, replace hashes, remove a lock/quarantine manually, or fall
+back to the legacy/host-native renderer. After audit and renewed authorization,
+use only the tested `--recover EXACT_TRANSACTION_PATH` flow from Task 3 before
+starting a newly fingerprinted single-render cycle.
+
+**Step 3: Prove old bytes did not move**
+
+```bash
+set -euo pipefail
+find design/brand/exports \
+  apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets \
+  -type f -print0 | sort -z | xargs -0 shasum -a 256 \
+  | tee /tmp/better-ahead-preserved.after.sha256
+cmp /tmp/better-ahead-preserved.before.sha256 \
+  /tmp/better-ahead-preserved.after.sha256
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:validate
+```
+
+Expected: `cmp` exit 0. The Better Ahead manifest records complete hashes for
+the six new outputs and remains `candidate`.
+
+**Step 4: Commit the auditable candidate before asking for approval**
+
+Copy the three review PNGs mechanically, without re-encoding, to the evidence
+directory and prove each copy with `cmp`. Then:
+
+```bash
+set -euo pipefail
+EVIDENCE_ROOT=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+mkdir -p "$EVIDENCE_ROOT"
+cp -- design/brand/better-ahead/review/better-ahead-comparison.png \
+  "$EVIDENCE_ROOT/brand-comparison.png"
+cp -- design/brand/better-ahead/review/better-ahead-reduced-sizes.png \
+  "$EVIDENCE_ROOT/brand-reduced-sizes.png"
+cp -- design/brand/better-ahead/review/better-ahead-light-dark.png \
+  "$EVIDENCE_ROOT/brand-light-dark.png"
+cmp design/brand/better-ahead/review/better-ahead-comparison.png \
+  "$EVIDENCE_ROOT/brand-comparison.png"
+cmp design/brand/better-ahead/review/better-ahead-reduced-sizes.png \
+  "$EVIDENCE_ROOT/brand-reduced-sizes.png"
+cmp design/brand/better-ahead/review/better-ahead-light-dark.png \
+  "$EVIDENCE_ROOT/brand-light-dark.png"
+git add design/brand/better-ahead design/brand/better-ahead-brand-assets.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+git commit -m "feat(brand): add Better Ahead candidate wordmark"
+```
+
+**Step 5: Stop for the blocking human visual checkpoint**
+
+Present the comparison, reduced-size, and Light/Dark boards. Approval must cover:
+
+- spelling and immediate reading of “Better Ahead”;
+- symbol fidelity and clear space;
+- balance between the preserved symbol and longer wordmark;
+- forward motion without a forced or aggressive feel;
+- Light/Dark contrast;
+- 44-point symbol and 96-point wordmark legibility;
+- splash composition and no clipping;
+- no BodyFlow wordmark or slogan embedded in any output.
+
+Do not proceed to the Asset Catalog until the user explicitly approves this
+candidate. If rejected, retain the rejected commit and evidence, revise only new
+masters, increment the candidate version, create a new fingerprint, and repeat
+the single-render cycle. A successful but visually rejected render leaves no
+transaction quarantine, so the next cycle starts only from the committed
+candidate and new input commit. Never rewrite or discard the rejected audit
+trail.
+
+**Step 6: Freeze only after explicit approval**
+
+Record the exact approval text/date in evidence, set the Better Ahead manifest
+to `brand_version: 1.0.0` and `approval_state: approved`, and run:
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:render:check
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:validate
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+git diff --check
+git add design/brand/better-ahead-brand-assets.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md
+git commit -m "docs(brand): approve Better Ahead asset family"
+```
+
+Expected: check mode is byte-identical and preserved assets still match their
+historical manifest.
+
+---
+
+### Task 5: Replace Product-Specific Catalog Interfaces With Semantic Assets
+
+**Files:**
+
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowSymbol.imageset`
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowWordmark.imageset`
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowHorizontal.imageset`
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowMonochrome.imageset`
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowNegative.imageset`
+- Delete from app target:
+  `Resources/Assets.xcassets/BodyFlowLaunch.imageset`
+- Create: `Resources/Assets.xcassets/BrandSymbol.imageset`
+- Create: `Resources/Assets.xcassets/BrandWordmark.imageset`
+- Create: `Resources/Assets.xcassets/BrandLogoHorizontal.imageset`
+- Create: `Resources/Assets.xcassets/BrandMonochrome.imageset`
+- Create: `Resources/Assets.xcassets/BrandNegative.imageset`
+- Create: `Resources/Assets.xcassets/BrandLaunch.imageset`
+- Rename: `DesignSystem/BodyFlowBrandAsset.swift` to
+  `DesignSystem/BrandAsset.swift`
+- Create: `DesignSystem/Components/BrandLogoView.swift`
+- Modify: `DesignSystem/Components/ScreenStateView.swift`
+- Modify: `Features/Auth/SplashView.swift`
+- Modify: `Features/Profile/CoachPersonaPickerView.swift`
+- Rename: `BodyFlowTests/BodyFlowBrandAssetTests.swift` to
+  `BodyFlowTests/BrandAssetTests.swift`
+- Modify: `BodyFlowTests/ScreenStateTests.swift`
+- Modify: `BodyFlowUITests/BodyFlowUITests.swift`
+- Modify: `BodyFlowUITests/Prompt14AccessibilityUITests.swift`
+- Modify: `scripts/brand/bodyflow-brand-contract.test.mjs`
+- Modify: `scripts/brand/bodyflow-brand-renderer-contract.test.mjs`
+- Modify: `scripts/brand/run-bodyflow-brand-renderer.sh`
+
+**Interfaces:**
+
+```swift
+enum BrandAsset: String, CaseIterable, Sendable {
+    case symbol = "BrandSymbol"
+    case wordmark = "BrandWordmark"
+    case horizontal = "BrandLogoHorizontal"
+    case monochrome = "BrandMonochrome"
+    case negative = "BrandNegative"
+    case launch = "BrandLaunch"
+}
+
+enum BrandLogoPresentation: Equatable, Sendable {
+    case asset(BrandAsset)
+    case symbolAndText(symbol: BrandAsset, text: String)
+}
+```
+
+`BrandLogoView` resolves the requested asset. When a new wordmark/lockup cannot
+load, it presents the preserved symbol plus `Better Ahead`. It never resolves a
+BodyFlow image set or former-name text.
+
+Regardless of whether the visible representation is vector art or fallback
+text, `BrandLogoView` exposes one textual accessibility representation labeled
+`Better Ahead` with the existing identifier `brand.product-name`. Decorative
+image children are hidden. This deliberately preserves the element contract
+used by `Prompt14AccessibilityUITests` (`staticTexts`), while the visual asset
+remains an image.
+
+**Step 1: Update tests first and verify RED**
+
+Tests must require neutral catalog names, Better Ahead accessibility labels,
+all assets load from the bundle, missing-wordmark fallback resolves to symbol +
+Better Ahead, and former catalog names do not load. Update the accessibility UI
+test first to require `staticTexts["brand.product-name"]`, label Better Ahead,
+and no duplicate accessible image child.
+
+```bash
+set -euo pipefail
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/BrandAssetTests \
+  -only-testing:BodyFlowTests/ScreenStateTests test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/Prompt14AccessibilityUITests test
+```
+
+Expected: FAIL against the old catalog/type.
+
+**Step 2: Copy preserved bytes and approved new bytes into semantic sets**
+
+- Copy the committed historical symbol/monochrome/negative SVG bytes exactly;
+  renaming their payload files is allowed only if `cmp` proves byte equality.
+- Copy the approved Better Ahead SVG exports to wordmark/horizontal/launch.
+- Do not alter AppIcon payloads or their `Contents.json`.
+- Use `preserves-vector-representation: true`; use `original` for multicolor
+  assets and `template` only for monochrome/negative.
+- Remove all six `BodyFlow*.imageset` directories from the app catalog. The
+  historical assets remain in `design/brand`, which is outside the target.
+
+**Step 3: Integrate actual production views**
+
+- Replace the text-only top identity bar with `BrandLogoView`.
+- Replace splash `Text("BodyFlow")` with the approved launch/wordmark and
+  localized slogan.
+- Use the same semantic brand header in the profile Flow-persona sheet.
+- Keep the source-level design-system prefixes `BodyFlowColor`,
+  `BodyFlowTypography`, and `BodyFlowSpacing`; they are internal compatibility
+  identifiers and not public identity.
+
+**Step 4: Run asset and native gates**
+
+Before running the legacy tests, update only their active-catalog assertion:
+the historical contract continues validating every approved BodyFlow
+source/master/export hash, while active Asset Catalog coverage moves to the new
+Better Ahead tests. Do not change any historical expected hash. Keep the legacy
+renderer transaction behavior unchanged, but add a fail-closed admission guard:
+if the Better Ahead manifest or any neutral brand image set exists, legacy
+`--write` exits before snapshot/build/promotion and cannot overwrite the active
+catalog. Add a fake-boundary test proving that refusal. Historical reproduction
+remains possible from a detached worktree at the historical SHA;
+`brand:render:check` is not run against the rebranded catalog.
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+pnpm --filter @mpp/scripts brand:better-ahead:catalog
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:validate
+pnpm --filter @mpp/scripts brand:test
+pnpm --filter @mpp/scripts brand:validate
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/BrandAssetTests \
+  -only-testing:BodyFlowTests/ScreenStateTests test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/Prompt14AccessibilityUITests test
+git diff --exit-code -- \
+  apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
+git diff --check
+```
+
+Expected: semantic assets load; historical catalog names do not; no Asset
+Catalog warning; preserved hashes remain exact. The legacy suite is green in
+archive-only mode and its fake renderer test proves legacy `--write` refuses
+the active Better Ahead catalog before any snapshot or promotion.
+
+**Step 5: Commit**
+
+```bash
+git add apps/ios/BodyFlow/BodyFlow/DesignSystem \
+  apps/ios/BodyFlow/BodyFlow/Features/Auth/SplashView.swift \
+  apps/ios/BodyFlow/BodyFlow/Features/Profile/CoachPersonaPickerView.swift \
+  apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets \
+  apps/ios/BodyFlow/BodyFlowTests/ScreenStateTests.swift \
+  apps/ios/BodyFlow/BodyFlowUITests/BodyFlowUITests.swift \
+  apps/ios/BodyFlow/BodyFlowUITests/Prompt14AccessibilityUITests.swift \
+  scripts/brand/bodyflow-brand-contract.test.mjs \
+  scripts/brand/bodyflow-brand-renderer-contract.test.mjs \
+  scripts/brand/run-bodyflow-brand-renderer.sh
+git add -A -- \
+  apps/ios/BodyFlow/BodyFlowTests/BodyFlowBrandAssetTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/BrandAssetTests.swift
+git commit -m "feat(ios): integrate semantic Better Ahead brand assets"
+```
+
+---
+
+### Task 6: Replace Public Product And Agent Copy, Including About
+
+**Files:**
+
+- Modify: `apps/ios/BodyFlow/BodyFlow/App/AppRouter.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/App/AppShellView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Auth/AuthFieldMessage.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentCard.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotCardView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotDetailView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotPresentation.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Onboarding/PersonaStepView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Onboarding/OnboardingCompletionView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Onboarding/OnboardingContainerView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Profile/ProfileRootView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Features/Profile/CoachPersonaPickerView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Coach/CoachPersona.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings`
+- Create: `apps/ios/BodyFlow/BodyFlow/Features/Profile/AboutView.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/AppRouterTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/LibraryPresentationTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/MascotPresentationTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/MascotAccessibilityModelTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowTests/OnboardingCompletionTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowUITests/Prompt14TodayMascotUITests.swift`
+
+**Step 1: Write failing public-copy tests**
+
+Require these semantics in both supported languages:
+
+```text
+product title: Better Ahead
+guide title: Flow
+category: Como usar o Better Ahead / Using Better Ahead
+Flow styles: Focus, Impulse, Zen (names stable; descriptions localized)
+persona chooser: Escolha o estilo do Flow / Choose Flow's style
+about title: Sobre o Better Ahead / About Better Ahead
+```
+
+The reviewed style descriptions are:
+
+| Style | pt-BR | en |
+| --- | --- | --- |
+| Focus | Direto, firme e objetivo. | Direct, firm, and objective. |
+| Impulse | Motivador, positivo e energético. | Motivating, positive, and energetic. |
+| Zen | Calmo, didático e acolhedor. | Calm, educational, and supportive. |
+
+Store only the descriptions under
+`flow.style.{focus,impulse,zen}.description`; the three stable display names
+come from the exhaustive code mapping and are not translated.
+
+Accessibility announcements must say Flow, never “Mascote BodyFlow” or “coach
+BodyFlow”. Server enum/wire values and telemetry identifiers remain unchanged.
+
+**Step 2: Run focused tests and verify RED**
+
+```bash
+set -euo pipefail
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/AppRouterTests \
+  -only-testing:BodyFlowTests/LibraryPresentationTests \
+  -only-testing:BodyFlowTests/MascotPresentationTests \
+  -only-testing:BodyFlowTests/MascotAccessibilityModelTests \
+  -only-testing:BodyFlowTests/OnboardingCompletionTests test
+```
+
+Expected: FAIL on old public copy and missing About route.
+
+**Step 3: Implement the public copy and About surface**
+
+- Add a typed profile About route; do not overload an unrelated demo detail.
+- About shows semantic logo, product name, localized slogan, localized
+  descriptor, localized Flow role line, app marketing/build version, privacy
+  and support rows only when actual configured URLs exist. Do not
+  invent legal entities, URLs, endorsements, or medical claims.
+- Rename public mascot/coach headings to Flow and public persona controls to
+  “Flow style”. Keep internal `Mascot*` and `Coach*` types.
+- Map every `SelectableCoachPersona` code exhaustively to the stable public
+  names `Focus`, `Impulse`, and `Zen` plus reviewed pt-BR/en descriptions from
+  the String Catalog. `MascotPresentation.options/optionsByCode` must not render
+  the API `option.name` or `option.description`; those wire fields remain
+  decoded and unchanged for compatibility. Tests inject conflicting old-brand
+  server text and prove it cannot reach the public Flow style controls.
+- Change `.usingBodyFlow` presentation only; keep its raw/API contract.
+- Replace the displayed demo markdown occurrence “aplicativo BodyFlow” with
+  Better Ahead. Do not alter API schema or content identifiers.
+- Auth layout, shell header, onboarding explanatory surface, and About consume
+  `BrandIdentity`; they do not duplicate brand literals.
+
+**Step 4: Run GREEN and commit**
+
+```bash
+set -euo pipefail
+CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-flow-copy.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  > "$CATALOG_SNAPSHOT"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/AppRouterTests \
+  -only-testing:BodyFlowTests/LibraryPresentationTests \
+  -only-testing:BodyFlowTests/MascotPresentationTests \
+  -only-testing:BodyFlowTests/MascotAccessibilityModelTests \
+  -only-testing:BodyFlowTests/OnboardingCompletionTests test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/Prompt14TodayMascotUITests test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  | cmp "$CATALOG_SNAPSHOT" -
+git diff --check
+git add apps/ios/BodyFlow/BodyFlow/App \
+  apps/ios/BodyFlow/BodyFlow/Features/Auth/AuthFieldMessage.swift \
+  apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentCard.swift \
+  apps/ios/BodyFlow/BodyFlow/Features/Mascot \
+  apps/ios/BodyFlow/BodyFlow/Features/Onboarding \
+  apps/ios/BodyFlow/BodyFlow/Features/Profile \
+  apps/ios/BodyFlow/BodyFlow/Core/Coach/CoachPersona.swift \
+  apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift \
+  apps/ios/BodyFlow/BodyFlowTests/AppRouterTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LibraryPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/MascotPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/MascotAccessibilityModelTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/OnboardingCompletionTests.swift \
+  apps/ios/BodyFlow/BodyFlowUITests/Prompt14TodayMascotUITests.swift
+git commit -m "feat(ios): adopt Better Ahead and Flow public copy"
+```
+
+Before committing, inspect the staged test directory and ensure unrelated test
+files are not included; narrow `git add` to the named files if any other test is
+dirty.
+
+---
+
+### Task 7: Localize Auth, Onboarding, Navigation, And Shared States
+
+**Files:**
+
+- Modify: `Resources/Localizable.xcstrings`
+- Create: `config/brand/better-ahead-ios-public-surfaces.json`
+- Create: `scripts/ios/better-ahead-localization-contract.mjs`
+- Create: `scripts/ios/better-ahead-localization-contract.test.mjs`
+- Modify: `scripts/package.json`
+- Modify: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
+- Modify/audit: `App/AppRootView.swift`
+- Modify/audit: `App/AppTab.swift`
+- Modify/audit: `App/AppRouter.swift`
+- Modify/audit: `DesignSystem/Components/ScreenStateView.swift`
+- Modify/audit: all files in `Features/Auth/`
+- Modify/audit: all files in `Features/Onboarding/`
+- Modify/audit: `Core/Coach/CoachPersona.swift`
+- Modify/audit: `Features/Profile/CoachPersonaPickerView.swift`
+- Create: `BodyFlowUITests/UITestLanguage.swift`
+- Modify: `BodyFlowUITests/BodyFlowUITestSupport.swift`
+- Modify: `BodyFlowUITests/Prompt14UITestSupport.swift`
+- Modify: `BodyFlowUITests/BodyFlowUITests.swift`
+- Create: `BodyFlowUITests/BetterAheadLocalizationUITests.swift`
+- Modify: matching Auth, AppTab, Onboarding, CoachPersona, ScreenState tests
+
+**Interfaces:**
+
+- Xcode's compiler extraction is the authority for static SwiftUI localized
+  APIs. One deliberate extraction build is allowed in this task; ordinary
+  builds remain protected by `SWIFT_EMIT_LOC_STRINGS = NO`.
+- Any client-owned `String` returned from a computed property, interpolation,
+  ternary, validation model, or presentation model must resolve through the
+  localization boundary explicitly.
+- Server-provided article/domain values are displayed as server content and are
+  not translated client-side. The three known Flow style names/descriptions are
+  the explicit exception established in Task 6: UI copy is keyed by the stable
+  code and never passes the corresponding raw server labels through.
+- The contract has two explicit scopes: `foundation` for this task and `all`
+  for Task 8. A key/producer has an exact scope and ownership classification;
+  an unchecked “future key” bucket is prohibited.
+
+**Step 1: Add failing catalog completeness tests**
+
+The Node contract parses the String Catalog and the curated iOS public-surface
+inventory. It rejects:
+
+- a client-owned public key without reviewed `pt-BR` and `en` values;
+- `needs_review`, stale, or empty translation states;
+- an unlocalized dynamic presentation literal;
+- fixed `pt_BR` formatting in a user-facing formatter;
+- product/agent proper names placed in translatable values inconsistently;
+- a broad file/directory wildcard allowlist.
+
+The inventory contains exact file paths and exact producer/key records only. It
+classifies each as `client_owned`, `server_owned`, or `technical`, and assigns
+`foundation` or `authenticated`. Seed it from the approved base, including the
+confirmed SwiftUI/presentation paths, `AppTab.swift`,
+`OnboardingFlowModel.swift`, and every additional producer discovered during
+extraction. Xcode owns discovery of static localized API calls; the custom
+contract checks dynamic/computed/ternary/interpolated producers and ownership
+classifications rather than pretending a regular expression is a full Swift
+parser. Any unclassified public producer fails; directory globs and whole-file
+exemptions are prohibited.
+
+```bash
+node --test scripts/ios/better-ahead-localization-contract.test.mjs
+```
+
+Expected: RED because the current app has no complete catalog.
+
+**Step 2: Run the one deliberate static-string extraction**
+
+Start from a clean Task 6 commit and run exactly:
+
+```bash
+set -euo pipefail
+EXTRACTION_DERIVED=$(mktemp -d /tmp/better-ahead-extraction.XXXXXX)
+CATALOG_PATH=apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings
+EXTRACTION_STATE=$(mktemp -d /tmp/better-ahead-extraction-state.XXXXXX)
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository . --exclude-exact "$CATALOG_PATH" \
+  > "$EXTRACTION_STATE/before.json"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Debug \
+  -derivedDataPath "$EXTRACTION_DERIVED" \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  SWIFT_EMIT_LOC_STRINGS=YES build
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository . --exclude-exact "$CATALOG_PATH" \
+  > "$EXTRACTION_STATE/after.json"
+cmp "$EXTRACTION_STATE/before.json" "$EXTRACTION_STATE/after.json"
+CATALOG_DIFF_STATUS=0
+git diff --quiet -- "$CATALOG_PATH" || CATALOG_DIFF_STATUS=$?
+test "$CATALOG_DIFF_STATUS" -eq 1
+```
+
+Expected: the extraction changes `Resources/Localizable.xcstrings` and the
+exact-exclusion state comparison proves every other pending/tracked/untracked
+path remained byte-identical. Review the complete catalog diff, assign
+every extracted key to an exact scope/owner, and record the command/result in
+preflight evidence. Do not run another extraction build in this plan. Keys in
+the `authenticated` scope may remain explicitly incomplete until Task 8;
+foundation keys may not.
+
+**Step 3: Localize the launch/auth/shared surface**
+
+Cover AppRoot loading/errors, all auth titles/messages/fields/actions,
+validation/accessibility announcements, brand header, splash loading label,
+and every shared screen-state title/message/retry action. Preserve input
+identifiers and error cases.
+
+**Step 4: Localize onboarding and navigation**
+
+Cover all seven onboarding steps, validation messages, selection state,
+country/time-zone search, review rows, Flow styles, consent development labels,
+tab titles, registration-kind titles, and navigation headings. Use the active
+locale for dates/numbers/regions; retain IANA identifiers and stored enum/raw
+values.
+
+**Step 5: Make all three UI-test launch paths locale-safe**
+
+Modify:
+
+```text
+BodyFlowUITests/BodyFlowUITestSupport.swift
+BodyFlowUITests/Prompt14UITestSupport.swift
+BodyFlowUITests/BodyFlowUITests.swift (private launch and relaunch paths)
+```
+
+Create one shared typed locale. Existing tests default explicitly to pt-BR;
+every relaunch reapplies the selected language instead of replacing its launch
+arguments:
+
+```swift
+enum UITestLanguage {
+    case portugueseBrazil
+    case englishUnitedStates
+
+    var launchArguments: [String] { get }
+}
+```
+
+The exact pairs are:
+
+```text
+pt-BR: -AppleLanguages (pt-BR) -AppleLocale pt_BR
+en-US: -AppleLanguages (en)    -AppleLocale en_US
+```
+
+The helper rejects caller arguments that already contain either locale flag,
+then appends exactly one pair while retaining scenario arguments. Add
+`testPortugueseFoundationSmoke` and `testEnglishFoundationSmoke` to
+`BetterAheadLocalizationUITests` for splash, auth, onboarding, tabs, Flow
+style, profile, and About.
+
+**Step 6: Run the scoped contract, both UI locales, and commit**
+
+```bash
+set -euo pipefail
+CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-foundation-catalog.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  > "$CATALOG_SNAPSHOT"
+pnpm --filter @mpp/scripts ios:localization:test:foundation
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/AuthFormStateTests \
+  -only-testing:BodyFlowTests/AppTabTests \
+  -only-testing:BodyFlowTests/OnboardingFlowModelTests \
+  -only-testing:BodyFlowTests/OnboardingPresentationTests \
+  -only-testing:BodyFlowTests/CoachPersonaTests \
+  -only-testing:BodyFlowTests/ScreenStateTests test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/BetterAheadLocalizationUITests/testPortugueseFoundationSmoke \
+  -only-testing:BodyFlowUITests/BetterAheadLocalizationUITests/testEnglishFoundationSmoke test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  | cmp "$CATALOG_SNAPSHOT" -
+git diff --check
+git add apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/App \
+  apps/ios/BodyFlow/BodyFlow/DesignSystem/Components/ScreenStateView.swift \
+  apps/ios/BodyFlow/BodyFlow/Features/Auth \
+  apps/ios/BodyFlow/BodyFlow/Features/Onboarding \
+  apps/ios/BodyFlow/BodyFlow/Core/Coach/CoachPersona.swift \
+  apps/ios/BodyFlow/BodyFlow/Features/Profile/CoachPersonaPickerView.swift \
+  apps/ios/BodyFlow/BodyFlowTests \
+  apps/ios/BodyFlow/BodyFlowUITests \
+  config/brand/better-ahead-ios-public-surfaces.json \
+  scripts/ios scripts/package.json \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md
+git commit -m "feat(ios): localize Better Ahead auth and onboarding"
+```
+
+The scripts entry is:
+
+```json
+{
+  "ios:localization:test:foundation": "node ios/better-ahead-localization-contract.mjs --check --scope foundation && node --test ios/better-ahead-localization-contract.test.mjs",
+  "ios:localization:test:all": "node ios/better-ahead-localization-contract.mjs --check --scope all && node --test ios/better-ahead-localization-contract.test.mjs"
+}
+```
+
+Inspect staged files before commit; only paths named in this task may be staged.
+The `all` scope is intentionally RED until Task 8, but every remaining failure
+must name an exact authenticated key/producer already present in the inventory.
+
+---
+
+### Task 8: Complete English Localization Across The Authenticated Client
+
+**Files:**
+
+- Modify: `Resources/Localizable.xcstrings`
+- Modify: `config/brand/better-ahead-ios-public-surfaces.json`
+- Modify: `scripts/ios/better-ahead-localization-contract.mjs`
+- Modify: `scripts/ios/better-ahead-localization-contract.test.mjs`
+- Modify/audit these feature groups and their presentation helpers:
+  - `Features/Today/*.swift`
+  - `Features/Register/*.swift`
+  - `Features/Plan/*.swift`
+  - `Features/Progress/*.swift`
+  - `Features/History/*.swift`
+  - `Features/Routine/*.swift`
+  - `Features/Library/*.swift`
+  - `Features/Mascot/*.swift`
+  - `Features/Profile/*.swift`
+  - `Features/Shared/*.swift`
+- Modify/audit client-owned fixture labels in:
+  - `Core/Models/AppFixtures.swift`
+  - `Core/Demo/DemoBodyFlowFixtures.swift`
+  - `Core/Demo/DemoPrompt14Fixtures.swift`
+- Modify/audit: `Core/Demo/DemoBodyFlowRepository.swift`
+- Modify matching presentation tests and bilingual UI smoke tests
+- Create: `apps/ios/BodyFlow/BodyFlowTests/LocalizationFormattingTests.swift`
+- Modify: `apps/ios/BodyFlow/BodyFlowUITests/BetterAheadLocalizationUITests.swift`
+
+**Step 1: Expand the failing inventory**
+
+The localization contract must enumerate every Swift file with a public
+SwiftUI string or client-owned presentation string. The approved-base audit
+found at least 74 such files, but the actual gate is zero unclassified public
+producer, not a numeric threshold. Technical IDs, system image names, endpoint
+paths, telemetry values, server payloads, and persisted raw values are
+explicitly classified rather than translated. Include the reachable fixture
+label in `DemoBodyFlowRepository.swift`; a whole-file exemption is forbidden.
+
+Run:
+
+```bash
+pnpm --filter @mpp/scripts ios:localization:test:all
+```
+
+Expected: RED until every client-owned public key in these groups has reviewed
+Portuguese and English values.
+
+**Step 2: Localize and prove reviewer-sized feature batches**
+
+For each group, localize titles, buttons, empty/error/stale states, sheets,
+accessibility labels/hints/announcements, units owned by the client, and date or
+number formatting. Preserve official numeric values and server text. In
+particular remove fixed `pt_BR` formatting from:
+
+```text
+Features/Mascot/MascotPresentation.swift
+Features/Onboarding/BodyDataStepView.swift
+Features/Plan/PlanComponents.swift
+Features/Progress/ProgressComponents.swift
+Features/Today/TodayHeaderSection.swift
+```
+
+The `en_US_POSIX` parser locale in Progress is technical and remains unchanged.
+
+Presentation/formatting APIs accept an injected `SupportedAppLanguage`,
+`Locale`, or `LocalizedStringResource`; tests exercise both pt-BR and English,
+never just the process locale. String Catalog plural variations cover 0, 1,
+and 2 for days, minutes, contents, stages, and items in both languages. Fixed
+time-zone tests also prove localized decimal/thousands/date/time output,
+including `7.420`/`7,420` and `78,4`/`78.4` where appropriate.
+
+The localization contract supports cumulative exact scopes
+`today-register`, `plan-progress-history`, and
+`routine-library-flow-profile`. For each batch: make the intended
+source/catalog/test changes; run its cumulative contract; snapshot both
+catalogs; run the named presentation tests in both languages; compare the
+post-build catalogs to that snapshot to prove ordinary Xcode execution did not
+autoedit them; then commit and require a clean worktree. Do not run another
+extraction build.
+
+Commit after each green feature batch (the UI smoke file is not staged here):
+
+```bash
+set -euo pipefail
+node scripts/ios/better-ahead-localization-contract.mjs --check --scope today-register
+BATCH_CATALOG=$(mktemp /tmp/better-ahead-today-register.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings > "$BATCH_CATALOG"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/TodayPresentationTests \
+  -only-testing:BodyFlowTests/RegistrationPresentationTests test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings | cmp "$BATCH_CATALOG" -
+git add apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Features/Today \
+  apps/ios/BodyFlow/BodyFlow/Features/Register \
+  apps/ios/BodyFlow/BodyFlowTests/TodayPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/RegistrationPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LocalizationFormattingTests.swift \
+  config/brand/better-ahead-ios-public-surfaces.json \
+  scripts/ios/better-ahead-localization-contract.mjs \
+  scripts/ios/better-ahead-localization-contract.test.mjs
+git commit -m "feat(ios): localize Today and registration"
+git diff --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+
+node scripts/ios/better-ahead-localization-contract.mjs --check --scope plan-progress-history
+BATCH_CATALOG=$(mktemp /tmp/better-ahead-plan-progress.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings > "$BATCH_CATALOG"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/PlanPresentationTests \
+  -only-testing:BodyFlowTests/ProgressPresentationTests \
+  -only-testing:BodyFlowTests/HistoryPresentationTests \
+  -only-testing:BodyFlowTests/LocalizationFormattingTests test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings | cmp "$BATCH_CATALOG" -
+git add apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Features/Plan \
+  apps/ios/BodyFlow/BodyFlow/Features/Progress \
+  apps/ios/BodyFlow/BodyFlow/Features/History \
+  apps/ios/BodyFlow/BodyFlowTests/PlanPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/ProgressPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/HistoryPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LocalizationFormattingTests.swift \
+  config/brand/better-ahead-ios-public-surfaces.json \
+  scripts/ios/better-ahead-localization-contract.mjs \
+  scripts/ios/better-ahead-localization-contract.test.mjs
+git commit -m "feat(ios): localize plan progress and history"
+git diff --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+
+node scripts/ios/better-ahead-localization-contract.mjs --check --scope routine-library-flow-profile
+BATCH_CATALOG=$(mktemp /tmp/better-ahead-routine-flow.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings > "$BATCH_CATALOG"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/RoutinePresentationTests \
+  -only-testing:BodyFlowTests/LibraryPresentationTests \
+  -only-testing:BodyFlowTests/MascotPresentationTests \
+  -only-testing:BodyFlowTests/LocalizationFormattingTests test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings | cmp "$BATCH_CATALOG" -
+git add apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Features/Routine \
+  apps/ios/BodyFlow/BodyFlow/Features/Library \
+  apps/ios/BodyFlow/BodyFlow/Features/Mascot \
+  apps/ios/BodyFlow/BodyFlow/Features/Profile \
+  apps/ios/BodyFlow/BodyFlow/Features/Shared \
+  apps/ios/BodyFlow/BodyFlow/Core/Models/AppFixtures.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoBodyFlowFixtures.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoPrompt14Fixtures.swift \
+  apps/ios/BodyFlow/BodyFlow/Core/Demo/DemoBodyFlowRepository.swift \
+  apps/ios/BodyFlow/BodyFlowTests/RoutinePresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LibraryPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/MascotPresentationTests.swift \
+  apps/ios/BodyFlow/BodyFlowTests/LocalizationFormattingTests.swift \
+  config/brand/better-ahead-ios-public-surfaces.json \
+  scripts/ios/better-ahead-localization-contract.mjs \
+  scripts/ios/better-ahead-localization-contract.test.mjs
+git commit -m "feat(ios): localize routine library Flow and profile"
+git diff --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+**Step 3: Add bilingual authenticated smoke coverage**
+
+Using the existing loaded demo scenarios, test both languages for:
+
+```text
+all five tabs
+Today header and one state
+registration sheet
+plan root
+progress root
+library root
+Flow card/detail
+profile and About
+```
+
+Assertions use stable accessibility identifiers for navigation and localized
+visible strings only where copy itself is under test. Do not rename internal
+IDs such as `tab.hoje`, `screen.mascot.detail`, or scenario arguments.
+
+Keep the two foundation methods from Task 7 and add
+`testPortugueseAuthenticatedSmoke` plus `testEnglishAuthenticatedSmoke`. Run
+the entire class and commit it separately so the test is never referenced by a
+prior commit before it exists. In the same file add these visual-evidence tests
+before the commit:
+
+```text
+testBrandSurfacesLightAndDark
+  -AppleInterfaceStyle Light, then Dark
+  captures splash, Today, Flow, and About in each appearance
+
+testBrandSurfacesAtAccessibilityDynamicType
+  -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL
+  captures onboarding, Today, and About
+
+testFlowWithReduceMotion
+  --ui-testing-prompt14-reduce-motion
+  captures the Flow surface after its stable state is reached
+```
+
+Each launch also uses the typed locale helper (pt-BR for the visual matrix;
+the two smoke methods separately prove pt-BR and English). Every requested
+surface attaches an `XCUIScreen.main.screenshot()` with a stable name and
+`XCTAttachment.Lifetime.keepAlways`. Tests assert no clipping/truncation marker,
+the expected semantic accessibility element, and stable navigation before
+capturing; screenshots do not replace assertions.
+
+Record the exact attachment matrix in
+`better-ahead-ios-public-surfaces.json`; the contract expands these literal
+arrays into exact names (no glob):
+
+```text
+{pt-br,en} × {splash,sign-in,onboarding-welcome,onboarding-flow-style,today,flow,profile,about}
+{light,dark} × {splash,today,flow,about}
+accessibility-xxxl × {onboarding,today,about}
+reduce-motion × {flow}
+```
+
+```bash
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/BetterAheadLocalizationUITests test
+git add apps/ios/BodyFlow/BodyFlowUITests/BetterAheadLocalizationUITests.swift \
+  config/brand/better-ahead-ios-public-surfaces.json
+git commit -m "test(ios): cover Better Ahead in both app languages"
+git diff --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+**Step 4: Run full localization contract and adjacent tests**
+
+```bash
+set -euo pipefail
+CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-all-catalog.XXXXXX)
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  > "$CATALOG_SNAPSHOT"
+pnpm --filter @mpp/scripts ios:localization:test:all
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/TodayPresentationTests \
+  -only-testing:BodyFlowTests/RegistrationPresentationTests \
+  -only-testing:BodyFlowTests/PlanPresentationTests \
+  -only-testing:BodyFlowTests/ProgressPresentationTests \
+  -only-testing:BodyFlowTests/HistoryPresentationTests \
+  -only-testing:BodyFlowTests/RoutinePresentationTests \
+  -only-testing:BodyFlowTests/LibraryPresentationTests \
+  -only-testing:BodyFlowTests/MascotPresentationTests \
+  -only-testing:BodyFlowTests/LocalizationFormattingTests test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowUITests/BetterAheadLocalizationUITests test
+shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  | cmp "$CATALOG_SNAPSHOT" -
+git diff --check
+```
+
+Expected: zero missing or review-state catalog entries. Server-owned article
+content may remain in the payload language, but the three known Flow style
+labels use the client-owned mapping from Task 6 and every iOS-owned control and
+presentation wrapper is bilingual. Workstream 2 must make reachable server
+content bilingual before integrated client delivery.
+
+---
+
+### Task 9: Add A Narrow Public-Content And Compiled-Resource Gate
+
+**Files:**
+
+- Create: `config/brand/better-ahead-ios-public-content-allowlist.json`
+- Create: `scripts/brand/better-ahead-public-content-contract.mjs`
+- Create: `scripts/brand/better-ahead-public-content-contract.test.mjs`
+- Create: `scripts/ios/better-ahead-xcresult-contract.mjs`
+- Create: `scripts/ios/better-ahead-xcresult-contract.test.mjs`
+- Create: `apps/ios/BodyFlow/BodyFlowTests/PublicBrandContentTests.swift`
+- Modify: `scripts/package.json`
+- Modify: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
+
+**Interfaces:**
+
+- Source mode checks customer-visible literals, localization values, app
+  catalog names, plist public keys, and the exact exclusion of historical
+  wordmarks from targets.
+- Bundle mode checks Debug and Release `Info.plist`, compiled `.strings`, and
+  `.stringsdict`/`.loctable` localization resources, all resources under each
+  `.lproj`, and `Assets.car` inventory. It does not scan the executable as
+  undifferentiated text because internal module/type symbols intentionally
+  retain BodyFlow.
+- Every allowlist entry contains exact path, exact field or anchored pattern,
+  reason, and owner. Directory wildcards and “allow BodyFlow everywhere” rules
+  are invalid.
+
+**Step 1: Write failing contract tests**
+
+Reject customer-facing matches for:
+
+```text
+BodyFlow / Body Flow
+CoreHealth as consumer endorsement
+MPP as consumer brand
+Dr. Roberto as consumer endorsement
+Balu or any obsolete agent name
+Mascote BodyFlow / coach BodyFlow
+BodyFlowWordmark / BodyFlowHorizontal / BodyFlowLaunch in Assets.car
+```
+
+Allow only exact internal/legal cases such as the preserved bundle identifier,
+target/scheme/module fields, technical persisted keys, raw API value
+`using_bodyflow`, the three AppIcon payload filenames required for byte
+invariance, and explicitly enumerated historical files outside every app target.
+Do not allow the whole `project.pbxproj` or whole `design/brand` directory.
+
+The initial allowlist must enumerate at least these exact fields/paths rather
+than generalize them:
+
+```text
+project.pbxproj :: PRODUCT_BUNDLE_IDENTIFIER = com.bodyflow.app(.tests|.uitests)
+project.pbxproj :: target/product/scheme references named BodyFlow
+compiled Info.plist :: CFBundleIdentifier = com.bodyflow.app
+compiled Info.plist :: CFBundleExecutable = BodyFlow
+PublishedContentModels.swift :: raw value using_bodyflow
+DemoStateStore.swift :: persisted keys beginning bodyflow.demo.
+AppLaunchConfiguration.swift :: Keychain service values beginning com.bodyflow.app.
+AppIcon.appiconset/Contents.json :: the three exact bodyflow-app-icon-*-1024.png filename fields
+AppIcon.appiconset/bodyflow-app-icon-default-1024.png :: invariant binary filename
+AppIcon.appiconset/bodyflow-app-icon-dark-1024.png :: invariant binary filename
+AppIcon.appiconset/bodyflow-app-icon-tinted-1024.png :: invariant binary filename
+```
+
+Historical wordmark paths are not public-source allowlist entries. The scanner
+verifies separately that `design/brand` is outside synchronized app target roots
+and that none of those exact files appears in Copy Bundle Resources or the
+compiled bundle.
+
+`PublicBrandContentTests` is a hosted runtime test for `Bundle.main`: it checks
+semantic image lookup, both supported localized bundles, approved public plist
+values, and runtime fallback. Filesystem source scanning, `plutil`, and
+`assetutil` remain the Node contract's responsibility.
+
+The xcresult contract invokes
+`xcrun xcresulttool get test-results summary --path RESULT.xcresult`, parses the
+documented JSON schema, and fails closed on a missing/unknown field, non-passed
+result, zero executed tests, any failure, any skip, or any expected failure.
+Fixture tests cover passed, failed, skipped, expected-failure, empty, and schema
+drift cases. Its attachment mode reads the exported attachment manifest and
+requires every stable screenshot name declared in Task 8 exactly once.
+
+**Step 2: Run RED**
+
+```bash
+node --test scripts/brand/better-ahead-public-content-contract.test.mjs
+node --test scripts/ios/better-ahead-xcresult-contract.test.mjs
+```
+
+Expected: FAIL until the scanner and exact allowlist exist.
+
+**Step 3: Implement source and local-notification audits**
+
+The source audit distinguishes string literals from type names. Also prove:
+
+```bash
+set -euo pipefail
+NOTIFICATION_MATCHES=$(rg -n \
+  'import UserNotifications|UNUserNotificationCenter|UNNotificationRequest|UNMutableNotificationContent' \
+  apps/ios/BodyFlow/BodyFlow || test "$?" -eq 1)
+test -z "$NOTIFICATION_MATCHES"
+```
+
+Expected: no local scheduler; evidence records “not applicable”. Do not confuse
+`UIAccessibility.post(notification:)` or Foundation `NotificationCenter` with
+user notifications.
+
+**Step 4: Build and audit compiled public resources**
+
+The bundle reader discovers exactly `pt-BR.lproj` and `en.lproj`. It converts
+every `Localizable.strings`, `Localizable.stringsdict`, `InfoPlist.strings`, and
+`.loctable` it finds with `plutil -convert json -o -`, walks all scalar values,
+and fails if a compiled localization resource cannot be parsed. It also audits
+all other files beneath those `.lproj` directories using their declared
+structured format or verified UTF-8 text. Binary-plist, plural, and loctable
+fixtures are required in the Node tests.
+
+For `Assets.car`, save `assetutil --info` JSON and parse exact `Name` fields.
+Require all six semantic names and reject all six former product-specific
+names; a positive `rg` match is not proof. AppIcon source bytes and
+`Contents.json` remain governed by `brand:better-ahead:catalog`; bundle mode
+follows `CFBundleIcons`/actool output to prove the referenced compiled icon
+artifacts exist without assuming they are named entries in `Assets.car`.
+
+```bash
+set -euo pipefail
+DERIVED_DATA=$(mktemp -d /tmp/better-ahead-bundle-audit.XXXXXX)
+AUDIT_ROOT=$(mktemp -d /tmp/better-ahead-bundle-report.XXXXXX)
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Debug \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" build
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Release \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "generic/platform=iOS Simulator" build
+node scripts/brand/better-ahead-public-content-contract.mjs --check-source
+pnpm --filter @mpp/scripts brand:better-ahead:catalog
+node scripts/brand/better-ahead-public-content-contract.mjs --check-bundle \
+  "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app"
+node scripts/brand/better-ahead-public-content-contract.mjs --check-bundle \
+  "$DERIVED_DATA/Build/Products/Release-iphonesimulator/BodyFlow.app"
+xcrun assetutil --info \
+  "$DERIVED_DATA/Build/Products/Release-iphonesimulator/BodyFlow.app/Assets.car" \
+  > "$AUDIT_ROOT/release-assets.json"
+node scripts/brand/better-ahead-public-content-contract.mjs --check-assetutil \
+  "$AUDIT_ROOT/release-assets.json"
+git diff --exit-code -- \
+  apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
+```
+
+Expected: both public plist names are Better Ahead; both locales are present;
+neutral assets are present; former wordmark/lockup/launch assets are absent.
+
+**Step 5: Run GREEN and commit**
+
+```bash
+pnpm --filter @mpp/scripts brand:better-ahead:public-content:test
+pnpm --filter @mpp/scripts ios:xcresult:test
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
+  -only-testing:BodyFlowTests/PublicBrandContentTests test
+git diff --check
+git add config/brand/better-ahead-ios-public-content-allowlist.json \
+  scripts/brand/better-ahead-public-content-contract.mjs \
+  scripts/brand/better-ahead-public-content-contract.test.mjs \
+  scripts/ios/better-ahead-xcresult-contract.mjs \
+  scripts/ios/better-ahead-xcresult-contract.test.mjs \
+  scripts/package.json \
+  apps/ios/BodyFlow/BodyFlowTests/PublicBrandContentTests.swift \
+  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md
+git commit -m "test(brand): gate Better Ahead public content"
+```
+
+Add this script entry:
+
+```json
+{
+  "brand:better-ahead:public-content:test": "node --test brand/better-ahead-public-content-contract.test.mjs",
+  "ios:xcresult:test": "node --test ios/better-ahead-xcresult-contract.test.mjs"
+}
+```
+
+---
+
+### Task 10: Run The Complete Native, Visual, And Preservation Gate
+
+**Files:**
+
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/README.md`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt`
+- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/render-reproducibility.txt`
+- Create approved screenshots beneath the same evidence directory
+- No application code or asset mutation is expected in this task
+
+**Step 1: Run all machine gates from a clean candidate commit**
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(mktemp -d /tmp/better-ahead-final.XXXXXX)
+DERIVED_DATA="$FINAL_ROOT/DerivedData"
+SIMULATOR_UDID=27291590-659D-4A29-8F45-CA5CA2D154F9
+mkdir -p "$DERIVED_DATA" "$FINAL_ROOT/logs" "$FINAL_ROOT/results"
+xcrun simctl list devices available | rg -F "$SIMULATOR_UDID"
+xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+git diff --exit-code
+git diff --cached --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+RUNTIME_POINTER=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt
+test ! -e "$RUNTIME_POINTER"
+printf '%s\n' "$FINAL_ROOT" > "$RUNTIME_POINTER"
+pnpm --filter @mpp/scripts brand:better-ahead:test
+pnpm --filter @mpp/scripts brand:better-ahead:baseline
+pnpm --filter @mpp/scripts brand:better-ahead:catalog
+pnpm --filter @mpp/scripts brand:better-ahead:validate
+REPRO_EVIDENCE=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/render-reproducibility.txt
+ENVIRONMENT_STATUS=0
+pnpm --filter @mpp/scripts brand:better-ahead:environment \
+  > "$FINAL_ROOT/logs/render-environment.log" 2>&1 || ENVIRONMENT_STATUS=$?
+case "$ENVIRONMENT_STATUS" in
+  0)
+    pnpm --filter @mpp/scripts brand:better-ahead:render:check \
+      2>&1 | tee "$FINAL_ROOT/logs/render-check.log"
+    printf '%s\n' 'reproduced: fingerprint exact and canonical bytes matched' \
+      > "$REPRO_EVIDENCE"
+    ;;
+  78)
+    printf '%s\n' 'canonical-only: fingerprint not recreated; no reproducibility claim' \
+      > "$REPRO_EVIDENCE"
+    ;;
+  *)
+    false
+    ;;
+esac
+pnpm --filter @mpp/scripts brand:better-ahead:public-content:test
+pnpm --filter @mpp/scripts ios:xcresult:test
+pnpm --filter @mpp/scripts ios:localization:test:all
+pnpm --filter @mpp/scripts brand:test
+pnpm --filter @mpp/scripts brand:validate
+```
+
+Do not run legacy `brand:render`, `brand:render:check`, or `brand:review` against
+the rebranded catalog. Task 5 has already converted the applicable legacy tests
+to archive-only assertions, retained every historical expected hash, and proven
+the guarded legacy writer refuses the active catalog. Task 10 performs no
+conditional test repair.
+
+**Step 2: Run focused and complete native tests**
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+DERIVED_DATA="$FINAL_ROOT/DerivedData"
+SIMULATOR_UDID=27291590-659D-4A29-8F45-CA5CA2D154F9
+test -d "$DERIVED_DATA"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$FINAL_ROOT/results/focused-native.xcresult" \
+  -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+  -only-testing:BodyFlowTests/BrandIdentityTests \
+  -only-testing:BodyFlowTests/BrandAssetTests \
+  -only-testing:BodyFlowTests/LocalizationContractTests \
+  -only-testing:BodyFlowTests/PublicBrandContentTests \
+  -only-testing:BodyFlowTests/ScreenStateTests test \
+  2>&1 | tee "$FINAL_ROOT/logs/focused-native.log"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$FINAL_ROOT/results/all-native.xcresult" \
+  -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+  -only-testing:BodyFlowTests test \
+  2>&1 | tee "$FINAL_ROOT/logs/all-native.log"
+node scripts/ios/better-ahead-xcresult-contract.mjs --check \
+  "$FINAL_ROOT/results/focused-native.xcresult"
+node scripts/ios/better-ahead-xcresult-contract.mjs --check \
+  "$FINAL_ROOT/results/all-native.xcresult"
+```
+
+Expected: zero failures and zero unapproved skips/expected failures.
+
+**Step 3: Run bilingual UI smoke and accessibility tests**
+
+Run the new Better Ahead smoke suite in `pt-BR` and English plus existing auth,
+onboarding, Today, Flow, and accessibility suites. Capture:
+
+```text
+PT-BR: splash, sign-in, onboarding welcome, Flow style, Today, Flow, profile, About
+English: the same eight surfaces
+Light and Dark: splash, Today, Flow, About
+Dynamic Type accessibility size: onboarding, Today, About
+Reduce Motion: Flow surface
+```
+
+Verify no clipping of Better Ahead, no untranslated iOS-owned control, stable
+focus order, minimum 44-point controls, and correct accessibility pronunciation
+of Better Ahead and Flow.
+
+Every captured test screenshot is an `XCTAttachment` with a stable descriptive
+name and `lifetime = .keepAlways`. Run every existing UI class explicitly so
+the bilingual suite does not replace the established regression coverage:
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+DERIVED_DATA="$FINAL_ROOT/DerivedData"
+SIMULATOR_UDID=27291590-659D-4A29-8F45-CA5CA2D154F9
+test -d "$DERIVED_DATA"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$FINAL_ROOT/results/all-ui.xcresult" \
+  -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+  -only-testing:BodyFlowUITests/BodyFlowUITests \
+  -only-testing:BodyFlowUITests/BetterAheadLocalizationUITests \
+  -only-testing:BodyFlowUITests/Prompt13AccessibilityUITests \
+  -only-testing:BodyFlowUITests/Prompt13PlanProgressHistoryUITests \
+  -only-testing:BodyFlowUITests/Prompt13RegistrationUITests \
+  -only-testing:BodyFlowUITests/Prompt13RoutineUITests \
+  -only-testing:BodyFlowUITests/Prompt13TodayUITests \
+  -only-testing:BodyFlowUITests/Prompt14AccessibilityUITests \
+  -only-testing:BodyFlowUITests/Prompt14LibraryUITests \
+  -only-testing:BodyFlowUITests/Prompt14ProgressUITests \
+  -only-testing:BodyFlowUITests/Prompt14TodayMascotUITests test \
+  2>&1 | tee "$FINAL_ROOT/logs/all-ui.log"
+node scripts/ios/better-ahead-xcresult-contract.mjs --check \
+  "$FINAL_ROOT/results/all-ui.xcresult"
+xcrun xcresulttool help export attachments > "$FINAL_ROOT/logs/xcresulttool-help.txt"
+SCREENSHOT_DIR=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/screenshots
+test ! -e "$SCREENSHOT_DIR"
+xcrun xcresulttool export attachments \
+  --path "$FINAL_ROOT/results/all-ui.xcresult" \
+  --output-path "$SCREENSHOT_DIR"
+node scripts/ios/better-ahead-xcresult-contract.mjs --check-attachments \
+  "$SCREENSHOT_DIR" \
+  --config config/brand/better-ahead-ios-public-surfaces.json
+```
+
+Expected: all bilingual smoke/accessibility tests pass with zero unapproved
+skips. The new suite owns one `pt-BR` and one English launch for every surface
+listed above. Review the exported attachment manifest and images; the visual
+checkpoint is blocking for clipping, contrast, identity, and wrong-language
+copy. Retain every exported file mechanically without re-encoding.
+
+**Step 4: Build Debug and Release with isolated DerivedData**
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+DERIVED_DATA="$FINAL_ROOT/DerivedData"
+SIMULATOR_UDID=27291590-659D-4A29-8F45-CA5CA2D154F9
+test -d "$DERIVED_DATA"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Debug \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" build \
+  2>&1 | tee "$FINAL_ROOT/logs/debug-build.log"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Release \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "generic/platform=iOS Simulator" build \
+  2>&1 | tee "$FINAL_ROOT/logs/release-build.log"
+```
+
+Expected: both `BUILD SUCCEEDED`, zero `actool`/Asset Catalog warning, and no
+new warning introduced by the rebrand. Report inherited warnings exactly. The
+last accepted baseline contained AppIntents warnings, MainActor warnings in
+hydration/workout registration, and an unused `waitUntilStarted` result in a
+test; do not claim “only AppIntents” if the others remain.
+
+**Step 5: Repeat compiled-resource and invariant checks**
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+DERIVED_DATA="$FINAL_ROOT/DerivedData"
+test -d "$DERIVED_DATA"
+for CONFIGURATION in Debug Release; do
+  APP_BUNDLE="$DERIVED_DATA/Build/Products/$CONFIGURATION-iphonesimulator/BodyFlow.app"
+  test -d "$APP_BUNDLE"
+  node scripts/brand/better-ahead-public-content-contract.mjs \
+    --check-bundle "$APP_BUNDLE"
+  xcrun assetutil --info "$APP_BUNDLE/Assets.car" \
+    > "$FINAL_ROOT/${CONFIGURATION}-assets.json"
+  node scripts/brand/better-ahead-public-content-contract.mjs \
+    --check-assetutil "$FINAL_ROOT/${CONFIGURATION}-assets.json"
+done
+node scripts/brand/better-ahead-public-content-contract.mjs --check-source
+pnpm --filter @mpp/scripts brand:better-ahead:catalog
+node scripts/brand/better-ahead-preserved-assets.mjs --emit-historical-map \
+  > "$FINAL_ROOT/preserved-assets.after.json"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json \
+  "$FINAL_ROOT/preserved-assets.after.json"
+pnpm --filter @mpp/scripts ios:localization:test:all
+git diff --exit-code -- \
+  apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
+git diff --cached --exit-code
+```
+
+Expected: Debug and Release pass the full structured resource scan; all
+semantic catalog/AppIcon source bytes pass; the complete historical map is
+byte-identical to Task 1 evidence. Pixel comparison may be supplementary but
+does not replace byte equality.
+
+**Step 6: Prove the original Mac worktree was preserved**
+
+```bash
+set -euo pipefail
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+test -d "$FINAL_ROOT"
+SOURCE_REPO=/Users/eduardohenrique/Developer/bodyflow
+test "$(git -C "$SOURCE_REPO" rev-parse HEAD)" \
+  = "$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-head.before.txt)"
+git -C "$SOURCE_REPO" status --porcelain=v1 -uall \
+  | tee /tmp/better-ahead-original-status.after.txt
+shasum -a 256 /tmp/better-ahead-original-status.after.txt \
+  | awk '{print $1}' | tee /tmp/better-ahead-original-status.after.sha256
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.txt \
+  /tmp/better-ahead-original-status.after.txt
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-status.before.sha256 \
+  /tmp/better-ahead-original-status.after.sha256
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository "$SOURCE_REPO" \
+  > "$FINAL_ROOT/original-diagnostics.after.json"
+cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/original-diagnostics.before.json \
+  "$FINAL_ROOT/original-diagnostics.after.json"
+git -C "$SOURCE_REPO" diff --cached --quiet
+```
+
+Expected: HEAD, porcelain, each path/status/type/size/SHA-256, and empty staging
+all match. A remote `behind` marker from fetch is not porcelain content and
+does not imply a worktree change.
+
+**Step 7: Record final evidence and commit**
+
+The README records base/final SHAs, exact tool versions, commands/results,
+preserved and new asset hashes, human approval, localization coverage, public
+content allowlist, both bundle audits, warnings, UI screenshots, original
+worktree preservation, and these remaining gates:
+
+```text
+Workstream 2 backend public language: still required
+private beta distribution: still requires explicit authorization and channel gate
+App Store production submission: not authorized
+```
+
+Then:
+
+```bash
+set -euo pipefail
+git diff --check
+git status --porcelain=v1 -uall
+FINAL_ROOT=$(tr -d '\n' < docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt)
+node scripts/brand/better-ahead-worktree-state.mjs \
+  --repository . \
+  --require-only-prefix docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand \
+  > "$FINAL_ROOT/implementation-evidence-only.json"
+git add docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+git commit -m "docs(ios): verify Better Ahead client rebrand"
+git diff --exit-code
+git diff --cached --exit-code
+git status --short --branch
+```
+
+Expected: isolated implementation worktree clean after the evidence commit.
+Do not push, create a PR, merge, upload, sign, deploy, purchase a domain, or
+file a trademark without separate authorization.
+
+## Acceptance Traceability
+
+| Approved requirement | Implemented by |
+| --- | --- |
+| Clean exact base and preservation of nine diagnostic files | Tasks 0, 1, 10 |
+| Historical manifest remains authority for preserved bytes | Tasks 1, 4, 5, 10 |
+| Symbol and App Icons byte-identical | Tasks 1, 4, 5, 10 |
+| Better Ahead wordmark/lockup generated separately | Tasks 3, 4 |
+| Canonical environment fingerprint committed before render | Task 3 |
+| Human visual approval of new assets | Task 4 |
+| Neutral semantic asset interfaces and safe fallback | Task 5 |
+| Better Ahead sole public product name | Tasks 2, 5, 6, 9 |
+| Flow sole public guide/agent name | Tasks 2, 6, 9 |
+| PT-BR and English iOS-owned UI | Tasks 2, 7, 8, 10 |
+| Display name and bundle name public aliases | Tasks 2, 9, 10 |
+| About hierarchy | Task 6 |
+| Local notification copy | Task 9 audit: not applicable at current base |
+| Stable internal IDs/contracts remain unchanged | All tasks; enforced by review/tests |
+| Debug/Release/native/accessibility gates | Tasks 9, 10 |
+| No external distribution or backend mutation | Tasks 0 and 10 boundaries |
+
+## Plan Self-Review
+
+- **Spec coverage:** all Workstream 1 requirements have an implementation task
+  and an acceptance gate. Backend copy and distribution remain separate.
+- **Placeholder scan:** execution-time facts are captured by scripts and logs;
+  no fake checksum, URL, legal entity, credential, or release status is supplied.
+- **Type consistency:** `BrandIdentity`, `BrandCopy`, `SupportedAppLanguage`,
+  `BrandAsset`, and `BrandLogoPresentation` have one documented owner and are
+  consumed by tests and production views.
+- **Asset safety:** legacy write commands are prohibited; the new runner has a
+  path-level write boundary; preserved bytes are verified before and after.
+- **Localization completeness:** the approved-base inventory found at least 74
+  public-string files, while the enforced criterion is stronger: zero
+  unclassified client-owned public producer, not a fixed file count.
+- **Compatibility:** target/scheme/module/bundle ID, APIs, storage, telemetry,
+  and server wire values remain stable unless an actual public leak is proven.
+- **Release truthfulness:** completing this plan finishes only the iOS client
+  rebrand. Integrated client testing still requires Workstream 2 and, depending
+  on distribution method, the private-beta subgate of Workstream 3.

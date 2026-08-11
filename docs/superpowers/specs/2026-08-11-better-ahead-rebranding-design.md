@@ -1,6 +1,6 @@
 # Better Ahead — Controlled Rebranding Design
 
-**Status:** Design approved in conversation; written specification pending review<br>
+**Status:** Written specification approved on 2026-08-11<br>
 **Scope:** Brand architecture and controlled migration from BodyFlow to Better Ahead<br>
 **Implementation order:** iOS client build, backend public language, release channels
 

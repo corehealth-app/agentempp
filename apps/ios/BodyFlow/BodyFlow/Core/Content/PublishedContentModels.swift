@@ -8,7 +8,7 @@ enum ContentSurface: String, Codable, Hashable, Sendable {
     case saved
 }
 
-enum ContentLocale: String, Codable, Hashable, Sendable {
+enum ContentLocale: String, CaseIterable, Codable, Hashable, Sendable {
     case ptBR = "pt-BR"
     case enUS = "en-US"
 }

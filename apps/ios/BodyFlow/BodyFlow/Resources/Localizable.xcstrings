@@ -1,0 +1,86 @@
+{
+  "sourceLanguage" : "pt-BR",
+  "strings" : {
+    "brand.descriptor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your personalized journey to a healthier life."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sua jornada personalizada para uma vida mais saudável."
+          }
+        }
+      }
+    },
+    "brand.flow.role-line" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flow, your guide every step of the way."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flow, seu guia em cada etapa."
+          }
+        }
+      }
+    },
+    "brand.logo.accessibility-label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead logo"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo da Better Ahead"
+          }
+        }
+      }
+    },
+    "brand.logo.fallback.accessibility-label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        }
+      }
+    },
+    "brand.slogan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better every day."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melhor a cada dia."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

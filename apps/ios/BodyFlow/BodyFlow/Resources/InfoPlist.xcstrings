@@ -1,0 +1,38 @@
+{
+  "sourceLanguage" : "pt-BR",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Better Ahead"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

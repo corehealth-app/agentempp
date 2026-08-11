@@ -34,6 +34,55 @@ struct LocalizationContractTests {
     }
 
     @Test(arguments: SupportedAppLanguage.allCases)
+    func reviewedBrandCatalogIsComplete(_ language: SupportedAppLanguage) throws {
+        switch language {
+        case .portugueseBrazil:
+            #expect(try AppLocalization.string(
+                "brand.slogan",
+                for: language
+            ) == "Melhor a cada dia.")
+            #expect(try AppLocalization.string(
+                "brand.descriptor",
+                for: language
+            ) == "Sua jornada personalizada para uma vida mais saudável.")
+            #expect(try AppLocalization.string(
+                "brand.flow.role-line",
+                for: language
+            ) == "Flow, seu guia em cada etapa.")
+            #expect(try AppLocalization.string(
+                "brand.logo.accessibility-label",
+                for: language
+            ) == "Logo da Better Ahead")
+            #expect(try AppLocalization.string(
+                "brand.logo.fallback.accessibility-label",
+                for: language
+            ) == "Better Ahead")
+
+        case .englishUnitedStates:
+            #expect(try AppLocalization.string(
+                "brand.slogan",
+                for: language
+            ) == "Better every day.")
+            #expect(try AppLocalization.string(
+                "brand.descriptor",
+                for: language
+            ) == "Your personalized journey to a healthier life.")
+            #expect(try AppLocalization.string(
+                "brand.flow.role-line",
+                for: language
+            ) == "Flow, your guide every step of the way.")
+            #expect(try AppLocalization.string(
+                "brand.logo.accessibility-label",
+                for: language
+            ) == "Better Ahead logo")
+            #expect(try AppLocalization.string(
+                "brand.logo.fallback.accessibility-label",
+                for: language
+            ) == "Better Ahead")
+        }
+    }
+
+    @Test(arguments: SupportedAppLanguage.allCases)
     func reviewedAccessibilityCopyIsAvailable(_ language: SupportedAppLanguage) throws {
         let label = try AppLocalization.string(
             "brand.logo.accessibility-label",

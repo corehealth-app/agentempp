@@ -83,8 +83,17 @@ renderer, shell, `plutil`, and `xcrun assetutil`.
   `corepack up`, `corepack install -g`, `corepack enable`, and
   `--dangerously-allow-all-builds` are outside this plan. The committed
   `onlyBuiltDependencies` policy remains authoritative.
-- The first Better Ahead fingerprint and render require the local Docker
-  Desktop Linux engine. A static Docker client, remote daemon, Docker Offload,
+- The first Better Ahead fingerprint and render require Docker Desktop 4.80.0
+  or newer and its local Linux engine. Every renderer-side Docker invocation
+  explicitly uses `docker --context desktop-linux`; the runner never relies on
+  an ambient/default context, and every build/run passes literal
+  `--platform=linux/amd64`. The resolved CLI and the Buildx, Desktop, and
+  Offload CLI plugins must resolve inside Docker Desktop's application bundle.
+  `cliPluginsExtraDirs` must be empty; user/system candidates are allowed only
+  when their realpath is the exact bundled binary, and every non-bundled shadow
+  is forbidden. Builds use the literal
+  `buildx build --builder default` path and its context-bound `docker` driver. A
+  static/Homebrew client, remote/cloud daemon, Docker Offload route,
   Colima, OrbStack, Podman, or a host-native Sharp renderer is not an equivalent
   environment. Exit `78` can preserve already committed canonical outputs
   without claiming reproducibility; it cannot create the first
@@ -1381,12 +1390,28 @@ application configurations.
 - Create: `scripts/brand/run-better-ahead-brand-renderer.sh`
 - Modify: `design/brand/better-ahead-brand-assets.json`
 - Modify: `scripts/package.json`
+- Read only: `package.json`
+- Read only: `pnpm-lock.yaml`
+- Read only: `pnpm-workspace.yaml`
+- Read only: `scripts/brand/canonical-renderer/**`
 - Read only: `design/brand/exports/bodyflow-horizontal.svg`
 
 **Interfaces:**
 
 - `capture-better-ahead-environment.mjs --write|--check` records or validates
   the exact host and pinned renderer fingerprint.
+- `capture-better-ahead-environment.mjs --assert-local-docker` is a read-only,
+  fail-closed route attestation. It validates Offload status JSON and records
+  the normalized bundled Offload plugin version in the normative runtime
+  fingerprint. Only the status-command identifier plus raw JSON byte length and
+  SHA-256 are non-secret per-run evidence; the raw diagnostic remains outside
+  the repository and those volatile values are not reproducibility-equality
+  inputs. Its verdict is
+  based on bundled client/plugin provenance, Docker Desktop application
+  version, absent environment overrides/non-bundled plugin shadows, the exact
+  `desktop-linux` Unix-socket endpoint, the context-bound default Buildx
+  builder, and the explicit context's local Docker Desktop engine identity. It
+  does not infer semantics from Docker's undocumented Offload JSON fields.
 - `run-better-ahead-brand-renderer.sh --write|--check|--recover EXACT_TRANSACTION_PATH`
   seals declared inputs and candidate bytes inside one journaled transaction
   and can promote only `design/brand/better-ahead/exports`,
@@ -1417,9 +1442,12 @@ Require:
 - allowed SVG elements/attributes only;
 - historical symbol/AppIcon hashes unchanged before and after fake renderer
   runs;
-- a per-run Docker image ID captured with `--iidfile`, `--network none`, and the
-  pinned `scripts/brand/canonical-renderer` context; the exact ID built for a
-  run must be the ID passed to `docker run`;
+- a per-run Docker image ID captured with
+  `buildx build --builder default --platform=linux/amd64 --iidfile`, using the
+  pinned `scripts/brand/canonical-renderer` context. The canonical Dockerfile's
+  dependency installation retains build-time network access. The exact ID
+  built for a run must be passed to
+  `docker --context desktop-linux run --platform=linux/amd64 --network none`;
 - check mode never writes;
 - write mode refuses a dirty input, concurrent edit, missing fingerprint,
   fingerprint mismatch, existing recovery quarantine, or target outside the two
@@ -1438,15 +1466,52 @@ Require:
 - all existing destinations are atomically captured and hash-validated before
   the first candidate is installed; a destination that appears or changes at
   any injected boundary fails closed without overwriting the concurrent edit;
-- the manifest/receipt is the final commit point. A pre-commit failure is
-  `RECOVERY_REQUIRED` and restores exact originals; a post-commit cleanup
-  failure is `CLEANUP_REQUIRED` and never restores old outputs;
+- the manifest/receipt is the final commit point. At the injected boundary
+  exactly after receipt publication and before the next journal update, proven
+  receipt absence selects `RECOVERY_REQUIRED` only when the journal is in a
+  recorded pre-commit state, recoverable originals are intact, and every
+  destination matches its phase-appropriate recorded original/installed state.
+  The exact expected receipt plus every recorded installed-output hash selects
+  `CLEANUP_REQUIRED` even if the journal still says `PROMOTING`. Receipt absence
+  under `COMMITTED`/`CLEANUP_REQUIRED`, or a present, malformed, unexpected, or
+  hash-divergent receipt/output, is blocking and selects neither recovery path.
+  Before further receipt/installed-hash verification, cleanup, or unlock, the
+  normal post-commit path durably enters `CLEANUP_REQUIRED`; any failure there
+  leaves it and never restores old outputs;
 - rollback/recovery preserves candidates and originals on failure, is
   idempotent for each recorded state, and names every touched path explicitly;
   cleanup, rollback, and recovery never use a glob or broad directory target;
-- only a fully successful run removes the exact lock. A second write remains
+- only a fully successful write or fully successful state-specific recovery
+  removes the exact lock, always as its final operation. A second write remains
   blocked after any injected error until
   `--recover EXACT_TRANSACTION_PATH` completes successfully;
+- the bounded digest and environment contract reject a changed root
+  `packageManager`, `pnpm-workspace.yaml` build policy, exact Corepack command,
+  or Node/Corepack/pnpm version without modifying any of those read-only inputs;
+- fake Docker fixtures prove `--assert-local-docker` is non-writing and
+  fail-closed: non-bundled client or Buildx/Desktop/Offload plugin
+  realpath/hash, non-bundled user/system plugin shadow, non-empty
+  `cliPluginsExtraDirs`, Docker Desktop application older than
+  4.80.0 or inconsistent with the server platform name, any ambient variable
+  whose name begins `DOCKER_`, `BUILDKIT_`, or `BUILDX_`, or the
+  `EXPERIMENTAL_BUILDKIT_SOURCE_POLICY` override, missing Offload
+  version/status support, nonzero/empty/malformed Offload JSON,
+  non-`desktop-linux` default context, nonlocal/TCP/SSH/cloud endpoint, a
+  default Buildx builder whose name/driver/endpoint are not exactly
+  `default`/`docker`/`desktop-linux`, or wrong explicit engine identity all exit
+  `78`. Attestation inspects only the named `default` builder and never runs
+  `buildx ls`, which could contact unrelated remote builders. The valid
+  status JSON hash/length is non-normative execution evidence, not a
+  state-schema or reproducibility oracle. `--write` and `--check` repeat the
+  same route attestation. Override fixtures use sentinel secret values and
+  prove diagnostics emit only variable names/presence, never their values;
+- fake runner tests prove every renderer `docker buildx build`, `run`,
+  `image inspect`, and related daemon command uses the literal
+  `--context desktop-linux` argument, build uses literal `--builder default`,
+  and every build/run uses literal `--platform=linux/amd64`. Build captures its
+  IID with `--iidfile`; only run uses literal `--network none` and consumes that
+  exact IID. No context-less Docker daemon API probe is permitted during
+  attestation or rendering;
 - no call to `render-bodyflow-brand-assets.mjs` or legacy `brand:render`.
 
 Machine tests cannot prove that arbitrary paths visually spell the intended
@@ -1531,10 +1596,13 @@ version, approval/receipt, and generated-output hash fields, avoiding both a
 self-referential hash and false invalidation from unrelated tooling.
 
 The normative renderer identity is the pinned base-image digest, the bounded
-canonical-renderer context/package-lock digest, and complete runtime versions
-observed inside the container. The image ID from `--iidfile` is per-run
-execution evidence: tests prove the same freshly built ID is used by
-`docker run`, but do not require separately rebuilt image IDs to be equal.
+canonical-renderer context/package-lock digest, the bundled Docker CLI/plugin
+realpaths, versions, and hashes, the context-bound default builder with its
+`docker` driver, and complete runtime versions observed inside the container.
+The image ID from `--iidfile` is per-run execution evidence: tests prove the
+same freshly built ID is used by
+`docker --context desktop-linux run`, but do not require separately rebuilt
+image IDs to be equal.
 
 Transactions use one exact lock path and a unique transaction directory under
 `design/brand`, both validated as descendants of the repository. The exact lock
@@ -1547,12 +1615,14 @@ depend on two independently published files.
 The normative state machine is:
 
 ```text
-IDLE -> LOCKED_PREPARING -> SEALED -> PROMOTING -> COMMITTED -> IDLE
+IDLE -> LOCKED_PREPARING -> SEALED -> PROMOTING -> COMMITTED
           |                 |          |
           +-----------------+----------+-> RECOVERY_REQUIRED
-                                           (before COMMITTED)
-COMMITTED --------------------------------> CLEANUP_REQUIRED
-                                           (cleanup failure)
+                                           (before receipt commit)
+COMMITTED -------------------------------> CLEANUP_REQUIRED -> IDLE
+                                           (post-commit verify/cleanup/unlock)
+PROMOTING + verifiable committed receipt -> CLEANUP_REQUIRED
+                                           (journal-label lag recovery)
 ```
 
 The initial journal records the run IID, physical repository root, exact
@@ -1573,19 +1643,33 @@ each candidate once into an immutable byte buffer, validates and hashes those
 same bytes, and promotes those buffers without resolving the candidate pathname
 again. Before the first promotion and again before the receipt commit point it
 revalidates bounded live inputs, sealed candidates, and recorded destination
-state. The receipt records the snapshot digest plus every captured and
-installed hash. The new manifest/receipt is promoted last and is the sole
-commit point.
+state. Before receipt publication, the flushed authoritative journal records
+the sealed expected receipt hash and every expected installed-output hash. The
+receipt records the snapshot digest plus every captured and installed hash. The
+new manifest/receipt is promoted last and is the sole commit point.
 
-Any exception before `COMMITTED` leaves the authoritative lock-journal,
-transaction, candidates, and originals intact and marks
+Any exception before the receipt commit point leaves the authoritative
+lock-journal, transaction, candidates, and originals intact and marks
 `RECOVERY_REQUIRED` when that journal update is possible; no error handler or
-`finally` path unlocks or cleans them. After the receipt and installed hashes
-are verified, cleanup touches only paths enumerated in the journal. A cleanup
-failure leaves the lock and journal at `CLEANUP_REQUIRED`; recovery verifies
-the committed receipt and finishes cleanup without rolling back the new
-outputs. Only the uninterrupted success path removes the exact lock as its
-final operation.
+`finally` path unlocks or cleans them. Receipt state and recorded hashes
+dominate the journal label: proven receipt absence authorizes pre-commit
+recovery only from `LOCKED_PREPARING`, `SEALED`, `PROMOTING`, or
+`RECOVERY_REQUIRED`, with intact recoverable originals and every destination
+matching its phase-appropriate recorded state. Receipt absence from `COMMITTED`
+or `CLEANUP_REQUIRED` is an inconsistency and blocks. The exact expected
+receipt plus every recorded installed hash is post-commit; any
+present/malformed/unexpected or hash-divergent state is likewise blocking and
+permits neither rollback nor cleanup/unlock. If the exact receipt was committed
+but the `COMMITTED` journal update was interrupted, recovery classifies the
+run as post-commit and atomically advances the journal to `CLEANUP_REQUIRED`
+without rollback. The normal writer also advances from `COMMITTED` to
+`CLEANUP_REQUIRED` before any post-commit receipt/installed-hash verification,
+cleanup, or unlock. Those operations touch only paths enumerated in the
+journal; any failure leaves the exact lock and journal at `CLEANUP_REQUIRED`.
+Recovery verifies the committed receipt and installed hashes and finishes
+cleanup without rolling back the new outputs.
+Only an uninterrupted successful write or a fully successful state-specific
+recovery removes the exact lock, always as its final operation.
 
 Recovery is permitted only through a tested
 `--recover EXACT_TRANSACTION_PATH` operation after the paths and hashes are
@@ -1595,6 +1679,17 @@ old outputs. Both flows are idempotent, preserve the lock and remaining journal
 on their own failure, and touch only paths named in the journal—never a
 wildcard or broad directory. Recovery itself does not rerender; any subsequent
 render still requires renewed authorization.
+
+For Task 4, the two recovery states have different continuation rules.
+`RECOVERY_REQUIRED` is pre-commit: successful recovery restores the exact
+pre-render state, and any later write is a new fingerprinted render cycle that
+requires renewed explicit render authorization. `CLEANUP_REQUIRED` is
+post-commit: the manifest receipt is already committed and the one authorized
+render has already occurred. Its recovery may only verify the committed receipt
+and installed-output hashes and finish the journal-enumerated cleanup/unlock; it
+must not restore or remove outputs, rebuild candidates, invoke Docker, recapture
+the fingerprint, or rerender. After successful `CLEANUP_REQUIRED` recovery,
+Task 4 resumes directly at Step 3.
 
 **Step 5: Commit the complete renderer inputs before fingerprint capture**
 
@@ -1623,11 +1718,32 @@ outputs that do not exist yet.
 
 **Current-execution reconciliation after the preserved partial commit**
 
-The current implementation already has clean commit
-`0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38` with the Step 5 message. Preserve
-it unchanged as an ancestor; do not amend, reset, drop, or replace it. Import
-this reconciled plan in a documentation-only commit, then perform the following
-hardening as an additional Task 3 commit:
+The current implementation already has clean pipeline commit
+`0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38` with the Step 5 message and its
+documentation-only child
+`ac6960f690dda59844cb6cedef96f23f81a4558c`. Preserve both unchanged as exact
+ancestors; do not amend, reset, drop, or replace either commit. Import this
+follow-up reconciliation in one additional documentation-only commit, then
+perform the following hardening as a separate Task 3 commit:
+
+Immediately after that import, while its documentation-only commit is still
+`HEAD`, prove the topology and both documentation-only boundaries before any
+dependency or implementation command:
+
+```bash
+set -euo pipefail
+test "$(git rev-parse ac6960f690dda59844cb6cedef96f23f81a4558c^)" \
+  = "0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38"
+git merge-base --is-ancestor \
+  ac6960f690dda59844cb6cedef96f23f81a4558c HEAD
+test "$(git rev-parse HEAD^)" \
+  = "ac6960f690dda59844cb6cedef96f23f81a4558c"
+test "$(git diff-tree --no-commit-id --name-only -r \
+  ac6960f690dda59844cb6cedef96f23f81a4558c)" \
+  = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
+```
 
 1. Verify and reconcile the dependency tree with the declared package manager.
    The earlier direct pnpm 11.16.0 invocation and
@@ -1659,10 +1775,66 @@ hardening as an additional Task 3 commit:
    commit-point, cleanup, and idempotent-recovery tests from Step 1 and confirm
    that the new assertions fail for the expected reasons before changing the
    implementation.
-3. Implement only the three reviewed hardenings within the existing Task 3
-   allowlist, run the full expanded suite, `validate:inputs`, preserved
-   baseline, and `git diff --check`, and obtain a new independent review with no
-   Critical or Important finding.
+3. Implement exactly the following four bounded workstreams. Items (a)-(c) are
+   the three reviewed renderer-safety hardenings. Item (d) is the mandatory
+   canonical-execution/fingerprint adaptation already required by Steps 4 and
+   6 and is expressly authorized in the same hardening commit:
+
+   a. **Transaction lifecycle:** publish the authoritative lock-journal before
+      any preparation write; route every post-lock error through it; cover
+      preparation, sealing, promotion, receipt, verification, cleanup, and
+      unlock failure boundaries; implement idempotent `RECOVERY_REQUIRED` and
+      `CLEANUP_REQUIRED` recovery using explicit paths only.
+   b. **TOCTOU closure:** render from the immutable bounded-input snapshot; seal
+      each candidate once as immutable bytes; capture and hash every original
+      destination before promotion; publish with no-replace semantics;
+      revalidate live inputs, sealed bytes, and destination state before first
+      promotion and before the receipt commit; fail closed on every injected
+      race.
+   c. **Comparison provenance:** declare
+      `design/brand/exports/bodyflow-horizontal.svg` with its exact path,
+      comparison-only role, and full SHA-256 in the immutable manifest
+      projection and bounded digest; reject altered, redirected, undeclared,
+      production-export, or app consumption before Docker or output mutation.
+   d. **Canonical execution/fingerprint:** extend the bounded input digest only
+      with the root `packageManager`, committed `pnpm-workspace.yaml` build
+      policy, and exact `corepack pnpm@10.33.2` render-command declaration.
+      Extend the environment capture/check contract with the observed
+      Node/Corepack/pnpm and Docker Desktop/client/plugin/engine versions,
+      realpaths, and hashes plus the composite local-route attestation. Record
+      the valid Offload status-command identifier and JSON hash/length
+      separately as per-run execution evidence
+      excluded from both the bounded digest and fingerprint-equality checks; do
+      not interpret undocumented JSON fields. Require Docker Desktop 4.80.0 or
+      newer; require Docker Desktop's bundled client and Buildx/Desktop/Offload
+      plugins; require empty `cliPluginsExtraDirs`; permit user/system plugin
+      candidates only when they resolve to the exact bundled binary; reject
+      every non-bundled shadow and all ambient `DOCKER_*`, `BUILDKIT_*`, and
+      `BUILDX_*` variables plus the BuildKit source-policy override; pin the exact
+      `desktop-linux` Unix-socket endpoint and local engine identity, make every
+      attestation/renderer/build/run daemon command use literal
+      `docker --context desktop-linux` without exception; require the
+      context-bound `default` Buildx builder with `docker` driver and literal
+      `buildx build --builder default`; and make every build/run pass literal
+      `--platform=linux/amd64`.
+      This authorizes the required schema, test, capture, and validation
+      changes; it does not authorize changing dependency declarations, the
+      lockfile, workspace policy, Docker context, Offload state, or any
+      canonical/historical input.
+
+   The write allowlist for this hardening commit is exactly the Better Ahead
+   manifest, `better-ahead-brand-contract.mjs` and its test,
+   `capture-better-ahead-environment.mjs`, both Better Ahead render scripts,
+   `run-better-ahead-brand-renderer.sh`, and `scripts/package.json` limited to
+   existing `brand:better-ahead:*` commands. Root `package.json`,
+   `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `canonical-renderer/**`, committed
+   masters, and the historical comparison SVG remain read-only, unchanged, and
+   unstaged. `environment.json`, exports, review PNGs, iOS files, and every
+   other path remain prohibited in this commit.
+
+   Run the full expanded suite, `validate:inputs`, preserved baseline, and
+   `git diff --check`, then obtain a new independent review with no Critical or
+   Important finding.
 4. Confirm that no export, review PNG, or `environment.json` exists, then commit
    the hardening separately:
 
@@ -1677,9 +1849,10 @@ hardening as an additional Task 3 commit:
    git commit -m "fix(brand): harden Better Ahead render transaction"
    ```
 
-The resulting hardening commit—not `0a5001e...`—is the exact Task 3 input
-commit captured by `environment.json`. The historical comparison SVG remains
-read-only and unstaged throughout.
+The resulting hardening commit—not `0a5001e...` or either documentation-only
+reconciliation—is the exact Task 3 input commit captured by
+`environment.json`. The historical comparison SVG remains read-only and
+unstaged throughout.
 
 **Step 6: Capture and commit the fingerprint before rendering**
 
@@ -1696,8 +1869,14 @@ Node, Corepack, and exact pnpm 10.33.2 versions
 pnpm-lock.yaml SHA-256
 Sharp, libvips, and librsvg versions from the pinned container contract
 canonical Docker base digest and per-run built image ID (execution evidence)
-Docker Desktop/client/engine versions, `desktop-linux` context, and local
-Linux-engine/Offload-disabled state
+Docker Desktop/client/Buildx/Desktop-plugin/Offload-plugin/engine versions,
+realpaths, and SHA-256 values plus explicit
+`docker --context desktop-linux` command prefix
+Offload status-JSON command/SHA-256/byte length as per-run execution evidence
+excluded from fingerprint-equality checks,
+`desktop-linux` Unix-socket endpoint, explicit local engine identity, and
+context-bound default Buildx builder with docker driver
+canonical platform: linux/amd64
 new master SHA-256 values
 exact command: corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
@@ -1715,19 +1894,166 @@ insufficient:
 set -euo pipefail
 printf 'architecture=%s\n' "$(uname -m)"
 printf 'docker_app=%s\n' "$(test -d /Applications/Docker.app && printf present || printf absent)"
-printf 'DOCKER_HOST=%s\n' "${DOCKER_HOST-}"
-printf 'DOCKER_CONTEXT=%s\n' "${DOCKER_CONTEXT-}"
-test -z "${DOCKER_HOST-}"
-test -z "${DOCKER_CONTEXT-}"
-command -v docker
+DOCKER_OVERRIDE_NAMES=$(env | sed -E -n \
+  's/^(DOCKER_[^=]*|BUILDKIT_[^=]*|BUILDX_[^=]*|EXPERIMENTAL_BUILDKIT_SOURCE_POLICY)=.*/\1/p' \
+  | LC_ALL=C sort)
+printf 'docker_override_names=%s\n' "$DOCKER_OVERRIDE_NAMES"
+test -z "$DOCKER_OVERRIDE_NAMES"
+DOCKER_CLI_PATH=$(command -v docker)
+DOCKER_CLI_REALPATH=$(node -e \
+  'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' \
+  "$DOCKER_CLI_PATH")
+printf 'docker_cli_realpath=%s\n' "$DOCKER_CLI_REALPATH"
+test "$DOCKER_CLI_REALPATH" \
+  = "/Applications/Docker.app/Contents/Resources/bin/docker"
+shasum -a 256 "$DOCKER_CLI_REALPATH"
+MAC_USER_NAME=$(id -un)
+MAC_USER_HOME=$(dscl . -read "/Users/$MAC_USER_NAME" NFSHomeDirectory \
+  | awk '{print $2}')
+test -n "$MAC_USER_HOME"
+DOCKER_USER_CONFIG="$MAC_USER_HOME/.docker/config.json"
+node -e '
+const fs = require("node:fs");
+const path = process.argv[1];
+if (!fs.existsSync(path)) process.exit(0);
+const config = JSON.parse(fs.readFileSync(path, "utf8"));
+if (!Object.hasOwn(config, "cliPluginsExtraDirs")) process.exit(0);
+if (!Array.isArray(config.cliPluginsExtraDirs)) process.exit(1);
+if (config.cliPluginsExtraDirs.length !== 0) process.exit(1);
+' "$DOCKER_USER_CONFIG"
+BUNDLED_PLUGIN_DIR="/Applications/Docker.app/Contents/Resources/cli-plugins"
+for PLUGIN_NAME in docker-buildx docker-desktop docker-offload; do
+  BUNDLED_PLUGIN_PATH="$BUNDLED_PLUGIN_DIR/$PLUGIN_NAME"
+  test -x "$BUNDLED_PLUGIN_PATH"
+  BUNDLED_PLUGIN_REALPATH=$(node -e \
+    'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' \
+    "$BUNDLED_PLUGIN_PATH")
+  case "$BUNDLED_PLUGIN_REALPATH" in
+    /Applications/Docker.app/Contents/Resources/*) ;;
+    *) false ;;
+  esac
+  printf '%s_realpath=%s\n' "$PLUGIN_NAME" "$BUNDLED_PLUGIN_REALPATH"
+  shasum -a 256 "$BUNDLED_PLUGIN_REALPATH"
+  USER_PLUGIN_PATH="$MAC_USER_HOME/.docker/cli-plugins/$PLUGIN_NAME"
+  if test -e "$USER_PLUGIN_PATH" || test -L "$USER_PLUGIN_PATH"; then
+    USER_PLUGIN_REALPATH=$(node -e \
+      'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' \
+      "$USER_PLUGIN_PATH")
+    test "$USER_PLUGIN_REALPATH" = "$BUNDLED_PLUGIN_REALPATH"
+  fi
+  for SYSTEM_PLUGIN_DIR in \
+    /usr/local/lib/docker/cli-plugins \
+    /usr/local/libexec/docker/cli-plugins \
+    /usr/lib/docker/cli-plugins \
+    /usr/libexec/docker/cli-plugins; do
+    SYSTEM_PLUGIN_PATH="$SYSTEM_PLUGIN_DIR/$PLUGIN_NAME"
+    if test -e "$SYSTEM_PLUGIN_PATH" || test -L "$SYSTEM_PLUGIN_PATH"; then
+      SYSTEM_PLUGIN_REALPATH=$(node -e \
+        'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' \
+        "$SYSTEM_PLUGIN_PATH")
+      test "$SYSTEM_PLUGIN_REALPATH" = "$BUNDLED_PLUGIN_REALPATH"
+    fi
+  done
+done
+DOCKER_DESKTOP_APP_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - \
+  /Applications/Docker.app/Contents/Info.plist)
+printf 'docker_desktop_app_version=%s\n' "$DOCKER_DESKTOP_APP_VERSION"
+node -e '
+const match = /^(\d+)\.(\d+)\.(\d+)/.exec(process.argv[1]);
+if (!match) process.exit(1);
+const actual = match.slice(1).map(Number);
+const minimum = [4, 80, 0];
+for (let index = 0; index < minimum.length; index += 1) {
+  if (actual[index] > minimum[index]) process.exit(0);
+  if (actual[index] < minimum[index]) process.exit(1);
+}
+' "$DOCKER_DESKTOP_APP_VERSION"
+docker buildx version
+docker desktop version
+docker offload version --json
+docker offload status --help | rg -F -- '--format'
+OFFLOAD_STATUS_JSON=$(mktemp /tmp/better-ahead-offload-status.XXXXXX)
+chmod 600 "$OFFLOAD_STATUS_JSON"
+docker offload status --format json > "$OFFLOAD_STATUS_JSON"
+test -s "$OFFLOAD_STATUS_JSON"
+node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' \
+  "$OFFLOAD_STATUS_JSON"
 test "$(docker context show)" = "desktop-linux"
-docker version
-test "$(docker info --format '{{.OSType}}')" = "linux"
-docker info --format 'arch={{.Architecture}} os={{.OperatingSystem}}'
-docker offload status 2>/dev/null || true
+EXPECTED_DOCKER_ENDPOINT="unix://${MAC_USER_HOME}/.docker/run/docker.sock"
+ACTUAL_DOCKER_ENDPOINT=$(docker context inspect desktop-linux \
+  --format '{{ .Endpoints.docker.Host }}')
+test "$ACTUAL_DOCKER_ENDPOINT" = "$EXPECTED_DOCKER_ENDPOINT"
+docker --context desktop-linux version
+SERVER_PLATFORM_NAME=$(docker --context desktop-linux version \
+  --format '{{.Server.Platform.Name}}')
+printf 'docker_server_platform=%s\n' "$SERVER_PLATFORM_NAME"
+case "$SERVER_PLATFORM_NAME" in
+  "Docker Desktop $DOCKER_DESKTOP_APP_VERSION"*) ;;
+  *) false ;;
+esac
+test "$(docker --context desktop-linux info --format '{{.OSType}}')" = "linux"
+test "$(docker --context desktop-linux info --format '{{.OperatingSystem}}')" \
+  = "Docker Desktop"
+test "$(docker --context desktop-linux info --format '{{.Name}}')" \
+  = "docker-desktop"
+EXPLICIT_ENGINE_ID=$(docker --context desktop-linux info --format '{{.ID}}')
+test -n "$EXPLICIT_ENGINE_ID"
+DEFAULT_BUILDER_INSPECT=$(docker --context desktop-linux \
+  buildx inspect default)
+printf '%s\n' "$DEFAULT_BUILDER_INSPECT"
+printf '%s\n' "$DEFAULT_BUILDER_INSPECT" \
+  | rg -x 'Name:[[:space:]]+default'
+printf '%s\n' "$DEFAULT_BUILDER_INSPECT" \
+  | rg -x 'Driver:[[:space:]]+docker'
+printf '%s\n' "$DEFAULT_BUILDER_INSPECT" \
+  | rg -x 'Endpoint:[[:space:]]+desktop-linux'
+LOCAL_DOCKER_EVIDENCE=$(mktemp /tmp/better-ahead-local-docker.XXXXXX)
+chmod 600 "$LOCAL_DOCKER_EVIDENCE"
+node scripts/brand/capture-better-ahead-environment.mjs \
+  --assert-local-docker | tee "$LOCAL_DOCKER_EVIDENCE"
+test -s "$LOCAL_DOCKER_EVIDENCE"
 ```
 
-The captured diagnostics must prove that Docker Offload is not running. If
+There is no best-effort fallback. Docker's public CLI reference guarantees JSON
+output but does not publish the Offload status schema, so the plan keeps the raw
+diagnostic only in the external runtime log. The bundled Offload plugin's
+normalized version, realpath, and binary hash are normative runtime fingerprint
+fields. The status-command identifier, JSON byte length, and SHA-256 are
+recorded without guessing field semantics or committing unknown fields. The
+status hash and length are volatile per-run
+execution evidence and are excluded from `--check` reproducibility-equality
+comparisons. The fail-closed verdict instead comes from the
+composite local-route attestation above: Docker Desktop must be at least 4.80.0,
+the resolved client and Buildx/Desktop/Offload plugins must be Docker Desktop's
+bundled binaries, `cliPluginsExtraDirs` must be empty, and every user/system
+candidate must resolve back to the exact bundled binary. All ambient variables
+whose names begin `DOCKER_`, `BUILDKIT_`, or `BUILDX_`, plus the explicit
+BuildKit source-policy override, must be absent; the server platform name must
+agree with the application version, and the selected default context must
+be `desktop-linux`, that context must resolve to the current macOS user's exact
+Docker Desktop Unix socket, the context-bound `default` Buildx builder must use
+the `docker` driver, and the explicit engine must report `linux`, Docker
+Desktop, and `docker-desktop`. No context-less daemon API query is allowed:
+Docker documents that any such API activity can wake an idle Offload session.
+The 4.80.0 floor is required because that release fixed explicit
+`desktop-linux` commands being silently routed to an active cloud engine.
+
+Missing commands, older Desktop, nonzero status, empty/malformed JSON, an
+unexpected endpoint/identity, or any failed assertion makes the standalone
+diagnostic block stop immediately without writing repository content. The
+`--assert-local-docker`, `--write`, and `--check` modes repeat the same
+attestation and contractually classify environmental unavailability or
+difference as exit `78`; unexpected checker/tool failures remain other nonzero
+codes. They record the evidence. The renderer uses
+`docker --context desktop-linux` for every daemon command, invokes the build as
+`docker --context desktop-linux buildx build --builder default`, and supplies
+literal `--platform=linux/amd64` plus `--iidfile`. It runs that exact IID with
+literal `--platform=linux/amd64 --network none`; the build itself retains the
+network access required by the pinned canonical Dockerfile. Never call
+`docker offload stop` automatically: it
+destroys the current cloud environment. If the route cannot be proved local,
+stop and ask the operator to disable Offload/switch to the local engine, then
+rerun the complete diagnostic. If
 `/Applications/Docker.app` exists but its CLI is absent from `PATH`, prepend
 `/Applications/Docker.app/Contents/Resources/bin` for this shell, start the
 existing Docker Desktop application, and repeat the whole diagnostic. If the
@@ -1786,12 +2112,29 @@ corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
 
-If rendering fails or produces a fingerprint mismatch, preserve all transaction
-and candidate paths plus `recovery.json`, report their exact paths/hashes, and
-stop. Do not rerun, replace hashes, remove a lock/quarantine manually, or fall
-back to the legacy/host-native renderer. After audit and renewed authorization,
-use only the tested `--recover EXACT_TRANSACTION_PATH` flow from Task 3 before
-starting a newly fingerprinted single-render cycle.
+If the renderer exits nonzero or reports a fingerprint mismatch, preserve and
+report the authoritative lock-journal, exact transaction path, candidates,
+originals, receipt if present, and every recorded hash, then stop. Do not rerun,
+replace hashes, manually remove a lock/quarantine, or fall back to the
+legacy/host-native renderer. An unknown or unreadable journal state is blocking.
+
+If the tested journal/receipt/destination classifier yields
+`RECOVERY_REQUIRED`, it has proved the receipt commit point was not reached and
+the recorded pre-commit state is recoverable. After audit and renewed recovery
+authorization, only the tested
+`--recover EXACT_TRANSACTION_PATH` flow may restore the exact pre-render state.
+Any later write is a new fingerprinted single-render cycle requiring renewed
+explicit render authorization.
+
+If that same classifier yields `CLEANUP_REQUIRED`, the exact committed receipt
+and installed hashes prove the single authorized render is already complete.
+After audit and recovery authorization,
+`--recover EXACT_TRANSACTION_PATH` may only verify the committed receipt and
+installed-output hashes and finish the journal-enumerated cleanup/unlock. It
+must not restore/remove outputs, rebuild candidates, invoke Docker, recapture
+the fingerprint, or rerender. If recovery succeeds and the receipt/output hashes
+still match, continue directly at Step 3. If recovery fails, retain the
+lock-journal and remaining transaction evidence and stop again.
 
 **Step 3: Prove old bytes did not move**
 

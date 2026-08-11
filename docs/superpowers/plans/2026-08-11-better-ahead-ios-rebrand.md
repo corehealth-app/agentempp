@@ -11,9 +11,12 @@ stable technical contracts.
 **Architecture:** Add one neutral `BrandIdentity`/`BrandAsset` boundary and one
 String Catalog-backed localization boundary. Keep target, scheme, module,
 bundle identifier, API contracts, persistence keys, telemetry identifiers, and
-server-owned domain values unchanged. Preserve the approved BodyFlow asset
-manifest as historical provenance; create a separate, narrow Better Ahead
-manifest and renderer that can only write new wordmark/lockup/review outputs.
+server-owned domain values unchanged. Use one explicit source `Info.plist` to
+decouple the two public bundle names from the preserved technical
+`PRODUCT_NAME`, with one exact synchronized-root membership exception. Preserve
+the approved BodyFlow asset manifest as historical provenance; create a
+separate, narrow Better Ahead manifest and renderer that can only write new
+wordmark/lockup/review outputs.
 Perform all implementation in a clean isolated worktree based on the approved
 asset tip. The clean Git-manager repository creates that worktree; the separate
 Mac worktree that holds the nine diagnostic files is read-only evidence.
@@ -59,10 +62,16 @@ String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
   `BodyFlowColor` UI tokens unchanged. Do not recolor the symbol to reconcile a
   one-channel hex difference.
 - Do not edit `project.pbxproj` to register new Swift or resource files because
-  the project uses file-system-synchronized groups. Edit it only for the two
-  public bundle-name values, the English region declaration, and changing
-  `SWIFT_EMIT_LOC_STRINGS` from `YES` to `NO` in the two application
-  configurations described below.
+  the project uses file-system-synchronized groups. Edit it only for the English
+  region declaration, changing `SWIFT_EMIT_LOC_STRINGS` from `YES` to `NO`,
+  temporarily setting the two public `INFOPLIST_KEY_CFBundle*` diagnostic inputs
+  before the generated-plist baseline and removing them before Task 2 staging,
+  setting `GENERATE_INFOPLIST_FILE = NO` and the explicit `INFOPLIST_FILE` in the
+  two application configurations, removing only the superseded app
+  `INFOPLIST_KEY_*` entries migrated into that source file, and adding the one
+  exact synchronized-membership exception that prevents that plist from
+  entering Copy Bundle Resources. No other group, target, phase, file-reference,
+  or build-setting edit is authorized.
 - Do not invoke legacy `brand:render` or `brand:review` in write mode during the
   rebrand. Those commands reconstruct all BodyFlow outputs and the entire Asset
   Catalog. Legacy `brand:test`, `brand:validate`, and `brand:render:check` are
@@ -598,6 +607,7 @@ git commit -m "test(brand): lock Better Ahead preserved asset baseline"
 - Create: `apps/ios/BodyFlow/BodyFlow/Core/Localization/AppLocalization.swift`
 - Create: `apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings`
 - Create: `apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings`
+- Create: `apps/ios/BodyFlow/BodyFlow/Resources/Info.plist`
 - Create: `apps/ios/BodyFlow/BodyFlowTests/BrandIdentityTests.swift`
 - Create: `apps/ios/BodyFlow/BodyFlowTests/LocalizationContractTests.swift`
 - Modify: `apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentModels.swift`
@@ -649,6 +659,9 @@ enum BrandIdentity {
 `Localizable.xcstrings`. `InfoPlist.xcstrings` repeats Better Ahead unchanged
 for OS-owned metadata in both locales. Only slogan, descriptor, role line, and
 surrounding UI copy are translated.
+`Resources/Info.plist` is the source of nonlocalized bundle metadata and both
+base public names. It uses build-setting substitutions for technical identity;
+it must never hard-code `BodyFlow` as a public value.
 `SupportedAppLanguage.englishUnitedStates` resolves the catalog localization
 `en`; its persisted/onboarding identifier remains `en-US`. Portuguese resolves
 `pt-BR` in both places. Tests require
@@ -692,6 +705,12 @@ func approvedEnglishCopy() {
         flowRoleLine: "Flow, your guide every step of the way."
     ))
 }
+
+@Test
+func publicBundleNamesUseApprovedBrand() {
+    #expect(Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String == "Better Ahead")
+    #expect(Bundle.main.infoDictionary?["CFBundleName"] as? String == "Better Ahead")
+}
 ```
 
 Also test that a missing brand key is reported by the localization contract and
@@ -706,7 +725,12 @@ Declare `@Suite struct BrandIdentityTests` and
 `@Suite struct LocalizationContractTests` so the documented `-only-testing`
 selectors address real suite names. Runtime tests exercise `Bundle.main` or an
 injected fixture bundle; only the Node catalog contract introduced in Task 7
-reads source JSON.
+reads source JSON. `BodyFlowTests` is hosted by the application, so the
+bundle-name test is the regression for the processed application's raw,
+nonlocalized plist, not the test bundle's generated plist. Use
+`infoDictionary`; do not use `object(forInfoDictionaryKey:)`, which may
+substitute an already-green value from localized `InfoPlist.strings` and
+conceal the raw `CFBundleName` failure.
 
 **Step 2: Run focused tests and verify RED**
 
@@ -719,7 +743,10 @@ xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -only-testing:BodyFlowTests/LocalizationContractTests test
 ```
 
-Expected: FAIL because the boundary/catalogs do not exist.
+Expected on a fresh execution: FAIL because the boundary/catalogs do not exist.
+For the authorized Task 2 resume after the first eight files were implemented,
+rerun after adding the hosted bundle-name assertion and require the focused suite
+to fail specifically because compiled `CFBundleName` is still `BodyFlow`.
 
 **Step 3: Implement the boundary and exact catalog entries**
 
@@ -749,50 +776,374 @@ inventory contract in Tasks 7-8 owns discovery; an ordinary build/test must
 never autoedit them. Any future extraction experiment must run in a disposable
 worktree and enter through a separately reviewed catalog diff.
 
-**Step 4: Set both public bundle names without renaming technical targets**
-
-In Debug and Release application build settings set exactly:
+Before the generated-plist reproduction in Step 4, keep
+`GENERATE_INFOPLIST_FILE = YES` and set these temporary diagnostic inputs in
+both application configurations:
 
 ```text
 INFOPLIST_KEY_CFBundleDisplayName = "Better Ahead";
 INFOPLIST_KEY_CFBundleName = "Better Ahead";
 ```
 
-Add `en` to `knownRegions`; keep `developmentRegion = "pt-BR"`, target/scheme
-names, `PRODUCT_NAME = "$(TARGET_NAME)"`, and bundle identifiers unchanged.
-Add `CFBundleDisplayName` and `CFBundleName` to `InfoPlist.xcstrings` with the
-same Better Ahead value for `pt-BR` and English.
+The first setting proves the supported display-name injection path; the second
+deliberately reproduces the Xcode 26.6 conflict. Step 5 removes both settings
+after the explicit source plist takes ownership. This makes the diagnostic
+replayable from the approved base as well as from the currently paused
+eight-file Task 2 worktree.
 
-**Step 5: Run GREEN, inspect generated plists, and commit**
+**Step 4: Reproduce and preserve the generated-plist baseline**
+
+Xcode 26.6 derives `CFBundleName` from `PRODUCT_NAME` when
+`GENERATE_INFOPLIST_FILE = YES`; `INFOPLIST_KEY_CFBundleName` does not override
+that derivation. Prove this behavior before changing the build configuration and
+retain the compiled plist outside the repository as the behavioral baseline:
 
 ```bash
 set -euo pipefail
-CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-catalogs.XXXXXX)
+PLIST_BASELINE_POINTER=/tmp/better-ahead-task2-plist-baseline-root.txt
+test ! -e "$PLIST_BASELINE_POINTER"
+PLIST_BASELINE_ROOT=$(mktemp -d /tmp/better-ahead-task2-plist-baseline.XXXXXX)
+CATALOG_SNAPSHOT="$PLIST_BASELINE_ROOT/catalogs.before.sha256"
 find apps/ios/BodyFlow/BodyFlow/Resources \
   -name '*.xcstrings' -type f -print0 \
   | sort -z | xargs -0 shasum -a 256 > "$CATALOG_SNAPSHOT"
-DERIVED_DATA=$(mktemp -d /tmp/better-ahead-identity-derived.XXXXXX)
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow -configuration Debug \
+  -derivedDataPath "$PLIST_BASELINE_ROOT/DerivedData" \
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" build \
+  2>&1 | tee "$PLIST_BASELINE_ROOT/generated-debug-build.log"
+xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow -configuration Release \
+  -derivedDataPath "$PLIST_BASELINE_ROOT/DerivedData" \
+  -destination "generic/platform=iOS Simulator" build \
+  2>&1 | tee "$PLIST_BASELINE_ROOT/generated-release-build.log"
+GENERATED_DEBUG_INFO="$PLIST_BASELINE_ROOT/DerivedData/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist"
+GENERATED_RELEASE_INFO="$PLIST_BASELINE_ROOT/DerivedData/Build/Products/Release-iphonesimulator/BodyFlow.app/Info.plist"
+for GENERATED_INFO in "$GENERATED_DEBUG_INFO" "$GENERATED_RELEASE_INFO"; do
+  test -f "$GENERATED_INFO"
+  test "$(plutil -extract CFBundleDisplayName raw -o - "$GENERATED_INFO")" \
+    = "Better Ahead"
+  test "$(plutil -extract CFBundleName raw -o - "$GENERATED_INFO")" \
+    = "BodyFlow"
+done
+cp -- "$GENERATED_DEBUG_INFO" \
+  "$PLIST_BASELINE_ROOT/generated-debug-before.plist"
+cp -- "$GENERATED_RELEASE_INFO" \
+  "$PLIST_BASELINE_ROOT/generated-release-before.plist"
+find apps/ios/BodyFlow/BodyFlow/Resources \
+  -name '*.xcstrings' -type f -print0 \
+  | sort -z | xargs -0 shasum -a 256 | cmp "$CATALOG_SNAPSHOT" -
+printf '%s\n' "$PLIST_BASELINE_ROOT" > "$PLIST_BASELINE_POINTER"
+```
+
+Expected: both builds and display-name checks pass while both captured raw
+`CFBundleName` values are `BodyFlow`. This is the RED evidence for the
+public-name requirement; do not rename the target or `PRODUCT_NAME` to make it
+green.
+
+**Step 5: Add one explicit source plist without renaming technical targets**
+
+Create `BodyFlow/Resources/Info.plist`. It must set these public keys directly:
+
+```text
+CFBundleDisplayName = Better Ahead
+CFBundleName = Better Ahead
+```
+
+Use these substitutions for technical identity and versioning rather than
+hard-coded product values:
+
+```text
+CFBundleDevelopmentRegion = $(DEVELOPMENT_LANGUAGE)
+CFBundleExecutable = $(EXECUTABLE_NAME)
+CFBundleIdentifier = $(PRODUCT_BUNDLE_IDENTIFIER)
+CFBundleInfoDictionaryVersion = 6.0
+CFBundlePackageType = $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+CFBundleShortVersionString = $(MARKETING_VERSION)
+CFBundleVersion = $(CURRENT_PROJECT_VERSION)
+LSRequiresIPhoneOS = true
+```
+
+Move the exact current generated values for these behavioral keys into the
+source plist; Step 6 compares their compiled forms against the Step 4 baseline:
+
+```text
+UIApplicationSceneManifest
+UIApplicationSupportsIndirectInputEvents
+UILaunchScreen
+UISupportedInterfaceOrientations~iphone
+UISupportedInterfaceOrientations~ipad
+```
+
+The captured and committed contract is exact: the scene manifest is a
+dictionary containing `UIApplicationSupportsMultipleScenes = true` and an
+empty `UISceneConfigurations` dictionary; indirect input support is `true`;
+the launch-screen dictionary is empty; the `~iphone` array is
+`UIInterfaceOrientationPortrait`, `UIInterfaceOrientationLandscapeLeft`,
+`UIInterfaceOrientationLandscapeRight`; and the `~ipad` array adds
+`UIInterfaceOrientationPortraitUpsideDown` immediately after Portrait, with
+the remaining landscape values in the same order. If the freshly captured
+Xcode 26.6 plist disagrees, stop and record the discrepancy instead of guessing.
+Do not replace either device-qualified orientation key with an unqualified
+`UISupportedInterfaceOrientations` key.
+
+Do not copy toolchain/platform outputs such as `DT*`, `BuildMachineOSBuild`,
+`MinimumOSVersion`, `UIDeviceFamily`, `CFBundleSupportedPlatforms`, asset-compiler
+icon keys, or `NSAccentColorName` into the source file. Xcode and `actool` must
+continue injecting those values during processing; the compiled-plist parity
+gate proves they remain present where applicable.
+
+For both application Debug and Release configurations, remove exactly these
+now-inactive settings after their values have moved into the source plist:
+
+```text
+INFOPLIST_KEY_CFBundleDisplayName
+INFOPLIST_KEY_CFBundleName
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation
+INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents
+INFOPLIST_KEY_UILaunchScreen_Generation
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone
+```
+
+Set exactly:
+
+```text
+GENERATE_INFOPLIST_FILE = NO;
+INFOPLIST_FILE = BodyFlow/Resources/Info.plist;
+```
+
+The application is a `PBXFileSystemSynchronizedRootGroup`. Add exactly one
+`PBXFileSystemSynchronizedBuildFileExceptionSet`, attach it to the existing
+`BodyFlow` root group's `exceptions`, target the existing `BodyFlow` application
+target, and set:
+
+```text
+membershipExceptions = (
+    Resources/Info.plist,
+);
+```
+
+The fixed target UUID is `5575F9CF301658E800FB4722`; the synchronized root UUID
+is `5575F9D2301658E800FB4722`. Generate one new collision-free 24-character PBX
+UUID for the exception object and reference only that object from the root. The
+membership path is relative to the synchronized `BodyFlow` root. Do not add a
+`PBXFileReference`, `PBXBuildFile`, explicit Resources-phase entry,
+`explicitFileTypes`, `explicitFolders`, directory exception, or wildcard. The
+plist remains an `INFOPLIST_FILE` input while being excluded from implicit Copy
+Bundle Resources membership.
+
+Add `en` to `knownRegions`; keep `developmentRegion = "pt-BR"`, target/scheme,
+module and executable names, `PRODUCT_NAME = "$(TARGET_NAME)"`, product path,
+and bundle identifiers unchanged. Add `CFBundleDisplayName` and `CFBundleName`
+to `InfoPlist.xcstrings` with the same Better Ahead value for `pt-BR` and
+English.
+
+**Step 6: Run GREEN, compare plists, and commit**
+
+```bash
+set -euo pipefail
+PLIST_BASELINE_ROOT=$(tr -d '\n' < /tmp/better-ahead-task2-plist-baseline-root.txt)
+test -d "$PLIST_BASELINE_ROOT"
+CATALOG_SNAPSHOT="$PLIST_BASELINE_ROOT/catalogs.before.sha256"
+test -f "$CATALOG_SNAPSHOT"
+BEFORE_DEBUG_INFO="$PLIST_BASELINE_ROOT/generated-debug-before.plist"
+BEFORE_RELEASE_INFO="$PLIST_BASELINE_ROOT/generated-release-before.plist"
+SOURCE_INFO=apps/ios/BodyFlow/BodyFlow/Resources/Info.plist
+PROJECT=apps/ios/BodyFlow/BodyFlow.xcodeproj
+plutil -lint "$SOURCE_INFO"
+test "$(plutil -extract CFBundleDisplayName raw -o - "$SOURCE_INFO")" \
+  = "Better Ahead"
+test "$(plutil -extract CFBundleName raw -o - "$SOURCE_INFO")" \
+  = "Better Ahead"
+test "$(plutil -extract CFBundleExecutable raw -o - "$SOURCE_INFO")" \
+  = '$(EXECUTABLE_NAME)'
+test "$(plutil -extract CFBundleIdentifier raw -o - "$SOURCE_INFO")" \
+  = '$(PRODUCT_BUNDLE_IDENTIFIER)'
+test "$(plutil -extract CFBundleDevelopmentRegion raw -o - "$SOURCE_INFO")" \
+  = '$(DEVELOPMENT_LANGUAGE)'
+test "$(plutil -extract CFBundleInfoDictionaryVersion raw -o - "$SOURCE_INFO")" \
+  = "6.0"
+test "$(plutil -extract CFBundlePackageType raw -o - "$SOURCE_INFO")" \
+  = '$(PRODUCT_BUNDLE_PACKAGE_TYPE)'
+test "$(plutil -extract CFBundleShortVersionString raw -o - "$SOURCE_INFO")" \
+  = '$(MARKETING_VERSION)'
+test "$(plutil -extract CFBundleVersion raw -o - "$SOURCE_INFO")" \
+  = '$(CURRENT_PROJECT_VERSION)'
+test "$(plutil -extract LSRequiresIPhoneOS raw -o - "$SOURCE_INFO")" \
+  = "true"
+for REQUIRED_SOURCE_KEY in \
+  UIApplicationSceneManifest UIApplicationSupportsIndirectInputEvents \
+  UILaunchScreen 'UISupportedInterfaceOrientations~iphone' \
+  'UISupportedInterfaceOrientations~ipad'; do
+  plutil -extract "$REQUIRED_SOURCE_KEY" xml1 -o /dev/null "$SOURCE_INFO"
+done
+SOURCE_INFO_JSON="$PLIST_BASELINE_ROOT/source-info.json"
+plutil -convert json -o "$SOURCE_INFO_JSON" "$SOURCE_INFO"
+node - "$SOURCE_INFO_JSON" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+
+const plist = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const approvedTopLevelKeys = [
+  "CFBundleDevelopmentRegion",
+  "CFBundleDisplayName",
+  "CFBundleExecutable",
+  "CFBundleIdentifier",
+  "CFBundleInfoDictionaryVersion",
+  "CFBundleName",
+  "CFBundlePackageType",
+  "CFBundleShortVersionString",
+  "CFBundleVersion",
+  "LSRequiresIPhoneOS",
+  "UIApplicationSceneManifest",
+  "UIApplicationSupportsIndirectInputEvents",
+  "UILaunchScreen",
+  "UISupportedInterfaceOrientations~iphone",
+  "UISupportedInterfaceOrientations~ipad",
+];
+assert.deepStrictEqual(Object.keys(plist).sort(), approvedTopLevelKeys.sort());
+NODE
+xcodebuild -project "$PROJECT" -list \
+  > "$PLIST_BASELINE_ROOT/project-list.txt"
+for CONFIGURATION in Debug Release; do
+  SETTINGS="$PLIST_BASELINE_ROOT/app-$CONFIGURATION.settings.txt"
+  xcodebuild -project "$PROJECT" -target BodyFlow \
+    -configuration "$CONFIGURATION" -sdk iphonesimulator \
+    -showBuildSettings > "$SETTINGS"
+  test "$(awk -F ' = ' '/^[[:space:]]*GENERATE_INFOPLIST_FILE = / {print $2; exit}' "$SETTINGS")" \
+    = "NO"
+  test "$(awk -F ' = ' '/^[[:space:]]*INFOPLIST_FILE = / {print $2; exit}' "$SETTINGS")" \
+    = "BodyFlow/Resources/Info.plist"
+  test "$(awk -F ' = ' '/^[[:space:]]*PRODUCT_NAME = / {print $2; exit}' "$SETTINGS")" \
+    = "BodyFlow"
+  test "$(awk -F ' = ' '/^[[:space:]]*PRODUCT_MODULE_NAME = / {print $2; exit}' "$SETTINGS")" \
+    = "BodyFlow"
+  test "$(awk -F ' = ' '/^[[:space:]]*EXECUTABLE_NAME = / {print $2; exit}' "$SETTINGS")" \
+    = "BodyFlow"
+  test "$(awk -F ' = ' '/^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER = / {print $2; exit}' "$SETTINGS")" \
+    = "com.bodyflow.app"
+  for MIGRATED_SETTING in \
+    INFOPLIST_KEY_CFBundleDisplayName \
+    INFOPLIST_KEY_CFBundleName \
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation \
+    INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents \
+    INFOPLIST_KEY_UILaunchScreen_Generation \
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad \
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone; do
+    if rg -q "^[[:space:]]*$MIGRATED_SETTING = " "$SETTINGS"; then
+      printf 'Migrated build setting remains active in %s: %s\n' \
+        "$CONFIGURATION" "$MIGRATED_SETTING" >&2
+      exit 1
+    fi
+  done
+done
+for TEST_TARGET in BodyFlowTests BodyFlowUITests; do
+  for CONFIGURATION in Debug Release; do
+    SETTINGS="$PLIST_BASELINE_ROOT/$TEST_TARGET-$CONFIGURATION.settings.txt"
+    xcodebuild -project "$PROJECT" -target "$TEST_TARGET" \
+      -configuration "$CONFIGURATION" -sdk iphonesimulator \
+      -showBuildSettings > "$SETTINGS"
+    test "$(awk -F ' = ' '/^[[:space:]]*GENERATE_INFOPLIST_FILE = / {print $2; exit}' "$SETTINGS")" \
+      = "YES"
+    test -z "$(awk -F ' = ' '/^[[:space:]]*INFOPLIST_FILE = / {print $2; exit}' "$SETTINGS")"
+  done
+done
+DERIVED_DATA=$(mktemp -d /tmp/better-ahead-identity-derived.XXXXXX)
+xcodebuild -project "$PROJECT" \
+  -scheme BodyFlow -configuration Debug \
   -derivedDataPath "$DERIVED_DATA" \
-  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" build
-test "$(plutil -extract CFBundleDisplayName raw -o - \
-  "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist")" \
-  = "Better Ahead"
-test "$(plutil -extract CFBundleName raw -o - \
-  "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist")" \
-  = "Better Ahead"
-for APP_LOCALE in pt-BR en; do
-  LOCALIZED_INFO="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/$APP_LOCALE.lproj/InfoPlist.strings"
-  test -f "$LOCALIZED_INFO"
-  test "$(plutil -extract CFBundleDisplayName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
-  test "$(plutil -extract CFBundleName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
+  -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" build \
+  2>&1 | tee "$PLIST_BASELINE_ROOT/explicit-debug-build.log"
+xcodebuild -project "$PROJECT" \
+  -scheme BodyFlow -configuration Release \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination "generic/platform=iOS Simulator" build \
+  2>&1 | tee "$PLIST_BASELINE_ROOT/explicit-release-build.log"
+DEBUG_INFO="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app/Info.plist"
+RELEASE_INFO="$DERIVED_DATA/Build/Products/Release-iphonesimulator/BodyFlow.app/Info.plist"
+for BUILT_INFO in "$DEBUG_INFO" "$RELEASE_INFO"; do
+  test -f "$BUILT_INFO"
+  test "$(plutil -extract CFBundleDisplayName raw -o - "$BUILT_INFO")" \
+    = "Better Ahead"
+  test "$(plutil -extract CFBundleName raw -o - "$BUILT_INFO")" \
+    = "Better Ahead"
+  test "$(plutil -extract CFBundleExecutable raw -o - "$BUILT_INFO")" \
+    = "BodyFlow"
+  test "$(plutil -extract CFBundleIdentifier raw -o - "$BUILT_INFO")" \
+    = "com.bodyflow.app"
+done
+for CONFIGURATION in Debug Release; do
+  if test "$CONFIGURATION" = "Debug"; then
+    BEFORE_INFO="$BEFORE_DEBUG_INFO"
+    BUILT_INFO="$DEBUG_INFO"
+  else
+    BEFORE_INFO="$BEFORE_RELEASE_INFO"
+    BUILT_INFO="$RELEASE_INFO"
+  fi
+  NORMALIZED_BEFORE="$PLIST_BASELINE_ROOT/$CONFIGURATION.generated.normalized.plist"
+  NORMALIZED_AFTER="$PLIST_BASELINE_ROOT/$CONFIGURATION.explicit.normalized.plist"
+  cp -- "$BEFORE_INFO" "$NORMALIZED_BEFORE"
+  cp -- "$BUILT_INFO" "$NORMALIZED_AFTER"
+  for PUBLIC_KEY in CFBundleDisplayName CFBundleName; do
+    plutil -remove "$PUBLIC_KEY" "$NORMALIZED_BEFORE"
+    plutil -remove "$PUBLIC_KEY" "$NORMALIZED_AFTER"
+  done
+  plutil -convert json \
+    -o "$PLIST_BASELINE_ROOT/$CONFIGURATION.generated.normalized.json" \
+    "$NORMALIZED_BEFORE"
+  plutil -convert json \
+    -o "$PLIST_BASELINE_ROOT/$CONFIGURATION.explicit.normalized.json" \
+    "$NORMALIZED_AFTER"
+  node - \
+    "$PLIST_BASELINE_ROOT/$CONFIGURATION.generated.normalized.json" \
+    "$PLIST_BASELINE_ROOT/$CONFIGURATION.explicit.normalized.json" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+
+const before = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const after = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+assert.deepStrictEqual(after, before);
+NODE
+  for TECHNICAL_KEY in \
+    CFBundleExecutable CFBundleIdentifier CFBundleInfoDictionaryVersion \
+    CFBundlePackageType CFBundleShortVersionString CFBundleVersion \
+    LSRequiresIPhoneOS; do
+    test "$(plutil -extract "$TECHNICAL_KEY" raw -o - "$BEFORE_INFO")" \
+      = "$(plutil -extract "$TECHNICAL_KEY" raw -o - "$BUILT_INFO")"
+  done
+done
+for CONFIGURATION in Debug Release; do
+  for APP_LOCALE in pt-BR en; do
+    LOCALIZED_INFO="$DERIVED_DATA/Build/Products/$CONFIGURATION-iphonesimulator/BodyFlow.app/$APP_LOCALE.lproj/InfoPlist.strings"
+    test -f "$LOCALIZED_INFO"
+    test "$(plutil -extract CFBundleDisplayName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
+    test "$(plutil -extract CFBundleName raw -o - "$LOCALIZED_INFO")" = "Better Ahead"
+  done
 done
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
+  -derivedDataPath "$DERIVED_DATA" \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
   -only-testing:BodyFlowTests/BrandIdentityTests \
   -only-testing:BodyFlowTests/LocalizationContractTests test
+for BUILD_LOG in \
+  "$PLIST_BASELINE_ROOT/explicit-debug-build.log" \
+  "$PLIST_BASELINE_ROOT/explicit-release-build.log"; do
+  PROCESS_COUNT=0
+  PROCESS_COUNT=$(rg -c \
+    '^ProcessInfoPlistFile .*BodyFlow\.app/Info\.plist .*BodyFlow/Resources/Info\.plist([[:space:]]|$)' \
+    "$BUILD_LOG") || {
+    RG_STATUS=$?
+    test "$RG_STATUS" -eq 1
+    PROCESS_COUNT=0
+  }
+  test "$PROCESS_COUNT" -eq 1
+  FORBIDDEN_COPY=$(rg -n \
+    'Multiple commands produce .*BodyFlow\.app/Info\.plist|^(CpResource|CopyPlistFile) .*BodyFlow\.app/Info\.plist .*BodyFlow/Resources/Info\.plist|warning:.*Copy Bundle Resources.*BodyFlow/Resources/Info\.plist|warning:.*BodyFlow/Resources/Info\.plist.*Copy Bundle Resources' \
+    "$BUILD_LOG" || test "$?" -eq 1)
+  test -z "$FORBIDDEN_COPY"
+done
 find apps/ios/BodyFlow/BodyFlow/Resources \
   -name '*.xcstrings' -type f -print0 \
   | sort -z | xargs -0 shasum -a 256 | cmp "$CATALOG_SNAPSHOT" -
@@ -801,6 +1152,7 @@ git add apps/ios/BodyFlow/BodyFlow/DesignSystem/BrandIdentity.swift \
   apps/ios/BodyFlow/BodyFlow/Core/Localization/AppLocalization.swift \
   apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
+  apps/ios/BodyFlow/BodyFlow/Resources/Info.plist \
   apps/ios/BodyFlow/BodyFlowTests/BrandIdentityTests.swift \
   apps/ios/BodyFlow/BodyFlowTests/LocalizationContractTests.swift \
   apps/ios/BodyFlow/BodyFlow/Core/Content/PublishedContentModels.swift \
@@ -808,10 +1160,18 @@ git add apps/ios/BodyFlow/BodyFlow/DesignSystem/BrandIdentity.swift \
 git commit -m "feat(ios): add Better Ahead bilingual identity boundary"
 ```
 
-Expected: both plist keys resolve to Better Ahead. No target, module, executable,
-or bundle identifier rename appears in the diff. The catalog checksum comparison
-must pass, and the project diff must show `SWIFT_EMIT_LOC_STRINGS = NO` in both
-application build configurations.
+Expected: Debug and Release expose both public names as Better Ahead. After
+removing only the two intentionally changed public-name keys, each complete
+compiled plist is structurally identical to its generated-plist baseline; the
+technical and behavioral values therefore match semantically in both
+configurations without relying on dictionary serialization order. Target,
+scheme, module, executable, product path, `PRODUCT_NAME`, and bundle identifiers
+remain unchanged. Each
+build uses the source plist exactly once and never copies it as a resource. The
+catalog checksum comparison passes, and the project diff shows
+`SWIFT_EMIT_LOC_STRINGS = NO`,
+`GENERATE_INFOPLIST_FILE = NO`, and the exact `INFOPLIST_FILE` in both
+application configurations.
 
 ---
 
@@ -1975,8 +2335,9 @@ content bilingual before integrated client delivery.
 **Interfaces:**
 
 - Source mode checks customer-visible literals, localization values, app
-  catalog names, plist public keys, and the exact exclusion of historical
-  wordmarks from targets.
+  catalog names, the explicit source-plist schema/build pipeline, plist public
+  keys, and the exact exclusion of both the source plist from Copy Bundle
+  Resources and historical wordmarks from targets.
 - Bundle mode checks Debug and Release `Info.plist`, compiled `.strings`, and
   `.stringsdict`/`.loctable` localization resources, all resources under each
   `.lproj`, and `Assets.car` inventory. It does not scan the executable as
@@ -2012,6 +2373,11 @@ than generalize them:
 ```text
 project.pbxproj :: PRODUCT_BUNDLE_IDENTIFIER = com.bodyflow.app(.tests|.uitests)
 project.pbxproj :: target/product/scheme references named BodyFlow
+project.pbxproj :: PRODUCT_NAME = $(TARGET_NAME) for the application
+project.pbxproj :: INFOPLIST_FILE = BodyFlow/Resources/Info.plist for application Debug/Release
+project.pbxproj :: synchronized membership exception = Resources/Info.plist for the BodyFlow target
+source Info.plist :: CFBundleDisplayName and CFBundleName = Better Ahead
+source Info.plist :: technical identity/version fields use the approved build-setting substitutions
 compiled Info.plist :: CFBundleIdentifier = com.bodyflow.app
 compiled Info.plist :: CFBundleExecutable = BodyFlow
 PublishedContentModels.swift :: raw value using_bodyflow
@@ -2027,6 +2393,38 @@ Historical wordmark paths are not public-source allowlist entries. The scanner
 verifies separately that `design/brand` is outside synchronized app target roots
 and that none of those exact files appears in Copy Bundle Resources or the
 compiled bundle.
+
+The source scanner also parses the two application build configurations and the
+synchronized-root exception graph. It requires exactly:
+
+```text
+GENERATE_INFOPLIST_FILE = NO
+INFOPLIST_FILE = BodyFlow/Resources/Info.plist
+no application INFOPLIST_KEY_CFBundleName/CFBundleDisplayName or migrated UI-generation keys
+one PBXFileSystemSynchronizedBuildFileExceptionSet
+membershipExceptions = Resources/Info.plist only
+exception target = BodyFlow application target
+exception attached to the BodyFlow synchronized root
+no Info.plist PBXFileReference, PBXBuildFile, or explicit Resources-phase entry
+BodyFlowTests and BodyFlowUITests keep GENERATE_INFOPLIST_FILE = YES and no INFOPLIST_FILE in Debug/Release
+```
+
+It parses `Resources/Info.plist` with `plutil`, requires the two public names,
+the approved technical substitutions, and the exact behavior-preservation
+values from Task 2: scene manifest with multiple scenes enabled and an empty
+scene-configuration dictionary, indirect input enabled, an empty launch-screen
+dictionary, and the ordered `~iphone`/`~ipad` orientation arrays. It rejects an
+unqualified orientation key. It also requires the exact 15-key top-level source
+schema enumerated by Task 2, so every unexpected generated/toolchain-owned key
+is rejected, including `UIRequiredDeviceCapabilities`, all `CFBundleIcon*`
+variants, `BuildMachineOSBuild`, `CFBundleSupportedPlatforms`,
+`MinimumOSVersion`, `UIDeviceFamily`, `NSAccentColorName`, and every `DT*` key.
+Fixtures must reject generation re-enabled, a wrong plist path, test-target
+generation disabled or a test-target source-plist path, missing or
+directory-wide membership exceptions, the exception attached to a test target,
+duplicate resource membership, hard-coded technical identity, any unexpected
+top-level source key, a missing behavior key, a wrong scalar/dictionary value,
+and reordered or otherwise changed orientation arrays.
 
 `PublicBrandContentTests` is a hosted runtime test for `Bundle.main`: it checks
 semantic image lookup, both supported localized bundles, approved public plist
@@ -2107,6 +2505,7 @@ xcrun assetutil --info \
 node scripts/brand/better-ahead-public-content-contract.mjs --check-assetutil \
   "$AUDIT_ROOT/release-assets.json"
 git diff --exit-code -- \
+  apps/ios/BodyFlow/BodyFlow/Resources/Info.plist \
   apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
 ```
@@ -2357,6 +2756,7 @@ cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-asse
   "$FINAL_ROOT/preserved-assets.after.json"
 pnpm --filter @mpp/scripts ios:localization:test:all
 git diff --exit-code -- \
+  apps/ios/BodyFlow/BodyFlow/Resources/Info.plist \
   apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
 git diff --cached --exit-code
@@ -2419,7 +2819,8 @@ changed because of fetch/worktree creation; neither is worktree content.
 **Step 7: Record final evidence and commit**
 
 The README records base/final SHAs, exact tool versions, commands/results,
-preserved and new asset hashes, human approval, localization coverage, public
+preserved and new asset hashes, human approval, localization coverage, the
+Xcode 26.6 generated-plist conflict and explicit-plist resolution, public
 content allowlist, both bundle audits, warnings, UI screenshots, preservation
 of both source worktrees, and these remaining gates:
 
@@ -2465,7 +2866,7 @@ file a trademark without separate authorization.
 | Better Ahead sole public product name | Tasks 2, 5, 6, 9 |
 | Flow sole public guide/agent name | Tasks 2, 6, 9 |
 | PT-BR and English iOS-owned UI | Tasks 2, 7, 8, 10 |
-| Display name and bundle name public aliases | Tasks 2, 9, 10 |
+| Public bundle names decoupled from preserved technical identity with plist parity | Tasks 2, 9, 10 |
 | About hierarchy | Task 6 |
 | Local notification copy | Task 9 audit: not applicable at current base |
 | Stable internal IDs/contracts remain unchanged | All tasks; enforced by review/tests |

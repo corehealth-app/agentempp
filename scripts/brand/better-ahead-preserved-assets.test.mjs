@@ -110,8 +110,15 @@ test("every future catalog alias is semantic and product-neutral", async () => {
   }
 });
 
-test("catalog mode requires every preserved semantic bundle source", async () => {
-  const audit = await betterAheadPreservedAssets(repositoryRoot, {
+test("catalog mode requires every preserved semantic bundle source", async (context) => {
+  const fixture = await cloneFixture(context);
+  await mutateJson(fixture, betterAheadManifestPath, (manifest) => ({
+    ...manifest,
+    brand_version: "1.0.0",
+    approval_state: "approved",
+  }));
+
+  const audit = await betterAheadPreservedAssets(fixture, {
     requireCatalog: true,
   });
 
@@ -130,6 +137,50 @@ test("catalog mode verifies preserved and approved new semantic sets", async (co
   });
 
   assert.deepEqual(audit.mismatches, []);
+});
+
+test("catalog mode rejects candidate approval or version before inspecting catalog files", async (context) => {
+  const cases = [
+    {
+      name: "candidate approval",
+      mutate(manifest) {
+        manifest.approval_state = "candidate";
+      },
+      pattern: /catalog mode requires approval_state approved/i,
+    },
+    {
+      name: "candidate version",
+      mutate(manifest) {
+        manifest.brand_version = "1.0.0-candidate.1";
+      },
+      pattern: /catalog mode requires brand_version 1\.0\.0/i,
+    },
+  ];
+
+  for (const fixtureCase of cases) {
+    const fixture = await cloneFixture(context);
+    await prepareCompleteCatalog(fixture);
+    await mutateJson(fixture, betterAheadManifestPath, (manifest) => {
+      fixtureCase.mutate(manifest);
+      return manifest;
+    });
+    await rm(path.join(
+      fixture,
+      catalogRoot,
+      "BrandSymbol.imageset/brand-symbol.svg",
+    ));
+
+    const audit = await betterAheadPreservedAssets(fixture, {
+      requireCatalog: true,
+    });
+
+    assert.match(audit.mismatches.join("\n"), fixtureCase.pattern, fixtureCase.name);
+    assert.doesNotMatch(
+      audit.mismatches.join("\n"),
+      /BrandSymbol\.imageset.*missing|catalog asset.*BrandSymbol/i,
+      `${fixtureCase.name} must fail before catalog inspection`,
+    );
+  }
 });
 
 test("catalog mode rejects missing, extra, misnamed, and re-encoded files", async (context) => {
@@ -265,6 +316,8 @@ async function prepareCompleteCatalog(root) {
   const manifest = JSON.parse(
     await readFile(path.join(root, betterAheadManifestPath), "utf8"),
   );
+  manifest.brand_version = "1.0.0";
+  manifest.approval_state = "approved";
   for (const asset of manifest.preserved) {
     if (!asset.neutral_catalog_path
       || asset.neutral_catalog_path.includes("/AppIcon.appiconset/")) continue;

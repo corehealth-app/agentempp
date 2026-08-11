@@ -34,14 +34,24 @@ export async function betterAheadWorktreeState(repositoryPath, options = {}) {
   const records = parsePorcelainV1Z(stdout);
 
   for (const exclusion of excludeExact) {
-    const exact = records.some(({ path: relativePath }) => relativePath === exclusion);
     const ancestor = records.some(({ path: relativePath }) =>
       relativePath.startsWith(`${exclusion}/`));
     if (ancestor) {
       throw new Error(`--exclude-exact rejects directory-wide exclusion: ${exclusion}`);
     }
-    if (!exact) {
-      throw new Error(`--exclude-exact does not name a reported path: ${exclusion}`);
+    const renameOrCopy = records.some(({ path: relativePath, originalPath }) =>
+      originalPath !== undefined
+      && (relativePath === exclusion || originalPath === exclusion));
+    if (renameOrCopy) {
+      throw new Error(`--exclude-exact cannot hide either side of a rename or copy: ${exclusion}`);
+    }
+    const exact = records.some(({ path: relativePath }) => relativePath === exclusion);
+    const state = await physicalState(repository, exclusion);
+    if (state.state !== "present" || state.fileType !== "regular_file") {
+      throw new Error(`--exclude-exact requires a present regular file: ${exclusion}`);
+    }
+    if (!exact && !await isTrackedPath(repository, exclusion)) {
+      throw new Error(`--exclude-exact does not name a reported path or clean tracked file: ${exclusion}`);
     }
   }
 
@@ -71,6 +81,19 @@ export async function betterAheadWorktreeState(repositoryPath, options = {}) {
   }
 
   return { schemaVersion: 1, paths };
+}
+
+async function isTrackedPath(repository, relativePath) {
+  try {
+    await runFile(
+      "git",
+      ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", relativePath],
+      { cwd: repository, encoding: "buffer" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function parsePorcelainV1Z(buffer) {

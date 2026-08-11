@@ -158,9 +158,24 @@ export async function betterAheadPreservedAssets(rootDirectory, options = {}) {
   }
 
   if (options.requireCatalog === true && declaration) {
-    await validateCatalog(root, result.preserved, result.newAssets, mismatches);
+    if (validateCatalogIdentity(declaration, mismatches)) {
+      await validateCatalog(root, result.preserved, result.newAssets, mismatches);
+    }
   }
   return result;
+}
+
+function validateCatalogIdentity(manifest, mismatches) {
+  let valid = true;
+  if (manifest.approval_state !== "approved") {
+    mismatches.push("catalog mode requires approval_state approved");
+    valid = false;
+  }
+  if (manifest.brand_version !== "1.0.0") {
+    mismatches.push("catalog mode requires brand_version 1.0.0");
+    valid = false;
+  }
+  return valid;
 }
 
 function historicalPreservedEntries(manifest, mismatches) {

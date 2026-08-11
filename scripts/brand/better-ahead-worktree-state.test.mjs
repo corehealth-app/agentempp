@@ -67,6 +67,41 @@ test("exact exclusion removes only one named file", async (context) => {
   assert.equal(state.paths.some(({ path: relativePath }) => relativePath === "modified.txt"), true);
 });
 
+test("exact exclusion accepts one clean tracked regular file before its controlled mutation", async (context) => {
+  const repository = await createRepository(context);
+  await writeFile(path.join(repository, "controlled-evidence.txt"), "before\n");
+  await git(repository, ["add", "controlled-evidence.txt"]);
+  await git(repository, ["commit", "--quiet", "-m", "track controlled evidence"]);
+
+  const before = await betterAheadWorktreeState(repository, {
+    excludeExact: ["controlled-evidence.txt"],
+  });
+  assert.deepEqual(before.paths, []);
+
+  await writeFile(path.join(repository, "controlled-evidence.txt"), "after\n");
+  const after = await betterAheadWorktreeState(repository, {
+    excludeExact: ["controlled-evidence.txt"],
+  });
+  assert.deepEqual(after.paths, []);
+});
+
+test("exact exclusion never hides either side of a rename or copy record", async (context) => {
+  const repository = await createRepository(context);
+  await writeFile(path.join(repository, "original.txt"), "original\n");
+  await git(repository, ["add", "original.txt"]);
+  await git(repository, ["commit", "--quiet", "-m", "track rename source"]);
+  await git(repository, ["mv", "original.txt", "renamed.txt"]);
+
+  await assert.rejects(
+    betterAheadWorktreeState(repository, { excludeExact: ["renamed.txt"] }),
+    /rename or copy/i,
+  );
+  await assert.rejects(
+    betterAheadWorktreeState(repository, { excludeExact: ["original.txt"] }),
+    /rename or copy/i,
+  );
+});
+
 test("exact exclusion rejects absolute, traversal, wildcard, root, and directory allowances", async (context) => {
   const repository = await createChangedRepository(context);
   await mkdir(path.join(repository, "evidence"), { recursive: true });

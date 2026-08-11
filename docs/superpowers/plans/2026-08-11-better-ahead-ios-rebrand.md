@@ -803,6 +803,9 @@ set -euo pipefail
 PLIST_BASELINE_POINTER=/tmp/better-ahead-task2-plist-baseline-root.txt
 test ! -e "$PLIST_BASELINE_POINTER"
 PLIST_BASELINE_ROOT=$(mktemp -d /tmp/better-ahead-task2-plist-baseline.XXXXXX)
+xcodebuild -version | tee "$PLIST_BASELINE_ROOT/xcode-version.txt"
+test "$(sed -n '1p' "$PLIST_BASELINE_ROOT/xcode-version.txt")" = "Xcode 26.6"
+test "$(sed -n '2p' "$PLIST_BASELINE_ROOT/xcode-version.txt")" = "Build version 17F113"
 CATALOG_SNAPSHOT="$PLIST_BASELINE_ROOT/catalogs.before.sha256"
 find apps/ios/BodyFlow/BodyFlow/Resources \
   -name '*.xcstrings' -type f -print0 \
@@ -830,6 +833,44 @@ cp -- "$GENERATED_DEBUG_INFO" \
   "$PLIST_BASELINE_ROOT/generated-debug-before.plist"
 cp -- "$GENERATED_RELEASE_INFO" \
   "$PLIST_BASELINE_ROOT/generated-release-before.plist"
+for BASELINE_CONFIGURATION in debug release; do
+  plutil -convert json \
+    -o "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.json" \
+    "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.plist"
+done
+node - \
+  "$PLIST_BASELINE_ROOT/generated-debug-before.json" \
+  "$PLIST_BASELINE_ROOT/generated-release-before.json" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+
+const expectedBehavior = {
+  UIApplicationSceneManifest: {
+    UIApplicationSupportsMultipleScenes: true,
+    UISceneConfigurations: {},
+  },
+  UIApplicationSupportsIndirectInputEvents: true,
+  UILaunchScreen: { UILaunchScreen: {} },
+  "UISupportedInterfaceOrientations~iphone": [
+    "UIInterfaceOrientationPortrait",
+    "UIInterfaceOrientationLandscapeLeft",
+    "UIInterfaceOrientationLandscapeRight",
+  ],
+  "UISupportedInterfaceOrientations~ipad": [
+    "UIInterfaceOrientationPortrait",
+    "UIInterfaceOrientationPortraitUpsideDown",
+    "UIInterfaceOrientationLandscapeLeft",
+    "UIInterfaceOrientationLandscapeRight",
+  ],
+};
+
+for (const plistPath of process.argv.slice(2)) {
+  const plist = JSON.parse(fs.readFileSync(plistPath, "utf8"));
+  for (const [key, value] of Object.entries(expectedBehavior)) {
+    assert.deepStrictEqual(plist[key], value, `${plistPath}: ${key}`);
+  }
+}
+NODE
 find apps/ios/BodyFlow/BodyFlow/Resources \
   -name '*.xcstrings' -type f -print0 \
   | sort -z | xargs -0 shasum -a 256 | cmp "$CATALOG_SNAPSHOT" -
@@ -837,9 +878,103 @@ printf '%s\n' "$PLIST_BASELINE_ROOT" > "$PLIST_BASELINE_POINTER"
 ```
 
 Expected: both builds and display-name checks pass while both captured raw
-`CFBundleName` values are `BodyFlow`. This is the RED evidence for the
+`CFBundleName` values are `BodyFlow`. The complete behavioral contract also
+passes in both configurations, including
+`UILaunchScreen = { UILaunchScreen = {} }`, the value captured for this project
+with Xcode 26.6 (`17F113`). This is the RED evidence for the
 public-name requirement; do not rename the target or `PRODUCT_NAME` to make it
 green.
+
+For an authorized resume after Step 4 already created the pointer and preserved
+both `generated-*-before.plist` files, do not delete the pointer or rerun the
+creation/build portion merely to satisfy `test ! -e`. Resolve the recorded root,
+revalidate it without modifying the pointer or either preserved plist, then run
+the JSON behavioral check above against those files:
+
+```bash
+set -euo pipefail
+PLIST_BASELINE_ROOT=$(tr -d '\n' < /tmp/better-ahead-task2-plist-baseline-root.txt)
+test -d "$PLIST_BASELINE_ROOT"
+test "$(xcodebuild -version | sed -n '1p')" = "Xcode 26.6"
+test "$(xcodebuild -version | sed -n '2p')" = "Build version 17F113"
+if test -f "$PLIST_BASELINE_ROOT/xcode-version.txt"; then
+  xcodebuild -version | cmp "$PLIST_BASELINE_ROOT/xcode-version.txt" -
+else
+  test "$PLIST_BASELINE_ROOT" \
+    = "/tmp/better-ahead-task2-plist-baseline.idcbiX"
+  test "$(git rev-parse HEAD^)" \
+    = "55e20de2cce1e2dce457c64aaf2f591131a17407"
+  test -f \
+    .superpowers/sdd/2026-08-11-better-ahead-ios-rebrand/task-2-report.md
+fi
+for CONFIGURATION in Debug Release; do
+  BASELINE_CONFIGURATION=$(printf '%s' "$CONFIGURATION" \
+    | tr '[:upper:]' '[:lower:]')
+  rg -F -- '** BUILD SUCCEEDED **' \
+    "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-build.log"
+  cmp "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.plist" \
+    "$PLIST_BASELINE_ROOT/DerivedData/Build/Products/$CONFIGURATION-iphonesimulator/BodyFlow.app/Info.plist"
+  test "$(plutil -extract CFBundleDisplayName raw -o - \
+    "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.plist")" \
+    = "Better Ahead"
+  test "$(plutil -extract CFBundleName raw -o - \
+    "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.plist")" \
+    = "BodyFlow"
+  plutil -convert json \
+    -o "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.json" \
+    "$PLIST_BASELINE_ROOT/generated-$BASELINE_CONFIGURATION-before.plist"
+done
+node - \
+  "$PLIST_BASELINE_ROOT/generated-debug-before.json" \
+  "$PLIST_BASELINE_ROOT/generated-release-before.json" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+
+const expectedBehavior = {
+  UIApplicationSceneManifest: {
+    UIApplicationSupportsMultipleScenes: true,
+    UISceneConfigurations: {},
+  },
+  UIApplicationSupportsIndirectInputEvents: true,
+  UILaunchScreen: { UILaunchScreen: {} },
+  "UISupportedInterfaceOrientations~iphone": [
+    "UIInterfaceOrientationPortrait",
+    "UIInterfaceOrientationLandscapeLeft",
+    "UIInterfaceOrientationLandscapeRight",
+  ],
+  "UISupportedInterfaceOrientations~ipad": [
+    "UIInterfaceOrientationPortrait",
+    "UIInterfaceOrientationPortraitUpsideDown",
+    "UIInterfaceOrientationLandscapeLeft",
+    "UIInterfaceOrientationLandscapeRight",
+  ],
+};
+
+for (const plistPath of process.argv.slice(2)) {
+  const plist = JSON.parse(fs.readFileSync(plistPath, "utf8"));
+  for (const [key, value] of Object.entries(expectedBehavior)) {
+    assert.deepStrictEqual(plist[key], value, `${plistPath}: ${key}`);
+  }
+}
+NODE
+test -f "$PLIST_BASELINE_ROOT/catalogs.before.sha256"
+find apps/ios/BodyFlow/BodyFlow/Resources \
+  -name '*.xcstrings' -type f -print0 \
+  | sort -z | xargs -0 shasum -a 256 \
+  | cmp "$PLIST_BASELINE_ROOT/catalogs.before.sha256" -
+```
+
+Every new Step 4 capture must contain `xcode-version.txt`. The one authorized
+resume whose baseline was created by the immediately preceding plan revision
+may lack that newly introduced file; in that case the exact live version checks
+above and the preserved execution report are the provenance bridge. Do not
+retroactively create the file or generalize this exception to another baseline.
+
+If the pointer exists but any referenced artifact is missing, or if the
+recorded Xcode build differs, stop without deleting or replacing anything. If
+the entire `/tmp` state was lost, a later explicitly authorized replay may run
+the complete Step 4 into a new root only after proving the same eight-file
+pre-migration snapshot; never reconstruct or edit a baseline plist.
 
 **Step 5: Add one explicit source plist without renaming technical targets**
 
@@ -878,7 +1013,8 @@ UISupportedInterfaceOrientations~ipad
 The captured and committed contract is exact: the scene manifest is a
 dictionary containing `UIApplicationSupportsMultipleScenes = true` and an
 empty `UISceneConfigurations` dictionary; indirect input support is `true`;
-the launch-screen dictionary is empty; the `~iphone` array is
+the top-level `UILaunchScreen` value is a dictionary with exactly one inner
+`UILaunchScreen` key whose value is an empty dictionary; the `~iphone` array is
 `UIInterfaceOrientationPortrait`, `UIInterfaceOrientationLandscapeLeft`,
 `UIInterfaceOrientationLandscapeRight`; and the `~ipad` array adds
 `UIInterfaceOrientationPortraitUpsideDown` immediately after Portrait, with
@@ -886,6 +1022,24 @@ the remaining landscape values in the same order. If the freshly captured
 Xcode 26.6 plist disagrees, stop and record the discrepancy instead of guessing.
 Do not replace either device-qualified orientation key with an unqualified
 `UISupportedInterfaceOrientations` key.
+
+Encode the launch-screen fragment unambiguously as:
+
+```xml
+<key>UILaunchScreen</key>
+<dict>
+    <key>UILaunchScreen</key>
+    <dict/>
+</dict>
+```
+
+Do not flatten it to `<key>UILaunchScreen</key><dict/>`, remove the inner key,
+or add another wrapper. Although Apple's build-setting reference describes the
+nominal generated value as an empty dictionary, the paired Debug and Release
+Xcode 26.6 (`17F113`) baselines for this project contain the nested structure.
+The observed compiled baseline governs this preservation migration; accepting
+a different compiled launch-screen structure or behavioral baseline would
+require a separate, explicitly approved task.
 
 Do not copy toolchain/platform outputs such as `DT*`, `BuildMachineOSBuild`,
 `MinimumOSVersion`, `UIDeviceFamily`, `CFBundleSupportedPlatforms`, asset-compiler
@@ -1003,6 +1157,23 @@ const approvedTopLevelKeys = [
   "UISupportedInterfaceOrientations~ipad",
 ];
 assert.deepStrictEqual(Object.keys(plist).sort(), approvedTopLevelKeys.sort());
+assert.deepStrictEqual(plist.UIApplicationSceneManifest, {
+  UIApplicationSupportsMultipleScenes: true,
+  UISceneConfigurations: {},
+});
+assert.equal(plist.UIApplicationSupportsIndirectInputEvents, true);
+assert.deepStrictEqual(plist.UILaunchScreen, { UILaunchScreen: {} });
+assert.deepStrictEqual(plist["UISupportedInterfaceOrientations~iphone"], [
+  "UIInterfaceOrientationPortrait",
+  "UIInterfaceOrientationLandscapeLeft",
+  "UIInterfaceOrientationLandscapeRight",
+]);
+assert.deepStrictEqual(plist["UISupportedInterfaceOrientations~ipad"], [
+  "UIInterfaceOrientationPortrait",
+  "UIInterfaceOrientationPortraitUpsideDown",
+  "UIInterfaceOrientationLandscapeLeft",
+  "UIInterfaceOrientationLandscapeRight",
+]);
 NODE
 xcodebuild -project "$PROJECT" -list \
   > "$PLIST_BASELINE_ROOT/project-list.txt"
@@ -1164,9 +1335,11 @@ Expected: Debug and Release expose both public names as Better Ahead. After
 removing only the two intentionally changed public-name keys, each complete
 compiled plist is structurally identical to its generated-plist baseline; the
 technical and behavioral values therefore match semantically in both
-configurations without relying on dictionary serialization order. Target,
-scheme, module, executable, product path, `PRODUCT_NAME`, and bundle identifiers
-remain unchanged. Each
+configurations without relying on dictionary serialization order. This parity
+includes the exact nested `UILaunchScreen = { UILaunchScreen = {} }` value; it
+must not be flattened or excluded from comparison. Target, scheme, module,
+executable, product path, `PRODUCT_NAME`, and bundle identifiers remain
+unchanged. Each
 build uses the source plist exactly once and never copies it as a resource. The
 catalog checksum comparison passes, and the project diff shows
 `SWIFT_EMIT_LOC_STRINGS = NO`,
@@ -2340,9 +2513,12 @@ content bilingual before integrated client delivery.
   Resources and historical wordmarks from targets.
 - Bundle mode checks Debug and Release `Info.plist`, compiled `.strings`, and
   `.stringsdict`/`.loctable` localization resources, all resources under each
-  `.lproj`, and `Assets.car` inventory. It does not scan the executable as
-  undifferentiated text because internal module/type symbols intentionally
-  retain BodyFlow.
+  `.lproj`, and `Assets.car` inventory. For every bundle invocation it parses
+  the complete compiled plist and requires the two public names, preserved
+  technical identity, and all five exact behavioral values from Task 2,
+  including the nested launch-screen dictionary. It does not scan the
+  executable as undifferentiated text because internal module/type symbols
+  intentionally retain BodyFlow.
 - Every allowlist entry contains exact path, exact field or anchored pattern,
   reason, and owner. Directory wildcards and “allow BodyFlow everywhere” rules
   are invalid.
@@ -2380,6 +2556,7 @@ source Info.plist :: CFBundleDisplayName and CFBundleName = Better Ahead
 source Info.plist :: technical identity/version fields use the approved build-setting substitutions
 compiled Info.plist :: CFBundleIdentifier = com.bodyflow.app
 compiled Info.plist :: CFBundleExecutable = BodyFlow
+compiled Info.plist :: exact Task 2 behavioral contract, including UILaunchScreen = { UILaunchScreen = {} }
 PublishedContentModels.swift :: raw value using_bodyflow
 DemoStateStore.swift :: persisted keys beginning bodyflow.demo.
 AppLaunchConfiguration.swift :: Keychain service values beginning com.bodyflow.app.
@@ -2412,8 +2589,12 @@ BodyFlowTests and BodyFlowUITests keep GENERATE_INFOPLIST_FILE = YES and no INFO
 It parses `Resources/Info.plist` with `plutil`, requires the two public names,
 the approved technical substitutions, and the exact behavior-preservation
 values from Task 2: scene manifest with multiple scenes enabled and an empty
-scene-configuration dictionary, indirect input enabled, an empty launch-screen
-dictionary, and the ordered `~iphone`/`~ipad` orientation arrays. It rejects an
+scene-configuration dictionary, indirect input enabled, the exact nested
+`UILaunchScreen = { UILaunchScreen = {} }` value, and the ordered
+`~iphone`/`~ipad` orientation arrays. The valid fixture hard-codes that nested
+value; negative fixtures must flatten it to `{}` and separately add or alter an
+inner key so semantic deep equality rejects both forms. The scanner must not
+learn the expected value dynamically from the source plist. It rejects an
 unqualified orientation key. It also requires the exact 15-key top-level source
 schema enumerated by Task 2, so every unexpected generated/toolchain-owned key
 is rejected, including `UIRequiredDeviceCapabilities`, all `CFBundleIcon*`
@@ -2425,6 +2606,14 @@ directory-wide membership exceptions, the exception attached to a test target,
 duplicate resource membership, hard-coded technical identity, any unexpected
 top-level source key, a missing behavior key, a wrong scalar/dictionary value,
 and reordered or otherwise changed orientation arrays.
+
+Bundle fixtures independently hard-code the approved processed values rather
+than deriving them from `Resources/Info.plist`. They must reject a compiled
+bundle whose launch value is flattened to `{}`, whose inner launch dictionary
+is missing or nonempty, or whose other scene/input/orientation behavior differs.
+Because `--check-bundle` is invoked once for Debug and once for Release in this
+task and again in Task 10, a later build-time transformation cannot pass merely
+because the source plist remains correct.
 
 `PublicBrandContentTests` is a hosted runtime test for `Bundle.main`: it checks
 semantic image lookup, both supported localized bundles, approved public plist
@@ -2467,6 +2656,8 @@ user notifications.
 **Step 4: Build and audit compiled public resources**
 
 The bundle reader discovers exactly `pt-BR.lproj` and `en.lproj`. It converts
+the bundle's root `Info.plist` to JSON and verifies the exact public, technical,
+and behavioral contract before inspecting localized resources. It converts
 every `Localizable.strings`, `Localizable.stringsdict`, `InfoPlist.strings`, and
 `.loctable` it finds with `plutil -convert json -o -`, walks all scalar values,
 and fails if a compiled localization resource cannot be parsed. It also audits
@@ -2510,8 +2701,10 @@ git diff --exit-code -- \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings
 ```
 
-Expected: both public plist names are Better Ahead; both locales are present;
-neutral assets are present; former wordmark/lockup/launch assets are absent.
+Expected: both public plist names are Better Ahead; the compiled technical and
+five behavioral values, including the nested launch dictionary, are exact in
+both Debug and Release; both locales are present; neutral assets are present;
+former wordmark/lockup/launch assets are absent.
 
 **Step 5: Run GREEN and commit**
 
@@ -2820,9 +3013,10 @@ changed because of fetch/worktree creation; neither is worktree content.
 
 The README records base/final SHAs, exact tool versions, commands/results,
 preserved and new asset hashes, human approval, localization coverage, the
-Xcode 26.6 generated-plist conflict and explicit-plist resolution, public
-content allowlist, both bundle audits, warnings, UI screenshots, preservation
-of both source worktrees, and these remaining gates:
+Xcode 26.6 generated-plist conflict and explicit-plist resolution, the observed
+nested `UILaunchScreen` baseline and its exact preservation in the source plist,
+public content allowlist, both bundle audits, warnings, UI screenshots,
+preservation of both source worktrees, and these remaining gates:
 
 ```text
 Workstream 2 backend public language: still required

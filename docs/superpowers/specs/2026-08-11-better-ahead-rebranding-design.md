@@ -101,6 +101,10 @@ Customer-facing code must request semantic assets such as:
 
 The implementation may retain old file history or internal source provenance,
 but views must not depend on product-specific names such as `BodyFlowLogo`.
+Former-name wordmarks or lockups may remain only in Git history or in a source
+archive that is excluded from every application target and Copy Bundle
+Resources phase. They are prohibited from `Assets.xcassets` and the compiled app
+bundle.
 
 ## 4. Controlled Technical Boundary
 
@@ -110,9 +114,13 @@ but views must not depend on product-specific names such as `BodyFlowLogo`.
 - PT-BR and English localization values.
 - Onboarding and About hierarchy.
 - Public agent name and agent introductions.
-- Public notification and customer-support templates in the relevant workstream.
+- Titles and bodies for notifications scheduled locally by the iOS app.
 - Asset Catalog interfaces used by views.
 - Tests and public-content audits.
+
+Remote push payload templates, scheduled backend messages, emails, and support
+responses belong exclusively to Workstream 2. Workstream 1 may audit how the app
+displays them, but must not duplicate or rewrite their backend content.
 
 ### 4.2 Preserve for stability
 
@@ -186,27 +194,55 @@ The previous rasterization investigation established that a rerender can change
 both bytes and a small number of pixels. This rebranding therefore separates
 preserved and new assets.
 
-### 7.1 Preserved assets
+### 7.1 Baseline resolution
 
-- Record the starting hashes of the approved symbol and text-free App Icon
-  exports.
+The nine modified files in the original working tree are diagnostic artifacts.
+They are never a source of expected hashes and must not be normalized, staged,
+discarded, or copied into the implementation worktree.
+
+Before any rebranding edit:
+
+- record the implementation base `HEAD` SHA, complete porcelain status, and
+  staging state;
+- create the implementation in a clean isolated worktree at that exact commit;
+- locate the tracked approved asset manifest at `HEAD` and compare it with the
+  committed artifacts, reading committed bytes rather than dirty working-tree
+  bytes;
+- produce an audit mapping each candidate path to its committed SHA-256, approved
+  manifest SHA-256, diagnostic working-tree SHA-256 when present, and intended
+  classification as preserved or new;
+- stop if the committed artifact and approved manifest disagree, or if no
+  tracked approval identifies the intended baseline. Do not infer approval from
+  the nine diagnostic files.
+
+### 7.2 Preserved assets
+
+- Use only committed artifacts whose bytes match the tracked approved manifest.
 - Copy or reference those exact artifacts without rerendering them.
 - Require byte-for-byte equality at the end of the rebranding.
 - A pixel-only comparison is additional evidence, not a replacement for the
   required byte invariant.
 
-### 7.2 New assets
+### 7.3 New assets
 
 - The Better Ahead wordmark and horizontal lockups are intentional new outputs.
-- Generate them once in the approved canonical environment.
+- Generate them once with the existing locked project dependencies; do not
+  upgrade or replace the render stack during the rebranding.
+- Before rendering, commit an environment fingerprint containing the base Git
+  SHA, macOS build, CPU architecture, Xcode version, Node version, package
+  manager version, lockfile hash, Sharp version, libvips version, librsvg version,
+  and exact render command. That exact fingerprint defines the canonical
+  environment for these new assets.
 - Review them visually before acceptance.
 - Store their bytes as the new canonical artifacts and record their hashes in a
   separate manifest.
 - A later reproduction may only claim invariance if it matches those canonical
-  bytes. Otherwise it must report the difference rather than silently replacing
-  the assets.
+  bytes under the recorded fingerprint. If the fingerprint cannot be recreated,
+  use the committed canonical artifacts without rerendering; do not claim
+  reproducibility. Any differing output must be reported rather than silently
+  replacing the assets.
 
-### 7.3 Forbidden behavior
+### 7.4 Forbidden behavior
 
 - Do not rerender the entire approved asset family merely to rename the product.
 - Do not overwrite expected hashes as a way to make a failing test pass.
@@ -223,6 +259,7 @@ First priority and subject of the first implementation plan:
 
 - central brand boundary;
 - PT-BR and English strings;
+- notification copy scheduled locally by iOS;
 - semantic asset aliases;
 - preserved symbol and App Icon;
 - new wordmark/lockup integration;
@@ -237,7 +274,7 @@ Separate plan immediately after the iOS surface is stable and required before
 the integrated client-test release:
 
 - Flow naming in public agent responses;
-- customer-facing notifications and scheduled messages;
+- remote push payloads and customer-facing scheduled backend messages;
 - public email/support templates;
 - prompt/configuration audit;
 - compatibility with existing API contracts and stored data.
@@ -320,7 +357,9 @@ The isolated iOS rebranding is complete only when:
 5. CoreHealth, MPP, and Dr. Roberto appear only where legally required or where
    MPP is an actual internal method term, never as an endorsement of the public
    brand.
-6. The approved symbol and text-free App Icon remain byte-identical.
+6. The approved symbol and text-free App Icon remain byte-identical to the
+   committed artifacts that match the tracked approved manifest, never to the
+   nine diagnostic working-tree files.
 7. New wordmark assets are visually approved and recorded in their own manifest.
 8. All focused tests and Debug/Release builds pass.
 9. The original worktree state and unrelated user changes are preserved.
@@ -360,5 +399,6 @@ The build may be handed to the client for integrated testing only after:
 After this design is approved in its written form, create a detailed
 implementation plan for **Workstream 1 only**. The plan must be suitable for the
 local macOS/Xcode session, use the exact repository state found there, preserve
-the nine diagnostic asset files until explicitly resolved, and retain the
+the nine diagnostic asset files until explicitly resolved, establish the
+baseline from the clean committed worktree and tracked manifest, and retain the
 approved asset-invariance rules above.

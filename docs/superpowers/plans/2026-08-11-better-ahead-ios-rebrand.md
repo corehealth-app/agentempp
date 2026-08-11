@@ -22,9 +22,9 @@ asset tip. The clean Git-manager repository creates that worktree; the separate
 Mac worktree that holds the nine diagnostic files is read-only evidence.
 
 **Tech Stack:** Swift 6, SwiftUI, Swift Testing, XCTest/XCUIAutomation, Xcode
-String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
-0.34.5 inside the already pinned Linux/amd64 renderer, shell, `plutil`, and
-`xcrun assetutil`.
+String Catalogs, Asset Catalogs, Node.js 22+, Corepack invoking exactly pnpm
+10.33.2, Node test runner, Sharp 0.34.5 inside the already pinned Linux/amd64
+renderer, shell, `plutil`, and `xcrun assetutil`.
 
 **Authoritative specification:**
 `docs/superpowers/specs/2026-08-11-better-ahead-rebranding-design.md`
@@ -77,6 +77,18 @@ String Catalogs, Asset Catalogs, Node.js 22+, pnpm 10, Node test runner, Sharp
   Catalog. Legacy `brand:test`, `brand:validate`, and `brand:render:check` are
   valid only as a read-only preflight against an untouched snapshot of the
   approved historical tree.
+- The repository root's exact `packageManager` contract is
+  `pnpm@10.33.2`. Every plan command invokes it explicitly as
+  `corepack pnpm@10.33.2`; a globally installed `pnpm`, `corepack use`,
+  `corepack up`, `corepack install -g`, `corepack enable`, and
+  `--dangerously-allow-all-builds` are outside this plan. The committed
+  `onlyBuiltDependencies` policy remains authoritative.
+- The first Better Ahead fingerprint and render require the local Docker
+  Desktop Linux engine. A static Docker client, remote daemon, Docker Offload,
+  Colima, OrbStack, Podman, or a host-native Sharp renderer is not an equivalent
+  environment. Exit `78` can preserve already committed canonical outputs
+  without claiming reproducibility; it cannot create the first
+  `environment.json` or the first Better Ahead outputs.
 
 ## Confirmed Baseline
 
@@ -302,10 +314,13 @@ verified blob IDs are the content checksum.
 set -euo pipefail
 LOCKFILE_BEFORE=$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')
 node --version
-pnpm --version
-pnpm install --frozen-lockfile
+test "$(node -p 'require("./package.json").packageManager')" = "pnpm@10.33.2"
+command -v corepack
+test "$(corepack pnpm@10.33.2 --version)" = "10.33.2"
+corepack pnpm@10.33.2 install --frozen-lockfile
 test "$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')" = "$LOCKFILE_BEFORE"
-git diff --exit-code -- pnpm-lock.yaml package.json scripts/package.json
+git diff --exit-code -- pnpm-lock.yaml package.json scripts/package.json \
+  pnpm-workspace.yaml
 test -z "$(git status --porcelain=v1 -uall)"
 ```
 
@@ -315,9 +330,9 @@ and changes no tracked dependency declaration or lockfile.
 **Step 6: Run the historical read-only gate**
 
 ```bash
-pnpm --filter @mpp/scripts brand:test
-pnpm --filter @mpp/scripts brand:validate
-pnpm --filter @mpp/scripts brand:render:check
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:render:check
 git diff --check
 ```
 
@@ -340,6 +355,9 @@ git merge-base --is-ancestor \
   11f5a7cec331d4fc683b6cee5cdf046d3e89623d HEAD
 git diff --cached --quiet
 test -z "$(git status --porcelain=v1 -uall)"
+test "$(node -p 'require("./package.json").packageManager')" = "pnpm@10.33.2"
+command -v corepack
+test "$(corepack pnpm@10.33.2 --version)" = "10.33.2"
 ```
 
 Expected: all assertions pass before a task mutates anything. A failure stops
@@ -575,8 +593,8 @@ checked independently by `brand:better-ahead:catalog`, so the Task 1 and Task
 **Step 5: Run GREEN and commit**
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 git diff --check
 git add design/brand/better-ahead-brand-assets.json \
   scripts/brand/better-ahead-preserved-assets.mjs \
@@ -1363,14 +1381,15 @@ application configurations.
 - Create: `scripts/brand/run-better-ahead-brand-renderer.sh`
 - Modify: `design/brand/better-ahead-brand-assets.json`
 - Modify: `scripts/package.json`
+- Read only: `design/brand/exports/bodyflow-horizontal.svg`
 
 **Interfaces:**
 
 - `capture-better-ahead-environment.mjs --write|--check` records or validates
   the exact host and pinned renderer fingerprint.
 - `run-better-ahead-brand-renderer.sh --write|--check|--recover EXACT_TRANSACTION_PATH`
-  snapshots inputs and can
-  promote only `design/brand/better-ahead/exports`,
+  seals declared inputs and candidate bytes inside one journaled transaction
+  and can promote only `design/brand/better-ahead/exports`,
   `design/brand/better-ahead/review`, and the new
   `design/brand/better-ahead-brand-assets.json` manifest; it has no write path
   to legacy exports, source, masters, AppIcon, or the Asset Catalog.
@@ -1383,7 +1402,8 @@ fingerprint is recreated exactly; `78` means a complete, non-writing diagnostic
 proved that the recorded environment is unavailable or differs; every other
 nonzero code is a checker/tool failure. Exit `78` permits canonical committed
 bytes to be used without a reproducibility claim, never a rerender or hash
-replacement.
+replacement. Because no Better Ahead environment or output bytes exist before
+Tasks 3 and 4, exit `78` at the current first-capture boundary is blocking.
 
 **Step 1: Write failing renderer/input tests**
 
@@ -1404,8 +1424,29 @@ Require:
 - write mode refuses a dirty input, concurrent edit, missing fingerprint,
   fingerprint mismatch, existing recovery quarantine, or target outside the two
   new output directories and the single new manifest;
-- rollback preserves candidates and originals on failure, with an exact
-  recovery record and no glob-based cleanup;
+- the comparison renderer may read only the manifest-declared historical input
+  `design/brand/exports/bodyflow-horizontal.svg`, whose exact SHA-256 is
+  `cb88d3af9c6687573f06c34349c9c8bda2e602f8862cc728ca564ed880708cb0`;
+  changing one byte, redirecting the read to an undeclared path, or attempting
+  to write that input fails before Docker or live-output mutation;
+- an authoritative lock-journal exists atomically before any preparation write;
+  failures at every preparation, sealing, promotion, receipt, verification,
+  cleanup, and unlock boundary retain a valid blocking journal;
+- candidate bytes are read, validated, and hashed once into sealed immutable
+  buffers; replacing or mutating a candidate pathname after sealing can never
+  change the promoted bytes or receipt;
+- all existing destinations are atomically captured and hash-validated before
+  the first candidate is installed; a destination that appears or changes at
+  any injected boundary fails closed without overwriting the concurrent edit;
+- the manifest/receipt is the final commit point. A pre-commit failure is
+  `RECOVERY_REQUIRED` and restores exact originals; a post-commit cleanup
+  failure is `CLEANUP_REQUIRED` and never restores old outputs;
+- rollback/recovery preserves candidates and originals on failure, is
+  idempotent for each recorded state, and names every touched path explicitly;
+  cleanup, rollback, and recovery never use a glob or broad directory target;
+- only a fully successful run removes the exact lock. A second write remains
+  blocked after any injected error until
+  `--recover EXACT_TRANSACTION_PATH` completes successfully;
 - no call to `render-bodyflow-brand-assets.mjs` or legacy `brand:render`.
 
 Machine tests cannot prove that arbitrary paths visually spell the intended
@@ -1473,12 +1514,20 @@ input digest covers the two masters, all new renderer/contract scripts, the
 unchanged canonical-renderer Docker context, `pnpm-lock.yaml`, and a canonical
 projection of only the renderer-related dependency versions and
 `brand:better-ahead:{environment,render,render:check,validate,validate:inputs}`
-commands from `scripts/package.json`. It also covers a canonical immutable
-manifest projection: product identity, historical/preserved references, role
-and output-path declarations, and `environment.path`. It does not hash
-unrelated package-script entries that Tasks 7 or 9 add later. It explicitly
-excludes `environment.json` and mutable manifest candidate version,
-approval/receipt, and generated-output hash fields, avoiding both a
+commands from `scripts/package.json`, the root
+`packageManager = pnpm@10.33.2`, and the committed
+`pnpm-workspace.yaml` build-script policy. It also covers the exact path and
+bytes of `design/brand/exports/bodyflow-horizontal.svg`, pinned to the full
+historical manifest SHA above and declared for comparison-board input only.
+No production export or app target may consume that historical wordmark.
+
+The digest also covers a canonical immutable manifest projection: product
+identity, historical/preserved references, the complete allowlist of every
+file either renderer may read, role and output-path declarations, and
+`environment.path`. A read outside that allowlist is a contract failure. The
+digest does not hash unrelated package-script entries that Tasks 7 or 9 add
+later. It explicitly excludes `environment.json` and mutable manifest candidate
+version, approval/receipt, and generated-output hash fields, avoiding both a
 self-referential hash and false invalidation from unrelated tooling.
 
 The normative renderer identity is the pinned base-image digest, the bounded
@@ -1488,16 +1537,64 @@ execution evidence: tests prove the same freshly built ID is used by
 `docker run`, but do not require separately rebuilt image IDs to be equal.
 
 Transactions use one exact lock path and a unique transaction directory under
-`design/brand`, both validated as descendants of the repository. A successful
-promotion validates every destination, records a promotion receipt in the new
-manifest (including the exact run IID), then removes only its own transaction
-directory and lock; no recovery
-quarantine remains. A failed promotion retains its exact lock, candidates,
-originals, and `recovery.json`, and blocks another write. Recovery is permitted
-only through a tested `--recover EXACT_TRANSACTION_PATH` operation after the
-paths/hashes are audited and a new render is explicitly authorized; it restores
-or removes only paths named in `recovery.json`, never a wildcard or broad
-directory.
+`design/brand`, both validated as descendants of the repository. The exact lock
+is also the authoritative recovery journal: publish a complete initial JSON
+with an exclusive atomic primitive before any preparation write. Journal
+updates use write-temp, flush, and atomic rename. A mirrored
+`transaction/recovery.json` may aid audit, but neither blocking nor recovery may
+depend on two independently published files.
+
+The normative state machine is:
+
+```text
+IDLE -> LOCKED_PREPARING -> SEALED -> PROMOTING -> COMMITTED -> IDLE
+          |                 |          |
+          +-----------------+----------+-> RECOVERY_REQUIRED
+                                           (before COMMITTED)
+COMMITTED --------------------------------> CLEANUP_REQUIRED
+                                           (cleanup failure)
+```
+
+The initial journal records the run IID, physical repository root, exact
+transaction path, complete read/write allowlists, and every destination with
+original state initially `pending`. Before the first live-output mutation,
+capture each existing destination atomically into the transaction's
+`originals` area, or record it as originally absent, and verify its exact hash.
+All destinations are captured before any candidate is installed. Installation
+uses an exclusive temporary file in the destination directory, flushes and
+hashes it, then publishes it with an atomic no-replace primitive. It never uses
+an unconditional overwrite rename. A path that reappears or diverges from its
+recorded state therefore fails closed and is never silently overwritten.
+
+The renderer first copies the complete bounded input set into an immutable
+transaction snapshot, proves its digest against the exact Task 3 input commit,
+and builds the Docker context and candidates only from that snapshot. It reads
+each candidate once into an immutable byte buffer, validates and hashes those
+same bytes, and promotes those buffers without resolving the candidate pathname
+again. Before the first promotion and again before the receipt commit point it
+revalidates bounded live inputs, sealed candidates, and recorded destination
+state. The receipt records the snapshot digest plus every captured and
+installed hash. The new manifest/receipt is promoted last and is the sole
+commit point.
+
+Any exception before `COMMITTED` leaves the authoritative lock-journal,
+transaction, candidates, and originals intact and marks
+`RECOVERY_REQUIRED` when that journal update is possible; no error handler or
+`finally` path unlocks or cleans them. After the receipt and installed hashes
+are verified, cleanup touches only paths enumerated in the journal. A cleanup
+failure leaves the lock and journal at `CLEANUP_REQUIRED`; recovery verifies
+the committed receipt and finishes cleanup without rolling back the new
+outputs. Only the uninterrupted success path removes the exact lock as its
+final operation.
+
+Recovery is permitted only through a tested
+`--recover EXACT_TRANSACTION_PATH` operation after the paths and hashes are
+audited. `RECOVERY_REQUIRED` restores each captured original or removes a
+destination recorded as originally absent. `CLEANUP_REQUIRED` never restores
+old outputs. Both flows are idempotent, preserve the lock and remaining journal
+on their own failure, and touch only paths named in the journal—never a
+wildcard or broad directory. Recovery itself does not rerender; any subsequent
+render still requires renewed authorization.
 
 **Step 5: Commit the complete renderer inputs before fingerprint capture**
 
@@ -1505,9 +1602,9 @@ Run the input-only tests, then commit masters and tooling without any generated
 export, review PNG, or environment file:
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:validate:inputs
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate:inputs
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 git diff --check
 git add design/brand/better-ahead/masters \
   design/brand/better-ahead-brand-assets.json \
@@ -1524,6 +1621,66 @@ The contract CLI must explicitly support `--inputs-only`; this mode validates
 masters, preserved references, path boundaries, and tooling without requiring
 outputs that do not exist yet.
 
+**Current-execution reconciliation after the preserved partial commit**
+
+The current implementation already has clean commit
+`0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38` with the Step 5 message. Preserve
+it unchanged as an ancestor; do not amend, reset, drop, or replace it. Import
+this reconciled plan in a documentation-only commit, then perform the following
+hardening as an additional Task 3 commit:
+
+1. Verify and reconcile the dependency tree with the declared package manager.
+   The earlier direct pnpm 11.16.0 invocation and
+   `--dangerously-allow-all-builds` exception are not evidence for any gate:
+
+   ```bash
+   set -euo pipefail
+   test "$(node -p 'require("./package.json").packageManager')" = "pnpm@10.33.2"
+   command -v corepack
+   test "$(corepack pnpm@10.33.2 --version)" = "10.33.2"
+   DANGEROUS_BUILD_POLICY=$(corepack pnpm@10.33.2 config get dangerouslyAllowAllBuilds)
+   case "$DANGEROUS_BUILD_POLICY" in
+     ''|false|null|undefined) ;;
+     *) false ;;
+   esac
+   export npm_config_dangerously_allow_all_builds=false
+   PACKAGE_STATE=$(mktemp /tmp/better-ahead-package-state.XXXXXX)
+   shasum -a 256 pnpm-lock.yaml package.json scripts/package.json \
+     pnpm-workspace.yaml > "$PACKAGE_STATE"
+   corepack pnpm@10.33.2 install --frozen-lockfile --force
+   shasum -a 256 pnpm-lock.yaml package.json scripts/package.json \
+     pnpm-workspace.yaml | cmp "$PACKAGE_STATE" -
+   git diff --exit-code -- pnpm-lock.yaml package.json scripts/package.json \
+     pnpm-workspace.yaml
+   ```
+
+2. Re-run the existing 27 contract tests with Corepack/pnpm 10.33.2. Then add
+   the adversarial provenance, lock-journal, sealed-byte, destination-race,
+   commit-point, cleanup, and idempotent-recovery tests from Step 1 and confirm
+   that the new assertions fail for the expected reasons before changing the
+   implementation.
+3. Implement only the three reviewed hardenings within the existing Task 3
+   allowlist, run the full expanded suite, `validate:inputs`, preserved
+   baseline, and `git diff --check`, and obtain a new independent review with no
+   Critical or Important finding.
+4. Confirm that no export, review PNG, or `environment.json` exists, then commit
+   the hardening separately:
+
+   ```bash
+   git add design/brand/better-ahead-brand-assets.json \
+     scripts/brand/better-ahead-brand-contract.mjs \
+     scripts/brand/better-ahead-brand-contract.test.mjs \
+     scripts/brand/capture-better-ahead-environment.mjs \
+     scripts/brand/render-better-ahead-brand-assets.mjs \
+     scripts/brand/render-better-ahead-brand-review.mjs \
+     scripts/brand/run-better-ahead-brand-renderer.sh scripts/package.json
+   git commit -m "fix(brand): harden Better Ahead render transaction"
+   ```
+
+The resulting hardening commit—not `0a5001e...`—is the exact Task 3 input
+commit captured by `environment.json`. The historical comparison SVG remains
+read-only and unstaged throughout.
+
 **Step 6: Capture and commit the fingerprint before rendering**
 
 The environment capture records exact values for:
@@ -1535,12 +1692,14 @@ digest of the bounded master/tooling/lockfile input set
 macOS product/build version
 host CPU architecture
 Xcode and Swift versions
-Node and pnpm versions
+Node, Corepack, and exact pnpm 10.33.2 versions
 pnpm-lock.yaml SHA-256
 Sharp, libvips, and librsvg versions from the pinned container contract
 canonical Docker base digest and per-run built image ID (execution evidence)
+Docker Desktop/client/engine versions, `desktop-linux` context, and local
+Linux-engine/Offload-disabled state
 new master SHA-256 values
-exact command: pnpm --filter @mpp/scripts brand:better-ahead:render
+exact command: corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
 
 Run the capture in write mode once, then validate it without rendering:
@@ -1548,12 +1707,42 @@ Run the capture in write mode once, then validate it without rendering:
 `--write` may create only `environment.json`; it must fail if it would mutate
 the manifest, masters, scripts, lockfile, or any output path.
 
+Before that first capture, diagnose all three Docker layers: installed app/CLI,
+session `PATH`, and reachable local engine. `docker --version` alone is
+insufficient:
+
+```bash
+set -euo pipefail
+printf 'architecture=%s\n' "$(uname -m)"
+printf 'docker_app=%s\n' "$(test -d /Applications/Docker.app && printf present || printf absent)"
+printf 'DOCKER_HOST=%s\n' "${DOCKER_HOST-}"
+printf 'DOCKER_CONTEXT=%s\n' "${DOCKER_CONTEXT-}"
+test -z "${DOCKER_HOST-}"
+test -z "${DOCKER_CONTEXT-}"
+command -v docker
+test "$(docker context show)" = "desktop-linux"
+docker version
+test "$(docker info --format '{{.OSType}}')" = "linux"
+docker info --format 'arch={{.Architecture}} os={{.OperatingSystem}}'
+docker offload status 2>/dev/null || true
+```
+
+The captured diagnostics must prove that Docker Offload is not running. If
+`/Applications/Docker.app` exists but its CLI is absent from `PATH`, prepend
+`/Applications/Docker.app/Contents/Resources/bin` for this shell, start the
+existing Docker Desktop application, and repeat the whole diagnostic. If the
+application is absent, stop and request installation/startup of the official
+Docker Desktop build for that Mac plus acceptance of its license terms. Do not
+install only a static/Homebrew client and do not substitute another local or
+remote backend. No `environment.json`, render, or Task 4 action is permitted
+until every diagnostic above passes.
+
 ```bash
 node scripts/brand/capture-better-ahead-environment.mjs --write
-pnpm --filter @mpp/scripts brand:better-ahead:environment
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:validate:inputs
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate:inputs
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 git diff --check
 git add design/brand/better-ahead/environment.json
 git commit -m "build(brand): pin Better Ahead render environment"
@@ -1580,7 +1769,7 @@ committed fingerprint predates the first render.
 
 ```bash
 set -euo pipefail
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 find design/brand/exports \
   apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets \
   -type f -print0 | sort -z | xargs -0 shasum -a 256 \
@@ -1593,8 +1782,8 @@ Expected: only intentional Task 4 output paths will become dirty.
 **Step 2: Run the new renderer exactly once in write mode**
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:environment
-pnpm --filter @mpp/scripts brand:better-ahead:render
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
 
 If rendering fails or produces a fingerprint mismatch, preserve all transaction
@@ -1614,9 +1803,9 @@ find design/brand/exports \
   | tee /tmp/better-ahead-preserved.after.sha256
 cmp /tmp/better-ahead-preserved.before.sha256 \
   /tmp/better-ahead-preserved.after.sha256
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
 ```
 
 Expected: `cmp` exit 0. The Better Ahead manifest records complete hashes for
@@ -1675,10 +1864,10 @@ Record the exact approval text/date in evidence, set the Better Ahead manifest
 to `brand_version: 1.0.0` and `approval_state: approved`, and run:
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:render:check
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:validate
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render:check
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 git diff --check
 git add design/brand/better-ahead-brand-assets.json \
   docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md
@@ -1814,12 +2003,12 @@ remains possible from a detached worktree at the historical SHA;
 `brand:render:check` is not run against the rebranded catalog.
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
-pnpm --filter @mpp/scripts brand:better-ahead:catalog
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:validate
-pnpm --filter @mpp/scripts brand:test
-pnpm --filter @mpp/scripts brand:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:catalog
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:validate
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
@@ -2164,7 +2353,7 @@ CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-foundation-catalog.XXXXXX)
 shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
   > "$CATALOG_SNAPSHOT"
-pnpm --filter @mpp/scripts ios:localization:test:foundation
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:localization:test:foundation
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
@@ -2254,7 +2443,7 @@ label in `DemoBodyFlowRepository.swift`; a whole-file exemption is forbidden.
 Run:
 
 ```bash
-pnpm --filter @mpp/scripts ios:localization:test:all
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:localization:test:all
 ```
 
 Expected: RED until every client-owned public key in these groups has reviewed
@@ -2461,7 +2650,7 @@ CATALOG_SNAPSHOT=$(mktemp /tmp/better-ahead-all-catalog.XXXXXX)
 shasum -a 256 apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \
   apps/ios/BodyFlow/BodyFlow/Resources/InfoPlist.xcstrings \
   > "$CATALOG_SNAPSHOT"
-pnpm --filter @mpp/scripts ios:localization:test:all
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:localization:test:all
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
@@ -2685,7 +2874,7 @@ xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -derivedDataPath "$DERIVED_DATA" \
   -destination "generic/platform=iOS Simulator" build
 node scripts/brand/better-ahead-public-content-contract.mjs --check-source
-pnpm --filter @mpp/scripts brand:better-ahead:catalog
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:catalog
 node scripts/brand/better-ahead-public-content-contract.mjs --check-bundle \
   "$DERIVED_DATA/Build/Products/Debug-iphonesimulator/BodyFlow.app"
 node scripts/brand/better-ahead-public-content-contract.mjs --check-bundle \
@@ -2709,8 +2898,8 @@ former wordmark/lockup/launch assets are absent.
 **Step 5: Run GREEN and commit**
 
 ```bash
-pnpm --filter @mpp/scripts brand:better-ahead:public-content:test
-pnpm --filter @mpp/scripts ios:xcresult:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:public-content:test
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:xcresult:test
 xcodebuild -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
   -scheme BodyFlow \
   -destination "platform=iOS Simulator,id=27291590-659D-4A29-8F45-CA5CA2D154F9" \
@@ -2765,17 +2954,17 @@ test -z "$(git status --porcelain=v1 -uall)"
 RUNTIME_POINTER=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/task10-runtime-root.txt
 test ! -e "$RUNTIME_POINTER"
 printf '%s\n' "$FINAL_ROOT" > "$RUNTIME_POINTER"
-pnpm --filter @mpp/scripts brand:better-ahead:test
-pnpm --filter @mpp/scripts brand:better-ahead:baseline
-pnpm --filter @mpp/scripts brand:better-ahead:catalog
-pnpm --filter @mpp/scripts brand:better-ahead:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:catalog
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
 REPRO_EVIDENCE=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/render-reproducibility.txt
 ENVIRONMENT_STATUS=0
-pnpm --filter @mpp/scripts brand:better-ahead:environment \
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment \
   > "$FINAL_ROOT/logs/render-environment.log" 2>&1 || ENVIRONMENT_STATUS=$?
 case "$ENVIRONMENT_STATUS" in
   0)
-    pnpm --filter @mpp/scripts brand:better-ahead:render:check \
+    corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render:check \
       2>&1 | tee "$FINAL_ROOT/logs/render-check.log"
     printf '%s\n' 'reproduced: fingerprint exact and canonical bytes matched' \
       > "$REPRO_EVIDENCE"
@@ -2788,11 +2977,11 @@ case "$ENVIRONMENT_STATUS" in
     false
     ;;
 esac
-pnpm --filter @mpp/scripts brand:better-ahead:public-content:test
-pnpm --filter @mpp/scripts ios:xcresult:test
-pnpm --filter @mpp/scripts ios:localization:test:all
-pnpm --filter @mpp/scripts brand:test
-pnpm --filter @mpp/scripts brand:validate
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:public-content:test
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:xcresult:test
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:localization:test:all
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:test
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:validate
 ```
 
 Do not run legacy `brand:render`, `brand:render:check`, or `brand:review` against
@@ -2942,12 +3131,12 @@ for CONFIGURATION in Debug Release; do
     --check-assetutil "$FINAL_ROOT/${CONFIGURATION}-assets.json"
 done
 node scripts/brand/better-ahead-public-content-contract.mjs --check-source
-pnpm --filter @mpp/scripts brand:better-ahead:catalog
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:catalog
 node scripts/brand/better-ahead-preserved-assets.mjs --emit-historical-map \
   > "$FINAL_ROOT/preserved-assets.after.json"
 cmp docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preserved-assets.before.json \
   "$FINAL_ROOT/preserved-assets.after.json"
-pnpm --filter @mpp/scripts ios:localization:test:all
+corepack pnpm@10.33.2 --filter @mpp/scripts ios:localization:test:all
 git diff --exit-code -- \
   apps/ios/BodyFlow/BodyFlow/Resources/Info.plist \
   apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings \

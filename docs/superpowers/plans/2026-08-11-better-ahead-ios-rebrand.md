@@ -16,7 +16,10 @@ decouple the two public bundle names from the preserved technical
 `PRODUCT_NAME`, with one exact synchronized-root membership exception. Preserve
 the approved BodyFlow asset manifest as historical provenance; create a
 separate, narrow Better Ahead manifest and renderer that can only write new
-wordmark/lockup/review outputs.
+wordmark/lockup/review outputs. Publish those outputs as one immutable,
+  version-addressed bundle with a single exclusive directory rename; the root
+  manifest is updated afterward as an ordinary reviewed Git patch that points
+  downstream tasks at that bundle, never by the transactional renderer.
 Perform all implementation in a clean isolated worktree based on the approved
 asset tip. The clean Git-manager repository creates that worktree; the separate
 Mac worktree that holds the nine diagnostic files is read-only evidence.
@@ -77,6 +80,16 @@ renderer, shell, `plutil`, and `xcrun assetutil`.
   Catalog. Legacy `brand:test`, `brand:validate`, and `brand:render:check` are
   valid only as a read-only preflight against an untouched snapshot of the
   approved historical tree.
+- Better Ahead renderer output is never installed as independent live files.
+  The only visual commit point is one same-filesystem, FD-anchored,
+  no-replace rename of the complete sealed directory
+  `design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>`. That immutable bundle
+  contains all three SVGs, all three review PNGs, and its receipt. No `current`
+  symlink, mutable alias, wildcard resolver, or flat `exports`/`review` output
+  is permitted. The root Better Ahead manifest is a reviewed source registry,
+  not a receipt and not the commit point; `finish`/`recover` never mutate it.
+  Downstream tasks resolve the exact committed bundle path recorded there only
+  after the candidate bundle and manifest patch are committed together.
 - The repository root's exact `packageManager` contract is
   `pnpm@10.33.2`. Every plan command invokes it explicitly as
   `corepack pnpm@10.33.2`; a globally installed `pnpm`, `corepack use`,
@@ -404,9 +417,11 @@ that task; never continue relative-path commands from either source worktree.
 - `brand:better-ahead:catalog` adds a physical bundle-source check once the
   semantic catalog exists. It requires the exact historical hashes for
   `BrandSymbol`, `BrandMonochrome`, and `BrandNegative`; the approved Better
-  Ahead manifest hashes for `BrandWordmark`, `BrandLogoHorizontal`, and
-  `BrandLaunch`; and the baseline bytes plus `Contents.json` for every AppIcon
-  payload. Missing, extra, misnamed, or re-encoded files fail the gate.
+  Ahead root manifest's exact immutable bundle/receipt hashes for
+  `BrandWordmark`, `BrandLogoHorizontal`, and `BrandLaunch`; and the baseline
+  bytes plus `Contents.json` for every AppIcon payload. It never scans the
+  bundle parent or follows an alias. Missing, extra, misnamed, rejected, or
+  re-encoded files fail the gate.
 - `better-ahead-worktree-state.mjs --repository PATH` parses NUL-delimited
   porcelain and emits deterministic JSON containing each changed/untracked
   relative path, status, file type, byte size, and SHA-256 (or explicit missing
@@ -1412,12 +1427,53 @@ application configurations.
   `desktop-linux` Unix-socket endpoint, the context-bound default Buildx
   builder, and the explicit context's local Docker Desktop engine identity. It
   does not infer semantics from Docker's undocumented Offload JSON fields.
-- `run-better-ahead-brand-renderer.sh --write|--check|--recover EXACT_TRANSACTION_PATH`
-  seals declared inputs and candidate bytes inside one journaled transaction
-  and can promote only `design/brand/better-ahead/exports`,
-  `design/brand/better-ahead/review`, and the new
-  `design/brand/better-ahead-brand-assets.json` manifest; it has no write path
-  to legacy exports, source, masters, AppIcon, or the Asset Catalog.
+- `better-ahead-brand-contract.mjs --check-bundle EXACT_BUNDLE_PATH` validates
+  the physical no-follow tree, receipt, exact entry set, roles, sizes, and
+  hashes independently immediately after rendering. Normal `--check` resolves
+  only the reviewed root manifest's declared candidate, requires it to equal
+  the bundle derived from `environment.task3_input_commit_sha`, and applies the
+  same validation.
+- `better-ahead-brand-contract.mjs --register-candidate EXACT_BUNDLE_PATH`
+  is a Task 4 source-edit helper, not part of rendering or recovery. It requires
+  the manifest to match its exact tracked pre-render blob, independently
+  validates the bundle, and changes only the seven receipt-derived mutable
+  fields enumerated in Task 4. `--print-bounded-digest` emits only the canonical
+  bounded-input digest so Task 4 can prove registration did not alter it. This
+  helper is an ordinary isolated-worktree source edit, not an adversarial CAS:
+  no concurrent source editor may run. It nevertheless rejects an untracked,
+  dirty, non-regular, hardlinked, or symlinked manifest; reads the exact HEAD
+  blob and physical preimage; writes only an exclusive same-directory temp;
+  fsyncs, atomically replaces, and fsyncs the parent; reopens the result
+  no-follow; and proves the resulting Git diff contains only the declared
+  mutable fields. Tests cover dirty/prechanged input, final/intermediate
+  symlinks, hardlinks, extra-field mutation, bounded-digest drift, and exact
+  success. Any suspected concurrent editing blocks Task 4 for manual audit.
+- `run-better-ahead-brand-renderer.sh --write|--check` and
+  `run-better-ahead-brand-renderer.sh --recover EXACT_TRANSACTION_PATH` plus
+  `--recover-orphan EXACT_BEGIN_TEMP_PATH` are the only public
+  rendering/recovery entry points. `--write` orchestrates the persisted
+  `begin -> one Docker build -> one visual container -> resume -> finish`
+  protocol; `--recover` never invokes Docker.
+- Runner `--check` is read-only and Docker-free: it validates the already
+  recorded environment file, bounded inputs, exact manifest-declared committed
+  bundle, receipt, and six hashes. It does not call environment live
+  attestation or regenerate comparison bytes; the separate
+  `brand:better-ahead:environment` command owns live Docker attestation.
+- The internal transaction interface is
+  `render-better-ahead-brand-assets.mjs --transaction-begin`,
+  `--transaction-resume EXACT_TRANSACTION_PATH`,
+  `--transaction-finish EXACT_TRANSACTION_PATH`, and
+  `--recover EXACT_TRANSACTION_PATH` plus
+  `--recover-orphan EXACT_BEGIN_TEMP_PATH`. `begin` durably publishes the
+  authoritative journal before snapshot, probe, build, render, log, or
+  candidate creation. `resume` consumes the journal-bound one-shot completion
+  record without publication. `finish` seals and atomically publishes the
+  whole bundle, verifies it, cleans its transaction, and unlocks. It never
+  mutates the root manifest.
+- The runner may create only its exact lock/transaction paths, the immutable
+  final bundle `design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>`. It has no
+  write path to the root manifest, flat Better Ahead exports/review paths,
+  legacy exports, source, masters, AppIcon, or the Asset Catalog.
 - New production masters are self-contained, path-only SVGs. They contain no
   live `<text>`, font reference, external URL, script, raster payload, product
   descriptor, slogan, or localized copy.
@@ -1450,41 +1506,60 @@ Require:
   `docker --context desktop-linux run --platform=linux/amd64 --network none`;
 - check mode never writes;
 - write mode refuses a dirty input, concurrent edit, missing fingerprint,
-  fingerprint mismatch, existing recovery quarantine, or target outside the two
-  new output directories and the single new manifest;
+  fingerprint mismatch, existing recovery quarantine, any pre-existing final
+  bundle destination, or any target outside the exact transaction and final
+  bundle paths. Only recovery may recognize an exact bundle bound to the same
+  run ID and nonce after a publication crash;
 - the comparison renderer may read only the manifest-declared historical input
   `design/brand/exports/bodyflow-horizontal.svg`, whose exact SHA-256 is
   `cb88d3af9c6687573f06c34349c9c8bda2e602f8862cc728ca564ed880708cb0`;
   changing one byte, redirecting the read to an undeclared path, or attempting
   to write that input fails before Docker or live-output mutation;
-- an authoritative lock-journal exists atomically before any preparation write;
-  failures at every preparation, sealing, promotion, receipt, verification,
-  cleanup, and unlock boundary retain a valid blocking journal;
-- candidate bytes are read, validated, and hashed once into sealed immutable
-  buffers; replacing or mutating a candidate pathname after sealing can never
-  change the promoted bytes or receipt;
-- all existing destinations are atomically captured and hash-validated before
-  the first candidate is installed; a destination that appears or changes at
-  any injected boundary fails closed without overwriting the concurrent edit;
-- the manifest/receipt is the final commit point. At the injected boundary
-  exactly after receipt publication and before the next journal update, proven
-  receipt absence selects `RECOVERY_REQUIRED` only when the journal is in a
-  recorded pre-commit state, recoverable originals are intact, and every
-  destination matches its phase-appropriate recorded original/installed state.
-  The exact expected receipt plus every recorded installed-output hash selects
-  `CLEANUP_REQUIRED` even if the journal still says `PROMOTING`. Receipt absence
-  under `COMMITTED`/`CLEANUP_REQUIRED`, or a present, malformed, unexpected, or
-  hash-divergent receipt/output, is blocking and selects neither recovery path.
-  Before further receipt/installed-hash verification, cleanup, or unlock, the
-  normal post-commit path durably enters `CLEANUP_REQUIRED`; any failure there
-  leaves it and never restores old outputs;
-- rollback/recovery preserves candidates and originals on failure, is
-  idempotent for each recorded state, and names every touched path explicitly;
-  cleanup, rollback, and recovery never use a glob or broad directory target;
+- an authoritative lock-journal exists atomically before any snapshot, probe,
+  Docker command, render log, candidate, bundle staging, or other preparation
+  write. Failures and signals at every begin, snapshot, build, container,
+  resume, sealing, bundle publication, verification, cleanup, and unlock
+  boundary retain the journal and all available evidence;
+- `begin` records the run ID, nonce, exact transaction path, bounded input
+  digest, expected six candidate paths, final bundle path, and dispatch request
+  before the external visual work starts. The transaction-bound dispatcher
+  claims that request exactly once and the one visual container produces all
+  six candidates; direct asset/review worker invocation, replay, a fabricated
+  request, a symlinked request, a live-repository input, or a second writer is
+  rejected;
+- the container receives the immutable snapshot read-only and only the exact
+  candidate/log area writable. The live repository is never mounted writable.
+  Asset and review workers are implementation modules, not public package
+  commands, and can run only through the journal-bound dispatcher request;
+- candidate files are opened through anchored descriptors without following
+  symlinks, validated and hashed from the same descriptors, copied into a
+  complete source bundle, and sealed. Path replacement, content mutation,
+  symlink/hardlink substitution, and read error injection at every boundary
+  fail closed without publishing the final bundle;
+- the bundle source contains exactly the three SVGs, three PNGs, and
+  `receipt.json`. A native helper validates that sealed tree and performs the
+  same-filesystem `renameatx_np(..., RENAME_EXCL)` from source bundle to final
+  bundle without returning to JavaScript between its final FD-based validation
+  and rename. That single directory-entry rename is the sole visual commit
+  point. The helper then fsyncs the bundles parent; a pre-created destination
+  causes a no-replace failure and is never overwritten;
+- recovery reads the lock, journal, mirror, transaction tree, candidates,
+  staged bundle, committed receipt, and outputs only through
+  component-by-component FD-relative traversal with `O_NOFOLLOW` and physical
+  type/owner/device/inode/link-count/size/hash checks. Only an explicitly
+  optional path returning `ENOENT` may mean absent; `ELOOP`, `ENOTDIR`,
+  `EACCES`, `EPERM`, `EIO`, every other error, or any symlink/hardlink/race is
+  blocking. The mirror is audit evidence only and never a fallback authority;
+- pre-commit recovery preserves candidates/logs until the audited recovery is
+  authorized, is idempotent, and names every touched path explicitly.
+  Post-commit recovery never deletes or restores the bundle. Cleanup and
+  recovery never use a glob or broad directory target;
 - only a fully successful write or fully successful state-specific recovery
   removes the exact lock, always as its final operation. A second write remains
-  blocked after any injected error until
-  `--recover EXACT_TRANSACTION_PATH` completes successfully;
+  blocked after any injected error until the applicable audited
+  `--recover-orphan EXACT_BEGIN_TEMP_PATH` (before lock publication) or
+  `--recover EXACT_TRANSACTION_PATH` (after publication) completes
+  successfully;
 - the bounded digest and environment contract reject a changed root
   `packageManager`, `pnpm-workspace.yaml` build policy, exact Corepack command,
   or Node/Corepack/pnpm version without modifying any of those read-only inputs;
@@ -1502,8 +1577,10 @@ Require:
   `78`. Attestation inspects only the named `default` builder and never runs
   `buildx ls`, which could contact unrelated remote builders. The valid
   status JSON hash/length is non-normative execution evidence, not a
-  state-schema or reproducibility oracle. `--write` and `--check` repeat the
-  same route attestation. Override fixtures use sentinel secret values and
+  state-schema or reproducibility oracle. Environment `--write`, environment
+  `--check`, and runner `--write` repeat the same route attestation; renderer
+  `--check` remains Docker-free and validates only the recorded fingerprint and
+  committed bundle. Override fixtures use sentinel secret values and
   prove diagnostics emit only variable names/presence, never their values;
 - fake runner tests prove every renderer `docker buildx build`, `run`,
   `image inspect`, and related daemon command uses the literal
@@ -1512,6 +1589,51 @@ Require:
   IID with `--iidfile`; only run uses literal `--network none` and consumes that
   exact IID. No context-less Docker daemon API probe is permitted during
   attestation or rendering;
+- fake runner tests also prove the exact persisted order
+  `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH`, exactly one build and one
+  container for a write, and zero Docker calls from `resume`, `finish`,
+  `--recover`, or any cleanup path. Build/container failures and `HUP`, `INT`,
+  or `TERM` after `begin` preserve the journal, request, logs, candidates, and
+  transaction path; no trap removes or unlocks them;
+- adversarial tests cover final and intermediate symlinks, matching-hash mirror
+  fallback attempts, candidate and staged-bundle substitution, same-inode
+  mutation and inode replacement before the native
+  helper takes exclusive ownership, a pre-created final bundle, a competing
+  final-path creation at the native publish boundary, interruption immediately
+  before and after the directory rename, parent-fsync failure, unlock inode
+  substitution, every non-`ENOENT` read error, idempotent post-commit recovery,
+  and an exact successful regular-file/directory control case. Tests do not
+  claim protection from deliberate mutation by an already-compromised process
+  running as the same user inside the private helper-owned validation-to-rename
+  interval;
+- tests interrupt the native initial-journal helper before and after its
+  exclusive lock rename. Before publication, a failed helper removes only its
+  exact begin temp; if that cleanup cannot be proven, it reports
+  `BEGIN_ORPHANED` with the exact path, blocks new writes, and only audited
+  `--recover-orphan EXACT_BEGIN_TEMP_PATH` may remove it. After publication,
+  the complete authoritative lock always exists, including when the transaction
+  root has not yet been created;
+- tests kill every later journal transition after deterministic
+  `<LOCK_PATH>.update` create, write, fsync, and rename. Before rename the prior
+  lock remains authoritative; the no-follow preflight always detects the exact
+  orphan, and only tested exact-leaf recovery may complete or remove it;
+- once the one container has produced a valid completion, a final destination
+  proven absent, an unchanged anchored bundles parent, and exact
+  candidates/staging, resumable failures in sealing, parent fsync, or
+  publication select `FINISH_REQUIRED`, preserve candidates/staging, and resume
+  `finish` without Docker. A present/divergent final path, substituted parent,
+  ambiguous physical state, or mismatched bytes selects `BLOCKED`, never
+  `FINISH_REQUIRED`. Tests prove no second build/container occurs and only a
+  pre-render `RECOVERY_REQUIRED` cycle can require renewed render authorization;
+- no originals or backups are created, read, restored, or present in the
+  schema: the immutable final bundle destination is required to be absent;
+- registration tests prove `--register-candidate` rejects a dirty/divergent
+  manifest, invalid/rejected/symlinked bundle, non-regular or hardlinked
+  manifest, extra-field edit, and bounded-digest drift; changes only the seven
+  declared receipt-derived fields on exact success; rejects a second invocation
+  unless the entire expected projection is already byte-identical, in which
+  case it is a non-writing success; and is never invoked by the runner,
+  `finish`, or recovery;
 - no call to `render-bodyflow-brand-assets.mjs` or legacy `brand:render`.
 
 Machine tests cannot prove that arbitrary paths visually spell the intended
@@ -1558,20 +1680,29 @@ Expose these commands without changing the existing `brand:*` commands:
 }
 ```
 
-The renderer produces only:
+Let `TASK3_INPUT_SHA` be the full lowercase 40-hex hardening commit recorded as
+`task3_input_commit_sha` in `environment.json`. The renderer publishes exactly
+one immutable bundle at:
 
 ```text
-design/brand/better-ahead/exports/better-ahead-wordmark.svg
-design/brand/better-ahead/exports/better-ahead-horizontal.svg
-design/brand/better-ahead/exports/better-ahead-launch.svg
-design/brand/better-ahead/review/better-ahead-comparison.png
-design/brand/better-ahead/review/better-ahead-reduced-sizes.png
-design/brand/better-ahead/review/better-ahead-light-dark.png
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/exports/better-ahead-wordmark.svg
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/exports/better-ahead-horizontal.svg
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/exports/better-ahead-launch.svg
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/review/better-ahead-comparison.png
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/review/better-ahead-reduced-sizes.png
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/review/better-ahead-light-dark.png
+design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/receipt.json
 ```
 
 The production SVG exports are byte copies/controlled compositions of the new
 masters. Sharp is used only for review PNGs. No symbol or App Icon raster is
-rendered.
+rendered. The receipt records its schema, exact Task 3 input SHA, bounded input
+digest, environment hash, renderer/run identity, bundle-relative path, and the
+relative path, role, SHA-256, and byte length of every one of the six outputs.
+No receipt field hashes the containing bundle or root-manifest bytes, avoiding
+self-reference. Files are regular, single-link, non-executable files; symlinks,
+hardlinks, devices, sockets, FIFOs, extra entries, and a pre-existing final
+bundle path are rejected.
 
 Before the first Task 3 commit, set the manifest's immutable
 `environment.path = design/brand/better-ahead/environment.json`. The bounded
@@ -1586,14 +1717,14 @@ bytes of `design/brand/exports/bodyflow-horizontal.svg`, pinned to the full
 historical manifest SHA above and declared for comparison-board input only.
 No production export or app target may consume that historical wordmark.
 
-The digest also covers a canonical immutable manifest projection: product
-identity, historical/preserved references, the complete allowlist of every
-file either renderer may read, role and output-path declarations, and
+The digest also covers a canonical immutable pre-render manifest projection:
+product identity, historical/preserved references, the complete allowlist of
+every file either renderer may read, role and output-path declarations, and
 `environment.path`. A read outside that allowlist is a contract failure. The
 digest does not hash unrelated package-script entries that Tasks 7 or 9 add
 later. It explicitly excludes `environment.json` and mutable manifest candidate
-version, approval/receipt, and generated-output hash fields, avoiding both a
-self-referential hash and false invalidation from unrelated tooling.
+version, approval/bundle-projection, and generated-output hash fields, avoiding
+both a self-referential hash and false invalidation from unrelated tooling.
 
 The normative renderer identity is the pinned base-image digest, the bounded
 canonical-renderer context/package-lock digest, the bundled Docker CLI/plugin
@@ -1604,92 +1735,168 @@ same freshly built ID is used by
 `docker --context desktop-linux run`, but do not require separately rebuilt
 image IDs to be equal.
 
-Transactions use one exact lock path and a unique transaction directory under
-`design/brand`, both validated as descendants of the repository. The exact lock
-is also the authoritative recovery journal: publish a complete initial JSON
-with an exclusive atomic primitive before any preparation write. Journal
-updates use write-temp, flush, and atomic rename. A mirrored
-`transaction/recovery.json` may aid audit, but neither blocking nor recovery may
-depend on two independently published files.
+Transactions use one fixed lock path and one unique transaction directory under
+`design/brand`, both proven by physical, descriptor-relative traversal to be
+inside the repository. The lock file is also the sole authoritative recovery
+journal. After pure read-only admissions, `begin` writes the complete initial
+JSON to the single deterministic exclusive leaf `<LOCK_PATH>.begin` in the
+lock's parent, fsyncs the file, uses
+anchored `renameatx_np(..., RENAME_EXCL)` to publish the lock atomically, and
+fsyncs the parent. Only then may it create the transaction root, snapshot,
+probe, IID file, render log, request, candidate, or bundle staging path. The
+native helper owns journal-temp creation through parent fsync as one operation;
+on pre-rename failure it removes only its exact temp. If removal/fsync cannot be
+proved, it emits `BEGIN_ORPHANED` plus that exact path and every later write
+blocks until audited `--recover-orphan EXACT_BEGIN_TEMP_PATH` verifies the
+authoritative lock is absent, validates the orphan no-follow, and removes only
+that leaf. Every write preflight checks the fixed begin leaf no-follow before
+creating anything, so a `SIGKILL` or power loss cannot leave an undiscoverable
+orphan; its presence reports `BEGIN_ORPHANED` with the deterministic path and
+blocks. A crash after lock publication but before transaction-root creation
+is a valid `LOCKED_PREPARING` state: the transaction root is schema-optional
+only there and recovery remains journal-authoritative. After lock publication,
+`begin` creates and validates the exact `bundles` parent with anchored
+`mkdirat` if absent, records whether this run created it, and fsyncs its parent
+before any Docker command. Pre-render recovery may remove that parent only if
+it is still the same empty run-created directory. Later journal updates use the
+single deterministic exclusive leaf `<LOCK_PATH>.update`, flush, anchored
+atomic rename, and parent flush. Every transition checks that leaf no-follow
+first. If a crash leaves it, the prior lock remains authoritative and the exact
+update leaf is preserved/reported; audited recovery validates its bound run ID,
+nonce, predecessor state, physical identity, and hash, then either completes
+the already-authorized transition or removes only that leaf. It never
+enumerates or glob-cleans lock siblings.
+`transaction/recovery.json` is a diagnostic mirror only: it is never read as
+fallback authority and disagreement is blocking.
+After every journal rename, the writer reopens the authoritative leaf with
+no-follow semantics and captures its new device/inode as the only valid lock
+identity for subsequent checks and final unlock.
 
 The normative state machine is:
 
 ```text
-IDLE -> LOCKED_PREPARING -> SEALED -> PROMOTING -> COMMITTED
-          |                 |          |
-          +-----------------+----------+-> RECOVERY_REQUIRED
-                                           (before receipt commit)
-COMMITTED -------------------------------> CLEANUP_REQUIRED -> IDLE
-                                           (post-commit verify/cleanup/unlock)
-PROMOTING + verifiable committed receipt -> CLEANUP_REQUIRED
-                                           (journal-label lag recovery)
+IDLE -> LOCKED_PREPARING -> RENDERING -> RENDERED -> SEALING
+          |                   |
+          +-------------------+-> RECOVERY_REQUIRED
+
+RENDERED/SEALING -> BUNDLE_SEALED -> PUBLISHING_BUNDLE -> BUNDLE_COMMITTED
+      |                  |                    |
+      +------------------+--------------------+-> FINISH_REQUIRED when final bundle absent
+
+BUNDLE_COMMITTED ------------------------> CLEANUP_REQUIRED -> IDLE
+        |                                         |
+        +-----------------------------------------+
+                 exact committed bundle always dominates journal-label lag
+
+unknown, ambiguous, symlinked, unreadable, or hash-divergent state -> BLOCKED
 ```
 
-The initial journal records the run IID, physical repository root, exact
-transaction path, complete read/write allowlists, and every destination with
-original state initially `pending`. Before the first live-output mutation,
-capture each existing destination atomically into the transaction's
-`originals` area, or record it as originally absent, and verify its exact hash.
-All destinations are captured before any candidate is installed. Installation
-uses an exclusive temporary file in the destination directory, flushes and
-hashes it, then publishes it with an atomic no-replace primitive. It never uses
-an unconditional overwrite rename. A path that reappears or diverges from its
-recorded state therefore fails closed and is never silently overwritten.
+`begin` records the run ID and nonce, physical repository root, exact
+transaction path, complete read/write allowlists, bounded input and environment
+hashes, final bundle path, exact six candidate paths, dispatch request path,
+claim path, completion path, and initially absent final destination. It then
+copies the complete bounded input set into an immutable transaction snapshot and
+proves that snapshot against the exact Task 3 input commit. Docker context,
+comparison input, and render inputs come only from that snapshot.
 
-The renderer first copies the complete bounded input set into an immutable
-transaction snapshot, proves its digest against the exact Task 3 input commit,
-and builds the Docker context and candidates only from that snapshot. It reads
-each candidate once into an immutable byte buffer, validates and hashes those
-same bytes, and promotes those buffers without resolving the candidate pathname
-again. Before the first promotion and again before the receipt commit point it
-revalidates bounded live inputs, sealed candidates, and recorded destination
-state. Before receipt publication, the flushed authoritative journal records
-the sealed expected receipt hash and every expected installed-output hash. The
-receipt records the snapshot digest plus every captured and installed hash. The
-new manifest/receipt is promoted last and is the sole commit point.
+The shell runner invokes `begin` before its sole Buildx build. It writes all
+subsequent execution evidence under the recorded transaction, repeats the
+fail-closed local-route attestation inside that journaled phase immediately
+before Buildx, and invokes one container with the freshly built IID. The
+standalone environment command in Task 4 is an earlier read-only preflight; it
+does not replace this post-`begin` attestation. A single dispatcher inside that container
+atomically claims the journal-bound request and imports both asset and review
+workers, producing all six candidates. The request binds the run ID, nonce,
+snapshot digest, exact input roots, and exact candidate allowlist. The workers
+reject standalone invocation, request replay, a second claim/writer, live-tree
+input, or output outside that allowlist. The snapshot is mounted read-only; only
+recorded transaction candidate/log paths are writable; the live repository is
+not mounted writable.
 
-Any exception before the receipt commit point leaves the authoritative
-lock-journal, transaction, candidates, and originals intact and marks
-`RECOVERY_REQUIRED` when that journal update is possible; no error handler or
-`finally` path unlocks or cleans them. Receipt state and recorded hashes
-dominate the journal label: proven receipt absence authorizes pre-commit
-recovery only from `LOCKED_PREPARING`, `SEALED`, `PROMOTING`, or
-`RECOVERY_REQUIRED`, with intact recoverable originals and every destination
-matching its phase-appropriate recorded state. Receipt absence from `COMMITTED`
-or `CLEANUP_REQUIRED` is an inconsistency and blocks. The exact expected
-receipt plus every recorded installed hash is post-commit; any
-present/malformed/unexpected or hash-divergent state is likewise blocking and
-permits neither rollback nor cleanup/unlock. If the exact receipt was committed
-but the `COMMITTED` journal update was interrupted, recovery classifies the
-run as post-commit and atomically advances the journal to `CLEANUP_REQUIRED`
-without rollback. The normal writer also advances from `COMMITTED` to
-`CLEANUP_REQUIRED` before any post-commit receipt/installed-hash verification,
-cleanup, or unlock. Those operations touch only paths enumerated in the
-journal; any failure leaves the exact lock and journal at `CLEANUP_REQUIRED`.
-Recovery verifies the committed receipt and installed hashes and finishes
-cleanup without rolling back the new outputs.
-Only an uninterrupted successful write or a fully successful state-specific
-recovery removes the exact lock, always as its final operation.
+After the external command completes, `resume` validates the request, claim,
+completion record, nonce, exit status, and exact six candidate paths using the
+authoritative journal. A build/container failure or incomplete record durably
+selects `RECOVERY_REQUIRED` when safe to record and preserves all evidence.
+Success advances only to `RENDERED`; `resume` never invokes Docker, publishes an
+output, mutates the manifest, cleans, or unlocks. On an abrupt signal, the
+runner's trap may only best-effort record the signal/exit status and print the
+transaction path. It must not remove any path or lock.
 
-Recovery is permitted only through a tested
-`--recover EXACT_TRANSACTION_PATH` operation after the paths and hashes are
-audited. `RECOVERY_REQUIRED` restores each captured original or removes a
-destination recorded as originally absent. `CLEANUP_REQUIRED` never restores
-old outputs. Both flows are idempotent, preserve the lock and remaining journal
-on their own failure, and touch only paths named in the journal—never a
-wildcard or broad directory. Recovery itself does not rerender; any subsequent
-render still requires renewed authorization.
+`finish` is valid from `RENDERED` or a validated `FINISH_REQUIRED` state. The
+`bundles` parent was already prepared by `begin`; later runs validate that exact
+existing parent but never enumerate it to choose an output. `finish` opens every candidate through anchored
+descriptors with no symlink following, validates and hashes bytes from those
+same descriptors, and materializes a source bundle under the transaction with
+exactly the seven declared files. It fsyncs every file and directory, prohibits
+extra entries/symlinks/hardlinks, and marks the staged tree sealed. A native
+FD-anchored helper then opens the repository, transaction, and bundles parent
+component by component; revalidates the sealed source tree and receipt; proves
+the final leaf absent with `AT_SYMLINK_NOFOLLOW`; and, without returning to
+JavaScript, performs the single same-filesystem
+`renameatx_np(..., RENAME_EXCL)` of the source directory to
+`bundles/<TASK3_INPUT_SHA>`. It fsyncs the bundles parent before reporting the
+commit. No individual output is ever visible at a flat live path, and no
+unconditional overwrite rename is permitted.
 
-For Task 4, the two recovery states have different continuation rules.
-`RECOVERY_REQUIRED` is pre-commit: successful recovery restores the exact
-pre-render state, and any later write is a new fingerprinted render cycle that
-requires renewed explicit render authorization. `CLEANUP_REQUIRED` is
-post-commit: the manifest receipt is already committed and the one authorized
-render has already occurred. Its recovery may only verify the committed receipt
-and installed-output hashes and finish the journal-enumerated cleanup/unlock; it
-must not restore or remove outputs, rebuild candidates, invoke Docker, recapture
-the fingerprint, or rerender. After successful `CLEANUP_REQUIRED` recovery,
-Task 4 resumes directly at Step 3.
+The threat boundary covers concurrent edits/precreation in the final repository
+namespace and every pathname substitution before the native helper assumes
+exclusive ownership of its private staged tree. It does not claim to make a
+normal developer-owned worktree tamper-proof against an already-compromised
+process running as the same macOS user that deliberately mutates that private
+tree during the helper-owned validation-to-rename interval. Within the stated
+boundary, the helper owns that final sequence and the live namespace changes
+atomically from absent to the complete immutable bundle.
+
+After the directory rename, physical bundle state dominates the journal label.
+An absent final bundle before a valid render completion may select
+`RECOVERY_REQUIRED`. An absent final bundle after an exact completion with
+intact candidates or staged bundle selects `FINISH_REQUIRED` and resumes only
+sealing/publication without Docker. An exact final bundle whose receipt and six
+hashes match
+the journal selects `BUNDLE_COMMITTED`/`CLEANUP_REQUIRED` even if the journal
+still says `PUBLISHING_BUNDLE`. A present unexpected, malformed, partial,
+symlinked, extra-entry, or hash-divergent bundle, or an absent bundle under a
+durably post-commit label, is `BLOCKED` and authorizes neither cleanup nor
+unlock.
+
+The committed bundle is the authority. `finish` and recovery do not mutate the
+root manifest. Once `finish` succeeds and unlocks, Task 4 validates the bundle
+independently, then creates an ordinary reviewable Git patch to the root
+manifest with `active_candidate.bundle_path`, receipt SHA-256, and all six
+receipt-derived roles/hashes. That patch is staged and committed together with
+the immutable bundle and evidence; a dirty or concurrently changed manifest is
+a normal Git conflict/blocker, never something the renderer overwrites.
+Downstream consumers must resolve the exact reviewed manifest-declared bundle
+and verify its receipt; they never scan `bundles`, choose a latest entry, or
+follow a mutable alias.
+
+Every recovery read uses the same anchored no-follow discipline as publication:
+open each directory component with `O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC`, open a
+leaf with `O_RDONLY|O_NOFOLLOW|O_CLOEXEC`, require the documented physical type,
+and verify owner, device, inode, link count, size, and hash from the same open
+descriptor before and after use. Only `ENOENT` for a schema-declared optional
+leaf means absent. Missing required lock/journal/receipt data and every
+other error—including `ELOOP`, `ENOTDIR`, `EACCES`, `EPERM`, and `EIO`—blocks
+without fallback, cleanup, or unlock. Unlock revalidates the exact recorded lock
+inode with `fstatat(..., AT_SYMLINK_NOFOLLOW)` and removes only that leaf with
+`unlinkat`, always as the final successful operation.
+
+Recovery is permitted only through the tested exact-path interface after
+audit: `--recover-orphan EXACT_BEGIN_TEMP_PATH` applies solely before an
+authoritative lock exists; `--recover EXACT_TRANSACTION_PATH` applies once it
+does. `RECOVERY_REQUIRED` is
+pre-commit: it never renders, and it retains candidates/logs until the audited
+explicit cleanup succeeds; any later write is a new fingerprinted cycle that
+requires renewed render authorization. `FINISH_REQUIRED` means the authorized
+container already completed: recovery revalidates the completion and exact
+candidates/staging, calls only `finish`, and never cleans them or requests a new
+render while publication remains safely resumable. `CLEANUP_REQUIRED` is
+post-commit: it never removes/restores the bundle and may only verify
+bundle/receipt/output hashes, reopen and fsync the anchored bundles parent to
+close any recorded post-rename parent-fsync failure, remove journal-enumerated
+transaction artifacts, and unlock. It never builds, invokes Docker, recreates
+candidates, recaptures the fingerprint, or rerenders. After successful
+post-commit recovery, Task 4 continues directly at Step 3.
 
 **Step 5: Commit the complete renderer inputs before fingerprint capture**
 
@@ -1718,32 +1925,65 @@ outputs that do not exist yet.
 
 **Current-execution reconciliation after the preserved partial commit**
 
-The current implementation already has clean pipeline commit
-`0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38` with the Step 5 message and its
-documentation-only child
-`ac6960f690dda59844cb6cedef96f23f81a4558c`. Preserve both unchanged as exact
-ancestors; do not amend, reset, drop, or replace either commit. Import this
-follow-up reconciliation in one additional documentation-only commit, then
-perform the following hardening as a separate Task 3 commit:
+The current implementation preserves pipeline commit
+`0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38`, documentation-only child
+`ac6960f690dda59844cb6cedef96f23f81a4558c`, and the later
+documentation-only reconciliation
+`9d204ab10801cd2cb07ec8d5ee6a759b12dd296b`. At that last commit the worktree
+contains exactly seven unstaged Task 3 implementation modifications, staging is
+empty, and no environment, bundle, export, review PNG, lock, journal, or
+transaction exists. Preserve all three commits and all seven modifications;
+do not amend, reset, stash, discard, stage, or replace them.
 
-Immediately after that import, while its documentation-only commit is still
-`HEAD`, prove the topology and both documentation-only boundaries before any
-dependency or implementation command:
+Before importing this Option A reconciliation, the operator must capture the
+NUL-delimited porcelain and binary diff of those seven files in private temp
+files. Import this plan as one additional documentation-only child of
+`9d204ab...`, stage/commit only this plan, and prove that the remaining
+porcelain and binary diff are byte-identical to the captured values. While that
+new documentation commit is `HEAD`, prove the topology and documentation-only
+boundaries before any dependency or implementation command:
 
 ```bash
 set -euo pipefail
+git diff --cached --exit-code
+TASK3_STATUS_BEFORE=$(mktemp /tmp/better-ahead-task3-status.XXXXXX)
+TASK3_DIFF_BEFORE=$(mktemp /tmp/better-ahead-task3-diff.XXXXXX)
+git status --porcelain=v1 -z -uall > "$TASK3_STATUS_BEFORE"
+git diff --binary > "$TASK3_DIFF_BEFORE"
+test -n "${OPTION_A_DOC_SHA:?set OPTION_A_DOC_SHA to the exact published documentation SHA from the handoff}"
+git fetch origin codex/better-ahead-rebranding-design
+test "$(git diff-tree --no-commit-id --name-only -r "$OPTION_A_DOC_SHA")" \
+  = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
+test "$(git rev-parse "$OPTION_A_DOC_SHA^0")" \
+  = "$(git rev-parse origin/codex/better-ahead-rebranding-design)"
+git cherry-pick "$OPTION_A_DOC_SHA"
 test "$(git rev-parse ac6960f690dda59844cb6cedef96f23f81a4558c^)" \
   = "0a5001e90c9816cb2f9be6f2ff1be6bfa3b0fb38"
-git merge-base --is-ancestor \
-  ac6960f690dda59844cb6cedef96f23f81a4558c HEAD
-test "$(git rev-parse HEAD^)" \
+test "$(git rev-parse 9d204ab10801cd2cb07ec8d5ee6a759b12dd296b^)" \
   = "ac6960f690dda59844cb6cedef96f23f81a4558c"
+test "$(git rev-parse HEAD^)" \
+  = "9d204ab10801cd2cb07ec8d5ee6a759b12dd296b"
+git merge-base --is-ancestor \
+  9d204ab10801cd2cb07ec8d5ee6a759b12dd296b HEAD
 test "$(git diff-tree --no-commit-id --name-only -r \
-  ac6960f690dda59844cb6cedef96f23f81a4558c)" \
+  9d204ab10801cd2cb07ec8d5ee6a759b12dd296b)" \
   = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
 test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
   = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
+git diff --cached --exit-code
+TASK3_STATUS_AFTER=$(mktemp /tmp/better-ahead-task3-status-after.XXXXXX)
+TASK3_DIFF_AFTER=$(mktemp /tmp/better-ahead-task3-diff-after.XXXXXX)
+git status --porcelain=v1 -z -uall > "$TASK3_STATUS_AFTER"
+git diff --binary > "$TASK3_DIFF_AFTER"
+cmp "$TASK3_STATUS_BEFORE" "$TASK3_STATUS_AFTER"
+cmp "$TASK3_DIFF_BEFORE" "$TASK3_DIFF_AFTER"
+test "$(git status --porcelain=v1 -z -uall \
+  | tr -cd '\0' | wc -c | tr -d ' ')" = "7"
 ```
+
+The import step must also list and record those seven exact relative paths;
+their set, status, and binary diff—not merely their count—are the preservation
+gate used below.
 
 1. Verify and reconcile the dependency tree with the declared package manager.
    The earlier direct pnpm 11.16.0 invocation and
@@ -1761,42 +2001,56 @@ test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
    esac
    export npm_config_dangerously_allow_all_builds=false
    PACKAGE_STATE=$(mktemp /tmp/better-ahead-package-state.XXXXXX)
+   PACKAGE_DIFF_STATE=$(mktemp /tmp/better-ahead-package-diff.XXXXXX)
    shasum -a 256 pnpm-lock.yaml package.json scripts/package.json \
      pnpm-workspace.yaml > "$PACKAGE_STATE"
+   git diff --binary -- scripts/package.json > "$PACKAGE_DIFF_STATE"
    corepack pnpm@10.33.2 install --frozen-lockfile --force
    shasum -a 256 pnpm-lock.yaml package.json scripts/package.json \
      pnpm-workspace.yaml | cmp "$PACKAGE_STATE" -
-   git diff --exit-code -- pnpm-lock.yaml package.json scripts/package.json \
-     pnpm-workspace.yaml
+   git diff --exit-code -- pnpm-lock.yaml package.json pnpm-workspace.yaml
+   git diff --binary -- scripts/package.json | cmp "$PACKAGE_DIFF_STATE" -
    ```
 
-2. Re-run the existing 27 contract tests with Corepack/pnpm 10.33.2. Then add
-   the adversarial provenance, lock-journal, sealed-byte, destination-race,
-   commit-point, cleanup, and idempotent-recovery tests from Step 1 and confirm
-   that the new assertions fail for the expected reasons before changing the
-   implementation.
-3. Implement exactly the following four bounded workstreams. Items (a)-(c) are
-   the three reviewed renderer-safety hardenings. Item (d) is the mandatory
-   canonical-execution/fingerprint adaptation already required by Steps 4 and
-   6 and is expressly authorized in the same hardening commit:
+2. Preserve the earlier partial broad-suite evidence and its frozen test hash
+   `88e20216f50d1dd0d8cab68e5729e030e8c1d496ff93073050dd0ab8febabac4`,
+   but do not count it as a final gate: only its first shard ran. Re-run the
+   existing contract suite with Corepack/pnpm 10.33.2. Add the RED tests in
+   Step 1 for all four review findings and the Option A protocol, and prove each
+   new assertion fails for its expected reason before changing implementation.
+3. Implement exactly these six bounded workstreams in the preserved seven-file
+   worktree. They jointly replace the superseded flat-file promotion design:
 
-   a. **Transaction lifecycle:** publish the authoritative lock-journal before
-      any preparation write; route every post-lock error through it; cover
-      preparation, sealing, promotion, receipt, verification, cleanup, and
-      unlock failure boundaries; implement idempotent `RECOVERY_REQUIRED` and
-      `CLEANUP_REQUIRED` recovery using explicit paths only.
-   b. **TOCTOU closure:** render from the immutable bounded-input snapshot; seal
-      each candidate once as immutable bytes; capture and hash every original
-      destination before promotion; publish with no-replace semantics;
-      revalidate live inputs, sealed bytes, and destination state before first
-      promotion and before the receipt commit; fail closed on every injected
-      race.
-   c. **Comparison provenance:** declare
+   a. **Persisted begin/resume/finish lifecycle:** publish the authoritative
+      lock-journal before snapshot/probe/build/render/log/candidate writes;
+      enforce the exact `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH` order and
+      one visual container; make failure/signal traps preserve all evidence;
+      make resume/finish/recover Docker-free and idempotent by state.
+   b. **Immutable atomic bundle:** materialize the exact seven-entry source
+      bundle, validate and seal it, and extend the existing embedded native
+      helper so final validation and the one
+      `renameatx_np(..., RENAME_EXCL)` directory publication occur in the same
+      FD-anchored process. Treat that rename as the only visual commit point.
+      Keep the root manifest outside the renderer transaction; Task 4 updates it
+      as a reviewed Git patch after bundle verification. Recovery never rolls
+      back or rerenders a committed bundle.
+   c. **Anchored no-follow recovery:** replace every pathname-first recovery,
+      receipt/output, mirror, and unlock read with component-by-component
+      anchored descriptors and the strict error/type/inode/link/hash taxonomy
+      defined above. The mirror never becomes fallback authority; only a
+      schema-optional `ENOENT` means absent. Remove the old originals/backups
+      schema and implementation entirely.
+   d. **Internal worker boundary:** make the asset and review renderers private
+      modules behind one journal-bound, nonce-bound, one-shot dispatcher; reject
+      direct CLI use, replay, fabricated/symlinked requests, live-tree input,
+      second claims/writers, and output outside the six candidates. The single
+      container imports both modules and produces all six outputs.
+   e. **Comparison provenance:** declare
       `design/brand/exports/bodyflow-horizontal.svg` with its exact path,
-      comparison-only role, and full SHA-256 in the immutable manifest
-      projection and bounded digest; reject altered, redirected, undeclared,
+      comparison-only role, and full SHA-256 in the immutable pre-render
+      manifest fields and bounded digest; reject altered, redirected, undeclared,
       production-export, or app consumption before Docker or output mutation.
-   d. **Canonical execution/fingerprint:** extend the bounded input digest only
+   f. **Canonical execution/fingerprint:** extend the bounded input digest only
       with the root `packageManager`, committed `pnpm-workspace.yaml` build
       policy, and exact `corepack pnpm@10.33.2` render-command declaration.
       Extend the environment capture/check contract with the observed
@@ -1822,21 +2076,26 @@ test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
       lockfile, workspace policy, Docker context, Offload state, or any
       canonical/historical input.
 
-   The write allowlist for this hardening commit is exactly the Better Ahead
+   The write allowlist for this hardening commit remains exactly the Better Ahead
    manifest, `better-ahead-brand-contract.mjs` and its test,
    `capture-better-ahead-environment.mjs`, both Better Ahead render scripts,
    `run-better-ahead-brand-renderer.sh`, and `scripts/package.json` limited to
    existing `brand:better-ahead:*` commands. Root `package.json`,
    `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `canonical-renderer/**`, committed
    masters, and the historical comparison SVG remain read-only, unchanged, and
-   unstaged. `environment.json`, exports, review PNGs, iOS files, and every
-   other path remain prohibited in this commit.
+   unstaged. `environment.json`, `bundles/**`, flat exports/review paths, review
+   PNGs, locks, journals, transactions, iOS files, and every other path remain
+   prohibited in this commit. No new helper file is authorized: extend the
+   native helper embedded in the existing renderer script.
 
-   Run the full expanded suite, `validate:inputs`, preserved baseline, and
-   `git diff --check`, then obtain a new independent review with no Critical or
-   Important finding.
-4. Confirm that no export, review PNG, or `environment.json` exists, then commit
-   the hardening separately:
+   Run the complete expanded suite in one final unfrozen pass with exact
+   Corepack/pnpm 10.33.2, then `validate:inputs`, the preserved baseline, and
+   `git diff --check`. Obtain two fresh independent reviews: one focused on the
+   state machine/atomic commit point and one on anchored recovery/runner
+   lifecycle. Both must report no Critical or Important finding.
+4. Confirm that no bundle, flat export/review output, review PNG,
+   `environment.json`, lock, journal, or transaction exists. Stage only the
+   allowlist and commit the hardening separately:
 
    ```bash
    git add design/brand/better-ahead-brand-assets.json \
@@ -1849,10 +2108,10 @@ test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
    git commit -m "fix(brand): harden Better Ahead render transaction"
    ```
 
-The resulting hardening commit—not `0a5001e...` or either documentation-only
-reconciliation—is the exact Task 3 input commit captured by
-`environment.json`. The historical comparison SVG remains read-only and
-unstaged throughout.
+The resulting hardening commit—not `0a5001e...` or any documentation-only
+reconciliation—is the exact `task3_input_commit_sha` captured by
+`environment.json` and later used as the immutable bundle directory name. The
+historical comparison SVG remains read-only and unstaged throughout.
 
 **Step 6: Capture and commit the fingerprint before rendering**
 
@@ -1868,18 +2127,25 @@ Xcode and Swift versions
 Node, Corepack, and exact pnpm 10.33.2 versions
 pnpm-lock.yaml SHA-256
 Sharp, libvips, and librsvg versions from the pinned container contract
-canonical Docker base digest and per-run built image ID (execution evidence)
+canonical Docker base digest and canonical renderer-context/dependency digests
 Docker Desktop/client/Buildx/Desktop-plugin/Offload-plugin/engine versions,
 realpaths, and SHA-256 values plus explicit
 `docker --context desktop-linux` command prefix
-Offload status-JSON command/SHA-256/byte length as per-run execution evidence
-excluded from fingerprint-equality checks,
+stable Offload status-command identifier/support capability; volatile status
+JSON SHA-256/byte length remains only in the external capture evidence and later
+Task 4 journal, excluded from committed `environment.json` and
+fingerprint-equality checks
 `desktop-linux` Unix-socket endpoint, explicit local engine identity, and
 context-bound default Buildx builder with docker driver
 canonical platform: linux/amd64
 new master SHA-256 values
 exact command: corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
+
+The Task 4 run's freshly built image IID does not exist at this pre-render
+commit and is not fabricated in `environment.json`. `begin` later records that
+IID as transaction/receipt/log execution evidence after the one authorized
+Buildx build and before the one visual container.
 
 Run the capture in write mode once, then validate it without rendering:
 
@@ -2064,6 +2330,7 @@ remote backend. No `environment.json`, render, or Task 4 action is permitted
 until every diagnostic above passes.
 
 ```bash
+set -euo pipefail
 node scripts/brand/capture-better-ahead-environment.mjs --write
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
@@ -2076,8 +2343,9 @@ git commit -m "build(brand): pin Better Ahead render environment"
 
 The checker permits later output/evidence commits but requires the recorded
 input commit to be an ancestor and the bounded input digest to remain exact.
-Expected: no generated export/review file exists in either Task 3 commit. The
-committed fingerprint predates the first render.
+Expected: no bundle, flat export/review file, review PNG, lock, journal, or
+transaction exists in either Task 3 commit. The committed fingerprint predates
+the first render.
 
 ---
 
@@ -2085,9 +2353,10 @@ committed fingerprint predates the first render.
 
 **Files:**
 
-- Create: `design/brand/better-ahead/exports/*`
-- Create: `design/brand/better-ahead/review/*`
-- Create: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/brand-*.png`
+- Create:
+  `design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>/{exports,review,receipt.json}`
+- Create:
+  `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/brand-candidates/<TASK3_INPUT_SHA>/{brand-*.png,approval.md}`
 - Modify: `design/brand/better-ahead-brand-assets.json`
 - Modify: `docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md`
 
@@ -2103,38 +2372,50 @@ find design/brand/exports \
 git status --porcelain=v1 -uall
 ```
 
-Expected: only intentional Task 4 output paths will become dirty.
+Expected: only the exact immutable bundle and later Task 4 manifest/evidence
+paths can become dirty. No flat Better Ahead export/review path exists.
 
 **Step 2: Run the new renderer exactly once in write mode**
 
 ```bash
+set -euo pipefail
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 ```
 
 If the renderer exits nonzero or reports a fingerprint mismatch, preserve and
-report the authoritative lock-journal, exact transaction path, candidates,
-originals, receipt if present, and every recorded hash, then stop. Do not rerun,
-replace hashes, manually remove a lock/quarantine, or fall back to the
-legacy/host-native renderer. An unknown or unreadable journal state is blocking.
+report the authoritative lock-journal, exact transaction path, request/claim,
+snapshot, build/render logs, candidates, staged bundle, final bundle if present,
+and every recorded hash, then stop. Do not
+rerun, replace hashes, manually remove a lock/quarantine, or fall back to the
+legacy/host-native renderer. An unknown, unreadable, symlinked, or ambiguous
+state is `BLOCKED`.
 
-If the tested journal/receipt/destination classifier yields
-`RECOVERY_REQUIRED`, it has proved the receipt commit point was not reached and
-the recorded pre-commit state is recoverable. After audit and renewed recovery
-authorization, only the tested
-`--recover EXACT_TRANSACTION_PATH` flow may restore the exact pre-render state.
-Any later write is a new fingerprinted single-render cycle requiring renewed
-explicit render authorization.
+If the tested classifier yields `RECOVERY_REQUIRED`, it has proved the final
+bundle is absent and the recorded pre-commit state is safely recoverable. After
+audit and renewed recovery authorization, only the tested
+`--recover EXACT_TRANSACTION_PATH` flow may perform its explicit pre-commit
+cleanup. Any later write is a new fingerprinted single-render cycle requiring
+renewed explicit render authorization.
 
-If that same classifier yields `CLEANUP_REQUIRED`, the exact committed receipt
-and installed hashes prove the single authorized render is already complete.
-After audit and recovery authorization,
-`--recover EXACT_TRANSACTION_PATH` may only verify the committed receipt and
-installed-output hashes and finish the journal-enumerated cleanup/unlock. It
-must not restore/remove outputs, rebuild candidates, invoke Docker, recapture
-the fingerprint, or rerender. If recovery succeeds and the receipt/output hashes
-still match, continue directly at Step 3. If recovery fails, retain the
-lock-journal and remaining transaction evidence and stop again.
+If it yields `FINISH_REQUIRED`, the exact completion plus candidates/staging
+prove the authorized visual container already ran and the final bundle is still
+absent. After audit and recovery authorization, the same tested
+`--recover EXACT_TRANSACTION_PATH` must revalidate those bytes and resume only
+`finish`—sealing and atomic bundle publication—with zero Docker calls. Success
+continues directly at Step 3. Failure preserves the journal, completion,
+candidates, staging, and logs and stops again; it never requests or performs a
+second render.
+
+If the classifier finds the exact complete final bundle and matching receipt,
+that physical commit dominates a lagging `PUBLISHING_BUNDLE`,
+`BUNDLE_COMMITTED`, or `CLEANUP_REQUIRED` journal label:
+the one authorized render is already complete. After audit and recovery
+authorization, `--recover EXACT_TRANSACTION_PATH` may only verify the committed
+bundle/receipt/output hashes and perform journal-enumerated cleanup/unlock. It must not remove or
+restore the bundle, rebuild candidates, invoke Docker, recapture the
+fingerprint, or rerender. On success continue directly at Step 3; on failure
+retain the journal and all remaining evidence and stop again.
 
 **Step 3: Prove old bytes did not move**
 
@@ -2148,35 +2429,92 @@ cmp /tmp/better-ahead-preserved.before.sha256 \
   /tmp/better-ahead-preserved.after.sha256
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
-corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
+TASK3_INPUT_SHA=$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(
+  "design/brand/better-ahead/environment.json", "utf8"
+)).task3_input_commit_sha;
+if (!/^[0-9a-f]{40}$/.test(value)) process.exit(1);
+process.stdout.write(value);
+')
+BUNDLE_ROOT="design/brand/better-ahead/bundles/$TASK3_INPUT_SHA"
+test -d "$BUNDLE_ROOT"
+test ! -L "$BUNDLE_ROOT"
+test -f "$BUNDLE_ROOT/receipt.json"
+node scripts/brand/better-ahead-brand-contract.mjs \
+  --check-bundle "$BUNDLE_ROOT"
 ```
 
-Expected: `cmp` exit 0. The Better Ahead manifest records complete hashes for
-the six new outputs and remains `candidate`.
+Expected: `cmp` exit 0. The independent bundle check proves the exact seven
+entries, receipt, six output hashes, Task 3 SHA, and environment binding without
+requiring or changing a root-manifest pointer.
 
-**Step 4: Commit the auditable candidate before asking for approval**
+**Step 4: Register and commit the auditable candidate before asking for approval**
 
-Copy the three review PNGs mechanically, without re-encoding, to the evidence
-directory and prove each copy with `cmp`. Then:
+Create an ordinary source patch to
+`design/brand/better-ahead-brand-assets.json`—outside the renderer—with exactly
+these mutable fields derived from the verified receipt:
+
+```text
+active_candidate.bundle_path
+active_candidate.receipt_sha256
+active_candidate.task3_input_commit_sha
+new_assets[].role
+new_assets[].bundle_relative_path
+new_assets[].sha256
+new_assets[].byte_length
+```
+
+No renderer/recovery command creates this patch. Require the manifest to match
+the exact clean pre-render Git blob before editing; if it is dirty or changed,
+stop as a normal Git conflict. These fields, candidate `brand_version`, and
+`approval_state` are the only mutable projection excluded from the bounded
+input digest. Prove that digest is identical before and after this patch, while
+normal validation requires `active_candidate` to match the receipt exactly.
+
+Copy the three review PNGs mechanically, without re-encoding, to a
+candidate-versioned evidence directory and prove each copy with `cmp`. Then:
 
 ```bash
 set -euo pipefail
-EVIDENCE_ROOT=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+TASK3_INPUT_SHA=$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(
+  "design/brand/better-ahead/environment.json", "utf8"
+)).task3_input_commit_sha;
+if (!/^[0-9a-f]{40}$/.test(value)) process.exit(1);
+process.stdout.write(value);
+')
+BUNDLE_ROOT="design/brand/better-ahead/bundles/$TASK3_INPUT_SHA"
+EVIDENCE_ROOT="docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/brand-candidates/$TASK3_INPUT_SHA"
+node scripts/brand/better-ahead-brand-contract.mjs \
+  --check-bundle "$BUNDLE_ROOT"
+BOUNDED_DIGEST_BEFORE=$(node scripts/brand/better-ahead-brand-contract.mjs \
+  --print-bounded-digest)
+node scripts/brand/better-ahead-brand-contract.mjs \
+  --register-candidate "$BUNDLE_ROOT"
+test "$(node scripts/brand/better-ahead-brand-contract.mjs \
+  --print-bounded-digest)" = "$BOUNDED_DIGEST_BEFORE"
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
 mkdir -p "$EVIDENCE_ROOT"
-cp -- design/brand/better-ahead/review/better-ahead-comparison.png \
+cp -- "$BUNDLE_ROOT/review/better-ahead-comparison.png" \
   "$EVIDENCE_ROOT/brand-comparison.png"
-cp -- design/brand/better-ahead/review/better-ahead-reduced-sizes.png \
+cp -- "$BUNDLE_ROOT/review/better-ahead-reduced-sizes.png" \
   "$EVIDENCE_ROOT/brand-reduced-sizes.png"
-cp -- design/brand/better-ahead/review/better-ahead-light-dark.png \
+cp -- "$BUNDLE_ROOT/review/better-ahead-light-dark.png" \
   "$EVIDENCE_ROOT/brand-light-dark.png"
-cmp design/brand/better-ahead/review/better-ahead-comparison.png \
+cmp "$BUNDLE_ROOT/review/better-ahead-comparison.png" \
   "$EVIDENCE_ROOT/brand-comparison.png"
-cmp design/brand/better-ahead/review/better-ahead-reduced-sizes.png \
+cmp "$BUNDLE_ROOT/review/better-ahead-reduced-sizes.png" \
   "$EVIDENCE_ROOT/brand-reduced-sizes.png"
-cmp design/brand/better-ahead/review/better-ahead-light-dark.png \
+cmp "$BUNDLE_ROOT/review/better-ahead-light-dark.png" \
   "$EVIDENCE_ROOT/brand-light-dark.png"
-git add design/brand/better-ahead design/brand/better-ahead-brand-assets.json \
-  docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand
+node scripts/brand/better-ahead-brand-contract.mjs \
+  --check-bundle "$BUNDLE_ROOT"
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
+git diff --check
+git add "$BUNDLE_ROOT" design/brand/better-ahead-brand-assets.json \
+  "$EVIDENCE_ROOT"
 git commit -m "feat(brand): add Better Ahead candidate wordmark"
 ```
 
@@ -2195,30 +2533,54 @@ Present the comparison, reduced-size, and Light/Dark boards. Approval must cover
 
 Do not proceed to the Asset Catalog until the user explicitly approves this
 candidate. If rejected, retain the rejected commit and evidence, revise only new
-masters, increment the candidate version, create a new fingerprint, and repeat
-the single-render cycle. A successful but visually rejected render leaves no
-transaction quarantine, so the next cycle starts only from the committed
-candidate and new input commit. Never rewrite or discard the rejected audit
-trail.
+masters, increment the candidate version, create a new hardening input commit
+and fingerprint, and publish a new immutable bundle under that new Task 3 SHA.
+The rejected bundle, receipt, commit, and evidence remain untouched. A
+successful but visually rejected render leaves no transaction quarantine, so
+the next cycle starts only from the committed rejected candidate and new input
+commit. Never rewrite, reuse, or discard the rejected audit trail.
 
 **Step 6: Freeze only after explicit approval**
 
-Record the exact approval text/date in evidence, set the Better Ahead manifest
-to `brand_version: 1.0.0` and `approval_state: approved`, and run:
+Derive the same `TASK3_INPUT_SHA` and `BUNDLE_ROOT`, revalidate the bundle, and
+create only
+`brand-candidates/<TASK3_INPUT_SHA>/approval.md` with `apply_patch`. Record the
+exact approval text and UTC date, full bundle path, Task 3 input SHA, receipt
+SHA-256, and all six relative output paths/hashes/byte lengths. Before changing
+approval state, serialize `active_candidate` canonically. Set only
+`brand_version: 1.0.0` and `approval_state: approved`; the serialized candidate
+must remain byte-identical and the bounded digest must remain unchanged. Then
+run:
 
 ```bash
+set -euo pipefail
+TASK3_INPUT_SHA=$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(
+  "design/brand/better-ahead/environment.json", "utf8"
+)).task3_input_commit_sha;
+if (!/^[0-9a-f]{40}$/.test(value)) process.exit(1);
+process.stdout.write(value);
+')
+BUNDLE_ROOT="design/brand/better-ahead/bundles/$TASK3_INPUT_SHA"
+APPROVAL_ROOT="docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/brand-candidates/$TASK3_INPUT_SHA"
+APPROVAL_FILE="$APPROVAL_ROOT/approval.md"
+node scripts/brand/better-ahead-brand-contract.mjs \
+  --check-bundle "$BUNDLE_ROOT"
+test -f "$APPROVAL_FILE"
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render:check
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:validate
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 git diff --check
 git add design/brand/better-ahead-brand-assets.json \
+  "$APPROVAL_FILE" \
   docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/preflight.md
 git commit -m "docs(brand): approve Better Ahead asset family"
 ```
 
-Expected: check mode is byte-identical and preserved assets still match their
-historical manifest.
+Expected: Docker-free check mode proves the approved bundle/receipt bytes are
+unchanged, and preserved assets still match their historical manifest.
 
 ---
 
@@ -2291,8 +2653,10 @@ remains an image.
 **Step 1: Update tests first and verify RED**
 
 Tests must require neutral catalog names, Better Ahead accessibility labels,
-all assets load from the bundle, missing-wordmark fallback resolves to symbol +
-Better Ahead, and former catalog names do not load. Update the accessibility UI
+all semantic images load from the compiled iOS app bundle, the Node source gate
+validates their provenance against the exact immutable Git asset bundle,
+missing-wordmark fallback resolves to symbol + Better Ahead, and former catalog
+names do not load. Update the accessibility UI
 test first to require `staticTexts["brand.product-name"]`, label Better Ahead,
 and no duplicate accessible image child.
 
@@ -2315,7 +2679,13 @@ Expected: FAIL against the old catalog/type.
 
 - Copy the committed historical symbol/monochrome/negative SVG bytes exactly;
   renaming their payload files is allowed only if `cmp` proves byte equality.
-- Copy the approved Better Ahead SVG exports to wordmark/horizontal/launch.
+- Resolve `active_candidate.bundle_path` from the approved Better Ahead root
+  manifest, require that exact path to equal
+  `design/brand/better-ahead/bundles/<environment.task3_input_commit_sha>`, and
+  validate its `receipt.json` plus all six hashes before copying anything.
+  Copy wordmark/horizontal/launch only from that bundle's `exports` directory.
+  Do not scan `bundles`, choose a newest directory, follow a symlink/alias, or
+  use a rejected bundle.
 - Do not alter AppIcon payloads or their `Contents.json`.
 - Use `preserves-vector-representation: true`; use `original` for multicolor
   assets and `template` only for monochrome/negative.
@@ -2346,6 +2716,7 @@ remains possible from a detached worktree at the historical SHA;
 `brand:render:check` is not run against the rebranded catalog.
 
 ```bash
+set -euo pipefail
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:baseline
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:catalog
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:test
@@ -3305,15 +3676,15 @@ REPRO_EVIDENCE=docs/superpowers/evidence/2026-08-11-better-ahead-ios-rebrand/ren
 ENVIRONMENT_STATUS=0
 corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:environment \
   > "$FINAL_ROOT/logs/render-environment.log" 2>&1 || ENVIRONMENT_STATUS=$?
+corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render:check \
+  2>&1 | tee "$FINAL_ROOT/logs/render-check.log"
 case "$ENVIRONMENT_STATUS" in
   0)
-    corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render:check \
-      2>&1 | tee "$FINAL_ROOT/logs/render-check.log"
-    printf '%s\n' 'reproduced: fingerprint exact and canonical bytes matched' \
+    printf '%s\n' 'environment-recreated: fingerprint exact; canonical bundle verified without rerender' \
       > "$REPRO_EVIDENCE"
     ;;
   78)
-    printf '%s\n' 'canonical-only: fingerprint not recreated; no reproducibility claim' \
+    printf '%s\n' 'canonical-only: bundle verified without rerender; fingerprint not recreated; no reproducibility claim' \
       > "$REPRO_EVIDENCE"
     ;;
   *)
@@ -3585,7 +3956,7 @@ file a trademark without separate authorization.
 | Distinct clean Git manager, exact implementation base, and preserved diagnostic worktree | Tasks 0, 1, 10 |
 | Historical manifest remains authority for preserved bytes | Tasks 1, 4, 5, 10 |
 | Symbol and App Icons byte-identical | Tasks 1, 4, 5, 10 |
-| Better Ahead wordmark/lockup generated separately | Tasks 3, 4 |
+| Better Ahead wordmark/lockup generated and published as one immutable atomic bundle | Tasks 3, 4 |
 | Canonical environment fingerprint committed before render | Task 3 |
 | Human visual approval of new assets | Task 4 |
 | Neutral semantic asset interfaces and safe fallback | Task 5 |
@@ -3609,7 +3980,9 @@ file a trademark without separate authorization.
   `BrandAsset`, and `BrandLogoPresentation` have one documented owner and are
   consumed by tests and production views.
 - **Asset safety:** legacy write commands are prohibited; the new runner has a
-  path-level write boundary; preserved bytes are verified before and after.
+  journal-first path boundary and one exclusive whole-bundle commit point;
+  recovery is FD-anchored/no-follow, and preserved bytes are verified before
+  and after.
 - **Localization completeness:** the approved-base inventory found at least 74
   public-string files, while the enforced criterion is stronger: zero
   unclassified client-owned public producer, not a fixed file count.

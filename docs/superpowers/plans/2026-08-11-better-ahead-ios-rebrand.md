@@ -111,6 +111,18 @@ renderer, shell, `plutil`, and `xcrun assetutil`.
   environment. Exit `78` can preserve already committed canonical outputs
   without claiming reproducibility; it cannot create the first
   `environment.json` or the first Better Ahead outputs.
+- The one canonical image build uses literal
+  `docker --context desktop-linux buildx build --builder default --platform=linux/amd64 --quiet --file Dockerfile .`
+  with cwd set to the exact journal-bound canonical-renderer directory in the
+  immutable transaction snapshot. Buildx receives no output pathname. The
+  existing embedded native helper owns the complete anchored
+  open/journal/spawn/drain/wait/fsync/validate cycle, maps two anonymous pipe
+  write ends to child descriptors `1` and `2`, drains their read ends into its
+  preopened IID stdout capture and Buildx stderr diagnostic log, and accepts only
+  the single canonical IID line printed on successful quiet output.
+  `--iidfile`, `--metadata-file`, any other pathname/stdout exporter,
+  `/dev/fd` or `/proc/self/fd` pathname handoff, and shell pathname redirection
+  are prohibited. This preserves exactly one build and one visual container.
 
 ## Confirmed Baseline
 
@@ -1498,11 +1510,22 @@ Require:
 - allowed SVG elements/attributes only;
 - historical symbol/AppIcon hashes unchanged before and after fake renderer
   runs;
-- a per-run Docker image ID captured with
-  `buildx build --builder default --platform=linux/amd64 --iidfile`, using the
-  pinned `scripts/brand/canonical-renderer` context. The canonical Dockerfile's
+- a per-run Docker image ID captured from the stdout of the exact literal
+  `docker --context desktop-linux buildx build --builder default --platform=linux/amd64 --quiet --file Dockerfile .`
+  argv, with cwd set to the exact journal-bound
+  `<TRANSACTION_PATH>/snapshot/scripts/brand/canonical-renderer` directory.
+  That anchored snapshot directory is the context; neither `.` nor `Dockerfile`
+  is resolved from the live repository. The existing
+  embedded native helper, not the shell, opens the journal-declared IID stdout
+  capture and Buildx stderr diagnostic log with anchored no-follow descriptors,
+  durably binds their physical identities to the journal, directly spawns the
+  approved Docker executable without an intermediate shell, maps anonymous pipe
+  write ends to child stdout/stderr, concurrently drains their read ends into
+  the retained evidence descriptors, waits for EOF and child termination,
+  flushes, revalidates, and parses the capture without reopening either
+  pathname. The canonical Dockerfile's
   dependency installation retains build-time network access. The exact ID
-  built for a run must be passed to
+  built for a run must be passed as one already validated argv element to
   `docker --context desktop-linux run --platform=linux/amd64 --network none`;
 - check mode never writes;
 - write mode refuses a dirty input, concurrent edit, missing fingerprint,
@@ -1516,10 +1539,14 @@ Require:
   changing one byte, redirecting the read to an undeclared path, or attempting
   to write that input fails before Docker or live-output mutation;
 - an authoritative lock-journal exists atomically before any snapshot, probe,
-  Docker command, render log, candidate, bundle staging, or other preparation
-  write. Failures and signals at every begin, snapshot, build, container,
-  resume, sealing, bundle publication, verification, cleanup, and unlock
-  boundary retain the journal and all available evidence;
+  IID stdout capture, Buildx stderr diagnostic log, Docker command, render log,
+  candidate, bundle staging, or other preparation write. Its initial schema
+  declares the exact capture/log paths as absent; the native pre-build
+  transition records their anchored device/inode identities and permitted build
+  mutation phase, and fsyncs the authoritative journal before spawning Buildx.
+  Failures and signals at every begin, snapshot, capture preparation, build,
+  container, resume, sealing, bundle publication, verification, cleanup, and
+  unlock boundary retain the journal and all available evidence;
 - `begin` records the run ID, nonce, exact transaction path, bounded input
   digest, expected six candidate paths, final bundle path, and dispatch request
   before the external visual work starts. The transaction-bound dispatcher
@@ -1566,7 +1593,8 @@ Require:
 - fake Docker fixtures prove `--assert-local-docker` is non-writing and
   fail-closed: non-bundled client or Buildx/Desktop/Offload plugin
   realpath/hash, non-bundled user/system plugin shadow, non-empty
-  `cliPluginsExtraDirs`, Docker Desktop application older than
+  `cliPluginsExtraDirs`, any non-empty Docker CLI `proxies` configuration,
+  Docker Desktop application older than
   4.80.0 or inconsistent with the server platform name, any ambient variable
   whose name begins `DOCKER_`, `BUILDKIT_`, or `BUILDX_`, or the
   `EXPERIMENTAL_BUILDKIT_SOURCE_POLICY` override, missing Offload
@@ -1585,16 +1613,93 @@ Require:
 - fake runner tests prove every renderer `docker buildx build`, `run`,
   `image inspect`, and related daemon command uses the literal
   `--context desktop-linux` argument, build uses literal `--builder default`,
-  and every build/run uses literal `--platform=linux/amd64`. Build captures its
-  IID with `--iidfile`; only run uses literal `--network none` and consumes that
-  exact IID. No context-less Docker daemon API probe is permitted during
-  attestation or rendering;
+  and every build/run uses literal `--platform=linux/amd64`. The one build uses
+  exactly one `--quiet`, exact `--file Dockerfile .`, and zero `--iidfile`,
+  `--metadata-file`, `--call`, `--progress`, stdin context/Dockerfile,
+  stdout-writing exporter, shell pathname
+  redirection, `/dev/fd`, or `/proc/self/fd` pathname. Only run uses literal
+  `--network none` and consumes, without rereading a pathname or using `eval`,
+  the exact normalized IID returned by the native helper. No context-less
+  Docker daemon API probe is permitted during attestation or rendering;
+- native-helper fixtures prove the helper owns one uninterrupted
+  `open -> journal bind -> spawn -> drain/wait/EOF -> fsync -> fstat -> parse -> journal result`
+  operation. It traverses anchored parents component by component, creates two
+  distinct absent-only `0600` regular leaves with
+  `O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC`, and requires the expected owner
+  and device, `st_nlink == 1`, size zero, and unchanged parent identity before
+  Buildx. The fixed transaction-relative leaves are
+  `evidence/buildx-image-id.stdout` and `evidence/buildx-stderr.log`; neither
+  name is caller-controlled. It directly executes the approved absolute Docker
+  realpath with an exact five-variable environment: `HOME` is the physically
+  attested current-user home used by the checked Docker context;
+  `PATH=/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin`;
+  `TMPDIR=/private/tmp`, after proving it is the physical root-owned sticky
+  temporary directory; and `LANG=C` plus `LC_ALL=C`. The fingerprint and journal
+  bind all five exact values. No ambient `DOCKER_*`, `BUILDKIT_*`,
+  `BUILDX_*`, BuildKit source-policy, proxy, credential/config, or other
+  variable is inherited. The helper uses `fchdir` on the already validated
+  snapshot-context dirfd, revalidates its identity, opens `/dev/null` for child
+  stdin, maps only two anonymous pipe write ends to child descriptors `1`/`2`,
+  and closes every other descriptor before `exec`; no output pathname is passed
+  to Docker or Buildx;
+- after the child is reaped, the same helper fsyncs and fstats both retained
+  descriptors, revalidates both leaves and their parent with anchored no-follow
+  lookups against the recorded identities, and reads the IID only with `pread`
+  from the retained descriptor. While draining each anonymous pipe, it computes
+  the authoritative byte count and SHA-256 in memory; after EOF, bytes read back
+  from each evidence FD must match that exact count/hash. Any mismatch or
+  post-EOF mutation is physical divergence and `BLOCKED`. An unchanged capture
+  whose exact pipe stream is merely invalid is `RECOVERY_REQUIRED`. Build
+  success accepts exactly 72 bytes matching
+  `^sha256:[0-9a-f]{64}\n$`; empty, partial, oversized, missing/extra newline,
+  CRLF, whitespace, uppercase/nonhex, NUL, multiple IDs, an inline message, a
+  nonzero exit, or a signal is invalid and must not reach `image inspect` or
+  `run`. Stderr may be empty or may grow only on its recorded regular-file inode
+  during the declared build phase; its final size and SHA-256 are journaled. The
+  helper concurrently drains helper-owned pipes into the two evidence FDs, with
+  hard caps of 4 KiB for stdout and 16 MiB for stderr. Overflow terminates the
+  process group, preserves only the bounded prefix, journals the overflow/count,
+  and is invalid. The helper launches one dedicated process group, reaps its
+  direct child, forwards `HUP`/`INT`/`TERM` to the whole group, and requires pipe
+  EOF before any successful seal. After direct-child exit without EOF, or after
+  any error/overflow/signal, it sends `TERM`, waits at most five seconds, sends
+  `KILL`, and allows at most five more seconds for EOF. If a writer survives,
+  the helper closes the anonymous pipes, records `BLOCKED`, and never seals a
+  successful result; that writer never held an evidence FD. Any drain/write
+  error, missing EOF on success, or signal-escalation failure is likewise
+  `BLOCKED`;
 - fake runner tests also prove the exact persisted order
   `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH`, exactly one build and one
-  container for a write, and zero Docker calls from `resume`, `finish`,
-  `--recover`, or any cleanup path. Build/container failures and `HUP`, `INT`,
-  or `TERM` after `begin` preserve the journal, request, logs, candidates, and
-  transaction path; no trap removes or unlocks them;
+  container for a successful write, and zero Docker calls from `resume`, `finish`,
+  `--recover`, or any cleanup path. The explicit failure paths are
+  `BEGIN -> BUILDX -> RESUME_FAILURE` for a failed build/invalid IID and
+  `BEGIN -> BUILDX -> RUN -> RESUME_FAILURE` for a failed container, with zero
+  `FINISH`, zero retry, and no reliance on `set -e` or a trap for the durable
+  classification. Build/container failures and `HUP`, `INT`, or `TERM` after
+  `begin` preserve the journal, request, IID stdout capture, Buildx stderr log,
+  render logs, candidates, and transaction path; no trap removes or unlocks them;
+- deterministic capture tests attack each IID/log leaf independently before
+  open, after each open, before spawn, while the child writes, after child exit,
+  before post-build identity validation, and before helper return. They cover a
+  pre-existing regular file, final/intermediate symlink, directory/FIFO/socket,
+  hardlink, unlink/rename/replacement, changed transaction parent, unauthorized
+  append/truncate/overwrite outside the authorized drain, fsync/read error, and
+  an external sentinel. Every path/identity or stream-vs-evidence divergence is
+  `BLOCKED`, preserves available evidence, leaves the
+  sentinel byte-identical, and invokes no container; legitimate same-inode
+  helper writes during drain, stderr growth, and empty stderr are successful
+  controls. A physically intact failed build or invalid IID whose capture bytes
+  exactly equal the child pipe stream durably selects `RECOVERY_REQUIRED` without
+  requiring a render completion or receipt. Signals are injected before capture
+  creation, between capture creation and its journal bind, during Buildx, after
+  wait/pipe EOF, and after the post-build journal transition; no case performs a
+  second build or container. A signal/orphan fixture leaves a Buildx descendant
+  holding stdout/stderr after the Docker parent exits and proves the helper
+  cannot seal successfully until both pipes reach EOF; escalation failure closes
+  the pipes, persists `BLOCKED`, and leaves the bounded evidence immutable.
+  Tests do not overclaim protection from an already
+  compromised same-UID process inside the existing private helper-owned threat
+  exclusion;
 - adversarial tests cover final and intermediate symlinks, matching-hash mirror
   fallback attempts, candidate and staged-bundle substitution, same-inode
   mutation and inode replacement before the native
@@ -1730,8 +1835,9 @@ The normative renderer identity is the pinned base-image digest, the bounded
 canonical-renderer context/package-lock digest, the bundled Docker CLI/plugin
 realpaths, versions, and hashes, the context-bound default builder with its
 `docker` driver, and complete runtime versions observed inside the container.
-The image ID from `--iidfile` is per-run execution evidence: tests prove the
-same freshly built ID is used by
+The image ID from the helper-owned `--quiet` stdout capture is per-run execution
+evidence: tests prove the same freshly built, strictly parsed ID is journaled and
+used by
 `docker --context desktop-linux run`, but do not require separately rebuilt
 image IDs to be equal.
 
@@ -1743,7 +1849,8 @@ JSON to the single deterministic exclusive leaf `<LOCK_PATH>.begin` in the
 lock's parent, fsyncs the file, uses
 anchored `renameatx_np(..., RENAME_EXCL)` to publish the lock atomically, and
 fsyncs the parent. Only then may it create the transaction root, snapshot,
-probe, IID file, render log, request, candidate, or bundle staging path. The
+probe, IID stdout capture, Buildx stderr diagnostic log, render log, request,
+candidate, or bundle staging path. The
 native helper owns journal-temp creation through parent fsync as one operation;
 on pre-rename failure it removes only its exact temp. If removal/fsync cannot be
 proved, it emits `BEGIN_ORPHANED` plus that exact path and every later write
@@ -1794,33 +1901,54 @@ unknown, ambiguous, symlinked, unreadable, or hash-divergent state -> BLOCKED
 `begin` records the run ID and nonce, physical repository root, exact
 transaction path, complete read/write allowlists, bounded input and environment
 hashes, final bundle path, exact six candidate paths, dispatch request path,
-claim path, completion path, and initially absent final destination. It then
+claim path, completion path, exact fixed IID stdout-capture and Buildx
+stderr-log paths in their initially absent state, and initially absent final
+destination. It then
 copies the complete bounded input set into an immutable transaction snapshot and
 proves that snapshot against the exact Task 3 input commit. Docker context,
 comparison input, and render inputs come only from that snapshot.
 
-The shell runner invokes `begin` before its sole Buildx build. It writes all
-subsequent execution evidence under the recorded transaction, repeats the
-fail-closed local-route attestation inside that journaled phase immediately
-before Buildx, and invokes one container with the freshly built IID. The
+The shell runner invokes `begin` before its sole Buildx build and performs no
+output-path redirection. All subsequent execution evidence stays under the
+recorded transaction, and the runner repeats the fail-closed local-route
+attestation inside that journaled phase immediately before Buildx. One operation
+in the existing embedded native helper then owns the complete capture lifecycle:
+it opens the two absent evidence leaves through the anchored transaction parent;
+atomically journals and fsyncs their physical identities before spawn; enters
+the anchored snapshot-context cwd; launches the exact approved Docker argv in a
+dedicated process group with anonymous pipes as stdout/stderr; concurrently
+drains those pipes into the retained evidence descriptors; reaps the direct
+child and enforces EOF/termination; fsyncs, revalidates, and seals both leaves;
+parses the IID from the retained descriptor; and atomically records the child
+status plus capture/log identity, size, hash, and overflow state before
+returning. No repository, journal, or directory descriptor is inherited by
+Buildx. Only an exit-zero child, closed writers, and the exact canonical IID line
+permit `image inspect` and one container with that validated IID. The
 standalone environment command in Task 4 is an earlier read-only preflight; it
-does not replace this post-`begin` attestation. A single dispatcher inside that container
-atomically claims the journal-bound request and imports both asset and review
-workers, producing all six candidates. The request binds the run ID, nonce,
+does not replace this post-`begin` attestation. A single dispatcher inside that
+container atomically claims the journal-bound request and imports both asset and
+review workers, producing all six candidates. The request binds the run ID, nonce,
 snapshot digest, exact input roots, and exact candidate allowlist. The workers
 reject standalone invocation, request replay, a second claim/writer, live-tree
 input, or output outside that allowlist. The snapshot is mounted read-only; only
 recorded transaction candidate/log paths are writable; the live repository is
 not mounted writable.
 
-After the external command completes, `resume` validates the request, claim,
-completion record, nonce, exit status, and exact six candidate paths using the
-authoritative journal. A build/container failure or incomplete record durably
-selects `RECOVERY_REQUIRED` when safe to record and preserves all evidence.
-Success advances only to `RENDERED`; `resume` never invokes Docker, publishes an
-output, mutates the manifest, cleans, or unlocks. On an abrupt signal, the
-runner's trap may only best-effort record the signal/exit status and print the
-transaction path. It must not remove any path or lock.
+After the external command completes, the runner deliberately invokes the
+appropriate resume transition even for a captured nonzero status; `set -e` and
+the signal trap are not the normal classifier. Build failure or invalid IID with
+intact physical evidence selects `RECOVERY_REQUIRED` from the journaled
+capture/log result without requiring a request claim, completion record, render
+receipt, or populated IID. Physical ambiguity selects `BLOCKED`. After a
+container attempt, `resume` validates the request, claim, completion record,
+nonce, exit status, and exact six candidate paths using the authoritative
+journal. Container failure or incomplete record durably selects
+`RECOVERY_REQUIRED` when safe to record and preserves all evidence. Success
+advances only to `RENDERED`; `resume` never invokes Docker, publishes an output,
+mutates the manifest, cleans, or unlocks. On an abrupt signal, the runner's trap
+may only best-effort request the same durable failure transition, record the
+signal/exit status, and print the transaction path. It must not remove any path
+or lock.
 
 `finish` is valid from `RENDERED` or a validated `FINISH_REQUIRED` state. The
 `bundles` parent was already prepared by `begin`; later runs validate that exact
@@ -2023,8 +2151,10 @@ gate used below.
 
    a. **Persisted begin/resume/finish lifecycle:** publish the authoritative
       lock-journal before snapshot/probe/build/render/log/candidate writes;
-      enforce the exact `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH` order and
-      one visual container; make failure/signal traps preserve all evidence;
+      enforce the exact successful
+      `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH` order, the explicit
+      `RESUME_FAILURE` paths defined above, and one visual container; make
+      failure/signal traps preserve all evidence;
       make resume/finish/recover Docker-free and idempotent by state.
    b. **Immutable atomic bundle:** materialize the exact seven-entry source
       bundle, validate and seal it, and extend the existing embedded native
@@ -2063,14 +2193,23 @@ gate used below.
       newer; require Docker Desktop's bundled client and Buildx/Desktop/Offload
       plugins; require empty `cliPluginsExtraDirs`; permit user/system plugin
       candidates only when they resolve to the exact bundled binary; reject
-      every non-bundled shadow and all ambient `DOCKER_*`, `BUILDKIT_*`, and
-      `BUILDX_*` variables plus the BuildKit source-policy override; pin the exact
+      every non-bundled shadow, any non-empty Docker CLI `proxies` configuration,
+      and all ambient `DOCKER_*`, `BUILDKIT_*`, and `BUILDX_*` variables plus the
+      BuildKit source-policy override; pin the exact
       `desktop-linux` Unix-socket endpoint and local engine identity, make every
       attestation/renderer/build/run daemon command use literal
       `docker --context desktop-linux` without exception; require the
       context-bound `default` Buildx builder with `docker` driver and literal
-      `buildx build --builder default`; and make every build/run pass literal
-      `--platform=linux/amd64`.
+      `buildx build --builder default`; make every build/run pass literal
+      `--platform=linux/amd64`; and require the exact build tail
+      `--quiet --file Dockerfile .` from the anchored snapshot-context cwd. The
+      existing embedded native helper owns open, durable pre-spawn journal
+      binding, direct process-group spawn without a shell, anonymous-pipe drain
+      into distinct anchored stdout/stderr evidence FDs, wait/EOF, flush,
+      identity revalidation, strict parse, and durable post-build journal result
+      as one operation.
+      Forbid `--iidfile`, `--metadata-file`, every pathname/stdout exporter,
+      `/dev/fd`/`/proc/self/fd`, and shell pathname redirection.
       This authorizes the required schema, test, capture, and validation
       changes; it does not authorize changing dependency declarations, the
       lockfile, workspace policy, Docker context, Offload state, or any
@@ -2080,7 +2219,9 @@ gate used below.
    manifest, `better-ahead-brand-contract.mjs` and its test,
    `capture-better-ahead-environment.mjs`, both Better Ahead render scripts,
    `run-better-ahead-brand-renderer.sh`, and `scripts/package.json` limited to
-   existing `brand:better-ahead:*` commands. Root `package.json`,
+   existing `brand:better-ahead:*` commands: eight authorized paths in total.
+   The current seven-file dirty set is a preservation fact, not a narrower or
+   contradictory implementation allowlist. Root `package.json`,
    `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `canonical-renderer/**`, committed
    masters, and the historical comparison SVG remain read-only, unchanged, and
    unstaged. `environment.json`, `bundles/**`, flat exports/review paths, review
@@ -2113,6 +2254,124 @@ reconciliation—is the exact `task3_input_commit_sha` captured by
 `environment.json` and later used as the immutable bundle directory name. The
 historical comparison SVG remains read-only and unstaged throughout.
 
+**Current-execution reconciliation after the Buildx IID gate**
+
+The implementation worktree has already imported the Option A document as
+`60ecb54175fd1172ffe2105a8059702f8b3d8ea0`, whose parent is exactly
+`9d204ab10801cd2cb07ec8d5ee6a759b12dd296b`. It still contains exactly the same
+seven unstaged Task 3 implementation files and empty staging. Its frozen binary
+diff SHA-256 is
+`3a9aab2ae42ff2921265a0366765a52ad6c4d01118cbe83953fb71775d20c22a`, and the
+current contract-test file SHA-256 is
+`bd5c7dbbab702cfce4f40e087cf8321ce01b6135be383cf2ed5d2da6a25020fd`. No
+`environment.json`, bundle, export, review PNG, lock, journal, transaction,
+Docker build, capture, or render exists. Preserve that state exactly.
+
+Buildx v0.32.1 makes the former literal `--iidfile` contract impossible to
+satisfy: its
+[tagged implementation](https://github.com/docker/buildx/blob/v0.32.1/commands/build.go#L321-L424)
+removes the supplied pathname before the build and later recreates it with
+`os.WriteFile`, invalidating a preopened inode and leaving a
+pathname-substitution window. The same implementation emits the successful
+image ID with `fmt.Println` in quiet mode, and the
+[Docker reference](https://docs.docker.com/reference/cli/docker/buildx/build/)
+documents `--quiet` as suppressing build output and printing the image ID on
+success. This reconciliation therefore supersedes only the `--iidfile`
+mechanism with the helper-owned `--quiet` FD-capture protocol above. It does not
+weaken any no-follow, journal-first, one-build/one-container, allowlist,
+fingerprint, recovery, or review gate.
+
+Before resuming implementation, import the new documentation-only child of
+`c8d2d2fa9a4e137ba8e2400140a17dc2ef47fd8e` while proving that the seven local
+changes remain byte-identical:
+
+```bash
+set -euo pipefail
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+IID_PLAN_PATH=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+git diff --cached --exit-code
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+test "$(git rev-parse HEAD)" = "60ecb54175fd1172ffe2105a8059702f8b3d8ea0"
+test "$(git rev-parse HEAD^)" = "9d204ab10801cd2cb07ec8d5ee6a759b12dd296b"
+IID_STATUS_BEFORE=$(mktemp /tmp/better-ahead-iid-status.XXXXXX)
+IID_DIFF_BEFORE=$(mktemp /tmp/better-ahead-iid-diff.XXXXXX)
+MANAGER_STATUS_BEFORE=$(mktemp /tmp/better-ahead-iid-manager-status.XXXXXX)
+DIAGNOSTIC_STATUS_BEFORE=$(mktemp /tmp/better-ahead-iid-diagnostic-status.XXXXXX)
+git status --porcelain=v1 -z -uall > "$IID_STATUS_BEFORE"
+git diff --binary > "$IID_DIFF_BEFORE"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_BEFORE"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_BEFORE"
+test "$(shasum -a 256 "$IID_DIFF_BEFORE" | awk '{print $1}')" \
+  = "3a9aab2ae42ff2921265a0366765a52ad6c4d01118cbe83953fb71775d20c22a"
+test "$(shasum -a 256 scripts/brand/better-ahead-brand-contract.test.mjs \
+  | awk '{print $1}')" \
+  = "bd5c7dbbab702cfce4f40e087cf8321ce01b6135be383cf2ed5d2da6a25020fd"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test ! -s "$MANAGER_STATUS_BEFORE"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+test "$(shasum -a 256 "$DIAGNOSTIC_STATUS_BEFORE" | awk '{print $1}')" \
+  = "4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c"
+test -n "${IID_CAPTURE_DOC_SHA:?set IID_CAPTURE_DOC_SHA to the exact published documentation SHA from the handoff}"
+test "${#IID_CAPTURE_DOC_SHA}" = 40
+case "$IID_CAPTURE_DOC_SHA" in *[!0-9a-f]*) false ;; esac
+git fetch origin codex/better-ahead-rebranding-design
+test "$(git rev-list --parents -n 1 "$IID_CAPTURE_DOC_SHA" | awk '{print NF}')" = 2
+test "$(git rev-parse "$IID_CAPTURE_DOC_SHA^")" \
+  = "c8d2d2fa9a4e137ba8e2400140a17dc2ef47fd8e"
+test "$(git rev-parse "$IID_CAPTURE_DOC_SHA^0")" \
+  = "$(git rev-parse origin/codex/better-ahead-rebranding-design)"
+test "$(git diff-tree --no-commit-id --name-only -r "$IID_CAPTURE_DOC_SHA")" \
+  = "docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md"
+test "$(git rev-parse "HEAD:$IID_PLAN_PATH")" \
+  = "$(git rev-parse "${IID_CAPTURE_DOC_SHA}^:$IID_PLAN_PATH")"
+git cherry-pick "$IID_CAPTURE_DOC_SHA"
+test "$(git rev-parse HEAD^)" = "60ecb54175fd1172ffe2105a8059702f8b3d8ea0"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = "$IID_PLAN_PATH"
+test "$(git ls-tree HEAD -- "$IID_PLAN_PATH")" \
+  = "$(git ls-tree "$IID_CAPTURE_DOC_SHA" -- "$IID_PLAN_PATH")"
+git diff --cached --exit-code
+IID_STATUS_AFTER=$(mktemp /tmp/better-ahead-iid-status-after.XXXXXX)
+IID_DIFF_AFTER=$(mktemp /tmp/better-ahead-iid-diff-after.XXXXXX)
+MANAGER_STATUS_AFTER=$(mktemp /tmp/better-ahead-iid-manager-status-after.XXXXXX)
+DIAGNOSTIC_STATUS_AFTER=$(mktemp /tmp/better-ahead-iid-diagnostic-status-after.XXXXXX)
+git status --porcelain=v1 -z -uall > "$IID_STATUS_AFTER"
+git diff --binary > "$IID_DIFF_AFTER"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_AFTER"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_AFTER"
+cmp "$IID_STATUS_BEFORE" "$IID_STATUS_AFTER"
+cmp "$IID_DIFF_BEFORE" "$IID_DIFF_AFTER"
+cmp "$MANAGER_STATUS_BEFORE" "$MANAGER_STATUS_AFTER"
+cmp "$DIAGNOSTIC_STATUS_BEFORE" "$DIAGNOSTIC_STATUS_AFTER"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+test "$(git status --porcelain=v1 -z -uall \
+  | LC_ALL=C tr -cd '\000' | wc -c | tr -d ' ')" = "7"
+```
+
+After that preservation gate, run the already-authored external OA-EXT cases as
+REDs before implementation, finish the two outstanding mirror/cleanup REDs and
+OA-29, then implement the capture protocol only within the eight-path Task 3
+write allowlist above. The preserved seven-file dirty set remains the starting
+state; the eighth authorized path may change only if a new RED demonstrates it
+is required. OA-29 must become GREEN by
+allowing the journal to record legitimate
+same-inode stderr growth and a failed/empty IID capture as
+`RECOVERY_REQUIRED` before any render receipt exists. Re-run the complete
+unfrozen Corepack/pnpm 10.33.2 suite and both independent reviews required above.
+No real Docker, fingerprint capture, or renderer may run until those gates pass;
+no new helper file is authorized.
+
 **Step 6: Capture and commit the fingerprint before rendering**
 
 The environment capture records exact values for:
@@ -2131,6 +2390,9 @@ canonical Docker base digest and canonical renderer-context/dependency digests
 Docker Desktop/client/Buildx/Desktop-plugin/Offload-plugin/engine versions,
 realpaths, and SHA-256 values plus explicit
 `docker --context desktop-linux` command prefix
+canonical Buildx child environment: physically attested `HOME`, fixed Docker
+Desktop/system-only `PATH`, `LANG=C`, `LC_ALL=C`, and literal
+`TMPDIR=/private/tmp` after physical root-owner/sticky-directory validation
 stable Offload status-command identifier/support capability; volatile status
 JSON SHA-256/byte length remains only in the external capture evidence and later
 Task 4 journal, excluded from committed `environment.json` and
@@ -2143,9 +2405,14 @@ exact command: corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:re
 ```
 
 The Task 4 run's freshly built image IID does not exist at this pre-render
-commit and is not fabricated in `environment.json`. `begin` later records that
-IID as transaction/receipt/log execution evidence after the one authorized
-Buildx build and before the one visual container.
+commit and is not fabricated in `environment.json`. `begin` records only the
+exact initially absent stdout-capture/stderr-log paths. The native helper's
+durable pre-build transition later binds their identities; its durable
+post-build transition records the actual validated IID, child status, capture
+size/hash, and stderr-log size/hash as per-run transaction evidence. After the
+one visual container succeeds, the same IID is copied into receipt/log evidence.
+The actual IID and volatile capture metadata are excluded from committed
+`environment.json` and fingerprint-equality checks.
 
 Run the capture in write mode once, then validate it without rendering:
 
@@ -2178,15 +2445,8 @@ MAC_USER_HOME=$(dscl . -read "/Users/$MAC_USER_NAME" NFSHomeDirectory \
   | awk '{print $2}')
 test -n "$MAC_USER_HOME"
 DOCKER_USER_CONFIG="$MAC_USER_HOME/.docker/config.json"
-node -e '
-const fs = require("node:fs");
-const path = process.argv[1];
-if (!fs.existsSync(path)) process.exit(0);
-const config = JSON.parse(fs.readFileSync(path, "utf8"));
-if (!Object.hasOwn(config, "cliPluginsExtraDirs")) process.exit(0);
-if (!Array.isArray(config.cliPluginsExtraDirs)) process.exit(1);
-if (config.cliPluginsExtraDirs.length !== 0) process.exit(1);
-' "$DOCKER_USER_CONFIG"
+node scripts/brand/capture-better-ahead-environment.mjs \
+  --assert-docker-user-config "$DOCKER_USER_CONFIG"
 BUNDLED_PLUGIN_DIR="/Applications/Docker.app/Contents/Resources/cli-plugins"
 for PLUGIN_NAME in docker-buildx docker-desktop docker-offload; do
   BUNDLED_PLUGIN_PATH="$BUNDLED_PLUGIN_DIR/$PLUGIN_NAME"
@@ -2292,7 +2552,14 @@ comparisons. The fail-closed verdict instead comes from the
 composite local-route attestation above: Docker Desktop must be at least 4.80.0,
 the resolved client and Buildx/Desktop/Offload plugins must be Docker Desktop's
 bundled binaries, `cliPluginsExtraDirs` must be empty, and every user/system
-candidate must resolve back to the exact bundled binary. All ambient variables
+candidate must resolve back to the exact bundled binary. Docker CLI `proxies`
+must be absent or an empty object because Docker otherwise pre-populates proxy
+build arguments from that configuration; the capture and the journaled
+immediate pre-build attestation repeat this check without logging proxy values.
+The checker reads an existing config only as an anchored, owner-matching,
+single-link regular file and treats only `ENOENT` as absent; a symlink, malformed
+JSON, non-regular file, hardlink, replacement, unreadable state, or non-empty
+`proxies`/`cliPluginsExtraDirs` is blocking. All ambient variables
 whose names begin `DOCKER_`, `BUILDKIT_`, or `BUILDX_`, plus the explicit
 BuildKit source-policy override, must be absent; the server platform name must
 agree with the application version, and the selected default context must
@@ -2310,12 +2577,23 @@ diagnostic block stop immediately without writing repository content. The
 `--assert-local-docker`, `--write`, and `--check` modes repeat the same
 attestation and contractually classify environmental unavailability or
 difference as exit `78`; unexpected checker/tool failures remain other nonzero
-codes. They record the evidence. The renderer uses
-`docker --context desktop-linux` for every daemon command, invokes the build as
-`docker --context desktop-linux buildx build --builder default`, and supplies
-literal `--platform=linux/amd64` plus `--iidfile`. It runs that exact IID with
-literal `--platform=linux/amd64 --network none`; the build itself retains the
-network access required by the pinned canonical Dockerfile. Never call
+codes. The internal `--assert-docker-user-config EXACT_PATH` operation used by
+that attestation traverses from the physically attested home dirfd, opens
+`.docker` and then `config.json` descriptor-relatively with no-follow semantics,
+validates owner/type/device/link count, reads and parses from that same FD, and
+accepts only `ENOENT` for the optional file; it emits only the verdict and never
+configuration values. They record the evidence. The renderer's exact build argv is
+`docker --context desktop-linux buildx build --builder default --platform=linux/amd64 --quiet --file Dockerfile .`,
+executed from the anchored journal-bound
+`<TRANSACTION_PATH>/snapshot/scripts/brand/canonical-renderer` cwd. The embedded
+native helper executes it directly and drains anonymous stdout/stderr pipes into
+the two already opened, journal-bound descriptors; Buildx receives no output
+pathname. The
+renderer runs the strictly parsed IID with literal
+`--platform=linux/amd64 --network none`; the build itself retains the network
+access required by the pinned canonical Dockerfile. `--iidfile`,
+`--metadata-file`, every pathname/stdout exporter, `/dev/fd`/`/proc/self/fd`
+handoff, and shell pathname redirection remain forbidden. Never call
 `docker offload stop` automatically: it
 destroys the current cloud environment. If the route cannot be proved local,
 stop and ask the operator to disable Offload/switch to the local engine, then
@@ -2385,8 +2663,9 @@ corepack pnpm@10.33.2 --filter @mpp/scripts brand:better-ahead:render
 
 If the renderer exits nonzero or reports a fingerprint mismatch, preserve and
 report the authoritative lock-journal, exact transaction path, request/claim,
-snapshot, build/render logs, candidates, staged bundle, final bundle if present,
-and every recorded hash, then stop. Do not
+snapshot, IID stdout capture, Buildx stderr diagnostic log, render logs,
+candidates, staged bundle, final bundle if present, and every recorded hash,
+then stop. Do not
 rerun, replace hashes, manually remove a lock/quarantine, or fall back to the
 legacy/host-native renderer. An unknown, unreadable, symlinked, or ambiguous
 state is `BLOCKED`.

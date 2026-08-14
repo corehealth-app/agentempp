@@ -123,6 +123,18 @@ renderer, shell, `plutil`, and `xcrun assetutil`.
   `--iidfile`, `--metadata-file`, any other pathname/stdout exporter,
   `/dev/fd` or `/proc/self/fd` pathname handoff, and shell pathname redirection
   are prohibited. This preserves exactly one build and one visual container.
+- Task 3's native-helper V3 fault oracle is a test-only programmatic seam in
+  the existing renderer module. `runNativeHelperV3` remains module-private;
+  production renderer/recovery/cleanup, journal, payload, CLI, package-script,
+  and environment interfaces gain no test control. The single named test-only
+  module export defined below is the explicit exception; it cannot dispatch a
+  production operation or accept a live path. The seam accepts only the seven
+  closed OA-16/OA-34 cases and the fixed closed negative probe matrix defined
+  below, owns an isolated temporary fixture, and synchronizes through
+  capability-bound anonymous pipes. It accepts no caller path, bytes,
+  descriptor, command, callback, offset, timeout, environment, or arbitrary
+  operation. No marker file, sleep, filesystem polling, Docker invocation, or
+  new tracked helper is authorized.
 
 ## Confirmed Baseline
 
@@ -1482,6 +1494,15 @@ application configurations.
   record without publication. `finish` seals and atomically publishes the
   whole bundle, verifies it, cleans its transaction, and unlocks. It never
   mutates the root manifest.
+- The sole test-only programmatic expansion is the named export
+  `nativeHelperV3TestOracle` from the existing
+  `render-better-ahead-brand-assets.mjs` module. It exposes only
+  `open(CLOSED_CASE_ID)`, `probe(CLOSED_NEGATIVE_PROBE_ID)`, and the frozen
+  one-shot protocols defined by the current-execution oracle reconciliation
+  below. It is not dispatched by the module's `main`, shell runner,
+  `scripts/package.json`, argv, environment, or serialized transaction data. It
+  can operate only on a private fixture that it creates itself and can never
+  receive or mutate the live repository.
 - The runner may create only its exact lock/transaction paths, the immutable
   final bundle `design/brand/better-ahead/bundles/<TASK3_INPUT_SHA>`. It has no
   write path to the root manifest, flat Better Ahead exports/review paths,
@@ -1582,8 +1603,12 @@ Require:
   Post-commit recovery never deletes or restores the bundle. Cleanup and
   recovery never use a glob or broad directory target;
 - only a fully successful write or fully successful state-specific recovery
-  removes the exact lock, always as its final operation. A second write remains
-  blocked after any injected error until the applicable audited
+  removes the exact lock as its final destructive pathname mutation and unlock
+  linearization point. Only fsync of the already-open lock parent and return may
+  follow as production filesystem operations; neither step may reopen or mutate
+  a pathname. A recognized test-only lock-POST oracle may exchange only its
+  anonymous `REACHED/RELEASE/CONSUMED` control frames around that fsync. A second
+  write remains blocked after any injected error until the applicable audited
   `--recover-orphan EXACT_BEGIN_TEMP_PATH` (before lock publication) or
   `--recover EXACT_TRANSACTION_PATH` (after publication) completes
   successfully;
@@ -1668,6 +1693,14 @@ Require:
   successful result; that writer never held an evidence FD. Any drain/write
   error, missing EOF on success, or signal-escalation failure is likewise
   `BLOCKED`;
+- OA-16 and OA-34 native-helper fixtures use only the closed programmatic test
+  oracle specified below. OA-16 proves that a canonical FD3 V3 payload truncated
+  by exactly its final byte and followed by real EOF is rejected without a
+  partial parse, retry, state transition, cleanup, unlock, Docker call, or
+  filesystem mutation. OA-34 deterministically exercises the six fixed
+  cleanup/unlock boundaries around mirror unlink, transaction rmdir, and lock
+  unlink. No fixture may reach those cases through CLI flags, environment
+  variables, serialized fields, marker paths, sleeps, or polling;
 - fake runner tests also prove the exact persisted order
   `BEGIN -> BUILDX -> RUN -> RESUME -> FINISH`, exactly one build and one
   container for a successful write, and zero Docker calls from `resume`, `finish`,
@@ -2007,7 +2040,13 @@ leaf means absent. Missing required lock/journal/receipt data and every
 other error—including `ELOOP`, `ENOTDIR`, `EACCES`, `EPERM`, and `EIO`—blocks
 without fallback, cleanup, or unlock. Unlock revalidates the exact recorded lock
 inode with `fstatat(..., AT_SYMLINK_NOFOLLOW)` and removes only that leaf with
-`unlinkat`, always as the final successful operation.
+`unlinkat`, which is its final pathname mutation and linearization point. It
+then fsyncs only the already-open lock parent and returns without another
+pathname lookup, journal write, unlink, or filesystem mutation. A recognized
+test-only lock-POST oracle may only emit `REACHED`, await exact `RELEASE` plus
+FD4 EOF, and emit `CONSUMED` around that fsync; those anonymous control frames
+never enter production state. A new lock created after the old unlink is a
+legitimate next owner and must survive.
 
 Recovery is permitted only through the tested exact-path interface after
 audit: `--recover-orphan EXACT_BEGIN_TEMP_PATH` applies solely before an
@@ -2229,6 +2268,13 @@ gate used below.
    prohibited in this commit. No new helper file is authorized: extend the
    native helper embedded in the existing renderer script.
 
+   The OA-16/OA-34 oracle is a test-only verification adjunct to workstreams
+   **b** and **c**, not a seventh production workstream and not an allowlist
+   expansion. Its implementation is confined to the already authorized
+   renderer module and contract test. It must not require a new tracked file or
+   any change to `scripts/package.json` unless that path was already required by
+   the production workstreams above.
+
    Run the complete expanded suite in one final unfrozen pass with exact
    Corepack/pnpm 10.33.2, then `validate:inputs`, the preserved baseline, and
    `git diff --check`. Obtain two fresh independent reviews: one focused on the
@@ -2371,6 +2417,429 @@ same-inode stderr growth and a failed/empty IID capture as
 unfrozen Corepack/pnpm 10.33.2 suite and both independent reviews required above.
 No real Docker, fingerprint capture, or renderer may run until those gates pass;
 no new helper file is authorized.
+
+**Current-execution reconciliation after the native-helper V3 oracle gate**
+
+The local Task 3 execution imported the preceding documentation reconciliation
+as `726bae58042dc4da86b08f3fa52de0f2dccc24a4` and then stopped before applying
+the Round 3 oracle work. The reported worktree still has exactly seven unstaged
+Task 3 files, empty staging, and contract-test SHA-256
+`bd5c7dbbab702cfce4f40e087cf8321ce01b6135be383cf2ed5d2da6a25020fd`.
+No Docker command, fingerprint capture, render, `environment.json`, bundle,
+lock, journal, or transaction was created. The local divergence report at
+`/tmp/better-ahead-native-v3-legacy-migration-seam-divergence.md`, reported as
+SHA-256 `0fa307f2f602297e5e41bebbca99afc639697c83ee2b0e6f3840fd0513e1fd6f`, is
+ephemeral audit evidence only; this committed section is the self-contained
+authority. Do not apply the uncommitted `/tmp` Round 3 material blindly.
+
+The earlier local brief required behavioral coverage for OA-16 and the six
+OA-34 races while keeping `runNativeHelperV3` private and forbidding test
+controls in production recovery/cleanup interfaces, argv, environment,
+markers, and polling. Those requirements are compatible only with the following
+closed, programmatic test seam, which is now explicitly authorized and is
+controlling wherever the earlier generic interface language appears narrower.
+It does not weaken any production threat-model, no-follow, recovery, cleanup,
+unlock, journal, one-build/one-container, allowlist, or review requirement.
+
+**Closed oracle API and confinement**
+
+- The existing renderer module may add exactly one new test-only named export,
+  `nativeHelperV3TestOracle = Object.freeze({ open, probe })`.
+  `runNativeHelperV3` itself remains lexical/module-private and is not re-exported.
+- `open(caseId)` accepts exactly one of these seven string literals and rejects
+  unknown values and every extra argument/property:
+
+  ```text
+  oa16.fd3_truncated
+  oa34.mirror.pre_unlink
+  oa34.mirror.post_unlink
+  oa34.transaction.pre_rmdir
+  oa34.transaction.post_rmdir
+  oa34.lock.pre_unlink
+  oa34.lock.post_unlink
+  ```
+
+- `probe(probeId)` accepts exactly one of the following closed negative IDs. It
+  internally constructs the named malformed frame, descriptor topology, or
+  lifecycle fault and returns one frozen audit result; it accepts no raw bytes,
+  FD number, path, command, callback, timeout, environment, or options object:
+
+  ```text
+  protocol.wrong_magic
+  protocol.wrong_version
+  protocol.wrong_kind
+  protocol.wrong_opcode
+  protocol.nonzero_reserved
+  protocol.wrong_session_nonce
+  protocol.wrong_barrier_challenge
+  protocol.wrong_sequence
+  protocol.short_frame
+  protocol.oversized_frame
+  protocol.trailing_frame
+  protocol.duplicate_frame
+  protocol.out_of_order_release
+  protocol.eof_before_release
+  descriptor.fd4_missing
+  descriptor.fd5_missing
+  descriptor.fd4_nonpipe
+  descriptor.fd5_nonpipe
+  lifecycle.barrier_not_reached
+  production.ambient_control_fds_closed
+  production.descendant_control_fds_closed
+  ```
+
+- Both methods create and physically validate their own `0700` `mkdtemp`
+  fixture under the attested local temporary root. They accept no repository
+  root, pathname, command, arbitrary operation, or caller-controlled protocol
+  material. Each fixture includes an independently hashed sentinel outside the
+  subtree presented to the native operation. No live-repository path or Docker
+  command is reachable from this façade. The negative matrix is an explicit
+  test seam, not an additional production opcode or recovery/cleanup interface.
+- The returned frozen, single-use OA-34 session exposes only `start()`, the
+  `reached` Promise, `inject(eventToken)`, `release(eventToken)`, the `result`
+  Promise, `audit()`, and `dispose()`. `await session.reached` supplies an opaque
+  token bound to that exact session and case. `inject` performs only the case's
+  fixed mutation; it accepts no callback or data. That same token authorizes exactly
+  one `inject` and then exactly one immediately subsequent `release`; a second
+  call in either phase or any use after release is reuse and fails closed.
+  Cross-case, cloned, forged, serialized, proxied, or otherwise out-of-order
+  sessions/tokens also fail closed.
+- The only valid behavioral lifecycles are:
+
+  | Case | Exact lifecycle |
+  |---|---|
+  | OA-16 | `open -> start` resolves after `ARM/ARMED` and closes FD4 -> `result` rejects with `NATIVE_HELPER_V3_TRUNCATED_RESPONSE` only after `CONSUMED`, FD5 EOF, and helper reap -> `audit -> dispose` |
+  | OA-34 | `open -> start` resolves after `ARM/ARMED` -> `eventToken = await session.reached -> await session.inject(eventToken) -> await session.release(eventToken)` and FD4 close -> `result` settles only after `CONSUMED`, FD5 EOF, and helper reap -> `audit -> dispose` |
+
+  The OA-16 session has the same frozen one-shot base but omits the `reached`,
+  `inject`, and `release` members entirely; tests prove those properties are
+  absent. `audit` is unavailable before `result` settles. Normal `dispose`
+  follows one audit; early `dispose` is only the fail-closed abort path defined
+  below. A repeated `start`, `audit`, normal `dispose`, or any other transition
+  rejects.
+- Internally, the session is registered by object identity in a module-private
+  `WeakMap` and closes over a one-shot capability. Only that identity may reach
+  a private final oracle parameter of `runNativeHelperV3`; every production call
+  supplies the immutable `NO_ORACLE` sentinel. This explicitly authorizes that
+  one module-private signature parameter; no public production function,
+  renderer/recovery/cleanup interface, or serialized
+  request/journal/recovery/receipt/log schema carries the capability.
+- Arbitrary code already executing in the same trusted Node process could
+  import the test façade, but the façade can touch only its self-created fixture
+  and cannot select an operation or path. This is within the existing
+  compromised-same-UID/process exclusion and is not authority to expose a
+  runtime or live-repository test hook.
+
+**Anonymous native protocol**
+
+- FD3 retains its existing V3 payload role and framing. Only a recognized oracle
+  session adds two anonymous pipes: FD4 carries fixed parent-to-helper control
+  frames and FD5 carries fixed helper-to-parent acknowledgements. The native
+  helper sets both control descriptors close-on-exec before it can spawn any
+  descendant. Docker, a fake child, and every production child observe FD4/FD5
+  closed; an ordinary production helper invocation receives neither descriptor.
+- Each control frame is exactly 48 bytes: ASCII magic `BAO3` (4 bytes), version
+  `1` (one byte), kind `ARM|RELEASE|ARMED|REACHED|CONSUMED` (one byte), one
+  closed opcode byte, one zero reserved byte, a 32-byte in-memory authenticator,
+  and one unsigned 64-bit big-endian phase sequence. There is no variable payload.
+  Kind codes are fixed as `ARM=0x01`, `RELEASE=0x02`, `ARMED=0x81`,
+  `REACHED=0x82`, and `CONSUMED=0x83`; opcode codes `0x01` through `0x07` map in
+  the exact OA case-ID order listed above. `ARM/ARMED` use sequence `1` and echo
+  a fresh parent-generated session nonce. At an OA-34 barrier the helper obtains
+  a new unpredictable 32-byte challenge from the operating system and emits it
+  only in `REACHED` with sequence `2`; the matching `RELEASE` must echo that
+  challenge and sequence, and `CONSUMED` echoes it with sequence `3`. A release
+  queued before `REACHED` cannot know the challenge and therefore fails closed.
+  OA-16 uses the session nonce in `CONSUMED` with sequence `2`.
+- Every endpoint uses exact-length blocking reads under the fixed watchdog, not
+  polling. For OA-16 the parent closes FD4 immediately after validated `ARMED`;
+  the helper requires that EOF before producing the truncated FD3 payload,
+  emits exact `CONSUMED`, and closes FD5. For OA-34 the parent writes the single
+  exact `RELEASE` only after fixed injection, then closes FD4; the helper reads
+  the frame and requires immediate EOF before it can cross any pending PRE
+  syscall or continue a POST path, then emits exact `CONSUMED` and closes FD5.
+  The parent requires FD5 EOF and helper reap after `CONSUMED`. These explicit
+  closes make short, oversized, and trailing input distinguishable without a
+  sleep, marker, nonblocking peek, or polling.
+- The helper-generated challenge is exposed to JavaScript only as the opaque
+  session-bound `eventToken`; callers never receive its bytes. `inject` must
+  complete and durably verify its fixed mutation before the closed façade may
+  echo the challenge in `RELEASE`.
+  Wrong magic, version, kind, opcode, reserved byte, authenticator, or sequence;
+  short, oversized, trailing, duplicated, or out-of-order frames; EOF on a
+  required control pipe; a non-pipe descriptor; or only one of FD4/FD5 being
+  present
+  aborts before every not-yet-executed guarded syscall and preserves the
+  auditable state. At a POST barrier the named syscall has already linearized,
+  so a protocol failure performs no later destructive syscall and preserves the
+  exact post-syscall state for audit; it never pretends to roll that syscall back.
+- The native oracle arms and consumes exactly one truncation or barrier. A
+  second matching boundary is an error, never a silent no-op or retry. No oracle
+  byte is written to the production payload, journal, recovery mirror, receipt,
+  log, marker, or filesystem.
+
+**OA-16: truncated FD3 payload**
+
+For `oa16.fd3_truncated`, use the normal canonical V3 encoder for the existing
+non-destructive fixture operation, write the complete frame except its final
+byte to FD3, close the producer end to provide real EOF, and exit the native
+helper successfully. The truncation offset is fixed at `canonicalLength - 1`
+and is not caller-controlled. The consumer must reject it with stable
+classification `NATIVE_HELPER_V3_TRUNCATED_RESPONSE`; it must not parse a
+prefix, consult stdout/stderr or a pathname fallback, return partial data,
+retry/reinvoke the helper, advance a transaction, clean up, unlock, or call
+Docker. The behavioral GREEN test proves one invocation, declared length `N`,
+observed length `N - 1`, real EOF, native exit zero, zero retry/Docker/mutation,
+and byte-identical fixture and sentinel state. Its RED must fail because the
+closed oracle behavior is absent, not because of timing.
+
+**OA-34: six deterministic cleanup/unlock boundaries**
+
+The PRE barriers occur immediately before the final anchored no-follow identity
+revalidation that precedes the destructive syscall. They must never be inserted
+between that final validation and the syscall, because the existing threat model
+does not claim protection from an already-compromised same-UID process inside
+that private interval. The mirror/transaction POST barriers occur immediately
+after the successful syscall and before their absence postcondition and parent
+fsync. The lock POST barrier occurs after its linearizing unlink and before only
+the retained-parent fsync; it performs no absence lookup. Each `REACHED` is
+emitted exactly once; only the matching fixed `inject` may precede `RELEASE`.
+
+1. `oa34.mirror.pre_unlink`: replace the mirror leaf with a distinct
+   inode/sentinel before final revalidation. The helper detects the mismatch,
+   does not unlink the replacement, reports non-success/`BLOCKED`, and retains
+   the authoritative lock and recoverable evidence.
+2. `oa34.mirror.post_unlink`: after the expected mirror inode is unlinked but
+   before absence proof and parent fsync, recreate that leaf with a distinct
+   inode/sentinel. The helper detects the unexpected entry, preserves it,
+   reports non-success/`BLOCKED`, and retains the lock; it never removes the new
+   leaf as fallback cleanup.
+3. `oa34.transaction.pre_rmdir`: replace the validated empty transaction
+   directory with a distinct directory containing a sentinel before final
+   revalidation. The helper detects the identity/content divergence, removes
+   nothing from the replacement, reports non-success/`BLOCKED`, and retains the
+   lock.
+4. `oa34.transaction.post_rmdir`: after removing the expected transaction
+   directory but before absence proof and parent fsync, recreate a distinct
+   directory containing a sentinel. The helper preserves the new directory,
+   reports non-success/`BLOCKED`, and retains the lock; it does not recurse or
+   retry cleanup.
+5. `oa34.lock.pre_unlink`: after all prior cleanup is durably complete but
+   before the lock's final identity revalidation and unlink, replace the lock
+   leaf with a distinct inode/sentinel. The helper detects the mismatch, does
+   not unlink the replacement, and must not report unlock success.
+6. `oa34.lock.post_unlink`: immediately after unlinking the old validated lock
+   and before fsyncing its parent, acquire a new valid lock by exclusive create
+   with a different run ID/nonce, then fsync that new lock and its parent and
+   verify its identity before `inject` resolves and `RELEASE` is permitted. The
+   old unlink is the unlock linearization point. The old helper performs only
+   the prescribed anonymous `RELEASE/CONSUMED` exchange, its already-required
+   retained-parent fsync, and return success; it performs no new pathname lookup,
+   journal write, unlink, or other filesystem mutation. The durably published
+   new lock remains byte- and inode-identical and blocks another writer.
+   Treating that legitimate new owner as the old lock or removing it is a test
+   failure.
+
+Every case proves the independent sentinel's bytes, device, and inode remain
+unchanged, the fixed injected object has the stated postcondition, no second
+cleanup/helper attempt occurs, and Docker is never invoked. The first five
+cases never claim successful cleanup/unlock; the sixth proves linearizable
+successful unlock without harming the next owner.
+
+**Synchronization, teardown, and negative gates**
+
+- `reached` resolves only after an exact `REACHED` frame is read from FD5.
+  `inject` completes its fixed mutation before `release` can emit the exact
+  `RELEASE` frame on FD4. There is no sleep, stat loop, marker, or polling. One
+  fixed 10-second monotonic watchdog is failure containment only, never race
+  coordination.
+- On timeout, assertion failure, early `dispose`, or EOF before release, close
+  FD4 so the helper cannot cross any not-yet-executed guarded syscall; a POST
+  case instead stops before any later cleanup/unlock action. Signal its dedicated
+  process group with `TERM`, wait at most five seconds, use `KILL` if necessary,
+  wait at most five more seconds, reap it, and close every descriptor. Audit the
+  fixture and sentinel before teardown. Remove only the exact self-created
+  fixture through no-follow traversal on audited success; if audit or teardown
+  cannot be proved, preserve that `0700` fixture and report its exact path.
+- Drive every raw-frame, descriptor-topology, and never-reached behavioral
+  negative only through the exact closed `probe` IDs above. Add direct
+  behavioral and source-level negatives for unknown/extra oracle input;
+  forged/cloned/reused capability or token; wrong method order; duplicate event
+  or release; all malformed control frames; missing/non-pipe FD4/FD5; helper
+  never reaching the barrier; hostile `--oracle`, `--oa-*`, and `--test-*`
+  flags; hostile environment names; ambient preopened FD4/FD5; and descendant
+  descriptor inheritance. The public parser rejects unknown flags before any
+  write, no environment value activates the seam, package scripts expose no
+  oracle command, importing the module for the named test façade does not run
+  `main` or any production admission, no schema accepts oracle fields, and
+  `runNativeHelperV3` remains unexported. A normal production control case must
+  preserve the prior behavior and descriptor inventory.
+
+This oracle implementation remains inside the eight-path Task 3 allowlist and
+may modify only `scripts/brand/render-better-ahead-brand-assets.mjs` plus
+`scripts/brand/better-ahead-brand-contract.test.mjs` beyond already-preserved
+changes. It creates no tracked helper or production dependency. Run its REDs
+first, then its focused GREENs, the complete unfrozen contract suite with exact
+`corepack pnpm@10.33.2`, `validate:inputs`, the preserved baseline, and
+`git diff --check`. Both previously required independent final reviews must
+cover the oracle's confinement, protocol, race linearization, and teardown and
+report no Critical or Important finding. No real Docker, fingerprint capture,
+renderer, Task 4, push, PR, merge, or deploy is authorized by this
+reconciliation.
+
+Before resuming, import this documentation-only child of
+`359f4bb202c0c8a6696a033fe61f00085d2da720` while preserving every pre-existing
+worktree and staging byte outside the authorized plan replacement. The fetch
+and cherry-pick are explicitly allowed to update Git metadata such as
+`FETCH_HEAD`, the named remote ref, index, reflog, and the new commit object;
+the private `/tmp` snapshots are also expected new files.
+
+```bash
+set -euo pipefail
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+ORACLE_PLAN_PATH=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+ORACLE_PARENT_PLAN_BLOB=17776145d1b231ad5f057cf84f7c2048ca651e6d
+
+git diff --cached --exit-code
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+test "$(git rev-parse HEAD)" = "726bae58042dc4da86b08f3fa52de0f2dccc24a4"
+test "$(git rev-parse HEAD^)" = "60ecb54175fd1172ffe2105a8059702f8b3d8ea0"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = "$ORACLE_PLAN_PATH"
+test "$(git rev-parse "HEAD:$ORACLE_PLAN_PATH")" = "$ORACLE_PARENT_PLAN_BLOB"
+git diff --exit-code -- "$ORACLE_PLAN_PATH"
+for absent_path in \
+  design/brand/better-ahead/environment.json \
+  design/brand/better-ahead/bundles \
+  design/brand/better-ahead/exports \
+  design/brand/better-ahead/review
+do
+  test ! -e "$absent_path"
+  test ! -L "$absent_path"
+done
+test -z "$(git ls-files --others --ignored --exclude-standard -- design/brand)"
+
+ORACLE_STATUS_BEFORE=$(mktemp /tmp/better-ahead-oracle-status.XXXXXX)
+ORACLE_DIFF_BEFORE=$(mktemp /tmp/better-ahead-oracle-diff.XXXXXX)
+MANAGER_STATUS_BEFORE=$(mktemp /tmp/better-ahead-oracle-manager.XXXXXX)
+DIAGNOSTIC_STATUS_BEFORE=$(mktemp /tmp/better-ahead-oracle-diagnostic.XXXXXX)
+DIAGNOSTIC_DIFF_BEFORE=$(mktemp /tmp/better-ahead-oracle-diagnostic-diff.XXXXXX)
+git status --porcelain=v1 -z -uall > "$ORACLE_STATUS_BEFORE"
+git diff --binary > "$ORACLE_DIFF_BEFORE"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_BEFORE"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_BEFORE"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$DIAGNOSTIC_DIFF_BEFORE"
+ORACLE_DIRTY_COUNT=0
+while IFS= read -r -d '' entry
+do
+  case "$entry" in
+    " M "*) dirty_path=${entry:3} ;;
+    *) false ;;
+  esac
+  case "$dirty_path" in
+    design/brand/better-ahead-brand-assets.json|\
+    scripts/brand/better-ahead-brand-contract.mjs|\
+    scripts/brand/better-ahead-brand-contract.test.mjs|\
+    scripts/brand/capture-better-ahead-environment.mjs|\
+    scripts/brand/render-better-ahead-brand-assets.mjs|\
+    scripts/brand/render-better-ahead-brand-review.mjs|\
+    scripts/brand/run-better-ahead-brand-renderer.sh|\
+    scripts/package.json) ;;
+    *) false ;;
+  esac
+  ORACLE_DIRTY_COUNT=$((ORACLE_DIRTY_COUNT + 1))
+done < "$ORACLE_STATUS_BEFORE"
+test "$ORACLE_DIRTY_COUNT" = "7"
+test "$(git diff --name-only -z | LC_ALL=C tr -cd '\000' \
+  | wc -c | tr -d ' ')" = "7"
+test "$(shasum -a 256 scripts/brand/better-ahead-brand-contract.test.mjs \
+  | awk '{print $1}')" \
+  = "bd5c7dbbab702cfce4f40e087cf8321ce01b6135be383cf2ed5d2da6a25020fd"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test ! -s "$MANAGER_STATUS_BEFORE"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+test -z "$(git -C "$DIAGNOSTIC_REPO" ls-files --others --exclude-standard)"
+test "$(git -C "$DIAGNOSTIC_REPO" diff --name-only -z \
+  | LC_ALL=C tr -cd '\000' | wc -c | tr -d ' ')" = "9"
+test "$(shasum -a 256 "$DIAGNOSTIC_STATUS_BEFORE" | awk '{print $1}')" \
+  = "4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c"
+
+test -n "${NATIVE_V3_ORACLE_DOC_SHA:?set the exact published documentation SHA from the handoff}"
+test "${#NATIVE_V3_ORACLE_DOC_SHA}" = 40
+case "$NATIVE_V3_ORACLE_DOC_SHA" in *[!0-9a-f]*) false ;; esac
+git fetch origin codex/better-ahead-rebranding-design
+test "$(git rev-list --parents -n 1 "$NATIVE_V3_ORACLE_DOC_SHA" \
+  | awk '{print NF}')" = "2"
+test "$(git rev-parse "$NATIVE_V3_ORACLE_DOC_SHA^")" \
+  = "359f4bb202c0c8a6696a033fe61f00085d2da720"
+test "$(git rev-parse "$NATIVE_V3_ORACLE_DOC_SHA^0")" \
+  = "$(git rev-parse origin/codex/better-ahead-rebranding-design)"
+test "$(git diff-tree --no-commit-id --name-only -r \
+  "$NATIVE_V3_ORACLE_DOC_SHA")" = "$ORACLE_PLAN_PATH"
+test "$(git rev-parse "$NATIVE_V3_ORACLE_DOC_SHA^:$ORACLE_PLAN_PATH")" \
+  = "$ORACLE_PARENT_PLAN_BLOB"
+test "$(git rev-parse "HEAD:$ORACLE_PLAN_PATH")" \
+  = "$ORACLE_PARENT_PLAN_BLOB"
+git diff --binary "$NATIVE_V3_ORACLE_DOC_SHA^" \
+  "$NATIVE_V3_ORACLE_DOC_SHA" -- "$ORACLE_PLAN_PATH" | git apply --check
+
+git -c core.hooksPath=/dev/null -c commit.gpgSign=false \
+  cherry-pick "$NATIVE_V3_ORACLE_DOC_SHA"
+test "$(git rev-parse HEAD^)" = "726bae58042dc4da86b08f3fa52de0f2dccc24a4"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "$ORACLE_PLAN_PATH"
+test "$(git ls-tree HEAD -- "$ORACLE_PLAN_PATH")" \
+  = "$(git ls-tree "$NATIVE_V3_ORACLE_DOC_SHA" -- "$ORACLE_PLAN_PATH")"
+git diff --cached --exit-code
+
+ORACLE_STATUS_AFTER=$(mktemp /tmp/better-ahead-oracle-status-after.XXXXXX)
+ORACLE_DIFF_AFTER=$(mktemp /tmp/better-ahead-oracle-diff-after.XXXXXX)
+MANAGER_STATUS_AFTER=$(mktemp /tmp/better-ahead-oracle-manager-after.XXXXXX)
+DIAGNOSTIC_STATUS_AFTER=$(mktemp /tmp/better-ahead-oracle-diagnostic-after.XXXXXX)
+DIAGNOSTIC_DIFF_AFTER=$(mktemp /tmp/better-ahead-oracle-diagnostic-diff-after.XXXXXX)
+git status --porcelain=v1 -z -uall > "$ORACLE_STATUS_AFTER"
+git diff --binary > "$ORACLE_DIFF_AFTER"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_AFTER"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_AFTER"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$DIAGNOSTIC_DIFF_AFTER"
+cmp "$ORACLE_STATUS_BEFORE" "$ORACLE_STATUS_AFTER"
+cmp "$ORACLE_DIFF_BEFORE" "$ORACLE_DIFF_AFTER"
+cmp "$MANAGER_STATUS_BEFORE" "$MANAGER_STATUS_AFTER"
+cmp "$DIAGNOSTIC_STATUS_BEFORE" "$DIAGNOSTIC_STATUS_AFTER"
+cmp "$DIAGNOSTIC_DIFF_BEFORE" "$DIAGNOSTIC_DIFF_AFTER"
+for absent_path in \
+  design/brand/better-ahead/environment.json \
+  design/brand/better-ahead/bundles \
+  design/brand/better-ahead/exports \
+  design/brand/better-ahead/review
+do
+  test ! -e "$absent_path"
+  test ! -L "$absent_path"
+done
+test -z "$(git ls-files --others --ignored --exclude-standard -- design/brand)"
+test "$(shasum -a 256 scripts/brand/better-ahead-brand-contract.test.mjs \
+  | awk '{print $1}')" \
+  = "bd5c7dbbab702cfce4f40e087cf8321ce01b6135be383cf2ed5d2da6a25020fd"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+```
+
+If any precondition, parent/blob check, status/diff comparison, or repository
+preservation check fails, stop without resolving a cherry-pick conflict or
+editing/staging another file. After a successful import, first add the seven
+closed OA cases and the closed negative-probe matrix as tracked behavioral REDs;
+only then implement the minimal seam. Resume at the oracle RED, not at Docker
+capture or render.
 
 **Step 6: Capture and commit the fingerprint before rendering**
 

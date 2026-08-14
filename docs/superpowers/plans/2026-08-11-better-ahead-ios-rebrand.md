@@ -128,9 +128,10 @@ renderer, shell, `plutil`, and `xcrun assetutil`.
   production renderer/recovery/cleanup, journal, payload, CLI, package-script,
   and environment interfaces gain no test control. The single named test-only
   module export defined below is the explicit exception; it cannot dispatch a
-  production operation or accept a live path. The seam accepts only the seven
-  closed OA-16/OA-34 cases and the fixed closed negative probe matrix defined
-  below, owns an isolated temporary fixture, and synchronizes through
+  production operation or accept a live path. The seam accepts only the frozen
+  closed-case inventory and fixed closed negative-probe matrix defined by the
+  latest current-execution reconciliation below, owns an isolated temporary
+  fixture, and synchronizes through
   capability-bound anonymous pipes. It accepts no caller path, bytes,
   descriptor, command, callback, offset, timeout, environment, or arbitrary
   operation. No marker file, sleep, filesystem polling, Docker invocation, or
@@ -2446,8 +2447,10 @@ unlock, journal, one-build/one-container, allowlist, or review requirement.
 - The existing renderer module may add exactly one new test-only named export,
   `nativeHelperV3TestOracle = Object.freeze({ open, probe })`.
   `runNativeHelperV3` itself remains lexical/module-private and is not re-exported.
-- `open(caseId)` accepts exactly one of these seven string literals and rejects
-  unknown values and every extra argument/property:
+- The initial `open(caseId)` inventory contains the following seven string
+  literals. The later legacy-test reconciliation preserves them unchanged and
+  defines the only authorized expansion. Unknown values and every extra
+  argument/property remain rejected:
 
   ```text
   oa16.fd3_truncated
@@ -2544,7 +2547,8 @@ unlock, journal, one-build/one-container, allowlist, or review requirement.
   and one unsigned 64-bit big-endian phase sequence. There is no variable payload.
   Kind codes are fixed as `ARM=0x01`, `RELEASE=0x02`, `ARMED=0x81`,
   `REACHED=0x82`, and `CONSUMED=0x83`; opcode codes `0x01` through `0x07` map in
-  the exact OA case-ID order listed above. `ARM/ARMED` use sequence `1` and echo
+  the exact initial OA case-ID order listed above, and the later reconciliation
+  assigns the only additional valid codes. `ARM/ARMED` use sequence `1` and echo
   a fresh parent-generated session nonce. At an OA-34 barrier the helper obtains
   a new unpredictable 32-byte challenge from the operating system and emits it
   only in `REACHED` with sequence `2`; the matching `RELEASE` must echo that
@@ -2840,6 +2844,1284 @@ editing/staging another file. After a successful import, first add the seven
 closed OA cases and the closed negative-probe matrix as tracked behavioral REDs;
 only then implement the minimal seam. Resume at the oracle RED, not at Docker
 capture or render.
+
+**Current-execution reconciliation after the read-only legacy-test inventory**
+
+The local execution imported the preceding native-helper oracle authority as
+`8f4020b0ae27d27c0de1b97d1682f507cd0be57c`, whose parent is
+`726bae58042dc4da86b08f3fa52de0f2dccc24a4`, and then authored only the
+tracked V3 oracle REDs in the contract test. The focused Corepack/pnpm 10.33.2
+run produced 43 leaves: 33 expected REDs and 10 passing confinement sentinels.
+Its complete log was reported as
+`/tmp/better-ahead-native-v3-oracle-red-attempt2.log` with SHA-256
+`fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d`.
+Two independent reviews accepted that RED contract with no Critical,
+Important, or Minor finding. Preserve that evidence; it need not be recreated
+before this reconciliation is imported. The log is explicitly ephemeral: when
+it still exists the handoff verifies its exact hash and summary; its absence
+does not invalidate the committed documentary record, frozen test bytes, and
+two accepted reviews and does not authorize a weaker substitute rerun.
+
+The subsequent read-only inventory corrected the earlier approximate count and
+is controlling:
+
+- there are exactly 10 source blocks, `FCB-001` through `FCB-010`, using the
+  four now-forbidden controls;
+- those blocks materialize 23 leaves, of which 21 use a forbidden control and
+  two are independent assertions that remain valid;
+- there are exactly 107, not 108, tests depending on the removed
+  `promoteBetterAheadCandidates` path: 106 transitively through the wrapper and
+  one direct namespace lookup (`FP-079`);
+- the apparent 108th test is the separate `NM-001` near-miss. It calls the
+  still-supported recovery API and has an exact existing equivalent;
+- the 107 tests partition exactly into 83 migrations, 20 removals tied only to
+  the deleted flat-promotion architecture, and four P1 gaps that require
+  additional closed oracle cases. No P0 gap was found.
+
+The frozen source for that inventory is
+`scripts/brand/better-ahead-brand-contract.test.mjs` at SHA-256
+`61facfae43bc5be7b45c2c5d406ccc20f88ba75ee13d3ec97b1d4232ecd0bcf1`
+and Git blob OID `4c6619113829b83494292164696ee9abbd315eaf`. `FP-001`
+through `FP-107` identify, in increasing source order, the complete top-level
+registrations between the former lines 4148 and 9180 whose dependency chain
+reaches the absent export; `FP-079` is the one direct namespace call. The
+wrapper at the former lines 44-45 has SHA-256
+`e2fe2a9b7d2dfaf6c8d8a9d152ea02f1a1bae219a54e0f5fe6941729375026a5`.
+The IDs and classifications below remain stable even after line numbers move.
+
+This section supersedes the earlier seven-case limit, the instruction to keep
+the incompatible legacy test tail unchanged, and the immediately preceding
+post-import instruction to author the seven OA REDs. Those REDs are already
+present and accepted at the frozen test hash. Every earlier state-specific
+import block remains historical evidence only; the preservation/import handoff
+in this section is the sole executable re-entry point. This does not supersede
+the private-helper boundary, negative-probe matrix, atomic-bundle architecture,
+one-build/one-container rule, no-follow model, or any Docker/render gate. It
+narrows the current migration write set as explicitly stated below.
+
+**Frozen legacy-test disposition**
+
+The 83 `MIGRATE` IDs are:
+
+```text
+FP-002 FP-003 FP-004 FP-005 FP-006 FP-007 FP-008 FP-009 FP-010
+FP-011 FP-012 FP-013 FP-019 FP-020 FP-021 FP-022 FP-023 FP-024
+FP-025 FP-027 FP-028 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037
+FP-038 FP-039 FP-040 FP-041 FP-042 FP-043 FP-044 FP-045 FP-046
+FP-047 FP-048 FP-049 FP-050 FP-053 FP-054 FP-055 FP-057 FP-058
+FP-059 FP-060 FP-061 FP-063 FP-064 FP-065 FP-067 FP-068 FP-069
+FP-070 FP-072 FP-073 FP-074 FP-075 FP-076 FP-078 FP-079 FP-080
+FP-081 FP-082 FP-083 FP-084 FP-085 FP-086 FP-087 FP-088 FP-089
+FP-090 FP-093 FP-094 FP-097 FP-098 FP-099 FP-101 FP-102 FP-105
+FP-106 FP-107
+```
+
+They partition without overlap into these nine migration owners:
+
+| Owner | Closed classifier | Count | IDs | Required current path |
+|---|---|---:|---|---|
+| Validation, admission, and sealing | `VALIDATION_ADMISSION_SEALING` | 10 | `FP-002,004,005,027,057,070,079,083,098,099` | `begin -> dispatch -> resume -> finish`; sealing assertions execute in `finish` |
+| Initial authority and owned workspace | `INITIAL_AUTHORITY_WORKSPACE` | 8 | `FP-007,028,046,047,048,049,050,053` | `begin -> recover` |
+| Atomic-bundle materialization/publication | `ATOMIC_BUNDLE_PUBLICATION` | 14 | `FP-040,041,043,044,045,058,060,063,064,065,074,076,097,102` | `dispatch -> resume -> finish` |
+| Journal update and resume reconciliation | `JOURNAL_RESUME_RECONCILIATION` | 12 | `FP-003,008,009,030,031,032,033,034,037,038,039,042` | `resume -> recover` |
+| Commit durability and physical truth | `COMMIT_DURABILITY_PHYSICAL_TRUTH` | 4 | `FP-006,025,061,067` | `finish -> recover` |
+| Path confinement and physical identity | `PATH_CONFINEMENT_IDENTITY` | 6 | `FP-020,021,022,023,024,068` | `begin/finish/recover` |
+| Convergence, idempotency, and runner state | `CONVERGENCE_IDEMPOTENCY_RUNNER` | 7 | `FP-012,013,019,069,080,081,107` | interrupted `finish/recover` followed by fixed recovery |
+| Cleanup ownership and integrity | `CLEANUP_OWNERSHIP_INTEGRITY` | 11 | `FP-054,055,059,075,078,082,084,085,101,105,106` | `finish/recover` |
+| Final authority revalidation/removal | `FINAL_AUTHORITY_REVALIDATION` | 11 | `FP-010,011,072,073,086,087,088,089,090,093,094` | final `finish/recover` unlock |
+
+Each migrated registration keeps its `FP-nnn` ID in its new test name or an
+immediately adjacent literal comment and keeps the inventory's complete
+input/action/matcher/invariant assertion. It must traverse the named current
+lifecycle owner, not merely call a validation helper directly. `FP-079` must
+use the real dispatcher and current bundle validation; it may not dynamically
+look up the absent export. Tests that formerly named a flat receipt, restore,
+displacement, or proof may retain only the invariant identified above and must
+retarget it to current lock/update/mirror/transaction/candidate/staged-bundle
+objects. They must not recreate the removed object model to preserve an old
+test shape.
+
+The 20 `DELETE_REMOVED_ARCHITECTURE` IDs are:
+
+```text
+FP-001 FP-014 FP-015 FP-016 FP-017 FP-018 FP-026 FP-029 FP-035
+FP-036 FP-051 FP-052 FP-056 FP-062 FP-066 FP-071 FP-077 FP-100
+FP-103 FP-104
+```
+
+Remove those complete registrations. Their only claimed objects are independent
+per-destination publication, originals/backups, rollback of the active tree,
+the root manifest as a receipt, per-destination pending records, or the removed
+`M/Q/P` proof scheme. Do not replace them with skipped tests, aliases, archived
+dead code, a compatibility export, or a test-only reconstruction of flat
+promotion. Their absence is a positive architecture assertion.
+
+The four `NEEDS_NEW_CLOSED_OPEN` IDs are:
+
+```text
+FP-091 FP-092 FP-095 FP-096
+```
+
+`FP-091` covers a physical edge swap after `openat`, `FP-092` a missing suffix
+that reappears, `FP-095` a same-inode authority mutation after validation, and
+`FP-096` both fixed variants of mutation after second-pass rebind. They migrate
+only through the new closed `oa35.unlock.*` cases below. The two fixed
+`FP-096` variants remain one traceability owner; they do not authorize a
+caller-selected mutation.
+
+Remove the duplicate `NM-001` registration only after identifying and
+annotating its exact retained equivalent, formerly at test lines 3632-3658.
+Preserve that equivalent and add the `NM-001` traceability ID to its name or
+adjacent comment. This deletion is outside the 107 count.
+
+The old `createPromotionFixture`, deferred
+`promoteBetterAheadCandidates` wrapper, direct namespace lookup, and every
+helper used only by the 20 removed blocks must disappear when their final live
+consumer disappears. The renderer export surface must continue to prove that
+`promoteBetterAheadCandidates` is absent.
+
+**FCB migration ledger**
+
+The following mapping is exhaustive. A `KEEP` entry means extract the
+independent leaf before deleting the old controlled block.
+
+| Block | Controlled replacement | Independent disposition |
+|---|---|---|
+| `FCB-001` | `oa35.begin.temporary_fsync.crash_orphan` | none |
+| `FCB-002` | `oa35.journal.update_temporary_fsync.crash` | keep the pre-existing update collision leaf |
+| `FCB-003` | `oa35.journal.update_rename.crash` and `oa35.journal.update_parent_fsync.crash` | none |
+| `FCB-004` | `oa35.cleanup.pre_first_unlink.nonprefix_absence` | none |
+| `FCB-005` | `oa35.begin.temporary_fsync.fail_clean` and `oa35.begin.temporary_fsync.crash_orphan` | none |
+| `FCB-006` | `oa35.cleanup.early_lock_replacement` | none |
+| `FCB-007` | `oa35.unlock.precommit_pre_unlink.fail_retry` | none |
+| `FCB-008` | `oa35.cleanup.same_byte_leaf_replacement`, `oa35.cleanup.hardlinked_leaf`, and `oa35.cleanup.transaction_directory_swap` | keep the pre-payload same-byte replacement leaf |
+| `FCB-009` | `oa35.unlock.committed_pre_unlink.fail_retry` and `oa35.unlock.bundle_same_inode_mutation` | none |
+| `FCB-010` | the four `oa35.journal.mirror_*`/`predecessor_unlink` cases and three `oa35.cleanup.after_*` cases | none |
+
+After extraction, remove the ten old controlled registrations rather than
+leaving both implementations. The two `KEEP` leaves use only current public
+lifecycle APIs and no oracle case. Every replacement keeps its `FCB-nnn` ID and
+asserts the same durable and negative postconditions on the current
+atomic-bundle state.
+
+For the shared `FCB-001`/retained `FCB-005` begin case only, the legacy
+transport distinction between caller-selected `fail` and `crash` is explicitly
+non-normative: it existed solely because of the forbidden `retain` fault
+option. The preserved production contract is the exact durable
+`BEGIN_ORPHANED` state, second-writer block, and exact orphan recovery.
+`crash_orphan` exercises that state through one real fixed interruption. This is
+the sole exception to retaining the old failure class and is why the closed
+inventory has 25 rather than 26 new IDs.
+
+**Closed OA-35 expansion**
+
+The named export remains exactly
+`nativeHelperV3TestOracle = Object.freeze({ open, probe })` and
+`runNativeHelperV3` remains lexical/module-private. The 21 `probe` IDs, their
+behavior, and their negative lifecycle are unchanged. The seven existing
+`open` IDs and opcodes `0x01` through `0x07` are unchanged. The following 25
+additional literals are the complete authorized expansion, making exactly 32
+`open` IDs. Twenty of the new literals replace the 21 controlled FCB leaves
+(the one retained-begin invariant is deliberately consolidated); the remaining
+five cover the four FP P1 owners because `FP-096` has two distinct mutations.
+Their opcodes are fixed by this order:
+
+```text
+0x08 oa35.begin.temporary_fsync.fail_clean
+0x09 oa35.begin.temporary_fsync.crash_orphan
+0x0a oa35.journal.update_temporary_fsync.crash
+0x0b oa35.journal.update_rename.crash
+0x0c oa35.journal.update_parent_fsync.crash
+0x0d oa35.journal.mirror_temporary_fsync.crash
+0x0e oa35.journal.mirror_swap.crash
+0x0f oa35.journal.mirror_parent_fsync.crash
+0x10 oa35.journal.predecessor_unlink.crash
+0x11 oa35.cleanup.pre_first_unlink.nonprefix_absence
+0x12 oa35.cleanup.after_first_unlink.crash
+0x13 oa35.cleanup.after_mirror_unlink.crash
+0x14 oa35.cleanup.after_transaction_rmdir.crash
+0x15 oa35.cleanup.early_lock_replacement
+0x16 oa35.cleanup.same_byte_leaf_replacement
+0x17 oa35.cleanup.hardlinked_leaf
+0x18 oa35.cleanup.transaction_directory_swap
+0x19 oa35.unlock.precommit_pre_unlink.fail_retry
+0x1a oa35.unlock.committed_pre_unlink.fail_retry
+0x1b oa35.unlock.bundle_same_inode_mutation
+0x1c oa35.unlock.edge_swap_after_openat
+0x1d oa35.unlock.missing_suffix_reappears
+0x1e oa35.unlock.authority_same_inode_mutation
+0x1f oa35.unlock.second_pass_edge_swap
+0x20 oa35.unlock.second_pass_missing_suffix
+```
+
+Each OA-35 top-level name places these exact trace tokens, in this order,
+immediately after its leading opcode token. No other `FCB-nnn` or `FP-nnn`
+token may appear in that name:
+
+```text
+08 FCB-005
+09 FCB-001 FCB-005
+0a FCB-002
+0b FCB-003
+0c FCB-003
+0d FCB-010
+0e FCB-010
+0f FCB-010
+10 FCB-010
+11 FCB-004
+12 FCB-010
+13 FCB-010
+14 FCB-010
+15 FCB-006
+16 FCB-008
+17 FCB-008
+18 FCB-008
+19 FCB-007
+1a FCB-009
+1b FCB-009
+1c FP-091
+1d FP-092
+1e FP-095
+1f FP-096
+20 FP-096
+```
+
+The malformed-opcode negative uses an unsupported value outside
+`0x01..0x20`. Unknown case IDs, old control names, extra arguments/properties,
+raw opcode numbers, and every nonliteral attempt still reject before fixture or
+filesystem creation.
+
+All OA-35 cases use the same frozen, identity-bound, single-use session,
+anonymous FD4/FD5 pipes, challenge, sequence, and
+`ARM/ARMED/REACHED/RELEASE` frames already specified for OA-34.
+`await session.reached` returns only an opaque token and `release(token)`
+permits exactly one continuation. Mutation cases retain the OA-34 rule:
+`inject(token)` performs and durably verifies exactly the case's fixed mutation
+before release, with no caller data; the helper then emits exact `CONSUMED`,
+closes FD5, and is reaped normally.
+
+For a fixed ordinary-failure case, `inject(token)` instead arms only the
+compiled-in error named by that literal. After exact `RELEASE` and FD4 EOF, the
+helper emits exact `CONSUMED`, returns that fixed error, closes FD5, and is
+reaped with the declared ordinary-error status.
+
+A literal ending in `.crash`, plus `crash_orphan` and
+`pre_first_unlink.nonprefix_absence`, uses a distinct honest-interruption
+terminal lifecycle. `inject(token)` arms only fixed `_exit(86)`. After exact
+`RELEASE` and FD4 EOF, the helper validates the frame and exits 86 at the named
+boundary without emitting `CONSUMED`; process exit supplies FD5 EOF. The parent
+requires that it successfully sent the exact challenge-bound release, then
+observes no `CONSUMED` byte, FD5 EOF, exact exit 86, helper reap, and the case's
+exact physical PRE or POST state. A PRE case executed no named destructive
+syscall; a POST case already executed only its named syscall. Any frame byte,
+unexpected acknowledgement, exit status, additional syscall, physical state,
+or teardown difference rejects. `protocol.eof_before_release` remains distinct:
+no valid release was sent, it uses its existing non-86 protocol classification,
+and it must retain the pre-release state. An arbitrary helper death therefore
+cannot satisfy an interruption case.
+
+The oracle's `result` resolves to a frozen controlled-case outcome only when
+the applicable normal, ordinary-error, or honest-interruption terminal sequence
+matches exactly. Existing OA-16/OA-34 `CONSUMED` semantics remain unchanged.
+
+Any declared fixed recovery pass starts only after the interrupted helper is
+reaped. The façade performs exactly the declared zero, one, or two passes
+against only its self-created fixture; `result` does not settle until those
+passes finish and their classifications are frozen for `audit()`. The caller
+cannot choose an operation, path, target, fault mode, retry count, or recovery
+action.
+
+Every case creates and physically validates its own `0700` temporary fixture,
+includes an external independently hashed sentinel, and invokes no Docker
+command. On successful result, audit, and teardown, neither the session nor
+`audit()` exposes a fixture path or mutable object. `audit()` may expose only
+frozen scalar classifications, counts, expected/observed identities and hashes,
+and the case's declared final-state facts; it exposes no descriptor, byte
+buffer, path, callback, command, function, or reusable capability. If audit or
+teardown cannot be proved, preserve the fixture and report its exact path only
+in the terminal failure diagnostic as already required above. The existing
+watchdog is teardown containment only.
+
+The 25 cases have these exact fixed effects and outcomes:
+
+1. `fail_clean` reaches the initial temporary-fsync boundary, returns the fixed
+   ordinary failure, proves the exact begin temporary and lock are absent, and
+   ends `IDLE` without recovery.
+2. `crash_orphan` crashes at that same boundary, proves the exact begin
+   temporary remains while the lock is absent and a second begin reports
+   `BEGIN_ORPHANED`, then performs one exact orphan recovery and ends `IDLE`.
+   This one real interruption replaces both legacy retained branches; the
+   artificial caller-selected `fail|crash` plus `retain` combination is removed,
+   not reproduced.
+3. `update_temporary_fsync.crash` crashes after the update temporary is durable
+   but before its rename; the prior lock stays authoritative, the exact owned
+   update temporary is the only extra leaf, another writer remains blocked, and
+   fixed recovery converges without Docker.
+4. `update_rename.crash` crashes immediately after the next lock-journal swap;
+   recovery reconciles that exact next authority with its predecessor update,
+   never promotes the mirror, and converges without Docker.
+5. `update_parent_fsync.crash` crashes immediately after the swapped
+   lock-journal parent fsync and proves the same exact durable reconciliation.
+6. `mirror_temporary_fsync.crash`, `mirror_swap.crash`,
+   `mirror_parent_fsync.crash`, and `predecessor_unlink.crash` each stop at
+   exactly the named mirror/update boundary, preserve the physically
+   authoritative lock and all required evidence, and converge through the
+   exact fixed recovery sequence without a new render.
+7. `pre_first_unlink.nonprefix_absence` reaches the point before cleanup's first
+   unlink, consumes exact release, then performs the fixed exit-86 interruption
+   and reaps that helper without a cleanup mutation. Only after reap, the closed
+   façade removes the case's fixed later owned leaf and starts exactly one new
+   recovery. That recovery rejects the non-prefix absence before mutation,
+   preserves the remaining authority and evidence, and performs no fallback
+   deletion or unlock.
+8. `after_first_unlink.crash`, `after_mirror_unlink.crash`, and
+   `after_transaction_rmdir.crash` crash immediately after exactly the named
+   successful cleanup mutation. Recovery accepts only that exact prefix,
+   revalidates every surviving object, converges to `IDLE`, and never rerenders.
+9. `early_lock_replacement` replaces the authoritative lock with the fixed
+   distinct sentinel before cleanup's first mutation; cleanup/unlock blocks and
+   preserves the replacement, prior authority evidence, transaction, and
+   external sentinel.
+10. `same_byte_leaf_replacement` replaces the exact journal-enumerated leaf
+    used by the frozen `FCB-008` row with a byte-identical distinct inode;
+    `hardlinked_leaf` gives that row's exact regular leaf an additional link;
+    and `transaction_directory_swap` replaces that row's exact directory with
+    a distinct nonempty directory. Each blocks before deleting the unowned
+    object and retains the lock and external sentinel.
+11. `precommit_pre_unlink.fail_retry` reaches the final lock-unlink boundary in
+    the precommit recovery state, returns the fixed ordinary failure, proves
+    the lock remains after all earlier permitted cleanup, and one exact retry
+    converges to `IDLE`.
+12. `committed_pre_unlink.fail_retry` does the same in
+    `BUNDLE_COMMITTED/CLEANUP_REQUIRED`, additionally proving the immutable
+    bundle and receipt remain byte- and inode-identical through the retry.
+13. `bundle_same_inode_mutation` mutates the fixed committed wordmark leaf
+    in-place after the prior/second-pass bundle-content validation but before
+    the final in-child revalidation that precedes authority removal. Unlock
+    blocks, retains the lock, performs no later pathname mutation, and preserves
+    the mutated fixture for audit. The barrier is never placed inside the final
+    revalidation-to-unlink private interval.
+14. `edge_swap_after_openat` swaps the fixed held physical parent edge after
+    its first `openat`; `missing_suffix_reappears` creates the fixed previously
+    absent suffix after that absence was observed. Both block final unlock,
+    preserve the injected object and authority, and touch no external sentinel.
+15. `authority_same_inode_mutation` changes the lock-journal bytes in the same
+    inode after a prior authority-validation pass and before the final in-child
+    revalidation. That final revalidation detects the content divergence and
+    retains authority; the barrier is not inside its private unlink interval.
+16. `second_pass_edge_swap` and `second_pass_missing_suffix` perform their
+    respective fixed edge/suffix mutation only after the second-pass rebind.
+    Both block before lock unlink and preserve all injected and authority
+    objects.
+
+The case implementation must use the exact literal target and failure class
+defined by this OA-35 table for the frozen FCB/FP owner cited above. The only
+intentional consolidation is `crash_orphan`, whose fixed real interruption
+replaces the two removed caller-selected retained modes. No row may be
+generalized into an arbitrary barrier, path, mutation, failure mode, or
+callback. Cases that share a native boundary may share private implementation
+code, but not an opcode or test result when their failure class, state, target,
+or durable postcondition differs. This is why `FP-096` has two literals and why
+the precommit and committed final-unlock retries remain distinct.
+
+No `nativeBeginFault`, `nativeJournalUpdateFault`, `nativeCleanupFault`, or
+`nativeCleanupBarrier` field may remain in a public function signature, options
+object, serialized payload or schema, native argv, CLI parser, environment
+lookup, package script, journal, log, receipt, or recovery state. Test source
+may contain those spellings only inside a source-level negative assertion.
+There is no compatibility alias.
+
+The earlier eight-path Task 3 allowlist was a maximum, not a requirement to
+touch all eight paths. For this reconciliation it is explicitly narrowed to the
+seven paths already dirty in the frozen snapshot. `scripts/package.json` is
+read-only throughout this migration, even if a new RED would otherwise suggest
+a command change; such a need is a STOP requiring another documentary
+reconciliation. This narrowing makes the exact seven-path final commit and
+clean-worktree gate authoritative.
+
+**Preservation and documentation-import handoff**
+
+Import the documentation-only child of
+`32e250525c8d9a56161e35e3ab599e9758cebd26` before changing another test or
+production byte. The fetch/cherry-pick may update only normal Git metadata, the
+new plan commit, the explicitly persisted frozen contract-test blob, and private
+`/tmp` snapshots. It may not normalize or rewrite the seven dirty implementation
+paths.
+
+```bash
+set -euo pipefail
+
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+MIGRATION_PLAN_PATH=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+MIGRATION_PARENT_PLAN_BLOB=060cc50188670fc14d0cc0dcb1907a97ed71abc5
+
+git diff --cached --exit-code
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+test "$(git rev-parse HEAD)" \
+  = "8f4020b0ae27d27c0de1b97d1682f507cd0be57c"
+test "$(git rev-parse HEAD^)" \
+  = "726bae58042dc4da86b08f3fa52de0f2dccc24a4"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "$MIGRATION_PLAN_PATH"
+test "$(git rev-parse "HEAD:$MIGRATION_PLAN_PATH")" \
+  = "$MIGRATION_PARENT_PLAN_BLOB"
+git diff --exit-code -- "$MIGRATION_PLAN_PATH"
+
+EXPECTED_DIRTY_PATHS=$(mktemp /tmp/better-ahead-migration-paths.XXXXXX)
+ACTUAL_DIRTY_PATHS=$(mktemp /tmp/better-ahead-migration-paths-actual.XXXXXX)
+printf '%s\n' \
+  design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-brand-contract.mjs \
+  scripts/brand/better-ahead-brand-contract.test.mjs \
+  scripts/brand/capture-better-ahead-environment.mjs \
+  scripts/brand/render-better-ahead-brand-assets.mjs \
+  scripts/brand/render-better-ahead-brand-review.mjs \
+  scripts/brand/run-better-ahead-brand-renderer.sh \
+  > "$EXPECTED_DIRTY_PATHS"
+git status --porcelain=v1 -uall \
+  | sed -n 's/^ M //p' \
+  | LC_ALL=C sort > "$ACTUAL_DIRTY_PATHS"
+LC_ALL=C sort -o "$EXPECTED_DIRTY_PATHS" "$EXPECTED_DIRTY_PATHS"
+cmp "$EXPECTED_DIRTY_PATHS" "$ACTUAL_DIRTY_PATHS"
+test "$(git status --porcelain=v1 -uall | shasum -a 256 \
+  | awk '{print $1}')" \
+  = "2d2881b85e533d247fd7b67cc9cec9a629ec66fa1b83e130d2771ac9eee416b4"
+test "$(git diff --binary | shasum -a 256 | awk '{print $1}')" \
+  = "52654f8b16bcd531902cbb285a26fc0d026739464bd04e7dc269e72fca8bf411"
+
+assert_sha() {
+  expected=$1
+  path=$2
+  test "$(shasum -a 256 "$path" | awk '{print $1}')" = "$expected"
+}
+assert_sha 5da5284c219f4b556110944c837c2dcbf0f406aa6327aec821cb72d6bf5cb11b \
+  design/brand/better-ahead-brand-assets.json
+assert_sha c9438906d4073813e15faec31332174e557888e0460705ddc6ff7bd89a7a99f0 \
+  scripts/brand/better-ahead-brand-contract.mjs
+assert_sha 61facfae43bc5be7b45c2c5d406ccc20f88ba75ee13d3ec97b1d4232ecd0bcf1 \
+  scripts/brand/better-ahead-brand-contract.test.mjs
+test "$(git hash-object -w --no-filters \
+  scripts/brand/better-ahead-brand-contract.test.mjs)" \
+  = "4c6619113829b83494292164696ee9abbd315eaf"
+git cat-file -e 4c6619113829b83494292164696ee9abbd315eaf^{blob}
+assert_sha 7bc9239e37ad8f219b92f59f5476cd6e58276ca2b095b81c27716edbed8d0435 \
+  scripts/brand/capture-better-ahead-environment.mjs
+assert_sha 9a5cb0ea098c787bcc80ef0bea30eb28636178211fac07ebfb6c0f29c282220b \
+  scripts/brand/render-better-ahead-brand-assets.mjs
+assert_sha e3bac5f60c9892ef936cf87585ce74820f8fa24ac6879e5e17cc2211baf05e42 \
+  scripts/brand/render-better-ahead-brand-review.mjs
+assert_sha 686b89883bd21df8c95c7eb49244b93e81cea8d6094ddf689236ea10c9092dc0 \
+  scripts/brand/run-better-ahead-brand-renderer.sh
+
+ORACLE_RED_LOG=/tmp/better-ahead-native-v3-oracle-red-attempt2.log
+ORACLE_RED_EXPECTED_SHA=fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d
+ORACLE_RED_VERIFIED_SHA=
+if test -e "$ORACLE_RED_LOG" || test -L "$ORACLE_RED_LOG"
+then
+  test -f "$ORACLE_RED_LOG"
+  test ! -L "$ORACLE_RED_LOG"
+  test "$(shasum -a 256 "$ORACLE_RED_LOG" | awk '{print $1}')" \
+    = "$ORACLE_RED_EXPECTED_SHA"
+  rg -q '^# tests 43$' "$ORACLE_RED_LOG"
+  rg -q '^# pass 10$' "$ORACLE_RED_LOG"
+  rg -q '^# fail 33$' "$ORACLE_RED_LOG"
+  rg -q '^# skipped 0$' "$ORACLE_RED_LOG"
+  ORACLE_RED_VERIFIED_SHA=$ORACLE_RED_EXPECTED_SHA
+fi
+
+for absent_path in \
+  design/brand/better-ahead/environment.json \
+  design/brand/better-ahead/bundles \
+  design/brand/better-ahead/exports \
+  design/brand/better-ahead/review
+do
+  test ! -e "$absent_path"
+  test ! -L "$absent_path"
+done
+test -z "$(git ls-files --others --ignored --exclude-standard -- design/brand)"
+
+MIGRATION_STATUS_BEFORE=$(mktemp /tmp/better-ahead-migration-status.XXXXXX)
+MIGRATION_DIFF_BEFORE=$(mktemp /tmp/better-ahead-migration-diff.XXXXXX)
+MANAGER_STATUS_BEFORE=$(mktemp /tmp/better-ahead-migration-manager.XXXXXX)
+DIAGNOSTIC_STATUS_BEFORE=$(mktemp /tmp/better-ahead-migration-diagnostic.XXXXXX)
+DIAGNOSTIC_DIFF_BEFORE=$(mktemp /tmp/better-ahead-migration-diagnostic-diff.XXXXXX)
+git status --porcelain=v1 -z -uall > "$MIGRATION_STATUS_BEFORE"
+git diff --binary > "$MIGRATION_DIFF_BEFORE"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_BEFORE"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_BEFORE"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$DIAGNOSTIC_DIFF_BEFORE"
+
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test ! -s "$MANAGER_STATUS_BEFORE"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+test -z "$(git -C "$DIAGNOSTIC_REPO" ls-files --others --exclude-standard)"
+test "$(git -C "$DIAGNOSTIC_REPO" diff --name-only -z \
+  | LC_ALL=C tr -cd '\000' | wc -c | tr -d ' ')" = "9"
+test "$(shasum -a 256 "$DIAGNOSTIC_STATUS_BEFORE" | awk '{print $1}')" \
+  = "4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c"
+
+test -n "${LEGACY_TEST_MIGRATION_DOC_SHA:?set the exact published documentation SHA from the handoff}"
+test "${#LEGACY_TEST_MIGRATION_DOC_SHA}" = 40
+case "$LEGACY_TEST_MIGRATION_DOC_SHA" in *[!0-9a-f]*) false ;; esac
+
+git fetch origin \
+  refs/heads/codex/better-ahead-rebranding-design:refs/remotes/origin/codex/better-ahead-rebranding-design
+test "$(git rev-list --parents -n 1 "$LEGACY_TEST_MIGRATION_DOC_SHA" \
+  | awk '{print NF}')" = "2"
+test "$(git rev-parse "$LEGACY_TEST_MIGRATION_DOC_SHA^")" \
+  = "32e250525c8d9a56161e35e3ab599e9758cebd26"
+test "$(git rev-parse "$LEGACY_TEST_MIGRATION_DOC_SHA^0")" \
+  = "$(git rev-parse origin/codex/better-ahead-rebranding-design)"
+test "$(git diff-tree --no-commit-id --name-only -r \
+  "$LEGACY_TEST_MIGRATION_DOC_SHA")" = "$MIGRATION_PLAN_PATH"
+test "$(git rev-parse \
+  "$LEGACY_TEST_MIGRATION_DOC_SHA^:$MIGRATION_PLAN_PATH")" \
+  = "$MIGRATION_PARENT_PLAN_BLOB"
+test "$(git rev-parse "HEAD:$MIGRATION_PLAN_PATH")" \
+  = "$MIGRATION_PARENT_PLAN_BLOB"
+git diff --binary "$LEGACY_TEST_MIGRATION_DOC_SHA^" \
+  "$LEGACY_TEST_MIGRATION_DOC_SHA" -- "$MIGRATION_PLAN_PATH" \
+  | git apply --check
+
+git -c core.hooksPath=/dev/null -c commit.gpgSign=false \
+  cherry-pick "$LEGACY_TEST_MIGRATION_DOC_SHA"
+test "$(git rev-parse HEAD^)" \
+  = "8f4020b0ae27d27c0de1b97d1682f507cd0be57c"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "$MIGRATION_PLAN_PATH"
+test "$(git ls-tree HEAD -- "$MIGRATION_PLAN_PATH")" \
+  = "$(git ls-tree "$LEGACY_TEST_MIGRATION_DOC_SHA" -- "$MIGRATION_PLAN_PATH")"
+git diff --cached --exit-code
+
+MIGRATION_STATUS_AFTER=$(mktemp /tmp/better-ahead-migration-status-after.XXXXXX)
+MIGRATION_DIFF_AFTER=$(mktemp /tmp/better-ahead-migration-diff-after.XXXXXX)
+MANAGER_STATUS_AFTER=$(mktemp /tmp/better-ahead-migration-manager-after.XXXXXX)
+DIAGNOSTIC_STATUS_AFTER=$(mktemp /tmp/better-ahead-migration-diagnostic-after.XXXXXX)
+DIAGNOSTIC_DIFF_AFTER=$(mktemp /tmp/better-ahead-migration-diagnostic-diff-after.XXXXXX)
+git status --porcelain=v1 -z -uall > "$MIGRATION_STATUS_AFTER"
+git diff --binary > "$MIGRATION_DIFF_AFTER"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$MANAGER_STATUS_AFTER"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$DIAGNOSTIC_STATUS_AFTER"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$DIAGNOSTIC_DIFF_AFTER"
+
+cmp "$MIGRATION_STATUS_BEFORE" "$MIGRATION_STATUS_AFTER"
+cmp "$MIGRATION_DIFF_BEFORE" "$MIGRATION_DIFF_AFTER"
+cmp "$MANAGER_STATUS_BEFORE" "$MANAGER_STATUS_AFTER"
+cmp "$DIAGNOSTIC_STATUS_BEFORE" "$DIAGNOSTIC_STATUS_AFTER"
+cmp "$DIAGNOSTIC_DIFF_BEFORE" "$DIAGNOSTIC_DIFF_AFTER"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+git cat-file -e 4c6619113829b83494292164696ee9abbd315eaf^{blob}
+assert_sha 61facfae43bc5be7b45c2c5d406ccc20f88ba75ee13d3ec97b1d4232ecd0bcf1 \
+  scripts/brand/better-ahead-brand-contract.test.mjs
+if test -n "$ORACLE_RED_VERIFIED_SHA"
+then
+  test "$(shasum -a 256 "$ORACLE_RED_LOG" | awk '{print $1}')" \
+    = "$ORACLE_RED_VERIFIED_SHA"
+fi
+for absent_path in \
+  design/brand/better-ahead/environment.json \
+  design/brand/better-ahead/bundles \
+  design/brand/better-ahead/exports \
+  design/brand/better-ahead/review
+do
+  test ! -e "$absent_path"
+  test ! -L "$absent_path"
+done
+test -z "$(git ls-files --others --ignored --exclude-standard -- design/brand)"
+```
+
+If any precondition, exact hash, source parent/blob, remote-tip, apply check,
+status/diff comparison, external repository check, or absence check fails, stop
+without resolving a conflict or changing/staging another path. A mismatch
+requires a new read-only inventory or documentary reconciliation; it is not
+permission to regenerate the expected bytes.
+
+**Required migration order and gates**
+
+1. Import this documentation authority with the preservation handoff above.
+   That handoff verifies the accepted 33-RED/10-pass log byte-for-byte when the
+   ephemeral file still exists; otherwise the committed record, persisted
+   frozen test blob, and accepted reviews remain the authority. Do not rerun the
+   superseded 43-leaf command merely to recreate a deleted `/tmp` file.
+2. Modify only the contract test first. Freeze the `83/20/4` and `10/21/2`
+   ledgers in literal traceability assertions; migrate the 83 tests through the
+   nine current owners; remove the 20 architecture-only blocks; replace the 21
+   controlled FCB leaves with the mapped closed cases; extract the two
+   independent leaves; replace the four P1 owners with the five fixed unlock
+   cases; and remove the duplicate `NM-001` after annotating its retained exact
+   equivalent.
+
+   The post-migration naming/count contract is exact:
+
+   - the original 43 `[OA-16-*]`, `[OA-34-*]`, and `[OA-V3-*]` leaves remain
+     semantically unchanged;
+   - exactly 25 new top-level tests begin `[OA-35-08]` through `[OA-35-20]`,
+     one per literal/opcode. Their names also contain every mapped `FCB-nnn`
+     and `FP-nnn` trace ID; they are the replacements, not duplicate wrappers.
+     Their intentional pre-implementation assertion uses the exact diagnostic
+     `EXPECTED_OA35_RED:<LOWERCASE_HEX_OPCODE>:UNIMPLEMENTED_CLOSED_CASE`;
+   - exactly 83 top-level tests begin with their `[FP-nnn]` MIGRATE ID;
+   - exactly two top-level extracted tests begin `[FCB-002-KEEP]` and
+     `[FCB-008-KEEP]`;
+   - exactly one top-level `[MIGRATION-LEDGER]` test freezes all 83 migration,
+     20 removal, four P1, ten FCB, two KEEP, 32 open, 21 probe, and one
+     `NM-001` disposition counts. It validates only the immutable test-side
+     declarations, must already pass in characterization RED, and does not
+     pretend the production seam is implemented;
+   - every one of the 86 migration/KEEP/ledger registrations places
+     `[RED-CLASSIFIER:<CLOSED_CLASSIFIER>]` immediately after its leading trace
+     ID in the top-level test name. Each registration that is intentionally RED
+     gives its failing assertion the literal diagnostic
+     `EXPECTED_MIGRATION_RED:<EXACT_TRACE_ID>:<CLOSED_CLASSIFIER>`. The 83 FP
+     classifiers are the exact values frozen in the owner table above;
+     `FCB-002-KEEP` uses `KEEP_CURRENT_UPDATE_COLLISION`, `FCB-008-KEEP` uses
+     `KEEP_CURRENT_PREPAYLOAD_REPLACEMENT`, and `MIGRATION-LEDGER` uses
+     `STATIC_LEDGER`. The external TAP checker binds both the test-name
+     classifier and any failure marker to that exact closed map. A registration
+     that already passes in characterization, including `MIGRATION-LEDGER`,
+     emits no marker. A thrown exception or failure before the intentional
+     assertion likewise has no marker and therefore fails the RED gate;
+   - the four P1 FP owners are asserted inside their five OA-35 tests and are
+     not four additional `[FP-*]` registrations. Internal fixed scenario loops
+     do not register nested `node:test` leaves.
+
+3. Before production edits, prove the other six dirty files remain
+   byte-identical to the imported snapshot. From the repository root, run these
+   exact focused commands through Corepack/pnpm 10.33.2 (pnpm sets the scripts
+   package working directory):
+
+   ```bash
+   set -euo pipefail
+   test "$(shasum -a 256 design/brand/better-ahead-brand-assets.json \
+     | awk '{print $1}')" \
+     = "5da5284c219f4b556110944c837c2dcbf0f406aa6327aec821cb72d6bf5cb11b"
+   test "$(shasum -a 256 scripts/brand/better-ahead-brand-contract.mjs \
+     | awk '{print $1}')" \
+     = "c9438906d4073813e15faec31332174e557888e0460705ddc6ff7bd89a7a99f0"
+   test "$(shasum -a 256 scripts/brand/capture-better-ahead-environment.mjs \
+     | awk '{print $1}')" \
+     = "7bc9239e37ad8f219b92f59f5476cd6e58276ca2b095b81c27716edbed8d0435"
+   test "$(shasum -a 256 scripts/brand/render-better-ahead-brand-assets.mjs \
+     | awk '{print $1}')" \
+     = "9a5cb0ea098c787bcc80ef0bea30eb28636178211fac07ebfb6c0f29c282220b"
+   test "$(shasum -a 256 scripts/brand/render-better-ahead-brand-review.mjs \
+     | awk '{print $1}')" \
+     = "e3bac5f60c9892ef936cf87585ce74820f8fa24ac6879e5e17cc2211baf05e42"
+   test "$(shasum -a 256 scripts/brand/run-better-ahead-brand-renderer.sh \
+     | awk '{print $1}')" \
+     = "686b89883bd21df8c95c7eb49244b93e81cea8d6094ddf689236ea10c9092dc0"
+
+   OA35_RED_LOG=$(mktemp /tmp/better-ahead-oa35-red.XXXXXX)
+   set +e
+   corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-name-pattern='^\[OA-(16|34|35|V3)-' \
+     brand/better-ahead-brand-contract.test.mjs \
+     > "$OA35_RED_LOG" 2>&1
+   OA35_RED_EXIT=$?
+   set -e
+   test "$OA35_RED_EXIT" = "1"
+   OA35_SUBTESTS=$(rg -c \
+     '^# Subtest: \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
+   OA35_PASS=$(rg -c \
+     '^ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
+   OA35_FAIL=$(rg -c \
+     '^not ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
+   test "${OA35_SUBTESTS:-0}" = "68"
+   test "${OA35_PASS:-0}" = "10"
+   test "${OA35_FAIL:-0}" = "58"
+   OA35_EXPECTED_NEW_RED_COUNT=$({ rg -o \
+     'EXPECTED_OA35_RED:(08|09|0[a-f]|1[0-9a-f]|20):UNIMPLEMENTED_CLOSED_CASE' \
+     "$OA35_RED_LOG" || true; } | LC_ALL=C sort -u | wc -l | tr -d ' ')
+   test "$OA35_EXPECTED_NEW_RED_COUNT" = "25"
+   ! rg -q \
+     '^(ok|not ok) [0-9]+ - \[OA-(16|34|35|V3)-.*# (SKIP|TODO)' \
+     "$OA35_RED_LOG"
+   rg -q '^# cancelled 0$' "$OA35_RED_LOG"
+   rg -q '^# todo 0$' "$OA35_RED_LOG"
+   ! rg -q \
+     'error: (SyntaxError|ReferenceError|TypeError)|ERR_MODULE_NOT_FOUND' \
+     "$OA35_RED_LOG"
+
+   MIGRATION_CHARACTERIZATION_LOG=$(mktemp \
+     /tmp/better-ahead-migration-characterization.XXXXXX)
+   set +e
+   corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-name-pattern='^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     brand/better-ahead-brand-contract.test.mjs \
+     > "$MIGRATION_CHARACTERIZATION_LOG" 2>&1
+   MIGRATION_CHARACTERIZATION_EXIT=$?
+   set -e
+   case "$MIGRATION_CHARACTERIZATION_EXIT" in 0|1) ;; *) false ;; esac
+   MIGRATION_SUBTESTS=$(rg -c \
+     '^# Subtest: \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_CHARACTERIZATION_LOG" || true)
+   MIGRATION_PASS=$(rg -c \
+     '^ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_CHARACTERIZATION_LOG" || true)
+   MIGRATION_FAIL=$(rg -c \
+     '^not ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_CHARACTERIZATION_LOG" || true)
+   test "${MIGRATION_SUBTESTS:-0}" = "86"
+   test $(( ${MIGRATION_PASS:-0} + ${MIGRATION_FAIL:-0} )) = 86
+   ! rg -q \
+     '^(ok|not ok) [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\].*# (SKIP|TODO)' \
+     "$MIGRATION_CHARACTERIZATION_LOG"
+   EXPECTED_MIGRATION_RED_COUNT=$({ rg -o \
+     'EXPECTED_MIGRATION_RED:(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER):[A-Z0-9_]+' \
+     "$MIGRATION_CHARACTERIZATION_LOG" || true; } \
+     | LC_ALL=C sort -u | wc -l | tr -d ' ')
+   test "$EXPECTED_MIGRATION_RED_COUNT" = "${MIGRATION_FAIL:-0}"
+   rg -q '^# cancelled 0$' "$MIGRATION_CHARACTERIZATION_LOG"
+   rg -q '^# todo 0$' "$MIGRATION_CHARACTERIZATION_LOG"
+   ! rg -q \
+     'promoteBetterAheadCandidates.*(?:not a function|undefined|missing export)|TypeError.*promoteBetterAheadCandidates' \
+     "$MIGRATION_CHARACTERIZATION_LOG"
+   ! rg -q \
+     'error: (SyntaxError|ReferenceError|TypeError)|ERR_MODULE_NOT_FOUND' \
+     "$MIGRATION_CHARACTERIZATION_LOG"
+
+   TAP_ASSOCIATION_CHECKER='
+   const fs = require("node:fs");
+   const [file, mode] = process.argv.slice(1);
+   const text = fs.readFileSync(file, "utf8");
+   const blocks = text.split(/\n(?=# Subtest: )/u);
+   const oaName = /^\[OA-(16|34|35|V3)-/u;
+   const migrationName =
+     /^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]/u;
+   if (mode !== "oa-red" && mode !== "migration-red") {
+     throw new Error("unsupported RED checker mode: " + mode);
+   }
+   const classifierById = new Map();
+   const addClassifiers = (classifier, ids) => {
+     for (const id of ids.trim().split(/\s+/u)) {
+       if (classifierById.has(id)) {
+         throw new Error("duplicate closed classifier ID: " + id);
+       }
+       classifierById.set(id, classifier);
+     }
+   };
+   addClassifiers("VALIDATION_ADMISSION_SEALING",
+     "FP-002 FP-004 FP-005 FP-027 FP-057 FP-070 FP-079 FP-083 FP-098 FP-099");
+   addClassifiers("INITIAL_AUTHORITY_WORKSPACE",
+     "FP-007 FP-028 FP-046 FP-047 FP-048 FP-049 FP-050 FP-053");
+   addClassifiers("ATOMIC_BUNDLE_PUBLICATION",
+     "FP-040 FP-041 FP-043 FP-044 FP-045 FP-058 FP-060 FP-063 FP-064 FP-065 FP-074 FP-076 FP-097 FP-102");
+   addClassifiers("JOURNAL_RESUME_RECONCILIATION",
+     "FP-003 FP-008 FP-009 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037 FP-038 FP-039 FP-042");
+   addClassifiers("COMMIT_DURABILITY_PHYSICAL_TRUTH",
+     "FP-006 FP-025 FP-061 FP-067");
+   addClassifiers("PATH_CONFINEMENT_IDENTITY",
+     "FP-020 FP-021 FP-022 FP-023 FP-024 FP-068");
+   addClassifiers("CONVERGENCE_IDEMPOTENCY_RUNNER",
+     "FP-012 FP-013 FP-019 FP-069 FP-080 FP-081 FP-107");
+   addClassifiers("CLEANUP_OWNERSHIP_INTEGRITY",
+     "FP-054 FP-055 FP-059 FP-075 FP-078 FP-082 FP-084 FP-085 FP-101 FP-105 FP-106");
+   addClassifiers("FINAL_AUTHORITY_REVALIDATION",
+     "FP-010 FP-011 FP-072 FP-073 FP-086 FP-087 FP-088 FP-089 FP-090 FP-093 FP-094");
+   classifierById.set("FCB-002-KEEP", "KEEP_CURRENT_UPDATE_COLLISION");
+   classifierById.set(
+     "FCB-008-KEEP", "KEEP_CURRENT_PREPAYLOAD_REPLACEMENT");
+   classifierById.set("MIGRATION-LEDGER", "STATIC_LEDGER");
+   if (classifierById.size !== 86) {
+     throw new Error("closed classifier map size is not 86");
+   }
+   const oaTraceByOpcode = new Map([
+     ["08", ["FCB-005"]],
+     ["09", ["FCB-001", "FCB-005"]],
+     ["0a", ["FCB-002"]], ["0b", ["FCB-003"]],
+     ["0c", ["FCB-003"]], ["0d", ["FCB-010"]],
+     ["0e", ["FCB-010"]], ["0f", ["FCB-010"]],
+     ["10", ["FCB-010"]], ["11", ["FCB-004"]],
+     ["12", ["FCB-010"]], ["13", ["FCB-010"]],
+     ["14", ["FCB-010"]], ["15", ["FCB-006"]],
+     ["16", ["FCB-008"]], ["17", ["FCB-008"]],
+     ["18", ["FCB-008"]], ["19", ["FCB-007"]],
+     ["1a", ["FCB-009"]], ["1b", ["FCB-009"]],
+     ["1c", ["FP-091"]], ["1d", ["FP-092"]],
+     ["1e", ["FP-095"]], ["1f", ["FP-096"]],
+     ["20", ["FP-096"]],
+   ]);
+   if (oaTraceByOpcode.size !== 25) {
+     throw new Error("closed OA-35 trace map size is not 25");
+   }
+   const selected = [];
+   for (const block of blocks) {
+     const header = block.match(/^# Subtest: (.+)$/mu);
+     if (!header) continue;
+     const name = header[1];
+     if (!(mode.startsWith("oa") ? oaName : migrationName).test(name)) {
+       continue;
+     }
+     const result = block.match(/^(not )?ok [0-9]+ - (.+)$/mu);
+     if (!result || result[2] !== name) {
+       throw new Error("missing top-level TAP result for " + name);
+     }
+     if (/# (SKIP|TODO)/u.test(result[2])) {
+       throw new Error("matching TAP result was skipped/TODO: " + name);
+     }
+     selected.push({ name, block, failed: Boolean(result[1]) });
+   }
+   const requireTrue = (condition, message) => {
+     if (!condition) throw new Error(message);
+   };
+   if (mode === "oa-red") {
+     requireTrue(selected.length === 68, "OA named count is not 68");
+     const failed = selected.filter((row) => row.failed);
+     requireTrue(failed.length === 58, "OA failure count mismatch");
+     const oa35 = selected.filter((row) => /^\[OA-35-/u.test(row.name));
+     requireTrue(oa35.length === 25, "OA-35 named count is not 25");
+     const expectedOpcodes = Array.from(
+       { length: 25 },
+       (_, index) => (index + 8).toString(16).padStart(2, "0"),
+     );
+     const observedOpcodes = oa35.map(
+       (row) => row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1],
+     );
+     requireTrue(
+       new Set(observedOpcodes).size === 25 &&
+         expectedOpcodes.every((opcode) => observedOpcodes.includes(opcode)),
+       "OA-35 opcode set is not exactly 08..20",
+     );
+     for (const row of oa35) {
+       const opcode = row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1];
+       requireTrue(Boolean(opcode), "OA-35 opcode missing from " + row.name);
+       const observedTraces = [...row.name.matchAll(
+         /\[((?:FCB|FP)-[0-9]{3})\]/gu,
+       )].map((match) => match[1]);
+       const expectedTraces = oaTraceByOpcode.get(opcode);
+       const expectedPrefix = `[OA-35-${opcode}] ` +
+         expectedTraces.map((trace) => `[${trace}]`).join(" ");
+       requireTrue(
+         JSON.stringify(observedTraces) ===
+           JSON.stringify(expectedTraces) &&
+           (row.name === expectedPrefix || row.name.startsWith(expectedPrefix + " ")),
+         "OA-35 opcode/trace map mismatch: " + row.name,
+       );
+       const markers =
+         row.block.match(
+           /EXPECTED_OA35_RED:(08|09|0[a-f]|1[0-9a-f]|20):UNIMPLEMENTED_CLOSED_CASE/gu,
+         ) ?? [];
+       requireTrue(row.failed, "OA-35 unexpectedly passed: " + row.name);
+       requireTrue(markers.length === 1, "OA-35 marker count: " + row.name);
+       requireTrue(
+         markers[0] ===
+           "EXPECTED_OA35_RED:" + opcode + ":UNIMPLEMENTED_CLOSED_CASE",
+         "OA-35 marker/opcode mismatch: " + row.name,
+       );
+       requireTrue(
+         /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
+         "OA-35 did not fail by assertion: " + row.name,
+       );
+     }
+     for (const row of failed) {
+       requireTrue(
+         /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
+         "OA failure was not an assertion: " + row.name,
+       );
+     }
+   } else {
+     requireTrue(selected.length === 86, "migration named count is not 86");
+     const selectedIds = selected.map(
+       (row) => row.name.match(/^\[([^\]]+)\]/u)?.[1],
+     );
+     const selectedIdSet = new Set(selectedIds);
+     requireTrue(
+       selectedIdSet.size === 86 &&
+         [...classifierById.keys()].every((id) => selectedIdSet.has(id)),
+       "migration trace-ID set differs from the closed 86-ID map",
+     );
+     const ledger = selected.find(
+       (row) => row.name.startsWith("[MIGRATION-LEDGER]"),
+     );
+     requireTrue(Boolean(ledger) && !ledger.failed, "migration ledger must pass");
+     for (const row of selected) {
+       const id = row.name.match(/^\[([^\]]+)\]/u)?.[1];
+       requireTrue(Boolean(id), "migration trace ID missing");
+       const expectedClassifier = classifierById.get(id);
+       requireTrue(Boolean(expectedClassifier), "unmapped migration ID: " + id);
+       const classifierSegments = row.name.match(
+         /\[RED-CLASSIFIER:[A-Z0-9_]+\]/gu,
+       ) ?? [];
+       const declaredClassifier = row.name.match(
+         /^\[[^\]]+\] \[RED-CLASSIFIER:([A-Z0-9_]+)\](?: |$)/u,
+       )?.[1];
+       requireTrue(
+         classifierSegments.length === 1 &&
+           declaredClassifier === expectedClassifier,
+         "migration name/classifier mismatch: " + id,
+       );
+       const markers =
+         row.block.match(
+           /EXPECTED_MIGRATION_RED:(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER):[A-Z0-9_]+/gu,
+         ) ?? [];
+       if (row.failed) {
+         requireTrue(markers.length === 1, "migration marker count: " + id);
+         requireTrue(
+           markers[0] ===
+             "EXPECTED_MIGRATION_RED:" + id + ":" + expectedClassifier,
+           "migration marker/closed-classifier mismatch: " + id,
+         );
+         requireTrue(
+           /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
+           "migration failure was not an assertion: " + id,
+         );
+       } else {
+         requireTrue(!row.failed && markers.length === 0, "migration GREEN mismatch");
+       }
+     }
+   }
+   console.log(JSON.stringify({
+     mode,
+     selected: selected.length,
+     pass: selected.filter((row) => !row.failed).length,
+     fail: selected.filter((row) => row.failed).length,
+   }));
+   '
+   node -e "$TAP_ASSOCIATION_CHECKER" "$OA35_RED_LOG" oa-red
+   node -e "$TAP_ASSOCIATION_CHECKER" \
+     "$MIGRATION_CHARACTERIZATION_LOG" migration-red
+   ```
+
+   The exact OA run is RED only because the original 33 oracle behaviors plus
+   the 25 OA-35 behaviors are absent; its ten confinement sentinels still pass.
+   The 86 characterization owners may honestly be mixed RED/GREEN against the
+   partial implementation, but every failure must reach the current lifecycle
+   owner and record its expected invariant reason. Nonmatching tests that Node
+   reports as skipped because of `--test-name-pattern` are outside these named
+   counts; no matching OA/migration record may be skipped or TODO. A
+   missing-export
+   `TypeError`, syntax error, wrong count, skipped case, timeout, ambient
+   dependency, or changed legacy fixture is not accepted evidence.
+4. Implement the complete 32-ID `open` inventory and unchanged 21-ID `probe`
+   matrix only in
+   `scripts/brand/render-better-ahead-brand-assets.mjs`, while completing the
+   test changes in
+   `scripts/brand/better-ahead-brand-contract.test.mjs`. Remove the four
+   forbidden legacy controls as part of the same GREEN. The other five
+   production files retain their frozen dirty bytes. No other new path, helper,
+   dependency, export, or production interface is authorized.
+5. Run the two exact focused commands again with new private logs. The named OA
+   TAP records must be `68 total / 68 pass / 0 fail / 0 matching skip or TODO`.
+   The named migration TAP records must be
+   `86 total / 86 pass / 0 fail / 0 matching skip or TODO`. Unrelated tests
+   filtered by Node may appear only as nonmatching skips and are not included in
+   those counts. Every literal
+   open/probe ID has a direct positive behavioral test; every FCB and P1 owner is
+   traced from the applicable OA-35 name; and all
+   unknown/extra/forged/reused/order and descriptor/protocol negatives remain
+   GREEN. Re-run the exact SHA checks from Step 3 for the manifest, contract,
+   environment capture, review renderer, and shell runner; those five files
+   must still match their frozen hashes. Only the contract test and asset
+   renderer may have advanced during GREEN.
+
+   ```bash
+   set -euo pipefail
+   OA35_GREEN_LOG=$(mktemp /tmp/better-ahead-oa35-green.XXXXXX)
+   corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-name-pattern='^\[OA-(16|34|35|V3)-' \
+     brand/better-ahead-brand-contract.test.mjs \
+     > "$OA35_GREEN_LOG" 2>&1
+   OA35_GREEN_SUBTESTS=$(rg -c \
+     '^# Subtest: \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
+   OA35_GREEN_PASS=$(rg -c \
+     '^ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
+   OA35_GREEN_FAIL=$(rg -c \
+     '^not ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
+   test "${OA35_GREEN_SUBTESTS:-0}" = "68"
+   test "${OA35_GREEN_PASS:-0}" = "68"
+   test "${OA35_GREEN_FAIL:-0}" = "0"
+   ! rg -q \
+     '^(ok|not ok) [0-9]+ - \[OA-(16|34|35|V3)-.*# (SKIP|TODO)' \
+     "$OA35_GREEN_LOG"
+   rg -q '^# cancelled 0$' "$OA35_GREEN_LOG"
+   rg -q '^# todo 0$' "$OA35_GREEN_LOG"
+
+   MIGRATION_GREEN_LOG=$(mktemp /tmp/better-ahead-migration-green.XXXXXX)
+   corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-name-pattern='^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     brand/better-ahead-brand-contract.test.mjs \
+     > "$MIGRATION_GREEN_LOG" 2>&1
+   MIGRATION_GREEN_SUBTESTS=$(rg -c \
+     '^# Subtest: \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_GREEN_LOG" || true)
+   MIGRATION_GREEN_PASS=$(rg -c \
+     '^ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_GREEN_LOG" || true)
+   MIGRATION_GREEN_FAIL=$(rg -c \
+     '^not ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
+     "$MIGRATION_GREEN_LOG" || true)
+   test "${MIGRATION_GREEN_SUBTESTS:-0}" = "86"
+   test "${MIGRATION_GREEN_PASS:-0}" = "86"
+   test "${MIGRATION_GREEN_FAIL:-0}" = "0"
+   ! rg -q \
+     '^(ok|not ok) [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\].*# (SKIP|TODO)' \
+     "$MIGRATION_GREEN_LOG"
+   rg -q '^# cancelled 0$' "$MIGRATION_GREEN_LOG"
+   rg -q '^# todo 0$' "$MIGRATION_GREEN_LOG"
+
+   GREEN_TAP_ASSOCIATION_CHECKER='
+   const fs = require("node:fs");
+   const [oaFile, migrationFile] = process.argv.slice(1);
+   const requireTrue = (condition, message) => {
+     if (!condition) throw new Error(message);
+   };
+   const classifierById = new Map();
+   const addClassifiers = (classifier, ids) => {
+     for (const id of ids.trim().split(/\s+/u)) {
+       requireTrue(!classifierById.has(id), "duplicate classifier ID: " + id);
+       classifierById.set(id, classifier);
+     }
+   };
+   addClassifiers("VALIDATION_ADMISSION_SEALING",
+     "FP-002 FP-004 FP-005 FP-027 FP-057 FP-070 FP-079 FP-083 FP-098 FP-099");
+   addClassifiers("INITIAL_AUTHORITY_WORKSPACE",
+     "FP-007 FP-028 FP-046 FP-047 FP-048 FP-049 FP-050 FP-053");
+   addClassifiers("ATOMIC_BUNDLE_PUBLICATION",
+     "FP-040 FP-041 FP-043 FP-044 FP-045 FP-058 FP-060 FP-063 FP-064 FP-065 FP-074 FP-076 FP-097 FP-102");
+   addClassifiers("JOURNAL_RESUME_RECONCILIATION",
+     "FP-003 FP-008 FP-009 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037 FP-038 FP-039 FP-042");
+   addClassifiers("COMMIT_DURABILITY_PHYSICAL_TRUTH",
+     "FP-006 FP-025 FP-061 FP-067");
+   addClassifiers("PATH_CONFINEMENT_IDENTITY",
+     "FP-020 FP-021 FP-022 FP-023 FP-024 FP-068");
+   addClassifiers("CONVERGENCE_IDEMPOTENCY_RUNNER",
+     "FP-012 FP-013 FP-019 FP-069 FP-080 FP-081 FP-107");
+   addClassifiers("CLEANUP_OWNERSHIP_INTEGRITY",
+     "FP-054 FP-055 FP-059 FP-075 FP-078 FP-082 FP-084 FP-085 FP-101 FP-105 FP-106");
+   addClassifiers("FINAL_AUTHORITY_REVALIDATION",
+     "FP-010 FP-011 FP-072 FP-073 FP-086 FP-087 FP-088 FP-089 FP-090 FP-093 FP-094");
+   classifierById.set("FCB-002-KEEP", "KEEP_CURRENT_UPDATE_COLLISION");
+   classifierById.set(
+     "FCB-008-KEEP", "KEEP_CURRENT_PREPAYLOAD_REPLACEMENT");
+   classifierById.set("MIGRATION-LEDGER", "STATIC_LEDGER");
+   requireTrue(classifierById.size === 86, "classifier map size is not 86");
+   const oaTraceByOpcode = new Map([
+     ["08", ["FCB-005"]],
+     ["09", ["FCB-001", "FCB-005"]],
+     ["0a", ["FCB-002"]], ["0b", ["FCB-003"]],
+     ["0c", ["FCB-003"]], ["0d", ["FCB-010"]],
+     ["0e", ["FCB-010"]], ["0f", ["FCB-010"]],
+     ["10", ["FCB-010"]], ["11", ["FCB-004"]],
+     ["12", ["FCB-010"]], ["13", ["FCB-010"]],
+     ["14", ["FCB-010"]], ["15", ["FCB-006"]],
+     ["16", ["FCB-008"]], ["17", ["FCB-008"]],
+     ["18", ["FCB-008"]], ["19", ["FCB-007"]],
+     ["1a", ["FCB-009"]], ["1b", ["FCB-009"]],
+     ["1c", ["FP-091"]], ["1d", ["FP-092"]],
+     ["1e", ["FP-095"]], ["1f", ["FP-096"]],
+     ["20", ["FP-096"]],
+   ]);
+   requireTrue(oaTraceByOpcode.size === 25, "OA-35 trace map size is not 25");
+   const select = (file, namePattern) => {
+     const blocks = fs.readFileSync(file, "utf8")
+       .split(/\n(?=# Subtest: )/u);
+     const selected = [];
+     for (const block of blocks) {
+       const name = block.match(/^# Subtest: (.+)$/mu)?.[1];
+       if (!name || !namePattern.test(name)) continue;
+       const result = block.match(/^(not )?ok [0-9]+ - (.+)$/mu);
+       requireTrue(
+         Boolean(result) && result[2] === name,
+         "missing top-level GREEN result: " + name,
+       );
+       requireTrue(!result[1], "GREEN test failed: " + name);
+       requireTrue(
+         !/# (SKIP|TODO)/u.test(result[2]),
+         "GREEN test skipped/TODO: " + name,
+       );
+       selected.push({ name, block });
+     }
+     return selected;
+   };
+   const oa = select(oaFile, /^\[OA-(16|34|35|V3)-/u);
+   requireTrue(oa.length === 68, "OA GREEN named count is not 68");
+   const oa35 = oa.filter((row) => /^\[OA-35-/u.test(row.name));
+   requireTrue(oa35.length === 25, "OA-35 GREEN named count is not 25");
+   const expectedOpcodes = Array.from(
+     { length: 25 },
+     (_, index) => (index + 8).toString(16).padStart(2, "0"),
+   );
+   const observedOpcodes = oa35.map(
+     (row) => row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1],
+   );
+   requireTrue(
+     new Set(observedOpcodes).size === 25 &&
+       expectedOpcodes.every((opcode) => observedOpcodes.includes(opcode)),
+     "OA-35 GREEN opcode set is not exactly 08..20",
+   );
+   for (const row of oa35) {
+     const opcode = row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1];
+     const observedTraces = [...row.name.matchAll(
+       /\[((?:FCB|FP)-[0-9]{3})\]/gu,
+     )].map((match) => match[1]);
+     const expectedTraces = oaTraceByOpcode.get(opcode);
+     const expectedPrefix = `[OA-35-${opcode}] ` +
+       expectedTraces.map((trace) => `[${trace}]`).join(" ");
+     requireTrue(
+       JSON.stringify(observedTraces) ===
+         JSON.stringify(expectedTraces) &&
+         (row.name === expectedPrefix || row.name.startsWith(expectedPrefix + " ")),
+       "OA-35 GREEN opcode/trace mismatch: " + row.name,
+     );
+     requireTrue(
+       !/EXPECTED_OA35_RED:/u.test(row.block),
+       "OA-35 RED marker survived GREEN: " + row.name,
+     );
+   }
+   const migration = select(
+     migrationFile,
+     /^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]/u,
+   );
+   requireTrue(migration.length === 86, "migration GREEN count is not 86");
+   const migrationIds = migration.map(
+     (row) => row.name.match(/^\[([^\]]+)\]/u)?.[1],
+   );
+   const migrationIdSet = new Set(migrationIds);
+   requireTrue(
+     migrationIdSet.size === 86 &&
+       [...classifierById.keys()].every((id) => migrationIdSet.has(id)),
+     "migration GREEN trace-ID set differs from the closed 86-ID map",
+   );
+   for (const row of migration) {
+     const id = row.name.match(/^\[([^\]]+)\]/u)?.[1];
+     const expectedClassifier = classifierById.get(id);
+     const classifierSegments = row.name.match(
+       /\[RED-CLASSIFIER:[A-Z0-9_]+\]/gu,
+     ) ?? [];
+     const declaredClassifier = row.name.match(
+       /^\[[^\]]+\] \[RED-CLASSIFIER:([A-Z0-9_]+)\](?: |$)/u,
+     )?.[1];
+     requireTrue(Boolean(expectedClassifier), "unmapped GREEN ID: " + id);
+     requireTrue(
+       classifierSegments.length === 1 &&
+         declaredClassifier === expectedClassifier,
+       "GREEN name/classifier mismatch: " + id,
+     );
+     requireTrue(
+       !/EXPECTED_MIGRATION_RED:/u.test(row.block),
+       "migration RED marker survived GREEN: " + id,
+     );
+   }
+   console.log(JSON.stringify({
+     oa: oa.length,
+     oa35: oa35.length,
+     migration: migration.length,
+   }));
+   '
+   node -e "$GREEN_TAP_ASSOCIATION_CHECKER" \
+     "$OA35_GREEN_LOG" "$MIGRATION_GREEN_LOG"
+   ```
+
+   Then run:
+
+   ```bash
+   set -euo pipefail
+   FULL_CONTRACT_LOG=$(mktemp /tmp/better-ahead-contract-green.XXXXXX)
+   corepack pnpm@10.33.2 --filter @mpp/scripts \
+     brand:better-ahead:test > "$FULL_CONTRACT_LOG" 2>&1
+   rg -q '^# fail 0$' "$FULL_CONTRACT_LOG"
+   rg -q '^# cancelled 0$' "$FULL_CONTRACT_LOG"
+   rg -q '^# skipped 0$' "$FULL_CONTRACT_LOG"
+   rg -q '^# todo 0$' "$FULL_CONTRACT_LOG"
+   ! rg -q '^# (fail|cancelled|skipped|todo) [1-9][0-9]*$' \
+     "$FULL_CONTRACT_LOG"
+   corepack pnpm@10.33.2 --filter @mpp/scripts \
+     brand:better-ahead:validate:inputs
+   corepack pnpm@10.33.2 --filter @mpp/scripts \
+     brand:better-ahead:baseline
+   git diff --check
+   ```
+
+   The complete unfrozen suite has zero failure, skip, todo, expected failure,
+   missing-export error, or filtered zero-test shard.
+6. The final ledger must prove exactly 83 migrated owners, 20 removed
+   architecture owners, four gap owners covered by five fixed literals, ten FCB
+   replacements, two extracted independent leaves, and one `NM-001`
+   deduplication. It must also prove zero executable dependency on
+   `promoteBetterAheadCandidates` or `createPromotionFixture`, zero production
+   occurrence of the four forbidden controls, and the exact renderer export
+   surface with `nativeHelperV3TestOracle` as the only test-only exception.
+7. Run two independent final reviews. One reviews seam confinement, fixed
+   opcodes, native boundary placement, physical postconditions, teardown, and
+   absence of production controls. The other reviews all 107 FP and 10 FCB
+   dispositions, assertion preservation, and absence of removed-architecture
+   resurrection. Both must report no Critical or Important finding before a
+   commit.
+
+The sentinel set must include at least `FP-004`, `FP-007`, `FP-024`,
+`FP-031`, `FP-061`, `FP-064`, `FP-067`, `FP-069`, `FP-079`, `FP-081`,
+`FP-085`, `FP-093`, and `FP-094` plus one successful
+`begin -> dispatch -> resume -> finish -> IDLE` control. Before the visual
+commit, failure must leave recoverable authority and no partial bundle. After
+the visual commit, recovery performs cleanup only and preserves the exact
+bundle. At `IDLE`, no lock, update, mirror, transaction directory, or unknown
+temporary remains.
+
+No real Docker, environment capture, fingerprint, renderer, Task 4, push, PR,
+merge, or deploy may run during this migration gate. After all gates and both
+reviews pass, stage exactly the pre-existing seven Task 3 implementation paths
+and create one commit:
+
+```bash
+set -euo pipefail
+
+git diff --cached --exit-code
+EXPECTED_TASK3_COMMIT_PATHS=$(mktemp \
+  /tmp/better-ahead-task3-commit-paths.XXXXXX)
+ACTUAL_TASK3_COMMIT_PATHS=$(mktemp \
+  /tmp/better-ahead-task3-commit-paths-actual.XXXXXX)
+trap 'rm -f "$EXPECTED_TASK3_COMMIT_PATHS" \
+  "$ACTUAL_TASK3_COMMIT_PATHS"' EXIT
+printf '%s\0' \
+  design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-brand-contract.mjs \
+  scripts/brand/better-ahead-brand-contract.test.mjs \
+  scripts/brand/capture-better-ahead-environment.mjs \
+  scripts/brand/render-better-ahead-brand-assets.mjs \
+  scripts/brand/render-better-ahead-brand-review.mjs \
+  scripts/brand/run-better-ahead-brand-renderer.sh \
+  > "$EXPECTED_TASK3_COMMIT_PATHS"
+
+git add \
+  design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-brand-contract.mjs \
+  scripts/brand/better-ahead-brand-contract.test.mjs \
+  scripts/brand/capture-better-ahead-environment.mjs \
+  scripts/brand/render-better-ahead-brand-assets.mjs \
+  scripts/brand/render-better-ahead-brand-review.mjs \
+  scripts/brand/run-better-ahead-brand-renderer.sh
+git diff --cached --name-only -z > "$ACTUAL_TASK3_COMMIT_PATHS"
+cmp "$EXPECTED_TASK3_COMMIT_PATHS" "$ACTUAL_TASK3_COMMIT_PATHS"
+git diff --cached --check
+
+TASK3_HARDENING_PARENT=$(git rev-parse HEAD)
+git -c core.hooksPath=/dev/null -c commit.gpgSign=false commit \
+  -m "fix(brand): harden Better Ahead atomic asset transaction"
+test "$(git rev-parse HEAD^)" = "$TASK3_HARDENING_PARENT"
+test "$(git show -s --format=%s HEAD)" \
+  = "fix(brand): harden Better Ahead atomic asset transaction"
+git diff-tree --no-commit-id --name-only -z -r HEAD \
+  > "$ACTUAL_TASK3_COMMIT_PATHS"
+cmp "$EXPECTED_TASK3_COMMIT_PATHS" "$ACTUAL_TASK3_COMMIT_PATHS"
+git diff --cached --exit-code
+test -z "$(git status --porcelain=v1 -uall)"
+```
+
+The executable block proves the commit contains exactly those seven paths and
+the worktree/staging are clean. Only then continue at Step 6. This
+reconciliation authorizes no environment or generated-output commit by itself.
 
 **Step 6: Capture and commit the fingerprint before rendering**
 

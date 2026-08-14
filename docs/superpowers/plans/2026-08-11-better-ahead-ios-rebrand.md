@@ -3448,13 +3448,240 @@ without resolving a conflict or changing/staging another path. A mismatch
 requires a new read-only inventory or documentary reconciliation; it is not
 permission to regenerate the expected bytes.
 
+**Current-execution reconciliation after the hierarchical TAP STOP**
+
+The preceding authority was imported successfully into the implementation as
+local cherry-pick `ad9869c0d6b11222263ea40c7b72e329092aeef5`, whose parent is
+`8f4020b0ae27d27c0de1b97d1682f507cd0be57c`. The plan blob is exactly
+`ff3e5cf3f8db7b0e5b118e7c4c4cd0fbbf43cfa1`; staging remained empty and the
+same seven implementation paths remained byte-identical. No pnpm command,
+test, Docker command, environment capture, fingerprint, renderer, bundle,
+lock, journal, transaction, or generated output ran during or after that
+import.
+
+The mandatory read-only STOP identified a documentary parser defect, not an
+implementation defect. The accepted frozen log at SHA-256
+`fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d`
+contains 43 TAP test records: 24 top-level records and 19 indented descendants,
+with 10 pass and 33 fail. Of the 24 top-level records, 17 begin `[OA-V3-`
+(two pass and 15 fail); the other seven are roots named exactly `[OA-16]` or
+`[OA-34]`. The published trailing-hyphen filter selected only those 17 V3
+roots, while the flat `split` parser ignored all 19 descendants. Adding 25
+top-level OA-35 cases would therefore have produced a false observed subset of
+42 records (`2 pass / 40 fail`) instead of the required complete tree of 68
+records (`10 pass / 58 fail`).
+
+This reconciliation preserves the existing topology. It does not authorize
+flattening, reparenting, or renaming any of the frozen 43 OA-16/OA-34/OA-V3
+records. The focused Node filter must select the seven exact OA-16/OA-34 roots,
+which execute their descendants, plus every OA-V3 and OA-35 root. The external
+checker must parse header/result pairs at their actual TAP indentation, bind
+each result to its own direct YAML diagnostic, and count every selected root
+and descendant exactly once. During RED, each legacy record must also retain
+the frozen direct `error`, `code`, `failureType`, exception `name`, and
+`operator` values; volatile duration, location, stack, expected, and actual
+fields are deliberately excluded. A direct intentional
+failure may use only
+`ERR_ASSERTION`, including a container that fails only in its own body after
+all descendants pass. A failure caused by a descendant must use
+`ERR_TEST_FAILURE` and declare `subtestsFailed` in the container diagnostic. A
+parent may not inherit a child marker or error code.
+
+The handoff below is the sole executable re-entry after this STOP. All earlier
+handoffs remain historical evidence only.
+
+**Preservation and documentation-import handoff for the TAP-tree correction**
+
+```bash
+set -euo pipefail
+
+GIT_REPO=/Users/eduardohenrique/Developer/bodyflow
+DIAGNOSTIC_REPO=/Users/eduardohenrique/Developer/bodyflow-brand-design-system-v1
+TAP_TREE_PLAN_PATH=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+TAP_TREE_PARENT_PLAN_BLOB=ff3e5cf3f8db7b0e5b118e7c4c4cd0fbbf43cfa1
+
+git diff --cached --exit-code
+test "$(git branch --show-current)" = "codex/better-ahead-ios-rebrand-v1"
+test "$(git rev-parse HEAD)" \
+  = "ad9869c0d6b11222263ea40c7b72e329092aeef5"
+test "$(git rev-parse HEAD^)" \
+  = "8f4020b0ae27d27c0de1b97d1682f507cd0be57c"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "$TAP_TREE_PLAN_PATH"
+test "$(git rev-parse "HEAD:$TAP_TREE_PLAN_PATH")" \
+  = "$TAP_TREE_PARENT_PLAN_BLOB"
+git diff --exit-code -- "$TAP_TREE_PLAN_PATH"
+
+TAP_EXPECTED_DIRTY=$(mktemp /tmp/better-ahead-tap-tree-paths.XXXXXX)
+TAP_ACTUAL_DIRTY=$(mktemp /tmp/better-ahead-tap-tree-paths-actual.XXXXXX)
+printf '%s\n' \
+  design/brand/better-ahead-brand-assets.json \
+  scripts/brand/better-ahead-brand-contract.mjs \
+  scripts/brand/better-ahead-brand-contract.test.mjs \
+  scripts/brand/capture-better-ahead-environment.mjs \
+  scripts/brand/render-better-ahead-brand-assets.mjs \
+  scripts/brand/render-better-ahead-brand-review.mjs \
+  scripts/brand/run-better-ahead-brand-renderer.sh \
+  | LC_ALL=C sort > "$TAP_EXPECTED_DIRTY"
+git status --porcelain=v1 -uall \
+  | sed -n 's/^ M //p' | LC_ALL=C sort > "$TAP_ACTUAL_DIRTY"
+cmp "$TAP_EXPECTED_DIRTY" "$TAP_ACTUAL_DIRTY"
+test "$(git status --porcelain=v1 -uall | shasum -a 256 \
+  | awk '{print $1}')" \
+  = "2d2881b85e533d247fd7b67cc9cec9a629ec66fa1b83e130d2771ac9eee416b4"
+test "$(git diff --binary | shasum -a 256 | awk '{print $1}')" \
+  = "52654f8b16bcd531902cbb285a26fc0d026739464bd04e7dc269e72fca8bf411"
+
+tap_assert_sha() {
+  expected=$1
+  path=$2
+  test "$(shasum -a 256 "$path" | awk '{print $1}')" = "$expected"
+}
+tap_assert_sha 5da5284c219f4b556110944c837c2dcbf0f406aa6327aec821cb72d6bf5cb11b \
+  design/brand/better-ahead-brand-assets.json
+tap_assert_sha c9438906d4073813e15faec31332174e557888e0460705ddc6ff7bd89a7a99f0 \
+  scripts/brand/better-ahead-brand-contract.mjs
+tap_assert_sha 61facfae43bc5be7b45c2c5d406ccc20f88ba75ee13d3ec97b1d4232ecd0bcf1 \
+  scripts/brand/better-ahead-brand-contract.test.mjs
+git cat-file -e 4c6619113829b83494292164696ee9abbd315eaf^{blob}
+tap_assert_sha 7bc9239e37ad8f219b92f59f5476cd6e58276ca2b095b81c27716edbed8d0435 \
+  scripts/brand/capture-better-ahead-environment.mjs
+tap_assert_sha 9a5cb0ea098c787bcc80ef0bea30eb28636178211fac07ebfb6c0f29c282220b \
+  scripts/brand/render-better-ahead-brand-assets.mjs
+tap_assert_sha e3bac5f60c9892ef936cf87585ce74820f8fa24ac6879e5e17cc2211baf05e42 \
+  scripts/brand/render-better-ahead-brand-review.mjs
+tap_assert_sha 686b89883bd21df8c95c7eb49244b93e81cea8d6094ddf689236ea10c9092dc0 \
+  scripts/brand/run-better-ahead-brand-renderer.sh
+
+TAP_FROZEN_LOG=/tmp/better-ahead-native-v3-oracle-red-attempt2.log
+test -f "$TAP_FROZEN_LOG"
+test ! -L "$TAP_FROZEN_LOG"
+TAP_FROZEN_LOG_SHA=$(shasum -a 256 "$TAP_FROZEN_LOG" | awk '{print $1}')
+test "$TAP_FROZEN_LOG_SHA" \
+  = "fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d"
+test "$(rg -c '^# Subtest:' "$TAP_FROZEN_LOG" || true)" = "24"
+test "$(rg -c '^ +# Subtest:' "$TAP_FROZEN_LOG" || true)" = "19"
+test "$(rg -c '^# Subtest: \[OA-(16|34)\]$' \
+  "$TAP_FROZEN_LOG" || true)" = "7"
+test "$(rg -c '^# Subtest: \[OA-V3-' "$TAP_FROZEN_LOG" || true)" = "17"
+test "$(rg -c '^ok [0-9]+ - \[OA-V3-' "$TAP_FROZEN_LOG" || true)" = "2"
+test "$(rg -c '^not ok [0-9]+ - \[OA-V3-' \
+  "$TAP_FROZEN_LOG" || true)" = "15"
+rg -q '^# tests 43$' "$TAP_FROZEN_LOG"
+rg -q '^# pass 10$' "$TAP_FROZEN_LOG"
+rg -q '^# fail 33$' "$TAP_FROZEN_LOG"
+rg -q '^# skipped 0$' "$TAP_FROZEN_LOG"
+
+TAP_STATUS_BEFORE=$(mktemp /tmp/better-ahead-tap-tree-status.XXXXXX)
+TAP_DIFF_BEFORE=$(mktemp /tmp/better-ahead-tap-tree-diff.XXXXXX)
+TAP_MANAGER_BEFORE=$(mktemp /tmp/better-ahead-tap-tree-manager.XXXXXX)
+TAP_DIAGNOSTIC_BEFORE=$(mktemp /tmp/better-ahead-tap-tree-diagnostic.XXXXXX)
+TAP_DIAGNOSTIC_DIFF_BEFORE=$(mktemp \
+  /tmp/better-ahead-tap-tree-diagnostic-diff.XXXXXX)
+git status --porcelain=v1 -z -uall > "$TAP_STATUS_BEFORE"
+git diff --binary > "$TAP_DIFF_BEFORE"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$TAP_MANAGER_BEFORE"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$TAP_DIAGNOSTIC_BEFORE"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$TAP_DIAGNOSTIC_DIFF_BEFORE"
+
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+git -C "$GIT_REPO" diff --cached --exit-code
+test ! -s "$TAP_MANAGER_BEFORE"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+git -C "$DIAGNOSTIC_REPO" diff --cached --exit-code
+test -z "$(git -C "$DIAGNOSTIC_REPO" ls-files --others --exclude-standard)"
+test "$(git -C "$DIAGNOSTIC_REPO" diff --name-only -z \
+  | LC_ALL=C tr -cd '\000' | wc -c | tr -d ' ')" = "9"
+test "$(shasum -a 256 "$TAP_DIAGNOSTIC_BEFORE" | awk '{print $1}')" \
+  = "4fc733aeb4f41ce17e7ed094920c0d5ab70da26b879d49c594a84f050e58550c"
+
+test -n "${TAP_TREE_DOC_SHA:?set the exact published TAP-tree documentation SHA}"
+test "${#TAP_TREE_DOC_SHA}" = "40"
+case "$TAP_TREE_DOC_SHA" in *[!0-9a-f]*) false ;; esac
+git fetch origin \
+  refs/heads/codex/better-ahead-rebranding-design:refs/remotes/origin/codex/better-ahead-rebranding-design
+test "$(git rev-list --parents -n 1 "$TAP_TREE_DOC_SHA" | awk '{print NF}')" \
+  = "2"
+test "$(git rev-parse "$TAP_TREE_DOC_SHA^")" \
+  = "ad3fb05b903ed034364fc6190240caf1954c4a2b"
+test "$(git rev-parse "$TAP_TREE_DOC_SHA^0")" \
+  = "$(git rev-parse origin/codex/better-ahead-rebranding-design)"
+test "$(git show -s --format=%s "$TAP_TREE_DOC_SHA")" \
+  = "docs(brand): reconcile hierarchical TAP gate"
+test "$(git diff-tree --no-commit-id --name-only -r "$TAP_TREE_DOC_SHA")" \
+  = "$TAP_TREE_PLAN_PATH"
+test "$(git rev-parse "$TAP_TREE_DOC_SHA^:$TAP_TREE_PLAN_PATH")" \
+  = "$TAP_TREE_PARENT_PLAN_BLOB"
+test "$(git rev-parse "HEAD:$TAP_TREE_PLAN_PATH")" \
+  = "$TAP_TREE_PARENT_PLAN_BLOB"
+git diff --binary "$TAP_TREE_DOC_SHA^" "$TAP_TREE_DOC_SHA" \
+  -- "$TAP_TREE_PLAN_PATH" | git apply --check
+
+git -c core.hooksPath=/dev/null -c commit.gpgSign=false \
+  cherry-pick "$TAP_TREE_DOC_SHA"
+test "$(git rev-parse HEAD^)" \
+  = "ad9869c0d6b11222263ea40c7b72e329092aeef5"
+test "$(git show -s --format=%s HEAD)" \
+  = "docs(brand): reconcile hierarchical TAP gate"
+test "$(git diff-tree --no-commit-id --name-only -r HEAD)" \
+  = "$TAP_TREE_PLAN_PATH"
+test "$(git ls-tree HEAD -- "$TAP_TREE_PLAN_PATH")" \
+  = "$(git ls-tree "$TAP_TREE_DOC_SHA" -- "$TAP_TREE_PLAN_PATH")"
+git diff --cached --exit-code
+
+TAP_STATUS_AFTER=$(mktemp /tmp/better-ahead-tap-tree-status-after.XXXXXX)
+TAP_DIFF_AFTER=$(mktemp /tmp/better-ahead-tap-tree-diff-after.XXXXXX)
+TAP_MANAGER_AFTER=$(mktemp /tmp/better-ahead-tap-tree-manager-after.XXXXXX)
+TAP_DIAGNOSTIC_AFTER=$(mktemp /tmp/better-ahead-tap-tree-diagnostic-after.XXXXXX)
+TAP_DIAGNOSTIC_DIFF_AFTER=$(mktemp \
+  /tmp/better-ahead-tap-tree-diagnostic-diff-after.XXXXXX)
+git status --porcelain=v1 -z -uall > "$TAP_STATUS_AFTER"
+git diff --binary > "$TAP_DIFF_AFTER"
+git -C "$GIT_REPO" status --porcelain=v1 -uall > "$TAP_MANAGER_AFTER"
+git -C "$DIAGNOSTIC_REPO" status --porcelain=v1 -uall \
+  > "$TAP_DIAGNOSTIC_AFTER"
+git -C "$DIAGNOSTIC_REPO" diff --binary > "$TAP_DIAGNOSTIC_DIFF_AFTER"
+test "$(git -C "$GIT_REPO" rev-parse HEAD)" \
+  = "0ce7f20f22b0e66a6de0544d4a46345181f2fccb"
+test "$(git -C "$DIAGNOSTIC_REPO" rev-parse HEAD)" \
+  = "03df7894e4cdb37db08351aafb6dd20ad4cb4103"
+cmp "$TAP_STATUS_BEFORE" "$TAP_STATUS_AFTER"
+cmp "$TAP_DIFF_BEFORE" "$TAP_DIFF_AFTER"
+cmp "$TAP_MANAGER_BEFORE" "$TAP_MANAGER_AFTER"
+cmp "$TAP_DIAGNOSTIC_BEFORE" "$TAP_DIAGNOSTIC_AFTER"
+cmp "$TAP_DIAGNOSTIC_DIFF_BEFORE" "$TAP_DIAGNOSTIC_DIFF_AFTER"
+git cat-file -e 4c6619113829b83494292164696ee9abbd315eaf^{blob}
+test -f "$TAP_FROZEN_LOG"
+test ! -L "$TAP_FROZEN_LOG"
+test "$(shasum -a 256 "$TAP_FROZEN_LOG" | awk '{print $1}')" \
+  = "$TAP_FROZEN_LOG_SHA"
+for absent_path in \
+  design/brand/better-ahead/environment.json \
+  design/brand/better-ahead/bundles \
+  design/brand/better-ahead/exports \
+  design/brand/better-ahead/review
+do
+  test ! -e "$absent_path"
+  test ! -L "$absent_path"
+done
+test -z "$(git ls-files --others --ignored --exclude-standard -- design/brand)"
+```
+
+If any check fails, stop without conflict resolution, cleanup, regeneration,
+test execution, staging, or edits. For this one reconciliation the frozen log
+is mandatory: its authenticated tree is the immutable roster used to reject a
+rename, reparent, reorder, flatten, or redistribution of any legacy OA record.
+
 **Required migration order and gates**
 
 1. Import this documentation authority with the preservation handoff above.
-   That handoff verifies the accepted 33-RED/10-pass log byte-for-byte when the
-   ephemeral file still exists; otherwise the committed record, persisted
-   frozen test blob, and accepted reviews remain the authority. Do not rerun the
-   superseded 43-leaf command merely to recreate a deleted `/tmp` file.
+   That handoff requires the accepted 33-RED/10-pass log byte-for-byte because
+   the hierarchical checker uses it as the frozen name/order/ancestry roster.
+   Do not rerun the superseded 43-record command to recreate or replace it; if
+   the authenticated file is absent, stop for a new documentary reconciliation.
 2. Modify only the contract test first. Freeze the `83/20/4` and `10/21/2`
    ledgers in literal traceability assertions; migrate the 83 tests through the
    nine current owners; remove the 20 architecture-only blocks; replace the 21
@@ -3465,11 +3692,19 @@ permission to regenerate the expected bytes.
 
    The post-migration naming/count contract is exact:
 
-   - the original 43 `[OA-16-*]`, `[OA-34-*]`, and `[OA-V3-*]` leaves remain
-     semantically unchanged;
+   - the original 43 OA TAP records remain semantically and topologically
+     unchanged: exactly 24 roots plus 19 indented descendants. Exactly seven
+     roots are named `[OA-16]` or `[OA-34]`, exactly 17 roots begin `[OA-V3-`,
+     and all 19 descendants remain under the seven exact OA-16/OA-34 roots.
+     Flattening, reparenting, renaming, or adding a nested registration is
+     prohibited. Their characterization remains `10 pass / 33 fail`, including
+     exactly `2 pass / 15 fail` among the 17 OA-V3 roots;
    - exactly 25 new top-level tests begin `[OA-35-08]` through `[OA-35-20]`,
      one per literal/opcode. Their names also contain every mapped `FCB-nnn`
-     and `FP-nnn` trace ID; they are the replacements, not duplicate wrappers.
+     and `FP-nnn` trace ID, followed by the exact mapped `oa35.*` literal; the
+     canonical name has no other prefix or suffix. They are appended in opcode
+     order after the unchanged 24 legacy roots and are the replacements, not
+     duplicate wrappers.
      Their intentional pre-implementation assertion uses the exact diagnostic
      `EXPECTED_OA35_RED:<LOWERCASE_HEX_OPCODE>:UNIMPLEMENTED_CLOSED_CASE`;
    - exactly 83 top-level tests begin with their `[FP-nnn]` MIGRATE ID;
@@ -3497,6 +3732,724 @@ permission to regenerate the expected bytes.
      not four additional `[FP-*]` registrations. Internal fixed scenario loops
      do not register nested `node:test` leaves.
 
+   The following source is the single canonical checker for every RED and
+   GREEN TAP gate below. It is executable documentation: each command extracts
+   these exact bytes from the imported plan, so the parser cannot drift between
+   phases.
+
+   <!-- BETTER_AHEAD_TAP_TREE_CHECKER_BEGIN -->
+   ```javascript
+const fs = require("node:fs");
+const crypto = require("node:crypto");
+
+const [file, mode, frozenFile] = process.argv.slice(1);
+const requireTrue = (condition, message) => {
+  if (!condition) throw new Error(message);
+};
+const spaces = (count) => " ".repeat(count);
+const summaryKeys = [
+  "tests", "pass", "fail", "cancelled", "skipped", "todo",
+];
+
+const readRegularNoFollow = (path, expectedSha256 = undefined) => {
+  requireTrue(Number.isInteger(fs.constants.O_NOFOLLOW),
+    "O_NOFOLLOW is unavailable for TAP input admission");
+  const flags = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW;
+  const descriptor = fs.openSync(path, flags);
+  try {
+    requireTrue(fs.fstatSync(descriptor).isFile(),
+      `TAP input is not a regular file: ${path}`);
+    const bytes = fs.readFileSync(descriptor);
+    if (expectedSha256) {
+      const actual = crypto.createHash("sha256").update(bytes).digest("hex");
+      requireTrue(actual === expectedSha256,
+        `authenticated TAP input digest mismatch: ${path}`);
+    }
+    return bytes.toString("utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+};
+
+const parseTapTree = (path, expectedSha256 = undefined) => {
+  const lines = readRegularNoFollow(path, expectedSha256)
+    .replace(/\r\n?/gu, "\n")
+    .split("\n");
+  const nodes = [];
+  const roots = [];
+  const stack = [];
+  const summary = new Map();
+  let rootPlan = null;
+  let pendingDiagnostic = null;
+  let diagnostic = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (diagnostic) {
+      if (line === spaces(diagnostic.indent) + "...") {
+        diagnostic = null;
+      } else {
+        diagnostic.owner.diagnostic.push(line);
+      }
+      continue;
+    }
+
+    if (
+      pendingDiagnostic &&
+      line === spaces(pendingDiagnostic.indent + 2) + "---"
+    ) {
+      diagnostic = {
+        owner: pendingDiagnostic,
+        indent: pendingDiagnostic.indent + 2,
+      };
+      pendingDiagnostic = null;
+      continue;
+    }
+    pendingDiagnostic = null;
+
+    const header = line.match(/^( *)# Subtest: (.+)$/u);
+    if (header) {
+      const indent = header[1].length;
+      requireTrue(
+        indent % 4 === 0,
+        `non-canonical TAP header indentation at ${path}:${index + 1}`,
+      );
+      while (stack.length && stack.at(-1).indent >= indent) {
+        requireTrue(
+          stack.at(-1).result,
+          `new header before prior result at ${path}:${index + 1}`,
+        );
+        stack.pop();
+      }
+      const parent = stack.at(-1) ?? null;
+      requireTrue(
+        parent ? indent === parent.indent + 4 : indent === 0,
+        `broken TAP ancestry at ${path}:${index + 1}`,
+      );
+      const node = {
+        name: header[2],
+        indent,
+        parent,
+        children: [],
+        result: null,
+        diagnostic: [],
+        plan: null,
+      };
+      if (parent) parent.children.push(node);
+      else roots.push(node);
+      nodes.push(node);
+      stack.push(node);
+      continue;
+    }
+
+    const result = line.match(/^( *)(not )?ok ([1-9][0-9]*) - (.+)$/u);
+    if (result) {
+      const indent = result[1].length;
+      requireTrue(
+        indent % 4 === 0,
+        `non-canonical TAP result indentation at ${path}:${index + 1}`,
+      );
+      while (stack.length && stack.at(-1).indent > indent) {
+        requireTrue(
+          stack.at(-1).result,
+          `ancestor result before child result at ${path}:${index + 1}`,
+        );
+        stack.pop();
+      }
+      const owner = stack.at(-1);
+      requireTrue(
+        owner && owner.indent === indent && !owner.result,
+        `orphan or duplicate TAP result at ${path}:${index + 1}`,
+      );
+      const directive = result[4].match(
+        /^(.*?)\s+#\s+(SKIP|TODO)(?:\s+.*)?$/iu,
+      );
+      const resultName = directive ? directive[1] : result[4];
+      requireTrue(
+        resultName === owner.name,
+        `TAP header/result mismatch at ${path}:${index + 1}`,
+      );
+      owner.result = {
+        failed: Boolean(result[2]),
+        ordinal: Number(result[3]),
+        directive: directive?.[2].toUpperCase() ?? null,
+      };
+      pendingDiagnostic = owner;
+      continue;
+    }
+
+    const plan = line.match(/^( *)([0-9]+)\.\.([0-9]+)$/u);
+    if (plan) {
+      const indent = plan[1].length;
+      requireTrue(
+        indent % 4 === 0 && Number(plan[2]) === 1,
+        `invalid TAP plan at ${path}:${index + 1}`,
+      );
+      while (stack.length && stack.at(-1).indent >= indent) {
+        requireTrue(
+          stack.at(-1).result,
+          `plan before result at ${path}:${index + 1}`,
+        );
+        stack.pop();
+      }
+      const owner = stack.at(-1) ?? null;
+      const count = Number(plan[3]);
+      if (owner) {
+        requireTrue(
+          indent === owner.indent + 4 && owner.plan === null,
+          `misbound or duplicate nested TAP plan at ${path}:${index + 1}`,
+        );
+        owner.plan = count;
+      } else {
+        requireTrue(
+          indent === 0 && rootPlan === null,
+          `misbound or duplicate root TAP plan at ${path}:${index + 1}`,
+        );
+        rootPlan = count;
+      }
+      continue;
+    }
+
+    const summaryMatch = line.match(
+      /^# (tests|pass|fail|cancelled|skipped|todo) ([0-9]+)$/u,
+    );
+    if (summaryMatch) {
+      requireTrue(
+        !summary.has(summaryMatch[1]),
+        `duplicate TAP summary ${summaryMatch[1]} in ${path}`,
+      );
+      summary.set(summaryMatch[1], Number(summaryMatch[2]));
+    }
+  }
+
+  requireTrue(!diagnostic, `unterminated TAP YAML diagnostic in ${path}`);
+  for (const node of nodes) {
+    requireTrue(node.result, `missing TAP result for ${node.name} in ${path}`);
+    if (node.children.length) {
+      requireTrue(
+        node.plan === node.children.length,
+        `child TAP plan mismatch for ${node.name} in ${path}`,
+      );
+      node.children.forEach((child, index) => {
+        requireTrue(
+          child.result.ordinal === index + 1,
+          `child TAP ordinal mismatch for ${child.name} in ${path}`,
+        );
+      });
+    } else {
+      requireTrue(
+        node.plan === null,
+        `leaf owns an unexpected TAP plan: ${node.name} in ${path}`,
+      );
+    }
+  }
+  requireTrue(rootPlan === roots.length, `root TAP plan mismatch in ${path}`);
+  roots.forEach((root, index) => {
+    requireTrue(
+      root.result.ordinal === index + 1,
+      `root TAP ordinal mismatch for ${root.name} in ${path}`,
+    );
+  });
+  for (const key of summaryKeys) {
+    requireTrue(summary.has(key), `missing TAP summary ${key} in ${path}`);
+  }
+  requireTrue(
+    summary.get("tests") === nodes.length,
+    `TAP summary/tree total mismatch in ${path}`,
+  );
+  return { path, nodes, roots, summary };
+};
+
+const directYamlScalar = (node, key) => {
+  const prefix = spaces(node.indent + 2) + key + ":";
+  const matches = node.diagnostic.filter(
+    (line) => line === prefix || line.startsWith(prefix + " "),
+  );
+  requireTrue(
+    matches.length <= 1,
+    `duplicate direct YAML field ${key}: ${node.name}`,
+  );
+  if (!matches.length) return undefined;
+  const raw = matches[0].slice(prefix.length).trim();
+  if (raw.startsWith("\x27") && raw.endsWith("\x27")) {
+    return raw.slice(1, -1).replace(/\x27\x27/gu, "\x27");
+  }
+  if (raw.startsWith("\"") && raw.endsWith("\"")) return JSON.parse(raw);
+  return raw;
+};
+
+const directYamlStableValue = (node, key) => {
+  const fieldIndent = node.indent + 2;
+  const prefix = spaces(fieldIndent) + key + ":";
+  const indexes = [];
+  node.diagnostic.forEach((line, index) => {
+    if (line === prefix || line.startsWith(prefix + " ")) indexes.push(index);
+  });
+  requireTrue(indexes.length <= 1,
+    `duplicate direct YAML field ${key}: ${node.name}`);
+  if (!indexes.length) return undefined;
+  const index = indexes[0];
+  const raw = node.diagnostic[index].slice(prefix.length).trim();
+  if (!/^[|>][+-]?$/u.test(raw)) return directYamlScalar(node, key);
+  const continuation = [];
+  for (let cursor = index + 1; cursor < node.diagnostic.length; cursor += 1) {
+    const line = node.diagnostic[cursor];
+    if (line === "") {
+      continuation.push("");
+      continue;
+    }
+    const indentation = line.match(/^ */u)[0].length;
+    if (indentation <= fieldIndent) break;
+    requireTrue(indentation >= fieldIndent + 2,
+      `malformed direct YAML block ${key}: ${node.name}`);
+    continuation.push(line.slice(fieldIndent + 2));
+  }
+  requireTrue(continuation.length > 0,
+    `empty direct YAML block ${key}: ${node.name}`);
+  return raw + "\n" + continuation.join("\n");
+};
+
+const descendants = (root) => root.children.flatMap(
+  (child) => [child, ...descendants(child)],
+);
+const countOutcome = (nodes) => ({
+  pass: nodes.filter((node) => !node.result.failed).length,
+  fail: nodes.filter((node) => node.result.failed).length,
+});
+const requireSummary = (tap, expected) => {
+  for (const [key, value] of Object.entries(expected)) {
+    requireTrue(
+      tap.summary.get(key) === value,
+      `TAP summary ${key} mismatch in ${tap.path}`,
+    );
+  }
+};
+const requireNoDirectives = (nodes) => {
+  for (const node of nodes) {
+    requireTrue(
+      node.result.directive === null,
+      `selected ${node.result.directive}: ${node.name}`,
+    );
+  }
+};
+const structureOf = (roots) => roots.map((root) => ({
+  name: root.name,
+  children: structureOf(root.children),
+}));
+const outcomesOf = (roots) => roots.map((root) => ({
+  failed: root.result.failed,
+  children: outcomesOf(root.children),
+}));
+const diagnosticSemanticsOf = (roots) => roots.map((root) => ({
+  error: directYamlStableValue(root, "error"),
+  code: directYamlStableValue(root, "code"),
+  failureType: directYamlStableValue(root, "failureType"),
+  exceptionName: directYamlStableValue(root, "name"),
+  operator: directYamlStableValue(root, "operator"),
+  children: diagnosticSemanticsOf(root.children),
+}));
+const requireFailureSemantics = (nodes) => {
+  for (const node of nodes) {
+    const failedBelow = descendants(node).filter(
+      (descendant) => descendant.result.failed,
+    );
+    const code = directYamlScalar(node, "code");
+    if (!node.result.failed) {
+      requireTrue(
+        failedBelow.length === 0,
+        `passing TAP record has a failed descendant: ${node.name}`,
+      );
+      requireTrue(
+        code !== "ERR_ASSERTION" && code !== "ERR_TEST_FAILURE",
+        `passing TAP record has a failure code: ${node.name}`,
+      );
+    } else if (failedBelow.length > 0) {
+      requireTrue(
+        code === "ERR_TEST_FAILURE",
+        `failed TAP wrapper is not ERR_TEST_FAILURE: ${node.name}`,
+      );
+      requireTrue(
+        directYamlScalar(node, "failureType") === "subtestsFailed",
+        `failed TAP container lacks subtestsFailed: ${node.name}`,
+      );
+    } else {
+      requireTrue(
+        code === "ERR_ASSERTION" &&
+          directYamlScalar(node, "failureType") !== "subtestsFailed",
+        `direct TAP failure is not ERR_ASSERTION: ${node.name}`,
+      );
+    }
+  }
+};
+
+const isGroup = (name) => name === "[OA-16]" || name === "[OA-34]";
+const isV3 = (name) => /^\[OA-V3-[^\]]+\](?: |$)/u.test(name);
+const isOA35 = (name) => /^\[OA-35-[0-9a-f]{2}\](?: |$)/u.test(name);
+const oaMarkerPattern =
+  /EXPECTED_OA35_RED:(?:08|09|0[a-f]|1[0-9a-f]|20):UNIMPLEMENTED_CLOSED_CASE/gu;
+
+const classifierById = new Map();
+const addClassifiers = (classifier, ids) => {
+  for (const id of ids.trim().split(/\s+/u)) {
+    requireTrue(!classifierById.has(id), "duplicate classifier ID: " + id);
+    classifierById.set(id, classifier);
+  }
+};
+addClassifiers("VALIDATION_ADMISSION_SEALING",
+  "FP-002 FP-004 FP-005 FP-027 FP-057 FP-070 FP-079 FP-083 FP-098 FP-099");
+addClassifiers("INITIAL_AUTHORITY_WORKSPACE",
+  "FP-007 FP-028 FP-046 FP-047 FP-048 FP-049 FP-050 FP-053");
+addClassifiers("ATOMIC_BUNDLE_PUBLICATION",
+  "FP-040 FP-041 FP-043 FP-044 FP-045 FP-058 FP-060 FP-063 FP-064 FP-065 FP-074 FP-076 FP-097 FP-102");
+addClassifiers("JOURNAL_RESUME_RECONCILIATION",
+  "FP-003 FP-008 FP-009 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037 FP-038 FP-039 FP-042");
+addClassifiers("COMMIT_DURABILITY_PHYSICAL_TRUTH",
+  "FP-006 FP-025 FP-061 FP-067");
+addClassifiers("PATH_CONFINEMENT_IDENTITY",
+  "FP-020 FP-021 FP-022 FP-023 FP-024 FP-068");
+addClassifiers("CONVERGENCE_IDEMPOTENCY_RUNNER",
+  "FP-012 FP-013 FP-019 FP-069 FP-080 FP-081 FP-107");
+addClassifiers("CLEANUP_OWNERSHIP_INTEGRITY",
+  "FP-054 FP-055 FP-059 FP-075 FP-078 FP-082 FP-084 FP-085 FP-101 FP-105 FP-106");
+addClassifiers("FINAL_AUTHORITY_REVALIDATION",
+  "FP-010 FP-011 FP-072 FP-073 FP-086 FP-087 FP-088 FP-089 FP-090 FP-093 FP-094");
+classifierById.set("FCB-002-KEEP", "KEEP_CURRENT_UPDATE_COLLISION");
+classifierById.set(
+  "FCB-008-KEEP", "KEEP_CURRENT_PREPAYLOAD_REPLACEMENT");
+classifierById.set("MIGRATION-LEDGER", "STATIC_LEDGER");
+requireTrue(classifierById.size === 86, "classifier map size is not 86");
+
+const oaTraceByOpcode = new Map([
+  ["08", ["FCB-005"]],
+  ["09", ["FCB-001", "FCB-005"]],
+  ["0a", ["FCB-002"]], ["0b", ["FCB-003"]],
+  ["0c", ["FCB-003"]], ["0d", ["FCB-010"]],
+  ["0e", ["FCB-010"]], ["0f", ["FCB-010"]],
+  ["10", ["FCB-010"]], ["11", ["FCB-004"]],
+  ["12", ["FCB-010"]], ["13", ["FCB-010"]],
+  ["14", ["FCB-010"]], ["15", ["FCB-006"]],
+  ["16", ["FCB-008"]], ["17", ["FCB-008"]],
+  ["18", ["FCB-008"]], ["19", ["FCB-007"]],
+  ["1a", ["FCB-009"]], ["1b", ["FCB-009"]],
+  ["1c", ["FP-091"]], ["1d", ["FP-092"]],
+  ["1e", ["FP-095"]], ["1f", ["FP-096"]],
+  ["20", ["FP-096"]],
+]);
+requireTrue(oaTraceByOpcode.size === 25, "OA-35 trace map size is not 25");
+
+const oaLiteralByOpcode = new Map([
+  ["08", "oa35.begin.temporary_fsync.fail_clean"],
+  ["09", "oa35.begin.temporary_fsync.crash_orphan"],
+  ["0a", "oa35.journal.update_temporary_fsync.crash"],
+  ["0b", "oa35.journal.update_rename.crash"],
+  ["0c", "oa35.journal.update_parent_fsync.crash"],
+  ["0d", "oa35.journal.mirror_temporary_fsync.crash"],
+  ["0e", "oa35.journal.mirror_swap.crash"],
+  ["0f", "oa35.journal.mirror_parent_fsync.crash"],
+  ["10", "oa35.journal.predecessor_unlink.crash"],
+  ["11", "oa35.cleanup.pre_first_unlink.nonprefix_absence"],
+  ["12", "oa35.cleanup.after_first_unlink.crash"],
+  ["13", "oa35.cleanup.after_mirror_unlink.crash"],
+  ["14", "oa35.cleanup.after_transaction_rmdir.crash"],
+  ["15", "oa35.cleanup.early_lock_replacement"],
+  ["16", "oa35.cleanup.same_byte_leaf_replacement"],
+  ["17", "oa35.cleanup.hardlinked_leaf"],
+  ["18", "oa35.cleanup.transaction_directory_swap"],
+  ["19", "oa35.unlock.precommit_pre_unlink.fail_retry"],
+  ["1a", "oa35.unlock.committed_pre_unlink.fail_retry"],
+  ["1b", "oa35.unlock.bundle_same_inode_mutation"],
+  ["1c", "oa35.unlock.edge_swap_after_openat"],
+  ["1d", "oa35.unlock.missing_suffix_reappears"],
+  ["1e", "oa35.unlock.authority_same_inode_mutation"],
+  ["1f", "oa35.unlock.second_pass_edge_swap"],
+  ["20", "oa35.unlock.second_pass_missing_suffix"],
+]);
+requireTrue(oaLiteralByOpcode.size === 25,
+  "OA-35 literal map size is not 25");
+
+const validateFrozenOA = (path) => {
+  requireTrue(Boolean(path), "frozen OA TAP log path is required");
+  const tap = parseTapTree(
+    path,
+    "fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d",
+  );
+  const groups = tap.roots.filter((root) => isGroup(root.name));
+  const v3 = tap.roots.filter((root) => isV3(root.name));
+  const nested = tap.nodes.filter((node) => node.parent);
+  requireTrue(tap.roots.length === 24, "frozen OA root count is not 24");
+  requireTrue(nested.length === 19, "frozen OA nested count is not 19");
+  requireTrue(tap.nodes.length === 43, "frozen OA total is not 43");
+  requireTrue(groups.length === 7, "frozen OA-16/OA-34 root count is not 7");
+  requireTrue(v3.length === 17, "frozen OA-V3 root count is not 17");
+  requireTrue(
+    tap.roots.every((root) => isGroup(root.name) || isV3(root.name)),
+    "frozen OA log contains an unexpected root",
+  );
+  requireTrue(
+    groups.every((root) => root.children.length > 0) &&
+      v3.every((root) => root.children.length === 0),
+    "frozen OA root topology differs",
+  );
+  requireTrue(
+    nested.every((node) => node.indent === 4 && isGroup(node.parent.name) &&
+      node.children.length === 0),
+    "frozen OA descendant topology differs",
+  );
+  requireNoDirectives(tap.nodes);
+  requireSummary(tap, {
+    tests: 43, pass: 10, fail: 33, cancelled: 0, skipped: 0, todo: 0,
+  });
+  requireTrue(
+    JSON.stringify(countOutcome(v3)) === JSON.stringify({ pass: 2, fail: 15 }),
+    "frozen OA-V3 split is not 2/15",
+  );
+  requireFailureSemantics(tap.nodes);
+  requireTrue(
+    tap.nodes.every((node) => !(node.diagnostic.join("\n").match(oaMarkerPattern))),
+    "OA-35 marker exists in the frozen legacy log",
+  );
+  return tap;
+};
+
+const validateOA = (path, expectedMode, frozenPath) => {
+  const tap = parseTapTree(path);
+  const frozen = validateFrozenOA(frozenPath);
+  const groups = tap.roots.filter((root) => isGroup(root.name));
+  const v3 = tap.roots.filter((root) => isV3(root.name));
+  const oa35 = tap.roots.filter((root) => isOA35(root.name));
+  const legacyRoots = tap.roots.filter((root) => !isOA35(root.name));
+  const nested = tap.nodes.filter((node) => node.parent);
+  requireTrue(tap.roots.length === 49, "OA root count is not 49");
+  requireTrue(nested.length === 19, "OA nested count is not 19");
+  requireTrue(tap.nodes.length === 68, "OA total is not 68");
+  requireTrue(groups.length === 7, "OA-16/OA-34 root count is not 7");
+  requireTrue(v3.length === 17, "OA-V3 root count is not 17");
+  requireTrue(oa35.length === 25, "OA-35 root count is not 25");
+  requireTrue(
+    tap.roots.slice(0, 24).every((root) => !isOA35(root.name)) &&
+      tap.roots.slice(24).every((root) => isOA35(root.name)),
+    "OA root composition is not 24 legacy followed by 25 OA-35",
+  );
+  requireTrue(
+    tap.roots.every(
+      (root) => isGroup(root.name) || isV3(root.name) || isOA35(root.name),
+    ),
+    "OA log contains an unexpected root",
+  );
+  requireTrue(
+    groups.every((root) => root.children.length > 0) &&
+      [...v3, ...oa35].every((root) => root.children.length === 0),
+    "OA root topology differs",
+  );
+  requireTrue(
+    nested.every((node) => node.indent === 4 && isGroup(node.parent.name) &&
+      node.children.length === 0),
+    "OA descendant topology differs",
+  );
+  requireTrue(
+    JSON.stringify(structureOf(legacyRoots)) ===
+      JSON.stringify(structureOf(frozen.roots)),
+    "legacy OA names, order, or parent/child roster changed",
+  );
+  requireNoDirectives(tap.nodes);
+  requireSummary(tap, expectedMode === "oa-red" ? {
+    tests: 68, pass: 10, fail: 58, cancelled: 0, skipped: 0, todo: 0,
+  } : {
+    tests: 68, pass: 68, fail: 0, cancelled: 0, skipped: 0, todo: 0,
+  });
+  const outcome = countOutcome(tap.nodes);
+  requireTrue(
+    outcome.pass === tap.summary.get("pass") &&
+      outcome.fail === tap.summary.get("fail"),
+    "OA tree/result split differs from its summary",
+  );
+  if (expectedMode === "oa-red") {
+    requireTrue(
+      JSON.stringify(outcomesOf(legacyRoots)) ===
+        JSON.stringify(outcomesOf(frozen.roots)),
+      "legacy OA characterization outcomes changed during RED",
+    );
+    requireTrue(
+      JSON.stringify(diagnosticSemanticsOf(legacyRoots)) ===
+        JSON.stringify(diagnosticSemanticsOf(frozen.roots)),
+      "legacy OA direct failure semantics changed during RED",
+    );
+    requireTrue(
+      JSON.stringify(countOutcome(v3)) ===
+        JSON.stringify({ pass: 2, fail: 15 }),
+      "OA-V3 RED split is not 2/15",
+    );
+    requireFailureSemantics(tap.nodes);
+  } else {
+    requireTrue(
+      tap.nodes.every((node) => !node.result.failed),
+      "OA GREEN contains a failing record",
+    );
+    requireFailureSemantics(tap.nodes);
+  }
+
+  const expectedOpcodes = Array.from(
+    { length: 25 },
+    (_, index) => (index + 8).toString(16).padStart(2, "0"),
+  );
+  const observedOpcodes = [];
+  for (const node of oa35) {
+    const opcode = node.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1];
+    observedOpcodes.push(opcode);
+    const expectedTraces = oaTraceByOpcode.get(opcode);
+    requireTrue(Boolean(expectedTraces), "unmapped OA-35 opcode: " + opcode);
+    const expectedLiteral = oaLiteralByOpcode.get(opcode);
+    requireTrue(Boolean(expectedLiteral), "unmapped OA-35 literal: " + opcode);
+    const observedTraces = [...node.name.matchAll(
+      /\[((?:FCB|FP)-[0-9]{3})\]/gu,
+    )].map((match) => match[1]);
+    const expectedName = `[OA-35-${opcode}] ` +
+      expectedTraces.map((trace) => `[${trace}]`).join(" ") +
+      " " + expectedLiteral;
+    requireTrue(
+      JSON.stringify(observedTraces) === JSON.stringify(expectedTraces) &&
+        node.name === expectedName,
+      "OA-35 opcode/trace/literal name mismatch: " + node.name,
+    );
+    const diagnostic = node.diagnostic.join("\n");
+    const markers = diagnostic.match(oaMarkerPattern) ?? [];
+    const expectedMarker =
+      `EXPECTED_OA35_RED:${opcode}:UNIMPLEMENTED_CLOSED_CASE`;
+    if (expectedMode === "oa-red") {
+      requireTrue(node.result.failed, "OA-35 unexpectedly passed: " + node.name);
+      requireTrue(
+        directYamlScalar(node, "code") === "ERR_ASSERTION",
+        "OA-35 did not fail by direct assertion: " + node.name,
+      );
+      requireTrue(
+        directYamlScalar(node, "error") === expectedMarker,
+        "OA-35 direct error marker mismatch: " + node.name,
+      );
+      requireTrue(
+        markers.length === 1 && markers[0] === expectedMarker,
+        "OA-35 marker count/opcode mismatch: " + node.name,
+      );
+    } else {
+      requireTrue(!node.result.failed, "OA-35 failed during GREEN: " + node.name);
+      requireTrue(markers.length === 0, "OA-35 RED marker survived GREEN");
+    }
+  }
+  requireTrue(
+    JSON.stringify(observedOpcodes) === JSON.stringify(expectedOpcodes),
+    "OA-35 opcode order is not exactly 08..20",
+  );
+  for (const node of tap.nodes.filter((candidate) => !isOA35(candidate.name))) {
+    requireTrue(
+      (node.diagnostic.join("\n").match(oaMarkerPattern) ?? []).length === 0,
+      "OA-35 marker appears outside its direct OA-35 diagnostic: " + node.name,
+    );
+  }
+  return {
+    roots: tap.roots.length,
+    nested: nested.length,
+    total: tap.nodes.length,
+    ...outcome,
+  };
+};
+
+const migrationName =
+  /^\[(FP-[0-9]{3}|FCB-00(?:2|8)-KEEP|MIGRATION-LEDGER)\]/u;
+const migrationMarkerPattern =
+  /EXPECTED_MIGRATION_RED:(?:FP-[0-9]{3}|FCB-00(?:2|8)-KEEP|MIGRATION-LEDGER):[A-Z0-9_]+/gu;
+const validateMigration = (path, expectedMode) => {
+  const tap = parseTapTree(path);
+  requireTrue(tap.roots.length === 86, "migration root count is not 86");
+  requireTrue(tap.nodes.length === 86, "migration total is not 86");
+  requireTrue(
+    tap.nodes.every((node) => !node.parent && node.indent === 0 &&
+      node.children.length === 0 && migrationName.test(node.name)),
+    "migration registrations are not the exact top-level closed set",
+  );
+  requireNoDirectives(tap.nodes);
+  requireSummary(tap, {
+    tests: 86,
+    pass: expectedMode === "migration-green" ? 86 :
+      tap.nodes.filter((node) => !node.result.failed).length,
+    fail: expectedMode === "migration-green" ? 0 :
+      tap.nodes.filter((node) => node.result.failed).length,
+    cancelled: 0,
+    skipped: 0,
+    todo: 0,
+  });
+  const ids = tap.nodes.map(
+    (node) => node.name.match(/^\[([^\]]+)\]/u)?.[1],
+  );
+  const idSet = new Set(ids);
+  requireTrue(
+    idSet.size === 86 &&
+      [...classifierById.keys()].every((id) => idSet.has(id)),
+    "migration trace-ID set differs from the closed 86-ID map",
+  );
+  const ledger = tap.nodes.find(
+    (node) => node.name.startsWith("[MIGRATION-LEDGER]"),
+  );
+  requireTrue(Boolean(ledger) && !ledger.result.failed,
+    "migration ledger must pass");
+  for (const node of tap.nodes) {
+    const id = node.name.match(/^\[([^\]]+)\]/u)?.[1];
+    const expectedClassifier = classifierById.get(id);
+    const classifierSegments = node.name.match(
+      /\[RED-CLASSIFIER:[A-Z0-9_]+\]/gu,
+    ) ?? [];
+    const declaredClassifier = node.name.match(
+      /^\[[^\]]+\] \[RED-CLASSIFIER:([A-Z0-9_]+)\](?: |$)/u,
+    )?.[1];
+    requireTrue(
+      classifierSegments.length === 1 &&
+        declaredClassifier === expectedClassifier,
+      "migration name/classifier mismatch: " + id,
+    );
+    const diagnostic = node.diagnostic.join("\n");
+    const markers = diagnostic.match(migrationMarkerPattern) ?? [];
+    if (node.result.failed) {
+      const expectedMarker =
+        `EXPECTED_MIGRATION_RED:${id}:${expectedClassifier}`;
+      requireTrue(
+        expectedMode === "migration-red",
+        "migration failure survived GREEN: " + id,
+      );
+      requireTrue(
+        directYamlScalar(node, "code") === "ERR_ASSERTION" &&
+          directYamlScalar(node, "error") === expectedMarker,
+        "migration failure is not its direct intentional assertion: " + id,
+      );
+      requireTrue(
+        markers.length === 1 && markers[0] === expectedMarker,
+        "migration marker/closed-classifier mismatch: " + id,
+      );
+    } else {
+      requireTrue(markers.length === 0,
+        "migration RED marker exists on passing record: " + id);
+    }
+  }
+  requireFailureSemantics(tap.nodes);
+  const outcome = countOutcome(tap.nodes);
+  requireTrue(
+    outcome.pass === tap.summary.get("pass") &&
+      outcome.fail === tap.summary.get("fail"),
+    "migration tree/result split differs from its summary",
+  );
+  return { roots: 86, nested: 0, total: 86, ...outcome };
+};
+
+let result;
+if (mode === "oa-red" || mode === "oa-green") {
+  result = validateOA(file, mode, frozenFile);
+} else if (mode === "migration-red" || mode === "migration-green") {
+  result = validateMigration(file, mode);
+} else {
+  throw new Error("unsupported TAP-tree checker mode: " + mode);
+}
+console.log(JSON.stringify({ mode, ...result }));
+   ```
+   <!-- BETTER_AHEAD_TAP_TREE_CHECKER_END -->
+
 3. Before production edits, prove the other six dirty files remain
    byte-identical to the imported snapshot. From the repository root, run these
    exact focused commands through Corepack/pnpm 10.33.2 (pnpm sets the scripts
@@ -3523,32 +4476,31 @@ permission to regenerate the expected bytes.
      | awk '{print $1}')" \
      = "686b89883bd21df8c95c7eb49244b93e81cea8d6094ddf689236ea10c9092dc0"
 
+   FROZEN_OA_RED_LOG=/tmp/better-ahead-native-v3-oracle-red-attempt2.log
+   test -f "$FROZEN_OA_RED_LOG"
+   test ! -L "$FROZEN_OA_RED_LOG"
+   test "$(shasum -a 256 "$FROZEN_OA_RED_LOG" | awk '{print $1}')" \
+     = "fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d"
+
    OA35_RED_LOG=$(mktemp /tmp/better-ahead-oa35-red.XXXXXX)
    set +e
    corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
-     --test-name-pattern='^\[OA-(16|34|35|V3)-' \
+     --test-reporter=tap \
+     --test-name-pattern='^(?:\[OA-(?:16|34)\](?: |$)|\[OA-(?:16|34|35|V3)-)' \
      brand/better-ahead-brand-contract.test.mjs \
      > "$OA35_RED_LOG" 2>&1
    OA35_RED_EXIT=$?
    set -e
    test "$OA35_RED_EXIT" = "1"
-   OA35_SUBTESTS=$(rg -c \
-     '^# Subtest: \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
-   OA35_PASS=$(rg -c \
-     '^ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
-   OA35_FAIL=$(rg -c \
-     '^not ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_RED_LOG" || true)
-   test "${OA35_SUBTESTS:-0}" = "68"
-   test "${OA35_PASS:-0}" = "10"
-   test "${OA35_FAIL:-0}" = "58"
+   rg -q '^# tests 68$' "$OA35_RED_LOG"
+   rg -q '^# pass 10$' "$OA35_RED_LOG"
+   rg -q '^# fail 58$' "$OA35_RED_LOG"
    OA35_EXPECTED_NEW_RED_COUNT=$({ rg -o \
      'EXPECTED_OA35_RED:(08|09|0[a-f]|1[0-9a-f]|20):UNIMPLEMENTED_CLOSED_CASE' \
      "$OA35_RED_LOG" || true; } | LC_ALL=C sort -u | wc -l | tr -d ' ')
    test "$OA35_EXPECTED_NEW_RED_COUNT" = "25"
-   ! rg -q \
-     '^(ok|not ok) [0-9]+ - \[OA-(16|34|35|V3)-.*# (SKIP|TODO)' \
-     "$OA35_RED_LOG"
    rg -q '^# cancelled 0$' "$OA35_RED_LOG"
+   rg -q '^# skipped 0$' "$OA35_RED_LOG"
    rg -q '^# todo 0$' "$OA35_RED_LOG"
    ! rg -q \
      'error: (SyntaxError|ReferenceError|TypeError)|ERR_MODULE_NOT_FOUND' \
@@ -3558,6 +4510,7 @@ permission to regenerate the expected bytes.
      /tmp/better-ahead-migration-characterization.XXXXXX)
    set +e
    corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-reporter=tap \
      --test-name-pattern='^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
      brand/better-ahead-brand-contract.test.mjs \
      > "$MIGRATION_CHARACTERIZATION_LOG" 2>&1
@@ -3592,216 +4545,34 @@ permission to regenerate the expected bytes.
      'error: (SyntaxError|ReferenceError|TypeError)|ERR_MODULE_NOT_FOUND' \
      "$MIGRATION_CHARACTERIZATION_LOG"
 
-   TAP_ASSOCIATION_CHECKER='
-   const fs = require("node:fs");
-   const [file, mode] = process.argv.slice(1);
-   const text = fs.readFileSync(file, "utf8");
-   const blocks = text.split(/\n(?=# Subtest: )/u);
-   const oaName = /^\[OA-(16|34|35|V3)-/u;
-   const migrationName =
-     /^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]/u;
-   if (mode !== "oa-red" && mode !== "migration-red") {
-     throw new Error("unsupported RED checker mode: " + mode);
-   }
-   const classifierById = new Map();
-   const addClassifiers = (classifier, ids) => {
-     for (const id of ids.trim().split(/\s+/u)) {
-       if (classifierById.has(id)) {
-         throw new Error("duplicate closed classifier ID: " + id);
-       }
-       classifierById.set(id, classifier);
-     }
-   };
-   addClassifiers("VALIDATION_ADMISSION_SEALING",
-     "FP-002 FP-004 FP-005 FP-027 FP-057 FP-070 FP-079 FP-083 FP-098 FP-099");
-   addClassifiers("INITIAL_AUTHORITY_WORKSPACE",
-     "FP-007 FP-028 FP-046 FP-047 FP-048 FP-049 FP-050 FP-053");
-   addClassifiers("ATOMIC_BUNDLE_PUBLICATION",
-     "FP-040 FP-041 FP-043 FP-044 FP-045 FP-058 FP-060 FP-063 FP-064 FP-065 FP-074 FP-076 FP-097 FP-102");
-   addClassifiers("JOURNAL_RESUME_RECONCILIATION",
-     "FP-003 FP-008 FP-009 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037 FP-038 FP-039 FP-042");
-   addClassifiers("COMMIT_DURABILITY_PHYSICAL_TRUTH",
-     "FP-006 FP-025 FP-061 FP-067");
-   addClassifiers("PATH_CONFINEMENT_IDENTITY",
-     "FP-020 FP-021 FP-022 FP-023 FP-024 FP-068");
-   addClassifiers("CONVERGENCE_IDEMPOTENCY_RUNNER",
-     "FP-012 FP-013 FP-019 FP-069 FP-080 FP-081 FP-107");
-   addClassifiers("CLEANUP_OWNERSHIP_INTEGRITY",
-     "FP-054 FP-055 FP-059 FP-075 FP-078 FP-082 FP-084 FP-085 FP-101 FP-105 FP-106");
-   addClassifiers("FINAL_AUTHORITY_REVALIDATION",
-     "FP-010 FP-011 FP-072 FP-073 FP-086 FP-087 FP-088 FP-089 FP-090 FP-093 FP-094");
-   classifierById.set("FCB-002-KEEP", "KEEP_CURRENT_UPDATE_COLLISION");
-   classifierById.set(
-     "FCB-008-KEEP", "KEEP_CURRENT_PREPAYLOAD_REPLACEMENT");
-   classifierById.set("MIGRATION-LEDGER", "STATIC_LEDGER");
-   if (classifierById.size !== 86) {
-     throw new Error("closed classifier map size is not 86");
-   }
-   const oaTraceByOpcode = new Map([
-     ["08", ["FCB-005"]],
-     ["09", ["FCB-001", "FCB-005"]],
-     ["0a", ["FCB-002"]], ["0b", ["FCB-003"]],
-     ["0c", ["FCB-003"]], ["0d", ["FCB-010"]],
-     ["0e", ["FCB-010"]], ["0f", ["FCB-010"]],
-     ["10", ["FCB-010"]], ["11", ["FCB-004"]],
-     ["12", ["FCB-010"]], ["13", ["FCB-010"]],
-     ["14", ["FCB-010"]], ["15", ["FCB-006"]],
-     ["16", ["FCB-008"]], ["17", ["FCB-008"]],
-     ["18", ["FCB-008"]], ["19", ["FCB-007"]],
-     ["1a", ["FCB-009"]], ["1b", ["FCB-009"]],
-     ["1c", ["FP-091"]], ["1d", ["FP-092"]],
-     ["1e", ["FP-095"]], ["1f", ["FP-096"]],
-     ["20", ["FP-096"]],
-   ]);
-   if (oaTraceByOpcode.size !== 25) {
-     throw new Error("closed OA-35 trace map size is not 25");
-   }
-   const selected = [];
-   for (const block of blocks) {
-     const header = block.match(/^# Subtest: (.+)$/mu);
-     if (!header) continue;
-     const name = header[1];
-     if (!(mode.startsWith("oa") ? oaName : migrationName).test(name)) {
-       continue;
-     }
-     const result = block.match(/^(not )?ok [0-9]+ - (.+)$/mu);
-     if (!result || result[2] !== name) {
-       throw new Error("missing top-level TAP result for " + name);
-     }
-     if (/# (SKIP|TODO)/u.test(result[2])) {
-       throw new Error("matching TAP result was skipped/TODO: " + name);
-     }
-     selected.push({ name, block, failed: Boolean(result[1]) });
-   }
-   const requireTrue = (condition, message) => {
-     if (!condition) throw new Error(message);
-   };
-   if (mode === "oa-red") {
-     requireTrue(selected.length === 68, "OA named count is not 68");
-     const failed = selected.filter((row) => row.failed);
-     requireTrue(failed.length === 58, "OA failure count mismatch");
-     const oa35 = selected.filter((row) => /^\[OA-35-/u.test(row.name));
-     requireTrue(oa35.length === 25, "OA-35 named count is not 25");
-     const expectedOpcodes = Array.from(
-       { length: 25 },
-       (_, index) => (index + 8).toString(16).padStart(2, "0"),
-     );
-     const observedOpcodes = oa35.map(
-       (row) => row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1],
-     );
-     requireTrue(
-       new Set(observedOpcodes).size === 25 &&
-         expectedOpcodes.every((opcode) => observedOpcodes.includes(opcode)),
-       "OA-35 opcode set is not exactly 08..20",
-     );
-     for (const row of oa35) {
-       const opcode = row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1];
-       requireTrue(Boolean(opcode), "OA-35 opcode missing from " + row.name);
-       const observedTraces = [...row.name.matchAll(
-         /\[((?:FCB|FP)-[0-9]{3})\]/gu,
-       )].map((match) => match[1]);
-       const expectedTraces = oaTraceByOpcode.get(opcode);
-       const expectedPrefix = `[OA-35-${opcode}] ` +
-         expectedTraces.map((trace) => `[${trace}]`).join(" ");
-       requireTrue(
-         JSON.stringify(observedTraces) ===
-           JSON.stringify(expectedTraces) &&
-           (row.name === expectedPrefix || row.name.startsWith(expectedPrefix + " ")),
-         "OA-35 opcode/trace map mismatch: " + row.name,
-       );
-       const markers =
-         row.block.match(
-           /EXPECTED_OA35_RED:(08|09|0[a-f]|1[0-9a-f]|20):UNIMPLEMENTED_CLOSED_CASE/gu,
-         ) ?? [];
-       requireTrue(row.failed, "OA-35 unexpectedly passed: " + row.name);
-       requireTrue(markers.length === 1, "OA-35 marker count: " + row.name);
-       requireTrue(
-         markers[0] ===
-           "EXPECTED_OA35_RED:" + opcode + ":UNIMPLEMENTED_CLOSED_CASE",
-         "OA-35 marker/opcode mismatch: " + row.name,
-       );
-       requireTrue(
-         /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
-         "OA-35 did not fail by assertion: " + row.name,
-       );
-     }
-     for (const row of failed) {
-       requireTrue(
-         /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
-         "OA failure was not an assertion: " + row.name,
-       );
-     }
-   } else {
-     requireTrue(selected.length === 86, "migration named count is not 86");
-     const selectedIds = selected.map(
-       (row) => row.name.match(/^\[([^\]]+)\]/u)?.[1],
-     );
-     const selectedIdSet = new Set(selectedIds);
-     requireTrue(
-       selectedIdSet.size === 86 &&
-         [...classifierById.keys()].every((id) => selectedIdSet.has(id)),
-       "migration trace-ID set differs from the closed 86-ID map",
-     );
-     const ledger = selected.find(
-       (row) => row.name.startsWith("[MIGRATION-LEDGER]"),
-     );
-     requireTrue(Boolean(ledger) && !ledger.failed, "migration ledger must pass");
-     for (const row of selected) {
-       const id = row.name.match(/^\[([^\]]+)\]/u)?.[1];
-       requireTrue(Boolean(id), "migration trace ID missing");
-       const expectedClassifier = classifierById.get(id);
-       requireTrue(Boolean(expectedClassifier), "unmapped migration ID: " + id);
-       const classifierSegments = row.name.match(
-         /\[RED-CLASSIFIER:[A-Z0-9_]+\]/gu,
-       ) ?? [];
-       const declaredClassifier = row.name.match(
-         /^\[[^\]]+\] \[RED-CLASSIFIER:([A-Z0-9_]+)\](?: |$)/u,
-       )?.[1];
-       requireTrue(
-         classifierSegments.length === 1 &&
-           declaredClassifier === expectedClassifier,
-         "migration name/classifier mismatch: " + id,
-       );
-       const markers =
-         row.block.match(
-           /EXPECTED_MIGRATION_RED:(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER):[A-Z0-9_]+/gu,
-         ) ?? [];
-       if (row.failed) {
-         requireTrue(markers.length === 1, "migration marker count: " + id);
-         requireTrue(
-           markers[0] ===
-             "EXPECTED_MIGRATION_RED:" + id + ":" + expectedClassifier,
-           "migration marker/closed-classifier mismatch: " + id,
-         );
-         requireTrue(
-           /code: ["\x27]?ERR_ASSERTION["\x27]?/u.test(row.block),
-           "migration failure was not an assertion: " + id,
-         );
-       } else {
-         requireTrue(!row.failed && markers.length === 0, "migration GREEN mismatch");
-       }
-     }
-   }
-   console.log(JSON.stringify({
-     mode,
-     selected: selected.length,
-     pass: selected.filter((row) => !row.failed).length,
-     fail: selected.filter((row) => row.failed).length,
-   }));
-   '
-   node -e "$TAP_ASSOCIATION_CHECKER" "$OA35_RED_LOG" oa-red
+   TAP_TREE_PLAN=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+   TAP_ASSOCIATION_CHECKER=$(
+     awk '
+       /^[[:space:]]*<!-- BETTER_AHEAD_TAP_TREE_CHECKER_BEGIN -->$/ \
+         { capture=1; next }
+       /^[[:space:]]*<!-- BETTER_AHEAD_TAP_TREE_CHECKER_END -->$/ \
+         { capture=0 }
+       capture && $0 !~ /^[[:space:]]*```/ { print }
+     ' "$TAP_TREE_PLAN"
+   )
+   test -n "$TAP_ASSOCIATION_CHECKER"
+   test "$(printf '%s' "$TAP_ASSOCIATION_CHECKER" | shasum -a 256 \
+     | awk '{print $1}')" \
+     = "58db979fc2f1e3d4f755b2262ac04304c6b1c3eca8c65619e6237778cf39449a"
+   node -e "$TAP_ASSOCIATION_CHECKER" \
+     "$OA35_RED_LOG" oa-red "$FROZEN_OA_RED_LOG"
    node -e "$TAP_ASSOCIATION_CHECKER" \
      "$MIGRATION_CHARACTERIZATION_LOG" migration-red
    ```
 
-   The exact OA run is RED only because the original 33 oracle behaviors plus
-   the 25 OA-35 behaviors are absent; its ten confinement sentinels still pass.
+   The exact OA run is RED only because 33 records in the authenticated legacy
+   tree and all 25 OA-35 roots fail at their intentional assertions; its ten
+   legacy passing records remain GREEN.
    The 86 characterization owners may honestly be mixed RED/GREEN against the
    partial implementation, but every failure must reach the current lifecycle
-   owner and record its expected invariant reason. Nonmatching tests that Node
-   reports as skipped because of `--test-name-pattern` are outside these named
-   counts; no matching OA/migration record may be skipped or TODO. A
-   missing-export
+   owner and record its expected invariant reason. With the pinned Node TAP
+   reporter these focused commands emit only the selected tree; any skipped or
+   TODO record, selected or otherwise, fails this gate. A missing-export
    `TypeError`, syntax error, wrong count, skipped case, timeout, ambient
    dependency, or changed legacy fixture is not accepted evidence.
 4. Implement the complete 32-ID `open` inventory and unchanged 21-ID `probe`
@@ -3813,11 +4584,10 @@ permission to regenerate the expected bytes.
    production files retain their frozen dirty bytes. No other new path, helper,
    dependency, export, or production interface is authorized.
 5. Run the two exact focused commands again with new private logs. The named OA
-   TAP records must be `68 total / 68 pass / 0 fail / 0 matching skip or TODO`.
+   TAP records must be `68 total / 68 pass / 0 fail / 0 skip or TODO`.
    The named migration TAP records must be
-   `86 total / 86 pass / 0 fail / 0 matching skip or TODO`. Unrelated tests
-   filtered by Node may appear only as nonmatching skips and are not included in
-   those counts. Every literal
+   `86 total / 86 pass / 0 fail / 0 skip or TODO`. The pinned Node TAP reporter
+   must emit only these selected records in each focused log. Every literal
    open/probe ID has a direct positive behavioral test; every FCB and P1 owner is
    traced from the applicable OA-35 name; and all
    unknown/extra/forged/reused/order and descriptor/protocol negatives remain
@@ -3828,200 +4598,56 @@ permission to regenerate the expected bytes.
 
    ```bash
    set -euo pipefail
+   FROZEN_OA_RED_LOG=/tmp/better-ahead-native-v3-oracle-red-attempt2.log
+   test -f "$FROZEN_OA_RED_LOG"
+   test ! -L "$FROZEN_OA_RED_LOG"
+   test "$(shasum -a 256 "$FROZEN_OA_RED_LOG" | awk '{print $1}')" \
+     = "fb79890356f3c9541615736ab185ef61a58e7882f0f76dffe94095b8e289b58d"
+
    OA35_GREEN_LOG=$(mktemp /tmp/better-ahead-oa35-green.XXXXXX)
    corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
-     --test-name-pattern='^\[OA-(16|34|35|V3)-' \
+     --test-reporter=tap \
+     --test-name-pattern='^(?:\[OA-(?:16|34)\](?: |$)|\[OA-(?:16|34|35|V3)-)' \
      brand/better-ahead-brand-contract.test.mjs \
      > "$OA35_GREEN_LOG" 2>&1
-   OA35_GREEN_SUBTESTS=$(rg -c \
-     '^# Subtest: \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
-   OA35_GREEN_PASS=$(rg -c \
-     '^ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
-   OA35_GREEN_FAIL=$(rg -c \
-     '^not ok [0-9]+ - \[OA-(16|34|35|V3)-' "$OA35_GREEN_LOG" || true)
-   test "${OA35_GREEN_SUBTESTS:-0}" = "68"
-   test "${OA35_GREEN_PASS:-0}" = "68"
-   test "${OA35_GREEN_FAIL:-0}" = "0"
-   ! rg -q \
-     '^(ok|not ok) [0-9]+ - \[OA-(16|34|35|V3)-.*# (SKIP|TODO)' \
-     "$OA35_GREEN_LOG"
+   rg -q '^# tests 68$' "$OA35_GREEN_LOG"
+   rg -q '^# pass 68$' "$OA35_GREEN_LOG"
+   rg -q '^# fail 0$' "$OA35_GREEN_LOG"
    rg -q '^# cancelled 0$' "$OA35_GREEN_LOG"
+   rg -q '^# skipped 0$' "$OA35_GREEN_LOG"
    rg -q '^# todo 0$' "$OA35_GREEN_LOG"
 
    MIGRATION_GREEN_LOG=$(mktemp /tmp/better-ahead-migration-green.XXXXXX)
    corepack pnpm@10.33.2 --filter @mpp/scripts exec node --test \
+     --test-reporter=tap \
      --test-name-pattern='^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
      brand/better-ahead-brand-contract.test.mjs \
      > "$MIGRATION_GREEN_LOG" 2>&1
-   MIGRATION_GREEN_SUBTESTS=$(rg -c \
-     '^# Subtest: \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
-     "$MIGRATION_GREEN_LOG" || true)
-   MIGRATION_GREEN_PASS=$(rg -c \
-     '^ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
-     "$MIGRATION_GREEN_LOG" || true)
-   MIGRATION_GREEN_FAIL=$(rg -c \
-     '^not ok [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]' \
-     "$MIGRATION_GREEN_LOG" || true)
-   test "${MIGRATION_GREEN_SUBTESTS:-0}" = "86"
-   test "${MIGRATION_GREEN_PASS:-0}" = "86"
-   test "${MIGRATION_GREEN_FAIL:-0}" = "0"
-   ! rg -q \
-     '^(ok|not ok) [0-9]+ - \[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\].*# (SKIP|TODO)' \
-     "$MIGRATION_GREEN_LOG"
+   rg -q '^# tests 86$' "$MIGRATION_GREEN_LOG"
+   rg -q '^# pass 86$' "$MIGRATION_GREEN_LOG"
+   rg -q '^# fail 0$' "$MIGRATION_GREEN_LOG"
    rg -q '^# cancelled 0$' "$MIGRATION_GREEN_LOG"
+   rg -q '^# skipped 0$' "$MIGRATION_GREEN_LOG"
    rg -q '^# todo 0$' "$MIGRATION_GREEN_LOG"
 
-   GREEN_TAP_ASSOCIATION_CHECKER='
-   const fs = require("node:fs");
-   const [oaFile, migrationFile] = process.argv.slice(1);
-   const requireTrue = (condition, message) => {
-     if (!condition) throw new Error(message);
-   };
-   const classifierById = new Map();
-   const addClassifiers = (classifier, ids) => {
-     for (const id of ids.trim().split(/\s+/u)) {
-       requireTrue(!classifierById.has(id), "duplicate classifier ID: " + id);
-       classifierById.set(id, classifier);
-     }
-   };
-   addClassifiers("VALIDATION_ADMISSION_SEALING",
-     "FP-002 FP-004 FP-005 FP-027 FP-057 FP-070 FP-079 FP-083 FP-098 FP-099");
-   addClassifiers("INITIAL_AUTHORITY_WORKSPACE",
-     "FP-007 FP-028 FP-046 FP-047 FP-048 FP-049 FP-050 FP-053");
-   addClassifiers("ATOMIC_BUNDLE_PUBLICATION",
-     "FP-040 FP-041 FP-043 FP-044 FP-045 FP-058 FP-060 FP-063 FP-064 FP-065 FP-074 FP-076 FP-097 FP-102");
-   addClassifiers("JOURNAL_RESUME_RECONCILIATION",
-     "FP-003 FP-008 FP-009 FP-030 FP-031 FP-032 FP-033 FP-034 FP-037 FP-038 FP-039 FP-042");
-   addClassifiers("COMMIT_DURABILITY_PHYSICAL_TRUTH",
-     "FP-006 FP-025 FP-061 FP-067");
-   addClassifiers("PATH_CONFINEMENT_IDENTITY",
-     "FP-020 FP-021 FP-022 FP-023 FP-024 FP-068");
-   addClassifiers("CONVERGENCE_IDEMPOTENCY_RUNNER",
-     "FP-012 FP-013 FP-019 FP-069 FP-080 FP-081 FP-107");
-   addClassifiers("CLEANUP_OWNERSHIP_INTEGRITY",
-     "FP-054 FP-055 FP-059 FP-075 FP-078 FP-082 FP-084 FP-085 FP-101 FP-105 FP-106");
-   addClassifiers("FINAL_AUTHORITY_REVALIDATION",
-     "FP-010 FP-011 FP-072 FP-073 FP-086 FP-087 FP-088 FP-089 FP-090 FP-093 FP-094");
-   classifierById.set("FCB-002-KEEP", "KEEP_CURRENT_UPDATE_COLLISION");
-   classifierById.set(
-     "FCB-008-KEEP", "KEEP_CURRENT_PREPAYLOAD_REPLACEMENT");
-   classifierById.set("MIGRATION-LEDGER", "STATIC_LEDGER");
-   requireTrue(classifierById.size === 86, "classifier map size is not 86");
-   const oaTraceByOpcode = new Map([
-     ["08", ["FCB-005"]],
-     ["09", ["FCB-001", "FCB-005"]],
-     ["0a", ["FCB-002"]], ["0b", ["FCB-003"]],
-     ["0c", ["FCB-003"]], ["0d", ["FCB-010"]],
-     ["0e", ["FCB-010"]], ["0f", ["FCB-010"]],
-     ["10", ["FCB-010"]], ["11", ["FCB-004"]],
-     ["12", ["FCB-010"]], ["13", ["FCB-010"]],
-     ["14", ["FCB-010"]], ["15", ["FCB-006"]],
-     ["16", ["FCB-008"]], ["17", ["FCB-008"]],
-     ["18", ["FCB-008"]], ["19", ["FCB-007"]],
-     ["1a", ["FCB-009"]], ["1b", ["FCB-009"]],
-     ["1c", ["FP-091"]], ["1d", ["FP-092"]],
-     ["1e", ["FP-095"]], ["1f", ["FP-096"]],
-     ["20", ["FP-096"]],
-   ]);
-   requireTrue(oaTraceByOpcode.size === 25, "OA-35 trace map size is not 25");
-   const select = (file, namePattern) => {
-     const blocks = fs.readFileSync(file, "utf8")
-       .split(/\n(?=# Subtest: )/u);
-     const selected = [];
-     for (const block of blocks) {
-       const name = block.match(/^# Subtest: (.+)$/mu)?.[1];
-       if (!name || !namePattern.test(name)) continue;
-       const result = block.match(/^(not )?ok [0-9]+ - (.+)$/mu);
-       requireTrue(
-         Boolean(result) && result[2] === name,
-         "missing top-level GREEN result: " + name,
-       );
-       requireTrue(!result[1], "GREEN test failed: " + name);
-       requireTrue(
-         !/# (SKIP|TODO)/u.test(result[2]),
-         "GREEN test skipped/TODO: " + name,
-       );
-       selected.push({ name, block });
-     }
-     return selected;
-   };
-   const oa = select(oaFile, /^\[OA-(16|34|35|V3)-/u);
-   requireTrue(oa.length === 68, "OA GREEN named count is not 68");
-   const oa35 = oa.filter((row) => /^\[OA-35-/u.test(row.name));
-   requireTrue(oa35.length === 25, "OA-35 GREEN named count is not 25");
-   const expectedOpcodes = Array.from(
-     { length: 25 },
-     (_, index) => (index + 8).toString(16).padStart(2, "0"),
-   );
-   const observedOpcodes = oa35.map(
-     (row) => row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1],
-   );
-   requireTrue(
-     new Set(observedOpcodes).size === 25 &&
-       expectedOpcodes.every((opcode) => observedOpcodes.includes(opcode)),
-     "OA-35 GREEN opcode set is not exactly 08..20",
-   );
-   for (const row of oa35) {
-     const opcode = row.name.match(/^\[OA-35-([0-9a-f]{2})\]/u)?.[1];
-     const observedTraces = [...row.name.matchAll(
-       /\[((?:FCB|FP)-[0-9]{3})\]/gu,
-     )].map((match) => match[1]);
-     const expectedTraces = oaTraceByOpcode.get(opcode);
-     const expectedPrefix = `[OA-35-${opcode}] ` +
-       expectedTraces.map((trace) => `[${trace}]`).join(" ");
-     requireTrue(
-       JSON.stringify(observedTraces) ===
-         JSON.stringify(expectedTraces) &&
-         (row.name === expectedPrefix || row.name.startsWith(expectedPrefix + " ")),
-       "OA-35 GREEN opcode/trace mismatch: " + row.name,
-     );
-     requireTrue(
-       !/EXPECTED_OA35_RED:/u.test(row.block),
-       "OA-35 RED marker survived GREEN: " + row.name,
-     );
-   }
-   const migration = select(
-     migrationFile,
-     /^\[(FP-[0-9]{3}|FCB-00(2|8)-KEEP|MIGRATION-LEDGER)\]/u,
-   );
-   requireTrue(migration.length === 86, "migration GREEN count is not 86");
-   const migrationIds = migration.map(
-     (row) => row.name.match(/^\[([^\]]+)\]/u)?.[1],
-   );
-   const migrationIdSet = new Set(migrationIds);
-   requireTrue(
-     migrationIdSet.size === 86 &&
-       [...classifierById.keys()].every((id) => migrationIdSet.has(id)),
-     "migration GREEN trace-ID set differs from the closed 86-ID map",
-   );
-   for (const row of migration) {
-     const id = row.name.match(/^\[([^\]]+)\]/u)?.[1];
-     const expectedClassifier = classifierById.get(id);
-     const classifierSegments = row.name.match(
-       /\[RED-CLASSIFIER:[A-Z0-9_]+\]/gu,
-     ) ?? [];
-     const declaredClassifier = row.name.match(
-       /^\[[^\]]+\] \[RED-CLASSIFIER:([A-Z0-9_]+)\](?: |$)/u,
-     )?.[1];
-     requireTrue(Boolean(expectedClassifier), "unmapped GREEN ID: " + id);
-     requireTrue(
-       classifierSegments.length === 1 &&
-         declaredClassifier === expectedClassifier,
-       "GREEN name/classifier mismatch: " + id,
-     );
-     requireTrue(
-       !/EXPECTED_MIGRATION_RED:/u.test(row.block),
-       "migration RED marker survived GREEN: " + id,
-     );
-   }
-   console.log(JSON.stringify({
-     oa: oa.length,
-     oa35: oa35.length,
-     migration: migration.length,
-   }));
-   '
+   TAP_TREE_PLAN=docs/superpowers/plans/2026-08-11-better-ahead-ios-rebrand.md
+   GREEN_TAP_ASSOCIATION_CHECKER=$(
+     awk '
+       /^[[:space:]]*<!-- BETTER_AHEAD_TAP_TREE_CHECKER_BEGIN -->$/ \
+         { capture=1; next }
+       /^[[:space:]]*<!-- BETTER_AHEAD_TAP_TREE_CHECKER_END -->$/ \
+         { capture=0 }
+       capture && $0 !~ /^[[:space:]]*```/ { print }
+     ' "$TAP_TREE_PLAN"
+   )
+   test -n "$GREEN_TAP_ASSOCIATION_CHECKER"
+   test "$(printf '%s' "$GREEN_TAP_ASSOCIATION_CHECKER" | shasum -a 256 \
+     | awk '{print $1}')" \
+     = "58db979fc2f1e3d4f755b2262ac04304c6b1c3eca8c65619e6237778cf39449a"
    node -e "$GREEN_TAP_ASSOCIATION_CHECKER" \
-     "$OA35_GREEN_LOG" "$MIGRATION_GREEN_LOG"
+     "$OA35_GREEN_LOG" oa-green "$FROZEN_OA_RED_LOG"
+   node -e "$GREEN_TAP_ASSOCIATION_CHECKER" \
+     "$MIGRATION_GREEN_LOG" migration-green
    ```
 
    Then run:

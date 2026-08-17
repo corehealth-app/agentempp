@@ -57,6 +57,14 @@ export interface PhraseSelectorResult {
   phrase_id: string | null
   /** Motivo da seleção/falha. */
   reason: string
+  /** Tamanho do pool retornado da fonte de frases. */
+  candidate_count?: number
+  /** Tamanho do pool após filtros de tag e compatibilidade temporal. */
+  compatible_count?: number
+  /** Quantas frases elegíveis estavam no cooldown do paciente. */
+  cooldown_count?: number
+  /** True quando a frase escolhida veio do subconjunto fora do cooldown. */
+  selected_after_cooldown?: boolean
 }
 
 /**
@@ -195,7 +203,7 @@ export function isTemporallyCompatible(
       if (has(reCeia)) return { ok: false, reason: 'phrase_mentions_ceia_in_cafe' }
       if (has(reNoite)) return { ok: false, reason: 'phrase_mentions_noite_in_cafe' }
       // "almoço" sozinho em frase de café também é estranho ("X é ideal pro almoço")
-      if (has(reAlmoco) && !has(reCafeManha) && !has(reManha))
+      if (has(reAlmoco) && !has(reCafeManha) && !has(reManha) && !has(reCedo))
         return { ok: false, reason: 'phrase_mentions_almoco_only_in_cafe' }
       return { ok: true }
     }
@@ -346,6 +354,7 @@ export async function selectCuratedPhrase(
     usage_count: number
     last_used_at: string | null
   }>)
+  const candidateCount = candidates.length
 
   if (candidates.length === 0) {
     return {
@@ -353,6 +362,9 @@ export async function selectCuratedPhrase(
       food_canonical_name: canonicalName,
       phrase_id: null,
       reason: 'no_phrases_for_food',
+      candidate_count: candidateCount,
+      compatible_count: 0,
+      cooldown_count: 0,
     }
   }
 
@@ -379,31 +391,64 @@ export async function selectCuratedPhrase(
         food_canonical_name: canonicalName,
         phrase_id: null,
         reason: 'no_temporally_compatible_phrase',
+        candidate_count: candidateCount,
+        compatible_count: 0,
+        cooldown_count: 0,
       }
     }
     pool = compatible
   }
+  const compatibleCount = pool.length
 
   // Cooldown por (user, phrase): filtra frases que esse user viu nas
-  // últimas 7 dias. Resolve repetição literal pra mesmo paciente em
-  // refeições consecutivas (review high #3). Só aplica se userId presente.
+  // últimas 7 dias. Resolve repetição literal pra mesmo paciente em refeições
+  // consecutivas (review high #3). Regra forte: se existe alternativa fora
+  // do cooldown, nunca repete a recente. Se a leitura do cooldown falhar,
+  // retorna null e o caller cai pro Haiku em vez de repetir silenciosamente.
+  let cooldownCount = 0
+  let selectedAfterCooldown = false
+  let allRecentFallback = false
   if (input.userId) {
     const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
     const phraseIds = pool.map((c) => c.id)
-    const { data: recent } = await sp
+    const { data: recent, error: cooldownError } = await sp
       .from('user_phrase_cooldown')
       .select('phrase_id')
       .eq('user_id', input.userId)
       .eq('phrase_table', 'food')
       .gte('last_seen_at', cooldownSince)
       .in('phrase_id', phraseIds)
+    if (cooldownError) {
+      return {
+        phrase: null,
+        food_canonical_name: canonicalName,
+        phrase_id: null,
+        reason: 'cooldown_lookup_failed',
+        candidate_count: candidateCount,
+        compatible_count: compatibleCount,
+        cooldown_count: 0,
+      }
+    }
     const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
+    cooldownCount = seenIds.size
     const notRecent = pool.filter((c) => !seenIds.has(c.id))
-    // Se TODAS foram vistas <7d, usa pool original (melhor repetir do que
-    // mandar fallback Haiku — paciente pode até notar a repetição mas o
-    // tom continua certo).
-    if (notRecent.length > 0) pool = notRecent
+    if (notRecent.length > 0) {
+      selectedAfterCooldown = seenIds.size > 0 && notRecent.length < pool.length
+      pool = notRecent
+    } else if (seenIds.size > 0) {
+      // Se TODAS foram vistas <7d, usa pool original (melhor repetir do que
+      // mandar fallback Haiku — paciente pode até notar a repetição mas o
+      // tom continua certo), mas marca o reason explicitamente.
+      allRecentFallback = true
+    }
   }
+
+  pool = [...pool].sort((a, b) => {
+    const aTime = a.last_used_at ? Date.parse(a.last_used_at) : 0
+    const bTime = b.last_used_at ? Date.parse(b.last_used_at) : 0
+    if (aTime !== bTime) return aTime - bTime
+    return (a.usage_count ?? 0) - (b.usage_count ?? 0)
+  })
 
   // Sorteio determinístico entre top-3 — retries inngest cachean step.run
   // por SAÍDA, mas qualquer throw após selectCuratedPhrase força re-execução.
@@ -422,6 +467,9 @@ export async function selectCuratedPhrase(
       food_canonical_name: canonicalName,
       phrase_id: null,
       reason: 'no_match_after_filter',
+      candidate_count: candidateCount,
+      compatible_count: compatibleCount,
+      cooldown_count: cooldownCount,
     }
   }
 
@@ -469,14 +517,24 @@ export async function selectCuratedPhrase(
 
   // reason inclui o caminho do match pra audit: 'selected' (exact) ou
   // 'selected_embedding:0.84' (cascade semântica)
-  const reasonStr = matchedViaEmbedding
-    ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
-    : 'selected'
+  const reasonStr = allRecentFallback
+    ? 'selected_all_recent'
+    : selectedAfterCooldown
+      ? matchedViaEmbedding
+        ? `selected_after_cooldown_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
+        : 'selected_after_cooldown'
+      : matchedViaEmbedding
+        ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
+        : 'selected'
 
   return {
     phrase: finalPhrase,
     food_canonical_name: canonicalName,
     phrase_id: picked.id,
     reason: reasonStr,
+    candidate_count: candidateCount,
+    compatible_count: compatibleCount,
+    cooldown_count: cooldownCount,
+    selected_after_cooldown: selectedAfterCooldown,
   }
 }

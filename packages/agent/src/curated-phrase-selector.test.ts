@@ -13,13 +13,16 @@ function mockSupabase(rows: Array<{
   tags: Record<string, unknown> | null
   usage_count: number
   last_used_at: string | null
-}>): ServiceClient {
+}>, opts: { recentPhraseIds?: string[]; cooldownError?: Error } = {}): ServiceClient {
   // Mock thenable chain pra .from('user_phrase_cooldown')...{select,eq,...}
   const cooldownChain = {
     select: () => cooldownChain,
     eq: () => cooldownChain,
     gte: () => cooldownChain,
-    in: async () => ({ data: [] }), // nenhuma frase em cooldown
+    in: async () => {
+      if (opts.cooldownError) return { data: null, error: opts.cooldownError }
+      return { data: (opts.recentPhraseIds ?? []).map((phrase_id) => ({ phrase_id })) }
+    },
     upsert: async () => ({ data: null }), // upsert no-op
   }
   const updateChain = {
@@ -433,5 +436,94 @@ describe('selectCuratedPhrase — filtro temporal integrado', () => {
       // sem mealKind
     })
     expect(r.phrase).toBe('Whey de manhã é hábito…')
+  })
+})
+
+describe('selectCuratedPhrase — cooldown forte por paciente', () => {
+  it('caso Roberto: frase recente em cooldown + alternativa elegível → escolhe alternativa', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'p-whey-repetida',
+          phrase:
+            'Whey de manhã é o tipo de hábito que separa quem leva o processo a sério de quem só pensa em emagrecer.',
+          tags: {},
+          usage_count: 18,
+          last_used_at: '2026-07-06T13:20:42.144Z',
+        },
+        {
+          id: 'p-whey-alternativa',
+          phrase:
+            'Café com whey logo cedo trava a fome até o almoço — 20g de proteína num item só, escolha sólida pra recomp.',
+          tags: { recomp: true },
+          usage_count: 1,
+          last_used_at: '2026-06-14T13:51:02.804Z',
+        },
+      ],
+      { recentPhraseIds: ['p-whey-repetida'] },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-prod',
+      items: [{ food_name: 'leite com whey', kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 }],
+      state: { protocol: 'recomposicao' },
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase_id).toBe('p-whey-alternativa')
+    expect(result.phrase).toBe(
+      'Café com whey logo cedo trava a fome até o almoço — 20g de proteína num item só, escolha sólida pra recomp.',
+    )
+    expect(result.reason).toBe('selected_after_cooldown')
+  })
+
+  it('todas as frases em cooldown → permite repetir com reason explícito', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'p-unica',
+          phrase: 'Whey de manhã é hábito de quem leva a sério.',
+          tags: {},
+          usage_count: 18,
+          last_used_at: '2026-07-06T13:20:42.144Z',
+        },
+      ],
+      { recentPhraseIds: ['p-unica'] },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-prod',
+      items: [{ food_name: 'leite com whey', kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 }],
+      state: { protocol: 'recomposicao' },
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase_id).toBe('p-unica')
+    expect(result.reason).toBe('selected_all_recent')
+  })
+
+  it('erro ao consultar cooldown → retorna null para cair no Haiku', async () => {
+    const supa = mockSupabase(
+      [
+        {
+          id: 'p-whey',
+          phrase: 'Whey de manhã é hábito de quem leva a sério.',
+          tags: {},
+          usage_count: 18,
+          last_used_at: '2026-07-06T13:20:42.144Z',
+        },
+      ],
+      { cooldownError: new Error('permission denied') },
+    )
+
+    const result = await selectCuratedPhrase(supa, {
+      userId: 'roberto-prod',
+      items: [{ food_name: 'leite com whey', kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 }],
+      state: { protocol: 'recomposicao' },
+      mealKind: 'cafe',
+    })
+
+    expect(result.phrase).toBeNull()
+    expect(result.reason).toBe('cooldown_lookup_failed')
   })
 })

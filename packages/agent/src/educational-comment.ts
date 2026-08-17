@@ -281,6 +281,11 @@ export async function generateEducationalComment(
         await emitEdu(opts, 'edu_comment.curated_hit', {
           kind: input.kind,
           anchor: curated.food_canonical_name,
+          phrase_id: curated.phrase_id,
+          candidate_count: curated.candidate_count ?? null,
+          compatible_count: curated.compatible_count ?? null,
+          cooldown_count: curated.cooldown_count ?? null,
+          selected_after_cooldown: curated.selected_after_cooldown === true,
           reason: curated.reason,
         })
         return curated.phrase
@@ -298,12 +303,28 @@ export async function generateEducationalComment(
           })),
           severity: 'critical',
         })
+      } else if (curated.reason === 'cooldown_lookup_failed') {
+        await emitEdu(opts, 'edu_comment.cooldown_error', {
+          kind: input.kind,
+          anchor: curated.food_canonical_name,
+          phrase_id: curated.phrase_id,
+          candidate_count: curated.candidate_count ?? null,
+          compatible_count: curated.compatible_count ?? null,
+          cooldown_count: curated.cooldown_count ?? null,
+          selected_after_cooldown: curated.selected_after_cooldown === true,
+          reason: curated.reason,
+        })
       } else {
         // curated_miss legítimo (planilha incompleta) — fire-and-forget,
         // não bloqueia turno do paciente.
         void emitEdu(opts, 'edu_comment.curated_miss', {
           kind: input.kind,
           anchor: curated.food_canonical_name,
+          phrase_id: curated.phrase_id,
+          candidate_count: curated.candidate_count ?? null,
+          compatible_count: curated.compatible_count ?? null,
+          cooldown_count: curated.cooldown_count ?? null,
+          selected_after_cooldown: curated.selected_after_cooldown === true,
           reason: curated.reason,
         })
       }

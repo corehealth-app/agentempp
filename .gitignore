@@ -92,3 +92,4 @@ crons-*.png
 calc-*.png
 *-page.yml
 .audit-logs/
+.gstack/

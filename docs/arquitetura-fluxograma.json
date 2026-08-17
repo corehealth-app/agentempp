@@ -1,0 +1,148 @@
+{
+  "titulo": "Agente MPP (Dr. Roberto Menescal) — como funciona, peça por peça",
+  "gerado_em": "2026-05-27",
+  "observacao": "Cada nó tem um campo \"onde\" que diz quem é responsável: a IA, o código determinístico, o banco de dados, um cálculo em tempo real, ou um serviço externo. O princípio do sistema: NÚMERO e TRANSAÇÃO = código (sempre igual e certo); CONVERSA e COACHING = IA.",
+
+  "legenda": {
+    "IA": "Modelo de IA decide/gera (Claude texto, Gemini visão, Groq áudio→texto). Pode variar.",
+    "CODIGO": "Lógica fixa programada no app (regras de negócio, montagem de mensagem, anti-alucinação). Sempre igual.",
+    "CALCULO": "Conta matemática feita pelo código em tempo real (metas, balanço, bloco 7700). Determinística.",
+    "BANCO": "Dado ou configuração no Supabase. Inclui o 'dado vivo' (editável sem deploy).",
+    "EXTERNO": "Serviço de terceiro (WhatsApp/Meta, OpenRouter, Gemini, Inngest, Vercel, Telegram, Stripe)."
+  },
+
+  "infraestrutura": {
+    "mensageria": { "onde": "EXTERNO", "o_que": "WhatsApp Business (Meta Cloud API)" },
+    "porta_de_entrada": { "onde": "CODIGO+BANCO", "o_que": "Edge Function 'webhook-whatsapp' no Supabase: recebe a mensagem, grava em 'messages', dispara evento" },
+    "orquestrador": { "onde": "EXTERNO", "o_que": "Inngest Cloud: enfileira e roda as funções com retry/idempotência" },
+    "servidor": { "onde": "EXTERNO", "o_que": "Vercel (serverless): roda o pipeline do agente e o painel admin" },
+    "banco": { "onde": "BANCO", "o_que": "Supabase (Postgres + Edge Functions + cron)" },
+    "cerebro_texto": { "onde": "IA+EXTERNO", "o_que": "Claude via OpenRouter (Sonnet na conversa, Haiku na mensagem proativa)" },
+    "visao": { "onde": "IA+EXTERNO", "o_que": "Google Gemini 2.5 Flash (lê fotos)" },
+    "audio_para_texto": { "onde": "IA+EXTERNO", "o_que": "Groq (transcreve áudio do paciente)" },
+    "pagamentos": { "onde": "EXTERNO", "o_que": "Stripe (assinatura)" }
+  },
+
+  "fluxo_principal": {
+    "descricao": "O que acontece quando o paciente manda uma mensagem.",
+    "nodes": [
+      { "id": "n1",  "label": "Paciente manda mensagem (texto / foto / áudio)", "onde": "EXTERNO" },
+      { "id": "n2",  "label": "Meta WhatsApp entrega no webhook", "onde": "EXTERNO" },
+      { "id": "n3",  "label": "Edge Function grava a mensagem em 'messages' e dispara evento", "onde": "CODIGO+BANCO" },
+      { "id": "n4",  "label": "Inngest aciona o processamento (Vercel)", "onde": "EXTERNO" },
+
+      { "id": "n5a", "label": "FOTO: baixa a imagem do WhatsApp (com 3 tentativas)", "onde": "CODIGO", "nota": "se falhar, pede pra reenviar — NÃO inventa o conteúdo" },
+      { "id": "n5b", "label": "FOTO: Gemini identifica alimentos + quantidade (ou %gordura / balança / rótulo)", "onde": "IA", "usa_config": "prompt 'vision-meal' (BANCO, editável)" },
+      { "id": "n5c", "label": "ÁUDIO: Groq transcreve pra texto", "onde": "IA" },
+
+      { "id": "n6",  "label": "Carrega o contexto do paciente: perfil, dia de hoje, progresso, últimas 50 msgs, janela de 14 dias", "onde": "BANCO" },
+      { "id": "n7",  "label": "Calcula metas e métricas do paciente (BMR, TDEE, meta de kcal e proteína)", "onde": "CALCULO" },
+      { "id": "n8",  "label": "Monta o 'manual' (system prompt) a partir das regras, filtrado pelo idioma do paciente", "onde": "CODIGO+BANCO", "nota": "as regras/persona/método ficam em 'agent_rules' (dado vivo, editável sem deploy)" },
+
+      { "id": "n9",  "label": "IA (Claude) lê tudo e decide: qual a intenção + quais ferramentas chamar", "onde": "IA" },
+
+      { "id": "n10", "label": "Executa as ferramentas (registrar refeição/treino, consultar progresso, atualizar dados...)", "onde": "CODIGO" },
+      { "id": "n10b","label": "Registrar refeição: casa o alimento na tabela TACO e calcula os macros", "onde": "CALCULO+BANCO" },
+      { "id": "n10c","label": "Grava meal_logs/workout_logs e atualiza o resumo do dia (daily_snapshots)", "onde": "BANCO" },
+
+      { "id": "n11", "label": "É um turno de NÚMERO PURO? (registrar refeição/treino, 'como tô', resultado de reavaliação)", "onde": "CODIGO", "tipo": "decisao" },
+      { "id": "n12a","label": "SIM → o SISTEMA monta a mensagem (card de balanço + número), sem a IA escrever", "onde": "CODIGO+CALCULO", "nota": "número sempre certo, formato fixo, e economiza uma chamada de IA" },
+      { "id": "n12b","label": "NÃO → a IA escreve a resposta (conversa, coaching, dúvida, motivação)", "onde": "IA" },
+
+      { "id": "n13", "label": "Rede anti-alucinação: troca o card pelo oficial e corrige número/sinal se a IA escreveu errado", "onde": "CODIGO", "nota": "o número NUNCA depende da IA — é sempre reconciliado pelo código" },
+      { "id": "n14", "label": "Formata e envia a resposta no WhatsApp", "onde": "CODIGO+EXTERNO" },
+      { "id": "n15", "label": "Grava a resposta em 'messages' com status de entrega (enviado/falhou)", "onde": "BANCO" }
+    ],
+    "edges": [
+      { "de": "n1", "para": "n2" },
+      { "de": "n2", "para": "n3" },
+      { "de": "n3", "para": "n4" },
+      { "de": "n4", "para": "n5a", "quando": "se foto" },
+      { "de": "n5a", "para": "n5b" },
+      { "de": "n4", "para": "n5c", "quando": "se áudio" },
+      { "de": "n4", "para": "n6", "quando": "se texto (ou após visão/áudio)" },
+      { "de": "n5b", "para": "n6" },
+      { "de": "n5c", "para": "n6" },
+      { "de": "n6", "para": "n7" },
+      { "de": "n7", "para": "n8" },
+      { "de": "n8", "para": "n9" },
+      { "de": "n9", "para": "n10" },
+      { "de": "n10", "para": "n10b" },
+      { "de": "n10b", "para": "n10c" },
+      { "de": "n10c", "para": "n11" },
+      { "de": "n11", "para": "n12a", "quando": "número puro" },
+      { "de": "n11", "para": "n12b", "quando": "conversa/coaching" },
+      { "de": "n12a", "para": "n13" },
+      { "de": "n12b", "para": "n13" },
+      { "de": "n13", "para": "n14" },
+      { "de": "n14", "para": "n15" }
+    ]
+  },
+
+  "rotinas_em_segundo_plano": [
+    { "nome": "Fechamento do dia (daily-closer)", "quando": "toda noite (cron)", "onde": "CODIGO+CALCULO", "o_que": "fecha o dia, credita o bloco 7700 com o déficit real, marca reavaliação quando completa 14 dias" },
+    { "nome": "Mensagens proativas (engajamento)", "quando": "horários do dia (cron)", "onde": "CODIGO+IA", "o_que": "bom dia, lembrete de refeição não registrada, etc. — os NÚMEROS (bloco, déficit de ontem, meta) são do sistema; a prosa motivacional é da IA" },
+    { "nome": "Avaliador de qualidade (LLM-judge)", "quando": "2x/dia (cron)", "onde": "IA", "o_que": "amostra ~10% das respostas e dá nota (modelo barato), pra acompanhar a qualidade" },
+    { "nome": "Auditoria profunda", "quando": "5x/dia (cron)", "onde": "IA+CODIGO", "o_que": "Claude lê as conversas procurando erro (ex: refeição perdida) e reporta no Telegram pra revisão humana" }
+  ],
+
+  "o_que_a_IA_faz": {
+    "onde": "IA",
+    "itens": [
+      "Visão (Gemini): identificar os alimentos e estimar a quantidade na foto; estimar %gordura em foto corporal; ler balança e rótulo",
+      "Áudio (Groq): transcrever o que o paciente falou",
+      "Entender a intenção e escolher quais ferramentas usar",
+      "Conversar: motivar, educar, tirar dúvida, conduzir a reavaliação",
+      "Escrever a prosa das respostas (exceto onde o sistema monta o número)"
+    ],
+    "nao_faz": "A IA NUNCA decide um número final (kcal, proteína, balanço, bloco 7700) — quem calcula e escreve o número é o código."
+  },
+
+  "o_que_e_calculado_pelo_codigo": {
+    "onde": "CALCULO",
+    "fonte": "motor de cálculo @mpp/core — travado por testes automatizados",
+    "itens": [
+      "Taxa metabólica (BMR) e gasto total (TDEE)",
+      "Meta calórica e meta de proteína do dia (já com o déficit programado embutido)",
+      "Balanço do dia = consumido - meta - exercício",
+      "Déficit REAL vs manutenção (o que de fato emagrece e alimenta o bloco)",
+      "Crédito do bloco 7700 (no fechamento da noite)",
+      "Card de balanço (a mensagem com os números, sempre no mesmo formato)",
+      "Gamificação: XP, nível, sequência de dias, blocos completos",
+      "Escadas de meta por %gordura / IMC nas reavaliações"
+    ],
+    "regra_de_ouro": "docs/CALCULO-MPP.md é a fonte de verdade; toda regra de cálculo é travada por teste."
+  },
+
+  "o_que_esta_no_banco": {
+    "onde": "BANCO",
+    "dados_do_paciente": [
+      "users / user_profiles (perfil, idioma, país, fuso)",
+      "daily_snapshots (resumo de cada dia — consumido, meta, balanço; 'daily_balance' é coluna calculada pelo próprio banco)",
+      "meal_logs / workout_logs (refeições e treinos registrados)",
+      "user_progress (bloco 7700, XP, nível, sequência, peso, próxima reavaliação)",
+      "messages (todo o histórico de conversa) / product_events (telemetria e auditoria)"
+    ],
+    "config_editavel_sem_deploy": [
+      "agent_rules — a persona, o método e as regras de comportamento que viram o 'manual' (system prompt) da IA",
+      "agent_configs — modelo de IA, temperatura e limites por etapa (conversa/engajamento/etc.)",
+      "global_config — modelo de visão, limites de confiança, áudio de saída desligado, destinos de auditoria, etc.",
+      "tabela TACO — base nutricional usada pra calcular os macros dos alimentos"
+    ]
+  },
+
+  "o_que_foi_otimizado_recentemente": {
+    "data": "2026-05-27",
+    "itens": [
+      { "tema": "Mensagens de número viram automáticas (sistema, não IA)", "onde": "CODIGO+CALCULO", "status": "feito", "cobre": ["registro de refeição/treino", "consulta de status ('como tô')", "resultado de reavaliação"], "ganho": "número sempre certo + mais barato (menos chamadas de IA)" },
+      { "tema": "Visão mais conservadora", "onde": "BANCO (prompt)", "status": "feito", "ganho": "para de inventar condimento que não está na foto e não infla a quantidade" },
+      { "tema": "Foto que falha agora tenta de novo + registra o motivo", "onde": "CODIGO", "status": "feito" },
+      { "tema": "Mensagem de 'bom dia' com número correto (déficit real vs manutenção; sem 'déficit fantasma' em dia sem registro)", "onde": "CODIGO", "status": "feito" },
+      { "tema": "Economia de token: manda só o idioma do paciente no manual (em vez de PT+EN+ES)", "onde": "CODIGO+BANCO", "status": "feito", "ganho": "~19% do prompt, sem perder nada" }
+    ],
+    "pendente_com_risco": [
+      { "tema": "Enxugar o 'manual' tirando regras que já viraram cálculo", "risco": "precisa de rede de testes (golden) antes — as regras ainda guiam a IA na conversa" },
+      { "tema": "Buscar só a parte do método que importa (RAG) em vez de carregar tudo", "risco": "alto, adiado" }
+    ]
+  }
+}

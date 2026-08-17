@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BodyFlow | Arquitetura histórica da versão WhatsApp</title>
+  <style>
+    @page { size: A4; margin: 16mm 15mm 18mm; }
+    * { box-sizing: border-box; }
+    :root {
+      --ink: #17211d;
+      --muted: #5e6a64;
+      --line: #d7ded9;
+      --paper: #ffffff;
+      --soft: #f2f5f3;
+      --green: #0f6a52;
+      --green-soft: #e5f2ed;
+      --teal: #177f86;
+      --teal-soft: #e4f2f3;
+      --blue: #275ea8;
+      --blue-soft: #e9eff8;
+      --amber: #a05c0f;
+      --amber-soft: #fff1d9;
+      --red: #9a3838;
+      --red-soft: #f9e7e7;
+      --violet: #674b91;
+      --violet-soft: #eee8f6;
+    }
+    html { background: #e9eeeb; }
+    body {
+      margin: 0 auto;
+      max-width: 210mm;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.48;
+      letter-spacing: 0;
+    }
+    main { padding: 0; }
+    h1, h2, h3, h4 { color: var(--ink); margin: 0; break-after: avoid; }
+    h1 { font-size: 29pt; line-height: 1.08; font-weight: 760; }
+    h2 { font-size: 20pt; line-height: 1.15; margin: 0 0 7mm; }
+    h3 { font-size: 13.5pt; margin: 6mm 0 2.5mm; }
+    h4 { font-size: 10.5pt; margin: 4mm 0 1.5mm; }
+    p { margin: 0 0 3mm; }
+    ul, ol { margin: 2mm 0 4mm 5mm; padding-left: 5mm; }
+    li { margin: 1.2mm 0; }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.9em;
+      color: #123d32;
+      background: #edf2ef;
+      border-radius: 3px;
+      padding: 0.2mm 1mm;
+    }
+    .cover {
+      min-height: 260mm;
+      padding: 22mm 18mm 15mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+      background:
+        linear-gradient(115deg, rgba(15,106,82,.96), rgba(23,127,134,.93)),
+        #0f6a52;
+      color: white;
+    }
+    .cover h1, .cover h2, .cover p { color: white; }
+    .cover .kicker { font-size: 10pt; font-weight: 700; text-transform: uppercase; }
+    .cover .title-block { max-width: 155mm; }
+    .cover .subtitle { font-size: 16pt; line-height: 1.35; margin-top: 8mm; max-width: 145mm; }
+    .cover .scope {
+      border-left: 1.3mm solid #ffd67a;
+      padding-left: 5mm;
+      max-width: 145mm;
+      font-size: 11pt;
+    }
+    .cover .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; font-size: 9pt; }
+    .cover .meta strong { display: block; margin-bottom: 1mm; color: #cdebe1; }
+    .brand-mark {
+      width: 18mm; height: 18mm; border: 1px solid rgba(255,255,255,.55);
+      display: grid; place-items: center; font-weight: 800; font-size: 17pt;
+      margin-bottom: 12mm;
+    }
+    .page { padding: 0 2mm; }
+    .chapter { page-break-before: always; padding-top: 2mm; }
+    .chapter:first-of-type { page-break-before: auto; }
+    .eyebrow { color: var(--green); font-weight: 750; font-size: 8.5pt; text-transform: uppercase; margin-bottom: 2mm; }
+    .lede { font-size: 12pt; line-height: 1.52; color: #30413a; margin-bottom: 7mm; }
+    .toc { columns: 2; column-gap: 14mm; }
+    .toc a { color: var(--ink); text-decoration: none; }
+    .toc ol { margin-top: 0; }
+    .toc li { break-inside: avoid; margin: 2mm 0; }
+    .callout {
+      border-left: 1.2mm solid var(--green);
+      background: var(--green-soft);
+      padding: 4mm 5mm;
+      margin: 5mm 0;
+      break-inside: avoid;
+    }
+    .callout.warn { border-color: var(--amber); background: var(--amber-soft); }
+    .callout.info { border-color: var(--blue); background: var(--blue-soft); }
+    .callout.risk { border-color: var(--red); background: var(--red-soft); }
+    .callout strong:first-child { display: block; margin-bottom: 1mm; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 5mm 0; }
+    .card {
+      border: .35mm solid var(--line); border-top: 1.1mm solid var(--green);
+      padding: 4mm; min-height: 32mm; break-inside: avoid;
+    }
+    .card.blue { border-top-color: var(--blue); }
+    .card.amber { border-top-color: var(--amber); }
+    .card.violet { border-top-color: var(--violet); }
+    .card h3 { font-size: 10.5pt; margin: 0 0 2mm; }
+    .card p { color: var(--muted); font-size: 8.6pt; }
+    .metric { font-size: 22pt; font-weight: 780; color: var(--green); line-height: 1; margin-bottom: 2mm; }
+    table { width: 100%; border-collapse: collapse; margin: 4mm 0 6mm; break-inside: auto; }
+    th, td { border-bottom: .25mm solid var(--line); text-align: left; vertical-align: top; padding: 2.4mm 2.2mm; }
+    th { background: var(--soft); color: #31423b; font-size: 8.3pt; text-transform: uppercase; font-weight: 740; }
+    td { font-size: 8.7pt; }
+    tr { break-inside: avoid; }
+    .compact td, .compact th { padding: 1.7mm 1.8mm; font-size: 8.1pt; }
+    .tag { display: inline-block; border-radius: 3px; padding: .5mm 1.5mm; font-size: 7.5pt; font-weight: 700; }
+    .tag.core { color: #0a5943; background: var(--green-soft); }
+    .tag.external { color: #1f5595; background: var(--blue-soft); }
+    .tag.ops { color: #80501b; background: var(--amber-soft); }
+    .tag.data { color: #5c4382; background: var(--violet-soft); }
+    .diagram {
+      border: .35mm solid var(--line); background: #fbfcfb; padding: 4mm;
+      margin: 5mm 0 7mm; break-inside: avoid;
+    }
+    .diagram-title { font-weight: 760; margin-bottom: 2mm; font-size: 10pt; }
+    .diagram-note { color: var(--muted); font-size: 8pt; margin-top: 2mm; }
+    svg { width: 100%; height: auto; display: block; }
+    .data-diagram { padding: 3mm; margin: 3mm 0 4mm; }
+    .data-diagram svg { width: 88%; margin: 0 auto; }
+    .data-table { margin: 2mm 0 3mm; }
+    .data-table td, .data-table th { padding: 1.2mm 1.4mm; font-size: 7.6pt; }
+    .flow-grid { display: grid; grid-template-columns: 1fr 9mm 1fr 9mm 1fr; align-items: stretch; gap: 1mm; margin: 4mm 0; }
+    .flow-step { border: .35mm solid var(--line); padding: 3mm; background: white; min-height: 24mm; }
+    .flow-step strong { display: block; color: var(--green); margin-bottom: 1mm; }
+    .flow-arrow { display: grid; place-items: center; color: var(--teal); font-size: 18pt; font-weight: 700; }
+    .lane { display: grid; grid-template-columns: 28mm 1fr; border-top: .35mm solid var(--line); }
+    .lane:last-child { border-bottom: .35mm solid var(--line); }
+    .lane-label { background: var(--soft); padding: 3mm; font-weight: 730; }
+    .lane-content { padding: 3mm 4mm; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 2mm; margin: 3mm 0; }
+    .pill { border: .3mm solid var(--line); background: white; padding: 1.3mm 2.3mm; font-size: 8.2pt; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; }
+    .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .avoid { break-inside: avoid; }
+    .small { font-size: 8.2pt; color: var(--muted); }
+    .mono-block {
+      font-family: "SFMono-Regular", Consolas, monospace; font-size: 7.8pt;
+      background: #17211d; color: #dfe9e4; padding: 4mm; white-space: pre-wrap;
+      margin: 4mm 0; break-inside: avoid;
+    }
+    .check { color: var(--green); font-weight: 800; }
+    .cross { color: var(--red); font-weight: 800; }
+    .source-list li { margin-bottom: 2mm; }
+    a { color: var(--blue); }
+    @media print {
+      html, body { background: white; max-width: none; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="cover">
+      <div>
+        <div class="brand-mark">BF</div>
+        <div class="title-block">
+          <div class="kicker">Documento técnico de arquitetura</div>
+          <h1>BodyFlow<br />versão WhatsApp</h1>
+          <p class="subtitle">Stack, componentes, dados, integrações e fluxos ponta a ponta da plataforma quando o paciente usava somente o WhatsApp.</p>
+        </div>
+      </div>
+      <div class="scope">
+        <strong>Recorte histórico</strong><br />
+        Este documento descreve o Agente MPP como produto conversacional WhatsApp. O painel web administrativo faz parte da operação. App iOS, API mobile, APNs, StoreKit, autenticação de paciente por e-mail e demais elementos app-first estão fora do escopo.
+      </div>
+      <div class="meta">
+        <div><strong>Base técnica</strong><span>Git <code>origin/main</code><br />SHA <code>280b3d7b569a</code><br />18 de julho de 2026</span></div>
+        <div><strong>Fontes</strong><span>Código, migrations, ADRs, runbooks e auditoria técnica do repositório. Nenhum secret ou dado pessoal foi incluído.</span></div>
+      </div>
+    </section>
+
+    <div class="page">
+      <section id="sumario" class="chapter">
+        <div class="eyebrow">Navegação</div>
+        <h2>Sumário</h2>
+        <div class="toc">
+          <ol>
+            <li><a href="#escopo">Escopo e premissas</a></li>
+            <li><a href="#produto">Produto e capacidades</a></li>
+            <li><a href="#contexto">Arquitetura de contexto</a></li>
+            <li><a href="#stack">Stack tecnológico</a></li>
+            <li><a href="#monorepo">Organização do monorepo</a></li>
+            <li><a href="#entrada">Fluxo de entrada WhatsApp</a></li>
+            <li><a href="#midia">Fluxos de áudio e imagem</a></li>
+            <li><a href="#agente">Pipeline do agente</a></li>
+            <li><a href="#confirmacao">Confirmação e escrita</a></li>
+            <li><a href="#saida">Fluxo de resposta</a></li>
+            <li><a href="#calculo">Motor determinístico</a></li>
+            <li><a href="#dados">Arquitetura de dados</a></li>
+            <li><a href="#workers">Workers e automações</a></li>
+            <li><a href="#admin">Painel administrativo</a></li>
+            <li><a href="#billing">Assinaturas e billing</a></li>
+            <li><a href="#observabilidade">Observabilidade e recuperação</a></li>
+            <li><a href="#seguranca">Trust boundaries e segurança</a></li>
+            <li><a href="#devops">DevOps e deploy</a></li>
+            <li><a href="#falhas">Redundâncias e modos de falha</a></li>
+            <li><a href="#limitacoes">Limitações históricas</a></li>
+            <li><a href="#evidencias">Evidências e glossário</a></li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="escopo" class="chapter">
+        <div class="eyebrow">1. Recorte histórico</div>
+        <h2>Escopo e premissas</h2>
+        <p class="lede">Na fase documentada, o WhatsApp era a interface completa do paciente. Conversa, onboarding, registros, confirmações, lembretes, áudio, fotos, reavaliação e retorno do agente aconteciam dentro do canal oficial da Meta.</p>
+        <div class="two-col">
+          <div>
+            <h3>Incluído</h3>
+            <ul>
+              <li>WhatsApp Cloud API como único canal de paciente em produção.</li>
+              <li>Supabase Postgres, Edge Functions, Auth administrativo, pgvector, pg_cron e pg_net.</li>
+              <li>Inngest como orquestrador durável de mensagens, crons e retentativas.</li>
+              <li>OpenRouter, Groq, ElevenLabs, Cartesia e Helicone opcional.</li>
+              <li>Next.js administrativo na Vercel e endpoints serverless.</li>
+              <li>Stripe para assinatura, Telegram para operação interna e GitHub para versionamento.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Explicitamente excluído</h3>
+            <ul>
+              <li>Aplicativo iOS, SwiftUI e projeto Xcode.</li>
+              <li>API/BFF mobile versionada e contratos próprios do app.</li>
+              <li>APNs, push nativo e deep links mobile.</li>
+              <li>StoreKit, App Store e compra dentro do aplicativo.</li>
+              <li>Autenticação de paciente por e-mail ou Apple.</li>
+              <li>Storage de mídia desenhado para um app nativo.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout info">
+          <strong>Identidade do paciente naquela fase</strong>
+          O paciente não possuía conta Supabase Auth. Sua identidade de domínio era o número WhatsApp normalizado em E.164, persistido em <code>users.wpp</code>. Supabase Auth atendia os administradores do painel, não os pacientes.
+        </div>
+        <p class="small">A referência técnica principal deste relatório é o snapshot Git <code>280b3d7b569a48410207a901182e003e436f2aef</code>. Documentações mais antigas do repositório exibem contagens anteriores de migrations e workers; as contagens deste PDF foram recalculadas no snapshot indicado.</p>
+      </section>
+
+      <section id="produto" class="chapter">
+        <div class="eyebrow">2. Produto</div>
+        <h2>O que a versão WhatsApp entregava</h2>
+        <div class="cards">
+          <div class="card"><h3>Onboarding</h3><p>Coleta conversacional de perfil, objetivo, protocolo, localização, preferências e rotina. Botões para até 3 opções e listas para até 10.</p></div>
+          <div class="card blue"><h3>Registro multimodal</h3><p>Refeições e treinos por texto, áudio, foto e legenda. Fotos também cobriam balança, corpo e rótulos.</p></div>
+          <div class="card amber"><h3>Saldo diário</h3><p>Card canônico com consumido, meta, proteína, exercício e Bloco 7700, calculado fora da LLM.</p></div>
+          <div class="card violet"><h3>Confirmação</h3><p>Propostas de refeição podiam aguardar o botão “Sim, registrar” ou “Editar” antes da escrita definitiva.</p></div>
+          <div class="card"><h3>Coaching</h3><p>Comentários educativos, lembretes de refeição, engajamento, reavaliação, dieta e treino sob demanda.</p></div>
+          <div class="card blue"><h3>Operação</h3><p>Painel web para usuários, conversas, prompts, alimentos, auditoria, crons, custos, billing e intervenções.</p></div>
+        </div>
+        <div class="callout">
+          <strong>Princípio de desenho</strong>
+          A LLM interpretava linguagem, mantinha a persona e escolhia ferramentas. O código e o banco eram responsáveis por cálculos, validação, idempotência e escrita. O card final era reconstruído a partir do estado persistido.
+        </div>
+      </section>
+
+      <section id="contexto" class="chapter">
+        <div class="eyebrow">3. Visão sistêmica</div>
+        <h2>Arquitetura de contexto</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 1. Componentes e conexões principais</div>
+          <svg viewBox="0 0 1040 650" role="img" aria-label="Arquitetura geral da versão WhatsApp">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#497267"/></marker>
+              <style>
+                .bx{rx:10;stroke-width:2}.tx{font:600 15px Arial;fill:#17211d}.sm{font:12px Arial;fill:#4f625a}.ar{stroke:#497267;stroke-width:2;fill:none;marker-end:url(#arrow)}.dash{stroke-dasharray:7 5}.grp{fill:none;stroke:#b8c7c0;stroke-width:2;stroke-dasharray:8 6;rx:16}.lbl{font:700 13px Arial;fill:#0f6a52;text-transform:uppercase}
+              </style>
+            </defs>
+            <rect class="grp" x="20" y="45" width="210" height="255"/><text class="lbl" x="35" y="68">Canal do paciente</text>
+            <rect class="bx" x="55" y="100" width="140" height="70" fill="#e5f2ed" stroke="#0f6a52"/><text class="tx" x="125" y="128" text-anchor="middle">Paciente</text><text class="sm" x="125" y="150" text-anchor="middle">WhatsApp</text>
+            <rect class="bx" x="55" y="210" width="140" height="70" fill="#e9eff8" stroke="#275ea8"/><text class="tx" x="125" y="238" text-anchor="middle">Meta Cloud</text><text class="sm" x="125" y="260" text-anchor="middle">Graph API v21.0</text>
+
+            <rect class="grp" x="270" y="45" width="300" height="555"/><text class="lbl" x="285" y="68">Supabase</text>
+            <rect class="bx" x="310" y="92" width="220" height="72" fill="#e4f2f3" stroke="#177f86"/><text class="tx" x="420" y="120" text-anchor="middle">Edge Functions</text><text class="sm" x="420" y="142" text-anchor="middle">webhooks e endpoints públicos</text>
+            <rect class="bx" x="310" y="208" width="220" height="82" fill="#eee8f6" stroke="#674b91"/><text class="tx" x="420" y="237" text-anchor="middle">Postgres</text><text class="sm" x="420" y="259" text-anchor="middle">estado, logs, config, billing</text><text class="sm" x="420" y="276" text-anchor="middle">RLS, RPCs, triggers</text>
+            <rect class="bx" x="310" y="332" width="220" height="72" fill="#f2f5f3" stroke="#5e6a64"/><text class="tx" x="420" y="360" text-anchor="middle">pgvector + busca</text><text class="sm" x="420" y="382" text-anchor="middle">alimentos, método, mensagens</text>
+            <rect class="bx" x="310" y="448" width="220" height="72" fill="#fff1d9" stroke="#a05c0f"/><text class="tx" x="420" y="476" text-anchor="middle">pg_cron + pg_net</text><text class="sm" x="420" y="498" text-anchor="middle">ticks e ponte de eventos</text>
+            <rect class="bx" x="310" y="540" width="220" height="42" fill="#e9eff8" stroke="#275ea8"/><text class="tx" x="420" y="566" text-anchor="middle">Auth administrativo</text>
+
+            <rect class="grp" x="610" y="45" width="405" height="555"/><text class="lbl" x="625" y="68">Execução e integrações</text>
+            <rect class="bx" x="645" y="92" width="150" height="72" fill="#e9eff8" stroke="#275ea8"/><text class="tx" x="720" y="120" text-anchor="middle">Inngest</text><text class="sm" x="720" y="142" text-anchor="middle">eventos, retries, cron</text>
+            <rect class="bx" x="830" y="92" width="150" height="72" fill="#e5f2ed" stroke="#0f6a52"/><text class="tx" x="905" y="120" text-anchor="middle">Vercel</text><text class="sm" x="905" y="142" text-anchor="middle">Next.js + workers</text>
+            <rect class="bx" x="645" y="208" width="150" height="82" fill="#eee8f6" stroke="#674b91"/><text class="tx" x="720" y="237" text-anchor="middle">Agent + Core</text><text class="sm" x="720" y="259" text-anchor="middle">tools e cálculos</text><text class="sm" x="720" y="276" text-anchor="middle">determinísticos</text>
+            <rect class="bx" x="830" y="208" width="150" height="82" fill="#fff1d9" stroke="#a05c0f"/><text class="tx" x="905" y="237" text-anchor="middle">OpenRouter</text><text class="sm" x="905" y="259" text-anchor="middle">LLM, vision,</text><text class="sm" x="905" y="276" text-anchor="middle">embeddings</text>
+            <rect class="bx" x="645" y="332" width="150" height="72" fill="#e4f2f3" stroke="#177f86"/><text class="tx" x="720" y="360" text-anchor="middle">Groq</text><text class="sm" x="720" y="382" text-anchor="middle">Whisper STT</text>
+            <rect class="bx" x="830" y="332" width="150" height="72" fill="#e4f2f3" stroke="#177f86"/><text class="tx" x="905" y="360" text-anchor="middle">TTS</text><text class="sm" x="905" y="382" text-anchor="middle">ElevenLabs / Cartesia</text>
+            <rect class="bx" x="645" y="448" width="150" height="72" fill="#e9eff8" stroke="#275ea8"/><text class="tx" x="720" y="476" text-anchor="middle">Stripe</text><text class="sm" x="720" y="498" text-anchor="middle">assinaturas</text>
+            <rect class="bx" x="830" y="448" width="150" height="72" fill="#f9e7e7" stroke="#9a3838"/><text class="tx" x="905" y="476" text-anchor="middle">Telegram</text><text class="sm" x="905" y="498" text-anchor="middle">alertas internos</text>
+            <rect class="bx" x="645" y="540" width="335" height="42" fill="#f2f5f3" stroke="#5e6a64"/><text class="tx" x="812" y="566" text-anchor="middle">GitHub + CI limitado + scripts operacionais</text>
+
+            <path class="ar" d="M125 170 L125 210"/><path class="ar" d="M195 245 L310 128"/>
+            <path class="ar" d="M420 164 L420 208"/><path class="ar" d="M530 128 L645 128"/>
+            <path class="ar" d="M795 128 L830 128"/><path class="ar" d="M830 150 L795 225"/>
+            <path class="ar" d="M645 250 L530 250"/><path class="ar" d="M795 250 L830 250"/>
+            <path class="ar" d="M720 290 L720 332"/><path class="ar" d="M780 290 L860 332"/>
+            <path class="ar" d="M645 268 C585 280,585 390,530 368"/>
+            <path class="ar dash" d="M530 484 L645 142"/><path class="ar dash" d="M905 164 C905 185,820 185,795 225"/>
+            <path class="ar" d="M645 484 L530 270"/><path class="ar" d="M830 484 L530 270"/>
+            <path class="ar" d="M310 561 L210 561 L210 300"/>
+          </svg>
+          <p class="diagram-note">O paciente fala somente com a Meta. Edge Functions e workers operam com privilégios de serviço; administradores entram pelo painel web autenticado. Telegram é um canal interno de operação, não um canal de paciente.</p>
+        </div>
+        <h3>Planos da arquitetura</h3>
+        <table>
+          <thead><tr><th>Plano</th><th>Responsabilidade</th><th>Componentes centrais</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Experiência</strong></td><td>Conversa, botões, mídia, reações, lembretes e cards.</td><td>WhatsApp Cloud, provider de mensageria, templates.</td></tr>
+            <tr><td><strong>Orquestração</strong></td><td>Ordenação por usuário, debounce, retries, espera e execução agendada.</td><td>Inngest, <code>message_buffer</code>, outbox, pg_cron.</td></tr>
+            <tr><td><strong>Inteligência</strong></td><td>Interpretação, persona, multimodal, RAG e escolha de tools.</td><td><code>@mpp/agent</code>, OpenRouter, Groq, providers.</td></tr>
+            <tr><td><strong>Domínio</strong></td><td>Cálculos, invariantes, metas, balanço, Bloco 7700 e registros atômicos.</td><td><code>@mpp/core</code>, tools, RPCs Postgres.</td></tr>
+            <tr><td><strong>Dados</strong></td><td>Estado do paciente, histórico, configuração, billing, auditoria e vetores.</td><td>Supabase Postgres, RLS, triggers, views, pgvector.</td></tr>
+            <tr><td><strong>Operação</strong></td><td>Administração, monitoramento, qualidade, deploy e intervenção humana.</td><td>Next.js/Vercel, Telegram, GitHub, scripts.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="stack" class="chapter">
+        <div class="eyebrow">4. Tecnologia</div>
+        <h2>Stack por camada</h2>
+        <table class="compact">
+          <thead><tr><th>Camada</th><th>Tecnologia / serviço</th><th>Uso no sistema</th></tr></thead>
+          <tbody>
+            <tr><td>Runtime</td><td>Node.js 22+, TypeScript 5.7, ESM</td><td>Aplicação, packages, workers, scripts e avaliações.</td></tr>
+            <tr><td>Monorepo</td><td>pnpm 10.33.2 + Turborepo 2.5</td><td>Workspaces, execução filtrada, builds e testes.</td></tr>
+            <tr><td>Qualidade</td><td>Vitest 2.1.8 + Biome 2.2.5</td><td>Testes de domínio, regressões, golden cases, lint e formato.</td></tr>
+            <tr><td>Admin web</td><td>Next.js 15.1, React 19, Tailwind, Radix UI</td><td>Painel administrativo, server actions e rotas API.</td></tr>
+            <tr><td>Hosting web</td><td>Vercel</td><td>Admin, <code>/api/inngest</code>, mídia proxy e checkout.</td></tr>
+            <tr><td>Canal</td><td>WhatsApp Cloud API, Graph v21.0</td><td>Texto, áudio, imagem, botões, listas, templates, reações e status.</td></tr>
+            <tr><td>Banco</td><td>Supabase Postgres</td><td>Dados de domínio, configuração, observabilidade, billing e operações atômicas.</td></tr>
+            <tr><td>Banco avançado</td><td>pgvector, pg_trgm, unaccent, pg_cron, pg_net, pgcrypto</td><td>Busca semântica/fuzzy, normalização, agendas e UUIDs.</td></tr>
+            <tr><td>Edge</td><td>Supabase Edge Functions, Deno</td><td>Webhooks Meta/Stripe/Telegram e auditoria.</td></tr>
+            <tr><td>Orquestração</td><td>Inngest 3.27</td><td>Eventos duráveis, concorrência, retries, passos e crons.</td></tr>
+            <tr><td>LLM</td><td>OpenRouter via SDK OpenAI</td><td>Conversa, tool calling, geração, comentários e judge.</td></tr>
+            <tr><td>Vision</td><td>OpenRouter multimodal</td><td>Refeição, corpo, balança, rótulo nutricional e classificação.</td></tr>
+            <tr><td>Embeddings</td><td>OpenRouter, 1024 dimensões</td><td>RAG do método e busca semântica.</td></tr>
+            <tr><td>STT</td><td>Groq Whisper</td><td>Transcrição de áudio em português.</td></tr>
+            <tr><td>TTS</td><td>ElevenLabs + Cartesia</td><td>Voz de âncora e voz operacional, com roteamento.</td></tr>
+            <tr><td>Billing</td><td>Stripe</td><td>Checkout, assinatura, renovação, inadimplência e cancelamento.</td></tr>
+            <tr><td>Operação interna</td><td>Telegram</td><td>Alertas, relatórios e aprovações humanas.</td></tr>
+            <tr><td>Observabilidade LLM</td><td>Helicone opcional + eventos próprios</td><td>Custos, tokens, cache, latência e rastreamento.</td></tr>
+            <tr><td>Versionamento</td><td>GitHub</td><td>Código, PRs, histórico, workflow preventivo e releases manuais.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn">
+          <strong>Modelos eram configuração de runtime</strong>
+          Os nomes de modelo não eram uma constante arquitetural. <code>agent_configs</code>, <code>agent_rules</code>, <code>global_config</code> e loaders de runtime podiam alterar modelo, temperatura, tokens, vision e comportamento sem redesenhar o fluxo. No baseline, a família Anthropic era usada nos caminhos principais e Haiku nos turnos mais baratos; OpenRouter era o gateway comum.
+        </div>
+      </section>
+
+      <section id="monorepo" class="chapter">
+        <div class="eyebrow">5. Código</div>
+        <h2>Organização do monorepo</h2>
+        <div class="mono-block">agentempp/
+├── apps/
+│   ├── admin/                 Next.js, painel e endpoints serverless
+│   └── cli/                   chat local de teste
+├── packages/
+│   ├── core/                  domínio e fórmulas determinísticas
+│   ├── agent/                 pipeline, tools, guards e composição
+│   ├── providers/             Meta, OpenRouter, Groq e TTS
+│   ├── db/                    cliente Supabase e tipos gerados
+│   └── inngest-functions/     workers, crons e recuperação
+├── supabase/
+│   ├── functions/             6 Edge Functions
+│   ├── migrations/            114 migrations no baseline
+│   └── tests/                 testes SQL de RPCs e invariantes
+├── scripts/                   seed, auditoria, reparo e deploy
+├── eval/                      casos e runner de avaliação
+└── docs/                      ADRs, runbooks, cálculo e especificações</div>
+        <table>
+          <thead><tr><th>Pacote</th><th>Responsabilidade</th><th>Não deveria possuir</th></tr></thead>
+          <tbody>
+            <tr><td><code>@mpp/core</code></td><td>Funções puras de nutrição, metas, balanço, protocolo e bloco.</td><td>I/O, chamadas LLM ou mensageria.</td></tr>
+            <tr><td><code>@mpp/agent</code></td><td>Contexto, prompts, tool loop, guardrails, composição e persistência de turno.</td><td>Detalhes de HTTP de provedores.</td></tr>
+            <tr><td><code>@mpp/providers</code></td><td>Adapters de APIs externas sob interfaces comuns.</td><td>Regras de negócio MPP.</td></tr>
+            <tr><td><code>@mpp/db</code></td><td>Cliente e contrato TypeScript do banco.</td><td>Orquestração conversacional.</td></tr>
+            <tr><td><code>@mpp/inngest-functions</code></td><td>Coordenação durável do ciclo de vida das mensagens e jobs.</td><td>Duplicação das fórmulas do core.</td></tr>
+            <tr><td><code>@mpp/admin</code></td><td>Interface e comandos administrativos, além do endpoint Inngest.</td><td>Interface de paciente.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="entrada" class="chapter">
+        <div class="eyebrow">6. Mensagem inbound</div>
+        <h2>Da bolha do WhatsApp ao evento processável</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 2. Entrada, idempotência, buffer e despacho</div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>1. Meta</strong>Entrega webhook de mensagem ou atualização de status.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>2. Edge</strong>Valida HMAC SHA-256 e normaliza o payload.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>3. RPC atômica</strong><code>ingest_whatsapp_inbound</code> deduplica e persiste.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>4. Buffer</strong>Texto e mídia entram em <code>message_buffer</code> com <code>flush_after</code>.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>5. Evento atrasado</strong>A Edge envia <code>buffer.flush</code> ao Inngest após debounce e margem.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>6. Claim</strong>Worker reivindica o burst e usa <code>message_dispatch_outbox</code>.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>7. Agregação</strong>Junta textos e preserva IDs, timestamps e mídias.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>8. Evento</strong>Dispara <code>message.received</code> com o último ID para reply.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>9. Serialização</strong><code>process-message</code> roda com concorrência 1 por usuário.</div>
+          </div>
+          <p class="diagram-note">O debounce era configurável em <code>global_config</code>, com fallback de 8 segundos. O evento inicial era agendado com margem adicional para reduzir a corrida entre a segunda mensagem e o flush.</p>
+        </div>
+        <h3>Por que havia buffer</h3>
+        <p>Pacientes frequentemente descreviam uma única intenção em várias bolhas: foto, legenda, quantidade e correção. Sem buffer, cada bolha poderia gerar uma chamada separada à LLM e registros parciais. O sistema agrupava o burst e enviava uma única representação ao pipeline.</p>
+        <h3>Dados preservados no burst</h3>
+        <div class="pill-row">
+          <span class="pill">todos os <code>providerMessageIds</code></span>
+          <span class="pill">timestamps do provider</span>
+          <span class="pill">texto agregado</span>
+          <span class="pill">tipo de cada mídia</span>
+          <span class="pill">media IDs</span>
+          <span class="pill">último ID para resposta</span>
+        </div>
+        <div class="callout info">
+          <strong>Botões eram exceção intencional</strong>
+          Um tap em botão ou lista não aguardava o debounce. A Edge emitia imediatamente <code>interactive.button.tapped</code>, pois confirmar ou editar uma proposta é uma ação discreta e determinística.
+        </div>
+      </section>
+
+      <section id="midia" class="chapter">
+        <div class="eyebrow">7. Multimodal</div>
+        <h2>Áudio, imagem, legenda e contexto</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 3. Preparação de mídia antes da LLM</div>
+          <svg viewBox="0 0 1000 500" role="img" aria-label="Fluxo multimodal">
+            <defs><marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#497267"/></marker><style>.b{rx:9;stroke-width:2}.t{font:600 15px Arial;fill:#17211d}.s{font:12px Arial;fill:#52645d}.l{stroke:#497267;stroke-width:2;fill:none;marker-end:url(#a2)}.d{stroke-dasharray:6 5}</style></defs>
+            <rect class="b" x="35" y="190" width="170" height="80" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="120" y="220" text-anchor="middle">Burst WhatsApp</text><text class="s" x="120" y="244" text-anchor="middle">texto + mídia(s)</text>
+            <rect class="b" x="270" y="60" width="190" height="90" fill="#e4f2f3" stroke="#177f86"/><text class="t" x="365" y="93" text-anchor="middle">Áudio</text><text class="s" x="365" y="116" text-anchor="middle">download Meta</text><text class="s" x="365" y="134" text-anchor="middle">Groq Whisper</text>
+            <rect class="b" x="270" y="190" width="190" height="90" fill="#eee8f6" stroke="#674b91"/><text class="t" x="365" y="223" text-anchor="middle">Imagem</text><text class="s" x="365" y="246" text-anchor="middle">download Meta</text><text class="s" x="365" y="264" text-anchor="middle">Vision via OpenRouter</text>
+            <rect class="b" x="270" y="330" width="190" height="90" fill="#e5f2ed" stroke="#0f6a52"/><text class="t" x="365" y="363" text-anchor="middle">Texto / legenda</text><text class="s" x="365" y="386" text-anchor="middle">narrativa explícita</text><text class="s" x="365" y="404" text-anchor="middle">do paciente</text>
+            <rect class="b" x="540" y="150" width="205" height="160" fill="#fff" stroke="#5e6a64"/><text class="t" x="642" y="181" text-anchor="middle">Fusão de contexto</text><text class="s" x="642" y="208" text-anchor="middle">texto tem precedência</text><text class="s" x="642" y="230" text-anchor="middle">rótulo pode fornecer valores</text><text class="s" x="642" y="252" text-anchor="middle">foto descreve evidências</text><text class="s" x="642" y="274" text-anchor="middle">falha não vira invenção</text>
+            <rect class="b" x="810" y="150" width="160" height="160" fill="#fff1d9" stroke="#a05c0f"/><text class="t" x="890" y="181" text-anchor="middle">Texto enriquecido</text><text class="s" x="890" y="208" text-anchor="middle">itens e quantidades</text><text class="s" x="890" y="230" text-anchor="middle">tipo da foto</text><text class="s" x="890" y="252" text-anchor="middle">confiança</text><text class="s" x="890" y="274" text-anchor="middle">rótulo confiável</text>
+            <path class="l" d="M205 230 C240 230,230 105,270 105"/><path class="l" d="M205 230 L270 235"/><path class="l" d="M205 230 C240 230,230 375,270 375"/>
+            <path class="l" d="M460 105 C510 105,500 180,540 190"/><path class="l" d="M460 235 L540 235"/><path class="l" d="M460 375 C510 375,500 290,540 280"/><path class="l" d="M745 230 L810 230"/>
+            <path class="l d" d="M642 310 C642 455,365 455,365 420"/>
+          </svg>
+          <p class="diagram-note">A imagem não era registrada diretamente. Ela era transformada em sinais estruturados e passava pelo mesmo pipeline de validação e confirmação. A legenda era tratada como contexto da foto, não como uma segunda refeição.</p>
+        </div>
+        <div class="two-col">
+          <div>
+            <h3>Áudio</h3>
+            <ol>
+              <li>Resolve o media ID na Graph API.</li>
+              <li>Baixa os bytes com retries para falhas transitórias.</li>
+              <li>Transcreve com Groq Whisper.</li>
+              <li>Persiste a transcrição na mensagem inbound.</li>
+              <li>Emite <code>stt.transcribed</code> ou <code>stt.failed</code>.</li>
+            </ol>
+          </div>
+          <div>
+            <h3>Imagem</h3>
+            <ol>
+              <li>Baixa da Meta e converte para data URI.</li>
+              <li>Classifica refeição, corpo, balança, rótulo ou outro.</li>
+              <li>Extrai sinais e confiança.</li>
+              <li>Aplica política específica para rótulo nutricional.</li>
+              <li>Emite <code>vision.analyzed</code> ou falha observável.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="callout warn">
+          <strong>Proteção contra burst dividido</strong>
+          Se uma legenda chegasse enquanto STT ou vision ainda estava em voo, o <code>buffer-listener</code> podia estender o flush uma única vez. Isso reduzia o risco de processar foto e explicação como turnos independentes.
+        </div>
+      </section>
+
+      <section id="agente" class="chapter">
+        <div class="eyebrow">8. Inteligência e domínio</div>
+        <h2>Pipeline do agente</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 4. Decisão conversacional e execução de tools</div>
+          <div class="lane"><div class="lane-label">Contexto</div><div class="lane-content">Garante usuário, checa assinatura, carrega perfil, progresso, snapshot, histórico filtrado, pending, timezone e resumo.</div></div>
+          <div class="lane"><div class="lane-label">Estágio</div><div class="lane-content">Resolve onboarding ou protocolo ativo; carrega prompt e regras do banco no idioma do paciente.</div></div>
+          <div class="lane"><div class="lane-label">Roteamento</div><div class="lane-content">Mantém modelo principal para turnos complexos; permite modelo barato em saudações, status e medições simples.</div></div>
+          <div class="lane"><div class="lane-label">Prompt</div><div class="lane-content">Bloco estável com persona/regras, bloco variável com estado atual, RAG do método e proteção antirrepetição.</div></div>
+          <div class="lane"><div class="lane-label">Loop LLM</div><div class="lane-content">Tool calling limitado por <code>max_tool_iterations</code>, schemas Zod e lista de tools permitidas por estágio.</div></div>
+          <div class="lane"><div class="lane-label">Guards</div><div class="lane-content">Bloqueia escrita falsa, duplicidade espúria, item fantasma, substituição fraca e números inconsistentes.</div></div>
+          <div class="lane"><div class="lane-label">Saída</div><div class="lane-content">Composição determinística, card canônico, comentário educativo, interação ou texto/áudio humanizado.</div></div>
+        </div>
+        <h3>Separação de responsabilidade</h3>
+        <table>
+          <thead><tr><th>A LLM podia</th><th>A LLM não era fonte de verdade para</th></tr></thead>
+          <tbody>
+            <tr><td>Interpretar texto, áudio transcrito e descrição visual.</td><td>Meta calórica, proteína alvo, balanço e Bloco 7700.</td></tr>
+            <tr><td>Escolher uma tool e preencher argumentos candidatos.</td><td>Confirmação de que uma gravação ocorreu.</td></tr>
+            <tr><td>Gerar prosa de coaching e responder perguntas abertas.</td><td>Valores oficiais de alimento quando havia referência canônica.</td></tr>
+            <tr><td>Gerar dieta e treino quando solicitado.</td><td>Idempotência, substituição destrutiva e transações.</td></tr>
+            <tr><td>Selecionar tom, idioma e formato.</td><td>Estado diário persistido e status de assinatura.</td></tr>
+          </tbody>
+        </table>
+        <h3>Tools funcionais</h3>
+        <div class="pill-row">
+          <span class="pill"><code>cadastra_dados_iniciais</code></span><span class="pill"><code>define_protocolo</code></span><span class="pill"><code>define_meta_peso</code></span>
+          <span class="pill"><code>registra_refeicao</code></span><span class="pill"><code>registra_treino</code></span><span class="pill"><code>marca_refeicao_pulada</code></span>
+          <span class="pill"><code>consulta_progresso</code></span><span class="pill"><code>consulta_metricas</code></span><span class="pill"><code>consulta_resumo_periodo</code></span>
+          <span class="pill"><code>gera_dieta</code></span><span class="pill"><code>gera_treino</code></span><span class="pill"><code>confirma_pais_residencia</code></span>
+          <span class="pill"><code>pausar_agente</code></span><span class="pill"><code>retomar_agente</code></span><span class="pill"><code>encerra_atendimento</code></span><span class="pill"><code>delete_user</code></span>
+        </div>
+      </section>
+
+      <section id="confirmacao" class="chapter">
+        <div class="eyebrow">9. Persistência segura</div>
+        <h2>Proposta, confirmação e escrita atômica</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 5. Refeição com confirmação interativa</div>
+          <svg viewBox="0 0 1020 510" role="img" aria-label="Fluxo de confirmação de refeição">
+            <defs><marker id="a3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#497267"/></marker><style>.b{rx:9;stroke-width:2}.t{font:600 14px Arial;fill:#17211d}.s{font:12px Arial;fill:#52645d}.l{stroke:#497267;stroke-width:2;fill:none;marker-end:url(#a3)}.yn{font:700 12px Arial;fill:#0f6a52}</style></defs>
+            <rect class="b" x="30" y="190" width="160" height="82" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="110" y="220" text-anchor="middle">Tool candidata</text><text class="s" x="110" y="244" text-anchor="middle">itens + meal type</text><text class="s" x="110" y="262" text-anchor="middle">+ contexto</text>
+            <rect class="b" x="245" y="190" width="175" height="82" fill="#fff1d9" stroke="#a05c0f"/><text class="t" x="332" y="220" text-anchor="middle">Políticas</text><text class="s" x="332" y="244" text-anchor="middle">dedupe, replace, label,</text><text class="s" x="332" y="262" text-anchor="middle">nutrição e segurança</text>
+            <rect class="b" x="485" y="190" width="180" height="82" fill="#eee8f6" stroke="#674b91"/><text class="t" x="575" y="220" text-anchor="middle">Pending</text><text class="s" x="575" y="244" text-anchor="middle">proposta JSON</text><text class="s" x="575" y="262" text-anchor="middle">status=pending</text>
+            <rect class="b" x="730" y="70" width="220" height="90" fill="#e5f2ed" stroke="#0f6a52"/><text class="t" x="840" y="100" text-anchor="middle">Sim, registrar</text><text class="s" x="840" y="124" text-anchor="middle">interactive-handler</text><text class="s" x="840" y="144" text-anchor="middle">RPC atômica</text>
+            <rect class="b" x="730" y="300" width="220" height="90" fill="#e4f2f3" stroke="#177f86"/><text class="t" x="840" y="330" text-anchor="middle">Editar</text><text class="s" x="840" y="354" text-anchor="middle">coleta correção</text><text class="s" x="840" y="374" text-anchor="middle">substitui proposta</text>
+            <rect class="b" x="485" y="30" width="180" height="82" fill="#f2f5f3" stroke="#5e6a64"/><text class="t" x="575" y="60" text-anchor="middle">Modo express</text><text class="s" x="575" y="84" text-anchor="middle">somente quando elegível</text><text class="s" x="575" y="102" text-anchor="middle">grava sem pending</text>
+            <rect class="b" x="730" y="430" width="220" height="55" fill="#f9e7e7" stroke="#9a3838"/><text class="t" x="840" y="463" text-anchor="middle">Expiração / cancelamento</text>
+            <path class="l" d="M190 231 L245 231"/><path class="l" d="M420 231 L485 231"/><path class="l" d="M665 221 C700 200,700 115,730 115"/><path class="l" d="M665 241 C700 260,700 345,730 345"/>
+            <path class="l" d="M420 205 C455 175,455 72,485 72"/><path class="l" d="M575 190 L575 112"/><path class="l" d="M840 390 L840 430"/><path class="l" d="M730 345 C690 345,690 260,665 250"/>
+            <text class="yn" x="690" y="105">confirmar</text><text class="yn" x="690" y="325">editar</text><text class="yn" x="445" y="120">express</text>
+          </svg>
+        </div>
+        <p>O registro em <code>meal_logs</code> não era considerado concluído porque a LLM disse “registrado”. A conclusão exigia uma tool bem-sucedida ou, quando aplicável, o tap do paciente. O handler interativo chamava as mesmas políticas de nutrição e as RPCs de escrita.</p>
+        <h3>Redundâncias dessa etapa</h3>
+        <ul>
+          <li><strong>Validação Zod:</strong> rejeitava payloads malformados antes da execução.</li>
+          <li><strong>Proveniência nutricional:</strong> ligava o item a <code>food_db_id</code> quando havia referência canônica.</li>
+          <li><strong>Replace escopado:</strong> substituição exigia intenção ou overlap suficiente e alvo explícito.</li>
+          <li><strong>RPC atômica:</strong> log e snapshot eram alterados dentro da mesma operação.</li>
+          <li><strong>Idempotência:</strong> provider message ID e request ID impediam duplicação em retries.</li>
+          <li><strong>Composição pós-banco:</strong> tabela e card eram gerados com o estado realmente persistido.</li>
+        </ul>
+      </section>
+
+      <section id="saida" class="chapter">
+        <div class="eyebrow">10. Mensagem outbound</div>
+        <h2>Da resposta validada ao WhatsApp</h2>
+        <div class="flow-grid">
+          <div class="flow-step"><strong>1. Composição</strong>Texto final, interação ou áudio; card canônico e partes do registro.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>2. Humanização</strong>Typing, delays, divisão por bolha e resposta à mensagem correta.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>3. Meta API</strong>Envia texto, botão, lista, áudio, imagem, template ou reação.</div>
+        </div>
+        <div class="flow-grid">
+          <div class="flow-step"><strong>4. Persistência</strong>Uma linha outbound por entrega, com ID real e status.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>5. Status webhook</strong><code>sent</code>, <code>delivered</code>, <code>read</code> ou <code>failed</code>.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>6. Auditoria</strong>Custos, tokens, latência, tools e eventos ficam correlacionáveis.</div>
+        </div>
+        <h3>Formatos de saída</h3>
+        <table>
+          <thead><tr><th>Formato</th><th>Quando</th><th>Detalhe</th></tr></thead>
+          <tbody>
+            <tr><td>Texto único</td><td>Resposta simples ou status.</td><td>Enviado com typing e delay configurável.</td></tr>
+            <tr><td>Três bolhas</td><td>Registro de refeição.</td><td>Tabela da refeição, comentário educativo e card de saldo.</td></tr>
+            <tr><td>Botões</td><td>Até 3 escolhas.</td><td>Confirmação, edição ou onboarding.</td></tr>
+            <tr><td>Lista</td><td>De 4 a 10 escolhas.</td><td>Menu interativo nativo do WhatsApp.</td></tr>
+            <tr><td>Áudio</td><td>Mensagem-âncora ou preferência de voz.</td><td>Texto é reescrito para fala, sintetizado, enviado e auditado.</td></tr>
+            <tr><td>Template HSM</td><td>Contato fora da janela permitida.</td><td>Usa template previamente aprovado pela Meta.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="calculo" class="chapter">
+        <div class="eyebrow">11. Fonte numérica</div>
+        <h2>Motor determinístico</h2>
+        <p class="lede">A função da LLM era entender o relato. As contas oficiais saíam de <code>@mpp/core</code>, das referências nutricionais e do estado do banco.</p>
+        <div class="cards">
+          <div class="card"><div class="metric">Meta</div><p>Recomposição: BMR × multiplicador menos déficit. Ganho: TDEE × superávit. Manutenção: TDEE.</p></div>
+          <div class="card blue"><div class="metric">Saldo</div><p><strong>Comida:</strong> consumido − meta. Exercício não libera mais comida no card.</p></div>
+          <div class="card amber"><div class="metric">7700</div><p><strong>Net:</strong> consumido − meta − exercício. O crédito usa déficit planejado menos saldo líquido.</p></div>
+        </div>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 6. Formação do estado diário</div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Perfil</strong>Peso, altura, sexo, idade, BF, atividade, fome, treino e protocolo.</div><div class="flow-arrow">+</div>
+            <div class="flow-step"><strong>Config</strong>Fatores, limites, multiplicadores e <code>KCAL_BLOCK=7700</code>.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Targets</strong>Meta calórica e proteína alvo.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Meal logs</strong>Kcal, P, C e G por item confirmado.</div><div class="flow-arrow">+</div>
+            <div class="flow-step"><strong>Workout logs</strong>Gasto confirmado por treino.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Snapshot</strong>Totais, saldos e status do dia local.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Status do dia</strong>Completo, pulado, incompleto ou pendente.</div><div class="flow-arrow">+</div>
+            <div class="flow-step"><strong>Closer</strong>Finalização atômica e crédito do dia.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Progresso</strong>Bloco, XP, streaks, nível e reavaliação.</div>
+          </div>
+        </div>
+        <h3>Regras importantes</h3>
+        <ul>
+          <li>Exercício acelera o bloco, mas não aumenta a linha “Restam” no card.</li>
+          <li>Dia com gap aberto e sem resposta fecha como incompleto e credita zero.</li>
+          <li>Dia explicitamente pulado pode usar o consumo real das demais refeições.</li>
+          <li>Consumo abaixo de 50% da meta ativa defesa contra sub-registro.</li>
+          <li>Créditos negativos podem reduzir o acumulado, mas o total não fica abaixo de zero.</li>
+        </ul>
+      </section>
+
+      <section id="dados" class="chapter">
+        <div class="eyebrow">12. Persistência</div>
+        <h2>Arquitetura de dados</h2>
+        <div class="diagram data-diagram">
+          <div class="diagram-title">Fluxograma 7. Relacionamentos lógicos do domínio</div>
+          <svg viewBox="0 0 1030 610" role="img" aria-label="Mapa lógico das tabelas">
+            <defs><marker id="a4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#657a71"/></marker><style>.b{rx:8;stroke-width:2}.t{font:600 14px Arial;fill:#17211d}.s{font:11px Arial;fill:#52645d}.l{stroke:#657a71;stroke-width:1.8;fill:none;marker-end:url(#a4)}.g{fill:none;stroke:#c4d0ca;stroke-width:2;stroke-dasharray:7 5;rx:14}.h{font:700 12px Arial;fill:#0f6a52}</style></defs>
+            <rect class="b" x="425" y="35" width="180" height="70" fill="#e5f2ed" stroke="#0f6a52"/><text class="t" x="515" y="65" text-anchor="middle">users</text><text class="s" x="515" y="86" text-anchor="middle">identidade WhatsApp</text>
+            <rect class="g" x="25" y="145" width="300" height="410"/><text class="h" x="45" y="170">CONVERSA E OPERAÇÃO</text>
+            <rect class="b" x="60" y="195" width="225" height="60" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="172" y="222" text-anchor="middle">messages</text><text class="s" x="172" y="242" text-anchor="middle">in/out, status, custo</text>
+            <rect class="b" x="60" y="285" width="225" height="60" fill="#e4f2f3" stroke="#177f86"/><text class="t" x="172" y="312" text-anchor="middle">message_buffer / outbox</text><text class="s" x="172" y="332" text-anchor="middle">burst e despacho</text>
+            <rect class="b" x="60" y="375" width="225" height="60" fill="#eee8f6" stroke="#674b91"/><text class="t" x="172" y="402" text-anchor="middle">pending_registrations</text><text class="s" x="172" y="422" text-anchor="middle">proposta e confirmação</text>
+            <rect class="b" x="60" y="465" width="225" height="60" fill="#f2f5f3" stroke="#5e6a64"/><text class="t" x="172" y="492" text-anchor="middle">product_events / audits</text><text class="s" x="172" y="512" text-anchor="middle">telemetria e qualidade</text>
+
+            <rect class="g" x="365" y="145" width="300" height="410"/><text class="h" x="385" y="170">DOMÍNIO DO PACIENTE</text>
+            <rect class="b" x="405" y="195" width="220" height="60" fill="#e5f2ed" stroke="#0f6a52"/><text class="t" x="515" y="222" text-anchor="middle">user_profiles</text><text class="s" x="515" y="242" text-anchor="middle">perfil e protocolo</text>
+            <rect class="b" x="405" y="285" width="220" height="60" fill="#fff1d9" stroke="#a05c0f"/><text class="t" x="515" y="312" text-anchor="middle">daily_snapshots</text><text class="s" x="515" y="332" text-anchor="middle">estado por data local</text>
+            <rect class="b" x="380" y="375" width="125" height="70" fill="#fff" stroke="#5e6a64"/><text class="t" x="442" y="405" text-anchor="middle">meal_logs</text><text class="s" x="442" y="426" text-anchor="middle">1 item/linha</text>
+            <rect class="b" x="525" y="375" width="125" height="70" fill="#fff" stroke="#5e6a64"/><text class="t" x="587" y="405" text-anchor="middle">workout_logs</text><text class="s" x="587" y="426" text-anchor="middle">treinos</text>
+            <rect class="b" x="405" y="475" width="220" height="60" fill="#eee8f6" stroke="#674b91"/><text class="t" x="515" y="502" text-anchor="middle">user_progress</text><text class="s" x="515" y="522" text-anchor="middle">bloco, XP, streak</text>
+
+            <rect class="g" x="705" y="145" width="300" height="410"/><text class="h" x="725" y="170">CATÁLOGOS E CONTROLE</text>
+            <rect class="b" x="745" y="195" width="220" height="60" fill="#e4f2f3" stroke="#177f86"/><text class="t" x="855" y="222" text-anchor="middle">food_db</text><text class="s" x="855" y="242" text-anchor="middle">TACO, USDA, rótulos</text>
+            <rect class="b" x="745" y="285" width="220" height="60" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="855" y="312" text-anchor="middle">agent_rules / configs</text><text class="s" x="855" y="332" text-anchor="middle">prompts e runtime</text>
+            <rect class="b" x="745" y="375" width="220" height="60" fill="#eee8f6" stroke="#674b91"/><text class="t" x="855" y="402" text-anchor="middle">method_chunks</text><text class="s" x="855" y="422" text-anchor="middle">RAG do método</text>
+            <rect class="b" x="745" y="465" width="220" height="60" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="855" y="492" text-anchor="middle">subscriptions</text><text class="s" x="855" y="512" text-anchor="middle">acesso e billing</text>
+
+            <path class="l" d="M470 105 C380 130,250 160,205 195"/><path class="l" d="M490 105 L515 195"/><path class="l" d="M555 105 C700 130,820 160,855 195"/>
+            <path class="l" d="M515 255 L515 285"/><path class="l" d="M480 345 L442 375"/><path class="l" d="M550 345 L587 375"/><path class="l" d="M515 345 L515 475"/>
+            <path class="l" d="M505 410 C650 410,690 225,745 225"/><path class="l" d="M285 225 C340 225,360 225,405 225"/>
+            <path class="l" d="M285 315 C330 315,350 315,405 315"/><path class="l" d="M285 405 C330 405,340 390,380 390"/>
+            <path class="l" d="M605 70 C760 70,850 100,855 195"/><path class="l" d="M605 85 C780 130,855 400,855 465"/>
+          </svg>
+        </div>
+        <table class="compact data-table">
+          <thead><tr><th>Grupo</th><th>Tabelas principais</th><th>Responsabilidade</th></tr></thead>
+          <tbody>
+            <tr><td>Identidade</td><td><code>users</code>, <code>user_profiles</code>, <code>user_progress</code></td><td>Paciente WhatsApp, perfil clínico, protocolo e gamificação.</td></tr>
+            <tr><td>Dia</td><td><code>daily_snapshots</code>, <code>meal_logs</code>, <code>workout_logs</code>, <code>reevaluations</code></td><td>Estado por data local e registros confirmados.</td></tr>
+            <tr><td>Conversa</td><td><code>messages</code>, <code>processed_messages</code>, <code>message_embeddings</code></td><td>Histórico, idempotência, busca e custos.</td></tr>
+            <tr><td>Entrega</td><td><code>message_buffer</code>, <code>message_dispatch_outbox</code>, tabelas de attempts</td><td>Debounce, claim, retries e fechamento de entrega.</td></tr>
+            <tr><td>Pendências</td><td><code>pending_registrations</code>, <code>pending_approvals</code></td><td>Confirmação do paciente e aprovação interna.</td></tr>
+            <tr><td>Nutrição</td><td><code>food_db</code>, <code>user_food_corrections</code>, frases educativas</td><td>Referência canônica, personalização e comentários.</td></tr>
+            <tr><td>Agente</td><td><code>agent_configs</code>, <code>agent_rules</code>, versões, <code>global_config</code>, <code>calc_config</code></td><td>Modelos, prompts, regras, flags e parâmetros.</td></tr>
+            <tr><td>Conhecimento</td><td><code>method_chunks</code></td><td>RAG do método com embeddings e filtro por protocolo.</td></tr>
+            <tr><td>Billing</td><td><code>subscriptions</code>, <code>subscription_events</code></td><td>Status de acesso e processamento idempotente de webhooks.</td></tr>
+            <tr><td>Observabilidade</td><td><code>product_events</code>, <code>tools_audit</code>, <code>llm_evaluations</code>, <code>audit_log</code></td><td>Telemetria, rastreabilidade e qualidade.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout info">
+          <strong>Mídia não residia em um bucket Supabase</strong>
+          A auditoria live de 02/07/2026 não encontrou buckets de Storage. O sistema persistia media IDs/URLs e baixava os bytes pela Graph API quando necessário. Isso distingue a arquitetura real do resumo genérico do README, que mencionava Storage como capacidade do Supabase.
+        </div>
+      </section>
+
+      <section id="workers" class="chapter">
+        <div class="eyebrow">13. Orquestração</div>
+        <h2>Workers e automações</h2>
+        <p>O snapshot exportava 17 funções Inngest. Algumas respondiam a eventos emitidos pela Edge ou por pg_cron; outras usavam cron nativo do Inngest. Jobs horários revalidavam o horário local do paciente antes de agir.</p>
+        <table class="compact">
+          <thead><tr><th>Worker</th><th>Trigger</th><th>Função</th></tr></thead>
+          <tbody>
+            <tr><td><code>process-message</code></td><td><code>message.received</code></td><td>Pipeline principal, mídia, agente e resposta.</td></tr>
+            <tr><td><code>buffer-listener</code></td><td><code>buffer.flush</code></td><td>Claim, agregação e despacho do burst.</td></tr>
+            <tr><td><code>interactive-handler</code></td><td><code>interactive.button.tapped</code></td><td>Confirma, edita ou processa onboarding interativo.</td></tr>
+            <tr><td><code>daily-closer</code></td><td><code>day.close.tick</code></td><td>Fecha o dia local e atualiza progresso.</td></tr>
+            <tr><td><code>daily-gap-checker</code></td><td><code>day.close.tick</code></td><td>Detecta refeição esperada faltante antes do fechamento.</td></tr>
+            <tr><td><code>meal-gap-reminder</code></td><td>cron horário</td><td>Lembrete opt-in determinístico.</td></tr>
+            <tr><td><code>engagement-sender</code></td><td><code>engagement.tick</code></td><td>Mensagem proativa com dados reais.</td></tr>
+            <tr><td><code>training-daily-delivery</code></td><td>cron horário + gate local</td><td>Entrega treino do dia sem nova geração.</td></tr>
+            <tr><td><code>pending-cleanup</code></td><td>cron a cada 5 min</td><td>Expira propostas vencidas.</td></tr>
+            <tr><td><code>daily-audit</code></td><td>cron 5 vezes/dia BRT</td><td>Saúde, integridade e auto-fix limitado.</td></tr>
+            <tr><td><code>sample-judge</code></td><td>cron 2 vezes/dia BRT</td><td>Amostra respostas para LLM-as-judge.</td></tr>
+            <tr><td><code>food-db-gaps-report</code></td><td>cron semanal</td><td>Reporta alimentos que caíram em fallback.</td></tr>
+            <tr><td><code>pipeline-health</code></td><td><code>pipeline.health.tick</code></td><td>Detecta inbound sem outbound e tenta ressincronizar.</td></tr>
+            <tr><td><code>wa-quality-check</code></td><td><code>wa.quality.check</code></td><td>Monitora qualidade do número Meta.</td></tr>
+            <tr><td><code>openrouter-balance-check</code></td><td>cron 4 vezes/dia BRT</td><td>Monitora saldo do provedor de IA.</td></tr>
+            <tr><td><code>regression-beacon</code></td><td>cron horário</td><td>Detecta regressões por eventos operacionais.</td></tr>
+            <tr><td><code>user-deletion-purger</code></td><td>cron a cada 15 min</td><td>Conclui expurgo de usuários marcados.</td></tr>
+          </tbody>
+        </table>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 8. Relógios e execução local</div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>pg_cron</strong>Varre em UTC e usa pg_net para emitir ticks.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Inngest</strong>Recebe evento, aplica retries e concorrência.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Gate local</strong>Converte timezone do usuário e decide agir.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Cron Inngest</strong>Dispara jobs de saúde e limpeza.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Config runtime</strong>Janelas, slots e políticas vêm do banco.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Entrega</strong>Usa o mesmo provider WhatsApp e persiste resultado.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="admin" class="chapter">
+        <div class="eyebrow">14. Backoffice</div>
+        <h2>Painel administrativo e intervenção</h2>
+        <p>O painel era uma aplicação Next.js hospedada na Vercel. Ele não substituía o canal do paciente; servia para observar, configurar e operar o agente.</p>
+        <div class="three-col">
+          <div class="card"><h3>Operação</h3><p>Dashboard, atenção, usuários, ficha, pausa, fechamento manual, conversas, busca, mídia e envio administrativo.</p></div>
+          <div class="card blue"><h3>Agente</h3><p>Prompts versionados, regras, playground, modelos, tools, alimentos, fórmulas e configurações globais.</p></div>
+          <div class="card amber"><h3>Saúde e negócio</h3><p>Auditoria, avaliações, funil, receita, assinaturas, crons e credenciais de serviços.</p></div>
+        </div>
+        <h3>Fluxo de autenticação administrativa</h3>
+        <div class="flow-grid">
+          <div class="flow-step"><strong>Login web</strong>Supabase Auth cria sessão do administrador.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>Middleware</strong>Valida usuário e protege rotas não públicas.</div><div class="flow-arrow">›</div>
+          <div class="flow-step"><strong>Banco</strong><code>admin_users</code>, JWT e policies definem leitura/escrita.</div>
+        </div>
+        <h3>Endpoints hospedados no admin</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Papel</th></tr></thead>
+          <tbody>
+            <tr><td><code>/api/inngest</code></td><td>Serve e sincroniza a coleção de functions Inngest.</td></tr>
+            <tr><td><code>/api/admin/send-message</code></td><td>Envio manual pelo provider com autenticação própria.</td></tr>
+            <tr><td><code>/api/media/[id]</code></td><td>Proxy autenticado para visualizar mídia da Meta.</td></tr>
+            <tr><td><code>/api/stripe/checkout</code></td><td>Cria checkout associado ao usuário do domínio.</td></tr>
+            <tr><td><code>/api/stripe/setup-products</code></td><td>Operação de catálogo de billing.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="billing" class="chapter">
+        <div class="eyebrow">15. Comercial</div>
+        <h2>Assinaturas e controle de acesso</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 9. Checkout, webhook e gate de acesso</div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Painel / link</strong>Cria checkout com metadata do usuário.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Stripe</strong>Processa pagamento e emite evento.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Edge webhook</strong>Valida <code>Stripe-Signature</code>.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Claim idempotente</strong><code>subscription_events</code> evita evento duplicado.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Subscription</strong>Atualiza plano, status e período.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Pipeline</strong><code>checkSubscription</code> libera ou bloqueia atendimento.</div>
+          </div>
+        </div>
+        <p>O webhook tratava checkout concluído, criação/atualização/cancelamento de assinatura, pagamento bem-sucedido e pagamento falho. O vínculo priorizava <code>user_id</code> explícito e possuía fallbacks históricos por WhatsApp ou e-mail.</p>
+        <div class="callout info"><strong>Billing era suporte ao produto WhatsApp</strong>Stripe não era uma interface de paciente comparável ao app. Seu estado apenas determinava se o pipeline conversacional podia atender.</div>
+      </section>
+
+      <section id="observabilidade" class="chapter">
+        <div class="eyebrow">16. Operação contínua</div>
+        <h2>Observabilidade, auditoria e recuperação</h2>
+        <table>
+          <thead><tr><th>Camada</th><th>Evidência produzida</th><th>Resposta</th></tr></thead>
+          <tbody>
+            <tr><td>Mensagem</td><td>Inbound/outbound, provider IDs, status, latência e modelo.</td><td>Reprocessamento, inspeção e correlação.</td></tr>
+            <tr><td>Tool</td><td><code>tools_audit</code> com nome, args, resultado e sucesso.</td><td>Prova de escrita real e análise de falha.</td></tr>
+            <tr><td>Produto</td><td><code>product_events</code> para guards, pipeline, mídia, custos e crons.</td><td>Alertas e painéis.</td></tr>
+            <tr><td>Qualidade LLM</td><td><code>llm_evaluations</code> e sample judge.</td><td>Amostragem, nota e regressão.</td></tr>
+            <tr><td>Integridade</td><td>Daily audit compara snapshots, logs e bloco.</td><td>Alerta e auto-fix restrito com circuit breaker.</td></tr>
+            <tr><td>Infra</td><td>Qualidade Meta, saldo OpenRouter, pipeline sem resposta.</td><td>Telegram e tentativa de recuperação.</td></tr>
+            <tr><td>Admin</td><td><code>audit_log</code> e histórico imutável de configs/regras.</td><td>Rastreabilidade de alteração humana.</td></tr>
+          </tbody>
+        </table>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 10. Ciclo de detecção e recuperação</div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Detectar</strong>Jobs consultam eventos, mensagens e invariantes.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Classificar</strong>Erro, divergência, custo, qualidade ou lacuna.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Registrar</strong>Evento e relatório sem apagar a evidência.</div>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-step"><strong>Alertar</strong>Telegram interno e painel de auditoria.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Recuperar</strong>Retry, resync, reconciliação limitada ou ação humana.</div><div class="flow-arrow">›</div>
+            <div class="flow-step"><strong>Verificar</strong>Novo evento, status de entrega e snapshot reconciliado.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="seguranca" class="chapter">
+        <div class="eyebrow">17. Fronteiras de confiança</div>
+        <h2>Segurança e autorização na arquitetura</h2>
+        <table>
+          <thead><tr><th>Fronteira</th><th>Controle esperado no fluxo</th><th>Privilégio</th></tr></thead>
+          <tbody>
+            <tr><td>Meta → Edge WhatsApp</td><td>Challenge de verificação e HMAC SHA-256 sobre corpo bruto.</td><td>Endpoint público com validação interna.</td></tr>
+            <tr><td>Stripe → Edge billing</td><td><code>Stripe-Signature</code> e secret do webhook.</td><td>Endpoint público com service role após validação.</td></tr>
+            <tr><td>Telegram → Edge</td><td>Secret token do bot e controle de admin.</td><td>Operação interna.</td></tr>
+            <tr><td>Inngest → Vercel</td><td>Signing key e protocolo da biblioteca.</td><td>Execução de workers server-side.</td></tr>
+            <tr><td>Admin → Supabase</td><td>Sessão Auth, middleware, <code>admin_users</code>, RLS e roles.</td><td>JWT do administrador.</td></tr>
+            <tr><td>Edge/workers → Supabase</td><td>Service role, sem exposição ao cliente.</td><td>Bypass de RLS para operações de backend.</td></tr>
+            <tr><td>Providers externos</td><td>Secrets em env ou <code>service_credentials</code>.</td><td>Somente server-side.</td></tr>
+            <tr><td>Paciente</td><td>Número WhatsApp é identidade de domínio.</td><td>Não recebe acesso direto ao PostgREST.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn">
+          <strong>Edge Functions com <code>verify_jwt=false</code></strong>
+          Os webhooks eram públicos por natureza e faziam autenticação no próprio handler. Isso não equivale a ausência de autenticação, mas torna a correção de cada verificação interna parte do perímetro crítico.
+        </div>
+        <h3>Tratamento de secrets</h3>
+        <p>O sistema previa variáveis por categoria: Supabase, Meta, OpenRouter, Groq, TTS, Inngest, Stripe, Telegram, observabilidade e e-mail. Valores não pertenciam ao repositório. Alguns serviços também podiam ser configurados em <code>service_credentials</code>, acessada apenas pelo backend e pelo painel administrativo autorizado.</p>
+      </section>
+
+      <section id="devops" class="chapter">
+        <div class="eyebrow">18. Entrega técnica</div>
+        <h2>DevOps, ambientes e deploy</h2>
+        <div class="diagram">
+          <div class="diagram-title">Fluxograma 11. Caminho de código até produção na fase WhatsApp</div>
+          <svg viewBox="0 0 1020 320" role="img" aria-label="Fluxo DevOps">
+            <defs><marker id="a5" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#497267"/></marker><style>.b{rx:9;stroke-width:2}.t{font:600 14px Arial;fill:#17211d}.s{font:12px Arial;fill:#52645d}.l{stroke:#497267;stroke-width:2;fill:none;marker-end:url(#a5)}.d{stroke-dasharray:6 5}</style></defs>
+            <rect class="b" x="25" y="105" width="150" height="82" fill="#f2f5f3" stroke="#5e6a64"/><text class="t" x="100" y="135" text-anchor="middle">Git local</text><text class="s" x="100" y="158" text-anchor="middle">test / typecheck</text><text class="s" x="100" y="176" text-anchor="middle">build / review</text>
+            <rect class="b" x="225" y="105" width="150" height="82" fill="#e9eff8" stroke="#275ea8"/><text class="t" x="300" y="135" text-anchor="middle">GitHub</text><text class="s" x="300" y="158" text-anchor="middle">main + PRs</text><text class="s" x="300" y="176" text-anchor="middle">CI preventivo</text>
+            <rect class="b" x="430" y="45" width="170" height="82" fill="#e5f2ed" stroke="#0f6a52"/><text class="t" x="515" y="75" text-anchor="middle">Vercel</text><text class="s" x="515" y="98" text-anchor="middle">Next.js + APIs</text><text class="s" x="515" y="116" text-anchor="middle">deploy produtivo</text>
+            <rect class="b" x="430" y="190" width="170" height="82" fill="#e4f2f3" stroke="#177f86"/><text class="t" x="515" y="220" text-anchor="middle">Supabase CLI</text><text class="s" x="515" y="243" text-anchor="middle">migrations + Edge</text><text class="s" x="515" y="261" text-anchor="middle">fluxo separado</text>
+            <rect class="b" x="660" y="45" width="160" height="82" fill="#eee8f6" stroke="#674b91"/><text class="t" x="740" y="75" text-anchor="middle">/api/inngest</text><text class="s" x="740" y="98" text-anchor="middle">PUT de sync</text><text class="s" x="740" y="116" text-anchor="middle">após deploy</text>
+            <rect class="b" x="865" y="45" width="130" height="82" fill="#fff1d9" stroke="#a05c0f"/><text class="t" x="930" y="75" text-anchor="middle">Inngest</text><text class="s" x="930" y="98" text-anchor="middle">functions</text><text class="s" x="930" y="116" text-anchor="middle">sincronizadas</text>
+            <rect class="b" x="660" y="190" width="335" height="82" fill="#f9e7e7" stroke="#9a3838"/><text class="t" x="827" y="220" text-anchor="middle">Canário e observação</text><text class="s" x="827" y="243" text-anchor="middle">webhook, outbound, jobs, eventos, qualidade Meta</text><text class="s" x="827" y="261" text-anchor="middle">e saúde do pipeline</text>
+            <path class="l" d="M175 146 L225 146"/><path class="l" d="M375 135 C405 120,405 86,430 86"/><path class="l d" d="M375 158 C405 175,405 231,430 231"/>
+            <path class="l" d="M600 86 L660 86"/><path class="l" d="M820 86 L865 86"/><path class="l" d="M600 231 L660 231"/><path class="l" d="M930 127 L875 190"/>
+          </svg>
+        </div>
+        <h3>Características do fluxo</h3>
+        <ul>
+          <li>Vercel hospedava o admin e o endpoint Inngest; não havia Vercel Cron.</li>
+          <li>Supabase migrations e Edge Functions tinham ciclo operacional separado.</li>
+          <li><code>scripts/deploy.sh</code> executava deploy Vercel, aguardava propagação e forçava <code>PUT /api/inngest</code>.</li>
+          <li>O script abortava se a sincronização do Inngest não retornasse sucesso.</li>
+          <li>O workflow GitHub existente tinha escopo restrito: impedir novos usos não justificados de <code>as any</code> no agent.</li>
+          <li>Scripts de seed, dry-run, reparo e auditoria serviam como ferramentas operacionais auditáveis.</li>
+        </ul>
+      </section>
+
+      <section id="falhas" class="chapter">
+        <div class="eyebrow">19. Resiliência</div>
+        <h2>Redundâncias e modos de falha</h2>
+        <table class="compact">
+          <thead><tr><th>Risco operacional</th><th>Redundâncias implementadas</th><th>Resultado esperado</th></tr></thead>
+          <tbody>
+            <tr><td>Meta reenvia webhook</td><td>Índices únicos por provider ID e RPC de ingestão idempotente.</td><td>Uma mensagem lógica, mesmo com entrega repetida.</td></tr>
+            <tr><td>Paciente manda várias bolhas</td><td>Debounce, burst com todos os IDs e filtro do contexto atual.</td><td>Uma intenção, sem duplicar a mensagem na LLM.</td></tr>
+            <tr><td>Worker cai após claim</td><td>Outbox de despacho, completion explícita e retries Inngest.</td><td>Recuperação sem perder o burst.</td></tr>
+            <tr><td>Foto e legenda se separam</td><td>Gate de mídia em voo e extensão única do buffer.</td><td>Mais chance de analisar como um único turno.</td></tr>
+            <tr><td>LLM afirma que salvou</td><td>Fake-write detector, tool obrigatória e card pós-banco.</td><td>Sem confirmação falsa de escrita.</td></tr>
+            <tr><td>LLM tenta substituir refeição</td><td>Intenção explícita, overlap, adição detector e RPC escopada.</td><td>Correção altera só o alvo.</td></tr>
+            <tr><td>Valor nutricional inconsistente</td><td>Catálogo verificado, <code>food_db_id</code>, invariantes e confirmação.</td><td>Número ligado à referência ou marcado como estimativa.</td></tr>
+            <tr><td>Resposta externa falha</td><td>Retries, fallback ao paciente, delivery status e evento de erro.</td><td>Falha visível e recuperável.</td></tr>
+            <tr><td>Deploy deixa workers antigos</td><td>Sync explícito do Inngest e pipeline-health.</td><td>Detecção e correção de dessincronização.</td></tr>
+            <tr><td>Job age no dia errado</td><td>Timezone IANA, timestamps do provider e gate pela data local.</td><td>Fechamento e refeição no dia do paciente.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout">
+          <strong>Sem promessa de “exactly once” na rede</strong>
+          Meta, Vercel, Inngest e Supabase formavam um sistema distribuído. A garantia prática vinha da combinação de entrega pelo menos uma vez, chaves idempotentes, claims, transações, concorrência por usuário e reconciliação. Isso é mais realista do que depender de uma única chamada perfeita.
+        </div>
+      </section>
+
+      <section id="limitacoes" class="chapter">
+        <div class="eyebrow">20. Leitura histórica</div>
+        <h2>Limitações e caveats do período</h2>
+        <p>Os pontos abaixo ajudam a interpretar a arquitetura sem projetar sobre ela capacidades que vieram depois.</p>
+        <div class="callout warn"><strong>Sem identidade portátil de paciente</strong>O número WhatsApp era a chave operacional. Não havia login de paciente, sessão própria, recuperação de conta ou vínculo independente do canal.</div>
+        <div class="callout warn"><strong>Mídia dependente da Meta</strong>Sem bucket próprio, o backend precisava resolver e baixar media IDs da Graph API no momento do processamento ou visualização.</div>
+        <div class="callout warn"><strong>Configuração distribuída</strong>Comportamento podia vir de env, <code>service_credentials</code>, prompts, rules e configs de runtime. Isso dava flexibilidade, mas exigia inventário e auditoria para saber a configuração efetiva.</div>
+        <div class="callout warn"><strong>Dois relógios</strong>Parte dos jobs nascia no pg_cron e parte no Inngest. A data correta dependia do gate pelo timezone do paciente.</div>
+        <div class="callout risk"><strong>Achados da auditoria de 02/07/2026</strong>A auditoria registrou exposição excessiva em grants/RLS/RPCs/views, dependências com advisories, ausência de índice adequado em um update de status WhatsApp e riscos em fetchs externos. Migrations posteriores podem ter alterado parte desse cenário. Este relatório não reexecutou a auditoria live e, portanto, não afirma o estado atual desses achados.</div>
+        <h3>Divergências documentais corrigidas neste relatório</h3>
+        <ul>
+          <li>O README e documentos mais antigos citavam modelos e contagens anteriores. O modelo era runtime-configurável.</li>
+          <li>No baseline havia <strong>114 migrations</strong>, <strong>6 Edge Functions</strong> e <strong>17 funções Inngest</strong>.</li>
+          <li>Havia um workflow GitHub limitado; não era uma suíte CI completa.</li>
+          <li>Supabase Storage era capacidade da plataforma, mas a auditoria live não encontrou bucket configurado.</li>
+        </ul>
+      </section>
+
+      <section class="chapter">
+        <div class="eyebrow">21. Síntese</div>
+        <h2>Como tudo se interligava</h2>
+        <ol>
+          <li>O paciente enviava texto, áudio, foto ou tap no WhatsApp.</li>
+          <li>A Meta chamava a Edge Function, que validava assinatura e persistia o evento.</li>
+          <li>Mensagens livres entravam em buffer; taps seguiam direto ao handler determinístico.</li>
+          <li>Inngest serializava por usuário, recuperava bursts e coordenava retries.</li>
+          <li>Áudio era transcrito; imagem era analisada; legenda e contexto eram fundidos.</li>
+          <li>O agent carregava banco, prompt, timezone, assinatura e estado diário.</li>
+          <li>A LLM escolhia tools; guards e Zod validavam a intenção.</li>
+          <li>Core, catálogo nutricional e RPCs realizavam as contas e escritas.</li>
+          <li>O sistema reconstruía tabela, comentário e card a partir do banco.</li>
+          <li>O provider enviava pela Meta e persistia IDs/status reais de cada bolha.</li>
+          <li>Crons fechavam dias, lembravam gaps, enviavam treino e monitoravam saúde.</li>
+          <li>O painel Next.js permitia observar e administrar; Stripe controlava acesso; Telegram recebia alertas.</li>
+          <li>Vercel, Supabase e Inngest formavam os três pilares de execução, estado e orquestração.</li>
+        </ol>
+        <div class="callout"><strong>Resumo arquitetural em uma frase</strong>Era um SaaS conversacional orientado a eventos: WhatsApp como interface, Supabase como sistema de registro, Inngest como coordenador, Vercel como runtime web, providers de IA como interpretação e o core determinístico como dono da verdade.</div>
+      </section>
+
+      <section id="evidencias" class="chapter">
+        <div class="eyebrow">22. Rastreabilidade</div>
+        <h2>Evidências técnicas consultadas</h2>
+        <p>Os caminhos abaixo referem-se ao repositório no snapshot <code>280b3d7</code>. A lista prioriza arquivos que demonstram cada conexão descrita.</p>
+        <ul class="source-list">
+          <li><code>package.json</code>, <code>pnpm-workspace.yaml</code>, <code>turbo.json</code>: runtime, monorepo e scripts.</li>
+          <li><code>apps/admin/package.json</code>: Next.js, React, Inngest, Stripe e Supabase.</li>
+          <li><code>apps/admin/src/app/api/inngest/route.ts</code>: exposição das functions na Vercel.</li>
+          <li><code>apps/admin/src/middleware.ts</code>: sessão administrativa e rotas públicas específicas.</li>
+          <li><code>supabase/functions/webhook-whatsapp/index.ts</code>: assinatura Meta, ingestão, buffer e taps.</li>
+          <li><code>packages/providers/src/messaging/whatsapp-cloud.ts</code>: Graph API, mídia, botões, listas, reações e status.</li>
+          <li><code>packages/inngest-functions/src/functions/buffer-listener.ts</code>: claim, outbox, burst e gate de mídia em voo.</li>
+          <li><code>packages/inngest-functions/src/functions/process-message.ts</code>: STT, vision, agent, envio e persistência.</li>
+          <li><code>packages/inngest-functions/src/index.ts</code> e <code>client.ts</code>: 17 workers e eventos tipados.</li>
+          <li><code>packages/agent/src/pipeline.ts</code>: contexto, assinatura, prompts, RAG, roteamento, tools e guards.</li>
+          <li><code>packages/agent/src/tools.ts</code>: catálogo de tools e escritas de domínio.</li>
+          <li><code>packages/core/src/engine/targets.ts</code>, <code>balance.ts</code>, <code>bloco.ts</code>: fórmulas oficiais.</li>
+          <li><code>packages/providers/src/llm/openrouter.ts</code>: gateway, timeout, retries, cache e custo.</li>
+          <li><code>supabase/migrations/</code>: 114 migrations, schema, RLS, RPCs, outboxes e invariantes.</li>
+          <li><code>supabase/functions/webhook-stripe/index.ts</code>: assinatura e processamento idempotente de billing.</li>
+          <li><code>scripts/deploy.sh</code>: Vercel, sync Inngest e gate de sucesso.</li>
+          <li><code>.github/workflows/lint-agent.yml</code>: proteção incremental da qualidade.</li>
+          <li><code>docs/adr/</code>, <code>docs/CALCULO-MPP.md</code> e runbooks: decisões e operação.</li>
+          <li><code>docs/audits/2026-07-02-full-platform-audit.md</code>: validações live e caveats históricos.</li>
+        </ul>
+        <h3>Contagens do baseline</h3>
+        <div class="cards">
+          <div class="card"><div class="metric">114</div><p>Migrations Supabase versionadas.</p></div>
+          <div class="card blue"><div class="metric">6</div><p>Edge Functions no repositório.</p></div>
+          <div class="card amber"><div class="metric">17</div><p>Funções Inngest exportadas.</p></div>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <div class="eyebrow">23. Termos</div>
+        <h2>Glossário</h2>
+        <table class="compact">
+          <thead><tr><th>Termo</th><th>Significado no sistema</th></tr></thead>
+          <tbody>
+            <tr><td>Agente MPP</td><td>Nome técnico do produto conversacional que posteriormente passou a compor a visão BodyFlow.</td></tr>
+            <tr><td>Burst</td><td>Conjunto de bolhas do paciente agrupadas como um único turno.</td></tr>
+            <tr><td>Pending</td><td>Proposta aguardando confirmação ou edição antes da escrita.</td></tr>
+            <tr><td>Tool</td><td>Operação tipada que a LLM solicita e o sistema valida/executa.</td></tr>
+            <tr><td>Snapshot</td><td>Estado agregado de um usuário em uma data local.</td></tr>
+            <tr><td>Bloco 7700</td><td>Acumulador de déficit líquido usado na progressão do método.</td></tr>
+            <tr><td>RAG</td><td>Recuperação de trechos do método por similaridade vetorial.</td></tr>
+            <tr><td>Outbox</td><td>Registro durável intermediário para garantir despacho recuperável.</td></tr>
+            <tr><td>Idempotência</td><td>Repetir a mesma tentativa não deve criar um segundo efeito lógico.</td></tr>
+            <tr><td>Service role</td><td>Credencial server-side do Supabase com privilégios elevados.</td></tr>
+            <tr><td>HSM</td><td>Template de mensagem aprovado pela Meta para contato fora da janela.</td></tr>
+            <tr><td>Gate local</td><td>Decisão de um job baseada no timezone e na data/hora do paciente.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout info">
+          <strong>Nota final</strong>
+          Este é um documento descritivo e histórico. Ele não modifica código, banco ou produção e não representa a arquitetura futura do app nativo.
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

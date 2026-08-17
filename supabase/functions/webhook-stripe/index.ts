@@ -8,7 +8,8 @@
  *   - invoice.payment_succeeded      → renew (active)
  *   - invoice.payment_failed         → past_due
  *
- * Idempotência: provider_event_id UNIQUE em subscription_events.
+ * Idempotência: claim/finalização atômicos em subscription_events. Eventos
+ * falhos continuam elegíveis para retry; apenas `processed` vira duplicata.
  *
  * Configuração: lê stripe.secret_key e stripe.webhook_secret de
  * service_credentials. Cache por instância da Edge Function.
@@ -31,13 +32,14 @@ async function getCredential(
   service: string,
   keyName: string,
 ): Promise<string | null> {
-  const { data } = await client
+  const { data, error } = await client
     .from('service_credentials')
     .select('value')
     .eq('service', service)
     .eq('key_name', keyName)
     .eq('is_active', true)
     .maybeSingle()
+  if (error) throw new Error(`credential lookup failed: ${error.message}`)
   return (data as { value: string } | null)?.value ?? null
 }
 
@@ -47,7 +49,6 @@ async function getStripeClient(): Promise<Stripe | null> {
   if (!key) return null
   cachedStripe = new Stripe(key, {
     apiVersion: '2024-12-18.acacia',
-    // @ts-expect-error — Deno fetch
     httpClient: Stripe.createFetchHttpClient(),
   })
   return cachedStripe
@@ -61,6 +62,44 @@ async function getWebhookSecret(): Promise<string | null> {
 }
 
 const cryptoProvider = Stripe.createSubtleCryptoProvider()
+
+type BillingEventContext = {
+  user_id?: string
+  subscription_id?: string
+  amount_cents?: number
+  currency?: string
+}
+
+async function claimSubscriptionEvent(
+  event: Stripe.Event,
+): Promise<'claimed' | 'duplicate' | 'in_progress'> {
+  const { data, error } = await supabase.rpc('claim_subscription_event', {
+    p_provider_event_id: event.id,
+    p_event_type: event.type,
+    p_payload: JSON.parse(JSON.stringify(event)),
+  })
+  if (error) throw new Error(`subscription event claim failed: ${error.message}`)
+  const status = (data as { status?: string } | null)?.status
+  if (status !== 'claimed' && status !== 'duplicate' && status !== 'in_progress') {
+    throw new Error(`invalid subscription event claim status: ${status ?? 'missing'}`)
+  }
+  return status
+}
+
+async function finishSubscriptionEvent(
+  providerEventId: string,
+  success: boolean,
+  context: BillingEventContext,
+  errorMessage?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('finish_subscription_event', {
+    p_provider_event_id: providerEventId,
+    p_success: success,
+    p_context: context,
+    p_error: errorMessage ?? null,
+  })
+  if (error) throw new Error(`subscription event finalization failed: ${error.message}`)
+}
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
@@ -96,47 +135,54 @@ Deno.serve(async (req) => {
     return new Response('invalid signature', { status: 400 })
   }
 
-  // Idempotência: tenta inserir o evento; UNIQUE em provider_event_id
-  const { error: dupErr } = await supabase.from('subscription_events').insert({
-    provider_event_id: event.id,
-    event_type: event.type,
-    payload: JSON.parse(JSON.stringify(event)),
-  })
-  if (dupErr?.code === '23505') {
+  let claim: 'claimed' | 'duplicate' | 'in_progress'
+  try {
+    claim = await claimSubscriptionEvent(event)
+  } catch (err) {
+    console.error('event claim failed:', err)
+    return new Response('event claim failed', { status: 500 })
+  }
+  if (claim === 'duplicate') {
     return new Response('ok (duplicate)', { status: 200 })
   }
+  if (claim === 'in_progress') {
+    return new Response('event already in progress', { status: 500 })
+  }
 
+  let eventContext: BillingEventContext = {}
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
-        await handleCheckoutCompleted(stripe, session)
+        eventContext = await handleCheckoutCompleted(stripe, session)
         break
       }
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription
-        await handleSubscriptionUpsert(sub)
+        eventContext = await handleSubscriptionUpsert(sub)
         break
       }
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription
-        await handleSubscriptionCanceled(sub)
+        eventContext = await handleSubscriptionCanceled(sub)
         break
       }
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice
+        eventContext = {
+          amount_cents: invoice.amount_paid,
+          currency: invoice.currency,
+        }
         if (invoice.subscription) {
           const subId =
             typeof invoice.subscription === 'string'
               ? invoice.subscription
               : invoice.subscription.id
-          await markSubscriptionStatus(subId, 'active')
-          // grava o valor pago no event para MRR
-          await supabase
-            .from('subscription_events')
-            .update({ amount_cents: invoice.amount_paid, currency: invoice.currency })
-            .eq('provider_event_id', event.id)
+          eventContext = {
+            ...eventContext,
+            ...(await markSubscriptionStatus(subId, 'active')),
+          }
         }
         break
       }
@@ -147,63 +193,83 @@ Deno.serve(async (req) => {
             typeof invoice.subscription === 'string'
               ? invoice.subscription
               : invoice.subscription.id
-          await markSubscriptionStatus(subId, 'past_due')
+          eventContext = await markSubscriptionStatus(subId, 'past_due')
         }
         break
       }
       default:
         console.log('unhandled event type:', event.type)
     }
+    await finishSubscriptionEvent(event.id, true, eventContext)
     return new Response('ok', { status: 200 })
   } catch (err) {
     console.error('handler error:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    try {
+      await finishSubscriptionEvent(event.id, false, {}, message)
+    } catch (finishError) {
+      console.error('failed to persist handler failure:', finishError)
+    }
     return new Response('handler failed', { status: 500 })
   }
 })
 
-async function handleCheckoutCompleted(stripe: Stripe, session: Stripe.Checkout.Session) {
-  if (!session.subscription) return
+async function handleCheckoutCompleted(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+): Promise<BillingEventContext> {
+  if (!session.subscription) throw new Error('checkout session has no subscription')
 
   // Mapeia user: prioridade metadata.user_id > metadata.wpp > customer_email
   let userId = session.metadata?.user_id ?? null
 
   if (!userId && session.metadata?.wpp) {
-    const { data: u } = await supabase
+    const { data: u, error } = await supabase
       .from('users')
       .select('id')
       .eq('wpp', session.metadata.wpp)
       .maybeSingle()
+    if (error) throw new Error(`checkout user lookup by wpp failed: ${error.message}`)
     userId = (u as { id: string } | null)?.id ?? null
   }
 
   if (!userId && session.customer_email) {
-    const { data: u } = await supabase
+    const { data: u, error } = await supabase
       .from('users')
       .select('id')
       .eq('email', session.customer_email)
       .maybeSingle()
+    if (error) throw new Error(`checkout user lookup by email failed: ${error.message}`)
     userId = (u as { id: string } | null)?.id ?? null
   }
 
   if (!userId) {
-    console.warn('checkout.completed sem user mapeado:', session.id)
-    return
+    throw new Error(`checkout session ${session.id} has no mapped user`)
   }
 
   const subId =
     typeof session.subscription === 'string' ? session.subscription : session.subscription.id
   const subscription = await stripe.subscriptions.retrieve(subId)
-  await upsertSubscription(userId, subscription)
+  return await upsertSubscription(userId, subscription)
 }
 
-async function handleSubscriptionUpsert(sub: Stripe.Subscription) {
-  const userId = sub.metadata?.user_id ?? null
-  if (!userId) return
-  await upsertSubscription(userId, sub)
+async function handleSubscriptionUpsert(sub: Stripe.Subscription): Promise<BillingEventContext> {
+  let userId = sub.metadata?.user_id ?? null
+  if (!userId) {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('user_id')
+      .eq('provider_subscription_id', sub.id)
+      .maybeSingle()
+    if (error) throw new Error(`subscription owner lookup failed: ${error.message}`)
+    userId = (data as { user_id?: string } | null)?.user_id ?? null
+  }
+  if (!userId) throw new Error(`subscription ${sub.id} has no mapped user`)
+  return await upsertSubscription(userId, sub)
 }
 
-async function handleSubscriptionCanceled(sub: Stripe.Subscription) {
-  await supabase
+async function handleSubscriptionCanceled(sub: Stripe.Subscription): Promise<BillingEventContext> {
+  const { data, error } = await supabase
     .from('subscriptions')
     .update({
       status: 'canceled',
@@ -211,6 +277,12 @@ async function handleSubscriptionCanceled(sub: Stripe.Subscription) {
       updated_at: new Date().toISOString(),
     })
     .eq('provider_subscription_id', sub.id)
+    .select('id, user_id')
+    .maybeSingle()
+  if (error) throw new Error(`subscription cancellation failed: ${error.message}`)
+  if (!data) throw new Error(`subscription ${sub.id} not found for cancellation`)
+  const row = data as { id: string; user_id: string }
+  return { subscription_id: row.id, user_id: row.user_id }
 }
 
 function tsToIso(ts: number | null | undefined): string | null {
@@ -218,13 +290,12 @@ function tsToIso(ts: number | null | undefined): string | null {
   return new Date(ts * 1000).toISOString()
 }
 
-async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
+async function upsertSubscription(
+  userId: string,
+  sub: Stripe.Subscription,
+): Promise<BillingEventContext> {
   const lookup = sub.items.data[0]?.price?.lookup_key ?? ''
-  const plan = lookup.includes('anual')
-    ? 'anual'
-    : lookup.includes('trial')
-      ? 'trial'
-      : 'mensal'
+  const plan = lookup.includes('anual') ? 'anual' : lookup.includes('trial') ? 'trial' : 'mensal'
 
   // Subscription pode estar 'incomplete' (sem first invoice paga ainda),
   // 'incomplete_expired', 'unpaid', etc. Mapeamos pro enum do nosso domínio.
@@ -241,27 +312,42 @@ async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
               ? 'past_due'
               : 'expired'
 
-  const { error } = await supabase.from('subscriptions').upsert(
-    {
-      user_id: userId,
-      provider: 'stripe',
-      provider_subscription_id: sub.id,
-      plan,
-      status,
-      current_period_start: tsToIso(sub.current_period_start),
-      current_period_end: tsToIso(sub.current_period_end),
-      trial_ends_at: tsToIso(sub.trial_end),
-      cancel_at_period_end: sub.cancel_at_period_end,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'provider_subscription_id' },
-  )
-  if (error) console.error('[webhook-stripe] upsert error:', error)
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .upsert(
+      {
+        user_id: userId,
+        provider: 'stripe',
+        provider_subscription_id: sub.id,
+        plan,
+        status,
+        current_period_start: tsToIso(sub.current_period_start),
+        current_period_end: tsToIso(sub.current_period_end),
+        trial_ends_at: tsToIso(sub.trial_end),
+        cancel_at_period_end: sub.cancel_at_period_end,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'provider_subscription_id' },
+    )
+    .select('id, user_id')
+    .single()
+  if (error) throw new Error(`subscription upsert failed: ${error.message}`)
+  const row = data as { id: string; user_id: string }
+  return { subscription_id: row.id, user_id: row.user_id }
 }
 
-async function markSubscriptionStatus(providerSubId: string, status: string) {
-  await supabase
+async function markSubscriptionStatus(
+  providerSubId: string,
+  status: string,
+): Promise<BillingEventContext> {
+  const { data, error } = await supabase
     .from('subscriptions')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('provider_subscription_id', providerSubId)
+    .select('id, user_id')
+    .maybeSingle()
+  if (error) throw new Error(`subscription status update failed: ${error.message}`)
+  if (!data) throw new Error(`subscription ${providerSubId} not found for status update`)
+  const row = data as { id: string; user_id: string }
+  return { subscription_id: row.id, user_id: row.user_id }
 }

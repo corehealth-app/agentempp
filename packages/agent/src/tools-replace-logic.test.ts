@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { registraRefeicao } from './tools.js'
 import type { ServiceClient } from '@mpp/db'
+import { describe, expect, it } from 'vitest'
+import { registraRefeicao } from './tools.js'
 
 // Tests focados na decisão de replace=true/false (defesa em profundidade).
 //
@@ -29,6 +29,8 @@ type RecentLog = {
   protein_g?: number
   carbs_g?: number
   fat_g?: number
+  consumed_at?: string
+  raw_provider_message_id?: string | null
 }
 
 interface MockOptions {
@@ -41,7 +43,22 @@ interface MockOptions {
   dayLogs?: RecentLog[]
   recentUserMessages?: string[]
   llmSentReplace?: boolean
-  editedPendings?: Array<{ id: string; resolved_at?: string | null; proposal?: Record<string, unknown> }>
+  editedPendings?: Array<{
+    id: string
+    resolved_at?: string | null
+    proposal?: Record<string, unknown>
+  }>
+  providerMessageId?: string
+  mealQueryErrors?: {
+    idempotency?: string
+    recentCorrection?: string
+    sameDay?: string
+  }
+  foodCorrectionErrors?: {
+    lookup?: string
+    write?: string
+  }
+  currentUserText?: string
 }
 
 interface CapturedEvent {
@@ -53,17 +70,65 @@ function makeContextAndSupabase(opts: MockOptions) {
   const events: CapturedEvent[] = []
   const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
   const mealInserts: Array<Record<string, unknown>> = []
-  let finalReplace: boolean | undefined = opts.llmSentReplace
+  const foodCorrectionWrites: Array<Record<string, unknown>> = []
+  const finalReplace: boolean | undefined = opts.llmSentReplace
 
   // Helper que retorna chain "Supabase-like" que ignora qualquer método
   // e termina com data fornecida. Suporta await (thenable).
   const chain = (rows: unknown): unknown => {
     const obj: Record<string, unknown> = { data: rows, error: null }
-    for (const m of ['select', 'eq', 'ilike', 'like', 'gte', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
+    for (const m of [
+      'select',
+      'eq',
+      'ilike',
+      'like',
+      'gte',
+      'gt',
+      'lt',
+      'lte',
+      'neq',
+      'in',
+      'is',
+      'or',
+      'order',
+      'limit',
+      'range',
+      'maybeSingle',
+      'single',
+    ]) {
       obj[m] = () => chain(rows)
     }
     obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
       Promise.resolve(cb({ data: rows, error: null }))
+    return obj
+  }
+
+  const resultChain = (rows: unknown, errorMessage?: string): unknown => {
+    const obj: Record<string, unknown> = {
+      data: errorMessage ? null : rows,
+      error: errorMessage ? { message: errorMessage } : null,
+    }
+    for (const m of [
+      'select',
+      'eq',
+      'or',
+      'neq',
+      'gte',
+      'order',
+      'limit',
+      'single',
+      'maybeSingle',
+    ]) {
+      obj[m] = () => resultChain(rows, errorMessage)
+    }
+    obj.then = (cb: (v: { data: unknown; error: { message: string } | null }) => unknown) =>
+      Promise.resolve(
+        cb(
+          errorMessage
+            ? { data: null, error: { message: errorMessage } }
+            : { data: rows, error: null },
+        ),
+      )
     return obj
   }
 
@@ -76,21 +141,81 @@ function makeContextAndSupabase(opts: MockOptions) {
         //  - idempotência: .eq('raw_provider_message_id', X) (sem providerMessageId, não pega).
         //  - replace block: deleta — fingir 0 rows.
         // Roteia por presença de .gte(): com gte → recentLogs (janela), sem gte → dayLogs (dia).
-        const dayLogs = opts.dayLogs ?? opts.recentLogs ?? []
-        const recentLogs = opts.recentLogs ?? []
-        // Chain stateful que lembra se .gte() foi chamado pra decidir o dataset no await.
-        const mealChain = (usedGte: boolean): unknown => {
+        const enrichLogs = (rows: RecentLog[]) =>
+          rows.map((row, index) => ({
+            id: row.id ?? `meal-log-${index + 1}`,
+            kcal: row.kcal ?? 100,
+            protein_g: row.protein_g ?? 10,
+            carbs_g: row.carbs_g ?? 10,
+            fat_g: row.fat_g ?? 5,
+            consumed_at: row.consumed_at ?? '2026-07-13T20:00:00Z',
+            raw_provider_message_id: row.raw_provider_message_id ?? 'provider-registration-default',
+            ...row,
+          }))
+        const dayLogs = enrichLogs(opts.dayLogs ?? opts.recentLogs ?? [])
+        const recentLogs = enrichLogs(opts.recentLogs ?? [])
+        // Chain stateful que lembra os filtros usados para devolver o dataset
+        // ou a falha correspondente à etapa que está sendo exercitada.
+        const mealChain = (state: {
+          usedGte: boolean
+          rawProviderMessage: boolean
+          snapshot: boolean
+        }): unknown => {
           const obj: Record<string, unknown> = {}
-          for (const m of ['select', 'eq', 'ilike', 'like', 'gt', 'lt', 'lte', 'neq', 'in', 'is', 'or', 'order', 'limit', 'range', 'maybeSingle', 'single']) {
-            obj[m] = () => mealChain(usedGte)
+          for (const m of [
+            'select',
+            'ilike',
+            'like',
+            'gt',
+            'lt',
+            'lte',
+            'neq',
+            'in',
+            'is',
+            'not',
+            'or',
+            'order',
+            'limit',
+            'range',
+            'maybeSingle',
+            'single',
+          ]) {
+            obj[m] = () => mealChain(state)
           }
-          obj.gte = () => mealChain(true)
-          obj.then = (cb: (v: { data: unknown; error: null }) => unknown) =>
-            Promise.resolve(cb({ data: usedGte ? recentLogs : dayLogs, error: null }))
+          obj.eq = (column: string) =>
+            mealChain({
+              ...state,
+              rawProviderMessage: state.rawProviderMessage || column === 'raw_provider_message_id',
+              snapshot: state.snapshot || column === 'snapshot_id',
+            })
+          obj.gte = () => mealChain({ ...state, usedGte: true })
+          obj.then = (cb: (v: { data: unknown; error: { message: string } | null }) => unknown) => {
+            const errorMessage = state.rawProviderMessage
+              ? opts.mealQueryErrors?.idempotency
+              : state.usedGte
+                ? opts.mealQueryErrors?.recentCorrection
+                : state.snapshot
+                  ? opts.mealQueryErrors?.sameDay
+                  : undefined
+            return Promise.resolve(
+              cb(
+                errorMessage
+                  ? { data: null, error: { message: errorMessage } }
+                  : {
+                      data: state.usedGte ? recentLogs : dayLogs,
+                      error: null,
+                    },
+              ),
+            )
+          }
           return obj
         }
         return {
-          ...((mealChain(false) as object)),
+          ...(mealChain({
+            usedGte: false,
+            rawProviderMessage: false,
+            snapshot: false,
+          }) as object),
           insert: (row: Record<string, unknown> | Record<string, unknown>[]) => {
             for (const r of Array.isArray(row) ? row : [row]) mealInserts.push(r)
             return chain([])
@@ -107,9 +232,42 @@ function makeContextAndSupabase(opts: MockOptions) {
           },
         }
       }
+      if (table === 'user_food_corrections') {
+        const correctionLookupChain = (usedOr: boolean): unknown => {
+          const obj: Record<string, unknown> = {}
+          for (const method of ['select', 'eq', 'neq', 'gte', 'order', 'limit']) {
+            obj[method] = () => correctionLookupChain(usedOr)
+          }
+          obj.or = () => correctionLookupChain(true)
+          obj.then = (
+            cb: (value: { data: unknown; error: { message: string } | null }) => unknown,
+          ) => {
+            const errorMessage = usedOr ? undefined : opts.foodCorrectionErrors?.lookup
+            return Promise.resolve(
+              cb(
+                errorMessage
+                  ? { data: null, error: { message: errorMessage } }
+                  : { data: [], error: null },
+              ),
+            )
+          }
+          return obj
+        }
+        return {
+          ...(correctionLookupChain(false) as object),
+          insert: (row: Record<string, unknown>) => {
+            foodCorrectionWrites.push(row)
+            return resultChain([], opts.foodCorrectionErrors?.write)
+          },
+          update: (row: Record<string, unknown>) => {
+            foodCorrectionWrites.push(row)
+            return resultChain([], opts.foodCorrectionErrors?.write)
+          },
+        }
+      }
       if (table === 'pending_registrations') {
         return {
-          ...((chain(opts.editedPendings ?? []) as object)),
+          ...(chain(opts.editedPendings ?? []) as object),
           insert: () => chain([]),
           update: () => chain([]),
           delete: () => chain([]),
@@ -118,7 +276,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       // daily_snapshots → retorna snapshot mock (precisa pra path do replace)
       if (table === 'daily_snapshots') {
         return {
-          ...((chain({ id: 'snap-mock' }) as object)),
+          ...(chain({ id: 'snap-mock' }) as object),
           insert: () => chain({ id: 'snap-mock' }),
           update: () => chain({ id: 'snap-mock' }),
           upsert: () => chain({ id: 'snap-mock' }),
@@ -126,7 +284,7 @@ function makeContextAndSupabase(opts: MockOptions) {
       }
       // outros — stub vazio
       return {
-        ...((chain([]) as object)),
+        ...(chain([]) as object),
         insert: () => chain([]),
         update: () => chain([]),
         delete: () => chain([]),
@@ -138,9 +296,42 @@ function makeContextAndSupabase(opts: MockOptions) {
       if (fn === 'search_food_trgm') return { data: [], error: null }
       if (fn === 'snapshot_add_meal')
         return {
-          data: { id: 'snap-mock', calories_consumed: 0, protein_g: 0, calories_target: null, protein_target: null, daily_balance: 0 },
+          data: {
+            id: 'snap-mock',
+            calories_consumed: 0,
+            protein_g: 0,
+            calories_target: null,
+            protein_target: null,
+            daily_balance: 0,
+          },
           error: null,
         }
+      if (fn === 'register_meal_atomic' || fn === 'register_meal_atomic_scoped') {
+        const items = (params?.p_items ?? []) as Array<Record<string, unknown>>
+        mealInserts.push(
+          ...items.map((item) => ({
+            ...item,
+            meal_type: params?.p_meal_type ?? null,
+            consumed_at: params?.p_consumed_at ?? null,
+          })),
+        )
+        return {
+          data: {
+            snapshot_id: 'snap-mock',
+            inserted_count: items.length,
+            inserted_food_names: items.map((item) => String(item.food_name)),
+            replaced_count: Number(params?.p_replace ? 1 : 0),
+            calories_consumed: items.reduce((sum, item) => sum + Number(item.kcal ?? 0), 0),
+            protein_g: items.reduce((sum, item) => sum + Number(item.protein_g ?? 0), 0),
+            carbs_g: items.reduce((sum, item) => sum + Number(item.carbs_g ?? 0), 0),
+            fat_g: items.reduce((sum, item) => sum + Number(item.fat_g ?? 0), 0),
+            calories_target: null,
+            protein_target: null,
+            daily_balance: 0,
+          },
+          error: null,
+        }
+      }
       return { data: null, error: null }
     },
   } as unknown as ServiceClient
@@ -150,6 +341,7 @@ function makeContextAndSupabase(opts: MockOptions) {
     events,
     rpcCalls,
     mealInserts,
+    foodCorrectionWrites,
     ctx: {
       supabase,
       userId: 'user-test',
@@ -157,12 +349,223 @@ function makeContextAndSupabase(opts: MockOptions) {
       userCountry: 'BR',
       userTimezone: 'America/Sao_Paulo',
       recentUserMessages: opts.recentUserMessages ?? [],
+      currentUserText: opts.currentUserText,
+      providerMessageId: opts.providerMessageId,
     },
     getFinalReplace: () => finalReplace,
   }
 }
 
 describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)', () => {
+  it('troca salame por calabresa sem reinserir os itens inalterados do jantar — caso Roberto 15/07', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [
+        {
+          id: 'rap10-log',
+          food_name: 'rap10',
+          quantity_g: 35,
+          kcal: 70,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'egg-log',
+          food_name: 'ovo cozido',
+          quantity_g: 100,
+          kcal: 146,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'salami-log',
+          food_name: 'salame fatiado',
+          quantity_g: 60,
+          kcal: 201.6,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'tomato-log',
+          food_name: 'tomate cereja',
+          quantity_g: 40,
+          kcal: 7.2,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+        {
+          id: 'cheese-log',
+          food_name: 'queijo derretido',
+          quantity_g: 30,
+          kcal: 87,
+          meal_type: 'jantar',
+          raw_provider_message_id: 'dinner-registration',
+        },
+      ],
+      currentUserText: 'Digo, salame por calabresa',
+      recentUserMessages: ['Digo, salame por calabresa'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: true,
+        items: [
+          { food_name: 'rap10', quantity_g: 35 },
+          { food_name: 'ovo cozido', quantity_g: 100 },
+          { food_name: 'calabresa fatiada', quantity_g: 60 },
+          { food_name: 'tomate cereja', quantity_g: 40 },
+          { food_name: 'queijo derretido', quantity_g: 30 },
+        ],
+        corrections: [{ de: 'salame fatiado', para: 'calabresa fatiada' }],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic_scoped')
+    expect(atomic?.params.p_replace_log_ids).toEqual(['salami-log'])
+    expect(
+      (atomic?.params.p_items as Array<{ food_name: string }>).map((item) => item.food_name),
+    ).toEqual(['calabresa fatiada'])
+  })
+
+  it('corrige somente o leite em pó e nunca apaga almoço/lanche inteiros — caso Roberto', async () => {
+    const { ctx, events, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [
+        {
+          id: 'milk-log',
+          food_name: 'leite em pó desnatado',
+          quantity_g: 30,
+          kcal: 108,
+          meal_type: 'almoco',
+          consumed_at: '2026-07-13T20:10:24Z',
+          raw_provider_message_id: 'milk-add',
+        },
+      ],
+      dayLogs: [
+        {
+          id: 'breakfast',
+          food_name: 'café da manhã',
+          quantity_g: 300,
+          kcal: 593,
+          meal_type: 'cafe',
+        },
+        { id: 'lunch', food_name: 'almoço', quantity_g: 500, kcal: 639, meal_type: 'almoco' },
+        {
+          id: 'kumis',
+          food_name: 'iogurte kumis',
+          quantity_g: 150,
+          kcal: 125,
+          meal_type: 'lanche',
+        },
+        {
+          id: 'milk-log',
+          food_name: 'leite em pó desnatado',
+          quantity_g: 30,
+          kcal: 108,
+          meal_type: 'almoco',
+          consumed_at: '2026-07-13T20:10:24Z',
+          raw_provider_message_id: 'milk-add',
+        },
+      ],
+      currentUserText: '30 gramas do leite em pó que usei tem apenas 85 kcal',
+      recentUserMessages: ['30 gramas do leite em pó que usei tem apenas 85 kcal'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        replace: true,
+        items: [{ food_name: 'leite em pó desnatado', quantity_g: 30, user_kcal: 85 }],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic_scoped')
+    expect(atomic?.params.p_replace_log_ids).toEqual(['milk-log'])
+    expect(atomic?.params.p_replace_meal_types).toBeNull()
+    expect(events.find((event) => event.event === 'tool.replace_item_scoped')).toMatchObject({
+      properties: {
+        target_log_ids: ['milk-log'],
+        from_meal_type: 'almoco',
+        to_meal_type: 'lanche',
+      },
+    })
+    expect(events.find((event) => event.event === 'tool.replace_cross_meal_type')).toBeUndefined()
+  })
+
+  it('correção explícita da refeição inteira apaga somente o registro alvo', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [
+        {
+          id: 'fried',
+          food_name: 'frango frito',
+          quantity_g: 120,
+          meal_type: 'almoco',
+          consumed_at: '2026-07-13T18:00:00Z',
+          raw_provider_message_id: 'lunch-registration',
+        },
+        {
+          id: 'rice',
+          food_name: 'arroz branco',
+          quantity_g: 100,
+          meal_type: 'almoco',
+          consumed_at: '2026-07-13T18:00:00Z',
+          raw_provider_message_id: 'lunch-registration',
+        },
+      ],
+      currentUserText: 'Corrige o almoço inteiro',
+      recentUserMessages: ['Corrige o almoço inteiro'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco',
+        replace: true,
+        items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic_scoped')
+    expect(atomic?.params.p_replace_log_ids).toEqual(['fried', 'rice'])
+    expect(atomic?.params.p_replace_meal_types).toBeNull()
+  })
+
+  it('vincula leite adicionado ao iogurte ao lanche, apesar da rotina sugerir almoço', async () => {
+    const { ctx, events, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [
+        {
+          id: 'kumis-log',
+          food_name: 'iogurte kumis',
+          quantity_g: 150,
+          meal_type: 'lanche',
+          consumed_at: new Date(Date.now() - 2 * 60_000).toISOString(),
+          raw_provider_message_id: 'kumis-confirm',
+        },
+      ],
+      currentUserText: 'Adicionei 30g de leite em pó desnatado ao iogurte',
+      recentUserMessages: ['Adicionei 30g de leite em pó desnatado ao iogurte'],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco',
+        replace: false,
+        items: [{ food_name: 'leite em pó desnatado', quantity_g: 30 }],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(atomic?.params.p_meal_type).toBe('lanche')
+    expect(events.find((event) => event.event === 'tool.meal_type_linked_addition')).toMatchObject({
+      properties: { linked_meal_type: 'lanche', matched_log_id: 'kumis-log' },
+    })
+  })
+
   it('replace=false + overlap >=50% → auto-aplica replace=true (implicit detected)', async () => {
     const { ctx, events } = makeContextAndSupabase({
       recentLogs: [
@@ -308,10 +711,12 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
       ctx,
     )
 
-    expect(events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context')).toBeUndefined()
+    expect(
+      events.find((e) => e.event === 'tool.replace_ratified_by_proposal_context'),
+    ).toBeUndefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeDefined()
     expect(events.find((e) => e.event === 'tool.replace_blocked_weak_evidence')).toBeDefined()
-    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+    expect(rpcCalls.find((c) => c.fn === 'register_meal_atomic')?.params.p_replace).toBe(false)
     expect(mealInserts.some((r) => r.food_name === 'torta de frango')).toBe(true)
   })
 
@@ -349,7 +754,7 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     )
 
     expect(events.find((e) => e.event === 'tool.replace_blocked_addition_intent')).toBeDefined()
-    expect(rpcCalls.some((c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal) < 0)).toBe(false)
+    expect(rpcCalls.find((c) => c.fn === 'register_meal_atomic')?.params.p_replace).toBe(false)
   })
 
   it('preserva user_kcal aprovado no pending ao gravar pela tool', async () => {
@@ -369,8 +774,46 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     )
 
     expect(Number(mealInserts[0]?.kcal)).toBe(95)
-    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
-    expect(snapshotCall?.params.p_kcal).toBe(95)
+    const atomicCall = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
+    expect((atomicCall?.params.p_items as Array<{ kcal: number }>)[0]?.kcal).toBe(95)
+  })
+
+  it('propaga food_db_id aprovado no pending até register_meal_atomic', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: [],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        replace: false,
+        items: [
+          {
+            food_name: 'sorvete',
+            quantity_g: 120,
+            approved_nutrition: {
+              source: 'canonical_exact',
+              food_db_id: 379,
+              kcal: 252,
+              protein_g: 4.2,
+              carbs_g: 28.8,
+              fat_g: 13.2,
+            },
+          },
+        ],
+      } as never,
+      ctx,
+    )
+
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    const item = (atomicCall?.params.p_items as Array<Record<string, unknown>> | undefined)?.[0]
+    expect(item).toMatchObject({
+      food_db_id: 379,
+      source: 'canonical_exact',
+      kcal: 252,
+    })
   })
 
   it('preserva kcal explícita de mensagem anterior quando confirmação curta diz "Sim isso" — caso Luciana', async () => {
@@ -394,9 +837,50 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
 
     expect(Number(mealInserts.find((r) => r.food_name === 'torta de legumes')?.kcal)).toBe(80)
     expect(Number(mealInserts.find((r) => r.food_name === 'pão baguete')?.kcal)).toBe(60)
-    const snapshotCall = rpcCalls.find((c) => c.fn === 'snapshot_add_meal')
-    expect(snapshotCall?.params.p_kcal).toBe(140)
+    const atomicCall = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
+    expect(
+      (atomicCall?.params.p_items as Array<{ kcal: number }>).reduce(
+        (sum, item) => sum + item.kcal,
+        0,
+      ),
+    ).toBe(140)
     expect(events.find((e) => e.event === 'pipeline.user_kcal_override')).toBeDefined()
+  })
+
+  it('não transforma o Total de um resumo nutricional em kcal do último item — caso Roberto', async () => {
+    const summary = `• pão francês (1 pão) — 150 kcal
+• ovo frito (1 unidade) — 94 kcal
+• queijo mussarela (30g) — 84 kcal
+• leite com whey (240 ml) — 228 kcal
+• geleia (15g) — 38 kcal
+Total: 593 kcal | 41.6g proteína | 51.8g carboidrato | 22.6g gordura`
+    const { ctx, mealInserts, rpcCalls, events } = makeContextAndSupabase({
+      recentLogs: [],
+      dayLogs: [],
+      recentUserMessages: [summary],
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'cafe',
+        replace: false,
+        items: [
+          { food_name: 'pão francês', quantity_g: 50 },
+          { food_name: 'ovo frito', quantity_g: 50 },
+          { food_name: 'queijo mussarela', quantity_g: 30 },
+          { food_name: 'leite com whey', quantity_g: 240 },
+          { food_name: 'geleia', quantity_g: 15 },
+        ],
+      } as never,
+      ctx,
+    )
+
+    expect(Number(mealInserts.find((row) => row.food_name === 'geleia')?.kcal)).toBe(39)
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(atomicCall).toBeDefined()
+    const savedItems = (atomicCall?.params.p_items as Array<{ kcal: number }> | undefined) ?? []
+    expect(savedItems.reduce((sum, item) => sum + item.kcal, 0)).not.toBe(593)
+    expect(events.find((event) => event.event === 'pipeline.user_kcal_override')).toBeUndefined()
   })
 
   // BUG do PAULO 2026-05-13 18:43-19:15 (cross-meal-type):
@@ -436,11 +920,13 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(events.find((e) => e.event === 'tool.replace_ratified_by_overlap')).toBeDefined()
     // E NÃO deve ter sido blocked
     expect(events.find((e) => e.event === 'tool.replace_blocked_no_correction')).toBeUndefined()
-    // Deve logar o evento de cross-meal-type
-    const cross = events.find((e) => e.event === 'tool.replace_cross_meal_type')
-    expect(cross).toBeDefined()
-    expect(cross?.properties.from_meal_type).toBe('lanche')
-    expect(cross?.properties.to_meal_type).toBe('almoco')
+    // O cross-meal existe, mas o delete fica restrito aos IDs do registro.
+    const scoped = events.find((e) => e.event === 'tool.replace_item_scoped')
+    expect(scoped).toBeDefined()
+    expect(scoped?.properties.from_meal_type).toBe('lanche')
+    expect(scoped?.properties.to_meal_type).toBe('almoco')
+    expect(scoped?.properties.target_log_ids).toHaveLength(5)
+    expect(events.find((e) => e.event === 'tool.replace_cross_meal_type')).toBeUndefined()
   })
 
   it('mesmo meal_type prevalece quando há logs em ambos (não confunde cross)', async () => {
@@ -449,8 +935,8 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     const { ctx, events } = makeContextAndSupabase({
       recentLogs: [
         { food_name: 'biscoito', quantity_g: 30, meal_type: 'lanche' }, // sem overlap
-        { food_name: 'arroz', quantity_g: 100, meal_type: 'almoco' },   // overlap
-        { food_name: 'feijão', quantity_g: 80, meal_type: 'almoco' },   // overlap
+        { food_name: 'arroz', quantity_g: 100, meal_type: 'almoco' }, // overlap
+        { food_name: 'feijão', quantity_g: 80, meal_type: 'almoco' }, // overlap
       ],
       recentUserMessages: ['era 150g de arroz, não 100'],
       llmSentReplace: true,
@@ -511,9 +997,10 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
   // LLM duplicou: items=[burrito,burrito,coca,coca] → 1.110 kcal em vez de 555.
   // Luciana 2026-05-11 14:09: 4x cenoura/tomate/alface/arroz num único almoço
   // (snapshot calorias_consumed=3424 vs real ~1156). Fix: dedup intra-array
-  // antes do calcMealMacros — itens com mesmo food_name normalizado mergeam
-  // somando quantity_g.
-  it('items duplicados no mesmo call são MERGED somando quantity_g — bug da AMANDA/LUCIANA', async () => {
+  // antes do calcMealMacros — cópias idênticas devem ser colapsadas, não
+  // somadas. Somar 300+300 preservava justamente a duplicação que o guard
+  // deveria remover.
+  it('items idênticos no mesmo call mantêm uma única porção — bug da AMANDA/LUCIANA', async () => {
     const { ctx, events } = makeContextAndSupabase({
       recentLogs: [],
       recentUserMessages: ['Burrito de filé\n1 coca 250ml'],
@@ -536,10 +1023,39 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(deduped).toBeDefined()
     expect(deduped?.properties.original_count).toBe(4)
     expect(deduped?.properties.merged_count).toBe(2)
-    const dups = deduped?.properties.duplicates as Array<{ food_name: string; repeated: number; summed_g: number }>
+    const dups = deduped?.properties.duplicates as Array<{
+      food_name: string
+      repeated: number
+      result_g: number
+      strategy: string
+    }>
     expect(dups).toHaveLength(2)
     expect(dups[0]?.repeated).toBe(2)
-    expect(dups[0]?.summed_g).toBe(600) // 300 + 300 somados (paciente comeu 2 burritos é semanticamente o mesmo que 1 de 600g)
+    expect(dups[0]?.result_g).toBe(300)
+    expect(dups[0]?.strategy).toBe('collapsed_identical')
+  })
+
+  it('quantidade inválida é rejeitada antes de tocar o banco', () => {
+    const schema = registraRefeicao.parameters
+
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: 0 }],
+      }).success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: -10 }],
+      }).success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({
+        meal_type: 'lanche',
+        items: [{ food_name: 'chocolate', quantity_g: 10_001 }],
+      }).success,
+    ).toBe(false)
   })
 
   // BUG do PAULO 2026-05-24 (4ª camada — re-inserção fantasma contra o dia):
@@ -579,11 +1095,41 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(events.find((e) => e.event === 'tool.replace_implicit_detected')).toBeUndefined()
   })
 
+  it('mantém itens repetidos quando o paciente os cita diretamente numa nova porção — caso Roberto 17/07', async () => {
+    const { ctx, events, rpcCalls } = makeContextAndSupabase({
+      dayLogs: [
+        { food_name: 'rap10', quantity_g: 70, meal_type: 'jantar' },
+        { food_name: 'queijo mussarela', quantity_g: 40, meal_type: 'jantar' },
+      ],
+      recentLogs: [],
+      currentUserText: 'rap10 de 70 kcal com queijo e Nutella',
+      recentUserMessages: ['rap10 de 70 kcal com queijo e Nutella'],
+      llmSentReplace: false,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: false,
+        items: [
+          { food_name: 'rap10', quantity_g: 70 },
+          { food_name: 'queijo mussarela', quantity_g: 40 },
+          { food_name: 'Nutella', quantity_g: 20 },
+        ],
+      },
+      ctx,
+    )
+
+    const atomic = rpcCalls.find((call) => call.fn === 'register_meal_atomic')
+    expect(
+      (atomic?.params.p_items as Array<{ food_name: string }>).map((item) => item.food_name),
+    ).toEqual(['rap10', 'queijo mussarela', 'Nutella'])
+    expect(events.find((event) => event.event === 'tool.meal_item_redup_skipped')).toBeUndefined()
+  })
+
   it('mesmo item em QUANTIDADE diferente → insere normal (não bloqueia) — não-regressão', async () => {
     const { ctx, events } = makeContextAndSupabase({
-      dayLogs: [
-        { food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' },
-      ],
+      dayLogs: [{ food_name: 'whey protein', quantity_g: 114, meal_type: 'cafe' }],
       recentLogs: [],
       // menciona "café" pra fixar meal_type (suprime autocorrect por hora).
       recentUserMessages: ['tomei mais um whey no café agora'],
@@ -624,6 +1170,39 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
   })
 })
 
+describe('registra_refeicao — persistência transacional', () => {
+  it('envia itens e replace em uma única RPC atômica', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+      dayLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+      recentUserMessages: ['corrige o almoço, o frango era grelhado'],
+      llmSentReplace: true,
+    })
+
+    await registraRefeicao.execute(
+      {
+        meal_type: 'almoco',
+        replace: true,
+        items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+      },
+      ctx,
+    )
+
+    const atomicCall = rpcCalls.find((call) => call.fn === 'register_meal_atomic_scoped')
+    expect(atomicCall).toBeDefined()
+    expect(atomicCall?.params).toMatchObject({
+      p_user_id: 'user-test',
+      p_meal_type: 'almoco',
+      p_replace: true,
+      p_replace_log_ids: ['meal-log-1'],
+    })
+    expect(atomicCall?.params.p_items).toEqual([
+      expect.objectContaining({ food_name: 'frango grelhado', quantity_g: 120 }),
+    ])
+    expect(rpcCalls.some((call) => call.fn === 'snapshot_add_meal')).toBe(false)
+  })
+})
+
 describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de dia anterior)', () => {
   it('consumed_date de ontem → snapshot e consumed_at no DIA CERTO, não no dia da gravação', async () => {
     const { ctx, rpcCalls, mealInserts } = makeContextAndSupabase({})
@@ -635,10 +1214,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       },
       ctx,
     )
-    // snapshot_add_meal (incremento, p_kcal>=0) deve ir pro dia 20, não pra hoje
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toBe('2026-05-20')
     // o meal_log gravado deve ter consumed_at caindo no dia 20
     expect(mealInserts.length).toBeGreaterThan(0)
@@ -651,9 +1227,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       { meal_type: 'jantar', items: [{ food_name: 'arroz branco cozido', quantity_g: 100 }] },
       ctx,
     )
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).not.toBe('2026-05-20')
     expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
@@ -674,9 +1248,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       eventTimeCtx,
     )
 
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toBe('2026-07-09')
     expect(mealInserts[0]?.consumed_at).toBe('2026-07-10T03:19:45.000Z')
   })
@@ -691,9 +1263,7 @@ describe('registra_refeicao — consumed_date (Fix B 2026-05-25: refeição de d
       },
       ctx,
     )
-    const add = rpcCalls.find(
-      (c) => c.fn === 'snapshot_add_meal' && Number(c.params.p_kcal ?? 0) >= 0,
-    )
+    const add = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect(add?.params.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(add?.params.p_date).not.toBe('ontem')
   })
@@ -730,5 +1300,110 @@ describe('registra_refeicao — classificacao automatica por horario local', () 
         }),
       }),
     )
+  })
+})
+
+describe('registra_refeicao — falha fechada em leituras que protegem calorias', () => {
+  it('não registra quando a consulta de idempotência falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      providerMessageId: 'provider-message-test',
+      mealQueryErrors: { idempotency: 'idempotency unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'almoco',
+          items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('idempotency unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+
+  it('não transforma correção em adição quando a busca de evidência recente falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      recentUserMessages: ['corrige o almoço, o frango era grelhado'],
+      llmSentReplace: true,
+      mealQueryErrors: { recentCorrection: 'recent correction unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'almoco',
+          replace: true,
+          items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('recent correction unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+
+  it('não insere novamente quando a leitura de deduplicação do dia falha', async () => {
+    const { ctx, rpcCalls } = makeContextAndSupabase({
+      dayLogs: [{ food_name: 'chocolate', quantity_g: 10, meal_type: 'lanche' }],
+      mealQueryErrors: { sameDay: 'same-day dedup unavailable' },
+    })
+
+    await expect(
+      registraRefeicao.execute(
+        {
+          meal_type: 'lanche',
+          replace: false,
+          items: [{ food_name: 'chocolate', quantity_g: 10 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('same-day dedup unavailable')
+    expect(rpcCalls.some((call) => call.fn === 'register_meal_atomic')).toBe(false)
+  })
+})
+
+describe('registra_refeicao — aprendizado de correções não corrompe o fluxo principal', () => {
+  const correctionArgs = {
+    meal_type: 'almoco' as const,
+    items: [{ food_name: 'frango grelhado', quantity_g: 120 }],
+    corrections: [{ de: 'frango frito', para: 'frango grelhado' }],
+  }
+
+  it('não cria memória nem evento de sucesso quando a leitura da memória falha', async () => {
+    const { ctx, events, foodCorrectionWrites, rpcCalls } = makeContextAndSupabase({
+      foodCorrectionErrors: { lookup: 'food correction lookup unavailable' },
+      recentLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+    })
+
+    await registraRefeicao.execute(correctionArgs, ctx)
+
+    expect(foodCorrectionWrites).toHaveLength(0)
+    expect(events.some((entry) => entry.event === 'food_correction.learned')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'food_correction.learning_failed',
+        properties: expect.objectContaining({ stage: 'lookup' }),
+      }),
+    )
+    expect(rpcCalls.some((call) => call.fn.startsWith('register_meal_atomic'))).toBe(true)
+  })
+
+  it('não emite evento de sucesso quando a gravação da memória falha', async () => {
+    const { ctx, events, foodCorrectionWrites, rpcCalls } = makeContextAndSupabase({
+      foodCorrectionErrors: { write: 'food correction write unavailable' },
+      recentLogs: [{ food_name: 'frango frito', quantity_g: 120, meal_type: 'almoco' }],
+    })
+
+    await registraRefeicao.execute(correctionArgs, ctx)
+
+    expect(foodCorrectionWrites).toHaveLength(1)
+    expect(events.some((entry) => entry.event === 'food_correction.learned')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'food_correction.learning_failed',
+        properties: expect.objectContaining({ stage: 'insert' }),
+      }),
+    )
+    expect(rpcCalls.some((call) => call.fn.startsWith('register_meal_atomic'))).toBe(true)
   })
 })

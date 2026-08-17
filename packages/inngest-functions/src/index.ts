@@ -17,6 +17,7 @@ import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
 import { mealGapReminderFn } from './functions/meal-gap-reminder.js'
 import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 import { regressionBeaconFn } from './functions/regression-beacon.js'
+import { userDeletionPurgerFn } from './functions/user-deletion-purger.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -35,6 +36,7 @@ export const allFunctions = [
   mealGapReminderFn,
   trainingDailyDeliveryFn,
   regressionBeaconFn,
+  userDeletionPurgerFn,
 ]
 
 export {
@@ -53,4 +55,5 @@ export {
   foodDbGapsReportFn,
   mealGapReminderFn,
   trainingDailyDeliveryFn,
+  userDeletionPurgerFn,
 }

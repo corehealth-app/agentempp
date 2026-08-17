@@ -1,7 +1,8 @@
-import { getLocalDateString, getLocalHour, getTodayGap, type MealType } from '@mpp/agent'
+import { getGapForDate, getLocalDateString, getLocalHour, type MealType } from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { classifyGapReminderDelivery } from './daily-gap-delivery.js'
 
 /**
  * Worker: detector de "esqueceu de registrar refeição" pré-fechamento.
@@ -26,13 +27,18 @@ import { createWorkerDeps } from '../lib/env.js'
 export const dailyGapCheckerFn = inngest.createFunction(
   { id: 'daily-gap-checker', retries: 1, concurrency: { limit: 5 } },
   { event: 'day.close.tick' },
-  async ({ step, logger }) => {
+  async ({ event, step, logger }) => {
+    const firedAtRaw = (event.data as { fired_at?: string }).fired_at
+    const firedAt = firedAtRaw ? new Date(firedAtRaw) : new Date()
+    const referenceTimestamp = Number.isFinite(firedAt.getTime()) ? firedAt : new Date()
+    const claimKey = event.id ?? `day-close:${referenceTimestamp.toISOString()}`
     const users = await step.run('list-users-gap', async () => {
       const { supabase } = createWorkerDeps()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('id, timezone, wpp, name')
         .eq('status', 'active')
+      if (error) throw new Error(error.message ?? 'gap users lookup failed')
       return data ?? []
     })
 
@@ -41,46 +47,144 @@ export const dailyGapCheckerFn = inngest.createFunction(
     let skipped = 0
 
     for (const user of users as Array<{ id: string; timezone: string | null; wpp: string; name: string | null }>) {
-      try {
-        const result = await step.run(`gap-${user.id}`, async () =>
-          checkUserGap(user.id, user.timezone ?? 'America/Sao_Paulo', user.wpp, user.name ?? 'você'),
-        )
-        if (result.reminded) reminded++
-        else if (result.skipped) skipped++
-        checked++
-      } catch (e) {
-        logger.error('gap-check failed', { userId: user.id, error: String(e) })
+      const prepared = await step.run(`gap-prepare-${user.id}`, async () =>
+        prepareUserGap(
+          user.id,
+          user.timezone ?? 'America/Sao_Paulo',
+          user.name ?? 'você',
+          claimKey,
+          referenceTimestamp,
+        ),
+      )
+      checked++
+      if (prepared.status !== 'claimed') {
+        skipped++
+        continue
       }
+
+      const delivery = await step.run(
+        `gap-send-${user.id}-${prepared.attemptId}`,
+        async () => {
+          const messaging = createMessagingProvider({
+            MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+            META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
+            META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN,
+            META_APP_SECRET: process.env.META_APP_SECRET,
+            META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
+          })
+          try {
+            const results = await sendHumanized(messaging, user.wpp, prepared.text, {
+              showTyping: false,
+              minDelay: 500,
+              maxDelay: 1500,
+              charsPerSecond: 60,
+              singleMessage: true,
+            })
+            return classifyGapReminderDelivery(results, new Date().toISOString())
+          } catch (error) {
+            return {
+              sent: false as const,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          }
+        },
+      )
+
+      if (!delivery.sent) {
+        await step.run(`gap-fail-${user.id}-${prepared.attemptId}`, async () => {
+          const { supabase } = createWorkerDeps()
+          const { data, error } = await (
+            supabase as unknown as {
+              rpc: (
+                name: string,
+                params: Record<string, unknown>,
+              ) => Promise<{ data: boolean | null; error: { message?: string } | null }>
+            }
+          ).rpc('fail_daily_gap_reminder', {
+            p_attempt_id: prepared.attemptId,
+            p_claim_key: claimKey,
+            p_error: delivery.error,
+            p_now: new Date().toISOString(),
+          })
+          if (error) throw new Error(error.message ?? 'gap reminder failure write failed')
+          return { markedFailed: data === true }
+        })
+        logger.warn('gap reminder delivery failed', {
+          userId: user.id,
+          error: delivery.error,
+        })
+        skipped++
+        continue
+      }
+
+      await step.run(`gap-finalize-${user.id}-${prepared.attemptId}`, async () => {
+        const { supabase } = createWorkerDeps()
+        const { data, error } = await (
+          supabase as unknown as {
+            rpc: (
+              name: string,
+              params: Record<string, unknown>,
+            ) => Promise<{
+              data: { applied?: boolean; status?: string } | null
+              error: { message?: string } | null
+            }>
+          }
+        ).rpc('finalize_daily_gap_reminder', {
+          p_attempt_id: prepared.attemptId,
+          p_claim_key: claimKey,
+          p_provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+          p_provider_message_id: delivery.providerMessageId,
+          p_content: prepared.text,
+          p_sent_at: delivery.sentAt,
+          p_pattern_days: prepared.patternActiveDays,
+          p_local_hour: prepared.localHour,
+        })
+        if (error) throw new Error(error.message ?? 'gap reminder finalization failed')
+        return data ?? { applied: false, status: 'missing_result' }
+      })
+      reminded++
     }
 
     return { checked, reminded, skipped, total: users.length }
   },
 )
 
-async function checkUserGap(
+type PreparedGap =
+  | {
+      status: 'claimed'
+      attemptId: string
+      text: string
+      patternActiveDays: number
+      localHour: number
+    }
+  | { status: 'skipped'; reason: string }
+
+async function prepareUserGap(
   userId: string,
   userTimezone: string,
-  wpp: string,
   name: string,
-): Promise<{ reminded?: boolean; skipped?: boolean; reason?: string }> {
+  claimKey: string,
+  referenceTimestamp: Date,
+): Promise<PreparedGap> {
   const { supabase } = createWorkerDeps()
-  const localHour = getLocalHour(userTimezone)
+  const localHour = getLocalHour(userTimezone, referenceTimestamp)
 
   // Janela de envio do lembrete: 21h-23h local (1-3h antes do bedtime típico).
   // Antes disso, é cedo demais (paciente pode ainda jantar). Depois, daily-closer pega.
   if (localHour < 21 || localHour > 23) {
-    return { skipped: true, reason: `local hour ${localHour} fora janela 21-23` }
+    return { status: 'skipped', reason: `local hour ${localHour} fora janela 21-23` }
   }
 
-  const today = getLocalDateString(userTimezone)
+  const today = getLocalDateString(userTimezone, referenceTimestamp)
 
   // Snapshot de hoje (cria se não existir, leve)
-  const { data: snapBefore } = await supabase
+  const { data: snapBefore, error: snapshotError } = await supabase
     .from('daily_snapshots')
     .select('id, day_status, gap_reminder_sent_at, day_closed')
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle()
+  if (snapshotError) throw new Error(snapshotError.message ?? 'gap snapshot lookup failed')
 
   const snap = snapBefore as {
     id: string
@@ -90,21 +194,21 @@ async function checkUserGap(
   } | null
 
   // Já fechou ou já mandou lembrete → skip
-  if (snap?.day_closed) return { skipped: true, reason: 'já fechado' }
+  if (snap?.day_closed) return { status: 'skipped', reason: 'já fechado' }
   if (snap?.gap_reminder_sent_at) {
-    return { skipped: true, reason: 'lembrete já enviado hoje' }
+    return { status: 'skipped', reason: 'lembrete já enviado hoje' }
   }
 
   // Computa gap baseado em padrão 14d
-  const gapInfo = await getTodayGap(supabase, userId, userTimezone)
+  const gapInfo = await getGapForDate(supabase, userId, userTimezone, today)
   if (gapInfo.gap.size === 0) {
-    return { skipped: true, reason: 'sem gap' }
+    return { status: 'skipped', reason: 'sem gap' }
   }
 
   // Fallback (paciente novo, <5 dias ativos): NÃO manda lembrete — sem padrão
   // confiável pra cobrar. Só começa a checar depois que tem histórico.
   if (gapInfo.pattern.fallbackUsed) {
-    return { skipped: true, reason: 'paciente novo (sem padrão 14d ainda)' }
+    return { status: 'skipped', reason: 'paciente novo (sem padrão 14d ainda)' }
   }
 
   // Tem gap real. Monta mensagem e envia.
@@ -118,90 +222,45 @@ async function checkUserGap(
   type LogRow = { meal_type: string | null; kcal: number | string | null; consumed_at: string }
   let todayLogs: LogRow[] = []
   if (snap?.id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data, error: logsError } = await supabase
       .from('meal_logs')
       .select('meal_type, kcal, consumed_at')
       .eq('snapshot_id', snap.id)
       .order('consumed_at', { ascending: true })
+    if (logsError) throw new Error(logsError.message ?? 'gap meal logs lookup failed')
     todayLogs = (data ?? []) as LogRow[]
   }
 
   const text = buildReminderText(name, gapList, todayLogs, userTimezone)
-
-  const messaging = createMessagingProvider({
-    MESSAGING_PROVIDER: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-    META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
-    META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN,
-    META_APP_SECRET: process.env.META_APP_SECRET,
-    META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
-  })
-
-  let deliveryStatus: 'sent' | 'failed' = 'sent'
-  let deliveryError: string | undefined
-  try {
-    const results = await sendHumanized(messaging, wpp, text, {
-      showTyping: false,
-      minDelay: 500,
-      maxDelay: 1500,
-      charsPerSecond: 60,
-      // Review F9: texto novo (~500 chars) seria estilhaçado em 3 bolhas pelo
-      // humanizer e paciente pode responder antes de ler a hint inteira.
-      // singleMessage garante chegada atômica (cabe em 1 msg WhatsApp, 4096 max).
-      singleMessage: true,
-    })
-    if (results.some((r) => r.status !== 'sent')) {
-      deliveryStatus = 'failed'
-      deliveryError = results.find((r) => r.error)?.error
+  const { data: claim, error: claimError } = await (
+    supabase as unknown as {
+      rpc: (
+        name: string,
+        params: Record<string, unknown>,
+      ) => Promise<{
+        data: { status?: string; attempt_id?: string } | null
+        error: { message?: string } | null
+      }>
     }
-  } catch (e) {
-    deliveryStatus = 'failed'
-    deliveryError = e instanceof Error ? e.message : String(e)
+  ).rpc('claim_daily_gap_reminder', {
+    p_user_id: userId,
+    p_date: today,
+    p_claim_key: claimKey,
+    p_gap: gapList,
+    p_now: referenceTimestamp.toISOString(),
+  })
+  if (claimError) throw new Error(claimError.message ?? 'gap reminder claim failed')
+  if (claim?.status !== 'claimed' || !claim.attempt_id) {
+    return { status: 'skipped', reason: claim?.status ?? 'claim unavailable' }
   }
 
-  // Marca snapshot (cria se não existir) com pending_close + reminder_sent_at.
-  // Cast: DB types ainda sem day_status/gap_reminder_sent_at (regerar após
-  // migration 20260516133000). Cast é safe — campos adicionados ao schema.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('daily_snapshots').upsert(
-    {
-      user_id: userId,
-      date: today,
-      day_status: 'pending_close',
-      gap_reminder_sent_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,date' },
-  )
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('messages').insert({
-    user_id: userId,
-    direction: 'out',
-    role: 'assistant',
-    content_type: 'text',
-    content: text,
-    provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-    agent_stage: 'engajamento',
-    delivery_status: deliveryStatus,
-    delivery_error: deliveryError ? { msg: deliveryError } : null,
-    raw_payload: { source: 'daily_gap_checker', date: today, gap: gapList },
-  })
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('product_events').insert({
-    user_id: userId,
-    event: 'daily.gap_reminder_sent',
-    properties: {
-      gap: gapList,
-      date: today,
-      pattern_active_days: gapInfo.pattern.activeDays,
-      local_hour: localHour,
-      delivery_status: deliveryStatus,
-    },
-  })
-
-  return { reminded: true, skipped: false }
+  return {
+    status: 'claimed',
+    attemptId: claim.attempt_id,
+    text,
+    patternActiveDays: gapInfo.pattern.activeDays,
+    localHour,
+  }
 }
 
 function buildReminderText(

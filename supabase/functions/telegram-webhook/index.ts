@@ -10,6 +10,11 @@
 // Em ambos: editMessageText pra mostrar o status final na conversa do Telegram.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import {
+  resolveTelegramApprovalOutcome,
+  type TelegramApplyResult,
+  type TelegramApprovalAction,
+} from '../_shared/telegram-approval.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -42,12 +47,13 @@ async function applyFix(supabase: any, type: string, payload: Record<string, unk
   if (type === 'food_alias') {
     const p = payload as unknown as FoodAliasPayload
     // Skip se ja existe
-    const { data: exist } = await supabase
+    const { data: exist, error: existingError } = await supabase
       .from('food_db')
       .select('id')
       .eq('name_pt', p.food_name)
       .eq('country_code', p.country_code ?? 'BR')
       .maybeSingle()
+    if (existingError) return { ok: false, reason: existingError.message }
     if (exist) return { ok: false, reason: 'ja existe' }
     const { data, error } = await supabase
       .from('food_db')
@@ -68,8 +74,12 @@ async function applyFix(supabase: any, type: string, payload: Record<string, unk
     return { ok: true, food_db_id: (data as { id: number }).id }
   }
   if (type === 'structural_bug_report') {
-    // Bug estrutural só aprovado vira "noted" — log em product_events.
-    return { ok: true, note: 'estrutural — só registrado, nada de codigo muda' }
+    const { error } = await supabase.from('product_events').insert({
+      event: 'audit.structural_bug_approved',
+      properties: { payload },
+    })
+    if (error) return { ok: false, reason: error.message }
+    return { ok: true, note: 'estrutural — registrado, nada de codigo muda' }
   }
   return { ok: false, reason: `tipo ${type} nao implementado pra auto-aplicar` }
 }
@@ -122,11 +132,13 @@ Deno.serve(async (req: Request) => {
   })
 
   // Busca pending
-  const { data: pending } = await supabase
+  const { data: pending, error: pendingError } = await supabase
     .from('pending_approvals')
     .select('*')
     .eq('id', pendingId)
-    .single()
+    .maybeSingle()
+
+  if (pendingError) throw new Error(`pending approval lookup failed: ${pendingError.message}`)
 
   if (!pending) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Pending não encontrada.' })
@@ -140,67 +152,79 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { status: 200 })
   }
 
-  let newStatus: 'approved' | 'rejected' | 'applied' | 'failed_to_apply' = 'rejected'
-  let appliedResult: Record<string, unknown> | null = null
-  let applicationError: string | null = null
-
-  if (action === 'approve') {
-    newStatus = 'approved'
-    // Tenta aplicar imediatamente
-    const result = await applyFix(
-      supabase,
-      pending.type as string,
-      pending.payload as Record<string, unknown>,
-    )
-    if (result.ok) {
-      newStatus = 'applied'
-      appliedResult = result as Record<string, unknown>
-    } else {
-      newStatus = 'failed_to_apply'
-      applicationError = (result as { reason: string }).reason
-    }
+  const approvalAction = action as TelegramApprovalAction
+  const claimedStatus = approvalAction === 'approve' ? 'approved' : 'rejected'
+  const decidedAt = new Date().toISOString()
+  const { data: claimed, error: claimError } = await supabase
+    .from('pending_approvals')
+    .update({ status: claimedStatus, decided_via: 'telegram', decided_at: decidedAt })
+    .eq('id', pendingId)
+    .eq('status', 'pending')
+    .select('*')
+    .maybeSingle()
+  if (claimError) throw new Error(`pending approval claim failed: ${claimError.message}`)
+  if (!claimed) {
+    await tg('answerCallbackQuery', {
+      callback_query_id: cb.id,
+      text: 'Esta decisão já foi processada.',
+    })
+    return new Response('ok', { status: 200 })
   }
 
-  // Update pending
-  await supabase
-    .from('pending_approvals')
-    .update({
-      status: newStatus,
-      decided_via: 'telegram',
-      decided_at: new Date().toISOString(),
-      application_result: appliedResult,
-      application_error: applicationError,
-    })
-    .eq('id', pendingId)
+  const applicationResult =
+    approvalAction === 'approve'
+      ? ((await applyFix(
+          supabase,
+          claimed.type as string,
+          claimed.payload as Record<string, unknown>,
+        )) as TelegramApplyResult)
+      : null
+  const outcome = resolveTelegramApprovalOutcome(approvalAction, applicationResult)
+
+  if (approvalAction === 'approve') {
+    const { data: finalized, error: finalizeError } = await supabase
+      .from('pending_approvals')
+      .update({
+        status: outcome.status,
+        application_result: outcome.applicationResult,
+        application_error: outcome.applicationError,
+      })
+      .eq('id', pendingId)
+      .eq('status', 'approved')
+      .select('id')
+      .maybeSingle()
+    if (finalizeError) throw new Error(`pending approval finalize failed: ${finalizeError.message}`)
+    if (!finalized) throw new Error('pending approval finalize changed no rows')
+  }
 
   // Audit log
-  await supabase.from('audit_log').insert({
-    action: `pending_approval.${newStatus}`,
+  const { error: auditError } = await supabase.from('audit_log').insert({
+    action: `pending_approval.${outcome.status}`,
     entity: 'pending_approvals',
     entity_id: pendingId,
     details: {
-      type: pending.type,
+      type: claimed.type,
       decided_via: 'telegram',
       telegram_user_id: cb.from.id,
-      payload_summary: JSON.stringify(pending.payload).slice(0, 300),
-      application_error: applicationError,
+      payload_summary: JSON.stringify(claimed.payload).slice(0, 300),
+      application_error: outcome.applicationError,
     },
   })
+  if (auditError) console.error('pending approval audit insert failed', auditError.message)
 
   // Edita a msg original pra mostrar resultado final
   if (cb.message) {
     const statusEmoji =
-      newStatus === 'applied'
+      outcome.status === 'applied'
         ? '✅ Aprovado e aplicado'
-        : newStatus === 'failed_to_apply'
+        : outcome.status === 'failed_to_apply'
           ? '⚠️ Aprovado mas falhou ao aplicar'
-          : newStatus === 'approved'
-            ? '✅ Aprovado'
-            : '❌ Rejeitado'
-    const summaryLine = applicationError
-      ? `\n\nErro: ${applicationError}`
-      : appliedResult && (appliedResult as { food_db_id?: number }).food_db_id
-        ? `\n\nfood_db.id = ${(appliedResult as { food_db_id: number }).food_db_id}`
+          : '❌ Rejeitado'
+    const summaryLine = outcome.applicationError
+      ? `\n\nErro: ${outcome.applicationError}`
+      : outcome.applicationResult &&
+          (outcome.applicationResult as { food_db_id?: number }).food_db_id
+        ? `\n\nfood_db.id = ${(outcome.applicationResult as { food_db_id: number }).food_db_id}`
         : ''
     await tg('editMessageText', {
       chat_id: cb.message.chat.id,
@@ -213,7 +237,12 @@ Deno.serve(async (req: Request) => {
 
   await tg('answerCallbackQuery', {
     callback_query_id: cb.id,
-    text: newStatus === 'applied' ? 'Aplicado.' : newStatus === 'rejected' ? 'Rejeitado.' : 'OK',
+    text:
+      outcome.status === 'applied'
+        ? 'Aplicado.'
+        : outcome.status === 'rejected'
+          ? 'Rejeitado.'
+          : 'Falhou ao aplicar.',
   })
 
   return new Response('ok', { status: 200 })

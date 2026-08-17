@@ -156,6 +156,33 @@ describe('detectConsumedDate', () => {
     })
   })
 
+  describe('CDD-3: não cruza a fronteira entre mensagens do burst', () => {
+    it('não empresta o almoço da linha seguinte para "caminhada de ontem"', () => {
+      const burst = 'caminhada igual a de ontem \n almoço: arroz e frango'
+      expect(detectConsumedDate(burst, TZ, NOW)).toBe(null)
+    })
+
+    it('não empresta o jantar da linha seguinte para "ontem treinei"', () => {
+      const burst = 'ontem treinei pesado \n jantar com arroz e feijão'
+      expect(detectConsumedDate(burst, TZ, NOW)).toBe(null)
+    })
+
+    it('não trata "a caminhada foi ontem" como data da refeição seguinte', () => {
+      const burst = 'a caminhada foi ontem \n almoço com salada'
+      expect(detectConsumedDate(burst, TZ, NOW)).toBe(null)
+    })
+
+    it('mantém a detecção quando refeição e marcador estão na mesma mensagem', () => {
+      const burst = 'jantar de ontem foi pizza \n segue a foto'
+      expect(detectConsumedDate(burst, TZ, NOW)?.days_ago).toBe(1)
+    })
+
+    it('mantém o marcador "ontem" quando ele é uma mensagem isolada do burst', () => {
+      const burst = 'ontem \n almoço com arroz e feijão'
+      expect(detectConsumedDate(burst, TZ, NOW)?.days_ago).toBe(1)
+    })
+  })
+
   // ── Timezone ────────────────────────────────────────────────────────
   describe('timezone awareness', () => {
     it('NY (-04 EDT em junho): paciente em NY às 02:00 local = "ontem" recente', () => {

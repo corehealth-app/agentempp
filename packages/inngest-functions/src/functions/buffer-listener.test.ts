@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildBufferDispatchEventId,
+  buildBufferedDispatchPayload,
   collectProviderMessageIds,
   collectProviderTimestamps,
   type BufferedInboundMessage,
 } from './buffer-listener.js'
 
 describe('buffer-listener providerMessageIds', () => {
+  it('gera id estável para retries do mesmo burst e distinto para outro burst', () => {
+    const first = buildBufferDispatchEventId('user-1', 'wamid-2')
+
+    expect(buildBufferDispatchEventId('user-1', 'wamid-2')).toBe(first)
+    expect(buildBufferDispatchEventId('user-1', 'wamid-3')).not.toBe(first)
+    expect(buildBufferDispatchEventId('user-2', 'wamid-2')).not.toBe(first)
+    expect(first).toMatch(/^buffer-dispatch-[a-f0-9]{64}$/)
+  })
+
   it('preserva todos os providerMessageIds do burst na ordem de chegada', () => {
     const msgs: BufferedInboundMessage[] = [
       {
@@ -44,6 +55,62 @@ describe('buffer-listener providerMessageIds', () => {
     expect(collectProviderTimestamps(msgs)).toEqual([
       '2026-07-10T03:59:58.000Z',
       '2026-07-10T04:00:02.000Z',
+    ])
+  })
+
+  it('compõe o lote reivindicado sem perder textos nem múltiplas imagens', () => {
+    const payload = buildBufferedDispatchPayload([
+      {
+        provider_message_id: 'wamid-image-1',
+        content_type: 'image',
+        text: 'frente',
+        mediaUrl: 'media-1',
+        received_at: '2026-07-12T12:00:00.000Z',
+      },
+      {
+        provider_message_id: 'wamid-image-2',
+        content_type: 'image',
+        text: 'costas',
+        mediaUrl: 'media-2',
+        received_at: '2026-07-12T12:00:02.000Z',
+      },
+    ])
+
+    expect(payload.contentType).toBe('image')
+    expect(payload.aggregated).toBe('frente\ncostas')
+    expect(payload.mediaUrls).toEqual(['media-1', 'media-2'])
+    expect(payload.latest.provider_message_id).toBe('wamid-image-2')
+  })
+
+  it('preserva foto e áudio no mesmo burst com tipo e id próprios', () => {
+    const payload = buildBufferedDispatchPayload([
+      {
+        provider_message_id: 'wamid-mixed-image',
+        content_type: 'image',
+        mediaUrl: 'image-media',
+        received_at: '2026-07-12T12:00:00.000Z',
+      },
+      {
+        provider_message_id: 'wamid-mixed-audio',
+        content_type: 'audio',
+        mediaUrl: 'audio-media',
+        received_at: '2026-07-12T12:00:02.000Z',
+      },
+    ])
+
+    expect(payload.mediaItems).toEqual([
+      {
+        url: 'image-media',
+        contentType: 'image',
+        providerMessageId: 'wamid-mixed-image',
+        timestamp: '2026-07-12T12:00:00.000Z',
+      },
+      {
+        url: 'audio-media',
+        contentType: 'audio',
+        providerMessageId: 'wamid-mixed-audio',
+        timestamp: '2026-07-12T12:00:02.000Z',
+      },
     ])
   })
 })

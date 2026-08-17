@@ -57,14 +57,21 @@ export interface PhraseSelectorResult {
   phrase_id: string | null
   /** Motivo da seleção/falha. */
   reason: string
-  /** Tamanho do pool retornado da fonte de frases. */
   candidate_count?: number
-  /** Tamanho do pool após filtros de tag e compatibilidade temporal. */
   compatible_count?: number
-  /** Quantas frases elegíveis estavam no cooldown do paciente. */
   cooldown_count?: number
-  /** True quando a frase escolhida veio do subconjunto fora do cooldown. */
   selected_after_cooldown?: boolean
+}
+
+type CuratedMealKind = Exclude<PhraseSelectorInput['mealKind'], 'treino' | undefined>
+
+interface CuratedPhraseCandidate {
+  id: string
+  phrase: string
+  tags: Record<string, unknown> | null
+  allowed_meal_types: CuratedMealKind[] | null
+  usage_count: number
+  last_used_at: string | null
 }
 
 /**
@@ -176,6 +183,7 @@ export function isTemporallyCompatible(
   const E = `(?=${W}|$)` // boundary à direita (lookahead)
   const has = (needle: RegExp): boolean => needle.test(p)
   const reCafeManha = new RegExp(`${B}caf[eé] da manh[ãa]${E}`, 'i')
+  const reCafe = new RegExp(`${B}caf[eé]${E}`, 'i')
   const reManha = new RegExp(`${B}manh[ãa]${E}`, 'i')
   const reCedo = new RegExp(`${B}(logo )?cedo${E}`, 'i')
   const reAlmoco = new RegExp(`${B}almo[çc]o${E}`, 'i')
@@ -188,7 +196,7 @@ export function isTemporallyCompatible(
   // Conta quantos slots distintos a frase referencia. Se >=3, é uma frase
   // "versátil" que descreve flexibilidade entre refeições — não bloqueia.
   const slotsMentioned =
-    (reCafeManha.test(p) || reManha.test(p) || reCedo.test(p) ? 1 : 0) +
+    (reCafe.test(p) || reCafeManha.test(p) || reManha.test(p) || reCedo.test(p) ? 1 : 0) +
     (reAlmoco.test(p) ? 1 : 0) +
     (reTarde.test(p) ? 1 : 0) +
     (reJantar.test(p) || reNoite.test(p) ? 1 : 0) +
@@ -203,7 +211,7 @@ export function isTemporallyCompatible(
       if (has(reCeia)) return { ok: false, reason: 'phrase_mentions_ceia_in_cafe' }
       if (has(reNoite)) return { ok: false, reason: 'phrase_mentions_noite_in_cafe' }
       // "almoço" sozinho em frase de café também é estranho ("X é ideal pro almoço")
-      if (has(reAlmoco) && !has(reCafeManha) && !has(reManha) && !has(reCedo))
+      if (has(reAlmoco) && !has(reCafe) && !has(reCafeManha) && !has(reManha) && !has(reCedo))
         return { ok: false, reason: 'phrase_mentions_almoco_only_in_cafe' }
       return { ok: true }
     }
@@ -308,14 +316,17 @@ export async function selectCuratedPhrase(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const sp = supabase as any
-  let { data: rows } = await sp
+  let { data: rows, error: phraseLookupError } = await sp
     .from('food_education_phrases')
-    .select('id, phrase, tags, usage_count, last_used_at')
+    .select('id, phrase, tags, allowed_meal_types, usage_count, last_used_at')
     .eq('active', true)
     .eq('language', language)
     .in('food_canonical_name', lookupVariants)
     .order('last_used_at', { ascending: true, nullsFirst: true })
     .limit(50)
+  if (phraseLookupError) {
+    throw new Error(phraseLookupError.message ?? 'curated phrase lookup failed')
+  }
 
   // Cascade 2: se .eq() vazio, busca semântica via RPC.
   let matchedViaEmbedding = false
@@ -329,12 +340,15 @@ export async function selectCuratedPhrase(
       //  - 0.80 = sweet spot: pega variações de nome ('X picado',
       //    'Y em flocos', 'Z zero açúcar') sem pegar substituições
       //    semânticas que confundem polaridade ('grelhado' vs 'frito').
-      const { data: vecRows } = await sp.rpc('match_food_phrases', {
+      const { data: vecRows, error: embeddingLookupError } = await sp.rpc('match_food_phrases', {
         query_embedding: queryVec,
         match_threshold: 0.8,
         match_count: 50,
         match_language: language,
       })
+      if (embeddingLookupError) {
+        throw new Error(embeddingLookupError.message ?? 'curated phrase embedding lookup failed')
+      }
       if (vecRows && vecRows.length > 0) {
         rows = vecRows
         matchedViaEmbedding = true
@@ -347,14 +361,7 @@ export async function selectCuratedPhrase(
     }
   }
 
-  const candidates = ((rows ?? []) as Array<{
-    id: string
-    phrase: string
-    tags: Record<string, unknown> | null
-    usage_count: number
-    last_used_at: string | null
-  }>)
-  const candidateCount = candidates.length
+  const candidates = (rows ?? []) as CuratedPhraseCandidate[]
 
   if (candidates.length === 0) {
     return {
@@ -362,9 +369,10 @@ export async function selectCuratedPhrase(
       food_canonical_name: canonicalName,
       phrase_id: null,
       reason: 'no_phrases_for_food',
-      candidate_count: candidateCount,
+      candidate_count: 0,
       compatible_count: 0,
       cooldown_count: 0,
+      selected_after_cooldown: false,
     }
   }
 
@@ -384,115 +392,67 @@ export async function selectCuratedPhrase(
   // (no_temporally_compatible_phrase) — caller cai pro Haiku, melhor do que
   // mandar frase quebrada.
   if (input.mealKind) {
-    const compatible = pool.filter((c) => isTemporallyCompatible(c.phrase, input.mealKind).ok)
+    const mealKind = input.mealKind
+    const compatible = pool.filter((candidate) => {
+      const allowed = candidate.allowed_meal_types
+      const explicitlyAllowed =
+        mealKind === 'treino' ||
+        !allowed ||
+        allowed.length === 0 ||
+        allowed.includes(mealKind)
+      return explicitlyAllowed && isTemporallyCompatible(candidate.phrase, mealKind).ok
+    })
     if (compatible.length === 0) {
       return {
         phrase: null,
         food_canonical_name: canonicalName,
         phrase_id: null,
         reason: 'no_temporally_compatible_phrase',
-        candidate_count: candidateCount,
+        candidate_count: candidates.length,
         compatible_count: 0,
         cooldown_count: 0,
+        selected_after_cooldown: false,
       }
     }
     pool = compatible
   }
+
   const compatibleCount = pool.length
-
-  // Cooldown por (user, phrase): filtra frases que esse user viu nas
-  // últimas 7 dias. Resolve repetição literal pra mesmo paciente em refeições
-  // consecutivas (review high #3). Regra forte: se existe alternativa fora
-  // do cooldown, nunca repete a recente. Se a leitura do cooldown falhar,
-  // retorna null e o caller cai pro Haiku em vez de repetir silenciosamente.
-  let cooldownCount = 0
-  let selectedAfterCooldown = false
-  let allRecentFallback = false
-  if (input.userId) {
-    const cooldownSince = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
-    const phraseIds = pool.map((c) => c.id)
-    const { data: recent, error: cooldownError } = await sp
-      .from('user_phrase_cooldown')
-      .select('phrase_id')
-      .eq('user_id', input.userId)
-      .eq('phrase_table', 'food')
-      .gte('last_seen_at', cooldownSince)
-      .in('phrase_id', phraseIds)
-    if (cooldownError) {
-      return {
-        phrase: null,
-        food_canonical_name: canonicalName,
-        phrase_id: null,
-        reason: 'cooldown_lookup_failed',
-        candidate_count: candidateCount,
-        compatible_count: compatibleCount,
-        cooldown_count: 0,
-      }
-    }
-    const seenIds = new Set((recent ?? []).map((r: { phrase_id: string }) => r.phrase_id))
-    cooldownCount = seenIds.size
-    const notRecent = pool.filter((c) => !seenIds.has(c.id))
-    if (notRecent.length > 0) {
-      selectedAfterCooldown = seenIds.size > 0 && notRecent.length < pool.length
-      pool = notRecent
-    } else if (seenIds.size > 0) {
-      // Se TODAS foram vistas <7d, usa pool original (melhor repetir do que
-      // mandar fallback Haiku — paciente pode até notar a repetição mas o
-      // tom continua certo), mas marca o reason explicitamente.
-      allRecentFallback = true
-    }
-  }
-
-  pool = [...pool].sort((a, b) => {
-    const aTime = a.last_used_at ? Date.parse(a.last_used_at) : 0
-    const bTime = b.last_used_at ? Date.parse(b.last_used_at) : 0
-    if (aTime !== bTime) return aTime - bTime
-    return (a.usage_count ?? 0) - (b.usage_count ?? 0)
+  const { data: claimRows, error: claimError } = await sp.rpc('claim_food_education_phrase', {
+    user_id: input.userId,
+    phrase_ids: pool.map((candidate) => candidate.id),
+    cooldown_days: 7,
   })
-
-  // Sorteio determinístico entre top-3 — retries inngest cachean step.run
-  // por SAÍDA, mas qualquer throw após selectCuratedPhrase força re-execução.
-  // Math.random pegaria frase diferente no retry, criando órfãos no cooldown
-  // (review medium). Hash baseado em (userId + canonicalName + date) garante
-  // mesma frase no retry. Date em YYYY-MM-DD pra rotação diária natural.
-  const today = new Date().toISOString().slice(0, 10)
-  const seedStr = `${input.userId ?? 'anon'}|${canonicalName}|${today}`
-  let seed = 0
-  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff
-  const idx = Math.abs(seed) % Math.min(pool.length, 3)
-  const picked = pool[idx]
-  if (!picked) {
+  if (claimError) {
     return {
       phrase: null,
       food_canonical_name: canonicalName,
       phrase_id: null,
-      reason: 'no_match_after_filter',
-      candidate_count: candidateCount,
+      reason: 'cooldown_lookup_failed',
+      candidate_count: candidates.length,
       compatible_count: compatibleCount,
-      cooldown_count: cooldownCount,
+      cooldown_count: 0,
+      selected_after_cooldown: false,
     }
   }
-
-  // Marca como usada (incrementa usage_count + atualiza last_used_at)
-  await sp
-    .from('food_education_phrases')
-    .update({
-      usage_count: picked.usage_count + 1,
-      last_used_at: new Date().toISOString(),
-    })
-    .eq('id', picked.id)
-
-  // Upsert cooldown pra esse user×phrase. Idempotente via ON CONFLICT.
-  if (input.userId) {
-    await sp.from('user_phrase_cooldown').upsert(
-      {
-        user_id: input.userId,
-        phrase_table: 'food',
-        phrase_id: picked.id,
-        last_seen_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,phrase_table,phrase_id' },
-    )
+  const claim = (claimRows?.[0] ?? null) as {
+    phrase_id: string
+    cooldown_count: number
+    selected_after_cooldown: boolean
+    exhausted: boolean
+  } | null
+  const picked = claim ? pool.find((candidate) => candidate.id === claim.phrase_id) : null
+  if (!picked || !claim) {
+    return {
+      phrase: null,
+      food_canonical_name: canonicalName,
+      phrase_id: null,
+      reason: 'cooldown_lookup_failed',
+      candidate_count: candidates.length,
+      compatible_count: compatibleCount,
+      cooldown_count: claim?.cooldown_count ?? 0,
+      selected_after_cooldown: false,
+    }
   }
 
   // Substitui placeholder {alimento} pelo nome do anchor. Quando o
@@ -517,24 +477,20 @@ export async function selectCuratedPhrase(
 
   // reason inclui o caminho do match pra audit: 'selected' (exact) ou
   // 'selected_embedding:0.84' (cascade semântica)
-  const reasonStr = allRecentFallback
-    ? 'selected_all_recent'
-    : selectedAfterCooldown
-      ? matchedViaEmbedding
-        ? `selected_after_cooldown_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
-        : 'selected_after_cooldown'
-      : matchedViaEmbedding
-        ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
-        : 'selected'
+  const reasonStr = claim.exhausted
+    ? 'selected_least_recent_after_exhaustion'
+    : matchedViaEmbedding
+      ? `selected_embedding:${embeddingSimilarity?.toFixed(2) ?? '?'}`
+      : 'selected'
 
   return {
     phrase: finalPhrase,
     food_canonical_name: canonicalName,
     phrase_id: picked.id,
     reason: reasonStr,
-    candidate_count: candidateCount,
+    candidate_count: candidates.length,
     compatible_count: compatibleCount,
-    cooldown_count: cooldownCount,
-    selected_after_cooldown: selectedAfterCooldown,
+    cooldown_count: claim.cooldown_count,
+    selected_after_cooldown: claim.selected_after_cooldown,
   }
 }

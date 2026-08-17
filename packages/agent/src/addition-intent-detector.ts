@@ -19,6 +19,7 @@
  *  - "comi mais"
  *  - "tem mais"
  *  - "acrescent" (acrescenta, acrescentar)
+ *  - "adicion" (adicionei, adicionar, adicionado)
  *  - "dobr" (dobrei, dobrar)
  *  - "repet" (repeti)
  *  - "também comi"
@@ -35,6 +36,7 @@ const ADDITION_TRIGGERS = new RegExp(
     String.raw`\bcomi\s+mais\b`,
     String.raw`\btem\s+mais\b`,
     String.raw`\bacrescent`,
+    String.raw`\badicion(?:ei|ou|amos|aram|ado|ada|ados|adas|ar|a|am|e)\b`,
     String.raw`\b(dobr[ei]|dobrei|dobrou|dobramos)\b`,
     String.raw`\brepeti(u|ram|mos)?\b`,
     String.raw`\brepete\b`,

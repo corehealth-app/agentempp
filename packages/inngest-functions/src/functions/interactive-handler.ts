@@ -23,25 +23,38 @@ import {
   adaptToolItemsToEduInput,
   cadastraDadosIniciais,
   composePostRegistrationMessage,
+  type EduCommentInput,
   embedEduComment,
   generateEducationalComment,
   getLocalDateString,
   getTzOffset,
+  type MealItem,
+  type MealTotals,
+  type PendingFoodCorrection,
   parseOnboardingButtonId,
+  type RegistrationEntry,
   registraRefeicao,
   registraTreino,
   shouldInferReplaceAfterEdit,
   splitRegistrationParts,
-  type EduCommentInput,
-  type MealItem,
-  type MealTotals,
-  type PendingFoodCorrection,
-  type RegistrationEntry,
 } from '@mpp/agent'
 import { createMessagingProvider, sendHumanized } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps } from '../lib/env.js'
-import { buildConfirmedMealArgs } from './pending-meal-confirmation.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
+import { loadUserProcessingState } from '../lib/user-processing-state.js'
+import { reopenLossyCancellationPending } from './lossy-cancellation-recovery.js'
+import { persistOutboundMessage } from './outbound-message-persistence.js'
+import { buildOutboundMessageRows } from './outbound-message-rows.js'
+import {
+  buildConfirmedMealArgs,
+  buildConfirmedMealRegistrationEntry,
+  selectValidatedWriteItems,
+  shouldBlockEffectiveReplace,
+} from './pending-meal-confirmation.js'
+import { decidePendingMealItems } from './pending-meal-item-policy.js'
+import { transitionPendingStatus } from './pending-status-transition.js'
+import { requireSuccessfulMealToolResult } from './tool-result-policy.js'
 
 const BUTTON_ID_PATTERN = /^(confirm|edit)_([0-9a-f-]{36})$/
 
@@ -87,6 +100,91 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
     return await step.run('handle-tap', async () => {
       const { supabase } = createWorkerDeps()
+      const userState = await loadUserProcessingState(supabase, userId)
+      if (userState.kind !== 'active') {
+        logger.info('Tap ignorado para user sem processamento ativo', {
+          userId,
+          state: userState.kind,
+        })
+        if (userState.kind === 'paused' && providerMessageId) {
+          await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
+        }
+        return { handled: false, reason: userState.kind }
+      }
+      const providerName = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
+      const persistDeliveries = async (
+        deliveries: Array<{
+          content: string
+          providerMessageId: string | null
+          status: 'queued' | 'sent' | 'failed'
+          error?: string
+        }>,
+        responsePart: string,
+      ) => {
+        const failed = deliveries.find((delivery) => delivery.status === 'failed')
+        if (failed) throw new Error(failed.error ?? 'interactive response delivery failed')
+        const rows = buildOutboundMessageRows({
+          userId,
+          provider: providerName,
+          contentType: 'text',
+          stage: 'recomposicao',
+          modelUsed: null,
+          promptTokens: null,
+          completionTokens: null,
+          costUsd: null,
+          latencyMs: null,
+          metadata: { pending_id: buttonId, response_part: responsePart },
+          deliveries,
+        })
+        for (const row of rows) await persistOutboundMessage(supabase, row)
+      }
+      const wasPartDelivered = async (responsePart: string) => {
+        const { data: existing, error: deliveryLookupError } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('direction', 'out')
+          .filter('raw_payload->>pending_id', 'eq', buttonId)
+          .filter('raw_payload->>response_part', 'eq', responsePart)
+          .neq('delivery_status', 'failed')
+          .limit(1)
+        throwIfQueryFailed(deliveryLookupError, 'interactive delivery lookup failed')
+        return (existing ?? []).length > 0
+      }
+      const sendTextTracked = async (content: string, responsePart: string) => {
+        if (await wasPartDelivered(responsePart)) return
+        const delivery = await messaging.sendText(wpp, content, {
+          replyTo: providerMessageId,
+        })
+        await persistDeliveries(
+          [
+            {
+              content,
+              providerMessageId: delivery.providerMessageId,
+              status: delivery.status,
+              error: delivery.error,
+            },
+          ],
+          responsePart,
+        )
+      }
+      const sendHumanizedTracked = async (
+        content: string,
+        options: Parameters<typeof sendHumanized>[3],
+        responsePart: string,
+      ) => {
+        if (await wasPartDelivered(responsePart)) return
+        const results = await sendHumanized(messaging, wpp, content, options)
+        await persistDeliveries(
+          results.map((delivery) => ({
+            content: delivery.content,
+            providerMessageId: delivery.providerMessageId,
+            status: delivery.status,
+            error: delivery.error,
+          })),
+          responsePart,
+        )
+      }
 
       // Roberto 2026-06-01: botão de onboarding (`btn_<field>_<value>`)
       // dispara cadastra_dados_iniciais direto. Padrão diferente do
@@ -96,7 +194,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         try {
           await cadastraDadosIniciais.execute(
             { [onbBtn.field]: onbBtn.value } as never,
-            { supabase, userId, userWpp: wpp, userCountry: 'BR', userTimezone: 'America/Sao_Paulo', providerMessageId, recentUserMessages: [] } as never,
+            {
+              supabase,
+              userId,
+              userWpp: wpp,
+              userCountry: 'BR',
+              userTimezone: 'America/Sao_Paulo',
+              providerMessageId,
+              recentUserMessages: [],
+            } as never,
           )
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -143,20 +249,20 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       const action = match[1] as 'confirm' | 'edit'
       const pendingId = match[2]!
 
-      const { data: pending } = await supabase
+      const { data: pending, error: pendingLookupError } = await supabase
         .from('pending_registrations')
         .select('id, user_id, status, expires_at, proposal, created_at, resolved_at')
         .eq('id', pendingId)
         .maybeSingle()
+      throwIfQueryFailed(pendingLookupError, 'interactive pending lookup failed')
       const row = pending as PendingRow | null
 
       // Pending não existe → talvez tap em msg antiga / dado limpo
       if (!row) {
-        await messaging
-          .sendText(wpp, 'Esse registro não foi encontrado. Me manda de novo?', {
-            replyTo: providerMessageId,
-          })
-          .catch(() => {})
+        await sendTextTracked(
+          'Esse registro não foi encontrado. Me manda de novo?',
+          'pending_not_found',
+        )
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.not_found',
@@ -175,8 +281,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       if (row.status !== 'pending') {
         // Audit 06-26 Layer 3 pizza-race recovery: quando status=cancelled E
         // tap recente (<120s) E há meal_log subset gravado pelo express path
-        // entre pending.created_at e resolved_at, RECUPERA: DELETE subset +
-        // INSERT proposal completa via fluxo normal. Caso Luciana 23/06 pizza
+        // entre pending.created_at e resolved_at, RECUPERA: reabre o pending e
+        // deixa a troca para register_meal_atomic. Caso Luciana 23/06 pizza
         // (já mitigado por Layer 1 mas residual existe quando subset-check
         // falha por normalização/sinônimo/plural).
         const RECOVERY_WINDOW_MS = 120_000
@@ -199,7 +305,11 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         if (recoveryEligible && typeof resolvedAt === 'string') {
           try {
             const stripAccents = (s: string) =>
-              s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+              s
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/\p{Diacritic}/gu, '')
+                .trim()
             const proposalNamesSet = new Set(
               (proposal.items ?? [])
                 .map((it) => stripAccents(it.name ?? it.food_name ?? ''))
@@ -232,16 +342,19 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             const endIso = new Date(new Date(resolvedAt).getTime() + 5000).toISOString()
             // Se mealType inválido (MED 2), pula query → cands=[] → fresh=[]
             // → recoveryCandidateOk=false → segue noop original (skip seguro).
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: candidates } = candMealType
-              ? await (supabase as any)
-                  .from('meal_logs')
-                  .select('id, food_name, kcal, created_at, raw_provider_message_id')
-                  .eq('user_id', userId)
-                  .eq('meal_type', candMealType)
-                  .gte('created_at', startIso)
-                  .lte('created_at', endIso)
-              : { data: [] }
+            let candidates: unknown[] = []
+            if (candMealType) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { data: candidateRows, error: candidatesError } = await (supabase as any)
+                .from('meal_logs')
+                .select('id, food_name, kcal, created_at, raw_provider_message_id')
+                .eq('user_id', userId)
+                .eq('meal_type', candMealType)
+                .gte('created_at', startIso)
+                .lte('created_at', endIso)
+              throwIfQueryFailed(candidatesError, 'lossy cancellation candidates lookup failed')
+              candidates = candidateRows ?? []
+            }
             const cands = (candidates ?? []) as Array<{
               id: string
               food_name: string
@@ -269,8 +382,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             const subsetKcalTotal = fresh.reduce((a, c) => a + (Number(c.kcal) || 0), 0)
             const sanityKcalOk =
               proposalKcalTotal > 0 ? subsetKcalTotal <= proposalKcalTotal * 0.6 : true
-            const recoveryCandidateOk =
-              fresh.length > 0 && subsetRatio >= 0.8 && sanityKcalOk
+            const recoveryCandidateOk = fresh.length > 0 && subsetRatio >= 0.8 && sanityKcalOk
             await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.recovery_candidate_evaluated',
@@ -286,86 +398,40 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               },
             })
             if (recoveryCandidateOk) {
-              // CAS: reabre o pending condicionalmente em status=cancelled.
-              const { data: reopened } = await supabase
-                .from('pending_registrations')
-                .update({ status: 'pending', resolved_at: null })
-                .eq('id', pendingId)
-                .eq('status', 'cancelled')
-                .select('id')
-                .maybeSingle()
+              const subsetIds = fresh.map((candidate) => candidate.id)
+              // Não toca em meal_logs/snapshot aqui. Se qualquer etapa seguinte
+              // falhar, os dados anteriores continuam íntegros; a confirmação
+              // executa substituição + recálculo na RPC transacional.
+              const reopened = await reopenLossyCancellationPending(supabase, {
+                userId,
+                pendingId,
+                subsetMealLogIds: subsetIds,
+                subsetKcalTotal,
+                proposalKcalTotal,
+                subsetMatchRatio: subsetRatio,
+                resolvedAtAgeMs: Date.now() - new Date(resolvedAt).getTime(),
+              })
               if (reopened) {
-                // Review HIGH 1 (audit 06-26 review): subtrair do snapshot
-                // ANTES de deletar os meal_logs. Antes, o registraRefeicao
-                // .execute(replace=true) abaixo tentava subtrair via SELECT
-                // mas os rows já tinham sumido → 0 subtraído → INSERT proposal
-                // SOMA tudo → snapshot inflado (subset + proposal completa).
-                // Agora subtrai diretamente com valores agregados do `fresh`.
-                const subsetIds = fresh.map((c) => c.id)
-                // Busca macros completos pra subtraçao acurada.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const { data: subsetMacros } = await (supabase as any)
-                  .from('meal_logs')
-                  .select('kcal, protein_g, carbs_g, fat_g, consumed_at')
-                  .in('id', subsetIds)
-                const macrosRows = (subsetMacros ?? []) as Array<{
-                  kcal: number | string
-                  protein_g: number | string
-                  carbs_g: number | string
-                  fat_g: number | string
-                  consumed_at: string
-                }>
-                const totalK = macrosRows.reduce((a, r) => a + (Number(r.kcal) || 0), 0)
-                const totalP = macrosRows.reduce((a, r) => a + (Number(r.protein_g) || 0), 0)
-                const totalC = macrosRows.reduce((a, r) => a + (Number(r.carbs_g) || 0), 0)
-                const totalF = macrosRows.reduce((a, r) => a + (Number(r.fat_g) || 0), 0)
-                // effectiveDate vem do consumed_at do primeiro row (UTC date string).
-                // Snapshot consolida por data UTC; pacientes em outros TZs tem leve
-                // discrepância mas é o mesmo padrão usado pelo registraRefeicao.
-                const effectiveDate =
-                  macrosRows[0]?.consumed_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
-                if (totalK > 0) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  await (supabase as any).rpc('snapshot_add_meal', {
-                    p_user_id: userId,
-                    p_date: effectiveDate,
-                    p_kcal: -totalK,
-                    p_protein: -totalP,
-                    p_carbs: -totalC,
-                    p_fat: -totalF,
-                    p_calories_target: null,
-                    p_protein_target: null,
-                  })
-                }
-                await supabase
-                  .from('meal_logs')
-                  .delete()
-                  .in('id', subsetIds)
-                  .eq('user_id', userId)
-                await supabase.from('product_events').insert({
-                  user_id: userId,
-                  event: 'pending.recovered_from_lossy_cancellation',
-                  properties: {
-                    pendingId,
-                    subset_meal_log_ids: subsetIds,
-                    subset_kcal_total: subsetKcalTotal,
-                    snapshot_subtracted_kcal: totalK,
-                    proposal_kcal_total: proposalKcalTotal,
-                    subset_match_ratio: subsetRatio,
-                    resolved_at_age_ms: Date.now() - new Date(resolvedAt).getTime(),
-                  },
-                })
                 // Marca row como pending pra fluxo CONFIRM normal abaixo.
                 row.status = 'pending'
                 row.resolved_at = null
                 // Força replace=true no proposal pra o execute abaixo
                 // deletar resíduos remanescentes e inserir proposal completa.
-                ;(row.proposal as { replace?: boolean }).replace = true
+                const recoveredProposal = row.proposal as {
+                  replace?: boolean
+                  replace_evidence?: string
+                }
+                recoveredProposal.replace = true
+                recoveredProposal.replace_evidence = 'lossy_cancellation_recovery'
               }
             }
           } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn('[interactive-handler] recovery falhou (non-fatal):', e)
+            logger.error('cancelled pending recovery failed', {
+              pendingId,
+              userId,
+              error: e instanceof Error ? e.message : String(e),
+            })
+            throw e
           }
         }
 
@@ -382,17 +448,16 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
       // Expirado → marca expired + avisa
       if (new Date(row.expires_at).getTime() <= Date.now()) {
-        await supabase
-          .from('pending_registrations')
-          .update({ status: 'expired', resolved_at: new Date().toISOString() })
-          .eq('id', pendingId)
-        await messaging
-          .sendText(
-            wpp,
-            'Esse registro expirou (demorou mais de 1 dia). Me manda de novo o que comeu?',
-            { replyTo: providerMessageId },
-          )
-          .catch(() => {})
+        await sendTextTracked(
+          'Esse registro expirou (demorou mais de 1 dia). Me manda de novo o que comeu?',
+          'pending_expired',
+        )
+        await transitionPendingStatus(supabase, {
+          pendingId,
+          from: 'pending',
+          to: 'expired',
+          resolvedAt: new Date().toISOString(),
+        })
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'pending.expired_on_tap',
@@ -402,19 +467,16 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       }
 
       // ── CONFIRM (Fase B) ──
-      // Marca status, GRAVA de verdade chamando registra_refeicao com items da
-      // proposta (bypassando o LLM — items já foram resolvidos no turno original),
-      // e responde com o card determinístico igual à Fase 1.
+      // GRAVA de verdade chamando registra_refeicao com items da proposta
+      // (bypassando o LLM — items já foram resolvidos no turno original),
+      // responde com o card e só então marca confirmed. Assim, retry de qualquer
+      // etapa ainda encontra o pending aberto e as tools idempotentes retomam.
       if (action === 'confirm') {
-        await supabase
-          .from('pending_registrations')
-          .update({ status: 'confirmed', resolved_at: new Date().toISOString() })
-          .eq('id', pendingId)
-
         const proposal = row.proposal as {
           kind?: 'meal' | 'workout'
           mealType?: string
           items?: MealItem[]
+          writeItems?: MealItem[]
           totals?: MealTotals
           workoutType?: string
           durationMin?: number | null
@@ -430,14 +492,17 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
            * precisa receber replace=true pra SUBSTITUIR a refeição do dia em
            * vez de inserir nova. Salvo no pipeline quando args.replace=true. */
           replace?: boolean
+          replace_evidence?: string
         }
 
         // Carrega user pra timezone (pra computar a data local no tool)
-        const { data: usr } = await supabase
+        const { data: usr, error: userLookupError } = await supabase
           .from('users')
           .select('timezone, country')
           .eq('id', userId)
           .maybeSingle()
+        throwIfQueryFailed(userLookupError, 'interactive user lookup failed')
+        if (!usr) throw new Error('interactive user not found')
         const userTimezone =
           (usr as { timezone?: string | null } | null)?.timezone ?? 'America/Sao_Paulo'
         const userCountry = (usr as { country?: string | null } | null)?.country ?? 'BR'
@@ -473,23 +538,24 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           // enquanto o card mostrava "Café registrado". Quando há mealType
           // explícito no proposal — paciente VIU e CLICOU pra confirmar —
           // ele é canônico: desliga autocorrect na tool. workout não usa.
-          trustMealType:
-            proposal.kind !== 'workout' && typeof proposal.mealType === 'string',
+          trustMealType: proposal.kind !== 'workout' && typeof proposal.mealType === 'string',
         }
 
         // Chama a tool de gravar diretamente (bypassando LLM) com os dados
         // resolvidos no pending. Branch por kind: meal usa registraRefeicao;
         // workout usa registraTreino. Resultado vai pro mesmo card determinístico.
-        let mealToolResult:
-          | {
-              success?: boolean
-              already_logged?: boolean
-              meal?: { items?: MealItem[]; totals?: MealTotals }
-            }
-          | null = null
-        let workoutToolResult:
-          | { success?: boolean; kcal_burned?: number; deduped?: boolean }
-          | null = null
+        let mealToolResult: {
+          success?: boolean
+          error?: string
+          message?: string
+          already_logged?: boolean
+          meal?: { items?: MealItem[]; totals?: MealTotals }
+        } | null = null
+        let workoutToolResult: {
+          success?: boolean
+          kcal_burned?: number
+          deduped?: boolean
+        } | null = null
 
         if (proposal.kind === 'workout') {
           const raw = proposal.raw_args ?? {}
@@ -520,75 +586,41 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 error: msg,
               },
             })
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
             logger.error('registraTreino.execute throw no tap', { pendingId, userId, error: msg })
             throw err
           }
         } else {
           // meal (default)
-          if (!proposal.items || proposal.items.length === 0) {
-            await messaging
-              .sendText(wpp, '✅ Registrado.', { replyTo: providerMessageId })
-              .catch(() => {})
-            return { handled: true, action: 'confirmed_empty', pendingId }
+          const proposedItems = proposal.items ?? []
+          let itemDecision = decidePendingMealItems(proposedItems, false)
+          if (itemDecision.action === 'reject_empty') {
+            await sendTextTracked(
+              'Não consegui recuperar os itens desse registro, então não gravei nada. Me manda a refeição de novo que eu recalculo certinho.',
+              'confirmation_invalid_empty',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'pending.invalid_empty_proposal',
+              properties: { pendingId, meal_type: proposal.mealType ?? null },
+            })
+            return { handled: true, action: 'rejected_empty', pendingId }
           }
-          // ── BUG I4 (Roberto 2026-06-14 17:05 BRT — macarronada 350g) ──
-          // Itens "zerados" por composite_rejected/no_match no meal-pipeline
-          // chegam aqui com kcal=0 mas quantity_g cheio (sólido), e o tap
-          // inseria meal_log com 0 kcal — paciente sub-declarava sem rastro.
-          // Regra: sólidos com >30g e 0 kcal SÃO erro de parsing (água/chá/
-          // refri-zero/gelo/condimento podem ter 0 kcal legítimo e são
-          // tratados pelo whitelist de nome).
-          //
-          // Estratégia (review adversarial 2026-06-15):
-          //   1ª tentativa: bloquear all-or-nothing, pedir correção textual.
-          //   2ª tentativa (paciente reta'pa): degradar pra best-effort —
-          //   registra só os itens OK, ignora os suspeitos e avisa.
-          //
-          // Normalização NFD remove diacríticos ANTES da regex — `\b` em JS
-          // sem flag `u` trata 'á/ã/ç' como NON-WORD; sem isso o whitelist
-          // ficava DEAD pra qualquer alimento PT-BR acentuado (review CRITICAL).
-          const stripAccents = (s: string): string =>
-            s
-              .normalize('NFD')
-              .replace(/\p{Diacritic}/gu, '')
-              .toLowerCase()
-          // Whitelist de zero-cal legítimos. Tudo já normalizado pra ASCII.
-          const ZERO_CAL_NAME_RE =
-            /\b(agua|gelo|gelos|cha|chas|cafe\s+preto|cafe\s+sem\s+acucar|cafe\s+sem|mostarda|vinagre|limao|shoyu|molho\s+shoyu|sal|pimenta|gengibre|alho|acafrao|canela|oregano|salsinha|cebolinha|coentro|manjericao|hortela|aji-no-moto|caldo\s+knorr|caldo\s+de\s+galinha|caldo\s+de\s+legumes)\b/
-          // Bebidas zero/diet/light — qualifier + keyword de bebida. Pega
-          // Coca/Guaraná/Pepsi/Sprite/Fanta/Schweppes/Powerade/Gatorade/Red
-          // Bull/H2O/isotônico/etc sem precisar listar cada marca.
-          const ZERO_CAL_DRINK_QUALIFIER_RE =
-            /\b(zero|diet|light|sem\s+acucar|sem\s+adocante)\b/
-          const DRINK_KEYWORD_RE =
-            /\b(refri\w*|refrigerante|coca|coca-cola|guarana|pepsi|sprite|fanta|schweppes|powerade|gatorade|red\s*bull|skol|brahma|antarctica|sukita|tonica|isotonico|energetico|soda|h2o|monster|burn|aguardente)\b/
-          const isLegitZeroCal = (name: string): boolean => {
-            const n = stripAccents(name)
-            if (ZERO_CAL_NAME_RE.test(n)) return true
-            if (ZERO_CAL_DRINK_QUALIFIER_RE.test(n) && DRINK_KEYWORD_RE.test(n)) return true
-            return false
-          }
-          const suspiciousItems = proposal.items.filter((it) => {
-            const kcal = Number(it.kcal ?? 0)
-            const qty = Number(it.quantity_g ?? 0)
-            if (kcal > 0) return false
-            if (qty <= 30) return false
-            const nm = String(it.name ?? '')
-            if (isLegitZeroCal(nm)) return false
-            return true
-          })
+
+          // Itens não reconhecidos com 0 kcal nunca são gravados como se o
+          // cálculo fosse válido. Zeros legítimos são classificados no helper.
           // Verifica se já bloqueamos esse pending nas últimas 4h —
           // sinal de retry. Evita loop infinito de block quando paciente
           // insiste em re-confirmar via texto curto.
           let isRetryAfterBlock = false
-          if (suspiciousItems.length > 0) {
+          if (itemDecision.suspiciousItems.length > 0) {
             const since4hIso = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
-            const { data: prevBlock } = await supabase
+            const { data: prevBlock, error: previousBlockError } = await supabase
               .from('product_events')
               .select('id')
               .eq('user_id', userId)
@@ -596,102 +628,117 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               .gte('occurred_at', since4hIso)
               .filter('properties->>pendingId', 'eq', pendingId)
               .limit(1)
+            throwIfQueryFailed(previousBlockError, 'zero kcal retry lookup failed')
             isRetryAfterBlock = ((prevBlock ?? []) as Array<{ id: string }>).length > 0
+            itemDecision = decidePendingMealItems(proposedItems, isRetryAfterBlock)
           }
-          if (suspiciousItems.length > 0 && !isRetryAfterBlock) {
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
+          if (itemDecision.action === 'block') {
+            const namesList = itemDecision.suspiciousItems
+              .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
+              .join(', ')
+            const invalidText =
+              itemDecision.suspiciousItems.length === 1
+                ? `Não consegui calcular ${namesList} direito (deu 0 kcal).`
+                : `Não consegui calcular estes itens direito: ${namesList}.`
+            const askText =
+              itemDecision.validItems.length > 0
+                ? `${invalidText} Me diga os valores ou responda "registra mesmo assim" para eu registrar somente os outros itens calculados.`
+                : `${invalidText} Me diga o alimento mais próximo ou uma estimativa de kcal e proteína; sem isso eu não consigo registrar com segurança.`
+            await sendTextTracked(askText, 'zero_kcal_block')
 
-            await supabase.from('product_events').insert({
+            const { error: blockedEventError } = await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.blocked_zero_kcal',
               properties: {
                 pendingId,
                 meal_type: proposal.mealType ?? null,
                 provider_message_id: providerMessageId ?? null,
-                suspicious_items: suspiciousItems.map((it) => ({
+                suspicious_items: itemDecision.suspiciousItems.map((it) => ({
                   name: it.name,
                   quantity_g: it.quantity_g,
                 })),
-                ok_items_count: proposal.items.length - suspiciousItems.length,
-                total_items: proposal.items.length,
-                note:
-                  'item sólido com >30g e 0 kcal indica composite_rejected/no_match no parser — não grava com zeros (bug I4 Roberto 2026-06-14)',
+                ok_items_count: itemDecision.validItems.length,
+                total_items: proposedItems.length,
+                note: 'item não reconhecido com 0 kcal não pode ser tratado como cálculo válido',
               },
             })
-
-            const namesList = suspiciousItems
-              .map((it) => `"${it.name}" (${Math.round(Number(it.quantity_g ?? 0))}g)`)
-              .join(', ')
-            const askText =
-              suspiciousItems.length === 1
-                ? `Não consegui calcular ${namesList} direito (deu 0 kcal). Me diz o que tinha de mais perto, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só me responder "registra mesmo assim".`
-                : `Não consegui calcular esses itens direito: ${namesList}. Me diz o que tinha de mais perto em cada um, ou estima kcal/proteína? Se quiser registrar assim mesmo, é só responder "registra mesmo assim".`
-            await messaging
-              .sendText(wpp, askText, { replyTo: providerMessageId })
-              .catch(() => {})
-
-            await supabase.from('messages').insert({
-              user_id: userId,
-              direction: 'out',
-              role: 'assistant',
-              content_type: 'text',
-              content: askText,
-              provider: 'whatsapp_cloud',
-              agent_stage: 'recomposicao',
-              delivery_status: 'sent',
-            })
+            throwIfQueryFailed(blockedEventError, 'zero kcal block persistence failed')
 
             return {
               handled: true,
               action: 'blocked_zero_kcal',
               pendingId,
-              suspicious_count: suspiciousItems.length,
+              suspicious_count: itemDecision.suspiciousItems.length,
             }
           }
-          // RETRY após block — best-effort: grava só os itens OK e avisa
-          // que os suspeitos foram ignorados. Se TODOS são suspeitos,
-          // confirma como veio (paciente insistiu, melhor 0 kcal
-          // visível que silêncio).
-          if (suspiciousItems.length > 0 && isRetryAfterBlock) {
-            const okItems = proposal.items.filter((it) => !suspiciousItems.includes(it))
+          if (itemDecision.action === 'reject_all') {
+            await sendTextTracked(
+              'Ainda não tenho um valor válido para registrar essa refeição e não vou salvar como 0 kcal. Me manda os itens de novo com quantidade ou uma estimativa de calorias.',
+              'zero_kcal_rejected_all',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.rejected_all_zero_kcal',
+              properties: {
+                pendingId,
+                suspicious_count: itemDecision.suspiciousItems.length,
+              },
+            })
+            return { handled: true, action: 'rejected_all_zero_kcal', pendingId }
+          }
+          const validatedWriteItems = selectValidatedWriteItems(
+            proposal.writeItems,
+            itemDecision.validItems,
+          )
+          if (
+            proposal.writeItems != null &&
+            (itemDecision.action !== 'proceed' || validatedWriteItems == null)
+          ) {
+            await sendTextTracked(
+              'Não apliquei essa correção porque um dos valores da refeição não passou na validação. Me mande novamente o item corrigido e a quantidade.',
+              'scoped_correction_invalid',
+            )
+            await transitionPendingStatus(supabase, {
+              pendingId,
+              from: 'pending',
+              to: 'edited',
+              resolvedAt: new Date().toISOString(),
+            })
+            await supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'tap.scoped_correction_invalid',
+              properties: {
+                pendingId,
+                meal_type: proposal.mealType ?? null,
+                write_items_count: proposal.writeItems.length,
+                valid_items_count: itemDecision.validItems.length,
+                suspicious_items_count: itemDecision.suspiciousItems.length,
+              },
+            })
+            return { handled: true, action: 'rejected_invalid_scoped_correction', pendingId }
+          }
+          proposal.items = itemDecision.validItems
+          proposal.writeItems = validatedWriteItems ?? undefined
+          if (itemDecision.action === 'register_valid_only') {
             await supabase.from('product_events').insert({
               user_id: userId,
               event: 'tap.blocked_zero_kcal_retry',
               properties: {
                 pendingId,
-                ok_items_count: okItems.length,
-                suspicious_count: suspiciousItems.length,
-                action: okItems.length > 0 ? 'register_ok_drop_suspicious' : 'register_as_is',
+                ok_items_count: itemDecision.validItems.length,
+                suspicious_count: itemDecision.suspiciousItems.length,
+                action: 'register_ok_drop_suspicious',
               },
             })
-            if (okItems.length > 0) {
-              // Reescreve proposal.items pra só conter os OK — flui pro
-              // path normal do registraRefeicao abaixo.
-              proposal.items = okItems
-              const skipNames = suspiciousItems
-                .map((it) => `"${it.name}"`)
-                .join(', ')
-              const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
-              await messaging
-                .sendText(wpp, warnText, { replyTo: providerMessageId })
-                .catch(() => {})
-              await supabase.from('messages').insert({
-                user_id: userId,
-                direction: 'out',
-                role: 'assistant',
-                content_type: 'text',
-                content: warnText,
-                provider: 'whatsapp_cloud',
-                agent_stage: 'recomposicao',
-                delivery_status: 'sent',
-              })
-            }
-            // Se okItems.length === 0, segue com proposal.items original
-            // (todos zerados) — paciente insistiu, registro best-effort.
+            const skipNames = itemDecision.suspiciousItems.map((it) => `"${it.name}"`).join(', ')
+            const warnText = `Beleza, vou registrar o que consegui calcular. ${skipNames} ficou de fora (não consegui estimar). Se quiser, manda só ${skipNames} de novo com estimativa de kcal/proteína.`
+            await sendTextTracked(warnText, 'zero_kcal_retry_warning')
           }
           // Audit 06-25 Bug D Camada C (Luciana 25/06 lanche pão): tap-handler
           // confirma card que SUBSTITUI proposta anterior do mesmo meal_type+
@@ -709,7 +756,14 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               // que falhava em alguns formatos de longOffset (review HIGH MED).
               const todayLocal = sourceLocalDate
               const tzOff = getTzOffset(userTimezone, referenceTimestamp)
-              const validMealTypes = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+              const validMealTypes = [
+                'cafe',
+                'almoco',
+                'lanche',
+                'jantar',
+                'ceia',
+                'outro',
+              ] as const
               type MT = (typeof validMealTypes)[number]
               const propMealType: MT | null = validMealTypes.includes(proposal.mealType as MT)
                 ? (proposal.mealType as MT)
@@ -737,17 +791,18 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                   // no mesmo dia + edit de jantar pendente → antes inferia
                   // replace e deletava o 1º lanche.
                   .eq('proposal->>mealType', propMealType)
-                  .gte(
-                    'resolved_at',
-                    new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-                  )
+                  .gte('resolved_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
                   .neq('id', pendingId)
                   .limit(1),
               ])
+              throwIfQueryFailed(sameDayRes.error, 'same-day meal lookup failed')
+              throwIfQueryFailed(priorEditedRes.error, 'edited pending lookup failed')
               const hasPriorMealOfSameType = (sameDayRes.data ?? []).length > 0
               const priorEditedRows = (priorEditedRes.data ?? []) as Array<{
                 id?: string | null
-                proposal?: { items?: Array<{ name?: string; food_name?: string; quantity_g?: number }> } | null
+                proposal?: {
+                  items?: Array<{ name?: string; food_name?: string; quantity_g?: number }>
+                } | null
               }>
               const hasPriorEdited = priorEditedRows.length > 0
               const decision = shouldInferReplaceAfterEdit({
@@ -778,7 +833,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                     overlap_ratio: decision.overlapRatio,
                   },
                 })
-              } else if (effectiveReplace && hasPriorMealOfSameType && hasPriorEdited && !decision.inferReplace) {
+              } else if (
+                shouldBlockEffectiveReplace({
+                  effectiveReplace,
+                  hasPriorMealOfSameType,
+                  hasPriorEditedPending: hasPriorEdited,
+                  inferredReplace: decision.inferReplace,
+                  replaceEvidence: proposal.replace_evidence,
+                })
+              ) {
                 effectiveReplace = false
                 await supabase.from('product_events').insert({
                   user_id: userId,
@@ -793,8 +856,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 })
               }
             } catch (e) {
-              // eslint-disable-next-line no-console
-              console.warn('[interactive-handler] replace inference failed (non-fatal):', e)
+              logger.error('replace inference failed', {
+                pendingId,
+                userId,
+                error: e instanceof Error ? e.message : String(e),
+              })
+              throw e
             }
           }
 
@@ -808,6 +875,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 {
                   mealType: proposal.mealType,
                   items: proposal.items,
+                  writeItems: proposal.writeItems,
                   corrections: proposal.corrections,
                 },
                 effectiveReplace,
@@ -816,9 +884,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               toolCtx as never,
             )) as {
               success?: boolean
+              error?: string
+              message?: string
               already_logged?: boolean
               meal?: { items?: MealItem[]; totals?: MealTotals }
             }
+            requireSuccessfulMealToolResult(mealToolResult)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             await supabase.from('product_events').insert({
@@ -833,12 +904,6 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 error: msg,
               },
             })
-            // Desfaz o confirmed pra paciente conseguir tentar de novo
-            await supabase
-              .from('pending_registrations')
-              .update({ status: 'pending', resolved_at: null })
-              .eq('id', pendingId)
-              .eq('status', 'confirmed')
             logger.error('registraRefeicao.execute throw no tap', {
               pendingId,
               userId,
@@ -850,7 +915,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
 
         // Carrega snapshot + progress frescos pro card canônico (mesma fonte do FIX C)
         const todayStr = sourceLocalDate
-        const [{ data: snap }, { data: prog }, { data: prof }] = await Promise.all([
+        const [snapshotResult, progressResult, profileResult] = await Promise.all([
           supabase
             .from('daily_snapshots')
             .select(
@@ -870,6 +935,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             .eq('user_id', userId)
             .maybeSingle(),
         ])
+        throwIfQueryFailed(snapshotResult.error, 'confirmation snapshot lookup failed')
+        throwIfQueryFailed(progressResult.error, 'confirmation progress lookup failed')
+        throwIfQueryFailed(profileResult.error, 'confirmation profile lookup failed')
+        const snap = snapshotResult.data
+        const prog = progressResult.data
+        const prof = profileResult.data
+        if (!snap) throw new Error('confirmation snapshot not found')
+        if (!prog) throw new Error('confirmation progress not found')
+        if (!prof) throw new Error('confirmation profile not found')
         const s = (snap ?? {}) as {
           calories_consumed?: number
           calories_target?: number | null
@@ -878,7 +952,8 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
           exercise_calories?: number
         }
         const p = (prog ?? {}) as { deficit_block?: number }
-        const proto = (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
+        const proto =
+          (prof as { current_protocol?: string | null } | null)?.current_protocol ?? null
 
         // Constrói a entry de registro pra alimentar composePostRegistrationMessage
         const registrations: RegistrationEntry[] =
@@ -893,14 +968,15 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
                 },
               ]
             : [
-                {
-                  tool: 'registra_refeicao',
-                  mealType: proposal.mealType ?? 'outro',
-                  items: mealToolResult?.meal?.items ?? proposal.items ?? [],
-                  totals:
-                    mealToolResult?.meal?.totals ??
-                    proposal.totals ?? { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-                },
+                buildConfirmedMealRegistrationEntry(
+                  {
+                    mealType: proposal.mealType,
+                    items: proposal.items,
+                    writeItems: proposal.writeItems,
+                    totals: proposal.totals,
+                  },
+                  mealToolResult,
+                ),
               ]
         const textBase = composePostRegistrationMessage({
           registrations,
@@ -911,8 +987,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
             proteinTarget: s.protein_target ?? null,
             exerciseCalories: s.exercise_calories ?? 0,
             deficitBlock: p.deficit_block ?? 0,
-            protocol:
-              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+            protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
           },
         })
 
@@ -931,8 +1006,7 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // o que falhava em dedup parcial. Agora só already_logged é
         // suficiente. Defesa em camadas com o guard interno de
         // generateEducationalComment.
-        const skipEdu =
-          proposal.kind !== 'workout' && mealToolResult?.already_logged === true
+        const skipEdu = proposal.kind !== 'workout' && mealToolResult?.already_logged === true
         if (skipEdu) {
           await supabase.from('product_events').insert({
             user_id: userId,
@@ -948,51 +1022,48 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         const eduComment = skipEdu
           ? ''
           : await generateEducationalComment(
-          llm,
-          {
-            kind:
-              proposal.kind === 'workout'
-                ? 'treino'
-                : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
-            // Adapter (P0 audit 2026-06-13): tool retorna items com chave
-            // `name`, EduCommentInput espera `food_name`. Fallback proposal.items
-            // quando a tool deduplica tudo (mesmo padrão de L401).
-            items:
-              proposal.kind !== 'workout'
-                ? adaptToolItemsToEduInput(
-                    (mealToolResult?.meal?.items as Parameters<
-                      typeof adaptToolItemsToEduInput
-                    >[0]) ??
-                      (proposal.items as Parameters<typeof adaptToolItemsToEduInput>[0]),
-                  )
-                : undefined,
-            totals:
-              proposal.kind !== 'workout'
-                ? (mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined
-                : undefined,
-            workout:
-              proposal.kind === 'workout'
-                ? {
-                    type: proposal.workoutType ?? 'treino',
-                    durationMin: proposal.durationMin,
-                    kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
-                  }
-                : undefined,
-            protocol:
-              (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
-          },
-          {
-            // ATIVA curated-phrase path (review CRITICAL).
-            supabase: deps2Supabase,
-            userId,
-            state: {
-              protocol:
-                (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
-            },
-            // Cascade semântica pra resolver foods compostos.
-            embeddings: deps2Embeddings,
-          },
-        )
+              llm,
+              {
+                kind:
+                  proposal.kind === 'workout'
+                    ? 'treino'
+                    : ((proposal.mealType as EduCommentInput['kind']) ?? 'outro'),
+                // Adapter (P0 audit 2026-06-13): tool retorna items com chave
+                // `name`, EduCommentInput espera `food_name`. Fallback proposal.items
+                // quando a tool deduplica tudo (mesmo padrão de L401).
+                items:
+                  proposal.kind !== 'workout'
+                    ? adaptToolItemsToEduInput(
+                        (mealToolResult?.meal?.items as Parameters<
+                          typeof adaptToolItemsToEduInput
+                        >[0]) ?? (proposal.items as Parameters<typeof adaptToolItemsToEduInput>[0]),
+                      )
+                    : undefined,
+                totals:
+                  proposal.kind !== 'workout'
+                    ? ((mealToolResult?.meal?.totals as EduCommentInput['totals']) ?? undefined)
+                    : undefined,
+                workout:
+                  proposal.kind === 'workout'
+                    ? {
+                        type: proposal.workoutType ?? 'treino',
+                        durationMin: proposal.durationMin,
+                        kcalBurned: workoutToolResult?.kcal_burned ?? proposal.kcalEst ?? 0,
+                      }
+                    : undefined,
+                protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+              },
+              {
+                // ATIVA curated-phrase path (review CRITICAL).
+                supabase: deps2Supabase,
+                userId,
+                state: {
+                  protocol: (proto as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ?? null,
+                },
+                // Cascade semântica pra resolver foods compostos.
+                embeddings: deps2Embeddings,
+              },
+            )
 
         // embedEduComment é função pura testável (invariante: eduComment
         // não-vazio ⇒ marker presente). Antes era código duplicado entre
@@ -1006,43 +1077,67 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
         // (almoço 8 itens + 4 linhas de comentário = 1.4kb numa msg). Se
         // não houver comentário (Haiku falhou), splitRegistrationParts
         // devolve comment=null e envia 2 bolhas (tabela | card).
-        const { meal: mealPart, comment: commentPart, card: cardPart } = splitRegistrationParts(text)
-        await sendHumanized(messaging, wpp, mealPart, {
-          singleMessage: true,
-          minDelay: 0,
-          maxDelay: 0,
-          showTyping: false,
-          inReplyTo: providerMessageId,
-        }).catch(() => {})
-        if (commentPart) {
-          await new Promise((res) => setTimeout(res, 1500))
-          await sendHumanized(messaging, wpp, commentPart, {
-            singleMessage: true,
-            minDelay: 0,
-            maxDelay: 0,
-            showTyping: false,
-          }).catch(() => {})
-        }
-        if (cardPart) {
-          await new Promise((res) => setTimeout(res, 1500))
-          await sendHumanized(messaging, wpp, cardPart, {
-            singleMessage: true,
-            minDelay: 0,
-            maxDelay: 0,
-            showTyping: false,
-          }).catch(() => {})
+        const {
+          meal: mealPart,
+          comment: commentPart,
+          card: cardPart,
+        } = splitRegistrationParts(text)
+        try {
+          await sendHumanizedTracked(
+            mealPart,
+            {
+              singleMessage: true,
+              minDelay: 0,
+              maxDelay: 0,
+              showTyping: false,
+              inReplyTo: providerMessageId,
+            },
+            'confirmation_meal',
+          )
+          if (commentPart) {
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            await sendHumanizedTracked(
+              commentPart,
+              {
+                singleMessage: true,
+                minDelay: 0,
+                maxDelay: 0,
+                showTyping: false,
+              },
+              'confirmation_comment',
+            )
+          }
+          if (cardPart) {
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            await sendHumanizedTracked(
+              cardPart,
+              {
+                singleMessage: true,
+                minDelay: 0,
+                maxDelay: 0,
+                showTyping: false,
+              },
+              'confirmation_card',
+            )
+          }
+        } catch (error) {
+          await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'interactive.handler.delivery_failed',
+            properties: {
+              pendingId,
+              kind: proposal.kind ?? 'meal',
+              error: error instanceof Error ? error.message : String(error),
+            },
+          })
+          throw error
         }
 
-        // Persiste a msg out
-        await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'out',
-          role: 'assistant',
-          content_type: 'text',
-          content: text,
-          provider: 'whatsapp_cloud',
-          agent_stage: 'recomposicao',
-          delivery_status: 'sent',
+        await transitionPendingStatus(supabase, {
+          pendingId,
+          from: 'pending',
+          to: 'confirmed',
+          resolvedAt: new Date().toISOString(),
         })
 
         await supabase.from('product_events').insert({
@@ -1069,22 +1164,20 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
       }
 
       // ── EDIT ──
-      // Marca status, pede correção. Próxima msg do paciente cai no fluxo normal
-      // do LLM (que vai re-analisar e propor de novo, criando novo pending).
-      await supabase
-        .from('pending_registrations')
-        .update({ status: 'edited', resolved_at: new Date().toISOString() })
-        .eq('id', pendingId)
+      // Pede correção e só então marca status. Próxima msg do paciente cai no
+      // fluxo normal do LLM (que vai re-analisar e criar novo pending).
+      await sendTextTracked('Beleza, me corrige aí o que tá errado.', 'edit_prompt')
+      await transitionPendingStatus(supabase, {
+        pendingId,
+        from: 'pending',
+        to: 'edited',
+        resolvedAt: new Date().toISOString(),
+      })
       await supabase.from('product_events').insert({
         user_id: userId,
         event: 'pending.edited',
         properties: { pendingId, kind: (row.proposal as { kind?: string }).kind ?? 'unknown' },
       })
-      await messaging
-        .sendText(wpp, 'Beleza, me corrige aí o que tá errado.', {
-          replyTo: providerMessageId,
-        })
-        .catch(() => {})
       return { handled: true, action: 'edited', pendingId }
     })
   },

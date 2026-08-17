@@ -2,14 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { validateRegistraRefeicao } from './registra_refeicao-guard.js'
 
 // biome-ignore lint/suspicious/noExplicitAny: mock supabase pra testes
-function mockSupabase(recentMeals: Array<{ food_name: string; meal_type: string }> = []): any {
+function mockSupabase(
+  recentMeals: Array<{ food_name: string; meal_type: string }> = [],
+  errorMessage?: string,
+): any {
   return {
     from: () => ({
       select: () => ({
         eq: () => ({
           eq: () => ({
             gte: () => ({
-              limit: async () => ({ data: recentMeals }),
+              limit: async () => ({
+                data: errorMessage ? null : recentMeals,
+                error: errorMessage ? { message: errorMessage } : null,
+              }),
             }),
           }),
         }),
@@ -116,5 +122,22 @@ describe('validateRegistraRefeicao — guard pós-LLM', () => {
       ctx,
     )
     expect(r.ok).toBe(true)
+  })
+
+  it('R3: falha fechada quando a consulta de duplicidade está indisponível', async () => {
+    const ctx = {
+      supabase: mockSupabase([], 'recent meal guard unavailable'),
+      userId: 'u1',
+    }
+
+    await expect(
+      validateRegistraRefeicao(
+        {
+          meal_type: 'almoco',
+          items: [{ food_name: 'arroz', quantity_g: 100 }],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('recent meal guard unavailable')
   })
 })

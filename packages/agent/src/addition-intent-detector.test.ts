@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectAdditionIntent, detectAdditionInRecentMessages } from './addition-intent-detector.js'
+import { detectAdditionInRecentMessages, detectAdditionIntent } from './addition-intent-detector.js'
 
 describe('detectAdditionIntent', () => {
   describe('GATILHO POSITIVO (deve detectar)', () => {
@@ -49,6 +49,10 @@ describe('detectAdditionIntent', () => {
 
     it('"acrescentar"', () => {
       expect(detectAdditionIntent('quero acrescentar mais um item')).toBeTruthy()
+    })
+
+    it('"Adicionei 30g de leite em pó ao iogurte" — caso real Roberto', () => {
+      expect(detectAdditionIntent('Adicionei 30g de leite em pó ao iogurte')).toBeTruthy()
     })
 
     it('"dobrei a porção"', () => {

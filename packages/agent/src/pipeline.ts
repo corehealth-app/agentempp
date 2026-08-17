@@ -12,6 +12,7 @@
 import { computeMetrics, eatingBalance, resolveProtocol } from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
+import { throwIfQueryFailed } from './db-query-error.js'
 import {
   auditNumericClaims,
   detectDeficitRealMismatch,
@@ -29,6 +30,7 @@ import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timez
 import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
 import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
+  buildPendingNutritionConfirmationNotes,
   composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
@@ -38,8 +40,22 @@ import {
   isPureStatusQueryTurn,
   isReevalToolTurn,
   normalizePendingFoodCorrections,
+  type MealItem,
   type RegistrationEntry,
 } from './post-registration-message.js'
+import { reconcilePendingMealEdit, reconcileScopedMealCorrection } from './pending-meal-edit.js'
+import {
+  cancelOpenPendingRegistrations,
+  createPendingRegistration,
+  loadRecentConfirmedMealPending,
+  loadRecentEditedMealPending,
+  loadRecentPendingMeal,
+  loadRecentRegisteredMeal,
+} from './pending-registration-store.js'
+import {
+  loadDeterministicDailyState,
+  loadReevaluationGate,
+} from './pipeline-state-store.js'
 import {
   makeOnboardingButtonId,
   parseOnboardingButtonTag,
@@ -52,6 +68,7 @@ import {
 } from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
 import { routeModel } from './model-router.js'
+import { loadRouterFlag } from './router-flag.js'
 import {
   isMealExpressEligible,
   isWorkoutExpressEligible,
@@ -68,6 +85,13 @@ import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
 import { detectCorrectionIntent } from './correction-detector.js'
 import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
 import { loadVisionPending } from './vision-pending-loader.js'
+import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
+import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
+import { dedupeMealItems } from './meal-item-dedup.js'
+import {
+  foodNamesReferToSameItem,
+  hasExplicitWholeMealReplacementIntent,
+} from './meal-replacement-target.js'
 import {
   bodyPhotoSignalFromEventProperties,
   composeReevalBodyPhotoWaitMessage,
@@ -78,7 +102,7 @@ import {
   type BodyPhotoState,
 } from './reevaluation-body-photos.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
-import type { ServiceClient } from '@mpp/db'
+import type { Json, ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import { ALL_TOOLS, getToolByName } from './tools.js'
@@ -615,6 +639,49 @@ export async function processMessage(
       }
       try {
         const validated = tool.parameters.parse(parsed)
+        const trustedVisionLabels = input.visionNutritionLabels ?? []
+        let matchedLabelCount: number | undefined
+        if (tc.name === 'registra_refeicao' && trustedVisionLabels.length > 0) {
+          const mealArgs = validated as {
+            items: Array<{
+              food_name: string
+              quantity_g: number
+              approved_nutrition?: {
+                source?: 'product_label'
+                kcal: number
+                protein_g: number
+                carbs_g: number
+                fat_g: number
+              }
+            }>
+          }
+          mealArgs.items = attachTrustedVisionNutrition(mealArgs.items, trustedVisionLabels)
+          matchedLabelCount = mealArgs.items.filter(
+            (item) => item.approved_nutrition != null,
+          ).length
+        }
+
+        if (
+          shouldBlockUntrustedNutritionLabelRegistration({
+            toolName: tc.name,
+            nutritionLabelDetected: input.visionNutritionLabelDetected === true,
+            detectedLabelCount: input.visionNutritionLabelDetectedCount,
+            trustedLabelCount: trustedVisionLabels.length,
+            matchedLabelCount,
+          })
+        ) {
+          const error =
+            trustedVisionLabels.length > 0
+              ? 'Rótulo confiável, mas sem associação inequívoca a um item da refeição. Não estime: confirme qual item e porção pertencem ao rótulo.'
+              : 'Rótulo incompleto ou com baixa confiança. Não registre nem estime ainda; peça kcal, proteína, carboidrato e gordura por porção.'
+          toolCallsSummary.push({ name: tc.name, arguments: validated, error })
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ success: false, error, retry_tool: false }),
+          })
+          continue
+        }
 
         // ── FASE B BOTÕES (Roberto 2026-05-28, opção #4) ──────────────────────
         // Quando o paciente está no opt-in (users.metadata.buttons_enabled) E o
@@ -677,33 +744,9 @@ export async function processMessage(
             )
             const newItemNames = new Set(newItemsByName.keys())
             if (!isExplicitReplace && newItemNames.size > 0) {
-              // Review M1 + M2: filtra kind=meal pra evitar match espúrio em
-              // pendings de training/onboarding/etc; captura error pra
-              // diferenciar query-fail de "não tem pending recente".
-              const { data: recentPending, error: pendErr } = await deps.supabase
-                .from('pending_registrations')
-                .select('id, proposal, created_at')
-                .eq('user_id', userId)
-                .eq('status', 'pending')
-                .eq('proposal->>kind', 'meal')
-                .gte(
-                  'created_at',
-                  new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-                )
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-              if (pendErr) {
-                await deps.supabase.from('product_events').insert({
-                  user_id: userId,
-                  event: 'pipeline.duplicate_check_query_failed',
-                  properties: {
-                    error_message: pendErr.message ?? String(pendErr),
-                    new_items_count: newItemNames.size,
-                  },
-                })
-                // Default seguro: cai no cancel cego (comportamento antigo).
-              }
+              // Filtra kind=meal e falha fechado: sem essa leitura não é seguro
+              // cancelar a proposta anterior nem decidir que o novo burst é distinto.
+              const recentPending = await loadRecentPendingMeal(deps.supabase, userId)
               const pend = recentPending as {
                 id: string
                 proposal: {
@@ -827,12 +870,8 @@ export async function processMessage(
                 }
               }
             }
-            if (!suppressedAsDuplicate) {
-              await deps.supabase
-                .from('pending_registrations')
-                .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-                .eq('user_id', userId)
-                .eq('status', 'pending')
+            if (!suppressedAsDuplicate && exprResult.eligible) {
+              await cancelOpenPendingRegistrations(deps.supabase, userId)
             }
           }
 
@@ -845,8 +884,86 @@ export async function processMessage(
               items: Array<{
                 food_name: string
                 quantity_g?: number
+                approved_nutrition?: {
+                  source?: 'product_label'
+                  kcal: number
+                  protein_g: number
+                  carbs_g: number
+                  fat_g: number
+                }
               }>
             }
+            const originalItemCount = args.items.length
+            const dedupedArgs = dedupeMealItems(
+              args.items.map((item) => ({ ...item, quantity_g: item.quantity_g ?? 0 })),
+              { patientText: semanticPatientText },
+            )
+            args.items = dedupedArgs.items
+            if (dedupedArgs.duplicates.length > 0) {
+              await deps.supabase.from('product_events').insert({
+                user_id: userId,
+                event: 'pipeline.pending_items_deduped',
+                properties: {
+                  meal_type: args.meal_type ?? null,
+                  provider_message_id: input.providerMessageId,
+                  source_content_type: ctx.lastInboundContentType,
+                  original_count: originalItemCount,
+                  merged_count: dedupedArgs.items.length,
+                  duplicates: dedupedArgs.duplicates.map((duplicate) => ({
+                    food_name: duplicate.food_name,
+                    repeated: duplicate.repeated,
+                    result_g: duplicate.result_g,
+                    strategy: duplicate.strategy,
+                  })),
+                },
+              })
+            }
+            const pendingCorrections = normalizePendingFoodCorrections(args.corrections)
+            const correctionSourceNames = pendingCorrections.map((correction) => correction.de)
+            const wholeMealReplacement =
+              args.replace === true &&
+              hasExplicitWholeMealReplacementIntent([
+                ...ctx.recentMessages
+                  .filter((message) => message.role === 'user')
+                  .map((message) => message.content),
+                semanticPatientText,
+              ])
+            const shouldLoadCorrectionContext =
+              args.replace === true && pendingCorrections.length > 0 && !wholeMealReplacement
+            const [editedPendingRow, confirmedPendingRow, registeredMeal] = await Promise.all([
+              loadRecentEditedMealPending(
+                deps.supabase,
+                userId,
+                args.meal_type ?? 'outro',
+                input.timestamp,
+              ),
+              shouldLoadCorrectionContext
+                ? loadRecentConfirmedMealPending(
+                    deps.supabase,
+                    userId,
+                    args.meal_type ?? 'outro',
+                    input.timestamp,
+                    correctionSourceNames,
+                  )
+                : Promise.resolve(null),
+              shouldLoadCorrectionContext
+                ? loadRecentRegisteredMeal(
+                    deps.supabase,
+                    userId,
+                    args.meal_type ?? 'outro',
+                    input.timestamp,
+                    correctionSourceNames,
+                  )
+                : Promise.resolve(null),
+            ])
+            const editedPending = editedPendingRow as {
+              id: string
+              proposal?: { items?: MealItem[] }
+            } | null
+            const confirmedPending = confirmedPendingRow as {
+              id: string
+              proposal?: { items?: MealItem[] }
+            } | null
             // FIX (Roberto 2026-05-28): a LLM passa só {food_name, quantity_g}.
             // kcal/macros vêm da resolução TACO via calcMealMacros — o mesmo
             // que registra_refeicao usa internamente. Sem isso o pending vinha
@@ -862,13 +979,16 @@ export async function processMessage(
               semanticPatientText,
             ]
             const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
-            const itemsWithOverrides = args.items.map((it) => ({
-              food_name: it.food_name,
-              quantity_g: it.quantity_g ?? 0,
-              ...(kcalOverrides.has(it.food_name)
-                ? { user_kcal: kcalOverrides.get(it.food_name)! }
-                : {}),
-            }))
+            const itemsWithOverrides = attachTrustedVisionNutrition(
+              args.items.map((it) => ({
+                ...it,
+                quantity_g: it.quantity_g ?? 0,
+                ...(kcalOverrides.has(it.food_name)
+                  ? { user_kcal: kcalOverrides.get(it.food_name)! }
+                  : {}),
+              })),
+              input.visionNutritionLabels ?? [],
+            )
             if (kcalOverrides.size > 0) {
               await deps.supabase.from('product_events').insert({
                 user_id: userId,
@@ -893,8 +1013,10 @@ export async function processMessage(
                 .filter((it) => it.user_kcal != null)
                 .map((it) => [it.food_name, it.user_kcal as number]),
             )
-            const proposalItems = resolved.items.map((m) => ({
+            let proposalItems: MealItem[] = resolved.items.map((m) => ({
               name: m.food_name,
+              food_db_id: m.matched_taco_id,
+              nutrition_source: m.source,
               quantity_g: m.quantity_g,
               display_qty: m.display_qty ?? null,
               display_unit: m.display_unit ?? null,
@@ -906,11 +1028,63 @@ export async function processMessage(
               carbs_g: m.carbs_g ?? 0,
               fat_g: m.fat_g ?? 0,
             }))
-            const proposalTotals = {
+            let proposalTotals = {
               kcal: resolved.totals.kcal,
               protein_g: resolved.totals.protein_g,
               carbs_g: resolved.totals.carbs_g,
               fat_g: resolved.totals.fat_g,
+            }
+            let quantityEditAdjustments: ReturnType<
+              typeof reconcilePendingMealEdit
+            >['adjustments'] = []
+            let quantityEditAdjustmentPayload: Array<Record<string, string | number>> = []
+            const previousItems =
+              registeredMeal?.items ??
+              editedPending?.proposal?.items ??
+              confirmedPending?.proposal?.items ??
+              []
+            if (previousItems.length > 0) {
+              const reconciled = reconcilePendingMealEdit({
+                previousItems,
+                resolvedItems: proposalItems,
+                currentExplicitKcalFoods: new Set(kcalOverrides.keys()),
+              })
+              proposalItems = reconciled.items
+              proposalTotals = reconciled.totals
+              quantityEditAdjustments = reconciled.adjustments
+              quantityEditAdjustmentPayload = quantityEditAdjustments.map((adjustment) => ({
+                food_name: adjustment.food_name,
+                previous_quantity_g: adjustment.previous_quantity_g,
+                quantity_g: adjustment.quantity_g,
+                previous_kcal: adjustment.previous_kcal,
+                kcal: adjustment.kcal,
+                reason: adjustment.reason,
+              }))
+              if (quantityEditAdjustments.length > 0) {
+                await deps.supabase.from('product_events').insert({
+                  user_id: userId,
+                  event: 'pipeline.pending_quantity_nutrition_scaled',
+                  properties: {
+                    edited_pending_id: editedPending?.id ?? null,
+                    confirmed_pending_id: confirmedPending?.id ?? null,
+                    registered_meal_context: registeredMeal != null,
+                    meal_type: args.meal_type ?? 'outro',
+                    adjustments: quantityEditAdjustmentPayload,
+                  },
+                })
+              }
+            }
+            if (shouldLoadCorrectionContext) {
+              const scopedCorrection = reconcileScopedMealCorrection({
+                previousItems,
+                resolvedItems: proposalItems,
+                corrections: pendingCorrections,
+              })
+              if (!scopedCorrection) {
+                throw new Error('pending scoped correction context is incomplete or ambiguous')
+              }
+              proposalItems = scopedCorrection.items
+              proposalTotals = scopedCorrection.totals
             }
             const ambiguousPreparationNames = [
               ...new Set(
@@ -919,21 +1093,48 @@ export async function processMessage(
                   .filter(requiresVisualPreparationConfirmation),
               ),
             ]
-            const confirmationNotes = ctx.lastInboundContentType === 'image'
-              ? ambiguousPreparationNames.slice(0, 2).map(
-                  (name) =>
-                    `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
-                )
-              : []
-            const pendingCorrections = normalizePendingFoodCorrections(args.corrections)
+            const nutritionConfirmationNotes = buildPendingNutritionConfirmationNotes(proposalItems)
+            const preparationConfirmationNotes =
+              ctx.lastInboundContentType === 'image'
+                ? ambiguousPreparationNames.slice(0, 2).map(
+                    (name) =>
+                      `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
+                  )
+                : []
+            const confirmationNotes = [
+              ...nutritionConfirmationNotes,
+              ...preparationConfirmationNotes,
+            ].slice(0, 2)
+            let correctionWriteItems: MealItem[] | undefined
+            if (shouldLoadCorrectionContext) {
+              const destinations = pendingCorrections
+                .map((correction) => correction.para.trim())
+                .filter((destination) => destination && destination.toLowerCase() !== 'nenhum')
+              const allDestinationsPresent = destinations.every((destination) =>
+                proposalItems.some((item) => foodNamesReferToSameItem(item.name, destination)),
+              )
+              if (!allDestinationsPresent || destinations.length === 0) {
+                throw new Error('pending correction destination missing from proposal')
+              }
+              correctionWriteItems = proposalItems.filter((item) =>
+                destinations.some((destination) =>
+                  foodNamesReferToSameItem(item.name, destination),
+                ),
+              )
+            }
             const proposal = {
               kind: 'meal' as const,
               mealType: args.meal_type ?? 'outro',
               items: proposalItems,
+              ...(correctionWriteItems ? { writeItems: correctionWriteItems } : {}),
               totals: proposalTotals,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
               source_text: semanticPatientText || null,
+              ...(editedPending?.id ? { edited_from_pending_id: editedPending.id } : {}),
+              ...(quantityEditAdjustments.length > 0
+                ? { quantity_edit_adjustments: quantityEditAdjustmentPayload }
+                : {}),
               ...(confirmationNotes.length > 0 ? { confirmationNotes } : {}),
               ...(pendingCorrections.length > 0 ? { corrections: pendingCorrections } : {}),
               express_eligible: false,
@@ -949,12 +1150,12 @@ export async function processMessage(
               ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            const { data: pendRow } = await deps.supabase
-              .from('pending_registrations')
-              .insert({ user_id: userId, proposal, expires_at: expiresAt })
-              .select('id')
-              .single()
-            const pendingId = (pendRow as { id: string } | null)?.id
+            const pendingId = await createPendingRegistration(deps.supabase, {
+              userId,
+              proposal: proposal as unknown as Json,
+              expiresAt,
+              requestKey: input.providerMessageId ?? null,
+            })
             if (pendingId) {
               const { body, buttons } = composePendingProposal(pendingId, proposal)
               interactivePayload = { body, buttons, pendingId }
@@ -966,7 +1167,9 @@ export async function processMessage(
                   kind: 'meal',
                   meal_type: proposal.mealType,
                   items_count: proposalItems.length,
+                  write_items_count: correctionWriteItems?.length ?? proposalItems.length,
                   corrections_count: pendingCorrections.length,
+                  whole_meal_replacement: wholeMealReplacement,
                   express_reason: exprResult.reason,
                 },
               })
@@ -986,7 +1189,6 @@ export async function processMessage(
               finalText = '' // o envio é via sendInteractive no caller
               break // sai do for-tool loop
             }
-            // Se INSERT falhou, cai pro execute normal (failsafe).
           } else if (exprResult.eligible) {
             await deps.supabase.from('product_events').insert({
               user_id: userId,
@@ -1027,12 +1229,8 @@ export async function processMessage(
 
           // FIX (mesmo do registra_refeicao acima): cancela pending em aberto
           // SEMPRE — express ou não — pra evitar duplicação caso tape Sim no antigo.
-          if (buttonsEnabled) {
-            await deps.supabase
-              .from('pending_registrations')
-              .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-              .eq('user_id', userId)
-              .eq('status', 'pending')
+          if (buttonsEnabled && exprRes.eligible) {
+            await cancelOpenPendingRegistrations(deps.supabase, userId)
           }
 
           if (buttonsEnabled && !exprRes.eligible) {
@@ -1051,12 +1249,12 @@ export async function processMessage(
               ...buildPendingTiming(ctx.timezone, input.timestamp),
             }
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            const { data: pendRow } = await deps.supabase
-              .from('pending_registrations')
-              .insert({ user_id: userId, proposal, expires_at: expiresAt })
-              .select('id')
-              .single()
-            const pendingId = (pendRow as { id: string } | null)?.id
+            const pendingId = await createPendingRegistration(deps.supabase, {
+              userId,
+              proposal: proposal as unknown as Json,
+              expiresAt,
+              requestKey: input.providerMessageId ?? null,
+            })
             if (pendingId) {
               const { body, buttons } = composePendingProposal(pendingId, proposal)
               interactivePayload = { body, buttons, pendingId }
@@ -1191,6 +1389,8 @@ export async function processMessage(
         const guardResult = await runToolGuard(tc.name, validated as Record<string, unknown>, {
           supabase: deps.supabase,
           userId,
+          userTimezone: toolCtx.userTimezone,
+          referenceTimestamp: toolCtx.referenceTimestamp,
           trustedTap: false,
           visionPending: ctx.visionPending,
         })
@@ -1279,23 +1479,10 @@ export async function processMessage(
     const iterEntries = toolCallsSummary.slice(-result.toolCalls.length)
     if (isPureRegistrationTurn(iterEntries, input.text)) {
       const todayStr = getLocalDateString(ctx.timezone)
-      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
-        deps.supabase
-          .from('daily_snapshots')
-          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-          .eq('user_id', userId)
-          .eq('date', todayStr)
-          .maybeSingle(),
-        deps.supabase.from('user_progress').select('deficit_block').eq('user_id', userId).maybeSingle(),
-      ])
+      const { snapshot: snapDet, progress: progDet } =
+        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
       if (snapDet) {
-        const s = snapDet as {
-          calories_consumed: number
-          calories_target: number | null
-          protein_g: number
-          protein_target: number | null
-          exercise_calories: number
-        }
+        const s = snapDet
         const registrations: RegistrationEntry[] = iterEntries.map((e) => {
           if (e.name === 'registra_treino') {
             const a = (e.arguments ?? {}) as { workout_type?: string; duration_min?: number }
@@ -1329,7 +1516,7 @@ export async function processMessage(
             proteinG: Number(s.protein_g),
             proteinTarget: s.protein_target,
             exerciseCalories: s.exercise_calories,
-            deficitBlock: (progDet as { deficit_block: number } | null)?.deficit_block ?? 0,
+            deficitBlock: progDet.deficit_block,
             protocol:
               (ctx.profile.currentProtocol as
                 | 'recomposicao'
@@ -1406,34 +1593,11 @@ export async function processMessage(
       // Gatilho conservador (só consulta_progresso + intenção de status pura);
       // qualquer coaching junto cai no fluxo normal (LLM responde).
       const todayStr = getLocalDateString(ctx.timezone)
-      const [{ data: snapDet }, { data: progDet }] = await Promise.all([
-        deps.supabase
-          .from('daily_snapshots')
-          .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-          .eq('user_id', userId)
-          .eq('date', todayStr)
-          .maybeSingle(),
-        deps.supabase
-          .from('user_progress')
-          .select('deficit_block, current_streak, level, xp_total, blocks_completed')
-          .eq('user_id', userId)
-          .maybeSingle(),
-      ])
+      const { snapshot: snapDet, progress: progDet } =
+        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
       if (snapDet) {
-        const s = snapDet as {
-          calories_consumed: number
-          calories_target: number | null
-          protein_g: number
-          protein_target: number | null
-          exercise_calories: number
-        }
-        const p = (progDet ?? {}) as {
-          deficit_block?: number
-          current_streak?: number
-          level?: number
-          xp_total?: number
-          blocks_completed?: number
-        }
+        const s = snapDet
+        const p = progDet
         finalText = composeStatusMessage(
           {
             caloriesConsumed: s.calories_consumed,
@@ -1441,7 +1605,7 @@ export async function processMessage(
             proteinG: Number(s.protein_g),
             proteinTarget: s.protein_target,
             exerciseCalories: s.exercise_calories,
-            deficitBlock: p.deficit_block ?? 0,
+            deficitBlock: p.deficit_block,
             protocol:
               (ctx.profile.currentProtocol as
                 | 'recomposicao'
@@ -1451,10 +1615,10 @@ export async function processMessage(
             last14d: ctx.last14d,
           },
           {
-            currentStreak: p.current_streak ?? 0,
-            level: p.level ?? 1,
-            xpTotal: p.xp_total ?? 0,
-            blocksCompleted: p.blocks_completed ?? 0,
+            currentStreak: p.current_streak,
+            level: p.level,
+            xpTotal: p.xp_total,
+            blocksCompleted: p.blocks_completed,
           },
         )
         messages.push({ role: 'assistant', content: finalText })
@@ -1472,22 +1636,8 @@ export async function processMessage(
       // que valem os próximos 14 dias), sem a IA re-redigir. Gatilho ESTREITO:
       // exige reevaluation.due recente (últimas 48h) — nunca dispara no onboarding
       // nem em update casual. Se não for reavaliação real → fluxo normal (LLM).
-      const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-      const [{ data: revalDue }, { data: profRow }] = await Promise.all([
-        deps.supabase
-          .from('product_events')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('event', 'reevaluation.due')
-          .gte('occurred_at', since)
-          .limit(1),
-        deps.supabase
-          .from('user_profiles')
-          .select('current_protocol')
-          .eq('user_id', userId)
-          .maybeSingle(),
-      ])
-      if (revalDue && revalDue.length > 0) {
+      const reevaluationGate = await loadReevaluationGate(deps.supabase, userId)
+      if (reevaluationGate.due) {
         const bodyPhotoState = ctx.bodyPhotoState ?? deriveBodyPhotoState([], [input.text])
         if (shouldWaitForBodyPhotosBeforeReeval(bodyPhotoState, true)) {
           finalText = composeReevalBodyPhotoWaitMessage(bodyPhotoState)
@@ -1515,7 +1665,7 @@ export async function processMessage(
           caloriesTarget: cr.calories_target_today ?? null,
           proteinTarget: cr.protein_target_today_g ?? null,
           protocol:
-            (profRow as { current_protocol?: string | null } | null)?.current_protocol ??
+            reevaluationGate.currentProtocol ??
             ctx.profile.currentProtocol ??
             null,
         })
@@ -1561,36 +1711,18 @@ export async function processMessage(
   let freshConsumed: number | null = ctx.todaySnapshot?.calories_consumed ?? null
   if (finalText && hasBalanceCard(finalText)) {
     const todayStr = getLocalDateString(ctx.timezone, input.timestamp)
-    const [{ data: snapFresh }, { data: progFresh }] = await Promise.all([
-      deps.supabase
-        .from('daily_snapshots')
-        .select('calories_consumed, calories_target, protein_g, protein_target, exercise_calories')
-        .eq('user_id', userId)
-        .eq('date', todayStr)
-        .maybeSingle(),
-      deps.supabase
-        .from('user_progress')
-        .select('deficit_block')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ])
+    const { snapshot: snapFresh, progress: progFresh } =
+      await loadDeterministicDailyState(deps.supabase, userId, todayStr)
     if (snapFresh) {
-      const snapTyped = snapFresh as {
-        calories_consumed: number
-        calories_target: number | null
-        protein_g: number
-        protein_target: number | null
-        exercise_calories: number
-      }
+      const snapTyped = snapFresh
       freshConsumed = snapTyped.calories_consumed
-      const progTyped = progFresh as { deficit_block: number } | null
       const canonicalCard = renderBalanceCard({
         caloriesConsumed: snapTyped.calories_consumed,
         caloriesTarget: snapTyped.calories_target,
         proteinG: Number(snapTyped.protein_g),
         proteinTarget: snapTyped.protein_target,
         exerciseCalories: snapTyped.exercise_calories,
-        deficitBlock: progTyped?.deficit_block ?? 0,
+        deficitBlock: progFresh.deficit_block,
         protocol:
           (ctx.profile.currentProtocol as
             | 'recomposicao'
@@ -1839,7 +1971,7 @@ function jsonify(value: unknown): import('@mpp/db').Json {
  *
  * Bloqueia se status = 'past_due', 'canceled', 'expired'.
  */
-async function checkSubscription(
+export async function checkSubscription(
   supabase: ServiceClient,
   userId: string,
 ): Promise<{ canAccess: boolean; reason?: string; status?: string }> {
@@ -1853,13 +1985,14 @@ async function checkSubscription(
     return { canAccess: true }
   }
 
-  const { data: sub } = await supabase
+  const { data: sub, error: subscriptionError } = await supabase
     .from('subscriptions')
     .select('status, current_period_end, trial_ends_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+  throwIfQueryFailed(subscriptionError, 'subscription lookup failed')
 
   if (!sub) {
     // Sem registro — primeiro acesso. Permite (worker cria trial depois).
@@ -1894,26 +2027,23 @@ function buildBlockedResponse(_input: AgentInput, reason: string): AgentOutput {
   }
 }
 
-async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string> {
-  const { data: existing } = await supabase
-    .from('users')
-    .select('id')
-    .eq('wpp', wpp)
-    .maybeSingle()
-  if (existing) return existing.id
+export async function ensureUser(supabase: ServiceClient, wpp: string): Promise<string> {
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: string,
+        params: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message?: string } | null }>
+    }
+  ).rpc('ensure_user_initialized', { p_wpp: wpp })
 
-  const { data: created, error } = await supabase
-    .from('users')
-    .insert({ wpp, status: 'active' })
-    .select('id')
-    .single()
-  if (error) throw error
-
-  // cria profile + progress vazios
-  await supabase.from('user_profiles').insert({ user_id: created.id })
-  await supabase.from('user_progress').insert({ user_id: created.id })
-
-  return created.id
+  if (error) {
+    throw new Error(error.message ?? 'ensure_user_initialized failed')
+  }
+  if (typeof data !== 'string' || data.length === 0) {
+    throw new Error('ensure_user_initialized returned no user id')
+  }
+  return data
 }
 
 const RECENT_MESSAGES_LIMIT = 50
@@ -1961,7 +2091,7 @@ export function buildPromptRecentMessages(
     }))
 }
 
-async function loadContext(
+export async function loadContext(
   supabase: ServiceClient,
   userId: string,
   currentProviderMessageIds?: string | string[] | null,
@@ -1970,10 +2100,12 @@ async function loadContext(
 ): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
-  const { data: user } = await (supabase as unknown as {
+  const { data: user, error: userError } = await (supabase as unknown as {
     from: (t: string) => {
       select: (s: string) => {
-        eq: (col: string, val: string) => { single: () => Promise<{ data: unknown }> }
+        eq: (col: string, val: string) => {
+          single: () => Promise<{ data: unknown; error: unknown }>
+        }
       }
     }
   })
@@ -1983,17 +2115,24 @@ async function loadContext(
     )
     .eq('id', userId)
     .single()
-  const { data: profile } = await supabase
+  throwIfQueryFailed(userError, 'user context lookup failed')
+  if (!user) throw new Error('user context missing')
+
+  const { data: profile, error: profileError } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('user_id', userId)
     .single()
-  const { data: msgs } = await supabase
+  throwIfQueryFailed(profileError, 'user profile lookup failed')
+  if (!profile) throw new Error('user profile missing')
+
+  const { data: msgs, error: messagesError } = await supabase
     .from('messages')
     .select('direction, content, content_type, created_at, provider_message_id')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(RECENT_MESSAGES_LIMIT)
+  throwIfQueryFailed(messagesError, 'recent messages lookup failed')
 
   // .slice() ANTES do .reverse() — reverse() muta in-place. Sem o slice, a
   // ordem do `msgs` original fica ASC, e o `lastInboundContentType` (linha
@@ -2069,7 +2208,7 @@ async function loadContext(
   // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
   const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
   const today = getLocalDateString(userTz, referenceTimestamp)
-  const { data: snapToday } = await supabase
+  const { data: snapToday, error: snapshotError } = await supabase
     .from('daily_snapshots')
     .select(
       'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at',
@@ -2077,23 +2216,28 @@ async function loadContext(
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle()
-  const { data: progress } = await supabase
+  throwIfQueryFailed(snapshotError, 'daily snapshot lookup failed')
+
+  const { data: progress, error: progressError } = await supabase
     .from('user_progress')
     .select(
       'current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date',
     )
     .eq('user_id', userId)
     .maybeSingle()
+  throwIfQueryFailed(progressError, 'user progress lookup failed')
+  if (!progress) throw new Error('user progress missing')
 
   // Janela 14 dias — orçamento calórico + DAM (manutenção/ganho_massa).
   // Computa em-memória sobre daily_snapshots fechados.
   const date14dAgo = getLocalDateMinusDays(userTz, 14, referenceTimestamp)
-  const { data: last14dRows } = await supabase
+  const { data: last14dRows, error: last14dError } = await supabase
     .from('daily_snapshots')
     .select('calories_consumed, calories_target, day_closed')
     .eq('user_id', userId)
     .gte('date', date14dAgo)
     .eq('day_closed', true)
+  throwIfQueryFailed(last14dError, 'daily history lookup failed')
   const last14dTyped = (last14dRows ?? []) as Array<{
     calories_consumed: number | null
     calories_target: number | null
@@ -2129,7 +2273,10 @@ async function loadContext(
   } | null
 
   const reevaluationSince = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-  const [{ data: bodyVisionRows }, { data: reevaluationDueRows }] = await Promise.all([
+  const [
+    { data: bodyVisionRows, error: bodyVisionError },
+    { data: reevaluationDueRows, error: reevaluationDueError },
+  ] = await Promise.all([
     supabase
       .from('product_events')
       .select('properties, occurred_at')
@@ -2146,6 +2293,8 @@ async function loadContext(
       .gte('occurred_at', reevaluationSince)
       .limit(1),
   ])
+  throwIfQueryFailed(bodyVisionError, 'body vision history lookup failed')
+  throwIfQueryFailed(reevaluationDueError, 'reevaluation status lookup failed')
   const bodySignals = ((bodyVisionRows ?? []) as Array<{
     properties: unknown
     occurred_at: string | null
@@ -2314,41 +2463,19 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
   }))
 }
 
-// ─── Router de modelo (Fase 6 — 2026-06-04) ──────────────────────────────────
-
-let routerFlagCache: { value: boolean; expiresAt: number } | null = null
-const ROUTER_FLAG_TTL_MS = 60_000
-
-async function loadRouterFlag(supabase: ServiceClient): Promise<boolean> {
-  const now = Date.now()
-  if (routerFlagCache && routerFlagCache.expiresAt > now) return routerFlagCache.value
+export async function hasOpenPending(
+  supabase: ServiceClient,
+  userId: string,
+): Promise<boolean> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-  const { data } = await (supabase as any)
-    .from('global_config')
-    .select('value')
-    .eq('key', 'router.haiku_enabled')
-    .maybeSingle()
-  // Default TRUE — Haiku routing fica ligado. Pra desligar: UPDATE global_config
-  // SET value='false' WHERE key='router.haiku_enabled'.
-  const value =
-    data && (data as { value: unknown }).value !== undefined
-      ? (data as { value: unknown }).value !== false &&
-        (data as { value: unknown }).value !== 'false'
-      : true
-  routerFlagCache = { value, expiresAt: now + ROUTER_FLAG_TTL_MS }
-  return value
-}
-
-async function hasOpenPending(supabase: ServiceClient, userId: string): Promise<boolean> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
-  const { data } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('pending_registrations')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .limit(1)
+  throwIfQueryFailed(error, 'pending lookup failed')
   return Array.isArray(data) && data.length > 0
 }
 
@@ -2659,7 +2786,8 @@ function formatUserContext(
       `(o sistema quebra em chunks naturais).\n` +
       `3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
       `momentos de validação emocional, não como prefixo automático.\n` +
-      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.`,
+      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.\n` +
+      `5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.`,
   )
 
   return sections.join('\n\n')

@@ -1,11 +1,13 @@
 import {
   findTimezoneCountryMismatches,
   getTzOffset,
+  hasImpossibleKcalDensity,
   looksLikeRegistrationRequest,
 } from '@mpp/agent'
 import { inngest } from '../client.js'
-import { recomputeUserBloco } from '../lib/bloco-recompute.js'
+import { applyUserBlocoCorrection, recomputeUserBloco } from '../lib/bloco-recompute.js'
 import { createWorkerDeps } from '../lib/env.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadBooleanConfig } from '../lib/runtime-config.js'
 
 /**
@@ -24,6 +26,139 @@ export function snapshotIntegrityGap(
 
 /** Tolerância de divergência snapshot vs meal_logs (kcal). */
 export const SNAPSHOT_INTEGRITY_TOL_KCAL = 50
+
+export function countImpossibleMealDensities(
+  rows: Array<{ kcal: number | null; quantity_g: number | null }>,
+): number {
+  return rows.filter(
+    (row) =>
+      row.kcal == null ||
+      row.quantity_g == null ||
+      hasImpossibleKcalDensity(Number(row.kcal), Number(row.quantity_g)),
+  ).length
+}
+
+interface CanonicalNutritionReference {
+  kcal_per_100g: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  is_verified: boolean | null
+}
+
+export interface NutritionAuditRow {
+  kcal: number | null
+  quantity_g: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  source: string | null
+  food_db_id: number | null
+  food_db: CanonicalNutritionReference | CanonicalNutritionReference[] | null
+}
+
+export function countNutritionAnomalies(rows: NutritionAuditRow[]): {
+  impossibleDensity: number
+  impossibleMacroMass: number
+  canonicalMissingFoodDbId: number
+  canonicalDrift: number
+  unverifiedFoodDbReference: number
+} {
+  let impossibleMacroMass = 0
+  let canonicalMissingFoodDbId = 0
+  let canonicalDrift = 0
+  let unverifiedFoodDbReference = 0
+
+  for (const row of rows) {
+    const quantity = Number(row.quantity_g)
+    const macros = [Number(row.protein_g), Number(row.carbs_g), Number(row.fat_g)]
+    if (
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      macros.some((value) => !Number.isFinite(value) || value < 0) ||
+      macros.reduce((sum, value) => sum + value, 0) > quantity * 1.1 + 5
+    ) {
+      impossibleMacroMass += 1
+    }
+
+    const reference = Array.isArray(row.food_db) ? (row.food_db[0] ?? null) : row.food_db
+    if (Number.isInteger(row.food_db_id) && reference?.is_verified === false) {
+      unverifiedFoodDbReference += 1
+    }
+
+    const canonical = row.source === 'canonical_exact' || row.source === 'canonical_fuzzy'
+    if (!canonical) continue
+    if (!Number.isInteger(row.food_db_id)) {
+      canonicalMissingFoodDbId += 1
+      continue
+    }
+
+    if (!reference || !Number.isFinite(quantity) || quantity <= 0) continue
+    const factor = quantity / 100
+    const comparisons = [
+      { actual: row.kcal, expected: reference.kcal_per_100g, absolute: 10, ratio: 0.15 },
+      { actual: row.protein_g, expected: reference.protein_g, absolute: 2, ratio: 0.25 },
+      { actual: row.carbs_g, expected: reference.carbs_g, absolute: 2, ratio: 0.25 },
+      { actual: row.fat_g, expected: reference.fat_g, absolute: 2, ratio: 0.25 },
+    ]
+    const drifted = comparisons.some((comparison) => {
+      if (comparison.actual == null || comparison.expected == null) return false
+      const actual = Number(comparison.actual)
+      const expected = Number(comparison.expected) * factor
+      if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false
+      const tolerance = Math.max(comparison.absolute, Math.abs(expected) * comparison.ratio)
+      return Math.abs(actual - expected) > tolerance
+    })
+    if (drifted) canonicalDrift += 1
+  }
+
+  return {
+    impossibleDensity: countImpossibleMealDensities(rows),
+    impossibleMacroMass,
+    canonicalMissingFoodDbId,
+    canonicalDrift,
+    unverifiedFoodDbReference,
+  }
+}
+
+interface EducationalRotationEvent {
+  user_id: string | null
+  occurred_at: string
+  properties: Record<string, unknown> | null
+}
+
+export function countEducationalRotationAnomalies(rows: EducationalRotationEvent[]): {
+  immediateRepeatAfterExhaustion: number
+  selectedAllRecent: number
+} {
+  let immediateRepeatAfterExhaustion = 0
+  let selectedAllRecent = 0
+  const previousPhraseByUserAnchor = new Map<string, string>()
+
+  const sorted = [...rows].sort((left, right) => left.occurred_at.localeCompare(right.occurred_at))
+  for (const row of sorted) {
+    const properties = row.properties ?? {}
+    const reason = typeof properties.reason === 'string' ? properties.reason : ''
+    if (reason === 'selected_all_recent') selectedAllRecent += 1
+
+    const phraseId = typeof properties.phrase_id === 'string' ? properties.phrase_id : null
+    const anchor = typeof properties.anchor === 'string' ? properties.anchor : null
+    if (!row.user_id || !phraseId || !anchor) continue
+    const key = `${row.user_id}:${anchor}`
+    const previousPhrase = previousPhraseByUserAnchor.get(key)
+    const compatibleCount = Number(properties.compatible_count ?? 0)
+    if (
+      reason === 'selected_least_recent_after_exhaustion' &&
+      compatibleCount > 1 &&
+      previousPhrase === phraseId
+    ) {
+      immediateRepeatAfterExhaustion += 1
+    }
+    previousPhraseByUserAnchor.set(key, phraseId)
+  }
+
+  return { immediateRepeatAfterExhaustion, selectedAllRecent }
+}
 
 export interface BlocoAutofixDecision {
   canApply: boolean
@@ -198,10 +333,7 @@ export const dailyAuditFn = inngest.createFunction(
       const userIds = [...new Set(snaps.map((s) => s.user_id))]
       const tzByUser = new Map<string, string>()
       if (userIds.length > 0) {
-        const { data: us } = await supabase
-          .from('users')
-          .select('id, timezone')
-          .in('id', userIds)
+        const { data: us } = await supabase.from('users').select('id, timezone').in('id', userIds)
         for (const u of (us ?? []) as Array<{ id: string; timezone: string | null }>) {
           tzByUser.set(u.id, u.timezone ?? 'America/Sao_Paulo')
         }
@@ -321,6 +453,39 @@ export const dailyAuditFn = inngest.createFunction(
         }>,
       )
 
+      // 14. Invariante física de nutrição. Mesmo que parser, pending e tool
+      // falhem juntos, um total de refeição atribuído a uma porção pequena
+      // reaparece aqui em até poucas horas no relatório operacional.
+      const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+      const { data: nutritionRows, error: nutritionRowsError } = await supabase
+        .from('meal_logs')
+        .select(
+          'kcal, quantity_g, protein_g, carbs_g, fat_g, source, food_db_id, food_db:food_db_id(kcal_per_100g, protein_g, carbs_g, fat_g, is_verified)',
+        )
+        .gte('created_at', since24h)
+      throwIfQueryFailed(nutritionRowsError, 'audit nutrition density lookup failed')
+      const nutritionAnomalies = countNutritionAnomalies(
+        (nutritionRows ?? []) as unknown as NutritionAuditRow[],
+      )
+
+      const { count: nutritionGuardRejections, error: nutritionGuardError } = await supabase
+        .from('product_events')
+        .select('id', { count: 'exact', head: true })
+        .in('event', ['meal_calc.user_kcal_rejected', 'meal_calc.approved_nutrition_rejected'])
+        .gte('occurred_at', since24h)
+      throwIfQueryFailed(nutritionGuardError, 'audit nutrition guard lookup failed')
+
+      const { data: educationalRows, error: educationalRowsError } = await supabase
+        .from('product_events')
+        .select('user_id, occurred_at, properties')
+        .eq('event', 'edu_comment.curated_hit')
+        .gte('occurred_at', since24h)
+        .order('occurred_at', { ascending: true })
+      throwIfQueryFailed(educationalRowsError, 'audit educational rotation lookup failed')
+      const educationalRotationAnomalies = countEducationalRotationAnomalies(
+        (educationalRows ?? []) as unknown as EducationalRotationEvent[],
+      )
+
       return {
         unansweredRegistrations: unansweredUserIds.size,
         unansweredNames,
@@ -344,6 +509,14 @@ export const dailyAuditFn = inngest.createFunction(
         turnos: costs.length,
         timezoneCountryMismatches: timezoneMismatches.length,
         timezoneMismatchUserIds: timezoneMismatches.map((row) => row.id),
+        impossibleNutritionLogs: nutritionAnomalies.impossibleDensity,
+        impossibleMacroLogs: nutritionAnomalies.impossibleMacroMass,
+        canonicalMissingFoodDbId: nutritionAnomalies.canonicalMissingFoodDbId,
+        canonicalNutritionDrift: nutritionAnomalies.canonicalDrift,
+        unverifiedFoodDbReferences: nutritionAnomalies.unverifiedFoodDbReference,
+        nutritionGuardRejections: nutritionGuardRejections ?? 0,
+        educationalImmediateRepeats: educationalRotationAnomalies.immediateRepeatAfterExhaustion,
+        educationalSelectedAllRecent: educationalRotationAnomalies.selectedAllRecent,
       }
     })
 
@@ -353,14 +526,11 @@ export const dailyAuditFn = inngest.createFunction(
     const autofix = await step.run('auto-reconcile-blocos', async () => {
       const BLOCO_DIFF_TOL = 50
       const MAX_BLOCO_FIX = 8
-      const autofixEnabled = await loadBooleanConfig(
-        supabase,
-        'audit.bloco_autofix_enabled',
-        false,
-      )
-      const { data: progs } = await supabase
+      const autofixEnabled = await loadBooleanConfig(supabase, 'audit.bloco_autofix_enabled', false)
+      const { data: progs, error: progressRowsError } = await supabase
         .from('user_progress')
         .select('user_id, deficit_block, blocks_completed')
+      throwIfQueryFailed(progressRowsError, 'audit bloco progress lookup failed')
       const diverge: Array<{
         uid: string
         old: number
@@ -393,15 +563,7 @@ export const dailyAuditFn = inngest.createFunction(
       const decision = decideBlocoAutofix(diverge.length, MAX_BLOCO_FIX, autofixEnabled)
       if (decision.canApply) {
         for (const b of diverge) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any)
-            .from('user_progress')
-            .update({
-              deficit_block: b.neu,
-              blocks_completed: b.newB,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('user_id', b.uid)
+          await applyUserBlocoCorrection(supabase, b.uid, b.neu, b.newB)
           await supabase.from('product_events').insert({
             user_id: b.uid,
             event: 'audit.bloco_autofixed',
@@ -441,8 +603,10 @@ export const dailyAuditFn = inngest.createFunction(
     if (metrics.numericMismatch > 3) alerts.push(`⚠️ ${metrics.numericMismatch} numeric mismatch`)
     if (metrics.sentimentMismatch > 0)
       alerts.push(`⚠️ ${metrics.sentimentMismatch} sentiment mismatch`)
-    if (metrics.compositeRejected > 2) alerts.push(`⚠️ ${metrics.compositeRejected} composite rejected`)
-    if (!metrics.snapshotIntegrityOk) alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
+    if (metrics.compositeRejected > 2)
+      alerts.push(`⚠️ ${metrics.compositeRejected} composite rejected`)
+    if (!metrics.snapshotIntegrityOk)
+      alerts.push(`🔴 ${metrics.snapshotDivergencias} divergência snapshot`)
     if (metrics.balance != null && metrics.balance < 20)
       alerts.push(`🔴 saldo OpenRouter $${metrics.balance.toFixed(2)} < $20`)
     if (metrics.reevaluationPending > 0)
@@ -456,6 +620,32 @@ export const dailyAuditFn = inngest.createFunction(
     if (metrics.timezoneCountryMismatches > 0)
       alerts.push(
         `🔴 ${metrics.timezoneCountryMismatches} paciente(s) com país confirmado e timezone incompatível`,
+      )
+    if (metrics.impossibleNutritionLogs > 0)
+      alerts.push(
+        `🔴 ${metrics.impossibleNutritionLogs} meal_log(s) com densidade calórica fisicamente impossível`,
+      )
+    if (metrics.nutritionGuardRejections > 0)
+      alerts.push(
+        `⚠️ ${metrics.nutritionGuardRejections} valor(es) nutricional(is) impossível(is) bloqueado(s)`,
+      )
+    if (metrics.impossibleMacroLogs > 0)
+      alerts.push(`🔴 ${metrics.impossibleMacroLogs} meal_log(s) com massa de macros impossível`)
+    if (metrics.canonicalMissingFoodDbId > 0)
+      alerts.push(
+        `🔴 ${metrics.canonicalMissingFoodDbId} meal_log(s) canônico(s) sem referência food_db`,
+      )
+    if (metrics.canonicalNutritionDrift > 0)
+      alerts.push(
+        `🔴 ${metrics.canonicalNutritionDrift} meal_log(s) divergente(s) da referência canônica`,
+      )
+    if (metrics.unverifiedFoodDbReferences > 0)
+      alerts.push(
+        `🔴 ${metrics.unverifiedFoodDbReferences} meal_log(s) ligado(s) a referência alimentar não verificada`,
+      )
+    if (metrics.educationalImmediateRepeats > 0 || metrics.educationalSelectedAllRecent > 0)
+      alerts.push(
+        `⚠️ rotação educativa: ${metrics.educationalImmediateRepeats} repetição(ões) imediata(s), ${metrics.educationalSelectedAllRecent} fallback(s) legado(s)`,
       )
 
     const overallStatus = alerts.length === 0 ? '✅ Tudo OK' : '⚠️ Atenção'
@@ -472,6 +662,9 @@ export const dailyAuditFn = inngest.createFunction(
       `• Reavaliação pendente (+24h): ${metrics.reevaluationPending}\n` +
       `• Registro sem resposta: ${metrics.unansweredRegistrations}${metrics.unansweredRegistrations > 0 ? ` (${metrics.unansweredNames})` : ''}\n` +
       `• País/timezone incompatível: ${metrics.timezoneCountryMismatches}\n` +
+      `• Densidade nutricional impossível: ${metrics.impossibleNutritionLogs} | bloqueados: ${metrics.nutritionGuardRejections}\n` +
+      `• Macros impossíveis: ${metrics.impossibleMacroLogs} | canônico sem ID: ${metrics.canonicalMissingFoodDbId} | drift: ${metrics.canonicalNutritionDrift} | referência não verificada: ${metrics.unverifiedFoodDbReferences}\n` +
+      `• Rotação educativa: ${metrics.educationalImmediateRepeats} repetição imediata | legado: ${metrics.educationalSelectedAllRecent}\n` +
       `\n*Auto-correção (blocos 7700)*\n` +
       (autofix.circuitBroke
         ? `• 🔴 ${autofix.divergeCount} divergentes — BLOQUEADO (circuit-breaker)\n`
@@ -479,9 +672,9 @@ export const dailyAuditFn = inngest.createFunction(
           ? autofix.divergeCount > 0
             ? `• ⚠️ desligada — ${autofix.divergeCount} divergente(s) detectado(s), 0 correções\n`
             : `• ✅ desligada — todos em sincronia (0 correções)\n`
-        : autofix.applied > 0
-          ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
-          : `• ✅ todos em sincronia (0 correções)\n`) +
+          : autofix.applied > 0
+            ? `• 🔧 ${autofix.applied} corrigido(s): ${autofix.details.join(', ')}\n`
+            : `• ✅ todos em sincronia (0 correções)\n`) +
       `\n*Defesas ativas*\n` +
       `• Card canônico substituiu: ${metrics.cardReplaced}\n` +
       `• Bloco solto substituído: ${metrics.looseBlocoReplaced}\n` +

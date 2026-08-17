@@ -1,14 +1,17 @@
 import { calcDailyXP, computeProgress, creditDayToBloco } from '@mpp/core'
 import type { DailySnapshot, UserProgress } from '@mpp/core'
+import type { ServiceClient } from '@mpp/db'
 import {
   getGapForDate,
   getLocalDateMinusDays,
+  getLocalDayUtcBounds,
   getLocalHour,
-  getTzOffset,
   loadCalcConfig,
   loadDailyTargets,
 } from '@mpp/agent'
 import { inngest } from '../client.js'
+import { finalizeDailyClose } from '../lib/daily-close-finalizer.js'
+import { resolveClosedDayStatus } from '../lib/day-status-policy.js'
 import { createWorkerDeps } from '../lib/env.js'
 
 /**
@@ -34,10 +37,11 @@ export const dailyCloserFn = inngest.createFunction(
       const { supabase } = createWorkerDeps()
       // Pega users cujo timezone tem offset que faz "agora" ser ~00h local
       // Simplificação MVP: pega todos active e a função verifica internamente
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('id, timezone')
         .eq('status', 'active')
+      if (error) throw new Error(error.message ?? 'active users lookup failed')
       return data ?? []
     })
 
@@ -78,12 +82,13 @@ async function closeUserDay(
 
   // Já fechado?
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existing } = await (supabase as any)
+  const { data: existing, error: existingError } = await (supabase as any)
     .from('daily_snapshots')
     .select('id, day_closed, day_status, gap_reminder_sent_at')
     .eq('user_id', userId)
     .eq('date', yesterday)
     .maybeSingle()
+  if (existingError) throw new Error(existingError.message ?? 'snapshot close lookup failed')
   const existingTyped = existing as {
     id: string
     day_closed: boolean | null
@@ -94,42 +99,46 @@ async function closeUserDay(
   if (existingTyped?.day_closed) return { skipped: true, reason: 'já fechado' }
 
   // Lê histórico do dia
-  const startOfDay = `${yesterday}T00:00:00${getTzOffset(userTimezone)}`
-  const endOfDay = `${yesterday}T23:59:59${getTzOffset(userTimezone)}`
+  const { startIso: startOfDay, endExclusiveIso: endOfDay } = getLocalDayUtcBounds(
+    userTimezone,
+    yesterday,
+  )
 
-  const [{ data: meals }, { data: workouts }, { data: messages }] = await Promise.all([
+  const [mealsResult, workoutsResult, messagesResult] = await Promise.all([
     supabase
       .from('meal_logs')
       .select('food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at')
       .eq('user_id', userId)
       .gte('consumed_at', startOfDay)
-      .lte('consumed_at', endOfDay),
+      .lt('consumed_at', endOfDay),
     supabase
       .from('workout_logs')
       .select('workout_type, duration_min, estimated_kcal, performed_at')
       .eq('user_id', userId)
       .gte('performed_at', startOfDay)
-      .lte('performed_at', endOfDay),
+      .lt('performed_at', endOfDay),
     supabase
       .from('messages')
       .select('direction, content')
       .eq('user_id', userId)
       .gte('created_at', startOfDay)
-      .lte('created_at', endOfDay)
+      .lt('created_at', endOfDay)
       .limit(50),
   ])
+  const historyError = mealsResult.error ?? workoutsResult.error ?? messagesResult.error
+  if (historyError) throw new Error(historyError.message ?? 'daily close history lookup failed')
+  const meals = mealsResult.data
+  const workouts = workoutsResult.data
+  const messages = messagesResult.data
 
   // Verifica se houve QUALQUER atividade no dia (meal, workout ou msg IN).
   // Antes: skipava se sem meal/workout → quebrava streak de quem só conversou.
   // Agora: msg IN também conta como "dia ativo" — cria snapshot vazio com
   // training_done=false mas atualiza last_active_date pra preservar streak.
-  const hadIncomingMsgs =
-    (messages ?? []).some((m) => (m as { direction: string }).direction === 'in')
-  if (
-    (!meals || meals.length === 0) &&
-    (!workouts || workouts.length === 0) &&
-    !hadIncomingMsgs
-  ) {
+  const hadIncomingMsgs = (messages ?? []).some(
+    (m) => (m as { direction: string }).direction === 'in',
+  )
+  if ((!meals || meals.length === 0) && (!workouts || workouts.length === 0) && !hadIncomingMsgs) {
     // BUG corrigido (Gleidson 2026-05-18): paciente sumiu por 3 dias mas
     // current_streak ficou congelado em 2 (LLM continuou dizendo "2 dias firmes"
     // nas msgs automáticas). Causa: daily-closer skipava dia inativo sem tocar
@@ -137,11 +146,14 @@ async function closeUserDay(
     //
     // Fix: ZERA current_streak quando há gap >= 2 dias desde last_active_date.
     // (1 dia de gap é tolerado — paciente pode pular um dia esporadicamente.)
-    const { data: prog } = await supabase
+    const { data: prog, error: progressLookupError } = await supabase
       .from('user_progress')
       .select('current_streak, last_active_date')
       .eq('user_id', userId)
       .maybeSingle()
+    if (progressLookupError) {
+      throw new Error(progressLookupError.message ?? 'inactive progress lookup failed')
+    }
     const progTyped = prog as {
       current_streak: number | null
       last_active_date: string | null
@@ -154,10 +166,13 @@ async function closeUserDay(
         (yesterdayDate.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24),
       )
       if (gapDays >= 2) {
-        await supabase
+        const { error: streakResetError } = await supabase
           .from('user_progress')
           .update({ current_streak: 0, updated_at: new Date().toISOString() })
           .eq('user_id', userId)
+        if (streakResetError) {
+          throw new Error(streakResetError.message ?? 'inactive streak reset failed')
+        }
         await supabase.from('product_events').insert({
           user_id: userId,
           event: 'streak.reset_inactive',
@@ -186,21 +201,19 @@ async function closeUserDay(
   const proteinG = (meals ?? []).reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
   const carbsG = (meals ?? []).reduce((s, m) => s + (Number(m.carbs_g) || 0), 0)
   const fatG = (meals ?? []).reduce((s, m) => s + (Number(m.fat_g) || 0), 0)
-  const exerciseKcal = (workouts ?? []).reduce(
-    (s, w) => s + (Number(w.estimated_kcal) || 0),
-    0,
-  )
+  const exerciseKcal = (workouts ?? []).reduce((s, w) => s + (Number(w.estimated_kcal) || 0), 0)
   const trainingDone = (workouts ?? []).length > 0
 
   // Pega target do profile + deficit_level (pra bloco 7700 incluir design_deficit
   // estrutural da recomp). Sem isso, paciente on-plan (consumed=target) tinha
   // dailyBalance=0 e bloco nunca crescia. Roberto reportou em 2026-05-09 e
   // 2026-05-12. A migration SQL daily_close_user já corrige; replicamos aqui.
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('user_profiles')
     .select('current_protocol, deficit_level')
     .eq('user_id', userId)
     .maybeSingle()
+  if (profileError) throw new Error(profileError.message ?? 'daily close profile lookup failed')
 
   // Carrega config editável (cache 60s). Constantes vêm de global_config calc.*
   const calcConfig = await loadCalcConfig(supabase)
@@ -229,8 +242,8 @@ async function closeUserDay(
     calcConfig,
   )
 
-  // Upsert daily_snapshot. day_status é atualizado em UPDATE separado abaixo
-  // (depois de computar gap-check), pra evitar reordenação grande dessa função.
+  // Mantém o snapshot aberto enquanto calcula status e progresso. A RPC final
+  // fecha snapshot + user_progress em uma única transação.
   const snapshotData = {
     user_id: userId,
     date: yesterday,
@@ -244,24 +257,28 @@ async function closeUserDay(
     training_done: trainingDone,
     xp_earned: xpEarned,
     current_protocol: profile?.current_protocol ?? null,
-    day_closed: true,
-    closed_at: new Date().toISOString(),
   }
 
-  const { data: snap } = await supabase
+  const { data: snap, error: snapshotUpsertError } = await supabase
     .from('daily_snapshots')
     .upsert(snapshotData, { onConflict: 'user_id,date' })
     .select('*')
     .single()
 
+  if (snapshotUpsertError) {
+    throw new Error(snapshotUpsertError.message ?? 'failed to upsert snapshot')
+  }
   if (!snap) throw new Error('failed to upsert snapshot')
 
   // computeProgress
-  const { data: prevProgress } = await supabase
+  const { data: prevProgress, error: prevProgressError } = await supabase
     .from('user_progress')
     .select('*')
     .eq('user_id', userId)
     .maybeSingle()
+  if (prevProgressError) {
+    throw new Error(prevProgressError.message ?? 'previous progress lookup failed')
+  }
 
   const prev: UserProgress = {
     xpTotal: prevProgress?.xp_total ?? 0,
@@ -271,9 +288,7 @@ async function closeUserDay(
     blocksCompleted: prevProgress?.blocks_completed ?? 0,
     deficitBlock: prevProgress?.deficit_block ?? 0,
     badgesEarned: prevProgress?.badges_earned ?? [],
-    lastActiveDate: prevProgress?.last_active_date
-      ? new Date(prevProgress.last_active_date)
-      : null,
+    lastActiveDate: prevProgress?.last_active_date ? new Date(prevProgress.last_active_date) : null,
   }
 
   const dailySnap: DailySnapshot = {
@@ -290,11 +305,12 @@ async function closeUserDay(
 
   // Design deficit estrutural: só recomp usa (400/500/600 conforme fome).
   // Outros protocolos (ganho_massa, manutenção) = 0 — bloco só conta extras.
-  const profileTyped = profile as { current_protocol?: string | null; deficit_level?: number | null } | null
+  const profileTyped = profile as {
+    current_protocol?: string | null
+    deficit_level?: number | null
+  } | null
   const designDeficit =
-    profileTyped?.current_protocol === 'recomposicao'
-      ? (profileTyped?.deficit_level ?? 500)
-      : 0
+    profileTyped?.current_protocol === 'recomposicao' ? (profileTyped?.deficit_level ?? 500) : 0
 
   // BUG (Erika 2026-05-14): paciente fez onboarding ontem, não registrou
   // nenhuma refeição, dia fechou e somou 1.969 kcal no bloco 7700 — porque
@@ -322,34 +338,29 @@ async function closeUserDay(
   //  - há padrão de refeição estabelecido (≥5 dias ativos no histórico 14d)
   //  - lembrete FOI enviado (gap_reminder_sent_at IS NOT NULL)
   //  - gap continua na DATA FECHANDO (paciente não registrou nem disse "pulei")
-  let dayStatus: 'complete' | 'incomplete_no_response' = 'complete'
-  if (existingTyped?.gap_reminder_sent_at && hasActivity) {
-    const gapInfo = await getGapForDate(supabase, userId, userTimezone, yesterday)
-    if (gapInfo.gap.size > 0 && !gapInfo.pattern.fallbackUsed) {
-      dayStatus = 'incomplete_no_response'
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('product_events').insert({
-        user_id: userId,
-        event: 'bloco7700.skipped_incomplete_day',
-        properties: {
-          date: yesterday,
-          gap: Array.from(gapInfo.gap),
-          reason: 'lembrete enviado, paciente não respondeu',
-        },
-      })
-    }
+  const gapInfo = hasActivity
+    ? await getGapForDate(supabase, userId, userTimezone, yesterday)
+    : null
+  const finalDayStatus = resolveClosedDayStatus({
+    existingDayStatus: existingTyped?.day_status ?? null,
+    reminderSent: Boolean(existingTyped?.gap_reminder_sent_at),
+    hasActivity,
+    gapCount: gapInfo?.gap.size ?? 0,
+    skippedCount: gapInfo?.skipped.size ?? 0,
+    fallbackPattern: gapInfo?.pattern.fallbackUsed ?? false,
+  })
+  if (finalDayStatus === 'incomplete_no_response') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('product_events').insert({
+      user_id: userId,
+      event: 'bloco7700.skipped_incomplete_day',
+      properties: {
+        date: yesterday,
+        gap: Array.from(gapInfo?.gap ?? []),
+        reason: 'lembrete enviado, paciente não respondeu',
+      },
+    })
   }
-
-  // Persiste day_status no snapshot (UPDATE separado — coluna ainda não está
-  // nos types gerados do supabase, regerar com `pnpm db:types` depois).
-  // Preserva user_skipped se já estava setado (paciente confirmou explicitamente).
-  const finalDayStatus =
-    existingTyped?.day_status === 'user_skipped' ? 'user_skipped' : dayStatus
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
-    .from('daily_snapshots')
-    .update({ day_status: finalDayStatus })
-    .eq('id', snap.id)
 
   // O CRÉDITO do bloco vem do engine (creditDayToBloco — fonte única da regra,
   // ver @mpp/core/engine/bloco + docs/CALCULO-MPP.md §3). As condições abaixo
@@ -395,23 +406,23 @@ async function closeUserDay(
 
   const next = computeProgress(dailySnap, prev, calcConfig, dayCredit)
 
-  await supabase
-    .from('user_progress')
-    .upsert(
-      {
-        user_id: userId,
-        xp_total: next.xpTotal,
-        level: next.level,
-        current_streak: next.currentStreak,
-        longest_streak: next.longestStreak,
-        blocks_completed: next.blocksCompleted,
-        deficit_block: next.deficitBlock,
-        badges_earned: next.badgesEarned,
-        last_active_date: yesterday,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    )
+  const finalized = await finalizeDailyClose(supabase, {
+    userId,
+    snapshotId: snap.id,
+    dayStatus: finalDayStatus,
+    xpTotal: next.xpTotal,
+    level: next.level,
+    currentStreak: next.currentStreak,
+    longestStreak: next.longestStreak,
+    blocksCompleted: next.blocksCompleted,
+    deficitBlock: next.deficitBlock,
+    badgesEarned: next.badgesEarned,
+    lastActiveDate: yesterday,
+    closedAt: new Date().toISOString(),
+  })
+  if (!finalized.applied) {
+    return { skipped: true, reason: 'fechado concorrentemente' }
+  }
 
   // Bonus: se chegou em badge nova, registra evento de produto
   const newBadges = next.badgesEarned.filter((b) => !prev.badgesEarned.includes(b))
@@ -461,7 +472,7 @@ async function closeUserDay(
       calories_target: targets.calories_target,
       exercise_calories: Math.round(exerciseKcal),
       training_done: trainingDone,
-      day_status: snap.day_status ?? null,
+      day_status: finalDayStatus,
       xp_earned: xpEarned,
       blocks_completed: next.blocksCompleted,
       blocks_completed_delta: next.blocksCompleted - prev.blocksCompleted,
@@ -498,55 +509,23 @@ async function closeUserDay(
  * vence — engagement matinal pega e pede o peso atualizado ao paciente.
  */
 async function checkReevaluation(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
+  supabase: ServiceClient,
   userId: string,
   closingDate: string,
 ): Promise<void> {
-  const { data: prog } = await supabase
-    .from('user_progress')
-    .select('next_reevaluation')
-    .eq('user_id', userId)
-    .maybeSingle()
-  const nextReval = (prog as { next_reevaluation: string | null } | null)?.next_reevaluation
-
-  if (!nextReval) {
-    // Bootstrap: primeiro snapshot do paciente + 14 dias
-    const { data: firstSnap } = await supabase
-      .from('daily_snapshots')
-      .select('date')
-      .eq('user_id', userId)
-      .order('date', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    const firstDate = (firstSnap as { date: string } | null)?.date
-    if (firstDate) {
-      const d = new Date(firstDate)
-      d.setDate(d.getDate() + 14)
-      await supabase
-        .from('user_progress')
-        .update({ next_reevaluation: d.toISOString().slice(0, 10) })
-        .eq('user_id', userId)
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: 'advance_reevaluation_schedule',
+        args: { p_user_id: string; p_closing_date: string },
+      ) => Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>
     }
-    return
-  }
-
-  // Due? closingDate (data fechada) >= next_reevaluation
-  if (closingDate >= nextReval) {
-    await supabase.from('product_events').insert({
-      user_id: userId,
-      event: 'reevaluation.due',
-      properties: { due_date: nextReval, closing_date: closingDate },
-    })
-    // Avança +14 dias a partir da data devida (não da data fechada — mantém
-    // cadência fixa de 14 em 14 mesmo se houve atraso no fechamento).
-    const d = new Date(nextReval)
-    d.setDate(d.getDate() + 14)
-    await supabase
-      .from('user_progress')
-      .update({ next_reevaluation: d.toISOString().slice(0, 10) })
-      .eq('user_id', userId)
-  }
+  ).rpc('advance_reevaluation_schedule', {
+    p_user_id: userId,
+    p_closing_date: closingDate,
+  })
+  if (error) throw new Error(error.message ?? 'reevaluation schedule update failed')
+  if (!data) throw new Error('reevaluation schedule returned no result')
 }
 
 // Helpers de timezone agora vêm de @mpp/agent (timezone-utils.ts).

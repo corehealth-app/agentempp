@@ -27,13 +27,7 @@ export interface VisionConfig {
   heliconeApiKey?: string
 }
 
-export type VisionImageType =
-  | 'meal'
-  | 'body'
-  | 'scale'
-  | 'nutrition_label'
-  | 'equipment'
-  | 'other'
+export type VisionImageType = 'meal' | 'body' | 'scale' | 'nutrition_label' | 'equipment' | 'other'
 
 export interface VisionMealAnalysis {
   type: 'meal'
@@ -44,6 +38,12 @@ export interface VisionMealAnalysis {
     notes?: string
   }>
   meal_context?: string
+  /** A própria análise de refeição viu uma tabela nutricional legível. */
+  nutrition_label_visible?: boolean
+  /** OCR secundário da tabela, quando ela aparece junto do produto/refeição. */
+  nutrition_label?: VisionNutritionLabelAnalysis
+  /** Falha do OCR secundário. Mantém a refeição utilizável, mas permite fail-closed no caller. */
+  nutrition_label_error?: string
   raw_response: string
   promptTokens: number
   completionTokens: number
@@ -108,7 +108,7 @@ export interface VisionEquipmentAnalysis {
   latencyMs: number
 }
 
-/** Tabela nutricional de embalagem (Amanda 2026-05-16 mandou foto de rótulo
+/** Tabela nutricional brasileira ou Nutrition Facts dos EUA (Amanda 2026-05-16 mandou foto de rótulo
  * 3x e gemini-2.5-flash não conseguiu extrair os valores; agente ficou
  * pedindo foto melhor em loop). Quando vision detecta rótulo, faz OCR
  * específico pra extrair kcal/proteína/carbo/gordura POR PORÇÃO (e por 100g
@@ -116,6 +116,8 @@ export interface VisionEquipmentAnalysis {
  * customizados via `corrections[]` em vez de cair no estimate genérico. */
 export interface VisionNutritionLabelAnalysis {
   type: 'nutrition_label'
+  /** Falha estruturada do OCR. Mantém a detecção para o caller bloquear estimativas. */
+  nutrition_label_error?: string
   /** Nome do produto na embalagem (ex: "iogurte whey de pêssego", "biscoito X"). */
   product_name: string | null
   /** Tamanho da porção em GRAMAS conforme rótulo (ex: 170 pra "porção 170g"). */
@@ -209,6 +211,9 @@ Para CADA item, julgue honestamente:
 - Se não conseguir identificar absolutamente nada, retorne \`items: []\` e descreva em \`meal_context\`.
 - \`meal_context\`: 1 frase curta sobre o tipo de refeição (ex: "café da manhã salgado", "almoço executivo", "lanche da tarde").
 - Se a foto NÃO for de comida, retorne items=[] e meal_context com a descrição.
+- Se houver qualquer quadro "Nutrition Facts"/tabela nutricional legível na
+  embalagem, retorne nutrition_label_visible=true, mesmo que o produto também
+  seja alimento pronto para consumo. Caso contrário, use false.
 
 Retorne APENAS JSON com este formato exato:
 {
@@ -217,7 +222,8 @@ Retorne APENAS JSON com este formato exato:
     {"name": "bacon frito", "quantity_g_estimate": 30, "confidence": 0.85},
     {"name": "pão de forma tostado", "quantity_g_estimate": 60, "confidence": 0.9}
   ],
-  "meal_context": "café da manhã salgado tradicional"
+  "meal_context": "café da manhã salgado tradicional",
+  "nutrition_label_visible": false
 }`
 
 const BODY_SYSTEM_PROMPT = `Você é um avaliador físico experiente analisando uma foto corporal.
@@ -270,7 +276,7 @@ const OTHER_SYSTEM_PROMPT = `Você é um descritor visual em pt-BR. Em 2-3 frase
 Retorne APENAS JSON:
 { "description": "..." }`
 
-const NUTRITION_LABEL_SYSTEM_PROMPT = `Você é um leitor especializado em TABELAS NUTRICIONAIS de embalagens brasileiras. Sua única tarefa: extrair os valores numéricos da tabela.
+const NUTRITION_LABEL_SYSTEM_PROMPT = `Você é um leitor especializado em TABELAS NUTRICIONAIS de embalagens do Brasil e dos Estados Unidos. Sua única tarefa: extrair os valores numéricos da tabela.
 
 # Como ler a tabela (padrão brasileiro ANVISA)
 
@@ -289,6 +295,14 @@ Linhas típicas (na ordem que costumam aparecer):
 8. Sódio (ignore)
 
 ⚠️ Algumas embalagens mostram só **POR 100g** em vez de "por porção". Outras mostram **AMBOS** (2 colunas: "por porção" + "por 100g"). Capture o que estiver visível.
+
+# Como ler Nutrition Facts (padrão dos EUA)
+
+- "Serving size 1 wrap (43g)" significa porção de 43g.
+- "Calories 70" é o valor POR PORÇÃO, não por 100g.
+- Extraia "Total Fat", "Total Carbohydrate" e "Protein"; ignore os percentuais % Daily Value.
+- Não confunda "Dietary Fiber" ou "Net Carbs" com carboidratos totais. Use sempre "Total Carbohydrate" em carbs_g.
+- Quando houver "about N servings per container", isso é quantidade de porções na embalagem e NÃO multiplica o que foi consumido.
 
 # Como achar o serving_size (porção)
 
@@ -328,7 +342,9 @@ Retorne APENAS JSON com este formato exato:
   "notes": "tabela completa, valores nítidos"
 }`
 
-const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 6 palavras (sem aspas, sem nada além):
+const CLASSIFIER_PROMPT = `Você classifica fotos enviadas a um agente nutricional brasileiro. Retorne APENAS uma das 6 palavras (sem aspas, sem nada além).
+
+PRIORIDADE: se um quadro "Nutrition Facts" ou tabela de Valor energético/Proteínas/Carboidratos/Gorduras estiver legível, classifique como nutrition_label mesmo que a embalagem, bebida ou alimento também apareça:
 
 meal             — foto de refeição/comida no prato/bebida pronta pra consumir
 nutrition_label  — foto de TABELA NUTRICIONAL (rótulo da embalagem, quadro de "Valor energético / Carboidratos / Proteínas / Gorduras" tipicamente em pt-BR ANVISA)
@@ -336,6 +352,23 @@ body             — foto corporal de pessoa (frente/lado/costas)
 scale            — foto de balança digital, fita métrica, ou medidor mostrando número
 equipment        — foto de EQUIPAMENTOS DE MUSCULAÇÃO ou cardio: halteres, anilhas, barras, máquinas (leg press, supino, smith), elásticos, banco, esteira, bike, sala de academia, área de treino em casa
 other            — qualquer outra coisa (embalagem fechada sem tabela visível, paisagem, etc)`
+
+const CLASSIFIER_RUNTIME_CONTRACT = `# CONTRATO RUNTIME VISION CLASSIFIER V1 — prevalece sobre instruções anteriores
+Retorne APENAS uma destas 6 palavras: meal, body, scale, nutrition_label, equipment ou other.
+Se houver um quadro "Nutrition Facts" ou tabela nutricional legível, retorne nutrition_label, mesmo que a imagem também mostre alimento, bebida ou embalagem.`
+
+const MEAL_RUNTIME_CONTRACT = `# CONTRATO RUNTIME VISION MEAL V1 — prevalece sobre instruções anteriores
+- A mensagem/legenda serve para identificar ou corrigir o que está VISÍVEL; não crie itens que existem apenas na legenda. O agente principal processa a legenda separadamente.
+- Se foto e legenda nomearem o mesmo alimento, emita esse alimento uma única vez.
+- Se houver "Nutrition Facts" ou tabela nutricional legível, use nutrition_label_visible=true. Caso contrário, use false.
+- O JSON deve conter exatamente items, meal_context e nutrition_label_visible; cada item deve conter name, quantity_g_estimate e confidence.`
+
+function appendRuntimeContract(prompt: string, contract: string): string {
+  const marker = contract.split('\n', 1)[0]
+  const markerIndex = marker ? prompt.indexOf(marker) : -1
+  const editorialPrompt = markerIndex >= 0 ? prompt.slice(0, markerIndex).trim() : prompt.trim()
+  return `${editorialPrompt}\n\n${contract}`
+}
 
 const EQUIPMENT_SYSTEM_PROMPT = `Você é um avaliador de equipamentos de treino. Olha a foto e enumera os equipamentos disponíveis pra musculação/cardio com PRECISÃO. Retorne APENAS um JSON válido com este schema:
 
@@ -374,6 +407,54 @@ export interface VisionPromptOverrides {
   equipment?: string
   other?: string
   classifier?: string
+}
+
+function parseVisionNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const number = Number(String(value).replace(',', '.'))
+  return Number.isFinite(number) ? number : null
+}
+
+export function normalizeNonNegativeVisionNumber(value: unknown): number | null {
+  const number = parseVisionNumber(value)
+  return number != null && number >= 0 ? number : null
+}
+
+export function normalizeVisionConfidence(value: unknown): number {
+  const number = parseVisionNumber(value)
+  if (number == null) return 0
+  return Math.max(0, Math.min(1, number))
+}
+
+export function normalizeMealOutputItems(rawItems: unknown): VisionMealAnalysis['items'] {
+  if (!Array.isArray(rawItems)) return []
+
+  return rawItems.flatMap((rawItem) => {
+    if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) return []
+    const item = rawItem as Record<string, unknown>
+    const rawName = item.name ?? item.item ?? item.food_name ?? item.food
+    if (typeof rawName !== 'string' || rawName.trim().length === 0) return []
+
+    const rawQuantity =
+      item.quantity_g_estimate ??
+      item.estimate_grams ??
+      item.grams ??
+      item.qty_g ??
+      item.quantity ??
+      item.amount_g
+    const parsedQuantity = parseVisionNumber(rawQuantity)
+    const quantity = parsedQuantity != null && parsedQuantity > 0 ? parsedQuantity : 0
+    const rawConfidence = item.confidence ?? item.conf ?? 0.5
+
+    return [
+      {
+        name: rawName.trim(),
+        quantity_g_estimate: quantity,
+        confidence: quantity > 0 ? normalizeVisionConfidence(rawConfidence) : 0,
+        notes: typeof item.notes === 'string' ? item.notes : undefined,
+      },
+    ]
+  })
 }
 
 /**
@@ -434,13 +515,16 @@ export class GeminiVision {
     this.model = cfg.model ?? 'anthropic/claude-sonnet-4.5'
     this.nutritionLabelModel = cfg.nutritionLabelModel ?? this.model
     this.prompts = {
-      meal: cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT,
+      meal: appendRuntimeContract(cfg.prompts?.meal ?? MEAL_SYSTEM_PROMPT, MEAL_RUNTIME_CONTRACT),
       body: cfg.prompts?.body ?? BODY_SYSTEM_PROMPT,
       scale: cfg.prompts?.scale ?? SCALE_SYSTEM_PROMPT,
       nutrition_label: cfg.prompts?.nutrition_label ?? NUTRITION_LABEL_SYSTEM_PROMPT,
       equipment: cfg.prompts?.equipment ?? EQUIPMENT_SYSTEM_PROMPT,
       other: cfg.prompts?.other ?? OTHER_SYSTEM_PROMPT,
-      classifier: cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
+      classifier: appendRuntimeContract(
+        cfg.prompts?.classifier ?? CLASSIFIER_PROMPT,
+        CLASSIFIER_RUNTIME_CONTRACT,
+      ),
     }
   }
 
@@ -482,10 +566,51 @@ export class GeminiVision {
   ): Promise<VisionAnalysis> {
     const type = options.hint ?? (await this.classify(imageUrl))
 
-    if (type === 'meal') return this.analyzeMeal(imageUrl, options.userMessage)
+    if (type === 'meal') {
+      const meal = await this.analyzeMeal(imageUrl, options.userMessage)
+      if (!meal.nutrition_label_visible) return meal
+      try {
+        return {
+          ...meal,
+          nutrition_label: await this.analyzeNutritionLabel(imageUrl, options.userMessage),
+        }
+      } catch (error) {
+        // A refeição continua utilizável, mas o caller sabe que viu um rótulo e
+        // deve impedir cálculo não confiável até conseguir os quatro macros.
+        return {
+          ...meal,
+          nutrition_label_error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
     if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
     if (type === 'scale') return this.analyzeScale(imageUrl)
-    if (type === 'nutrition_label') return this.analyzeNutritionLabel(imageUrl, options.userMessage)
+    if (type === 'nutrition_label') {
+      try {
+        return await this.analyzeNutritionLabel(imageUrl, options.userMessage)
+      } catch (error) {
+        const emptyNutrition = {
+          kcal: null,
+          protein_g: null,
+          carbs_g: null,
+          fat_g: null,
+        }
+        return {
+          type: 'nutrition_label',
+          product_name: null,
+          serving_size_g: null,
+          per_serving: { ...emptyNutrition },
+          per_100g: { ...emptyNutrition },
+          confidence: 0,
+          notes: 'A tabela foi detectada, mas os valores não puderam ser extraídos com segurança.',
+          nutrition_label_error: error instanceof Error ? error.message : String(error),
+          raw_response: '',
+          promptTokens: 0,
+          completionTokens: 0,
+          latencyMs: 0,
+        }
+      }
+    }
     if (type === 'equipment') return this.analyzeEquipment(imageUrl)
     return this.analyzeOther(imageUrl)
   }
@@ -521,8 +646,7 @@ export class GeminiVision {
       (allowedLocations as readonly string[]).includes(parsed.location)
         ? (parsed.location as (typeof allowedLocations)[number])
         : null
-    const confidenceRaw = typeof parsed.confidence === 'number' ? parsed.confidence : 0
-    const confidence = Math.max(0, Math.min(1, confidenceRaw))
+    const confidence = normalizeVisionConfidence(parsed.confidence)
     return {
       type: 'equipment',
       equipment: equipmentList,
@@ -567,35 +691,8 @@ export class GeminiVision {
     // Parser tolerante — modelos novos (gemini 2.5 / claude sonnet) divergem do schema:
     // aceita items|meal_contents|foods e cada item aceita name|item|food_name
     // + quantity_g_estimate|estimate_grams|grams|qty_g|quantity. Strings viram numbers.
-    const rawItems =
-      (parsed.items as unknown[]) ??
-      (parsed.meal_contents as unknown[]) ??
-      (parsed.foods as unknown[]) ??
-      []
-    const itemsRaw: VisionMealAnalysis['items'] = (rawItems as Array<Record<string, unknown>>).map(
-      (it) => {
-        const name =
-          (it.name as string) ??
-          (it.item as string) ??
-          (it.food_name as string) ??
-          (it.food as string) ??
-          ''
-        const qtyRaw =
-          it.quantity_g_estimate ??
-          it.estimate_grams ??
-          it.grams ??
-          it.qty_g ??
-          it.quantity ??
-          it.amount_g
-        const confRaw = it.confidence ?? it.conf ?? 0.5
-        return {
-          name,
-          quantity_g_estimate: Number(qtyRaw) || 0,
-          confidence: Number(confRaw) || 0,
-          notes: (it.notes as string | undefined) ?? undefined,
-        }
-      },
-    )
+    const rawItems = [parsed.items, parsed.meal_contents, parsed.foods].find(Array.isArray) ?? []
+    const itemsRaw = normalizeMealOutputItems(rawItems)
     // Bug Roberto 2026-06-01 08:50 BRT: Claude vision retornou "pão de forma
     // tostado (25g)" 2x na MESMA proposta (alucinação OU 2 pedaços idênticos
     // na foto). Paciente teve que editar manualmente. Aqui dedup por
@@ -632,10 +729,19 @@ export class GeminiVision {
       (parsed.context as string) ??
       (parsed.description as string) ??
       undefined
+    const normalizedLabelEvidence = `${meal_context ?? ''} ${raw}`
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+    const nutritionLabelVisible =
+      parsed.nutrition_label_visible === true ||
+      /\b(nutrition\s+facts|serving\s+size|tabela\s+nutricional|rotulo\s+(?:esta\s+)?visivel|rotulo\s+nutricional|segundo\s+(?:o\s+)?rotulo|rotulo\s+(?:indica|informa|mostra))\b/i.test(
+        normalizedLabelEvidence,
+      )
     return {
       type: 'meal',
       items,
       meal_context,
+      nutrition_label_visible: nutritionLabelVisible,
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,
@@ -681,8 +787,14 @@ export class GeminiVision {
     return {
       type: 'body',
       view: p.view ?? 'unknown',
-      bf_percent_estimate: p.bf_percent_estimate ?? null,
-      bf_confidence: p.bf_confidence ?? 0,
+      bf_percent_estimate:
+        typeof p.bf_percent_estimate === 'number' &&
+        Number.isFinite(p.bf_percent_estimate) &&
+        p.bf_percent_estimate >= 0 &&
+        p.bf_percent_estimate <= 100
+          ? p.bf_percent_estimate
+          : null,
+      bf_confidence: normalizeVisionConfidence(p.bf_confidence),
       composition_notes: p.composition_notes ?? '',
       posture_notes: p.posture_notes,
       raw_response: raw,
@@ -719,9 +831,14 @@ export class GeminiVision {
     }
     return {
       type: 'scale',
-      weight_kg: p.weight_kg ?? null,
-      confidence: p.confidence ?? 0,
-      unit_detected: p.unit_detected ?? 'unknown',
+      weight_kg:
+        typeof p.weight_kg === 'number' && Number.isFinite(p.weight_kg) && p.weight_kg > 0
+          ? p.weight_kg
+          : null,
+      confidence: normalizeVisionConfidence(p.confidence),
+      unit_detected: ['kg', 'lb', 'g', 'unknown'].includes(p.unit_detected ?? '')
+        ? (p.unit_detected ?? 'unknown')
+        : 'unknown',
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,
@@ -780,28 +897,24 @@ export class GeminiVision {
       confidence?: number | string
       notes?: string
     }
-    const toNum = (v: unknown): number | null => {
-      if (v == null || v === '') return null
-      const n = Number(String(v).replace(',', '.'))
-      return Number.isFinite(n) ? n : null
-    }
+    const servingSize = normalizeNonNegativeVisionNumber(p.serving_size_g)
     return {
       type: 'nutrition_label',
       product_name: p.product_name ?? null,
-      serving_size_g: toNum(p.serving_size_g),
+      serving_size_g: servingSize != null && servingSize > 0 ? servingSize : null,
       per_serving: {
-        kcal: toNum(p.per_serving?.kcal),
-        protein_g: toNum(p.per_serving?.protein_g),
-        carbs_g: toNum(p.per_serving?.carbs_g),
-        fat_g: toNum(p.per_serving?.fat_g),
+        kcal: normalizeNonNegativeVisionNumber(p.per_serving?.kcal),
+        protein_g: normalizeNonNegativeVisionNumber(p.per_serving?.protein_g),
+        carbs_g: normalizeNonNegativeVisionNumber(p.per_serving?.carbs_g),
+        fat_g: normalizeNonNegativeVisionNumber(p.per_serving?.fat_g),
       },
       per_100g: {
-        kcal: toNum(p.per_100g?.kcal),
-        protein_g: toNum(p.per_100g?.protein_g),
-        carbs_g: toNum(p.per_100g?.carbs_g),
-        fat_g: toNum(p.per_100g?.fat_g),
+        kcal: normalizeNonNegativeVisionNumber(p.per_100g?.kcal),
+        protein_g: normalizeNonNegativeVisionNumber(p.per_100g?.protein_g),
+        carbs_g: normalizeNonNegativeVisionNumber(p.per_100g?.carbs_g),
+        fat_g: normalizeNonNegativeVisionNumber(p.per_100g?.fat_g),
       },
-      confidence: toNum(p.confidence) ?? 0,
+      confidence: normalizeVisionConfidence(p.confidence),
       notes: p.notes,
       raw_response: raw,
       promptTokens: completion.usage?.prompt_tokens ?? 0,

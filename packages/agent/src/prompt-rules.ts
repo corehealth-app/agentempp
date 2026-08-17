@@ -27,18 +27,25 @@ export interface RuleRow {
   language: string | null
 }
 
+function normalizeStoredRuleLang(language: string | null): string | null {
+  if (language == null) return null
+  const normalized = language.trim().toLowerCase()
+  if (normalized === 'pt' || normalized === 'pt-br') return 'pt-BR'
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en'
+  if (normalized === 'es' || normalized.startsWith('es-')) return 'es'
+  return language
+}
+
 /**
  * Parte pura (testável): filtra por idioma e agrega no formato da view.
  * Mantém pt-BR (base) + idioma do paciente + agnóstico (null). Retorna null se
  * nada sobrar (caller cai no prompt cheio).
  */
-export function filterAndFormatRules(
-  rows: RuleRow[],
-  lang: 'pt-BR' | 'en' | 'es',
-): string | null {
-  const kept = rows.filter(
-    (r) => r.language == null || r.language === 'pt-BR' || r.language === lang,
-  )
+export function filterAndFormatRules(rows: RuleRow[], lang: 'pt-BR' | 'en' | 'es'): string | null {
+  const kept = rows.filter((r) => {
+    const ruleLang = normalizeStoredRuleLang(r.language)
+    return ruleLang == null || ruleLang === 'pt-BR' || ruleLang === lang
+  })
   if (kept.length === 0) return null
   return kept.map((r) => `## ${r.topic}\n\n${r.content}`).join('\n\n---\n\n')
 }

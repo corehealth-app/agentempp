@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { normalizeRuleLang, filterAndFormatRules, type RuleRow } from './prompt-rules.js'
+import { describe, expect, it } from 'vitest'
+import { filterAndFormatRules, normalizeRuleLang, type RuleRow } from './prompt-rules.js'
 
 describe('normalizeRuleLang', () => {
   it('mapeia locale → idioma da regra (pt-BR default)', () => {
@@ -23,7 +23,8 @@ describe('filterAndFormatRules', () => {
   ]
 
   it('paciente pt-BR: mantém pt-BR + null, DROPA en/es', () => {
-    const out = filterAndFormatRules(rows, 'pt-BR')!
+    const out = filterAndFormatRules(rows, 'pt-BR')
+    if (!out) throw new Error('expected filtered prompt')
     expect(out).toContain('## Persona')
     expect(out).toContain('## Método')
     expect(out).not.toContain('When to show')
@@ -31,10 +32,23 @@ describe('filterAndFormatRules', () => {
   })
 
   it('paciente en: mantém pt-BR (base do método) + en + null, DROPA es', () => {
-    const out = filterAndFormatRules(rows, 'en')!
+    const out = filterAndFormatRules(rows, 'en')
+    if (!out) throw new Error('expected filtered prompt')
     expect(out).toContain('## Persona') // base do método em pt-BR fica
     expect(out).toContain('## When to show balance')
     expect(out).not.toContain('Cuándo')
+  })
+
+  it('trata language=pt como alias da base pt-BR para qualquer paciente', () => {
+    const legacyPtRule: RuleRow = {
+      topic: 'Regra crítica legada',
+      content: 'não pode ser descartada',
+      language: 'pt',
+    }
+
+    expect(filterAndFormatRules([legacyPtRule], 'pt-BR')).toContain('Regra crítica legada')
+    expect(filterAndFormatRules([legacyPtRule], 'en')).toContain('Regra crítica legada')
+    expect(filterAndFormatRules([legacyPtRule], 'es')).toContain('Regra crítica legada')
   })
 
   it('formato idêntico ao da view: "## topic\\n\\ncontent" juntado por "\\n\\n---\\n\\n"', () => {

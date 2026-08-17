@@ -6,7 +6,7 @@
  * 50%, dedup intra-bucket, retorno do mais recente pendente) ficam travados.
  */
 import { describe, expect, it } from 'vitest'
-import { deriveVisionPending } from './vision-pending-loader.js'
+import { deriveVisionPending, loadVisionPending } from './vision-pending-loader.js'
 
 const NOW = new Date('2026-06-26T18:00:00.000Z').getTime()
 
@@ -32,7 +32,7 @@ const vision = (
 
 const meal = (food: string, pmid: string | null, createdAt: string) => ({
   food_name: food,
-  provider_message_id: pmid,
+  raw_provider_message_id: pmid,
   created_at: createdAt,
 })
 
@@ -181,5 +181,88 @@ describe('deriveVisionPending', () => {
       NOW,
     )
     expect(result).toBeNull() // 100% overlap após normalize
+  })
+})
+
+function queryChain(
+  result: { data: unknown; error: unknown },
+  onSelect?: (columns: string) => void,
+) {
+  const chain = {
+    select: (columns: string) => {
+      onSelect?.(columns)
+      return chain
+    },
+    eq: () => chain,
+    gte: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    // biome-ignore lint/suspicious/noThenProperty: Supabase query builders are intentionally thenable.
+    then: <TResult1 = { data: unknown; error: unknown }>(
+      onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+    ) => Promise.resolve(result).then(onfulfilled),
+  }
+  return chain
+}
+
+describe('loadVisionPending — falhas de banco', () => {
+  const visionRow = vision(
+    'pmid-db-error',
+    [{ name: 'frango' }],
+    '2026-06-26T17:55:00.000Z',
+  )
+
+  it('propaga erro ao carregar eventos de vision', async () => {
+    const supabase = {
+      from: () => queryChain({ data: null, error: { message: 'vision lookup failed' } }),
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).rejects.toThrow(
+      'vision lookup failed',
+    )
+  })
+
+  it('propaga erro ao verificar se a foto já virou refeição', async () => {
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'product_events') return queryChain({ data: [visionRow], error: null })
+        if (table === 'meal_logs') {
+          return queryChain({ data: null, error: { message: 'meal lookup failed' } })
+        }
+        return queryChain({ data: [], error: null })
+      },
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).rejects.toThrow('meal lookup failed')
+  })
+
+  it('consulta o id bruto correto e reconhece vision já consumida pelo meal_log', async () => {
+    let mealLogSelect: string | null = null
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'product_events') return queryChain({ data: [visionRow], error: null })
+        if (table === 'meal_logs') {
+          return queryChain(
+            {
+              data: [
+                {
+                  food_name: 'frango',
+                  raw_provider_message_id: 'pmid-db-error',
+                  created_at: '2026-06-26T17:56:00.000Z',
+                },
+              ],
+              error: null,
+            },
+            (columns) => {
+              mealLogSelect = columns
+            },
+          )
+        }
+        return queryChain({ data: [], error: null })
+      },
+    }
+
+    await expect(loadVisionPending(supabase, 'user-1')).resolves.toBeNull()
+    expect(mealLogSelect).toBe('food_name, raw_provider_message_id, created_at')
   })
 })

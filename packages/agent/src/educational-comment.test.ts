@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { generateEducationalComment, hasPhantomFoodMention } from './educational-comment.js'
+import {
+  generateEducationalComment,
+  hasPhantomFoodMention,
+} from './educational-comment.js'
 
 describe('hasPhantomFoodMention', () => {
   const cafe = [
@@ -55,181 +58,225 @@ describe('hasPhantomFoodMention', () => {
   })
 })
 
-function mockEduSupabase(
-  rows: Array<{
-    id: string
-    phrase: string
-    tags: Record<string, unknown> | null
-    usage_count: number
-    last_used_at: string | null
-  }>,
-  opts: { recentPhraseIds?: string[]; cooldownError?: Error } = {},
-) {
+function makeEducationalSupabase(cooldownError?: string, phraseText?: string) {
   const events: Array<{ event: string; properties: Record<string, unknown> }> = []
-  const updates: unknown[] = []
-  const upserts: unknown[] = []
-
-  const foodSelectChain = {
-    eq: () => foodSelectChain,
-    in: () => foodSelectChain,
-    order: () => foodSelectChain,
-    limit: async () => ({ data: rows }),
-  }
-  const foodUpdateChain = {
-    eq: async () => ({ data: null }),
-  }
-  const cooldownSelectChain = {
-    eq: () => cooldownSelectChain,
-    gte: () => cooldownSelectChain,
-    in: async () => {
-      if (opts.cooldownError) return { data: null, error: opts.cooldownError }
-      return { data: (opts.recentPhraseIds ?? []).map((phrase_id) => ({ phrase_id })) }
+  const phraseRows = [
+    {
+      id: 'phrase-whey-1',
+      phrase:
+        phraseText ?? '{alimento} ajuda a sustentar uma refeição rica em proteína.',
+      tags: null,
+      allowed_meal_types: null,
+      usage_count: 0,
+      last_used_at: null,
     },
+  ]
+
+  const chain = (data: unknown, error: { message: string } | null = null): unknown => {
+    const value: Record<string, unknown> = {}
+    for (const method of ['select', 'eq', 'in', 'gte', 'order', 'limit']) {
+      value[method] = () => chain(data, error)
+    }
+    // biome-ignore lint/suspicious/noThenProperty: Supabase query builders are awaitable thenables.
+    value.then = (
+      resolve: (result: { data: unknown; error: { message: string } | null }) => unknown,
+    ) => Promise.resolve(resolve({ data: error ? null : data, error }))
+    return value
   }
 
   const supabase = {
     from: (table: string) => {
       if (table === 'food_education_phrases') {
         return {
-          select: () => foodSelectChain,
-          update: (value: unknown) => {
-            updates.push(value)
-            return foodUpdateChain
-          },
+          ...((chain(phraseRows) as object)),
+          update: () => chain(null),
         }
       }
       if (table === 'user_phrase_cooldown') {
         return {
-          select: () => cooldownSelectChain,
-          upsert: async (value: unknown) => {
-            upserts.push(value)
-            return { data: null }
-          },
+          ...((chain([], cooldownError ? { message: cooldownError } : null) as object)),
+          upsert: async () => ({ data: null, error: null }),
         }
       }
       if (table === 'product_events') {
         return {
-          insert: async (value: { event: string; properties: Record<string, unknown> }) => {
-            events.push(value)
-            return { data: null }
+          insert: async (row: { event: string; properties: Record<string, unknown> }) => {
+            events.push(row)
+            return { data: null, error: null }
           },
         }
       }
-      throw new Error(`unexpected table: ${table}`)
+      return chain([])
+    },
+    rpc: async (name: string) => {
+      if (name !== 'claim_food_education_phrase') return { data: [], error: null }
+      if (cooldownError) return { data: null, error: { message: cooldownError } }
+      return {
+        data: [
+          {
+            phrase_id: phraseRows[0]?.id,
+            cooldown_count: 0,
+            selected_after_cooldown: false,
+            exhausted: false,
+          },
+        ],
+        error: null,
+      }
     },
   }
 
-  return { supabase, events, updates, upserts }
+  return { supabase, events }
 }
 
-describe('generateEducationalComment — telemetria curated/cooldown', () => {
-  it('curated_hit inclui metadados de pool, cooldown e phrase_id', async () => {
-    const { supabase, events } = mockEduSupabase(
-      [
-        {
-          id: 'p-repetida',
-          phrase:
-            'Whey de manhã é o tipo de hábito que separa quem leva o processo a sério de quem só pensa em emagrecer.',
-          tags: {},
-          usage_count: 18,
-          last_used_at: '2026-07-06T13:20:42.144Z',
-        },
-        {
-          id: 'p-alternativa',
-          phrase:
-            'Café com whey logo cedo trava a fome até o almoço — 20g de proteína num item só, escolha sólida pra recomp.',
-          tags: { recomp: true },
-          usage_count: 1,
-          last_used_at: '2026-06-14T13:51:02.804Z',
-        },
-      ],
-      { recentPhraseIds: ['p-repetida'] },
-    )
-    const llm = { complete: async () => ({ content: 'não deveria chamar haiku' }) }
-
-    const comment = await generateEducationalComment(
-      llm as never,
+describe('generateEducationalComment — telemetria de cooldown', () => {
+  const input = {
+    kind: 'cafe' as const,
+    items: [
       {
-        kind: 'cafe',
-        items: [
-          {
-            food_name: 'leite com whey',
-            quantity_g: 240,
-            kcal: 228,
-            protein_g: 24,
-            carbs_g: 12,
-            fat_g: 7.2,
-          },
-        ],
-        totals: { kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 },
-        protocol: 'recomposicao',
+        food_name: 'leite com whey',
+        quantity_g: 240,
+        kcal: 228,
+        protein_g: 24,
+        carbs_g: 12,
+        fat_g: 7.2,
       },
-      {
-        supabase,
-        userId: 'roberto-prod',
-        state: { protocol: 'recomposicao' },
-      },
-    )
+    ],
+    totals: { kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 },
+  }
 
-    expect(comment).toBe(
-      'Café com whey logo cedo trava a fome até o almoço — 20g de proteína num item só, escolha sólida pra recomp.',
-    )
-    const hit = events.find((e) => e.event === 'edu_comment.curated_hit')
-    expect(hit?.properties).toMatchObject({
-      phrase_id: 'p-alternativa',
-      candidate_count: 2,
-      compatible_count: 2,
-      cooldown_count: 1,
-      selected_after_cooldown: true,
-      reason: 'selected_after_cooldown',
+  it('inclui id e contagens no evento de frase curada', async () => {
+    const { supabase, events } = makeEducationalSupabase()
+    let llmCalls = 0
+    const llm = {
+      complete: async () => {
+        llmCalls += 1
+        return { content: 'Comentário do Haiku.' }
+      },
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+      state: { protocol: 'recomposicao' },
     })
+
+    expect(result).toContain('Leite com whey')
+    expect(llmCalls).toBe(0)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.curated_hit',
+        properties: expect.objectContaining({
+          phrase_id: 'phrase-whey-1',
+          candidate_count: 1,
+          compatible_count: 1,
+          cooldown_count: 0,
+          selected_after_cooldown: false,
+        }),
+      }),
+    )
   })
 
-  it('falha no lookup de cooldown emite cooldown_error e cai para Haiku', async () => {
-    const { supabase, events } = mockEduSupabase(
-      [
-        {
-          id: 'p-whey',
-          phrase: 'Whey de manhã é hábito de quem leva a sério.',
-          tags: {},
-          usage_count: 18,
-          last_used_at: '2026-07-06T13:20:42.144Z',
-        },
-      ],
-      { cooldownError: new Error('permission denied') },
-    )
-    const llm = { complete: async () => ({ content: 'Fallback Haiku seguro.' }) }
+  it('emite cooldown_error e usa Haiku quando a consulta falha', async () => {
+    const { supabase, events } = makeEducationalSupabase('cooldown unavailable')
+    const llm = {
+      complete: async () => ({ content: 'Comentário alternativo do Haiku.' }),
+    }
 
-    const comment = await generateEducationalComment(
-      llm as never,
-      {
-        kind: 'cafe',
-        items: [
-          {
-            food_name: 'leite com whey',
-            quantity_g: 240,
-            kcal: 228,
-            protein_g: 24,
-            carbs_g: 12,
-            fat_g: 7.2,
-          },
-        ],
-        totals: { kcal: 228, protein_g: 24, carbs_g: 12, fat_g: 7.2 },
-        protocol: 'recomposicao',
-      },
-      {
-        supabase,
-        userId: 'roberto-prod',
-        state: { protocol: 'recomposicao' },
-      },
-    )
-
-    expect(comment).toBe('Fallback Haiku seguro.')
-    expect(events.find((e) => e.event === 'edu_comment.cooldown_error')?.properties).toMatchObject({
-      reason: 'cooldown_lookup_failed',
-      anchor: 'leite com whey',
-      candidate_count: 1,
-      compatible_count: 1,
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
     })
+
+    expect(result).toBe('Comentário alternativo do Haiku.')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.cooldown_error',
+        properties: expect.objectContaining({ reason: 'cooldown_lookup_failed' }),
+      }),
+    )
+  })
+
+  it('registra tokens, custo, modelo e latência quando usa Haiku', async () => {
+    const { supabase, events } = makeEducationalSupabase('force curated fallback')
+    const llm = {
+      complete: async () => ({
+        content: 'Comentário alternativo do Haiku.',
+        promptTokens: 321,
+        completionTokens: 45,
+        totalTokens: 366,
+        costUsd: 0.00042,
+        model: 'anthropic/claude-haiku-4.5:provider',
+        latencyMs: 876,
+      }),
+    }
+
+    await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.haiku_success',
+        properties: expect.objectContaining({
+          prompt_tokens: 321,
+          completion_tokens: 45,
+          total_tokens: 366,
+          cost_usd: 0.00042,
+          model: 'anthropic/claude-haiku-4.5:provider',
+          latency_ms: 876,
+        }),
+      }),
+    )
+  })
+
+  it('descarta reforço de identidade moralizante gerado pelo Haiku', async () => {
+    const { supabase, events } = makeEducationalSupabase('force curated fallback')
+    const llm = {
+      complete: async () => ({
+        content:
+          'Almoço com 33g de proteína só na carne de porco — você está priorizando o que realmente constrói músculo e saciedade. Esse é o padrão de quem leva a recomposição a sério.',
+      }),
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(result).toBe('')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.tone_drop',
+        properties: expect.objectContaining({ reason: 'moralizing_identity_language' }),
+      }),
+    )
+  })
+
+  it('descarta frase curada moralizante e usa fallback neutro', async () => {
+    const { supabase, events } = makeEducationalSupabase(
+      undefined,
+      '{alimento} é o padrão de quem leva a recomposição a sério.',
+    )
+    const llm = {
+      complete: async () => ({
+        content: 'Leite com whey contribui com proteína e praticidade nessa refeição.',
+      }),
+    }
+
+    const result = await generateEducationalComment(llm as never, input, {
+      supabase,
+      userId: 'user-test',
+    })
+
+    expect(result).toBe(
+      'Leite com whey contribui com proteína e praticidade nessa refeição.',
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: 'edu_comment.curated_tone_drop',
+        properties: expect.objectContaining({ reason: 'moralizing_identity_language' }),
+      }),
+    )
   })
 })

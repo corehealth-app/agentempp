@@ -37,6 +37,10 @@ const MEAL_CONFIRM: Record<string, string> = {
 
 export interface MealItem {
   name: string
+  /** Canonical food reference used to calculate this item, when available. */
+  food_db_id?: number | null
+  /** Nutrition provenance captured before a pending is approved. */
+  nutrition_source?: string | null
   quantity_g: number
   display_qty?: number | null
   display_unit?: string | null
@@ -371,6 +375,9 @@ export interface PendingProposal {
   kind: 'meal' | 'workout'
   mealType?: string
   items?: MealItem[]
+  /** Subconjunto efetivamente persistido numa correção por item. `items`
+   * continua sendo a refeição completa exibida para confirmação. */
+  writeItems?: MealItem[]
   totals?: MealTotals
   workoutType?: string
   durationMin?: number | null
@@ -392,6 +399,31 @@ export interface PendingFoodCorrection {
   protein_g?: number
   carbs_g?: number
   fat_g?: number
+}
+
+const ESTIMATED_NUTRITION_SOURCES = new Set([
+  'llm_estimate',
+  'category_mismatch',
+  'protein_mismatch',
+  'composite_rejected',
+])
+
+export function buildPendingNutritionConfirmationNotes(items: MealItem[]): string[] {
+  const estimatedNames = [
+    ...new Set(
+      items
+        .filter((item) => ESTIMATED_NUTRITION_SOURCES.has(item.nutrition_source ?? ''))
+        .map((item) => item.name.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 2)
+  if (estimatedNames.length === 0) return []
+  const subject =
+    estimatedNames.length === 1
+      ? `O valor de ${estimatedNames[0]}`
+      : `Os valores de ${estimatedNames.join(' e ')}`
+  const verb = estimatedNames.length === 1 ? 'é estimado' : 'são estimados'
+  return [`${subject} ${verb}. Envie o rótulo ou a receita para usar o valor exato.`]
 }
 
 export function normalizePendingFoodCorrections(value: unknown): PendingFoodCorrection[] {

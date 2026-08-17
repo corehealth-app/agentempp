@@ -1,9 +1,166 @@
 import { describe, expect, it } from 'vitest'
 import {
-  SNAPSHOT_INTEGRITY_TOL_KCAL,
+  countEducationalRotationAnomalies,
+  countImpossibleMealDensities,
+  countNutritionAnomalies,
   decideBlocoAutofix,
+  SNAPSHOT_INTEGRITY_TOL_KCAL,
   snapshotIntegrityGap,
 } from './daily-audit.js'
+
+describe('countImpossibleMealDensities — redundância nutricional', () => {
+  it('detecta total da refeição atribuído a uma porção pequena', () => {
+    expect(
+      countImpossibleMealDensities([
+        { quantity_g: 15, kcal: 593 },
+        { quantity_g: 120, kcal: 252 },
+        { quantity_g: 100, kcal: 900 },
+      ]),
+    ).toBe(1)
+  })
+
+  it('trata números inválidos como anomalia em vez de ignorá-los', () => {
+    expect(
+      countImpossibleMealDensities([
+        { quantity_g: 0, kcal: 100 },
+        { quantity_g: null, kcal: 100 },
+        { quantity_g: 100, kcal: null },
+      ]),
+    ).toBe(3)
+  })
+})
+
+describe('countNutritionAnomalies — proveniência e macros', () => {
+  it('separa densidade, massa de macros, referência ausente e drift canônico', () => {
+    const result = countNutritionAnomalies([
+      {
+        quantity_g: 120,
+        kcal: 252,
+        protein_g: 4.2,
+        carbs_g: 28.8,
+        fat_g: 13.2,
+        source: 'canonical_exact',
+        food_db_id: 379,
+        food_db: {
+          kcal_per_100g: 210,
+          protein_g: 3.5,
+          carbs_g: 24,
+          fat_g: 11,
+          is_verified: true,
+        },
+      },
+      {
+        quantity_g: 15,
+        kcal: 593,
+        protein_g: 1,
+        carbs_g: 100,
+        fat_g: 18,
+        source: 'user_kcal',
+        food_db_id: null,
+        food_db: null,
+      },
+      {
+        quantity_g: 100,
+        kcal: 100,
+        protein_g: 80,
+        carbs_g: 50,
+        fat_g: 10,
+        source: 'llm_estimate',
+        food_db_id: null,
+        food_db: null,
+      },
+      {
+        quantity_g: 100,
+        kcal: 100,
+        protein_g: 10,
+        carbs_g: 10,
+        fat_g: 2,
+        source: 'canonical_exact',
+        food_db_id: null,
+        food_db: null,
+      },
+      {
+        quantity_g: 100,
+        kcal: 70,
+        protein_g: 1,
+        carbs_g: 15,
+        fat_g: 0,
+        source: 'canonical_exact',
+        food_db_id: 500,
+        food_db: {
+          kcal_per_100g: 210,
+          protein_g: 3.5,
+          carbs_g: 24,
+          fat_g: 11,
+          is_verified: true,
+        },
+      },
+      {
+        quantity_g: 100,
+        kcal: 342,
+        protein_g: 6,
+        carbs_g: 5,
+        fat_g: 34,
+        source: 'canonical_exact',
+        food_db_id: 176,
+        food_db: {
+          kcal_per_100g: 342,
+          protein_g: 6,
+          carbs_g: 5,
+          fat_g: 34,
+          is_verified: false,
+        },
+      },
+    ])
+
+    expect(result).toEqual({
+      impossibleDensity: 1,
+      impossibleMacroMass: 2,
+      canonicalMissingFoodDbId: 1,
+      canonicalDrift: 1,
+      unverifiedFoodDbReference: 1,
+    })
+  })
+})
+
+describe('countEducationalRotationAnomalies', () => {
+  it('detecta fallback legado e repetição imediata após esgotamento com alternativas', () => {
+    const result = countEducationalRotationAnomalies([
+      {
+        user_id: 'user-1',
+        occurred_at: '2026-07-13T10:00:00.000Z',
+        properties: {
+          anchor: 'leite com whey',
+          phrase_id: 'phrase-1',
+          reason: 'selected',
+          compatible_count: 8,
+        },
+      },
+      {
+        user_id: 'user-1',
+        occurred_at: '2026-07-13T11:00:00.000Z',
+        properties: {
+          anchor: 'leite com whey',
+          phrase_id: 'phrase-1',
+          reason: 'selected_least_recent_after_exhaustion',
+          compatible_count: 8,
+        },
+      },
+      {
+        user_id: 'user-2',
+        occurred_at: '2026-07-13T12:00:00.000Z',
+        properties: {
+          anchor: 'whey protein',
+          phrase_id: 'phrase-2',
+          reason: 'selected_all_recent',
+          compatible_count: 1,
+        },
+      },
+    ])
+
+    expect(result).toEqual({ immediateRepeatAfterExhaustion: 1, selectedAllRecent: 1 })
+  })
+})
 
 describe('snapshotIntegrityGap — integridade snapshot vs meal_logs por consumed_at', () => {
   it('bate exato → gap 0 (dentro da tolerância)', () => {

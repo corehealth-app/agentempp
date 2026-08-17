@@ -14,15 +14,29 @@
  * Pura — sem I/O, sem dependência de supabase/LLM. Testável.
  */
 
+import { looksLikeStructuredNutritionSummary } from './nutrition-context.js'
+
 const UNCERTAINTY_MARKERS =
   /\b(uns?|umas?|mais\s+ou\s+menos|talvez|acho\s+que|por\s+a[íi]|aproximadamente|cerca\s+de|sei\s+l[áa]|chuto|chutei|n[ãa]o\s+sei\s+bem|mais\/menos|nao\s+tenho\s+certeza)\b/i
 
-// Quantidades explícitas: contagem genérica de NÚMEROS no texto. Cobre tanto
-// "100g"/"200ml" (com unidade) quanto "2 ovos"/"3 pães" (número + nome do
-// alimento). Heurística aproximada — sobra rara (false positive) leva a
-// gravar direto algo que devia ir pra botão; o lado conservador (botão) é
-// preferido na dúvida e está garantido pelos outros checks.
-const QUANTITY_MARKERS_GLOBAL = /\b\d+(?:[.,]\d+)?/g
+// Só conta quantidades com unidade. Números de kcal/macros/metas não comprovam
+// porção e não podem liberar gravação direta.
+const QUANTITY_MARKERS_GLOBAL =
+  /\b\d+(?:[.,]\d+)?\s*(?:kg|g|ml|litros?|l|unidades?|unid\.?|ovos?|p(?:ão|ães|ao|aes)|fatias?|colher(?:es)?|copos?|x[íi]caras?|bolas?|por[çc][õo]es?|scoops?|latas?|garrafas?)\b/gi
+
+const MACRO_LABEL_AFTER_GRAMS =
+  /^\s*(?:de\s+)?(?:prote[ií]nas?|protein|carbo(?:idratos?)?|carbs?|gorduras?|fat|fibras?|fiber|[pcg])\b/i
+
+function countExplicitPortionMarkers(text: string): number {
+  const pattern = new RegExp(QUANTITY_MARKERS_GLOBAL.source, QUANTITY_MARKERS_GLOBAL.flags)
+  let count = 0
+  for (const match of text.matchAll(pattern)) {
+    const suffix = text.slice((match.index ?? 0) + match[0].length)
+    if (MACRO_LABEL_AFTER_GRAMS.test(suffix)) continue
+    count += 1
+  }
+  return count
+}
 
 export interface ExpressInput {
   contentType: 'text' | 'image' | 'audio'
@@ -84,11 +98,13 @@ export function isMealExpressEligible(input: ExpressInput): ExpressResult {
   if (UNCERTAINTY_MARKERS.test(input.patientText)) {
     return { eligible: false, reason: 'uncertainty_marker' }
   }
+  if (looksLikeStructuredNutritionSummary(input.patientText)) {
+    return { eligible: false, reason: 'structured_nutrition_summary' }
+  }
   if (input.items.length === 0) {
     return { eligible: false, reason: 'no_items' }
   }
-  const qtyMatches = input.patientText.match(QUANTITY_MARKERS_GLOBAL) ?? []
-  const qtyCount = qtyMatches.length
+  const qtyCount = countExplicitPortionMarkers(input.patientText)
   if (qtyCount < input.items.length) {
     return {
       eligible: false,

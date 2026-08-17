@@ -1,23 +1,38 @@
 import {
   aggregateBodyBfEstimate,
+  type BodyPhotoSignal,
   bodyPhotoSignalFromEventProperties,
   detectPendingResponse,
   formatBodyPhotoDigest,
   splitRegistrationParts,
-  type BodyPhotoSignal,
+  type TrustedVisionNutritionLabel,
 } from '@mpp/agent'
 import {
+  createMessagingProvider,
   GeminiVision,
   GroqSTT,
-  TTSRouter,
-  createMessagingProvider,
   rewriteForTTS,
   sendHumanized,
+  TTSRouter,
+  type VisionNutritionLabelAnalysis,
 } from '@mpp/providers'
 import { inngest } from '../client.js'
 import { createWorkerDeps, loadCredential, processMessage } from '../lib/env.js'
+import { throwIfQueryFailed } from '../lib/query-error.js'
 import { loadHumanizerConfig, loadVisionConfig } from '../lib/runtime-config.js'
+import { loadUserProcessingState } from '../lib/user-processing-state.js'
+import { sendHumanizedDurably } from './durable-humanized-send.js'
+import { combinePatientNarrative, normalizeInboundMediaItems } from './media-burst.js'
+import { resolveTrustedNutritionLabel } from './nutrition-label-policy.js'
+import { persistOutboundMessage } from './outbound-message-persistence.js'
+import {
+  buildOutboundMessageRows,
+  type OutboundDelivery,
+  requireOutboundDelivery,
+} from './outbound-message-rows.js'
+import { sendPipelineErrorFallback } from './pipeline-error-fallback.js'
 import { classifyProposalMsgIdWrite } from './proposal-msg-id-policy.js'
+import { buildVisionEventDedupeKey } from './vision-event-key.js'
 
 /**
  * Worker principal: processa cada mensagem recebida.
@@ -47,12 +62,22 @@ export const processMessageFn = inngest.createFunction(
       text,
       mediaUrl,
       mediaUrls,
+      mediaItems,
       provider,
       timestamp,
     } = event.data
 
-    // Suporta múltiplas mídias: prioriza mediaUrls[]; cai pro mediaUrl singular
-    const allMediaUrls = mediaUrls && mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : []
+    const normalizedMediaItems = normalizeInboundMediaItems({
+      mediaItems,
+      contentType,
+      mediaUrl,
+      mediaUrls,
+      providerMessageId,
+      timestamp,
+    })
+    const audioMediaItems = normalizedMediaItems.filter((item) => item.contentType === 'audio')
+    const imageMediaItems = normalizedMediaItems.filter((item) => item.contentType === 'image')
+    const allMediaUrls = normalizedMediaItems.map((item) => item.url)
 
     logger.info('Processing', {
       userId,
@@ -67,6 +92,23 @@ export const processMessageFn = inngest.createFunction(
       META_APP_SECRET: process.env.META_APP_SECRET,
       META_VERIFY_TOKEN: process.env.META_VERIFY_TOKEN,
     })
+
+    const userState = await step.run('check-user-processing-state-v2', async () => {
+      const { supabase } = createWorkerDeps()
+      return await loadUserProcessingState(supabase, userId)
+    })
+    if (userState.kind === 'deleted' || userState.kind === 'blocked') {
+      logger.info('User sem processamento ativo, ignorando msg', {
+        userId,
+        state: userState.kind,
+      })
+      return { ok: true, ignored: true, reason: userState.kind }
+    }
+    if (userState.kind === 'paused') {
+      logger.info('User pausado, ignorando msg', { userId, until: userState.until })
+      await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
+      return { ok: true, paused: true, until: userState.until }
+    }
 
     // === FASE B/D — DEC-3: paciente digita "sim"/"editar" em vez de tocar ===
     // Antes de qualquer outro processamento, se for texto curto que casa com
@@ -92,7 +134,7 @@ export const processMessageFn = inngest.createFunction(
           const nowMs = Date.now()
           const fourHoursAgoIso = new Date(nowMs - 4 * 60 * 60 * 1000).toISOString()
           const nowIso = new Date(nowMs).toISOString()
-          const { data: pending } = await supabase
+          const { data: pending, error: pendingError } = await supabase
             .from('pending_registrations')
             .select('id')
             .eq('user_id', userId)
@@ -102,13 +144,14 @@ export const processMessageFn = inngest.createFunction(
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
+          throwIfQueryFailed(pendingError, 'recent pending lookup failed')
           const pendingId = (pending as { id: string } | null)?.id
           if (!pendingId) {
             // Sub-caso: existe pending STALE (>4h e <expires_at, geralmente
             // <24h)? Diferencia "orphan_no_pending_at_all" de
             // "orphan_with_stale_pending" — só o 2º merece resposta
             // determinística (paciente confirmou tarde, perdeu a janela).
-            const { data: stalePending } = await supabase
+            const { data: stalePending, error: stalePendingError } = await supabase
               .from('pending_registrations')
               .select('id, created_at, proposal')
               .eq('user_id', userId)
@@ -118,9 +161,12 @@ export const processMessageFn = inngest.createFunction(
               .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle()
-            const stale = stalePending as
-              | { id: string; created_at: string; proposal?: { mealType?: string } | null }
-              | null
+            throwIfQueryFailed(stalePendingError, 'stale pending lookup failed')
+            const stale = stalePending as {
+              id: string
+              created_at: string
+              proposal?: { mealType?: string } | null
+            } | null
             await supabase.from('product_events').insert({
               user_id: userId,
               event: 'pending.text_fallback_orphan',
@@ -133,33 +179,19 @@ export const processMessageFn = inngest.createFunction(
               },
             })
             if (stale) {
-              // Manda msg determinística: paciente confirmou tarde demais.
-              const mealHint = stale.proposal?.mealType
-                ? ` (era ${stale.proposal.mealType})`
-                : ''
+              const mealHint = stale.proposal?.mealType ? ` (era ${stale.proposal.mealType})` : ''
               const askText = `Recebi seu "${text.trim()}", mas a proposta${mealHint} ficou esperando muito tempo e eu não posso registrar com certeza. Pode me mandar de novo o que você comeu? Ou clicar no botão da proposta velha (se ainda estiver no chat).`
-              await messaging
-                .sendText(wpp, askText, { replyTo: providerMessageId })
-                .catch(() => {})
-              await supabase.from('messages').insert({
-                user_id: userId,
-                direction: 'out',
-                role: 'assistant',
-                content_type: 'text',
-                content: askText,
-                provider: 'whatsapp_cloud',
-                agent_stage: 'recomposicao',
-                delivery_status: 'sent',
-              })
               return {
                 dispatched: false,
                 reason: 'stale_pending_too_old',
                 stale_pending_id: stale.id,
+                response_text: askText,
               }
             }
             return { dispatched: false, reason: 'no_recent_pending' }
           }
           await inngest.send({
+            id: `pending-text:${providerMessageId}`,
             name: 'interactive.button.tapped',
             data: {
               userId,
@@ -189,6 +221,44 @@ export const processMessageFn = inngest.createFunction(
         // pedindo o paciente reenviar — NÃO cai pro LLM (evita LLM
         // improvisar "Sim, e aí?" sem contexto).
         if ((handled as { reason?: string })?.reason === 'stale_pending_too_old') {
+          const staleResult = handled as {
+            stale_pending_id?: string
+            response_text?: string
+          }
+          const responseText = staleResult.response_text
+          if (!responseText) {
+            throw new Error('stale pending response text missing')
+          }
+          const delivery = await step.run('send-stale-pending-response', async () =>
+            requireOutboundDelivery(
+              responseText,
+              await messaging.sendText(wpp, responseText, {
+                replyTo: providerMessageId,
+              }),
+            ),
+          )
+          await step.run('persist-stale-pending-response', async () => {
+            const { supabase } = createWorkerDeps()
+            const [row] = buildOutboundMessageRows({
+              userId,
+              provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+              contentType: 'text',
+              stage: 'recomposicao',
+              modelUsed: null,
+              promptTokens: null,
+              completionTokens: null,
+              costUsd: null,
+              latencyMs: null,
+              metadata: {
+                response_part: 'stale_pending_response',
+                pending_id: staleResult.stale_pending_id ?? 'unknown',
+              },
+              deliveries: [delivery],
+            })
+            if (!row) throw new Error('stale pending outbound row missing')
+            await persistOutboundMessage(supabase, row)
+            return { persisted: true }
+          })
           return {
             ok: true,
             sent: 1,
@@ -203,109 +273,140 @@ export const processMessageFn = inngest.createFunction(
     // === Step 1: ack ===
     await step.run('ack', async () => {
       await messaging.showTypingFor(providerMessageId).catch(() => {})
-      if (contentType === 'audio' || contentType === 'image') {
+      if (normalizedMediaItems.length > 0) {
         await messaging.react(wpp, providerMessageId, '👀').catch(() => {})
       }
       return { acked: true }
     })
 
-    // === Step 1.5: pausa? ===
-    // Se o user está com paused_until > now, NÃO processa — só reage com 💤
-    const pauseCheck = await step.run('check-pause', async (): Promise<{ paused: boolean; until: string | null }> => {
-      const { supabase } = createWorkerDeps()
-      const { data: u } = await supabase
-        .from('users')
-        .select('status, metadata')
-        .eq('id', userId)
-        .maybeSingle()
-      if (!u) return { paused: false, until: null }
-      const meta = (u as { metadata: Record<string, unknown> | null }).metadata
-      const pausedUntil = meta?.paused_until as string | undefined
-      if (pausedUntil && new Date(pausedUntil) > new Date()) {
-        return { paused: true, until: pausedUntil }
-      }
-      return { paused: false, until: null }
-    })
-
-    if (pauseCheck.paused) {
-      logger.info('User pausado, ignorando msg', { userId, until: pauseCheck.until })
-      await messaging.react(wpp, providerMessageId, '💤').catch(() => {})
-      return { ok: true, paused: true, until: pauseCheck.until }
-    }
-
     // === Step 2: media prep — STT ou Vision ===
     let enrichedText: string | undefined = text
-    let mediaSummary: { kind: 'audio' | 'image'; latency_ms: number } | null = null
+    let patientNarrative: string | undefined = text
+    let mediaSummary: { kind: 'audio' | 'image' | 'mixed'; latency_ms: number } | null = null
+    const visionNutritionLabels: TrustedVisionNutritionLabel[] = []
+    let visionNutritionLabelDetected = false
+    let visionNutritionLabelDetectedCount = 0
 
-    if (contentType === 'audio' && allMediaUrls.length > 0) {
+    if (audioMediaItems.length > 0) {
       const sttRes = await step.run('stt-transcribe', async () => {
         if (!process.env.GROQ_API_KEY) {
-          return { ok: false as const, reason: 'GROQ_API_KEY ausente', text: null, latency_ms: 0 }
-        }
-        try {
-          const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
-          // Áudio: transcreve só o primeiro (cada áudio = um turno semântico)
-          const blob = await messaging.downloadMedia(allMediaUrls[0]!)
-          const r = await stt.transcribe({ audio: blob, language: 'pt' })
-          return { ok: true as const, text: r.text, latency_ms: r.latencyMs }
-        } catch (e) {
           return {
-            ok: false as const,
-            reason: e instanceof Error ? e.message : String(e),
-            text: null,
+            items: audioMediaItems.map((media) => ({
+              ok: false as const,
+              media,
+              reason: 'GROQ_API_KEY ausente',
+              text: null,
+              latency_ms: 0,
+            })),
             latency_ms: 0,
           }
         }
+        const startedAt = Date.now()
+        const stt = new GroqSTT({ apiKey: process.env.GROQ_API_KEY })
+        const items = await Promise.all(
+          audioMediaItems.map(async (media) => {
+            try {
+              const blob = await messaging.downloadMedia(media.url)
+              const r = await stt.transcribe({ audio: blob, language: 'pt' })
+              return {
+                ok: true as const,
+                media,
+                text: r.text,
+                reason: null,
+                latency_ms: r.latencyMs,
+              }
+            } catch (error) {
+              return {
+                ok: false as const,
+                media,
+                text: null,
+                reason: error instanceof Error ? error.message : String(error),
+                latency_ms: 0,
+              }
+            }
+          }),
+        )
+        return { items, latency_ms: Date.now() - startedAt }
       })
-      if (sttRes.ok) {
-        enrichedText = sttRes.text || text
-        mediaSummary = { kind: 'audio', latency_ms: sttRes.latency_ms }
-        logger.info('STT done', { length: sttRes.text?.length, latency: sttRes.latency_ms })
-      } else {
-        logger.warn('STT skipped', { reason: sttRes.reason })
+
+      const successfulTranscripts = sttRes.items.filter(
+        (item): item is Extract<(typeof sttRes.items)[number], { ok: true }> => item.ok,
+      )
+      patientNarrative = combinePatientNarrative([
+        text,
+        ...successfulTranscripts.map((item) => item.text),
+      ])
+      enrichedText =
+        patientNarrative ??
+        `[${audioMediaItems.length} áudio(s) recebido(s), mas a transcrição falhou. Peça ao paciente para reenviar ou escrever o conteúdo. NÃO INVENTE.]`
+      mediaSummary = {
+        kind: imageMediaItems.length > 0 ? 'mixed' : 'audio',
+        latency_ms: sttRes.latency_ms,
       }
-      // Observabilidade: loga STT (sucesso ou falha). Sem isso, audio quebrado
-      // só vira visível quando paciente reclama (caso Paulo 05-13).
-      try {
+      logger.info('STT batch done', {
+        total: sttRes.items.length,
+        successful: successfulTranscripts.length,
+        latency: sttRes.latency_ms,
+      })
+
+      await step.run('persist-stt-results', async () => {
         const { supabase } = createWorkerDeps()
-        await supabase.from('product_events').insert({
+        for (const item of successfulTranscripts) {
+          const { error: transcriptError } = await supabase
+            .from('messages')
+            .update({ content: item.text })
+            .eq('user_id', userId)
+            .eq('provider', 'whatsapp_cloud')
+            .eq('provider_message_id', item.media.providerMessageId)
+            .eq('direction', 'in')
+          if (transcriptError) {
+            throw new Error(transcriptError.message ?? 'STT transcript persistence failed')
+          }
+        }
+
+        const eventRows = sttRes.items.map((item) => ({
           user_id: userId,
-          event: sttRes.ok ? 'stt.transcribed' : 'stt.failed',
+          event: item.ok ? 'stt.transcribed' : 'stt.failed',
           properties: {
-            provider_message_id: providerMessageId,
-            success: sttRes.ok,
-            latency_ms: sttRes.latency_ms,
-            text_length: sttRes.ok ? (sttRes.text?.length ?? 0) : 0,
-            text_preview: sttRes.ok ? (sttRes.text ?? '').slice(0, 120) : null,
-            reason: !sttRes.ok ? sttRes.reason : null,
+            provider_message_id: item.media.providerMessageId,
+            success: item.ok,
+            latency_ms: item.latency_ms,
+            text_length: item.ok ? item.text.length : 0,
+            text_preview: item.ok ? item.text.slice(0, 120) : null,
+            reason: item.ok ? null : item.reason,
             provider: 'groq-whisper',
             language: 'pt',
           },
-        })
-        // Persiste transcrição em messages.content pra rastreabilidade.
-        // Antes ficava só no contexto LLM e sumia — banco mostrava content vazio.
-        if (sttRes.ok && sttRes.text && providerMessageId) {
-          await supabase
-            .from('messages')
-            .update({ content: sttRes.text })
-            .eq('provider_message_id', providerMessageId)
-            .eq('direction', 'in')
+        }))
+        const { error: eventError } = await supabase.from('product_events').insert(eventRows)
+        if (eventError) {
+          logger.warn('STT event persistence failed', {
+            code: eventError.code,
+            message: eventError.message,
+          })
         }
-      } catch (logErr) {
-        logger.warn('STT event log failed', {
-          error: logErr instanceof Error ? logErr.message : String(logErr),
-        })
-      }
+        return { persisted: sttRes.items.length }
+      })
     }
 
-    if (contentType === 'image' && allMediaUrls.length > 0) {
+    if (imageMediaItems.length > 0) {
       const visionCfg = await step.run('vision-config', async () => {
         const { supabase } = createWorkerDeps()
         return loadVisionConfig(supabase)
       })
       const vRes = await step.run('vision-analyze', async () => {
         if (!process.env.OPENROUTER_API_KEY) {
-          return { ok: false as const, reason: 'OPENROUTER_API_KEY ausente', images: [] }
+          return {
+            ok: false as const,
+            reason: 'OPENROUTER_API_KEY ausente',
+            images: [],
+            imageMedia: [],
+            failures: imageMediaItems.map((media) => ({
+              media,
+              reason: 'OPENROUTER_API_KEY ausente',
+            })),
+            latency_ms: 0,
+          }
         }
         try {
           const vision = new GeminiVision({
@@ -316,28 +417,120 @@ export const processMessageFn = inngest.createFunction(
             prompts: visionCfg.prompts,
           })
           const start = Date.now()
-          // Processa TODAS as imagens em paralelo
-          const analyses = await Promise.all(
-            allMediaUrls.map(async (url) => {
-              const blob = await messaging.downloadMedia(url)
-              const buf = Buffer.from(await blob.arrayBuffer())
-              const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
-              return vision.analyzeImage(dataUri, { userMessage: text ?? undefined })
+          // Uma imagem ruim não invalida as demais do mesmo burst.
+          const results = await Promise.all(
+            imageMediaItems.map(async (media) => {
+              try {
+                const blob = await messaging.downloadMedia(media.url)
+                const buf = Buffer.from(await blob.arrayBuffer())
+                const dataUri = `data:${blob.type || 'image/jpeg'};base64,${buf.toString('base64')}`
+                const image = await vision.analyzeImage(dataUri, {
+                  userMessage: patientNarrative,
+                })
+                return { ok: true as const, media, image }
+              } catch (error) {
+                return {
+                  ok: false as const,
+                  media,
+                  reason: error instanceof Error ? error.message : String(error),
+                }
+              }
             }),
           )
-          return { ok: true as const, images: analyses, latency_ms: Date.now() - start }
+          const successful = results.filter(
+            (result): result is Extract<(typeof results)[number], { ok: true }> => result.ok,
+          )
+          const failures = results
+            .filter(
+              (result): result is Extract<(typeof results)[number], { ok: false }> => !result.ok,
+            )
+            .map(({ media, reason }) => ({ media, reason }))
+          return {
+            ok: successful.length > 0,
+            reason: failures[0]?.reason ?? null,
+            images: successful.map((result) => result.image),
+            imageMedia: successful.map((result) => result.media),
+            failures,
+            latency_ms: Date.now() - start,
+          }
         } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e)
           return {
             ok: false as const,
-            reason: e instanceof Error ? e.message : String(e),
+            reason,
             images: [],
+            imageMedia: [],
+            failures: imageMediaItems.map((media) => ({ media, reason })),
+            latency_ms: 0,
           }
         }
       })
+
+      if (vRes.failures.length > 0) {
+        await step.run('log-vision-download-failed', async () => {
+          const { supabase } = createWorkerDeps()
+          const rows = vRes.failures.map((failure) => ({
+            user_id: userId,
+            event: 'vision.download_failed',
+            properties: {
+              provider_message_id: failure.media.providerMessageId,
+              reason: failure.reason.slice(0, 500),
+              photo_count: imageMediaItems.length,
+              had_caption: !!patientNarrative,
+            },
+          }))
+          const { error } = await supabase.from('product_events').insert(rows)
+          if (error) {
+            logger.warn('vision.download_failed insert error', {
+              code: error.code,
+              message: error.message,
+            })
+          }
+          return { logged: rows.length }
+        })
+      }
+
       if (vRes.ok && vRes.images.length > 0) {
         // Formata cada imagem segundo seu tipo
         const blocks: string[] = []
         const bodySignals: BodyPhotoSignal[] = []
+        const appendNutritionLabel = (
+          img: VisionNutritionLabelAnalysis,
+          idx: string,
+          samePhotoAsMeal = false,
+        ) => {
+          visionNutritionLabelDetected = true
+          visionNutritionLabelDetectedCount += 1
+          const ps = img.per_serving
+          const p100 = img.per_100g
+          const labelResolution = resolveTrustedNutritionLabel(
+            {
+              productName: img.product_name,
+              confidence: img.confidence,
+              servingSizeG: img.serving_size_g,
+              perServing: ps,
+              per100g: p100,
+            },
+            visionCfg.meal_confidence_threshold,
+          )
+          if (labelResolution.trusted) {
+            visionNutritionLabels.push(labelResolution.trusted)
+          }
+          const fmt = (n: number | null) => (n == null ? 'n/d' : String(n))
+          const servingLine =
+            img.serving_size_g != null
+              ? `  porção declarada: **${img.serving_size_g}g**`
+              : '  porção não declarada na imagem'
+          const perServingLine = `  POR PORÇÃO (${img.serving_size_g ?? '?'}g): ${fmt(ps.kcal)} kcal | ${fmt(ps.protein_g)}g P | ${fmt(ps.carbs_g)}g C | ${fmt(ps.fat_g)}g G`
+          const per100Line = `  POR 100g: ${fmt(p100.kcal)} kcal | ${fmt(p100.protein_g)}g P | ${fmt(p100.carbs_g)}g C | ${fmt(p100.fat_g)}g G`
+          const confPct = (img.confidence * 100).toFixed(0)
+          const guidance = labelResolution.trusted
+            ? `\n  ✅ AÇÃO: preserve o nome exato do produto e pergunte/extraia somente a quantidade consumida. Chame registra_refeicao com o item normal, SEM usar corrections para repetir macros. O sistema anexará os valores completos e validados do rótulo ao pending de confirmação.`
+            : `\n  ⚠️ AÇÃO: não use esses números no cálculo (${labelResolution.reason}). Peça ao paciente os quatro valores por porção: kcal, proteína, carboidrato e gordura.`
+          blocks.push(
+            `${idx} [tabela nutricional${samePhotoAsMeal ? ' na mesma foto' : ''}]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
+          )
+        }
         for (let i = 0; i < vRes.images.length; i++) {
           const img = vRes.images[i]!
           const idx = vRes.images.length > 1 ? `Foto ${i + 1}/${vRes.images.length}` : 'Foto'
@@ -361,17 +554,21 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(
               `${idx} [refeição]:\n${img.meal_context ? `  contexto: ${img.meal_context}\n` : ''}${itemsTxt}${guidance}`,
             )
+            if (img.nutrition_label_visible && !img.nutrition_label) {
+              visionNutritionLabelDetected = true
+              visionNutritionLabelDetectedCount += 1
+            }
+            if (img.nutrition_label) {
+              appendNutritionLabel(img.nutrition_label, idx, true)
+            }
           } else if (img.type === 'body') {
-            const bodyProviderMessageId =
-              Array.isArray(providerMessageIds) && providerMessageIds.length === vRes.images.length
-                ? providerMessageIds[i] ?? providerMessageId
-                : providerMessageId
+            const bodyMedia = vRes.imageMedia[i]
             bodySignals.push({
               view: img.view,
               bfPercentEstimate: img.bf_percent_estimate,
               confidence: img.bf_confidence,
-              occurredAt: new Date(timestamp).toISOString(),
-              providerMessageId: bodyProviderMessageId ?? null,
+              occurredAt: new Date(bodyMedia?.timestamp ?? timestamp).toISOString(),
+              providerMessageId: bodyMedia?.providerMessageId ?? providerMessageId,
               photoCount: vRes.images.length,
               compositionNotes: img.composition_notes ?? null,
               postureNotes: img.posture_notes ?? null,
@@ -384,33 +581,14 @@ export const processMessageFn = inngest.createFunction(
               `${idx} [balança]:\n  peso lido: ${img.weight_kg ?? 'n/d'} kg (conf ${(img.confidence * 100).toFixed(0)}%, unidade ${img.unit_detected})`,
             )
           } else if (img.type === 'nutrition_label') {
-            const ps = img.per_serving
-            const p100 = img.per_100g
-            const fmt = (n: number | null) => (n == null ? 'n/d' : String(n))
-            const servingLine =
-              img.serving_size_g != null
-                ? `  porção declarada: **${img.serving_size_g}g**`
-                : '  porção não declarada na imagem'
-            const perServingLine = `  POR PORÇÃO (${img.serving_size_g ?? '?'}g): ${fmt(ps.kcal)} kcal | ${fmt(ps.protein_g)}g P | ${fmt(ps.carbs_g)}g C | ${fmt(ps.fat_g)}g G`
-            const per100Line = `  POR 100g: ${fmt(p100.kcal)} kcal | ${fmt(p100.protein_g)}g P | ${fmt(p100.carbs_g)}g C | ${fmt(p100.fat_g)}g G`
-            const confPct = (img.confidence * 100).toFixed(0)
-            // Guidance pro LLM usar `corrections[]` em registra_refeicao com os
-            // macros customizados (campos kcal_per_100g, protein_g, carbs_g, fat_g).
-            // Caso Amanda 2026-05-16: ficou stuck pedindo "manda foto melhor" 3x;
-            // com isto extraído, basta passar pra tool e fim.
-            const guidance =
-              img.per_100g.kcal != null
-                ? `\n  ✅ AÇÃO: chame registra_refeicao com itens normais E preencha \`corrections[]\` com {de:"${img.product_name ?? 'iogurte/produto'}", para:"${img.product_name ?? 'iogurte/produto'}", kcal_per_100g:${p100.kcal}, protein_g:${p100.protein_g ?? 0}, carbs_g:${p100.carbs_g ?? 0}, fat_g:${p100.fat_g ?? 0}}. Isso registra com macros REAIS da embalagem em vez de estimativa genérica.`
-                : img.per_serving.kcal != null && img.serving_size_g
-                  ? `\n  ✅ AÇÃO: tabela só tem POR PORÇÃO. Calcule POR 100g dividindo: kcal_per_100g=${Math.round((ps.kcal! / img.serving_size_g) * 100)}, protein_g=${ps.protein_g != null ? ((ps.protein_g / img.serving_size_g) * 100).toFixed(1) : 0}, etc. Use em \`corrections[]\` de registra_refeicao.`
-                  : `\n  ⚠️ AÇÃO: tabela ilegível ou incompleta. Pergunte ao paciente pra digitar os valores (kcal, proteína, carboidrato, gordura por porção).`
-            blocks.push(
-              `${idx} [tabela nutricional]:\n  produto: ${img.product_name ?? '?'} (conf ${confPct}%)\n${servingLine}\n${perServingLine}\n${per100Line}${img.notes ? `\n  notas vision: ${img.notes}` : ''}${guidance}`,
-            )
+            appendNutritionLabel(img, idx)
           } else if (img.type === 'equipment') {
             const confPct = (img.confidence * 100).toFixed(0)
-            const items = img.equipment.length > 0 ? img.equipment.join(', ') : '(nenhum item visível)'
-            const locLine = img.location ? `  local inferido: ${img.location}` : '  local: indeterminado'
+            const items =
+              img.equipment.length > 0 ? img.equipment.join(', ') : '(nenhum item visível)'
+            const locLine = img.location
+              ? `  local inferido: ${img.location}`
+              : '  local: indeterminado'
             // Guidance pro LLM: confirmar com paciente + perguntar dias/semana
             // e nível antes de chamar gera_treino. NUNCA chamar a tool direto
             // da foto (description da tool é clara sobre os 3 dados obrigatórios).
@@ -425,11 +603,23 @@ export const processMessageFn = inngest.createFunction(
             blocks.push(`${idx} [outra]:\n  ${img.description}`)
           }
         }
+        const partialFailureNotice =
+          vRes.failures.length > 0
+            ? `\n\n[${vRes.failures.length} de ${imageMediaItems.length} foto(s) não puderam ser analisadas. Considere apenas as análises acima e peça somente a mídia faltante se ela for necessária.]`
+            : ''
+        const multimodalFusionNotice = patientNarrative
+          ? `\n\n[REGRA DE FUSÃO MULTIMODAL: a análise visual e o relato acima descrevem o mesmo consumo. O texto do paciente corrige/completa a foto; não some novamente um alimento presente nas duas fontes.]`
+          : ''
         enrichedText =
-          `[${vRes.images.length} foto(s) recebida(s) — análise visual automática abaixo]\n\n` +
+          `[${vRes.images.length}/${imageMediaItems.length} foto(s) analisada(s) — análise visual automática abaixo]\n\n` +
           blocks.join('\n\n') +
-          (text ? `\n\nLegenda do usuário: "${text}"` : '')
-        mediaSummary = { kind: 'image', latency_ms: vRes.latency_ms }
+          (patientNarrative ? `\n\nRelato do usuário: "${patientNarrative}"` : '') +
+          multimodalFusionNotice +
+          partialFailureNotice
+        mediaSummary = {
+          kind: audioMediaItems.length > 0 ? 'mixed' : 'image',
+          latency_ms: (mediaSummary?.latency_ms ?? 0) + vRes.latency_ms,
+        }
         logger.info('Vision done', {
           count: vRes.images.length,
           types: vRes.images.map((i) => i.type),
@@ -441,178 +631,209 @@ export const processMessageFn = inngest.createFunction(
         // distribuição de type sem `vercel logs` ao vivo. Latência é do batch
         // (Promise.all paralelo), mesma pra todas as imagens do turno.
         await step.run('log-vision-analyzed', async () => {
-          try {
-            const { supabase } = createWorkerDeps()
-            const rows = vRes.images.map((img) => {
-              let confidence: number | null = null
-              // FIX 4 (Roberto 2026-06-15): expor meal_items + meal_context
-              // no properties pra pipeline.ts conseguir detectar "foto pendente
-              // de registro" sem precisar re-rodar vision. Caso real: paciente
-              // mandou foto, respondeu disambiguação, LLM chamou
-              // marca_refeicao_pulada em vez de registra_refeicao — foto
-              // perdida. Com meal_items aqui, o pipeline carrega visionPending
-              // do estado e bloqueia o skip.
-              let mealItems:
-                | Array<{ name: string; quantity_g_estimate: number; confidence: number }>
-                | null = null
-              let mealContext: string | null = null
-              let needsDisambiguation = false
-              let bodyView: string | null = null
-              let bodyBfPercentEstimate: number | null = null
-              let bodyCompositionNotes: string | null = null
-              let bodyPostureNotes: string | null = null
-              if (img.type === 'meal') {
-                confidence = img.items.length > 0
+          const { supabase } = createWorkerDeps()
+          const rows = vRes.images.map((img, imageIndex) => {
+            let confidence: number | null = null
+            // FIX 4 (Roberto 2026-06-15): expor meal_items + meal_context
+            // no properties pra pipeline.ts conseguir detectar "foto pendente
+            // de registro" sem precisar re-rodar vision. Caso real: paciente
+            // mandou foto, respondeu disambiguação, LLM chamou
+            // marca_refeicao_pulada em vez de registra_refeicao — foto
+            // perdida. Com meal_items aqui, o pipeline carrega visionPending
+            // do estado e bloqueia o skip.
+            let mealItems: Array<{
+              name: string
+              quantity_g_estimate: number
+              confidence: number
+            }> | null = null
+            let mealContext: string | null = null
+            let needsDisambiguation = false
+            let bodyView: string | null = null
+            let bodyBfPercentEstimate: number | null = null
+            let bodyCompositionNotes: string | null = null
+            let bodyPostureNotes: string | null = null
+            let nutritionLabelVisible = false
+            let nutritionLabelOcrAttached = false
+            let nutritionLabelOcrFailed = false
+            if (img.type === 'meal') {
+              confidence =
+                img.items.length > 0
                   ? img.items.reduce((acc, it) => acc + (it.confidence ?? 0), 0) / img.items.length
                   : null
-                mealItems = img.items.map((it) => ({
-                  name: it.name,
-                  quantity_g_estimate: it.quantity_g_estimate,
-                  confidence: it.confidence,
-                }))
-                mealContext = img.meal_context ?? null
-                needsDisambiguation = img.items.some(
-                  (it) => it.confidence < visionCfg.meal_confidence_threshold,
-                )
-              } else if (img.type === 'body') {
-                confidence = img.bf_confidence
-                bodyView = img.view
-                bodyBfPercentEstimate = img.bf_percent_estimate
-                bodyCompositionNotes = img.composition_notes ?? null
-                bodyPostureNotes = img.posture_notes ?? null
-              } else if (
-                img.type === 'scale' ||
-                img.type === 'equipment' ||
-                img.type === 'nutrition_label'
-              ) {
-                confidence = img.confidence
+              mealItems = img.items.map((it) => ({
+                name: it.name,
+                quantity_g_estimate: it.quantity_g_estimate,
+                confidence: it.confidence,
+              }))
+              mealContext = img.meal_context ?? null
+              needsDisambiguation = img.items.some(
+                (it) => it.confidence < visionCfg.meal_confidence_threshold,
+              )
+              nutritionLabelVisible = img.nutrition_label_visible === true
+              nutritionLabelOcrAttached = img.nutrition_label != null
+              nutritionLabelOcrFailed = img.nutrition_label_error != null
+            } else if (img.type === 'body') {
+              confidence = img.bf_confidence
+              bodyView = img.view
+              bodyBfPercentEstimate = img.bf_percent_estimate
+              bodyCompositionNotes = img.composition_notes ?? null
+              bodyPostureNotes = img.posture_notes ?? null
+            } else if (
+              img.type === 'scale' ||
+              img.type === 'equipment' ||
+              img.type === 'nutrition_label'
+            ) {
+              confidence = img.confidence
+              if (img.type === 'nutrition_label') {
+                nutritionLabelVisible = true
+                nutritionLabelOcrAttached = img.nutrition_label_error == null
+                nutritionLabelOcrFailed = img.nutrition_label_error != null
               }
-              const model =
-                img.type === 'nutrition_label'
-                  ? visionCfg.nutrition_label_model
-                  : visionCfg.model
-              return {
-                user_id: userId,
-                event: 'vision.analyzed',
-                properties: {
-                  provider_message_id: providerMessageId,
-                  type: img.type,
-                  latency_ms: vRes.latency_ms,
-                  confidence,
-                  model,
-                  photo_count: vRes.images.length,
-                  had_caption: !!text,
-                  // FIX 4 — telemetria rica pro gate funcionar
-                  meal_items: mealItems,
-                  meal_context: mealContext,
-                  needs_disambiguation: needsDisambiguation,
-                  view: bodyView,
-                  bf_percent_estimate: bodyBfPercentEstimate,
-                  bf_confidence: img.type === 'body' ? img.bf_confidence : null,
-                  composition_notes: bodyCompositionNotes,
-                  posture_notes: bodyPostureNotes,
-                },
-              }
-            })
-            // supabase-js v2 NÃO lança em 4xx/5xx (RLS, FK, payload errado);
-            // o erro vem em { error }. Sem capturar, telemetria zera silenciosa
-            // — exatamente o padrão que escondeu o bug do edu_comment 36h.
-            const { error: insertErr } = await supabase.from('product_events').insert(rows)
-            if (insertErr) {
-              logger.warn('vision.analyzed insert error', {
-                code: insertErr.code,
-                message: insertErr.message,
-              })
             }
+            const model =
+              img.type === 'nutrition_label' ? visionCfg.nutrition_label_model : visionCfg.model
+            const visionProviderMessageId =
+              vRes.imageMedia[imageIndex]?.providerMessageId ?? providerMessageId
+            const dedupeKey = buildVisionEventDedupeKey(
+              visionProviderMessageId,
+              img.type,
+              imageIndex,
+            )
+            return {
+              user_id: userId,
+              event: 'vision.analyzed',
+              properties: {
+                dedupe_key: dedupeKey,
+                provider_message_id: visionProviderMessageId,
+                type: img.type,
+                latency_ms: vRes.latency_ms,
+                confidence,
+                model,
+                photo_count: vRes.images.length,
+                had_caption: !!patientNarrative,
+                // FIX 4 — telemetria rica pro gate funcionar
+                meal_items: mealItems,
+                meal_context: mealContext,
+                needs_disambiguation: needsDisambiguation,
+                nutrition_label_visible: nutritionLabelVisible,
+                nutrition_label_ocr_attached: nutritionLabelOcrAttached,
+                nutrition_label_ocr_failed: nutritionLabelOcrFailed,
+                view: bodyView,
+                bf_percent_estimate: bodyBfPercentEstimate,
+                bf_confidence: img.type === 'body' ? img.bf_confidence : null,
+                composition_notes: bodyCompositionNotes,
+                posture_notes: bodyPostureNotes,
+              },
+            }
+          })
+          const dedupeKeys = rows.map((row) => row.properties.dedupe_key)
+          const { data: existingVisionEvents, error: existingVisionEventsError } = await supabase
+            .from('product_events')
+            .select('properties')
+            .eq('user_id', userId)
+            .eq('event', 'vision.analyzed')
+            .in('properties->>dedupe_key', dedupeKeys)
+          throwIfQueryFailed(existingVisionEventsError, 'vision event idempotency lookup failed')
+          const existingDedupeKeys = new Set(
+            (existingVisionEvents ?? []).flatMap((row) => {
+              const properties = row.properties as Record<string, unknown> | null
+              return typeof properties?.dedupe_key === 'string' ? [properties.dedupe_key] : []
+            }),
+          )
+          const missingRows = rows.filter(
+            (row) => !existingDedupeKeys.has(row.properties.dedupe_key),
+          )
+          if (missingRows.length > 0) {
+            const { error: insertErr } = await supabase.from('product_events').insert(missingRows)
+            throwIfQueryFailed(insertErr, 'vision event persistence failed')
+          }
 
-            // Audit 06-25 Bug B (Roberto 25/06): grava digest curto em
-            // messages.content do inbound da foto. Hoje content é NULL pra
-            // content_type=image SEM caption — quando paciente manda 2 fotos
-            // + texto, e LLM faz pergunta no meio, o turno seguinte filtra
-            // recentMessages por `.content` truthy (pipeline.ts:1810) e perde
-            // a memória das fotos.
-            //
-            // Review HIGH 3 (audit 06-25): fotos COM caption já têm
-            // content=caption (webhook-whatsapp:234). Filtro `.is(content,null)`
-            // antigo bloqueava digest pra essas — bug! Maioria das fotos têm
-            // caption ("aqui meu almoço"), então o fix antigo cobria minoria.
-            // Agora: SE content já existe E não tem sentinela [vision], faz
-            // append com prefixo `\n[vision] ...` pra preservar AMBOS caption
-            // e digest. Sentinela permite idempotência em retries.
-            try {
-              const mealImgs = vRes.images.filter((i) => i.type === 'meal')
-              if (providerMessageId && mealImgs.length > 0) {
-                const digests = mealImgs.map((img, idx) => {
-                  const names = img.items.slice(0, 8).map((it) => it.name).join(', ')
-                  const more = img.items.length > 8 ? ` +${img.items.length - 8}` : ''
-                  const ctx = img.meal_context ? ` — ${img.meal_context.slice(0, 60)}` : ''
-                  const prefix = mealImgs.length > 1 ? `Foto ${idx + 1}/${mealImgs.length}` : 'Foto'
-                  return `[vision] ${prefix}: ${img.items.length} itens: ${names}${more}${ctx}`
-                })
-                const digestText = digests.join('\n')
-                // Busca content atual pra decidir entre SET (null) ou APPEND.
-                const { data: existing } = await supabase
-                  .from('messages')
-                  .select('content')
-                  .eq('provider_message_id', providerMessageId)
-                  .eq('user_id', userId)
-                  .maybeSingle()
-                const cur = (existing as { content?: string | null } | null)?.content ?? null
-                // Idempotência: se sentinela já está no content, não duplica.
-                if (cur && cur.includes('[vision]')) {
-                  // já gravado — no-op
-                } else if (cur && cur.length > 0) {
-                  // foto com caption — APPEND digest preservando caption
-                  await supabase
-                    .from('messages')
-                    .update({ content: `${cur}\n${digestText}` })
-                    .eq('provider_message_id', providerMessageId)
-                    .eq('user_id', userId)
-                } else {
-                  // foto sem caption (content=null) — SET digest
-                  await supabase
-                    .from('messages')
-                    .update({ content: digestText })
-                    .eq('provider_message_id', providerMessageId)
-                    .eq('user_id', userId)
-                    .is('content', null)
-                }
-              }
-              const bodyDigestText = formatBodyPhotoDigest(bodySignals)
-              if (providerMessageId && bodyDigestText.length > 0) {
-                const { data: existing } = await supabase
-                  .from('messages')
-                  .select('content')
-                  .eq('provider_message_id', providerMessageId)
-                  .eq('user_id', userId)
-                  .maybeSingle()
-                const cur = (existing as { content?: string | null } | null)?.content ?? null
-                if (cur && cur.includes('[vision-body]')) {
-                  // já gravado — no-op
-                } else if (cur && cur.length > 0) {
-                  await supabase
-                    .from('messages')
-                    .update({ content: `${cur}\n${bodyDigestText}` })
-                    .eq('provider_message_id', providerMessageId)
-                    .eq('user_id', userId)
-                } else {
-                  await supabase
-                    .from('messages')
-                    .update({ content: bodyDigestText })
-                    .eq('provider_message_id', providerMessageId)
-                    .eq('user_id', userId)
-                    .is('content', null)
-                }
-              }
-            } catch (digestErr) {
-              logger.warn('vision digest update failed (non-fatal)', {
-                error: digestErr instanceof Error ? digestErr.message : String(digestErr),
-              })
-            }
-          } catch (logErr) {
-            logger.warn('vision.analyzed event log failed', {
-              error: logErr instanceof Error ? logErr.message : String(logErr),
+          // Audit 06-25 Bug B (Roberto 25/06): grava digest curto em
+          // messages.content do inbound da foto. Hoje content é NULL pra
+          // content_type=image SEM caption — quando paciente manda 2 fotos
+          // + texto, e LLM faz pergunta no meio, o turno seguinte filtra
+          // recentMessages por `.content` truthy (pipeline.ts:1810) e perde
+          // a memória das fotos.
+          //
+          // Review HIGH 3 (audit 06-25): fotos COM caption já têm
+          // content=caption (webhook-whatsapp:234). Filtro `.is(content,null)`
+          // antigo bloqueava digest pra essas — bug! Maioria das fotos têm
+          // caption ("aqui meu almoço"), então o fix antigo cobria minoria.
+          // Agora: SE content já existe E não tem sentinela [vision], faz
+          // append com prefixo `\n[vision] ...` pra preservar AMBOS caption
+          // e digest. Sentinela permite idempotência em retries.
+          const mealImgs = vRes.images.filter((i) => i.type === 'meal')
+          if (providerMessageId && mealImgs.length > 0) {
+            const digests = mealImgs.map((img, idx) => {
+              const names = img.items
+                .slice(0, 8)
+                .map((it) => it.name)
+                .join(', ')
+              const more = img.items.length > 8 ? ` +${img.items.length - 8}` : ''
+              const ctx = img.meal_context ? ` — ${img.meal_context.slice(0, 60)}` : ''
+              const prefix = mealImgs.length > 1 ? `Foto ${idx + 1}/${mealImgs.length}` : 'Foto'
+              return `[vision] ${prefix}: ${img.items.length} itens: ${names}${more}${ctx}`
             })
+            const digestText = digests.join('\n')
+            // Busca content atual pra decidir entre SET (null) ou APPEND.
+            const { data: existing, error: existingMessageError } = await supabase
+              .from('messages')
+              .select('content')
+              .eq('provider_message_id', providerMessageId)
+              .eq('user_id', userId)
+              .maybeSingle()
+            throwIfQueryFailed(existingMessageError, 'meal vision digest lookup failed')
+            const cur = (existing as { content?: string | null } | null)?.content ?? null
+            // Idempotência: se sentinela já está no content, não duplica.
+            if (cur && cur.includes('[vision]')) {
+              // já gravado — no-op
+            } else if (cur && cur.length > 0) {
+              // foto com caption — APPEND digest preservando caption
+              const { error: digestUpdateError } = await supabase
+                .from('messages')
+                .update({ content: `${cur}\n${digestText}` })
+                .eq('provider_message_id', providerMessageId)
+                .eq('user_id', userId)
+              throwIfQueryFailed(digestUpdateError, 'meal vision digest update failed')
+            } else {
+              // foto sem caption (content=null) — SET digest
+              const { error: digestSetError } = await supabase
+                .from('messages')
+                .update({ content: digestText })
+                .eq('provider_message_id', providerMessageId)
+                .eq('user_id', userId)
+                .is('content', null)
+              throwIfQueryFailed(digestSetError, 'meal vision digest write failed')
+            }
+          }
+          const bodyDigestText = formatBodyPhotoDigest(bodySignals)
+          if (providerMessageId && bodyDigestText.length > 0) {
+            const { data: existing, error: existingBodyMessageError } = await supabase
+              .from('messages')
+              .select('content')
+              .eq('provider_message_id', providerMessageId)
+              .eq('user_id', userId)
+              .maybeSingle()
+            throwIfQueryFailed(existingBodyMessageError, 'body vision digest lookup failed')
+            const cur = (existing as { content?: string | null } | null)?.content ?? null
+            if (cur && cur.includes('[vision-body]')) {
+              // já gravado — no-op
+            } else if (cur && cur.length > 0) {
+              const { error: bodyDigestUpdateError } = await supabase
+                .from('messages')
+                .update({ content: `${cur}\n${bodyDigestText}` })
+                .eq('provider_message_id', providerMessageId)
+                .eq('user_id', userId)
+              throwIfQueryFailed(bodyDigestUpdateError, 'body vision digest update failed')
+            } else {
+              const { error: bodyDigestSetError } = await supabase
+                .from('messages')
+                .update({ content: bodyDigestText })
+                .eq('provider_message_id', providerMessageId)
+                .eq('user_id', userId)
+                .is('content', null)
+              throwIfQueryFailed(bodyDigestSetError, 'body vision digest write failed')
+            }
           }
         })
         // Persiste a ESTIMATIVA de BF% agregando as fotos corporais recentes.
@@ -621,7 +842,7 @@ export const processMessageFn = inngest.createFunction(
           await step.run('persist-bf-estimate', async () => {
             const { supabase } = createWorkerDeps()
             const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-            const { data: rows } = await supabase
+            const { data: rows, error: bodyHistoryError } = await supabase
               .from('product_events')
               .select('properties, occurred_at')
               .eq('user_id', userId)
@@ -629,17 +850,20 @@ export const processMessageFn = inngest.createFunction(
               .gte('occurred_at', since)
               .order('occurred_at', { ascending: false })
               .limit(30)
-            const recentSignals = ((rows ?? []) as Array<{
-              properties: unknown
-              occurred_at: string | null
-            }>)
+            throwIfQueryFailed(bodyHistoryError, 'body vision history lookup failed')
+            const recentSignals = (
+              (rows ?? []) as Array<{
+                properties: unknown
+                occurred_at: string | null
+              }>
+            )
               .map((row) => bodyPhotoSignalFromEventProperties(row.properties, row.occurred_at))
               .filter((signal): signal is BodyPhotoSignal => signal != null)
             const bf = aggregateBodyBfEstimate(
               recentSignals.length > 0 ? recentSignals : bodySignals,
             )
             if (!bf) return
-            await supabase
+            const { error: bfEstimateError } = await supabase
               .from('user_profiles')
               .update({
                 bf_percent_estimated: bf.estimate,
@@ -647,42 +871,26 @@ export const processMessageFn = inngest.createFunction(
                 bf_estimated_at: new Date().toISOString(),
               })
               .eq('user_id', userId)
+            throwIfQueryFailed(bfEstimateError, 'body fat estimate persistence failed')
           })
         }
       } else {
         logger.warn('Vision skipped', { reason: vRes.ok ? 'sem imagens' : vRes.reason })
-        // Observabilidade (Roberto 2026-05-27 08:47): a falha de visão NUNCA
-        // virava evento — só logger.warn do Inngest, inacessível sem `vercel
-        // logs` ao vivo. Confirmado: 0 logs de falha de download em 10 dias.
-        // Agora grava product_events com o motivo exato (token/timeout/CDN/5xx)
-        // pra auditoria saber a causa e medir frequência.
-        if (!vRes.ok) {
-          await step.run('log-vision-download-failed', async () => {
-            const { supabase } = createWorkerDeps()
-            await supabase.from('product_events').insert({
-              user_id: userId,
-              event: 'vision.download_failed',
-              properties: {
-                provider_message_id: providerMessageId,
-                reason: String(vRes.reason ?? '').slice(0, 500),
-                photo_count: allMediaUrls.length,
-                had_caption: !!text,
-              },
-            })
-          })
+        mediaSummary = {
+          kind: audioMediaItems.length > 0 ? 'mixed' : 'image',
+          latency_ms: (mediaSummary?.latency_ms ?? 0) + vRes.latency_ms,
         }
-        if (text) {
-          // Se não conseguiu ler mas tem caption, usa só a caption
-          enrichedText = text
+        const failureNotice = `[${imageMediaItems.length} foto(s) recebida(s), mas nenhuma pôde ser analisada. Peça ao usuário para reenviar apenas as fotos ou descrever o conteúdo. NÃO INVENTE.]`
+        if (patientNarrative) {
+          enrichedText = `${patientNarrative}\n\n${failureNotice}`
         } else {
-          // Sem texto e sem vision: avisa o LLM explicitamente que recebeu foto mas não conseguiu ler
-          enrichedText = `[${allMediaUrls.length} foto(s) recebida(s) — falhou ao baixar/analisar. Peça ao usuário pra reenviar ou descrever por texto. NÃO INVENTE o conteúdo.]`
+          enrichedText = failureNotice
         }
       }
     }
 
     // === Step 3: pipeline ===
-    let result
+    let result: Awaited<ReturnType<typeof processMessage>>
     try {
       result = await step.run('agent-pipeline', async () => {
         const deps = createWorkerDeps()
@@ -692,7 +900,11 @@ export const processMessageFn = inngest.createFunction(
           providerMessageIds,
           contentType,
           text: enrichedText,
-          patientText: contentType === 'image' ? text : enrichedText,
+          patientText: patientNarrative,
+          visionNutritionLabels:
+            visionNutritionLabels.length > 0 ? visionNutritionLabels : undefined,
+          visionNutritionLabelDetected,
+          visionNutritionLabelDetectedCount,
           mediaUrl,
           provider,
           timestamp: new Date(timestamp),
@@ -706,28 +918,35 @@ export const processMessageFn = inngest.createFunction(
       // que era inacessível sem `vercel logs` ao vivo). Caso real 2026-05-13:
       // Roberto mandou foto, pipeline falhou silenciosamente, demoramos 30min
       // pra confirmar a causa porque não havia evento no banco.
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const errStack = err instanceof Error ? err.stack?.slice(0, 1500) : undefined
       try {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        const errStack = err instanceof Error ? err.stack?.slice(0, 1500) : undefined
-        const { supabase } = createWorkerDeps()
-        await supabase.from('product_events').insert({
-          user_id: userId,
-          event: 'pipeline.error',
-          properties: {
-            provider_message_id: providerMessageId,
-            content_type: contentType,
-            has_media: !!mediaUrl,
-            error_message: errMsg.slice(0, 500),
-            error_stack: errStack,
-            text_preview: (enrichedText ?? text ?? '').slice(0, 200),
-          },
+        await step.run('log-pipeline-error', async () => {
+          const { supabase } = createWorkerDeps()
+          const { error } = await supabase.from('product_events').insert({
+            user_id: userId,
+            event: 'pipeline.error',
+            properties: {
+              provider_message_id: providerMessageId,
+              content_type: contentType,
+              has_media: normalizedMediaItems.length > 0,
+              error_message: errMsg.slice(0, 500),
+              error_stack: errStack,
+              text_preview: (enrichedText ?? text ?? '').slice(0, 200),
+            },
+          })
+          throwIfQueryFailed(error, 'pipeline error event insert failed')
+          return { logged: true }
         })
       } catch (logErr) {
         logger.error('Failed to log pipeline.error event', {
           error: logErr instanceof Error ? logErr.message : String(logErr),
         })
       }
-      await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
+      await step.run('react-pipeline-error', async () => {
+        await messaging.react(wpp, providerMessageId, '❌').catch(() => {})
+        return { reacted: true }
+      })
 
       // Roberto+Paulo 2026-05-31 22h BRT: pipeline.error 402 (OpenRouter sem
       // saldo). O fallback existia mas tinha `.catch(() => {})` silencioso —
@@ -735,41 +954,74 @@ export const processMessageFn = inngest.createFunction(
       // intermitente etc), paciente ficava sem resposta NENHUMA e a gente nem
       // sabia. Agora: detecta tipo de erro p/ msg mais útil + retry sem
       // replyTo se falhar + LOGA o resultado.
-      const errMsgLower = (err instanceof Error ? err.message : String(err)).toLowerCase()
+      const errMsgLower = errMsg.toLowerCase()
       const is402 = errMsgLower.includes('402') || errMsgLower.includes('credits')
       const fallbackText = is402
         ? 'Tive uma falha técnica de instante e não consegui processar agora. Já fui notificado aqui. Pode reenviar em uns minutos? 🙏'
         : 'Tive um problema agora. Tenta de novo em alguns segundos? 🙏'
 
-      let fallbackSent = false
+      let fallbackDelivery: OutboundDelivery | null = null
       let fallbackError: string | null = null
       try {
-        await messaging.sendText(wpp, fallbackText, { replyTo: providerMessageId })
-        fallbackSent = true
-      } catch (e1) {
-        // 1ª tentativa falhou — replyTo pode ter rejeitado. Retry sem replyTo.
+        fallbackDelivery = await step.run('send-pipeline-error-fallback', async () =>
+          sendPipelineErrorFallback(messaging, wpp, fallbackText, providerMessageId),
+        )
+      } catch (fallbackErr) {
+        fallbackError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+      }
+      if (fallbackDelivery) {
         try {
-          await messaging.sendText(wpp, fallbackText)
-          fallbackSent = true
-        } catch (e2) {
-          fallbackError = e2 instanceof Error ? e2.message : String(e2)
+          const delivery = fallbackDelivery
+          await step.run('persist-pipeline-error-fallback', async () => {
+            const { supabase } = createWorkerDeps()
+            const [row] = buildOutboundMessageRows({
+              userId,
+              provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
+              contentType: 'text',
+              stage: null,
+              modelUsed: null,
+              promptTokens: null,
+              completionTokens: null,
+              costUsd: null,
+              latencyMs: null,
+              metadata: { response_part: 'pipeline_error_fallback' },
+              deliveries: [delivery],
+            })
+            if (!row) throw new Error('pipeline fallback outbound row missing')
+            await persistOutboundMessage(supabase, row)
+            return { persisted: true }
+          })
+        } catch (persistenceError) {
+          logger.error('Failed to persist pipeline fallback', {
+            error:
+              persistenceError instanceof Error
+                ? persistenceError.message
+                : String(persistenceError),
+          })
         }
       }
       try {
-        const { supabase: supA } = createWorkerDeps()
-        await supA.from('product_events').insert({
-          user_id: userId,
-          event: fallbackSent
-            ? 'pipeline.error.fallback_sent'
-            : 'pipeline.error.fallback_failed',
-          properties: {
-            provider_message_id: providerMessageId,
-            is_402: is402,
-            fallback_error: fallbackError,
-          },
+        await step.run('log-pipeline-error-fallback', async () => {
+          const { supabase } = createWorkerDeps()
+          const { error } = await supabase.from('product_events').insert({
+            user_id: userId,
+            event: fallbackDelivery
+              ? 'pipeline.error.fallback_sent'
+              : 'pipeline.error.fallback_failed',
+            properties: {
+              provider_message_id: providerMessageId,
+              fallback_provider_message_id: fallbackDelivery?.providerMessageId ?? null,
+              is_402: is402,
+              fallback_error: fallbackError,
+            },
+          })
+          throwIfQueryFailed(error, 'pipeline fallback event insert failed')
+          return { logged: true }
         })
-      } catch {
-        /* logging opcional, não bloqueia */
+      } catch (logErr) {
+        logger.warn('Failed to log pipeline fallback event', {
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        })
       }
       throw err
     }
@@ -796,63 +1048,71 @@ export const processMessageFn = inngest.createFunction(
             throw new Error('messaging provider sem sendInteractiveList')
           }
           const items = ix.buttons.map((b) => ({ id: b.id, title: b.title }))
-          return messaging.sendInteractiveList(wpp, ix.body, ix.list.buttonText, items, {
-            replyTo: providerMessageId,
-          })
+          const delivery = await messaging.sendInteractiveList(
+            wpp,
+            ix.body,
+            ix.list.buttonText,
+            items,
+            {
+              replyTo: providerMessageId,
+            },
+          )
+          if (delivery.status === 'failed') {
+            throw new Error(delivery.error ?? 'interactive list delivery failed')
+          }
+          return delivery
         }
         if (!messaging.sendInteractive) {
           throw new Error('messaging provider sem sendInteractive')
         }
-        return messaging.sendInteractive(wpp, ix.body, ix.buttons, { replyTo: providerMessageId })
+        const delivery = await messaging.sendInteractive(wpp, ix.body, ix.buttons, {
+          replyTo: providerMessageId,
+        })
+        if (delivery.status === 'failed') {
+          throw new Error(delivery.error ?? 'interactive delivery failed')
+        }
+        return delivery
       })
       const { supabase } = createWorkerDeps()
-      if (sendRes.providerMessageId) {
-        // Anexa o id da msg out pra auditoria + replies/quote-by-id.
-        //
-        // Audit 06-26 Item 5 (Opção B, zero DDL): preserva o proposal_msg_id
-        // ORIGINAL via `.is('proposal_msg_id', null)`. Re-envios (retry de
-        // fallback) NÃO sobrescrevem — tap continua funcionando via pendingId
-        // codificado no buttonId, mas preserve mantém o card original como
-        // âncora pra reply do paciente. Audit review HIGH 2 corrige
-        // semântica: o tap NÃO consulta proposal_msg_id (busca por pendingId
-        // do BUTTON_ID_PATTERN). Esse fix é defesa de auditoria, não de
-        // funcionalidade do tap.
-        const upd = await supabase
-          .from('pending_registrations')
-          .update({ proposal_msg_id: sendRes.providerMessageId })
-          .eq('id', ix.pendingId)
-          .is('proposal_msg_id', null)
-          .select('id')
-        const rowWasSet = Array.isArray(upd.data) && upd.data.length > 0
-        const policy = classifyProposalMsgIdWrite({
-          rowWasSet,
-          newProviderMessageId: sendRes.providerMessageId,
+      const messageId = await step.run('persist-interactive-out', async () => {
+        const [row] = buildOutboundMessageRows({
+          userId,
+          provider: 'whatsapp_cloud',
+          contentType: 'interactive',
+          stage: result.stage,
+          modelUsed: result.modelUsed,
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          costUsd: result.costUsd,
+          latencyMs: result.latencyMs,
+          deliveries: [
+            {
+              content: ix.body,
+              providerMessageId: sendRes.providerMessageId,
+              status: sendRes.status,
+              error: sendRes.error,
+            },
+          ],
         })
-        await supabase.from('product_events').insert({
-          user_id: userId,
-          event: policy.event,
-          properties: {
-            ...policy.properties,
-            pendingId: ix.pendingId,
-          },
-        })
-      }
-      await supabase.from('messages').insert({
+        if (!row) throw new Error('interactive delivery row missing')
+        return persistOutboundMessage(supabase, row)
+      })
+      const upd = await supabase
+        .from('pending_registrations')
+        .update({ proposal_msg_id: messageId })
+        .eq('id', ix.pendingId)
+        .is('proposal_msg_id', null)
+        .select('id')
+      if (upd.error) throw new Error(upd.error.message)
+      const policy = classifyProposalMsgIdWrite({
+        rowWasSet: Array.isArray(upd.data) && upd.data.length > 0,
+        messageId,
+        newProviderMessageId: sendRes.providerMessageId ?? '',
+      })
+      await supabase.from('product_events').insert({
         user_id: userId,
-        direction: 'out',
-        role: 'assistant',
-        content_type: 'interactive',
-        content: ix.body,
-        provider: 'whatsapp_cloud',
-        provider_message_id: sendRes.providerMessageId ?? null,
-        agent_stage: result.stage,
-        model_used: result.modelUsed,
-        prompt_tokens: result.promptTokens,
-        completion_tokens: result.completionTokens,
-        cost_usd: result.costUsd,
-        latency_ms: result.latencyMs,
-        delivery_status: sendRes.status,
-        delivery_error: sendRes.error ? { error: sendRes.error } : null,
+        event: policy.event,
+        properties: { ...policy.properties, pendingId: ix.pendingId },
       })
       return {
         ok: true,
@@ -889,8 +1149,8 @@ export const processMessageFn = inngest.createFunction(
     let sentCount = 0
     let failedCount = 0
     let sendMode: 'text' | 'audio' = 'text'
-    let deliveryError: string | undefined
     let ttsMediaId: string | undefined
+    let outboundDeliveries: OutboundDelivery[] = []
 
     if (wantsAudio) {
       sendMode = 'audio'
@@ -922,17 +1182,29 @@ export const processMessageFn = inngest.createFunction(
         const blob = new Blob([new Uint8Array(ttsResult.audio)], { type: ttsResult.mimeType })
         const mediaId = await messaging.uploadMedia(blob, ttsResult.mimeType)
         const sendResult = await messaging.sendAudio(wpp, mediaId)
+        if (sendResult.status === 'failed') {
+          throw new Error(sendResult.error ?? 'audio delivery failed')
+        }
         return {
           status: sendResult.status,
+          provider_message_id: sendResult.providerMessageId,
+          error: sendResult.error,
           chars: speechText.length,
           tts_provider: ttsProvider,
           tts_latency_ms: ttsResult.durationMs,
           media_id: mediaId,
         }
       })
-      if (audioRes.status === 'sent') sentCount = 1
-      else failedCount = 1
+      sentCount = 1
       ttsMediaId = audioRes.media_id
+      outboundDeliveries = [
+        {
+          content: result.text,
+          providerMessageId: audioRes.provider_message_id,
+          status: audioRes.status,
+          error: audioRes.error,
+        },
+      ]
       logger.info('Audio sent', audioRes)
       // Observabilidade TTS — antes era invisível, só visível no /audit por
       // contagem de OUT com content_type=audio sem detalhe de provider/latência.
@@ -968,84 +1240,106 @@ export const processMessageFn = inngest.createFunction(
       // cai no envio único.
       const splitForRegistration = result.singleMessage === true
       const parts = splitForRegistration ? splitRegistrationParts(result.text) : null
-      const sendResults = await step.run('send-to-user', async () => {
-        if (parts && (parts.card || parts.comment)) {
-          const baseOpts = {
-            showTyping: true,
-            minDelay: humanizer.min_delay_ms,
-            maxDelay: humanizer.response_max_delay_ms,
-            charsPerSecond: humanizer.chars_per_second,
-            singleMessage: true,
-          }
-          const r1 = await sendHumanized(messaging, wpp, parts.meal, {
-            ...baseOpts,
-            inReplyTo: providerMessageId,
-            replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-          })
-          const all = [...r1]
-          if (parts.comment) {
-            await new Promise((res) => setTimeout(res, 1500))
-            const r2 = await sendHumanized(messaging, wpp, parts.comment, baseOpts)
-            all.push(...r2)
-          }
-          if (parts.card) {
-            await new Promise((res) => setTimeout(res, 1500))
-            const r3 = await sendHumanized(messaging, wpp, parts.card, baseOpts)
-            all.push(...r3)
-          }
-          return all
-        }
-        return sendHumanized(messaging, wpp, result.text, {
+      const assertSuccessful = <T extends { status: string; error?: string }>(deliveries: T[]) => {
+        const failed = deliveries.find((delivery) => delivery.status === 'failed')
+        if (failed) throw new Error(failed.error ?? 'message delivery failed')
+        return deliveries
+      }
+      let sendResults: OutboundDelivery[] = []
+      if (parts && (parts.card || parts.comment)) {
+        const baseOpts = {
           showTyping: true,
           minDelay: humanizer.min_delay_ms,
           maxDelay: humanizer.response_max_delay_ms,
           charsPerSecond: humanizer.chars_per_second,
-          inReplyTo: providerMessageId,
-          replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
-          singleMessage: result.singleMessage === true,
+          singleMessage: true,
+        }
+        const mealResults = await step.run('send-registration-meal', async () =>
+          assertSuccessful(
+            await sendHumanized(messaging, wpp, parts.meal, {
+              ...baseOpts,
+              inReplyTo: providerMessageId,
+              replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+            }),
+          ),
+        )
+        sendResults.push(...mealResults)
+        if (parts.comment) {
+          const comment = parts.comment
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          const commentResults = await step.run('send-registration-comment', async () =>
+            assertSuccessful(await sendHumanized(messaging, wpp, comment, baseOpts)),
+          )
+          sendResults.push(...commentResults)
+        }
+        if (parts.card) {
+          const card = parts.card
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          const cardResults = await step.run('send-registration-card', async () =>
+            assertSuccessful(await sendHumanized(messaging, wpp, card, baseOpts)),
+          )
+          sendResults.push(...cardResults)
+        }
+      } else {
+        sendResults = await sendHumanizedDurably({
+          provider: messaging,
+          to: wpp,
+          text: result.text,
+          stepPrefix: 'send-to-user',
+          runStep: (id, operation) => step.run(id, operation),
+          opts: {
+            showTyping: true,
+            minDelay: humanizer.min_delay_ms,
+            maxDelay: humanizer.response_max_delay_ms,
+            charsPerSecond: humanizer.chars_per_second,
+            inReplyTo: providerMessageId,
+            replyTo: result.toolCalls.length > 0 ? providerMessageId : undefined,
+            singleMessage: result.singleMessage === true,
+          },
         })
-      })
-      sentCount = sendResults.filter((r) => r.status === 'sent').length
-      failedCount = sendResults.filter((r) => r.status !== 'sent').length
-      deliveryError = sendResults.find((r) => r.error)?.error
+      }
+      sentCount = sendResults.filter((delivery) => delivery.status !== 'failed').length
+      failedCount = sendResults.filter((delivery) => delivery.status === 'failed').length
+      outboundDeliveries = sendResults.map((delivery) => ({
+        content: delivery.content,
+        providerMessageId: delivery.providerMessageId,
+        status: delivery.status,
+        error: delivery.error,
+      }))
     }
 
-    // Persiste a OUT no banco COM delivery_status real.
-    // Antes a persistência acontecia em pipeline.ts SEM delivery_status
-    // (sempre null), agora roda aqui depois do envio com status sent/failed.
-    {
-      const deliveryStatus: 'sent' | 'failed' = failedCount > 0 ? 'failed' : 'sent'
-      await step.run('persist-out', async () => {
-        const { error: insErr } = await supabase.from('messages').insert({
-          user_id: userId,
-          direction: 'out',
-          role: 'assistant',
-          content_type: sendMode === 'audio' ? 'audio' : 'text',
-          content: result.text,
-          // Persiste o media_id do áudio TTS pra rastreabilidade.
-          // Antes ficava null em mensagens content_type=audio.
-          media_url: ttsMediaId ?? null,
-          provider: process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud',
-          agent_stage: result.stage,
-          model_used: result.modelUsed,
-          prompt_tokens: result.promptTokens,
-          completion_tokens: result.completionTokens,
-          cost_usd: result.costUsd,
-          latency_ms: result.latencyMs,
-          delivery_status: deliveryStatus,
-          delivery_error: deliveryError ? { msg: deliveryError } : null,
-        })
-        if (insErr) logger.error('persist OUT failed', { error: insErr })
-        return { ok: true }
-      })
+    if (outboundDeliveries.length === 0) {
+      throw new Error('delivery completed without outbound results')
     }
+    await step.run('persist-out', async () => {
+      const providerName = process.env.MESSAGING_PROVIDER ?? 'whatsapp_cloud'
+      const rows = buildOutboundMessageRows({
+        userId,
+        provider: providerName,
+        contentType: sendMode === 'audio' ? 'audio' : 'text',
+        stage: result.stage,
+        modelUsed: result.modelUsed,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        costUsd: result.costUsd,
+        latencyMs: result.latencyMs,
+        deliveries: outboundDeliveries,
+      })
+      for (const row of rows) {
+        await persistOutboundMessage(supabase, {
+          ...row,
+          media_url: sendMode === 'audio' ? (ttsMediaId ?? null) : null,
+        })
+      }
+      return { persisted: rows.length }
+    })
 
     // === Step 5: reação final ===
     await step.run('final-reaction', async () => {
       if (result.toolCalls.length > 0) {
         const allOk = result.toolCalls.every((t) => !t.error)
         await messaging.react(wpp, providerMessageId, allOk ? '✅' : '⚠️').catch(() => {})
-      } else if (contentType === 'audio' || contentType === 'image') {
+      } else if (normalizedMediaItems.length > 0) {
         await messaging.react(wpp, providerMessageId, '').catch(() => {})
       }
       return { ok: true }

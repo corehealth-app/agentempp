@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import type { ServiceClient } from '@mpp/db'
 import {
   buildPersonalWindowsFromLogs,
+  getPersonalMealWindows,
   hourInTimezone,
   type MealRegistrationSample,
   type MealType,
@@ -9,6 +11,21 @@ import {
   percentile,
   resolveMealTypeByHour,
 } from './personal-meal-windows.js'
+
+function failingMealWindowClient(message: string): ServiceClient {
+  const chain = (): unknown => {
+    const value: Record<string, unknown> = {}
+    for (const method of ['select', 'eq', 'gte', 'not', 'limit']) {
+      value[method] = () => chain()
+    }
+    // biome-ignore lint/suspicious/noThenProperty: Supabase query builders are awaitable thenables.
+    value.then = (
+      resolve: (result: { data: null; error: { message: string } }) => unknown,
+    ) => Promise.resolve(resolve({ data: null, error: { message } }))
+    return value
+  }
+  return { from: () => chain() } as unknown as ServiceClient
+}
 
 function sample(meal_type: MealType, hour: number, day: number): MealRegistrationSample {
   return {
@@ -136,6 +153,19 @@ describe('resolveMealTypeByHour — fallback global', () => {
   })
   it('sem janela pessoal, 2h → ceia', () => {
     expect(resolveMealTypeByHour(2, emptyPersonal).expected).toBe('ceia')
+  })
+})
+
+describe('getPersonalMealWindows — integridade da fonte', () => {
+  it('não converte erro de leitura em rotina global', async () => {
+    await expect(
+      getPersonalMealWindows(
+        failingMealWindowClient('personal meal history unavailable'),
+        'user-test',
+        'America/New_York',
+        new Date('2026-07-12T20:00:00.000Z'),
+      ),
+    ).rejects.toThrow('personal meal history unavailable')
   })
 })
 

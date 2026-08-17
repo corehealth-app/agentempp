@@ -8,7 +8,7 @@
  * O cache vive 60s. Mudanças via /settings/calc no admin demoram até esse
  * tempo pra propagar (ou reinicia o worker).
  */
-import { DEFAULT_CALC_CONFIG, type CalcConfig } from '@mpp/core'
+import { type CalcConfig, DEFAULT_CALC_CONFIG } from '@mpp/core'
 
 interface ConfigRow {
   key: string
@@ -29,8 +29,15 @@ export async function loadCalcConfig(svc: any): Promise<CalcConfig> {
     .from('global_config')
     .select('key, value')
     .like('key', 'calc.%')) as { data: ConfigRow[] | null; error: unknown }
-  if (error || !data || data.length === 0) {
-    // Fallback seguro: usa defaults se DB falhar
+  if (error) {
+    const message =
+      typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '').trim()
+        : ''
+    throw new Error(message || 'calculation config lookup failed')
+  }
+  if (!data || data.length === 0) {
+    // Consulta íntegra sem overrides: usa os valores canônicos do core.
     cached = { config: DEFAULT_CALC_CONFIG, expiresAt: now + TTL_MS }
     return DEFAULT_CALC_CONFIG
   }
@@ -40,7 +47,7 @@ export async function loadCalcConfig(svc: any): Promise<CalcConfig> {
     const subKey = row.key.replace(/^calc\./, '') as keyof CalcConfig
     if (subKey in merged) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+      // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       ;(merged as any)[subKey] = row.value
     }
   }

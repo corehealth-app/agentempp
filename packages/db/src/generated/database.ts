@@ -443,6 +443,56 @@ export type Database = {
           },
         ]
       }
+      daily_gap_reminder_attempts: {
+        Row: {
+          attempt_id: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id?: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          claim_key?: string
+          claimed_at?: string
+          date?: string
+          gap?: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_gap_reminder_attempts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       engagement_phrases: {
         Row: {
           active: boolean
@@ -521,11 +571,13 @@ export type Database = {
           fat_g: number | null
           fiber_g: number | null
           id: number
+          is_verified: boolean
           kcal_per_100g: number | null
           name_norm: string | null
           name_pt: string
           protein_g: number | null
           source: string
+          source_ref: string | null
         }
         Insert: {
           carbs_g?: number | null
@@ -535,11 +587,13 @@ export type Database = {
           fat_g?: number | null
           fiber_g?: number | null
           id?: number
+          is_verified?: boolean
           kcal_per_100g?: number | null
           name_norm?: string | null
           name_pt: string
           protein_g?: number | null
           source?: string
+          source_ref?: string | null
         }
         Update: {
           carbs_g?: number | null
@@ -549,17 +603,20 @@ export type Database = {
           fat_g?: number | null
           fiber_g?: number | null
           id?: number
+          is_verified?: boolean
           kcal_per_100g?: number | null
           name_norm?: string | null
           name_pt?: string
           protein_g?: number | null
           source?: string
+          source_ref?: string | null
         }
         Relationships: []
       }
       food_education_phrases: {
         Row: {
           active: boolean
+          allowed_meal_types: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id: string | null
           created_at: string
           curated_by: string | null
@@ -575,6 +632,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -590,6 +648,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -693,6 +752,7 @@ export type Database = {
           consumed_at: string
           created_at: string
           fat_g: number | null
+          food_db_id: number | null
           food_name: string
           id: string
           image_url: string | null
@@ -712,6 +772,7 @@ export type Database = {
           consumed_at?: string
           created_at?: string
           fat_g?: number | null
+          food_db_id?: number | null
           food_name: string
           id?: string
           image_url?: string | null
@@ -731,6 +792,7 @@ export type Database = {
           consumed_at?: string
           created_at?: string
           fat_g?: number | null
+          food_db_id?: number | null
           food_name?: string
           id?: string
           image_url?: string | null
@@ -745,6 +807,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "meal_logs_food_db_id_fkey"
+            columns: ["food_db_id"]
+            isOneToOne: false
+            referencedRelation: "food_db"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "meal_logs_snapshot_id_fkey"
             columns: ["snapshot_id"]
@@ -765,24 +834,59 @@ export type Database = {
         Row: {
           buffered_at: string
           flush_after: string
+          media_extension_count: number
           messages: Json
           user_id: string
         }
         Insert: {
           buffered_at?: string
           flush_after: string
+          media_extension_count?: number
           messages?: Json
           user_id: string
         }
         Update: {
           buffered_at?: string
           flush_after?: string
+          media_extension_count?: number
           messages?: Json
           user_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "message_buffer_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_dispatch_outbox: {
+        Row: {
+          created_at: string
+          id: string
+          messages: Json
+          source_flush_after: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          messages: Json
+          source_flush_after: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          messages?: Json
+          source_flush_after?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_dispatch_outbox_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "users"
@@ -1257,33 +1361,48 @@ export type Database = {
       subscription_events: {
         Row: {
           amount_cents: number | null
+          attempt_count: number
           created_at: string
           currency: string
           event_type: string
           id: string
+          last_error: string | null
           payload: Json | null
+          processed_at: string | null
+          processing_started_at: string | null
+          processing_status: string
           provider_event_id: string | null
           subscription_id: string | null
           user_id: string | null
         }
         Insert: {
           amount_cents?: number | null
+          attempt_count?: number
           created_at?: string
           currency?: string
           event_type: string
           id?: string
+          last_error?: string | null
           payload?: Json | null
+          processed_at?: string | null
+          processing_started_at?: string | null
+          processing_status?: string
           provider_event_id?: string | null
           subscription_id?: string | null
           user_id?: string | null
         }
         Update: {
           amount_cents?: number | null
+          attempt_count?: number
           created_at?: string
           currency?: string
           event_type?: string
           id?: string
+          last_error?: string | null
           payload?: Json | null
+          processed_at?: string | null
+          processing_started_at?: string | null
+          processing_status?: string
           provider_event_id?: string | null
           subscription_id?: string | null
           user_id?: string | null
@@ -2178,6 +2297,15 @@ export type Database = {
         Args: { p_debounce_ms?: number; p_msg_entry: Json; p_user_id: string }
         Returns: Json
       }
+      claim_subscription_event: {
+        Args: {
+          p_event_type: string
+          p_now?: string
+          p_payload: Json
+          p_provider_event_id: string
+        }
+        Returns: Json
+      }
       calc_workout_kcal: {
         Args: {
           p_duration_min: number
@@ -2213,8 +2341,33 @@ export type Database = {
         }[]
       }
       f_unaccent: { Args: { "": string }; Returns: string }
+      finish_subscription_event: {
+        Args: {
+          p_context?: Json
+          p_error?: string
+          p_now?: string
+          p_provider_event_id: string
+          p_success: boolean
+        }
+        Returns: Json
+      }
       get_global_config: { Args: { p_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      claim_food_education_phrase: {
+        Args: {
+          cooldown_days?: number
+          phrase_ids: string[]
+          user_id: string
+        }
+        Returns: {
+          cooldown_count: number
+          exhausted: boolean
+          last_used_at: string
+          phrase_id: string
+          selected_after_cooldown: boolean
+          usage_count: number
+        }[]
+      }
       match_food_phrases: {
         Args: {
           match_count: number
@@ -2223,6 +2376,7 @@ export type Database = {
           query_embedding: string
         }
         Returns: {
+          allowed_meal_types: Database["public"]["Enums"]["meal_type_enum"][]
           id: string
           last_used_at: string
           phrase: string
@@ -2250,6 +2404,10 @@ export type Database = {
       }
       pending_approvals_expire_old: { Args: never; Returns: number }
       refresh_mv_kpis_daily: { Args: never; Returns: undefined }
+      reset_user_conversation_atomic: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       resolve_system_prompt: {
         Args: { p_language?: string; p_stage: string }
         Returns: string

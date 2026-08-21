@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.1
+**Versão do dossiê:** 1.2
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2288,3 +2288,34 @@ TestFlight, App Store, push, PR, merge ou deploy.
 
 O plano operacional agora aplicável é
 `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`.
+
+---
+
+## 32. Atualização operacional 1.2 — CI-0 signing gate
+
+**Data:** 21/08/2026
+
+A CI-0 foi implementada parcialmente na worktree de integração neutra do Mac,
+mas continua sem commit. A sessão local reportou GREEN nos testes focados: 63
+testes registrados, 83 execuções aprovadas, zero falhas e zero skips. Esta VPS
+não executou Xcode e registra o resultado apenas como evidência fornecida pela
+sessão Mac.
+
+O build Debug original para `generic/platform=iOS` foi bloqueado antes da
+compilação, em `GatherProvisioningInputs`, porque a configuração de assinatura
+exigia Development Team. Release não foi executado. Os scans de conteúdo e
+secrets, a revisão técnica independente, o staging e o commit da CI-0 ainda
+estão pendentes.
+
+A decisão operacional estreita é usar somente nos comandos Debug e Release da
+CI-0 os overrides `CODE_SIGNING_ALLOWED=NO` e
+`CODE_SIGNING_REQUIRED=NO`, preservando o destino
+`generic/platform=iOS`. Não houve alteração persistente de signing, nem
+certificado, team ou profile. O resultado desses builds unsigned não é prova
+de signing, provisioning ou binário distribuível.
+
+A próxima ação é publicar esta emenda documental, validá-la no Mac e retomar
+os gates restantes da CI-0 na mesma worktree preservada. A CI-1 continua não
+autorizada. O naming hold, a preservação da worktree órfã, os limites de Git e
+distribuição, e a proibição de produção, TestFlight e App Store permanecem
+inalterados.

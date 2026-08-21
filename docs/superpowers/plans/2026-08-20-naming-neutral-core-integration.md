@@ -449,6 +449,12 @@ without external release.
 
 - [ ] **Step 2: Build Debug and Release**
 
+> **Superseded only for this Step 2 by
+> [CI-0 Signing Gate Reconciliation — 2026-08-21](#ci-0-signing-gate-reconciliation--2026-08-21).**
+> The historical commands below document the original gate that stopped in
+> `GatherProvisioningInputs`; do not treat them as the current CI-0 build
+> commands.
+
   Run:
 
   ```bash
@@ -520,6 +526,69 @@ without external release.
 
   Then report HEAD, staged paths, test/build results and hashes. Do not push,
   open a PR, merge, deploy, upload TestFlight or alter the old worktree.
+
+## CI-0 Signing Gate Reconciliation — 2026-08-21
+
+This section supersedes **only** the build-command block in Task 4, Step 2.
+The original Debug command stopped in `GatherProvisioningInputs` because a
+Development Team was required before CI-0 compilation began. Task 4 remains a
+compilation verification gate; it is not a signing, installation, archive, or
+distribution gate.
+
+On the Mac, run exactly these commands for the current Task 4, Step 2:
+
+```text
+xcodebuild build \
+  -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO
+
+xcodebuild build \
+  -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO
+```
+
+The two `CODE_SIGNING_*` settings are permitted only as command-line overrides
+for this compilation proof. This reconciliation does not change the
+`generic/platform=iOS` destination and does not authorize simulator
+substitution, `project.pbxproj` editing, a Development Team,
+`-allowProvisioningUpdates`, a provisioning profile, certificates, bundle-ID
+changes, persistent signing settings, archive, device installation, TestFlight,
+App Store, or any claim that a build is signed or distributable. Do not add
+other flags to bypass a failure.
+
+If either unsigned build fails because of compilation, linking, Swift 6, a test
+target, resource, or configuration, stop and report that real error. The
+override never turns such a failure into a signing workaround.
+
+After both builds report `BUILD SUCCEEDED`, continue in the same preserved Mac
+worktree with the following order:
+
+1. `git diff --check`;
+2. complete allowlist verification of changed paths;
+3. candidate-name scan limited to added lines;
+4. scan for literal credential values, JWTs, `service_role`, literal bearer
+   values, and real production URLs;
+5. independent technical review;
+6. correction of every Critical or Important finding;
+7. repeat focused tests after every correction;
+8. repeat these unsigned builds after a correction that affects production
+   code;
+9. selective staging; and
+10. one local commit with `feat(ios): add naming-neutral secure mobile transport`.
+
+`SessionTokenProviding` and technical occurrences of `token` are not, by
+themselves, secrets. `BodyFlow` remains permitted as a technical identifier.
+No candidate public name may be added to UI, copy, test, fixture, or log. This
+reconciliation neither concludes CI-0 nor authorizes a push, pull request,
+merge, deployment, production configuration, TestFlight, or App Store work.
 
 ## Future stages — planned but not authorized by CI-0
 

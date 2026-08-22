@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.2
+**Versão do dossiê:** 1.3
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2319,3 +2319,26 @@ os gates restantes da CI-0 na mesma worktree preservada. A CI-1 continua não
 autorizada. O naming hold, a preservação da worktree órfã, os limites de Git e
 distribuição, e a proibição de produção, TestFlight e App Store permanecem
 inalterados.
+
+---
+
+## 33. Atualização operacional 1.3 — drift do resíduo da worktree órfã
+
+**Data:** 22/08/2026
+
+O STOP pré-fetch reportado pelo Mac observou 987 diretórios residuais na
+worktree órfã, contra 5.270 na auditoria anterior: diferença de -4.283. Em
+ambos os estados, havia zero arquivos regulares, `.git` ausente e os 1.420
+paths tracked ausentes. O index e a metadata órfã permaneceram preservados.
+A causa é desconhecida; nenhuma restauração foi autorizada ou executada.
+
+A worktree continua `PHYSICALLY_INCOMPLETE_WORKTREE`, com subclassificação
+`VOLATILE_RESIDUE_DRIFT`. Contagens de diretórios e symlinks deixam de bloquear
+a CI-0, pois são resíduo forense não tracked; os gates materiais de Git, index,
+paths tracked, `.git` ausente, zero arquivos regulares e não reutilização da
+worktree permanecem obrigatórios.
+
+Após a publicação desta emenda, a CI-0 pode retomar no Mac pela worktree
+durável, sem restauração. Os builds unsigned, scans, revisão independente e
+commit local da CI-0 continuam pendentes. CI-1 permanece não autorizada e o
+rebrand permanece congelado.

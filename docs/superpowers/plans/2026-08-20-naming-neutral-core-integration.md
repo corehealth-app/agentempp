@@ -590,6 +590,53 @@ No candidate public name may be added to UI, copy, test, fixture, or log. This
 reconciliation neither concludes CI-0 nor authorizes a push, pull request,
 merge, deployment, production configuration, TestFlight, or App Store work.
 
+## CI-0 Orphan Residue Drift Reconciliation — 2026-08-22
+
+This section supersedes **only** former checks that required an exact
+filesystem-residue cardinality for the old Better Ahead worktree. It preserves
+the `PHYSICALLY_INCOMPLETE_WORKTREE` classification and records
+`VOLATILE_RESIDUE_DRIFT`; it neither restores the path nor changes its forensic
+status.
+
+The next Mac gate must first fetch and validate this documentation commit, then
+read the dossier, physical audit, CI-0 evidence, naming-hold specification, and
+this plan in full. It must confirm the manager and diagnostic repository,
+`worktree1` by HEAD, parent, index SHA-256, index size, and empty staging; and
+the old worktree's absent `.git`, zero regular files, zero physically present
+orphan-index paths, and non-reattached state. Record directory and symlink
+counts only as observations: do not require either 5270 or 987.
+
+It must then validate the durable CI-0 worktree, its ten implementation paths,
+and empty staging; run exactly the two unsigned builds already authorized;
+perform allowlist, `git diff --check`, candidate-name, and secret scans; obtain
+independent review; run the focused final suite; and create the local CI-0
+commit only if every gate passes.
+
+```text
+xcodebuild build \
+  -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO
+
+xcodebuild build \
+  -project apps/ios/BodyFlow/BodyFlow.xcodeproj \
+  -scheme BodyFlow \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO
+```
+
+No other override is authorized. Signing persistence, Development Team,
+provisioning, archive, TestFlight, App Store, CI-1, production, implementation
+push, rebrand work, and old-worktree recovery, cleanup, repair, or reuse remain
+prohibited. The retained material gates include authorized Git/index state,
+tracked-path absence, and preservation of the historical 5270 observation;
+they do not include residue-count equality.
+
 ## Future stages — planned but not authorized by CI-0
 
 | Stage | Scope | Explicit boundary |

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct AppDependencies: Sendable {
@@ -37,7 +38,13 @@ struct AppDependencies: Sendable {
         make(configuration: configuration)
     }
 
-    static func make(configuration: AppLaunchConfiguration) -> AppDependencies {
+    static func make(
+        configuration: AppLaunchConfiguration,
+        mobileAPIConfigurationProvider: (any MobileAPIConfigurationProviding)? = nil,
+        sessionTokenProvider: (any SessionTokenProviding)? = nil,
+        mobileAPISession: URLSession = .shared,
+        apiClientOverride: (any APIClient)? = nil
+    ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
             InMemorySecureStore()
@@ -59,16 +66,41 @@ struct AppDependencies: Sendable {
             UnavailableContentCoverSessionFactory()
         #if DEBUG
         let todayRequest = APIRequest<TodaySummary>(method: .get, path: "/today")
-        let apiClient: any APIClient = switch configuration.mode {
-        case .demo:
-            MockAPIClient(
-                payloads: [todayRequest.key: AppFixtures.todayPayload]
+        let apiClient: any APIClient
+        if configuration.mode == .demo, let apiClientOverride {
+            apiClient = apiClientOverride
+        } else if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
+                    .currentConfiguration(),
+                  let sessionTokenProvider {
+            apiClient = MobileAPITransport(
+                configuration: mobileAPIConfiguration,
+                sessionTokenProvider: sessionTokenProvider,
+                session: mobileAPISession
             )
-        case .releaseUnavailable:
-            UnavailableAPIClient()
+        } else {
+            apiClient = switch configuration.mode {
+            case .demo:
+                MockAPIClient(
+                    payloads: [todayRequest.key: AppFixtures.todayPayload]
+                )
+            case .releaseUnavailable:
+                UnavailableAPIClient()
+            }
         }
         #else
-        let apiClient: any APIClient = UnavailableAPIClient()
+        _ = apiClientOverride
+        let apiClient: any APIClient
+        if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
+                .currentConfiguration(),
+           let sessionTokenProvider {
+            apiClient = MobileAPITransport(
+                configuration: mobileAPIConfiguration,
+                sessionTokenProvider: sessionTokenProvider,
+                session: mobileAPISession
+            )
+        } else {
+            apiClient = UnavailableAPIClient()
+        }
         #endif
 
         #if DEBUG

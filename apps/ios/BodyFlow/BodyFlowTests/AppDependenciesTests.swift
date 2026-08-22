@@ -5,6 +5,86 @@ import Testing
 
 @Suite("App Dependencies")
 struct AppDependenciesTests {
+    @Test("Valid origin and session seam install the real mobile transport")
+    func validOriginAndSessionInstallTransport() throws {
+        let configuration = try MobileAPIConfiguration(
+            originString: "https://staging.example.test"
+        )
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+                configuration: configuration
+            ),
+            sessionTokenProvider: DependencyTokenProvider(token: "session-test-value")
+        )
+
+        #expect(dependencies.apiClient is MobileAPITransport)
+    }
+
+    @Test("Missing mobile origin keeps the API client unavailable")
+    func missingOriginKeepsClientUnavailable() {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: nil,
+            sessionTokenProvider: DependencyTokenProvider(token: "session-test-value")
+        )
+
+        #expect(dependencies.apiClient is UnavailableAPIClient)
+    }
+
+    @Test("Missing mobile session keeps the API client unavailable")
+    func missingSessionKeepsClientUnavailable() throws {
+        let configuration = try MobileAPIConfiguration(
+            originString: "https://staging.example.test"
+        )
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+                configuration: configuration
+            ),
+            sessionTokenProvider: nil
+        )
+
+        #expect(dependencies.apiClient is UnavailableAPIClient)
+    }
+
+    @Test("Release ignores an explicitly injected synthetic success client")
+    func releaseIgnoresSyntheticClientOverride() {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            apiClientOverride: MockAPIClient()
+        )
+
+        #expect(dependencies.apiClient is UnavailableAPIClient)
+    }
+
+    @Test("CI-0 dependency and networking sources contain no candidate product name")
+    func ci0SourcesRemainNamingNeutral() throws {
+        let testDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let appDirectory = testDirectory.deletingLastPathComponent().appending(path: "BodyFlow")
+        let sourceURLs = [
+            appDirectory.appending(path: "App/AppDependencies.swift"),
+            appDirectory.appending(path: "Core/Networking/MobileAPIConfiguration.swift"),
+            appDirectory.appending(path: "Core/Networking/MobileAPIEnvelope.swift"),
+            appDirectory.appending(path: "Core/Networking/MobileAPITransport.swift"),
+            appDirectory.appending(path: "Core/Networking/MobileAPITransportError.swift"),
+            appDirectory.appending(path: "Core/Networking/SessionTokenProviding.swift"),
+        ]
+        let forbidden = [
+            ["Better", "Ahead"].joined(separator: " "),
+            ["Body", "Journey"].joined(),
+            ["Be", "Better"].joined(),
+            ["Better", "Everyday"].joined(),
+        ]
+
+        for sourceURL in sourceURLs {
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
+            for candidate in forbidden {
+                #expect(!source.contains(candidate))
+            }
+        }
+    }
+
     @Test("Release graph installs fail-closed support dependencies")
     func releaseGraphInstallsFailClosedSupportDependencies() {
         let dependencies = releaseDependencies()
@@ -159,6 +239,24 @@ struct AppDependenciesTests {
     }
 
     #if DEBUG
+    @Test("Debug graph accepts an explicitly injected mock API client")
+    func debugGraphAcceptsExplicitMockClient() throws {
+        let request = APIRequest<TodaySummary>(method: .get, path: "/today")
+        let mock = MockAPIClient(payloads: [request.key: AppFixtures.todayPayload])
+        let dependencies = AppDependencies.make(
+            configuration: AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: true,
+                startsWithCompletedFixture: true,
+                preloadsSyntheticOnboardingValues: true,
+                authBehavior: .succeed(after: nil)
+            ),
+            apiClientOverride: mock
+        )
+
+        #expect((dependencies.apiClient as? MockAPIClient) === mock)
+    }
+
     @Test("Debug make graph preserves Prompt 12 while Prompt 13 is unavailable")
     func debugMakePreservesPrompt12AndFailsPrompt13Closed() async throws {
         let dependencies = AppDependencies.make(
@@ -894,3 +992,15 @@ private func dependencyRoutineAttempt() throws
     )
 }
 #endif
+
+private actor DependencyTokenProvider: SessionTokenProviding {
+    private let token: String?
+
+    init(token: String?) {
+        self.token = token
+    }
+
+    func currentBearerToken() -> String? {
+        token
+    }
+}

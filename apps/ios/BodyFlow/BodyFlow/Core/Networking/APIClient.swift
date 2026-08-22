@@ -21,6 +21,7 @@ struct UnavailableAPIClient: APIClient {
     }
 }
 
+#if DEBUG
 actor MockAPIClient: APIClient {
     private let payloads: [APIRequestKey: Data]
     private let failures: [APIRequestKey: APIClientError]
@@ -58,3 +59,4 @@ actor MockAPIClient: APIClient {
         }
     }
 }
+#endif

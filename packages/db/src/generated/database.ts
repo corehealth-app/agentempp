@@ -354,6 +354,56 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_gap_reminder_attempts: {
+        Row: {
+          attempt_id: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id?: string
+          claim_key: string
+          claimed_at: string
+          date: string
+          gap: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          claim_key?: string
+          claimed_at?: string
+          date?: string
+          gap?: Json
+          last_error?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_gap_reminder_attempts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_snapshots: {
         Row: {
           calories_consumed: number
@@ -443,16 +493,16 @@ export type Database = {
           },
         ]
       }
-      daily_gap_reminder_attempts: {
+      engagement_delivery_attempts: {
         Row: {
           attempt_id: string
           claim_key: string
           claimed_at: string
-          date: string
-          gap: Json
           last_error: string | null
-          provider_message_id: string | null
+          local_date: string
+          provider_message_ids: Json | null
           sent_at: string | null
+          slot: string
           status: string
           updated_at: string
           user_id: string
@@ -461,11 +511,11 @@ export type Database = {
           attempt_id?: string
           claim_key: string
           claimed_at: string
-          date: string
-          gap: Json
           last_error?: string | null
-          provider_message_id?: string | null
+          local_date: string
+          provider_message_ids?: Json | null
           sent_at?: string | null
+          slot: string
           status: string
           updated_at?: string
           user_id: string
@@ -474,18 +524,18 @@ export type Database = {
           attempt_id?: string
           claim_key?: string
           claimed_at?: string
-          date?: string
-          gap?: Json
           last_error?: string | null
-          provider_message_id?: string | null
+          local_date?: string
+          provider_message_ids?: Json | null
           sent_at?: string | null
+          slot?: string
           status?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "daily_gap_reminder_attempts_user_id_fkey"
+            foreignKeyName: "engagement_delivery_attempts_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -616,7 +666,9 @@ export type Database = {
       food_education_phrases: {
         Row: {
           active: boolean
-          allowed_meal_types: Database["public"]["Enums"]["meal_type_enum"][] | null
+          allowed_meal_types:
+            | Database["public"]["Enums"]["meal_type_enum"][]
+            | null
           bloco_id: string | null
           created_at: string
           curated_by: string | null
@@ -632,7 +684,9 @@ export type Database = {
         }
         Insert: {
           active?: boolean
-          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
+          allowed_meal_types?:
+            | Database["public"]["Enums"]["meal_type_enum"][]
+            | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -648,7 +702,9 @@ export type Database = {
         }
         Update: {
           active?: boolean
-          allowed_meal_types?: Database["public"]["Enums"]["meal_type_enum"][] | null
+          allowed_meal_types?:
+            | Database["public"]["Enums"]["meal_type_enum"][]
+            | null
           bloco_id?: string | null
           created_at?: string
           curated_by?: string | null
@@ -1245,33 +1301,6 @@ export type Database = {
           },
         ]
       }
-      prompt_backups: {
-        Row: {
-          backed_up_at: string
-          char_count: number | null
-          id: string
-          label: string | null
-          stage: string
-          system_prompt: string
-        }
-        Insert: {
-          backed_up_at?: string
-          char_count?: number | null
-          id?: string
-          label?: string | null
-          stage: string
-          system_prompt: string
-        }
-        Update: {
-          backed_up_at?: string
-          char_count?: number | null
-          id?: string
-          label?: string | null
-          stage?: string
-          system_prompt?: string
-        }
-        Relationships: []
-      }
       reevaluations: {
         Row: {
           agent_decision: Json | null
@@ -1545,6 +1574,7 @@ export type Database = {
           id: string
           notes: string | null
           plan_type: string
+          source_request_key: string | null
           user_id: string
           valid_until: string | null
           version: number | null
@@ -1560,6 +1590,7 @@ export type Database = {
           id?: string
           notes?: string | null
           plan_type?: string
+          source_request_key?: string | null
           user_id: string
           valid_until?: string | null
           version?: number | null
@@ -1575,6 +1606,7 @@ export type Database = {
           id?: string
           notes?: string | null
           plan_type?: string
+          source_request_key?: string | null
           user_id?: string
           valid_until?: string | null
           version?: number | null
@@ -1871,6 +1903,7 @@ export type Database = {
       users: {
         Row: {
           admin_notes: string | null
+          auth_user_id: string | null
           country: string | null
           country_confirmed: boolean
           country_detected_from_wpp: string | null
@@ -1887,10 +1920,11 @@ export type Database = {
           tags: string[]
           timezone: string | null
           updated_at: string
-          wpp: string
+          wpp: string | null
         }
         Insert: {
           admin_notes?: string | null
+          auth_user_id?: string | null
           country?: string | null
           country_confirmed?: boolean
           country_detected_from_wpp?: string | null
@@ -1907,10 +1941,11 @@ export type Database = {
           tags?: string[]
           timezone?: string | null
           updated_at?: string
-          wpp: string
+          wpp?: string | null
         }
         Update: {
           admin_notes?: string | null
+          auth_user_id?: string | null
           country?: string | null
           country_confirmed?: boolean
           country_detected_from_wpp?: string | null
@@ -1927,7 +1962,7 @@ export type Database = {
           tags?: string[]
           timezone?: string | null
           updated_at?: string
-          wpp?: string
+          wpp?: string | null
         }
         Relationships: []
       }
@@ -2259,6 +2294,7 @@ export type Database = {
       vw_meal_state: {
         Row: {
           consumed_at: string | null
+          kcal_orphaned: number | null
           last_transition_at: string | null
           meal_log_created_at: string | null
           meal_log_id: string | null
@@ -2275,6 +2311,10 @@ export type Database = {
     }
     Functions: {
       admin_role: { Args: never; Returns: string }
+      advance_reevaluation_schedule: {
+        Args: { p_closing_date: string; p_user_id: string }
+        Returns: Json
+      }
       agent_kpis: { Args: { days?: number }; Returns: Json }
       attention_cleanup_expired: { Args: never; Returns: number }
       attention_dismiss: {
@@ -2293,17 +2333,9 @@ export type Database = {
         Args: { p_hours?: number; p_kind: string; p_user_id: string }
         Returns: undefined
       }
+      bootstrap_patient_profile: { Args: never; Returns: string }
       buffer_append_msg: {
         Args: { p_debounce_ms?: number; p_msg_entry: Json; p_user_id: string }
-        Returns: Json
-      }
-      claim_subscription_event: {
-        Args: {
-          p_event_type: string
-          p_now?: string
-          p_payload: Json
-          p_provider_event_id: string
-        }
         Returns: Json
       }
       calc_workout_kcal: {
@@ -2314,6 +2346,54 @@ export type Database = {
           p_weight_kg?: number
         }
         Returns: number
+      }
+      claim_daily_gap_reminder: {
+        Args: {
+          p_claim_key: string
+          p_date: string
+          p_gap: Json
+          p_now?: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      claim_due_message_dispatch: {
+        Args: { p_now?: string; p_user_id: string }
+        Returns: Json
+      }
+      claim_engagement_delivery: {
+        Args: {
+          p_claim_key: string
+          p_local_date: string
+          p_now?: string
+          p_slot: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      claim_food_education_phrase: {
+        Args: { cooldown_days?: number; phrase_ids: string[]; user_id: string }
+        Returns: {
+          cooldown_count: number
+          exhausted: boolean
+          last_used_at: string
+          phrase_id: string
+          selected_after_cooldown: boolean
+          usage_count: number
+        }[]
+      }
+      claim_subscription_event: {
+        Args: {
+          p_event_type: string
+          p_now?: string
+          p_payload: Json
+          p_provider_event_id: string
+        }
+        Returns: Json
+      }
+      complete_message_dispatch: {
+        Args: { p_dispatch_id: string }
+        Returns: Json
       }
       cron_run_now: { Args: { p_jobname: string }; Returns: Json }
       cron_toggle_job: {
@@ -2340,7 +2420,79 @@ export type Database = {
           wpp: string
         }[]
       }
+      ensure_user_initialized: { Args: { p_wpp: string }; Returns: string }
+      extend_message_buffer_once: {
+        Args: { p_new_flush_after: string; p_user_id: string }
+        Returns: boolean
+      }
       f_unaccent: { Args: { "": string }; Returns: string }
+      fail_daily_gap_reminder: {
+        Args: {
+          p_attempt_id: string
+          p_claim_key: string
+          p_error: string
+          p_now?: string
+        }
+        Returns: boolean
+      }
+      fail_engagement_delivery: {
+        Args: {
+          p_attempt_id: string
+          p_claim_key: string
+          p_error: string
+          p_now?: string
+        }
+        Returns: boolean
+      }
+      finalize_daily_close_atomic: {
+        Args: {
+          p_badges_earned: string[]
+          p_blocks_completed: number
+          p_closed_at?: string
+          p_current_streak: number
+          p_day_status: string
+          p_deficit_block: number
+          p_last_active_date: string
+          p_level: number
+          p_longest_streak: number
+          p_snapshot_id: string
+          p_user_id: string
+          p_xp_total: number
+        }
+        Returns: Json
+      }
+      finalize_daily_gap_reminder: {
+        Args: {
+          p_attempt_id: string
+          p_claim_key: string
+          p_content: string
+          p_local_hour: number
+          p_pattern_days: number
+          p_provider: string
+          p_provider_message_id: string
+          p_sent_at: string
+        }
+        Returns: Json
+      }
+      finalize_engagement_delivery: {
+        Args: {
+          p_attempt_id: string
+          p_claim_key: string
+          p_completion_tokens?: number
+          p_cost_usd?: number
+          p_deliveries: Json
+          p_latency_ms?: number
+          p_model?: string
+          p_phrase_id?: string
+          p_phrase_used?: boolean
+          p_prompt_tokens?: number
+          p_provider: string
+          p_reevaluation_context?: Json
+          p_reevaluation_due?: boolean
+          p_sent_at: string
+        }
+        Returns: Json
+      }
       finish_subscription_event: {
         Args: {
           p_context?: Json
@@ -2352,22 +2504,22 @@ export type Database = {
         Returns: Json
       }
       get_global_config: { Args: { p_key: string }; Returns: Json }
-      is_admin: { Args: never; Returns: boolean }
-      claim_food_education_phrase: {
+      ingest_whatsapp_inbound: {
         Args: {
-          cooldown_days?: number
-          phrase_ids: string[]
-          user_id: string
+          p_buffer: boolean
+          p_content: string
+          p_content_type: string
+          p_debounce_ms: number
+          p_media_url: string
+          p_provider_message_id: string
+          p_raw_payload: Json
+          p_received_at: string
+          p_server_received_at: string
+          p_wpp: string
         }
-        Returns: {
-          cooldown_count: number
-          exhausted: boolean
-          last_used_at: string
-          phrase_id: string
-          selected_after_cooldown: boolean
-          usage_count: number
-        }[]
+        Returns: Json
       }
+      is_admin: { Args: never; Returns: boolean }
       match_food_phrases: {
         Args: {
           match_count: number
@@ -2385,25 +2537,70 @@ export type Database = {
           usage_count: number
         }[]
       }
-      match_method_chunks: {
-        Args: {
-          filter_protocol?: string
-          match_count?: number
-          query_embedding: string
-        }
-        Returns: {
-          content: string
-          distance: number
-          page_title: string
-          protocol: string
-        }[]
-      }
       pause_user: {
         Args: { p_days: number; p_user_id: string }
         Returns: undefined
       }
       pending_approvals_expire_old: { Args: never; Returns: number }
       refresh_mv_kpis_daily: { Args: never; Returns: undefined }
+      register_meal_atomic: {
+        Args: {
+          p_calories_target?: number
+          p_consumed_at?: string
+          p_date: string
+          p_items: Json
+          p_meal_type: Database["public"]["Enums"]["meal_type_enum"]
+          p_protein_target?: number
+          p_provider_message_id?: string
+          p_replace?: boolean
+          p_replace_meal_types?: Database["public"]["Enums"]["meal_type_enum"][]
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      register_meal_atomic_scoped: {
+        Args: {
+          p_calories_target?: number
+          p_consumed_at?: string
+          p_date: string
+          p_items: Json
+          p_meal_type: Database["public"]["Enums"]["meal_type_enum"]
+          p_protein_target?: number
+          p_provider_message_id?: string
+          p_replace?: boolean
+          p_replace_log_ids?: string[]
+          p_replace_meal_types?: Database["public"]["Enums"]["meal_type_enum"][]
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      register_workout_atomic: {
+        Args: {
+          p_calories_target?: number
+          p_date: string
+          p_duration_min: number
+          p_estimated_kcal: number
+          p_intensity?: string
+          p_notes?: string
+          p_performed_at?: string
+          p_protein_target?: number
+          p_provider_message_id?: string
+          p_replace_recent?: boolean
+          p_replace_since?: string
+          p_user_id: string
+          p_workout_type: string
+        }
+        Returns: Json
+      }
+      replace_pending_registration_atomic: {
+        Args: {
+          p_expires_at: string
+          p_proposal: Json
+          p_request_key?: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       reset_user_conversation_atomic: {
         Args: { p_user_id: string }
         Returns: Json
@@ -2413,6 +2610,22 @@ export type Database = {
         Returns: string
       }
       resume_user: { Args: { p_user_id: string }; Returns: undefined }
+      save_training_plan_atomic: {
+        Args: {
+          p_days_per_week: number
+          p_equipment_summary: string
+          p_generated_at: string
+          p_generated_by: string
+          p_notes: string
+          p_plan_type: string
+          p_request_key: string
+          p_user_id: string
+          p_valid_until: string
+          p_version: number
+          p_weekly_schedule: Json
+        }
+        Returns: Json
+      }
       search_food_trgm: {
         Args: {
           max_results?: number
@@ -2593,9 +2806,6 @@ export type Database = {
         | "manutencao"
         | "coleta_dados"
         | "regras_gerais"
-        | "vision"
-        | "engajamento"
-        | "analista_diario"
       sex_enum: "masculino" | "feminino"
       sub_status: "trial" | "active" | "past_due" | "canceled" | "expired"
       user_status: "active" | "blocked" | "deleted"
@@ -2766,9 +2976,6 @@ export const Constants = {
         "manutencao",
         "coleta_dados",
         "regras_gerais",
-        "vision",
-        "engajamento",
-        "analista_diario",
       ],
       sex_enum: ["masculino", "feminino"],
       sub_status: ["trial", "active", "past_due", "canceled", "expired"],

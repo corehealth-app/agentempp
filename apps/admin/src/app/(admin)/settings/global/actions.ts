@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { hasAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export async function updateGlobalConfig(key: string, value: unknown) {
   try {
@@ -16,11 +17,15 @@ export async function updateGlobalConfig(key: string, value: unknown) {
       .select('id, role')
       .eq('id', user.id)
       .maybeSingle()
-    if (!admin || admin.role !== 'admin') return { error: 'Acesso negado' }
+    if (!admin || !hasAdminRole(admin.role, MASTER_ADMIN_ROLES)) {
+      return { error: 'Acesso negado' }
+    }
 
-    const { error } = await (svc as unknown as {
-      rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
-    }).rpc('set_global_config', { p_key: key, p_value: value })
+    const { error } = await (
+      svc as unknown as {
+        rpc: (n: string, p: Record<string, unknown>) => Promise<{ error: unknown }>
+      }
+    ).rpc('set_global_config', { p_key: key, p_value: value })
     if (error) {
       const msg = (error as { message?: string }).message ?? String(error)
       return { error: msg }

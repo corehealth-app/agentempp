@@ -4,6 +4,7 @@
  * Apenas admin autenticado.
  */
 import { NextResponse } from 'next/server'
+import { hasAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
 import { setupStripeProducts } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
 
@@ -18,13 +19,16 @@ export async function POST() {
 
   const { data: admin, error: adminError } = await supabase
     .from('admin_users')
-    .select('id')
+    .select('id, role')
     .eq('id', user.id)
     .maybeSingle()
   if (adminError) {
     return NextResponse.json({ error: 'admin lookup failed' }, { status: 500 })
   }
-  if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const adminRole = (admin as unknown as { role: string } | null)?.role
+  if (!adminRole || !hasAdminRole(adminRole, MASTER_ADMIN_ROLES)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   try {
     const results = await setupStripeProducts()

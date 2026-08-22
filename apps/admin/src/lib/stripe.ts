@@ -224,7 +224,7 @@ export async function setupStripeProducts(): Promise<
 export async function createCheckoutSession(opts: {
   lookup_key: string
   user_id: string
-  user_wpp: string
+  user_wpp: string | null
   user_email?: string | null
   user_name?: string | null
   user_country?: string | null
@@ -290,13 +290,13 @@ export async function createCheckoutSession(opts: {
     locale: locale as never,
     metadata: {
       user_id: opts.user_id,
-      wpp: opts.user_wpp,
+      ...(opts.user_wpp ? { wpp: opts.user_wpp } : {}),
       ...(opts.user_name ? { user_name: opts.user_name } : {}),
     },
     subscription_data: {
       metadata: {
         user_id: opts.user_id,
-        wpp: opts.user_wpp,
+        ...(opts.user_wpp ? { wpp: opts.user_wpp } : {}),
       },
     },
   })

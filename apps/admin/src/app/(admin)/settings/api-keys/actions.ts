@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { hasAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 interface SaveInput {
   service: string
@@ -20,7 +21,9 @@ async function requireAdmin() {
     .select('id, role, email')
     .eq('id', user.id)
     .maybeSingle()
-  if (!admin || admin.role !== 'admin') throw new Error('Acesso negado')
+  if (!admin || !hasAdminRole(admin.role, MASTER_ADMIN_ROLES)) {
+    throw new Error('Acesso negado')
+  }
   return { user, admin }
 }
 

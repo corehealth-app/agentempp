@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { hasAdminRole, isAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 interface AddInput {
   email: string
@@ -22,7 +23,11 @@ export async function addAdmin(input: AddInput) {
       .select('role')
       .eq('id', user.id)
       .maybeSingle()
-    if (!me || me.role !== 'admin') return { error: 'Apenas admin pode adicionar' }
+    if (!me || !hasAdminRole(me.role, MASTER_ADMIN_ROLES)) {
+      return { error: 'Apenas master admin pode adicionar' }
+    }
+
+    if (!isAdminRole(input.role)) return { error: 'Papel administrativo invalido' }
 
     // Tenta achar o auth.users.id pelo email (via auth admin API)
     const { data: authUsers } = await svc.auth.admin.listUsers({ page: 1, perPage: 200 })
@@ -31,6 +36,16 @@ export async function addAdmin(input: AddInput) {
       return {
         error: `Usuário ${input.email} ainda não existe em auth.users — peça para ele fazer login no /login primeiro`,
       }
+    }
+
+    const { data: patientAccount, error: patientError } = await svc
+      .from('users')
+      .select('id')
+      .eq('auth_user_id', found.id)
+      .maybeSingle()
+    if (patientError) return { error: patientError.message }
+    if (patientAccount) {
+      return { error: 'Use uma conta de e-mail separada para paciente e administrador' }
     }
 
     const { error } = await svc.from('admin_users').upsert({

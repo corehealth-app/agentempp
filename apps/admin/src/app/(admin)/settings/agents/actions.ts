@@ -1,6 +1,7 @@
 'use server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { hasAdminRole, MASTER_ADMIN_ROLES } from '@/lib/admin-rbac'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 interface UpdateInput {
   id: string
@@ -35,13 +36,11 @@ export async function updateAgentConfig(input: UpdateInput) {
       .select('id, role, email')
       .eq('id', user.id)
       .maybeSingle()
-    if (!admin || admin.role !== 'admin') return { error: 'Acesso negado' }
+    if (!admin || !hasAdminRole(admin.role, MASTER_ADMIN_ROLES)) {
+      return { error: 'Acesso negado' }
+    }
 
-    const { data: before } = await svc
-      .from('agent_configs')
-      .select('*')
-      .eq('id', input.id)
-      .single()
+    const { data: before } = await svc.from('agent_configs').select('*').eq('id', input.id).single()
 
     const updates: Record<string, unknown> = {
       model: input.model,
@@ -64,13 +63,15 @@ export async function updateAgentConfig(input: UpdateInput) {
     if (input.helicone_cache !== undefined) updates.helicone_cache = input.helicone_cache
     if (input.streaming !== undefined) updates.streaming = input.streaming
 
-    const { error } = await (svc as unknown as {
-      from: (t: string) => {
-        update: (u: Record<string, unknown>) => {
-          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+    const { error } = await (
+      svc as unknown as {
+        from: (t: string) => {
+          update: (u: Record<string, unknown>) => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+          }
         }
       }
-    })
+    )
       .from('agent_configs')
       .update(updates)
       .eq('id', input.id)

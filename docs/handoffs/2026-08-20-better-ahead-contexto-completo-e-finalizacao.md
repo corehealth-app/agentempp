@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.3
+**Versão do dossiê:** 1.4
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2342,3 +2342,19 @@ Após a publicação desta emenda, a CI-0 pode retomar no Mac pela worktree
 durável, sem restauração. Os builds unsigned, scans, revisão independente e
 commit local da CI-0 continuam pendentes. CI-1 permanece não autorizada e o
 rebrand permanece congelado.
+
+---
+
+## 34. Atualização operacional 1.4 — CI-0 concluída e CI-1 isolada autorizada
+
+**Data:** 23/08/2026
+
+CI-0 foi concluída e publicada em `b9a51bc1a641895ef5323cb1085b3b5622bbb277`
+na branch de integração neutra: 68/88 testes, builds unsigned Debug/Release e
+revisão final 0/0/0. A publicação GitHub usou credencial em keyring seguro;
+nenhum PR, merge ou deploy ocorreu.
+
+CI-1 é o próximo gate, com Auth 2.54.1 isolado, actor próprio e Keychain próprio;
+o SDK não terá listener, restore ou refresh. CI-2 continua não autorizada. O
+app ainda não tem login real concluído nem integração ponta a ponta; staging,
+beta, produção, Apple e naming hold permanecem pendentes.

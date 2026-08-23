@@ -639,6 +639,15 @@ they do not include residue-count equality.
 
 ## Future stages — planned but not authorized by CI-0
 
+## CI-0 Completion and Isolated CI-1 Authorization — 2026-08-22
+
+CI-0 is complete and published as `b9a51bc1a641895ef5323cb1085b3b5622bbb277`
+on `codex/naming-neutral-core-integration-v1`: 68/88 native results, unsigned
+Debug/Release builds and final review 0/0/0. CI-1 is now authorized only by its
+isolated specification and plan: exact Auth 2.54.1, no SupabaseClient/listener/
+refresh, discarding SDK storage, app actor and app Keychain. Naming hold remains
+active; CI-2 remains unauthorized.
+
 | Stage | Scope | Explicit boundary |
 | --- | --- | --- |
 | CI-1 | Supabase Auth, Keychain and single session source | no public naming expansion |

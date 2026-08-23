@@ -2347,6 +2347,10 @@ rebrand permanece congelado.
 
 ## 34. Atualização operacional 1.4 — CI-0 concluída e CI-1 isolada autorizada
 
+> **Estado histórico, superado para CI-1 pela atualização 1.5 em 23/08/2026.**
+> A referência a Auth 2.54.1 e a formulação anterior sobre listener não são
+> autorização operacional atual.
+
 **Data:** 23/08/2026
 
 CI-0 foi concluída e publicada em `b9a51bc1a641895ef5323cb1085b3b5622bbb277`
@@ -2358,3 +2362,38 @@ CI-1 é o próximo gate, com Auth 2.54.1 isolado, actor próprio e Keychain pró
 o SDK não terá listener, restore ou refresh. CI-2 continua não autorizada. O
 app ainda não tem login real concluído nem integração ponta a ponta; staging,
 beta, produção, Apple e naming hold permanecem pendentes.
+
+---
+
+## 35. Atualização operacional 1.5 — STOP de ciclo de vida e retomada CI-1
+
+**Data:** 23/08/2026
+
+A implementação CI-1 no Mac permanece congelada, sem commit ou push: 15 paths
+(7 modificados e 8 novos), staging vazio, 154 testes focados e 1.071 testes
+BodyFlowTests reportados como aprovados. A análise independente encontrou que
+Auth 2.54.1 registrava estado de ciclo de vida sem uma limpeza pública
+suficiente para o modelo de cliente por operação. O STOP está preservado como
+evidência fornecida pelo Mac; não foi reexecutado na VPS.
+
+CI-1 passa a exigir apenas `Auth` de `supabase-swift` 2.55.1, fixado no commit
+`21d3aaf21ee98f41611f9f75070489fc8b23d882`. A tag inclui os fixes oficiais que
+removem o cliente desalocado do registry interno e encerram o trabalho de
+refresh durante `deinit`. O desenho não muda: cliente efêmero por operação,
+`autoRefreshToken: false`, storage descartável, nenhuma restauração ou refresh
+do SDK e `AuthenticationSessionStore` como única sessão durável do app.
+
+“Sem listener” passa a significar sem listener de autenticação/sessão instalado
+pelo aplicativo ou usado para persistir/restaurar sessão. A observação interna
+do SDK é tolerada somente no cliente efêmero 2.55.1, sem refresh e com prova de
+desalocação. A retomada deve testar referência fraca até um deadline finito,
+sem `Task.yield()` isolado, sem requisição/refresh tardio e sem retenção pelo
+storage descartável. O warning menor de polling deve ser corrigido dentro dos
+15 paths ou justificado objetivamente e passar Review B final sem Critical ou
+Important.
+
+Antes do commit CI-1 ainda faltam: atualizar o pin, adaptar somente a API
+necessária, completar essa prova de vida, repetir testes, builds unsigned Debug
+e Release em `generic/platform=iOS`, scans e duas revisões independentes. CI-2,
+integração ponta a ponta, staging, beta, produção, Apple e naming hold seguem
+fora de escopo. O app continua não 100% funcional para cliente/App Store.

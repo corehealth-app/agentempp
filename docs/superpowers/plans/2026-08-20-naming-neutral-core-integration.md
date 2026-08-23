@@ -644,9 +644,11 @@ they do not include residue-count equality.
 CI-0 is complete and published as `b9a51bc1a641895ef5323cb1085b3b5622bbb277`
 on `codex/naming-neutral-core-integration-v1`: 68/88 native results, unsigned
 Debug/Release builds and final review 0/0/0. CI-1 is now authorized only by its
-isolated specification and plan: exact Auth 2.54.1, no SupabaseClient/listener/
-refresh, discarding SDK storage, app actor and app Keychain. Naming hold remains
-active; CI-2 remains unauthorized.
+isolated specification and plan: exact Auth 2.55.1/revision
+`21d3aaf21ee98f41611f9f75070489fc8b23d882`, no SupabaseClient, no refresh,
+discarding SDK storage, app actor and app Keychain. Application auth/session
+listeners remain prohibited. Naming hold remains active; CI-2 remains
+unauthorized.
 
 | Stage | Scope | Explicit boundary |
 | --- | --- | --- |
@@ -660,6 +662,40 @@ active; CI-2 remains unauthorized.
 
 Push, paywall, chat nativo and migration of legacy WhatsApp identities remain
 separate decisions. They are not implicit in CI-0.
+
+## CI-1 AuthClient Lifecycle Reconciliation — 2026-08-23
+
+The Mac STOP against Auth 2.54.1 is recorded in
+`docs/superpowers/evidence/2026-08-23-ci1-supabase-auth-2.54.1-lifecycle-stop.md`.
+Its short-lived AuthClient still registered lifecycle machinery without a
+public cleanup path, so client-per-operation could accumulate registry state.
+The frozen 15-path CI-1 worktree is preserved; no implementation commit,
+push, merge or deployment was made.
+
+CI-1 resumes only against official `supabase-swift` tag `v2.55.1`, exact
+revision `21d3aaf21ee98f41611f9f75070489fc8b23d882`, with product/import `Auth`
+only. The verified authority is
+`docs/superpowers/evidence/2026-08-23-supabase-swift-v2.55.1-authclient-lifecycle-authority.md`.
+It includes the fixes that remove a deinitialized client from the dependency
+registry and stop its refresh work. The architecture remains ephemeral client
+per remote operation, `autoRefreshToken: false`, discarding storage, no SDK
+restore/session/currentSession/refresh API, no durable SDK ownership, and a
+single app-actor Keychain-backed session authority.
+
+The previous broad wording is refined: the app may not install an auth or
+session listener or use a listener as session persistence/restoration. The
+limited internal SDK lifecycle observer is permitted solely as an inert
+implementation detail of an ephemeral 2.55.1 AuthClient. The Mac gate must
+prove client deallocation within a bounded deadline and no late request or
+refresh grant after the operation. A one-yield assertion is inadequate.
+
+Resume the same frozen Mac worktree only after validating its existing 15 paths
+and preflight hashes. Update the package pin, adapt the initializer only if the
+2.55.1 API requires it, add/adjust only in-allowlist tests, then run focused
+and full CI-1 tests, exact unsigned Debug and Release builds for
+`generic/platform=iOS`, scans and two independent reviews. CI-2, backend
+changes, public naming, production configuration, staging E2E, TestFlight,
+App Store and deployment remain unauthorized.
 
 ## Mac execution handoff
 

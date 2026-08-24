@@ -43,7 +43,10 @@ struct AppDependencies: Sendable {
         mobileAPIConfigurationProvider: (any MobileAPIConfigurationProviding)? = nil,
         sessionTokenProvider: (any SessionTokenProviding)? = nil,
         mobileAPISession: URLSession = .shared,
-        apiClientOverride: (any APIClient)? = nil
+        apiClientOverride: (any APIClient)? = nil,
+        supabaseAuthConfiguration: SupabaseAuthConfiguration? = nil,
+        authenticationSessionStore: AuthenticationSessionStore? = nil,
+        supabaseAuthFetch: SupabaseAuthRemoteClient.Fetch? = nil
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -54,6 +57,19 @@ struct AppDependencies: Sendable {
             )
         }
         let stateStore = DemoStateStore(secureStore: secureStore)
+        let releaseSessionStore: AuthenticationSessionStore? =
+            if configuration.mode == .releaseUnavailable,
+               supabaseAuthConfiguration != nil {
+                authenticationSessionStore ?? AuthenticationSessionStore(
+                    secureStore: KeychainSecureStore(
+                        service: AuthenticationSessionStore.keychainService
+                    )
+                )
+            } else {
+                nil
+            }
+        let mobileSessionTokenProvider: (any SessionTokenProviding)? =
+            releaseSessionStore ?? sessionTokenProvider
         var coachPersona: any CoachPersonaRepository =
             DemoCoachPersonaRepository(stateStore: stateStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
@@ -71,10 +87,10 @@ struct AppDependencies: Sendable {
             apiClient = apiClientOverride
         } else if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
                     .currentConfiguration(),
-                  let sessionTokenProvider {
+                  let mobileSessionTokenProvider {
             apiClient = MobileAPITransport(
                 configuration: mobileAPIConfiguration,
-                sessionTokenProvider: sessionTokenProvider,
+                sessionTokenProvider: mobileSessionTokenProvider,
                 session: mobileAPISession
             )
         } else {
@@ -92,10 +108,10 @@ struct AppDependencies: Sendable {
         let apiClient: any APIClient
         if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
                 .currentConfiguration(),
-           let sessionTokenProvider {
+           let mobileSessionTokenProvider {
             apiClient = MobileAPITransport(
                 configuration: mobileAPIConfiguration,
-                sessionTokenProvider: sessionTokenProvider,
+                sessionTokenProvider: mobileSessionTokenProvider,
                 session: mobileAPISession
             )
         } else {
@@ -231,12 +247,49 @@ struct AppDependencies: Sendable {
         let routine: any RoutineProviding = unavailable
         #endif
 
-        return AppDependencies(
-            apiClient: apiClient,
-            authentication: DemoAuthenticationService(
+        let authentication: any AuthenticationService
+        #if DEBUG
+        if configuration.mode == .demo {
+            authentication = DemoAuthenticationService(
                 stateStore: stateStore,
                 configuration: configuration
-            ),
+            )
+        } else if let supabaseAuthConfiguration,
+                  let releaseSessionStore {
+            let fetch = supabaseAuthFetch ?? SupabaseAuthFetch(
+                configuration: supabaseAuthConfiguration
+            ).callAsFunction
+            authentication = SupabaseAuthenticationService(
+                remote: SupabaseAuthRemoteClient(
+                    configuration: supabaseAuthConfiguration,
+                    fetch: fetch
+                ),
+                sessionStore: releaseSessionStore
+            )
+        } else {
+            authentication = UnavailableAuthenticationService()
+        }
+        #else
+        if let supabaseAuthConfiguration,
+           let releaseSessionStore {
+            let fetch = supabaseAuthFetch ?? SupabaseAuthFetch(
+                configuration: supabaseAuthConfiguration
+            ).callAsFunction
+            authentication = SupabaseAuthenticationService(
+                remote: SupabaseAuthRemoteClient(
+                    configuration: supabaseAuthConfiguration,
+                    fetch: fetch
+                ),
+                sessionStore: releaseSessionStore
+            )
+        } else {
+            authentication = UnavailableAuthenticationService()
+        }
+        #endif
+
+        return AppDependencies(
+            apiClient: apiClient,
+            authentication: authentication,
             onboarding: DemoOnboardingRepository(
                 stateStore: stateStore,
                 buildFlavor: buildFlavor,

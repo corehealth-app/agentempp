@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5575FA00301658E900FB4722 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 5575FA01301658E900FB4722 /* Markdown */; };
+		A10000000000000000000001 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000003 /* Auth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +71,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5575FA00301658E900FB4722 /* Markdown in Frameworks */,
+				A10000000000000000000001 /* Auth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -131,6 +133,7 @@
 			name = BodyFlow;
 			packageProductDependencies = (
 				5575FA01301658E900FB4722 /* Markdown */,
+				A10000000000000000000003 /* Auth */,
 			);
 			productName = BodyFlow;
 			productReference = 5575F9D0301658E800FB4722 /* BodyFlow.app */;
@@ -219,6 +222,7 @@
 			productRefGroup = 5575F9D1301658E800FB4722 /* Products */;
 			packageReferences = (
 				5575FA02301658E900FB4722 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				A10000000000000000000002 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 			projectDirPath = "";
 			projectRoot = "";
@@ -263,6 +267,14 @@
 				version = 0.8.0;
 			};
 		};
+		A10000000000000000000002 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.55.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -270,6 +282,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5575FA02301658E900FB4722 /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
+		};
+		A10000000000000000000003 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000002 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
 		};
 /* End XCSwiftPackageProductDependency section */
 

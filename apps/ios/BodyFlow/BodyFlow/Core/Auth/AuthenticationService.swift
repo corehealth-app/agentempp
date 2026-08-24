@@ -27,3 +27,29 @@ protocol AuthenticationService: Sendable {
     func requestPasswordRecovery(email: String) async throws
     func signOut() async throws
 }
+
+struct UnavailableAuthenticationService: AuthenticationService {
+    func restoreSession() async throws -> AuthSession? {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func requestPasswordRecovery(email: String) async throws {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signOut() async throws {
+        throw AuthenticationError.operationUnavailable
+    }
+}

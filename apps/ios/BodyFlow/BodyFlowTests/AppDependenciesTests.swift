@@ -3,7 +3,7 @@ import Testing
 
 @testable import BodyFlow
 
-@Suite("App Dependencies")
+@Suite("App Dependencies", .serialized)
 struct AppDependenciesTests {
     @Test("Valid origin and session seam install the real mobile transport")
     func validOriginAndSessionInstallTransport() throws {
@@ -57,6 +57,136 @@ struct AppDependenciesTests {
 
         #expect(dependencies.apiClient is UnavailableAPIClient)
     }
+
+    @Test("Release without Supabase configuration installs unavailable authentication")
+    func releaseWithoutSupabaseConfigurationFailsClosed() async {
+        let dependencies = releaseDependencies()
+
+        #expect(dependencies.authentication is UnavailableAuthenticationService)
+        await #expect(throws: AuthenticationError.operationUnavailable) {
+            _ = try await dependencies.authentication.restoreSession()
+        }
+    }
+
+    @Test("Release with valid Supabase configuration installs isolated authentication")
+    func releaseWithSupabaseConfigurationInstallsAuthentication() throws {
+        let configuration = try SupabaseAuthConfiguration(
+            originString: "https://project.example.test",
+            key: "sb_publishable_synthetic"
+        )
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            supabaseAuthConfiguration: configuration,
+            authenticationSessionStore: AuthenticationSessionStore(
+                secureStore: InMemorySecureStore()
+            ),
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+        )
+
+        #expect(dependencies.authentication is SupabaseAuthenticationService)
+    }
+
+    @Test("Release auth and Mobile API share the app-owned session store")
+    func releaseAuthAndTransportShareSessionStore() throws {
+        let sessionStore = AuthenticationSessionStore(secureStore: InMemorySecureStore())
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+                configuration: try MobileAPIConfiguration(
+                    originString: "https://mobile.example.test"
+                )
+            ),
+            sessionTokenProvider: DependencyTokenProvider(token: "wrong-provider"),
+            supabaseAuthConfiguration: try SupabaseAuthConfiguration(
+                originString: "https://project.example.test",
+                key: "sb_publishable_synthetic"
+            ),
+            authenticationSessionStore: sessionStore,
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+        )
+
+        let provider = Mirror(reflecting: dependencies.apiClient).children
+            .first { $0.label == "sessionTokenProvider" }?.value
+        #expect((provider as? AuthenticationSessionStore) === sessionStore)
+    }
+
+    @Test("Release valid app-owned bearer reaches the CI-0 transport")
+    func releaseValidBearerFeedsMobileTransport() async throws {
+        let sessionStore = AuthenticationSessionStore(
+            secureStore: InMemorySecureStore(),
+            now: { Date(timeIntervalSince1970: 1_000) }
+        )
+        let record = dependencyAuthenticationRecord(expiresAt: 2_000)
+        try await sessionStore.replace(with: record)
+        let harness = try await dependencyTransportHarness(sessionStore: sessionStore)
+
+        let payload: DependencyTransportPayload = try await harness.dependencies.apiClient.send(
+            APIRequest(method: .get, path: "/api/mobile/v1/probe")
+        )
+        let requests = await harness.recorder.requests
+
+        #expect(payload == DependencyTransportPayload(value: "ok"))
+        #expect(requests.count == 1)
+        #expect(
+            requests.first?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer \(record.accessToken)"
+        )
+    }
+
+    @Test("Release expired app-owned session never feeds the CI-0 transport")
+    func releaseExpiredBearerFailsClosed() async throws {
+        let secureStore = InMemorySecureStore()
+        let expired = dependencyAuthenticationRecord(expiresAt: 999)
+        try await secureStore.store(
+            try JSONEncoder().encode(expired),
+            forKey: AuthenticationSessionStore.storageKey
+        )
+        let sessionStore = AuthenticationSessionStore(
+            secureStore: secureStore,
+            now: { Date(timeIntervalSince1970: 1_000) }
+        )
+        #expect(try await sessionStore.hydrate() == nil)
+        let harness = try await dependencyTransportHarness(sessionStore: sessionStore)
+
+        await #expect(throws: MobileAPITransportError.missingSession) {
+            let _: DependencyTransportPayload = try await harness.dependencies.apiClient.send(
+                APIRequest(method: .get, path: "/api/mobile/v1/probe")
+            )
+        }
+        #expect(await harness.recorder.requests.isEmpty)
+    }
+
+    @Test("Release absent app-owned session remains fail closed before CI-0 network activity")
+    func releaseAbsentBearerFailsClosed() async throws {
+        let sessionStore = AuthenticationSessionStore(
+            secureStore: InMemorySecureStore(),
+            now: { Date(timeIntervalSince1970: 1_000) }
+        )
+        let harness = try await dependencyTransportHarness(sessionStore: sessionStore)
+
+        await #expect(throws: MobileAPITransportError.missingSession) {
+            let _: DependencyTransportPayload = try await harness.dependencies.apiClient.send(
+                APIRequest(method: .get, path: "/api/mobile/v1/probe")
+            )
+        }
+        #expect(await harness.recorder.requests.isEmpty)
+    }
+
+    #if DEBUG
+    @Test("Debug demo remains explicit even when Supabase configuration is supplied")
+    func debugDemoDoesNotInstallSupabaseAuthentication() throws {
+        let configuration = try SupabaseAuthConfiguration(
+            originString: "https://project.example.test",
+            key: "sb_publishable_synthetic"
+        )
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: ["--ui-testing"], buildFlavor: .debug),
+            supabaseAuthConfiguration: configuration
+        )
+
+        #expect(dependencies.authentication is DemoAuthenticationService)
+    }
+    #endif
 
     @Test("CI-0 dependency and networking sources contain no candidate product name")
     func ci0SourcesRemainNamingNeutral() throws {
@@ -916,6 +1046,128 @@ private func releaseDependencies() -> AppDependencies {
             buildFlavor: .release
         )
     )
+}
+
+private struct DependencyTransportPayload: Codable, Equatable, Sendable {
+    let value: String
+}
+
+private struct DependencyTransportHarness: Sendable {
+    let dependencies: AppDependencies
+    let recorder: DependencyTransportRecorder
+}
+
+private func dependencyTransportHarness(
+    sessionStore: AuthenticationSessionStore
+) async throws -> DependencyTransportHarness {
+    let recorder = DependencyTransportRecorder()
+    await DependencyTransportURLProtocol.install(recorder: recorder)
+    let sessionConfiguration = URLSessionConfiguration.ephemeral
+    sessionConfiguration.protocolClasses = [DependencyTransportURLProtocol.self]
+    let dependencies = AppDependencies.make(
+        configuration: .resolve(arguments: [], buildFlavor: .release),
+        mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+            configuration: try MobileAPIConfiguration(
+                originString: "https://mobile.example.test"
+            )
+        ),
+        mobileAPISession: URLSession(configuration: sessionConfiguration),
+        supabaseAuthConfiguration: try SupabaseAuthConfiguration(
+            originString: "https://project.example.test",
+            key: "sb_publishable_synthetic"
+        ),
+        authenticationSessionStore: sessionStore,
+        supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+    )
+    return DependencyTransportHarness(dependencies: dependencies, recorder: recorder)
+}
+
+private func dependencyAuthenticationRecord(
+    expiresAt: TimeInterval
+) -> AuthenticationSessionRecord {
+    let userID = "00000000-0000-4000-8000-000000000001"
+    let header = Data(#"{"alg":"none","typ":"JWT"}"#.utf8)
+        .dependencyBase64URL
+    let payload = Data(#"{"sub":"\#(userID)"}"#.utf8)
+        .dependencyBase64URL
+    return AuthenticationSessionRecord(
+        userID: userID,
+        email: "member@fixture.invalid",
+        isEmailConfirmed: true,
+        isOnboardingCompleted: false,
+        accessToken: "\(header).\(payload).synthetic",
+        refreshToken: "refresh-synthetic",
+        expiresAt: Date(timeIntervalSince1970: expiresAt)
+    )
+}
+
+private extension Data {
+    var dependencyBase64URL: String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+private actor DependencyTransportRecorder {
+    private(set) var requests: [URLRequest] = []
+
+    func record(_ request: URLRequest) {
+        requests.append(request)
+    }
+}
+
+private final class DependencyTransportURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let registry = DependencyTransportRegistry()
+    private var loadingTask: Task<Void, Never>?
+
+    static func install(recorder: DependencyTransportRecorder) async {
+        await registry.install(recorder: recorder)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.scheme == "https"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        loadingTask = Task {
+            guard let recorder = await Self.registry.current() else { return }
+            await recorder.record(request)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            let body = Data(
+                #"{"data":{"value":"ok"},"meta":{"api_version":"v1","request_id":"dependency-request-0001"}}"#.utf8
+            )
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() {
+        loadingTask?.cancel()
+    }
+}
+
+private actor DependencyTransportRegistry {
+    private var recorder: DependencyTransportRecorder?
+
+    func install(recorder: DependencyTransportRecorder) {
+        self.recorder = recorder
+    }
+
+    func current() -> DependencyTransportRecorder? {
+        recorder
+    }
 }
 
 #if DEBUG

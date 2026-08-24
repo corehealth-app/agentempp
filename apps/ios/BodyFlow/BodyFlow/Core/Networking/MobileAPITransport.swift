@@ -2,12 +2,11 @@ import Foundation
 
 struct MobileAPITransport: Sendable {
     private let configuration: MobileAPIConfiguration?
-    private let sessionTokenProvider: any SessionTokenProviding
+    private let sessionLifecycle: any SessionLifecycleProviding
     private let session: URLSession
     private let clock: any Clock<Duration>
     private let timeout: Duration
     private let responseBodyLimit: Int
-    private let maximumRetryCount: Int
 
     init(
         configuration: MobileAPIConfiguration?,
@@ -18,18 +17,40 @@ struct MobileAPITransport: Sendable {
         responseBodyLimit: Int = 64 * 1_024,
         maximumRetryCount: Int = 1
     ) {
+        let lifecycle = LegacySessionLifecycleAdapter(provider: sessionTokenProvider)
+        self.init(
+            configuration: configuration,
+            sessionLifecycle: lifecycle,
+            session: session,
+            clock: clock,
+            timeout: timeout,
+            responseBodyLimit: responseBodyLimit
+        )
+        _ = maximumRetryCount
+    }
+
+    init(
+        configuration: MobileAPIConfiguration?,
+        sessionLifecycle: any SessionLifecycleProviding,
+        session: URLSession,
+        clock: any Clock<Duration>,
+        timeout: Duration = .seconds(30),
+        responseBodyLimit: Int = 64 * 1_024
+    ) {
         self.configuration = configuration
-        self.sessionTokenProvider = sessionTokenProvider
+        self.sessionLifecycle = sessionLifecycle
         let sessionConfiguration = session.configuration
         sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         sessionConfiguration.urlCache = nil
+        sessionConfiguration.httpShouldSetCookies = false
+        sessionConfiguration.httpCookieStorage = nil
+        sessionConfiguration.urlCredentialStorage = nil
         sessionConfiguration.timeoutIntervalForRequest = Self.seconds(timeout)
         sessionConfiguration.timeoutIntervalForResource = Self.seconds(timeout)
         self.session = URLSession(configuration: sessionConfiguration)
         self.clock = clock
         self.timeout = timeout
         self.responseBodyLimit = responseBodyLimit
-        self.maximumRetryCount = maximumRetryCount
     }
 
     init(
@@ -52,54 +73,89 @@ struct MobileAPITransport: Sendable {
             throw MobileAPITransportError.unavailableConfiguration
         }
         let requestID = UUID().uuidString.lowercased()
-        var attempt = 0
+        let lease: SessionLease
+        do {
+            lease = try await sessionLifecycle.leaseForRequest()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch SessionLifecycleError.sessionSuperseded {
+            throw MobileAPITransportError.sessionSuperseded
+        } catch {
+            throw MobileAPITransportError.missingSession
+        }
 
-        while true {
-            try Task.checkCancellation()
-            let result: NetworkResult
-            do {
-                result = try await executeAttempt(
-                    request,
-                    configuration: configuration,
-                    requestID: requestID
-                )
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch let error as MobileAPITransportError {
-                if error == .network,
-                   attempt < maximumRetryCount,
-                   request.isRetryEligible {
-                    attempt += 1
-                    continue
-                }
-                throw error
-            }
-
-            if Self.isRetryable(status: result.response.statusCode),
-               attempt < maximumRetryCount,
-               request.isRetryEligible {
-                attempt += 1
-                continue
-            }
-
-            return try decode(
+        try Task.checkCancellation()
+        let firstResult = try await executeAttempt(
+            request,
+            configuration: configuration,
+            requestID: requestID,
+            lease: lease
+        )
+        guard firstResult.response.statusCode == 401,
+              request.isRetryEligible
+        else {
+            return try await validatedDecode(
                 Response.self,
-                data: result.data,
-                response: result.response
+                result: firstResult,
+                lease: lease
             )
         }
+
+        let refreshedLease: SessionLease
+        do {
+            refreshedLease = try await sessionLifecycle
+                .refreshAfterUnauthorized(lease: lease)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch SessionLifecycleError.sessionSuperseded {
+            throw MobileAPITransportError.sessionSuperseded
+        } catch {
+            return try decode(
+                Response.self,
+                data: firstResult.data,
+                response: firstResult.response
+            )
+        }
+
+        let secondResult = try await executeAttempt(
+            request,
+            configuration: configuration,
+            requestID: requestID,
+            lease: refreshedLease
+        )
+        return try await validatedDecode(
+            Response.self,
+            result: secondResult,
+            lease: refreshedLease
+        )
+    }
+
+    private func validatedDecode<Response: Decodable & Sendable>(
+        _ type: Response.Type,
+        result: NetworkResult,
+        lease: SessionLease
+    ) async throws -> Response {
+        do {
+            try await sessionLifecycle.validate(lease)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw MobileAPITransportError.sessionSuperseded
+        }
+        return try decode(
+            type,
+            data: result.data,
+            response: result.response
+        )
     }
 
     private func executeAttempt<Response: Decodable & Sendable>(
         _ request: MobileAPIRequest<Response>,
         configuration: MobileAPIConfiguration,
-        requestID: String
+        requestID: String,
+        lease: SessionLease
     ) async throws -> NetworkResult {
-        let bearer = await sessionTokenProvider.currentBearerToken()
-        try Task.checkCancellation()
-        guard let bearer,
-              !bearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
+        guard !lease.bearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw MobileAPITransportError.missingSession
         }
 
@@ -116,7 +172,7 @@ struct MobileAPITransport: Sendable {
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.httpBody = request.body
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        urlRequest.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue("Bearer \(lease.bearer)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue(requestID, forHTTPHeaderField: "X-Request-Id")
         if request.body != nil {
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -127,36 +183,84 @@ struct MobileAPITransport: Sendable {
 
         let preparedRequest = urlRequest
         let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration)
-        do {
-            return try await withThrowingTaskGroup(of: NetworkResult.self) { group in
-                group.addTask {
-                    try await readBounded(
-                        preparedRequest,
-                        redirectDelegate: redirectDelegate
-                    )
-                }
-                group.addTask {
-                    try await clock.sleep(for: timeout)
-                    throw MobileAPITransportError.timeout
-                }
-
-                guard let first = try await group.next() else {
-                    throw MobileAPITransportError.network
-                }
-                group.cancelAll()
-                return first
+        let cancellationRelay = NetworkTaskCancellationRelay()
+        return try await withTaskCancellationHandler {
+            let workID: UUID
+            do {
+                workID = try await sessionLifecycle.beginPatientWork(
+                    lease: lease,
+                    cancel: cancellationRelay.cancel
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw MobileAPITransportError.sessionSuperseded
             }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as MobileAPITransportError {
-            throw error
-        } catch let error as URLError where error.code == .cancelled {
-            try Task.checkCancellation()
-            throw MobileAPITransportError.network
-        } catch let error as URLError where error.code == .timedOut {
-            throw MobileAPITransportError.timeout
-        } catch {
-            throw MobileAPITransportError.network
+
+            let startGate = NetworkTaskStartGate()
+            let networkTask = Task {
+                await startGate.waitUntilOpen()
+                try Task.checkCancellation()
+                return try await withThrowingTaskGroup(of: NetworkResult.self) { group in
+                    group.addTask {
+                        try await readBounded(
+                            preparedRequest,
+                            redirectDelegate: redirectDelegate
+                        )
+                    }
+                    group.addTask {
+                        try await clock.sleep(for: timeout)
+                        throw MobileAPITransportError.timeout
+                    }
+
+                    guard let first = try await group.next() else {
+                        throw MobileAPITransportError.network
+                    }
+                    group.cancelAll()
+                    return first
+                }
+            }
+            cancellationRelay.install(networkTask)
+            await startGate.open()
+            do {
+                let result = try await networkTask.value
+                await sessionLifecycle.finishPatientWork(workID)
+                do {
+                    try await sessionLifecycle.validate(lease)
+                } catch {
+                    throw MobileAPITransportError.sessionSuperseded
+                }
+                return result
+            } catch is CancellationError {
+                await sessionLifecycle.finishPatientWork(workID)
+                if Task.isCancelled { throw CancellationError() }
+                do {
+                    try await sessionLifecycle.validate(lease)
+                } catch {
+                    throw MobileAPITransportError.sessionSuperseded
+                }
+                throw MobileAPITransportError.network
+            } catch let error as MobileAPITransportError {
+                await sessionLifecycle.finishPatientWork(workID)
+                throw error
+            } catch let error as URLError where error.code == .cancelled {
+                await sessionLifecycle.finishPatientWork(workID)
+                if Task.isCancelled { throw CancellationError() }
+                do {
+                    try await sessionLifecycle.validate(lease)
+                } catch {
+                    throw MobileAPITransportError.sessionSuperseded
+                }
+                throw MobileAPITransportError.network
+            } catch let error as URLError where error.code == .timedOut {
+                await sessionLifecycle.finishPatientWork(workID)
+                throw MobileAPITransportError.timeout
+            } catch {
+                await sessionLifecycle.finishPatientWork(workID)
+                throw MobileAPITransportError.network
+            }
+        } onCancel: {
+            cancellationRelay.cancel()
         }
     }
 
@@ -269,10 +373,6 @@ struct MobileAPITransport: Sendable {
         )
     }
 
-    private static func isRetryable(status: Int) -> Bool {
-        status == 429 || (500...599).contains(status)
-    }
-
     private static func safeRequestID(_ value: String?) -> String? {
         guard let value, isValidRequestID(value) else { return nil }
         return value
@@ -306,6 +406,34 @@ struct MobileAPITransport: Sendable {
     }
 }
 
+private struct LegacySessionLifecycleAdapter: SessionLifecycleProviding {
+    let provider: any SessionTokenProviding
+
+    func currentBearerToken() async -> String? {
+        await provider.currentBearerToken()
+    }
+
+    func leaseForRequest() async throws -> SessionLease {
+        guard let bearer = await provider.currentBearerToken(),
+              !bearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { throw SessionLifecycleError.missingSession }
+        return SessionLease(userID: "legacy", generation: 0, bearer: bearer)
+    }
+
+    func refreshAfterUnauthorized(lease: SessionLease) async throws
+        -> SessionLease {
+        throw SessionLifecycleError.refreshFailed
+    }
+
+    func validate(_ lease: SessionLease) async throws {}
+    func signOut() async -> RemoteRevocationOutcome { .unconfirmed }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) async throws -> UUID { UUID() }
+    func finishPatientWork(_ id: UUID) async {}
+}
+
 extension MobileAPITransport: APIClient {
     func send<Response: Decodable & Sendable>(
         _ request: APIRequest<Response>
@@ -321,6 +449,45 @@ extension MobileAPITransport: APIClient {
 private struct NetworkResult: Sendable {
     let data: Data
     let response: HTTPURLResponse
+}
+
+private actor NetworkTaskStartGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilOpen() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        pending.forEach { $0.resume() }
+    }
+}
+
+private final class NetworkTaskCancellationRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<NetworkResult, Error>?
+    private var isCancelled = false
+
+    func install(_ task: Task<NetworkResult, Error>) {
+        let cancelImmediately = lock.withLock {
+            self.task = task
+            return isCancelled
+        }
+        if cancelImmediately { task.cancel() }
+    }
+
+    func cancel() {
+        let task = lock.withLock {
+            isCancelled = true
+            return self.task
+        }
+        task?.cancel()
+    }
 }
 
 private extension MobileAPIRequest {

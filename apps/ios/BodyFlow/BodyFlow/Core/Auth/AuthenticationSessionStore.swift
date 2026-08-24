@@ -9,15 +9,18 @@ enum AuthenticationSessionState: Equatable, Sendable {
 enum AuthenticationSessionStoreError: Error, Equatable, Sendable {
     case invalidRecord
     case storageUnavailable
+    case localInvalidationFailed
+    case cleanupIncomplete
 }
 
 actor AuthenticationSessionStore: SessionTokenProviding {
     static let keychainService = "com.bodyflow.app.auth-session.v1"
     static let storageKey = "bodyflow.auth.session.v1"
+    static let invalidationMarkerKey = "bodyflow.auth.session.invalidated.v1"
 
     private let secureStore: any SecureStoring
     private let now: @Sendable () -> Date
-    private var currentRecord: AuthenticationSessionRecord?
+    private var storedRecord: AuthenticationSessionRecord?
     private var transitionInProgress = false
     private var transitionWaiters: [TransitionWaiter] = []
     private(set) var state: AuthenticationSessionState = .notHydrated
@@ -31,10 +34,41 @@ actor AuthenticationSessionStore: SessionTokenProviding {
     }
 
     func hydrate() async throws -> AuthSession? {
+        guard let record = try await bootstrapRecord(),
+              record.expiresAt > now()
+        else { return nil }
+        return record.publicSession
+    }
+
+    func bootstrapRecord() async throws -> AuthenticationSessionRecord? {
         try Task.checkCancellation()
         try await beginTransition()
         defer { endTransition() }
         try Task.checkCancellation()
+
+        let marker: Data?
+        do {
+            marker = try await secureStore.data(forKey: Self.invalidationMarkerKey)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            storedRecord = nil
+            state = .notHydrated
+            throw AuthenticationSessionStoreError.storageUnavailable
+        }
+        try Task.checkCancellation()
+
+        if marker != nil {
+            storedRecord = nil
+            state = .signedOut
+            do {
+                try await secureStore.removeData(forKey: Self.storageKey)
+                try await secureStore.removeData(forKey: Self.invalidationMarkerKey)
+            } catch {
+                // The marker remains authoritative if cleanup cannot finish.
+            }
+            return nil
+        }
 
         let data: Data?
         do {
@@ -43,14 +77,14 @@ actor AuthenticationSessionStore: SessionTokenProviding {
             throw CancellationError()
         } catch {
             try Task.checkCancellation()
-            currentRecord = nil
+            storedRecord = nil
             state = .notHydrated
             throw AuthenticationSessionStoreError.storageUnavailable
         }
         try Task.checkCancellation()
 
         guard let data else {
-            currentRecord = nil
+            storedRecord = nil
             state = .signedOut
             return nil
         }
@@ -58,19 +92,19 @@ actor AuthenticationSessionStore: SessionTokenProviding {
             AuthenticationSessionRecord.self,
             from: data
         ), record.schemaVersion == 1, Self.isStructurallyValid(record) else {
-            currentRecord = nil
+            storedRecord = nil
             state = .notHydrated
             throw AuthenticationSessionStoreError.invalidRecord
         }
         guard record.expiresAt > now() else {
-            currentRecord = nil
+            storedRecord = nil
             state = .signedOut
-            return nil
+            return record
         }
 
-        currentRecord = record
+        storedRecord = record
         state = .authenticated(record.publicSession)
-        return record.publicSession
+        return record
     }
 
     func replace(with record: AuthenticationSessionRecord) async throws {
@@ -87,14 +121,22 @@ actor AuthenticationSessionStore: SessionTokenProviding {
 
         let data: Data
         do {
+            let marker = try await secureStore.data(
+                forKey: Self.invalidationMarkerKey
+            )
             data = try JSONEncoder().encode(record)
             try await secureStore.store(data, forKey: Self.storageKey)
+            if marker != nil {
+                try await secureStore.removeData(
+                    forKey: Self.invalidationMarkerKey
+                )
+            }
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             throw AuthenticationSessionStoreError.storageUnavailable
         }
-        currentRecord = record
+        storedRecord = record
         state = .authenticated(record.publicSession)
     }
 
@@ -109,20 +151,71 @@ actor AuthenticationSessionStore: SessionTokenProviding {
         } catch {
             throw AuthenticationSessionStoreError.storageUnavailable
         }
-        currentRecord = nil
+        storedRecord = nil
         state = .signedOut
     }
 
+    func currentRecord() -> AuthenticationSessionRecord? {
+        storedRecord
+    }
+
+    @discardableResult
+    func invalidateLocally() async throws -> AuthenticationSessionRecord? {
+        let retainedRecord = try await beginLocalInvalidation()
+        try await finishLocalInvalidation()
+        return retainedRecord
+    }
+
+    func beginLocalInvalidation() async throws -> AuthenticationSessionRecord? {
+        try await beginTransition()
+        defer { endTransition() }
+        try Task.checkCancellation()
+        let retainedRecord = storedRecord
+        let marker = Data(#"{"schema_version":1,"invalidated":true}"#.utf8)
+        do {
+            try await secureStore.store(
+                marker,
+                forKey: Self.invalidationMarkerKey
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw AuthenticationSessionStoreError.localInvalidationFailed
+        }
+
+        storedRecord = nil
+        state = .signedOut
+        return retainedRecord
+    }
+
+    func finishLocalInvalidation() async throws {
+        try await beginTransition()
+        defer { endTransition() }
+        try Task.checkCancellation()
+        do {
+            try await secureStore.removeData(forKey: Self.storageKey)
+        } catch {
+            throw AuthenticationSessionStoreError.cleanupIncomplete
+        }
+        do {
+            try await secureStore.removeData(
+                forKey: Self.invalidationMarkerKey
+            )
+        } catch {
+            throw AuthenticationSessionStoreError.cleanupIncomplete
+        }
+    }
+
     func currentBearerToken() -> String? {
-        guard let currentRecord,
-              Self.isStructurallyValid(currentRecord),
-              currentRecord.expiresAt > now()
+        guard let storedRecord,
+              Self.isStructurallyValid(storedRecord),
+              storedRecord.expiresAt > now()
         else {
-            self.currentRecord = nil
+            self.storedRecord = nil
             state = .signedOut
             return nil
         }
-        return currentRecord.accessToken
+        return storedRecord.accessToken
     }
 
     private func beginTransition() async throws {

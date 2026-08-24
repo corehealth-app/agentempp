@@ -19,6 +19,12 @@ enum AuthenticationError: Error, Equatable, Sendable {
     case storageUnavailable
 }
 
+enum RemoteRevocationOutcome: Equatable, Sendable {
+    case confirmed
+    case unconfirmed
+    case localInvalidationFailed
+}
+
 protocol AuthenticationService: Sendable {
     func restoreSession() async throws -> AuthSession?
     func signIn(email: String, password: String) async throws -> AuthSession

@@ -14,6 +14,7 @@ enum MobileAPIRequestError: Error, Equatable, Sendable {
 enum MobileAPITransportError: Error, Equatable, Sendable {
     case unavailableConfiguration
     case missingSession
+    case sessionSuperseded
     case redirectNotAllowed
     case timeout
     case responseTooLarge(limit: Int)
@@ -34,6 +35,7 @@ extension MobileAPITransportError: CustomStringConvertible {
         switch self {
         case .unavailableConfiguration: "mobile_api_unavailable_configuration"
         case .missingSession: "mobile_api_missing_session"
+        case .sessionSuperseded: "mobile_api_session_superseded"
         case .redirectNotAllowed: "mobile_api_redirect_not_allowed"
         case .timeout: "mobile_api_timeout"
         case .responseTooLarge: "mobile_api_response_too_large"

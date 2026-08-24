@@ -230,6 +230,119 @@ struct SupabaseAuthServiceTests {
         #expect(await recorder.requests.count == requestsAtCancellation)
     }
 
+    @Test("direct refresh posts only the refresh token to the locked Auth endpoint")
+    func directRefreshUsesOriginLockedGrant() async throws {
+        let recorder = AuthRequestRecorder(response: sessionResponse())
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try configuration(),
+            fetch: recorder.fetch
+        )
+
+        let refreshed = try await remote.refresh(record: authenticationRecord())
+        let requests = await recorder.requests
+
+        #expect(requests.count == 1)
+        #expect(requests[0].httpMethod == "POST")
+        #expect(requests[0].url?.absoluteString ==
+            "https://project.example.test/auth/v1/token?grant_type=refresh_token")
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") ==
+            "Bearer sb_publishable_synthetic")
+        #expect(requests[0].httpBody == Data(#"{"refresh_token":"refresh-synthetic"}"#.utf8))
+        #expect(refreshed.userID == authenticationRecord().userID)
+    }
+
+    @Test("local logout uses the captured bearer and never requests global scope")
+    func directLogoutUsesLocalScope() async throws {
+        let recorder = AuthRequestRecorder(response: Data(), status: 204)
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try configuration(),
+            fetch: recorder.fetch
+        )
+
+        let outcome = await remote.revokeCurrentSession(
+            accessToken: syntheticAccessToken()
+        )
+        let requests = await recorder.requests
+
+        #expect(outcome == .confirmed)
+        #expect(requests.count == 1)
+        #expect(requests[0].httpMethod == "POST")
+        #expect(requests[0].url?.absoluteString ==
+            "https://project.example.test/auth/v1/logout?scope=local")
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") ==
+            "Bearer \(syntheticAccessToken())")
+        #expect(requests[0].httpBody == nil)
+    }
+
+    @Test("non-204 local logout remains explicitly unconfirmed", arguments: [
+        401, 403, 429, 500,
+    ])
+    func directLogoutClassifiesUnconfirmed(_ status: Int) async throws {
+        let recorder = AuthRequestRecorder(response: Data(), status: status)
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try configuration(),
+            fetch: recorder.fetch
+        )
+
+        #expect(await remote.revokeCurrentSession(
+            accessToken: syntheticAccessToken()
+        ) == .unconfirmed)
+        #expect(await recorder.requests.count == 1)
+    }
+
+    @Test("direct refresh classifies terminal and transient statuses", arguments: [
+        RefreshStatusCase(status: 400, error: .invalidGrant),
+        RefreshStatusCase(status: 403, error: .forbidden),
+        RefreshStatusCase(status: 429, error: .rateLimited),
+        RefreshStatusCase(status: 503, error: .server),
+    ])
+    func directRefreshClassifiesStatus(_ errorCase: RefreshStatusCase) async throws {
+        let recorder = AuthRequestRecorder(response: Data("{}".utf8), status: errorCase.status)
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try configuration(),
+            fetch: recorder.fetch
+        )
+
+        await #expect(throws: errorCase.error) {
+            _ = try await remote.refresh(record: authenticationRecord())
+        }
+        #expect(await recorder.requests.count == 1)
+    }
+
+    @Test("direct refresh maps the locked fetch timeout without retry")
+    func directRefreshMapsTimeout() async throws {
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try configuration(),
+            fetch: { _ in throw SupabaseAuthNetworkError.timeout }
+        )
+
+        await #expect(throws: SupabaseAuthRemoteError.timeout) {
+            _ = try await remote.refresh(record: authenticationRecord())
+        }
+    }
+
+    @Test("authentication adapter accepts honest remote outcomes and throws only before local invalidation")
+    func signOutAdapterMapsLifecycleOutcome() async throws {
+        for outcome in [RemoteRevocationOutcome.confirmed, .unconfirmed] {
+            let lifecycle = LifecycleOutcomeStub(outcome: outcome)
+            let service = SupabaseAuthenticationService(
+                remote: SupabaseAuthRemoteStub(),
+                lifecycle: lifecycle
+            )
+            try await service.signOut()
+            #expect(await lifecycle.signOutCount == 1)
+        }
+
+        let failed = LifecycleOutcomeStub(outcome: .localInvalidationFailed)
+        let service = SupabaseAuthenticationService(
+            remote: SupabaseAuthRemoteStub(),
+            lifecycle: failed
+        )
+        await #expect(throws: AuthenticationError.storageUnavailable) {
+            try await service.signOut()
+        }
+    }
+
     @Test("remote errors reveal no password, email, token, or response body")
     func remoteErrorsAreRedacted() async throws {
         let body = Data(#"{"error":"token-do-not-print","email":"member@fixture.invalid"}"#.utf8)
@@ -388,6 +501,25 @@ struct SupabaseAuthServiceTests {
         }
     }
 
+    @Test("service restore distinguishes lifecycle availability from storage")
+    func serviceRestoreMapsLifecycleFailures() async throws {
+        let transient = SupabaseAuthenticationService(
+            remote: SupabaseAuthRemoteStub(),
+            lifecycle: RestoreFailureLifecycle(error: .refreshFailed)
+        )
+        await #expect(throws: AuthenticationError.serviceUnavailable) {
+            _ = try await transient.restoreSession()
+        }
+
+        let storage = SupabaseAuthenticationService(
+            remote: SupabaseAuthRemoteStub(),
+            lifecycle: RestoreFailureLifecycle(error: .localInvalidationFailed)
+        )
+        await #expect(throws: AuthenticationError.storageUnavailable) {
+            _ = try await storage.restoreSession()
+        }
+    }
+
     @Test("service recovery validates input and delegates exactly once")
     func serviceRecoveryDelegatesOnce() async throws {
         let remote = SupabaseAuthRemoteStub()
@@ -409,6 +541,56 @@ private func configuration() throws -> SupabaseAuthConfiguration {
         originString: "https://project.example.test",
         key: "sb_publishable_synthetic"
     )
+}
+
+struct RefreshStatusCase: Sendable {
+    let status: Int
+    let error: SupabaseAuthRemoteError
+}
+
+private actor LifecycleOutcomeStub: SessionLifecycleProviding {
+    let outcome: RemoteRevocationOutcome
+    private(set) var signOutCount = 0
+
+    init(outcome: RemoteRevocationOutcome) { self.outcome = outcome }
+    func currentBearerToken() -> String? { nil }
+    func leaseForRequest() throws -> SessionLease {
+        throw SessionLifecycleError.missingSession
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) throws -> SessionLease {
+        throw SessionLifecycleError.missingSession
+    }
+    func validate(_ lease: SessionLease) throws {
+        throw SessionLifecycleError.missingSession
+    }
+    func signOut() -> RemoteRevocationOutcome {
+        signOutCount += 1
+        return outcome
+    }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) throws -> UUID {
+        throw SessionLifecycleError.missingSession
+    }
+    func finishPatientWork(_ id: UUID) {}
+}
+
+private struct RestoreFailureLifecycle: SessionLifecycleProviding {
+    let error: SessionLifecycleError
+
+    func restorePublicSession() async throws -> AuthSession? { throw error }
+    func currentBearerToken() async -> String? { nil }
+    func leaseForRequest() async throws -> SessionLease { throw error }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws
+        -> SessionLease { throw error }
+    func validate(_ lease: SessionLease) async throws { throw error }
+    func signOut() async -> RemoteRevocationOutcome { .unconfirmed }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) async throws -> UUID { throw error }
+    func finishPatientWork(_ id: UUID) async {}
 }
 
 private func sessionResponse(

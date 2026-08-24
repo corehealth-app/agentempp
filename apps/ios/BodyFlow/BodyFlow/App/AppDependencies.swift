@@ -46,7 +46,9 @@ struct AppDependencies: Sendable {
         apiClientOverride: (any APIClient)? = nil,
         supabaseAuthConfiguration: SupabaseAuthConfiguration? = nil,
         authenticationSessionStore: AuthenticationSessionStore? = nil,
-        supabaseAuthFetch: SupabaseAuthRemoteClient.Fetch? = nil
+        supabaseAuthFetch: SupabaseAuthRemoteClient.Fetch? = nil,
+        sessionLifecycleOverride: (any SessionLifecycleProviding)? = nil,
+        sessionRefreshPolicy: SessionRefreshPolicy = .production
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -68,8 +70,31 @@ struct AppDependencies: Sendable {
             } else {
                 nil
             }
+        let releaseAuthRemote: SupabaseAuthRemoteClient? =
+            if let supabaseAuthConfiguration, releaseSessionStore != nil {
+                SupabaseAuthRemoteClient(
+                    configuration: supabaseAuthConfiguration,
+                    fetch: supabaseAuthFetch ?? SupabaseAuthFetch(
+                        configuration: supabaseAuthConfiguration
+                    ).callAsFunction
+                )
+            } else {
+                nil
+            }
+        let releaseLifecycle: (any SessionLifecycleProviding)? =
+            if let sessionLifecycleOverride {
+                sessionLifecycleOverride
+            } else if let releaseSessionStore, let releaseAuthRemote {
+                SessionLifecycleCoordinator(
+                    store: releaseSessionStore,
+                    remote: releaseAuthRemote,
+                    refreshPolicy: sessionRefreshPolicy
+                )
+            } else {
+                nil
+            }
         let mobileSessionTokenProvider: (any SessionTokenProviding)? =
-            releaseSessionStore ?? sessionTokenProvider
+            releaseLifecycle ?? releaseSessionStore ?? sessionTokenProvider
         var coachPersona: any CoachPersonaRepository =
             DemoCoachPersonaRepository(stateStore: stateStore)
         let buildFlavor: AppBuildFlavor = configuration.mode == .demo ? .debug : .release
@@ -88,11 +113,20 @@ struct AppDependencies: Sendable {
         } else if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
                     .currentConfiguration(),
                   let mobileSessionTokenProvider {
-            apiClient = MobileAPITransport(
-                configuration: mobileAPIConfiguration,
-                sessionTokenProvider: mobileSessionTokenProvider,
-                session: mobileAPISession
-            )
+            if let releaseLifecycle {
+                apiClient = MobileAPITransport(
+                    configuration: mobileAPIConfiguration,
+                    sessionLifecycle: releaseLifecycle,
+                    session: mobileAPISession,
+                    clock: ContinuousClock()
+                )
+            } else {
+                apiClient = MobileAPITransport(
+                    configuration: mobileAPIConfiguration,
+                    sessionTokenProvider: mobileSessionTokenProvider,
+                    session: mobileAPISession
+                )
+            }
         } else {
             apiClient = switch configuration.mode {
             case .demo:
@@ -109,11 +143,20 @@ struct AppDependencies: Sendable {
         if let mobileAPIConfiguration = mobileAPIConfigurationProvider?
                 .currentConfiguration(),
            let mobileSessionTokenProvider {
-            apiClient = MobileAPITransport(
-                configuration: mobileAPIConfiguration,
-                sessionTokenProvider: mobileSessionTokenProvider,
-                session: mobileAPISession
-            )
+            if let releaseLifecycle {
+                apiClient = MobileAPITransport(
+                    configuration: mobileAPIConfiguration,
+                    sessionLifecycle: releaseLifecycle,
+                    session: mobileAPISession,
+                    clock: ContinuousClock()
+                )
+            } else {
+                apiClient = MobileAPITransport(
+                    configuration: mobileAPIConfiguration,
+                    sessionTokenProvider: mobileSessionTokenProvider,
+                    session: mobileAPISession
+                )
+            }
         } else {
             apiClient = UnavailableAPIClient()
         }
@@ -254,33 +297,21 @@ struct AppDependencies: Sendable {
                 stateStore: stateStore,
                 configuration: configuration
             )
-        } else if let supabaseAuthConfiguration,
-                  let releaseSessionStore {
-            let fetch = supabaseAuthFetch ?? SupabaseAuthFetch(
-                configuration: supabaseAuthConfiguration
-            ).callAsFunction
+        } else if let releaseAuthRemote,
+                  let releaseLifecycle {
             authentication = SupabaseAuthenticationService(
-                remote: SupabaseAuthRemoteClient(
-                    configuration: supabaseAuthConfiguration,
-                    fetch: fetch
-                ),
-                sessionStore: releaseSessionStore
+                remote: releaseAuthRemote,
+                lifecycle: releaseLifecycle
             )
         } else {
             authentication = UnavailableAuthenticationService()
         }
         #else
-        if let supabaseAuthConfiguration,
-           let releaseSessionStore {
-            let fetch = supabaseAuthFetch ?? SupabaseAuthFetch(
-                configuration: supabaseAuthConfiguration
-            ).callAsFunction
+        if let releaseAuthRemote,
+           let releaseLifecycle {
             authentication = SupabaseAuthenticationService(
-                remote: SupabaseAuthRemoteClient(
-                    configuration: supabaseAuthConfiguration,
-                    fetch: fetch
-                ),
-                sessionStore: releaseSessionStore
+                remote: releaseAuthRemote,
+                lifecycle: releaseLifecycle
             )
         } else {
             authentication = UnavailableAuthenticationService()

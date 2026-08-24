@@ -277,6 +277,100 @@ struct AuthenticationSessionStoreTests {
         let relaunched = AuthenticationSessionStore(secureStore: secureStore)
         #expect(try await relaunched.hydrate() == record.publicSession)
     }
+
+    @Test("expired bootstrap is retained only for coordinator refresh")
+    func expiredBootstrapReturnsRecordWithoutBearer() async throws {
+        let secureStore = MarkerSecureStore()
+        let record = fixtureRecord(expiresAt: 10)
+        try await secureStore.store(
+            try JSONEncoder().encode(record),
+            forKey: AuthenticationSessionStore.storageKey
+        )
+        let store = AuthenticationSessionStore(
+            secureStore: secureStore,
+            now: { Date(timeIntervalSince1970: 20) }
+        )
+
+        #expect(try await store.bootstrapRecord() == record)
+        #expect(await store.currentBearerToken() == nil)
+        #expect(await store.state == .signedOut)
+    }
+
+    @Test("invalidation marker wins over a retained record after relaunch")
+    func markerWinsOnFreshBootstrap() async throws {
+        let secureStore = MarkerSecureStore()
+        try await secureStore.store(
+            try JSONEncoder().encode(fixtureRecord()),
+            forKey: AuthenticationSessionStore.storageKey
+        )
+        try await secureStore.store(
+            Data(#"{"schema_version":1,"invalidated":true}"#.utf8),
+            forKey: AuthenticationSessionStore.invalidationMarkerKey
+        )
+
+        let relaunched = AuthenticationSessionStore(secureStore: secureStore)
+        #expect(try await relaunched.bootstrapRecord() == nil)
+        #expect(await relaunched.state == .signedOut)
+    }
+
+    @Test("marker write failure preserves the old session and performs no cleanup")
+    func markerFailurePreservesOldSession() async throws {
+        let secureStore = MarkerSecureStore()
+        let record = fixtureRecord()
+        let store = AuthenticationSessionStore(secureStore: secureStore)
+        try await store.replace(with: record)
+        await secureStore.failStore(forKey: AuthenticationSessionStore.invalidationMarkerKey)
+
+        await #expect(throws: AuthenticationSessionStoreError.localInvalidationFailed) {
+            try await store.invalidateLocally()
+        }
+        #expect(await store.currentRecord() == record)
+        #expect(await store.currentBearerToken() == record.accessToken)
+        #expect(await secureStore.value(forKey: AuthenticationSessionStore.storageKey) != nil)
+    }
+
+    @Test("cleanup retains the marker when record or marker deletion fails", arguments: [
+        AuthenticationSessionStore.storageKey,
+        AuthenticationSessionStore.invalidationMarkerKey,
+    ])
+    func cleanupFailureRemainsSignedOutAfterRelaunch(_ failingKey: String) async throws {
+        let secureStore = MarkerSecureStore()
+        let store = AuthenticationSessionStore(secureStore: secureStore)
+        try await store.replace(with: fixtureRecord())
+        await secureStore.failRemoval(forKey: failingKey)
+
+        await #expect(throws: AuthenticationSessionStoreError.cleanupIncomplete) {
+            try await store.invalidateLocally()
+        }
+        let relaunched = AuthenticationSessionStore(secureStore: secureStore)
+        #expect(try await relaunched.bootstrapRecord() == nil)
+        #expect(await secureStore.value(
+            forKey: AuthenticationSessionStore.invalidationMarkerKey
+        ) != nil)
+    }
+
+    @Test("a new authenticated session reconciles a retained invalidation marker")
+    func replacementReconcilesRetainedMarker() async throws {
+        let secureStore = MarkerSecureStore()
+        let store = AuthenticationSessionStore(secureStore: secureStore)
+        try await store.replace(with: fixtureRecord(accessToken: "access-old"))
+        await secureStore.failRemoval(
+            forKey: AuthenticationSessionStore.invalidationMarkerKey
+        )
+        await #expect(throws: AuthenticationSessionStoreError.cleanupIncomplete) {
+            try await store.invalidateLocally()
+        }
+        await secureStore.allowRemoval(
+            forKey: AuthenticationSessionStore.invalidationMarkerKey
+        )
+        let replacement = fixtureRecord(accessToken: "access-new")
+
+        try await store.replace(with: replacement)
+
+        let relaunched = AuthenticationSessionStore(secureStore: secureStore)
+        #expect(try await relaunched.bootstrapRecord() == replacement)
+        #expect(await relaunched.currentBearerToken() == replacement.accessToken)
+    }
 }
 
 private func fixtureRecord(
@@ -318,7 +412,8 @@ private extension Data {
 }
 
 private actor RecordingSecureStore: SecureStoring {
-    private(set) var value: Data?
+    private var values: [String: Data] = [:]
+    var value: Data? { values[AuthenticationSessionStore.storageKey] }
     private(set) var storeCount = 0
     private var storeFails = false
     private var removalFails = false
@@ -328,18 +423,18 @@ private actor RecordingSecureStore: SecureStoring {
         if readsCancel {
             withUnsafeCurrentTask { $0?.cancel() }
         }
-        return value
+        return values[key]
     }
 
     func store(_ data: Data, forKey key: String) throws {
         guard !storeFails else { throw RecordingSecureStoreError.unavailable }
-        value = data
+        values[key] = data
         storeCount += 1
     }
 
     func removeData(forKey key: String) throws {
         guard !removalFails else { throw RecordingSecureStoreError.unavailable }
-        value = nil
+        values[key] = nil
     }
 
     func failStores() { storeFails = true }
@@ -350,15 +445,43 @@ private actor RecordingSecureStore: SecureStoring {
 
 private enum RecordingSecureStoreError: Error { case unavailable }
 
-private actor CancellingAfterWriteSecureStore: SecureStoring {
-    private(set) var value: Data?
+private actor MarkerSecureStore: SecureStoring {
+    private var values: [String: Data] = [:]
+    private var failingStoreKeys: Set<String> = []
+    private var failingRemovalKeys: Set<String> = []
 
-    func data(forKey key: String) -> Data? { value }
+    func data(forKey key: String) -> Data? { values[key] }
+
+    func store(_ data: Data, forKey key: String) throws {
+        guard !failingStoreKeys.contains(key) else {
+            throw RecordingSecureStoreError.unavailable
+        }
+        values[key] = data
+    }
+
+    func removeData(forKey key: String) throws {
+        guard !failingRemovalKeys.contains(key) else {
+            throw RecordingSecureStoreError.unavailable
+        }
+        values[key] = nil
+    }
+
+    func value(forKey key: String) -> Data? { values[key] }
+    func failStore(forKey key: String) { failingStoreKeys.insert(key) }
+    func failRemoval(forKey key: String) { failingRemovalKeys.insert(key) }
+    func allowRemoval(forKey key: String) { failingRemovalKeys.remove(key) }
+}
+
+private actor CancellingAfterWriteSecureStore: SecureStoring {
+    private var values: [String: Data] = [:]
+    var value: Data? { values[AuthenticationSessionStore.storageKey] }
+
+    func data(forKey key: String) -> Data? { values[key] }
 
     func store(_ data: Data, forKey key: String) {
-        value = data
+        values[key] = data
         withUnsafeCurrentTask { $0?.cancel() }
     }
 
-    func removeData(forKey key: String) { value = nil }
+    func removeData(forKey key: String) { values[key] = nil }
 }

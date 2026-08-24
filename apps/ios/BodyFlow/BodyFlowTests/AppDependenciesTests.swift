@@ -86,9 +86,10 @@ struct AppDependenciesTests {
         #expect(dependencies.authentication is SupabaseAuthenticationService)
     }
 
-    @Test("Release auth and Mobile API share the app-owned session store")
-    func releaseAuthAndTransportShareSessionStore() throws {
+    @Test("Release auth and Mobile API share one lifecycle instance")
+    func releaseAuthAndTransportShareLifecycle() async throws {
         let sessionStore = AuthenticationSessionStore(secureStore: InMemorySecureStore())
+        let lifecycle = DependencyLifecycle()
         let dependencies = AppDependencies.make(
             configuration: .resolve(arguments: [], buildFlavor: .release),
             mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
@@ -102,12 +103,15 @@ struct AppDependenciesTests {
                 key: "sb_publishable_synthetic"
             ),
             authenticationSessionStore: sessionStore,
-            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) },
+            sessionLifecycleOverride: lifecycle
         )
 
-        let provider = Mirror(reflecting: dependencies.apiClient).children
-            .first { $0.label == "sessionTokenProvider" }?.value
-        #expect((provider as? AuthenticationSessionStore) === sessionStore)
+        let transportLifecycle = Mirror(reflecting: dependencies.apiClient).children
+            .first { $0.label == "sessionLifecycle" }?.value
+        #expect((transportLifecycle as? DependencyLifecycle) === lifecycle)
+        try await dependencies.authentication.signOut()
+        #expect(await lifecycle.signOutCount == 1)
     }
 
     @Test("Release valid app-owned bearer reaches the CI-0 transport")
@@ -1052,6 +1056,39 @@ private struct DependencyTransportPayload: Codable, Equatable, Sendable {
     let value: String
 }
 
+private actor DependencyLifecycle: SessionLifecycleProviding {
+    private let lease = SessionLease(
+        userID: "00000000-0000-4000-8000-000000000001",
+        generation: 1,
+        bearer: "dependency-bearer"
+    )
+    private(set) var signOutCount = 0
+
+    func currentBearerToken() -> String? { lease.bearer }
+    func leaseForRequest() -> SessionLease { lease }
+    func refreshAfterUnauthorized(lease: SessionLease) throws -> SessionLease {
+        try validate(lease)
+        return lease
+    }
+    func validate(_ candidate: SessionLease) throws {
+        guard candidate == lease else {
+            throw SessionLifecycleError.sessionSuperseded
+        }
+    }
+    func signOut() -> RemoteRevocationOutcome {
+        signOutCount += 1
+        return .confirmed
+    }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) throws -> UUID {
+        try validate(lease)
+        return UUID()
+    }
+    func finishPatientWork(_ id: UUID) {}
+}
+
 private struct DependencyTransportHarness: Sendable {
     let dependencies: AppDependencies
     let recorder: DependencyTransportRecorder
@@ -1077,7 +1114,11 @@ private func dependencyTransportHarness(
             key: "sb_publishable_synthetic"
         ),
         authenticationSessionStore: sessionStore,
-        supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+        supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) },
+        sessionRefreshPolicy: SessionRefreshPolicy(
+            now: { Date(timeIntervalSince1970: 1_000) },
+            leeway: 60
+        )
     )
     return DependencyTransportHarness(dependencies: dependencies, recorder: recorder)
 }

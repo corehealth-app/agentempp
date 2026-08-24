@@ -309,23 +309,71 @@ struct MobileAPITransportTests {
         #expect(captured.httpMethod == "POST")
     }
 
-    @Test("safe read retries one transient server failure")
-    func retriesSafeRead() async throws {
-        let harness = try await TransportHarness(tokens: ["session-alpha", "session-alpha"])
+    @Test("transient server failure is never replayed by the session layer")
+    func doesNotRetryServerFailure() async throws {
+        let harness = try await TransportHarness(tokens: ["session-alpha"])
         await harness.stub.respond { _, call in
             call == 1 ? .failure(status: 503, code: "internal_error") : .success()
         }
 
-        let _: TransportPayload = try await harness.transport.execute(.getToday())
+        await #expect(throws: MobileAPITransportError.self) {
+            let _: TransportPayload = try await harness.transport.execute(.getToday())
+        }
 
+        #expect(await harness.stub.requests().count == 1)
+    }
+
+    @Test("one current 401 refreshes and replays with stable logical identifiers")
+    func refreshesOnceAfterUnauthorized() async throws {
+        let harness = try await LifecycleTransportHarness()
+        await harness.stub.respond { _, attempt in
+            attempt == 1
+                ? .failure(status: 401, code: "expired_token")
+                : .success()
+        }
+
+        let response: TransportPayload = try await harness.transport.execute(.getToday())
+        let requests = await harness.stub.requests()
+
+        #expect(response.value == "ok")
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "X-Request-Id") ==
+            requests[1].value(forHTTPHeaderField: "X-Request-Id"))
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") !=
+            requests[1].value(forHTTPHeaderField: "Authorization"))
+        #expect(await harness.lifecycle.refreshCount == 1)
+    }
+
+    @Test("a second 401 ends without another refresh")
+    func secondUnauthorizedEnds() async throws {
+        let harness = try await LifecycleTransportHarness()
+        await harness.stub.respond(with: .failure(status: 401, code: "expired_token"))
+
+        await #expect(throws: MobileAPITransportError.self) {
+            let _: TransportPayload = try await harness.transport.execute(.getToday())
+        }
         #expect(await harness.stub.requests().count == 2)
+        #expect(await harness.lifecycle.refreshCount == 1)
+    }
+
+    @Test("a response completed after generation invalidation is suppressed")
+    func staleResponseIsSuppressed() async throws {
+        let harness = try await LifecycleTransportHarness()
+        await harness.stub.respond { _, _ in
+            await harness.lifecycle.supersede()
+            return .success()
+        }
+
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            let _: TransportPayload = try await harness.transport.execute(.getToday())
+        }
     }
 
     @Test("mutation retry preserves the logical idempotency key")
     func preservesKeyAcrossRetry() async throws {
-        let harness = try await TransportHarness(tokens: ["session-alpha", "session-alpha"])
+        let harness = try await LifecycleTransportHarness()
         await harness.stub.respond { _, call in
-            call == 1 ? .failure(status: 503, code: "internal_error") : .success()
+            call == 1 ? .failure(status: 401, code: "expired_token") : .success()
         }
         let key = try IdempotencyKey(validating: "mobile-mutation-retry-0001")
         let request = try MobileAPIRequest<TransportPayload>(
@@ -393,6 +441,117 @@ struct MobileAPITransportTests {
         let request = try #require(await harness.stub.requests().first)
 
         #expect(request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
+    }
+
+    @Test("network cannot start before patient work registration succeeds")
+    func registrationPrecedesNetworkStart() async throws {
+        let stub = TransportStubStore()
+        await stub.respond(with: .success())
+        await StubURLProtocol.install(store: stub)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(
+                originString: "https://staging.example.test"
+            ),
+            sessionLifecycle: RejectingRegistrationLifecycle(),
+            session: URLSession(configuration: configuration),
+            clock: ContinuousClock(),
+            timeout: .seconds(2)
+        )
+
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            let _: TransportPayload = try await transport.execute(.getToday())
+        }
+        #expect(await stub.requests().isEmpty)
+    }
+
+    @Test("caller cancellation before registration release sends no request")
+    func cancellationBeforeRegistrationReleaseSendsNothing() async throws {
+        let stub = TransportStubStore()
+        await stub.respond(with: .success())
+        await StubURLProtocol.install(store: stub)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let lifecycle = BlockingRegistrationLifecycle()
+        let transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(
+                originString: "https://staging.example.test"
+            ),
+            sessionLifecycle: lifecycle,
+            session: URLSession(configuration: configuration),
+            clock: ContinuousClock(),
+            timeout: .seconds(2)
+        )
+        let request = Task {
+            let _: TransportPayload = try await transport.execute(.getToday())
+        }
+        await lifecycle.waitForRegistrationStart()
+
+        request.cancel()
+        await lifecycle.releaseRegistration()
+
+        await #expect(throws: CancellationError.self) {
+            try await request.value
+        }
+        #expect(await stub.requests().isEmpty)
+    }
+}
+
+private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
+    func currentBearerToken() -> String? { "bearer-old" }
+    func leaseForRequest() -> SessionLease {
+        SessionLease(userID: "user-old", generation: 1, bearer: "bearer-old")
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) throws -> SessionLease {
+        throw SessionLifecycleError.sessionSuperseded
+    }
+    func validate(_ lease: SessionLease) throws {}
+    func signOut() -> RemoteRevocationOutcome { .confirmed }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) async throws -> UUID {
+        try await Task.sleep(for: .milliseconds(100))
+        cancel()
+        throw SessionLifecycleError.sessionSuperseded
+    }
+    func finishPatientWork(_ id: UUID) {}
+}
+
+private actor BlockingRegistrationLifecycle: SessionLifecycleProviding {
+    private var registrationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var registrationRelease: CheckedContinuation<Void, Never>?
+
+    func currentBearerToken() -> String? { "bearer-old" }
+    func leaseForRequest() -> SessionLease {
+        SessionLease(userID: "user-old", generation: 1, bearer: "bearer-old")
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) throws -> SessionLease {
+        throw SessionLifecycleError.refreshFailed
+    }
+    func validate(_ lease: SessionLease) throws {}
+    func signOut() -> RemoteRevocationOutcome { .confirmed }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) async -> UUID {
+        registrationStarted = true
+        let waiters = startWaiters
+        startWaiters.removeAll(keepingCapacity: false)
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { registrationRelease = $0 }
+        return UUID()
+    }
+    func finishPatientWork(_ id: UUID) {}
+    func waitForRegistrationStart() async {
+        guard !registrationStarted else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+    func releaseRegistration() {
+        registrationRelease?.resume()
+        registrationRelease = nil
     }
 }
 
@@ -469,6 +628,69 @@ private struct TransportHarness: Sendable {
             maximumRetryCount: maximumRetryCount
         )
     }
+}
+
+private struct LifecycleTransportHarness: Sendable {
+    let stub: TransportStubStore
+    let lifecycle: TransportLifecycleStub
+    let transport: MobileAPITransport
+
+    init() async throws {
+        let stub = TransportStubStore()
+        await StubURLProtocol.install(store: stub)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let lifecycle = TransportLifecycleStub()
+        self.stub = stub
+        self.lifecycle = lifecycle
+        transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(
+                originString: "https://staging.example.test"
+            ),
+            sessionLifecycle: lifecycle,
+            session: session,
+            clock: ContinuousClock(),
+            timeout: .seconds(2),
+            responseBodyLimit: 64 * 1_024
+        )
+    }
+}
+
+private actor TransportLifecycleStub: SessionLifecycleProviding {
+    private var generation: UInt64 = 1
+    private var bearer = "bearer-initial"
+    private(set) var refreshCount = 0
+
+    func currentBearerToken() -> String? { bearer }
+    func leaseForRequest() -> SessionLease {
+        SessionLease(userID: "user-a", generation: generation, bearer: bearer)
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) throws -> SessionLease {
+        try validate(lease)
+        refreshCount += 1
+        bearer = "bearer-rotated"
+        return SessionLease(
+            userID: lease.userID,
+            generation: generation,
+            bearer: bearer
+        )
+    }
+    func validate(_ lease: SessionLease) throws {
+        guard lease.generation == generation else {
+            throw SessionLifecycleError.sessionSuperseded
+        }
+    }
+    func signOut() -> RemoteRevocationOutcome { .confirmed }
+    func beginPatientWork(
+        lease: SessionLease,
+        cancel: @escaping @Sendable () -> Void
+    ) throws -> UUID {
+        try validate(lease)
+        return UUID()
+    }
+    func finishPatientWork(_ id: UUID) {}
+    func supersede() { generation &+= 1 }
 }
 
 private actor RotatingTokenProvider: SessionTokenProviding {

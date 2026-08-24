@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.4
+**Versão do dossiê:** 1.6
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -38,7 +38,7 @@ Hoje, a realidade é:
 | Identidade Better Ahead | **PARCIAL** | Nome, voz, slogans e estratégia visual estão aprovados. Tasks 0–2 do rebrand foram concluídos; Tasks 3–10 ainda não. |
 | Português e inglês | **PARCIAL** | A fronteira bilíngue inicial e nomes públicos foram implementados. A localização completa das telas autenticadas ainda pertence às Tasks 7–8. |
 | App iOS em Release | **BLOQUEADO POR PROJETO** | O Release compila, mas usa `UnavailableAPIClient` e serviços indisponíveis. Não conversa com backend real. |
-| Autenticação iOS real | **NÃO IMPLEMENTADA** | A base aprovada usa `DemoAuthenticationService`. |
+| Autenticação iOS real | **FUNDAÇÃO IMPLEMENTADA** | CI-1 adicionou Auth isolado, Keychain e uma fonte única de sessão; ambiente real e E2E continuam pendentes. |
 | Mobile API/BFF | **IMPLEMENTADA EM CÓDIGO, STAGING PARCIAL** | Contratos existem e foram validados em staging; a URL de staging/publicação Vercel e a integração iOS real não foram fechadas. |
 | Backend em produção para o app | **NÃO VERIFICADO/NÃO PROMOVIDO** | As novas fundações foram documentadas como staging-only; produção ficou intocada nas entregas de julho. |
 | Agente “Flow” ponta a ponta | **PARCIAL** | O agente MPP/WhatsApp existe, mas o rebrand público do backend e a integração do app ainda são Workstream 2. |
@@ -2397,3 +2397,27 @@ necessária, completar essa prova de vida, repetir testes, builds unsigned Debug
 e Release em `generic/platform=iOS`, scans e duas revisões independentes. CI-2,
 integração ponta a ponta, staging, beta, produção, Apple e naming hold seguem
 fora de escopo. O app continua não 100% funcional para cliente/App Store.
+
+---
+
+## 36. Atualização operacional 1.6 — CI-1 concluída e CI-2 autorizada
+
+**Data:** 24/08/2026
+
+CI-1 foi concluída e publicada em
+`aba177d7cbb0d9cecb13c5f1099e6b99b6456c93` na branch
+`codex/ci1-supabase-auth-session-v1`, sobre CI-0. A VPS verificou tree,
+estatísticas, 15 paths e seus hashes. A implementação usa somente Auth 2.55.1,
+Keychain, record interno e `AuthenticationSessionStore` como fonte única.
+
+O relatório Mac registra 140/182 testes focados e 1.072/1.261 BodyFlowTests,
+Debug/Release unsigned em `generic/platform=iOS`, lifetime bounded sem
+retenção, scans aprovados e duas revisões finais 0/0/0. Nenhum ambiente real,
+URL/chave, staging E2E, signing ou produção foi configurado.
+
+CI-2 é o próximo gate autorizado para refresh/rotação, logout local seguro,
+troca de usuário, cancelamento patient-scoped e supressão de respostas tardias.
+CI-3 não é autorizada. A fundação de autenticação/sessão real existe, mas
+refresh/logout completo, adapters e staging ainda pendem; o app não está E2E,
+beta-ready ou pronto para Apple. Naming hold, staging, beta, produção e Apple
+continuam pendentes.

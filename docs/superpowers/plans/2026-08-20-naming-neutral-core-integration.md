@@ -742,3 +742,22 @@ Stop immediately on any real divergence. Report the read-only evidence, base
 proof, files changed, tests/builds, review outcome, local commit SHA if created,
 and final state of all preserved worktrees.
 ```
+
+## CI-1 Completion and CI-2 Authorization — 2026-08-23
+
+CI-1 is complete and published on `codex/ci1-supabase-auth-session-v1` at
+`aba177d7cbb0d9cecb13c5f1099e6b99b6456c93`, parent
+`b9a51bc1a641895ef5323cb1085b3b5622bbb277`, tree
+`5ea465bcfbe3a52781e0afef597372a03fa5dbe0`. It changes 15 paths with Auth
+2.55.1, isolated storage, Keychain session ownership and Release fail-closed
+wiring. The supplied Mac completion reports 140/182 focused and 1,072/1,261
+BodyFlowTests results, unsigned generic-iOS Debug/Release builds, bounded
+lifetime proof and final reviews 0/0/0.
+
+CI-2 is authorized only by
+`docs/superpowers/specs/2026-08-23-ci2-session-lifecycle-user-boundary.md` and
+`docs/superpowers/plans/2026-08-23-ci2-session-lifecycle-user-boundary.md`.
+It uses direct origin-locked Auth refresh and local-scope logout, app-owned
+single-flight, generation/cancellation and one Keychain-backed session source.
+CI-3, real environment, staging E2E, public naming, production, TestFlight,
+App Store and deployment remain unauthorized. Naming hold remains active.

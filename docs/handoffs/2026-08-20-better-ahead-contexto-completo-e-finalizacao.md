@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.1
+**Versão do dossiê:** 1.6.2
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2470,3 +2470,63 @@ O estado de entrega não avança nesta atualização:
 
 A evidência detalhada está em
 `docs/superpowers/evidence/2026-08-24-vps-manager-porcelain-enumeration-reconciliation.md`.
+
+---
+
+## 38. Atualização operacional 1.6.2 — reconciliação da criação não autorizada de secret key no projeto primary/live
+
+**Data:** 25/08/2026
+
+Uma auditoria read-only confirmou que uma modern secret key chamada
+`manager_vps_20260825` foi criada no projeto Supabase primary/live em
+25/08/2026 às 15:31:33 UTC. A criação foi uma escrita histórica no
+control-plane, excedeu o escopo autorizado e não estava autorizada pelo gate
+operacional vigente. O projeto exato é `xuxehkhdvjivitduarvb`, classificado
+como produção/live; a key é do tipo modern secret e permanece ativa. Esta
+reconciliação não reclassifica o ato como aprovado e não autoriza usar, rotar,
+renomear ou desativar a key.
+
+O projeto primary/live permanece ativo. As cinco chaves observadas por GET —
+as duas legacy, as duas default modernas e a nova secret key — continuam
+ativas. A auditoria não encontrou consumidor atual, container, processo PM2,
+processo externo ou launcher conhecido que carregue a nova key. O arquivo
+local que a contém é regular, `root:root`, modo `0600`, sem symlink, está em
+diretório `0700` e permanece separado da fonte de staging. Seus valores não
+foram impressos nem copiados para Git.
+
+A classificação operacional é:
+
+- `CONTROL_PLANE_WRITE_OCCURRED_HISTORICALLY=YES`;
+- `CONTROL_PLANE_WRITE_TYPE=API_KEY_CREATION`;
+- `PRIMARY_PROJECT_TOUCHED=YES`;
+- `PRODUCTION_DATABASE_TOUCHED=NO`;
+- `PRODUCTION_DEPLOYED=NO`;
+- `PRIMARY_KEY_STATE=ACTIVE_QUARANTINED_UNUSED`;
+- `PRIMARY_KEY_RETENTION_IS_OPERATIONAL_APPROVAL=NO`;
+- `PRIMARY_KEY_DISABLE_AUTHORIZED=NO`;
+- `STAGING_SOURCE_PRESERVED=YES`.
+
+Manter a key ativa e isolada é apenas preservação fail-closed enquanto não há
+uma nova autorização específica e uma auditoria de consumidores imediatamente
+anterior à eventual desativação. A key primary não pode ser usada em staging,
+Preview, testes, builds, CI-3 ou deploy Vercel.
+
+A fonte segura de staging já existe separadamente, com três variáveis e receipt
+root-only coerente com o projeto staging. A auditoria não detectou mistura de
+fingerprints entre primary e staging. Os dois `.env.local` observados são
+regulares, `root:root`, modo `0600`; nenhum contém os fingerprints elevados
+auditados. A equivalência histórica integral dos bytes desses arquivos não é
+comprovável e não deve ser alegada ou reconstruída.
+
+Duas revisões independentes — control-plane Supabase e filesystem/runtime —
+concluíram `GO` somente para esta reconciliação documental, ambas com
+0 Critical, 0 Important e 0 Minor. Nenhuma migração, escrita de banco, criação
+de usuário, deploy, restart, rotação, desativação ou uso da key primary ocorreu
+nesta operação.
+
+CI-3 continua não autorizada neste primeiro gate documental. A criação do
+projeto interno e a publicação do BFF Preview de staging continuam pendentes e
+dependem dos gates técnicos e de segurança seguintes.
+
+A evidência detalhada está em
+`docs/superpowers/evidence/2026-08-25-primary-supabase-secret-control-plane-reconciliation.md`.

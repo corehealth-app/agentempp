@@ -793,3 +793,49 @@ This rule does not resume PAT work in the current VPS operation and does not
 authorize a staging secret source, Vercel project or deployment, CI-3, CI-4,
 production, TestFlight or App Store activity. CI-2 remains the latest
 published implementation gate.
+
+## Primary Supabase Secret Control-Plane Reconciliation — 2026-08-25
+
+The creation of primary/live secret key `manager_vps_20260825` is recorded as
+an unauthorized historical control-plane write. Its current state is
+`ACTIVE_QUARANTINED_UNUSED`: active only for fail-closed preservation, isolated
+outside Git, and not loaded by any consumer or known next launcher found in the
+read-only audit. Retention is not operational approval. Use, rename, rotation,
+disablement and removal remain unauthorized.
+
+The following markers are authoritative:
+
+```text
+CONTROL_PLANE_WRITE_OCCURRED_HISTORICALLY=YES
+CONTROL_PLANE_WRITE_TYPE=API_KEY_CREATION
+PRIMARY_PROJECT_TOUCHED=YES
+PRODUCTION_DATABASE_TOUCHED=NO
+PRODUCTION_DEPLOYED=NO
+PRIMARY_KEY_STATE=ACTIVE_QUARANTINED_UNUSED
+PRIMARY_KEY_RETENTION_IS_OPERATIONAL_APPROVAL=NO
+PRIMARY_KEY_DISABLE_AUTHORIZED=NO
+STAGING_SOURCE_PRESERVED=YES
+```
+
+Primary/live and staging are strict, non-interchangeable trust domains:
+
+- primary credentials are never staging credentials and must not enter
+  Preview, tests, builds, CI-3, Vercel or a staging runtime;
+- all primary/live inspection remains read-only unless a later authority names
+  the exact mutation;
+- disabling the quarantined key requires a new explicit authorization and a
+  fresh consumer audit immediately before the action;
+- the existing root-only staging source and receipt are the only authorized
+  inputs for a future staging Preview;
+- a future Vercel deployment, when separately authorized, must use only the
+  three staging variables and Preview scope, with no Production or Development
+  environment values;
+- receipt flags are scope-specific: staging `key_created=false` does not erase
+  or contradict the historical primary API-key creation;
+- operation reports must state both historical control-plane creation and zero
+  new key mutation during the reconciling operation.
+
+The detailed authority is
+`docs/superpowers/evidence/2026-08-25-primary-supabase-secret-control-plane-reconciliation.md`.
+This section by itself does not authorize Vercel, deployment, CI-3, production,
+TestFlight or App Store work.

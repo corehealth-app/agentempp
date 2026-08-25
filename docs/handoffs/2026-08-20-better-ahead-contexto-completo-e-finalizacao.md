@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.6
+**Versão do dossiê:** 1.6.7
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2785,3 +2785,68 @@ os três outcomes usam allowlists, versões, subjects, parent, reviews e push
 exatos definidos integralmente na spec e no plano. A preservação final exige
 staging vazio e `.vercel` ausente na worktree CI-2; `.vercel` local somente na
 worktree dedicada, sempre untracked/unstaged.
+
+## 43. Atualização operacional 1.6.7 — STOP na descoberta do RED 1 do Mobile BFF dedicado
+
+**Data:** 25/08/2026
+
+A autoridade documental do artefato dedicado foi publicada em
+`89f8bc1c41073d110fe17ee3c638da3998c31aad`. A implementação isolada partiu do
+CI-2 `277873755bf29771a10b5f362b522c2e6a6c21d6`, no branch
+`codex/ci3-dedicated-mobile-bff-surface-v1` e worktree
+`/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`.
+
+O último gate aprovado foi Task 3 Step 1: após resource gate, o install frozen
+com Corepack pnpm 10.33.2 terminou com exit 0, sem alteração rastreada e com
+`pnpm-lock.yaml` byte a byte igual ao CI-2, SHA-256
+`2ea2083229ce0f5b8c1fab28f4324b1840a596939dac369f32b073a8d065dc55`.
+Somente os dois testes RED autorizados foram criados, ambos unstaged:
+
+```text
+apps/mobile-bff/src/source-surface.test.ts
+apps/mobile-bff/src/route-mirror.test.ts
+```
+
+O gate seguinte, Task 3 Step 4 — RED 1, não atingiu a falha semântica exigida
+de wrapper count zero. O comando exato publicado executou Vitest 2.1.9 com
+root em `apps/admin`, mas descobriu zero arquivos e executou zero testes porque
+os dois operands resolvem para o sibling `apps/mobile-bff`. O resultado foi
+exit 1 e `No test files found`. O transcript normalizado tem SHA-256
+`5faceda6a65a877d02f0eb1115c9227c98689ad8bc5cddb38929fabbac655a07`.
+
+O source manifest ainda foi reproduzido read-only diretamente do objeto CI-2
+como 40 registros e SHA-256
+`7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`,
+mas isso não substitui o RED executado. Wrapper parity, import closure,
+build-surface, focused tests, typecheck, build e smoke não foram executados.
+Nenhum package/config GREEN, wrapper ou lockfile importer foi criado.
+
+O resultado obrigatório é `STOP_DOCUMENTED`. Alterar o root/comando do runner
+ou antecipar `vitest.config.ts` exige reconciliação explícita da autoridade e
+preservação da ordem test-first. Não houve commit/push de código, settings
+PATCH, env batch, link, deployment, SSO forward/rollback, probe público,
+receipt, Supabase/database write, produção, CI-3 ou CI-4. O projeto Vercel
+existente permanece no último estado confirmado pela autoridade, sem qualquer
+tentativa desta fase.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=NOT_VERIFIED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=0
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_RED1_VITEST_EXTERNAL_TEST_DISCOVERY
+```
+
+Preservação: o manager conserva seus 25 itens históricos e staging vazio; a
+worktree antiga permanece detached, clean no CI-2 e sem `.vercel`; a worktree
+de implementação permanece no CI-2, sem upstream, com somente os dois testes
+RED unstaged. Esta atualização não autoriza executar o próximo gate, editar
+código, tocar serviços, produção, CI-3 ou CI-4.
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.

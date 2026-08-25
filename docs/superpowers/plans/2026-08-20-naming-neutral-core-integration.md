@@ -1072,3 +1072,42 @@ subjects, authority parent, review/staging/push gates and marker/macro-prompt
 contracts defined in the dedicated spec/plan. Final preservation rechecks
 empty staging and absent `.vercel` in the old CI-2 worktree, plus local
 `.vercel` untracked/unstaged only in the dedicated deploy worktree.
+
+## Dedicated Mobile BFF RED 1 discovery STOP — 2026-08-25
+
+The published dedicated-artifact authority is
+`89f8bc1c41073d110fe17ee3c638da3998c31aad`. Its implementation worktree was
+created once from CI-2 `277873755bf29771a10b5f362b522c2e6a6c21d6` on
+`codex/ci3-dedicated-mobile-bff-surface-v1`.
+
+Task 3 Step 1 passed: frozen install completed without tracked or lockfile
+drift. Task 3 Step 4 did not reach the required semantic RED. The exact
+published Vitest command used root `apps/admin`, discovered zero files under
+the sibling `apps/mobile-bff`, executed zero tests and exited 1 with
+`No test files found`. Its normalized transcript SHA-256 is
+`5faceda6a65a877d02f0eb1115c9227c98689ad8bc5cddb38929fabbac655a07`.
+
+Exactly two RED tests exist, both untracked and unstaged; no GREEN config,
+package, wrapper, verifier or lockfile importer exists. Tasks 4–7, code
+reviews/publication and every Vercel/Supabase/deployment/probe phase were not
+started. The project remains at its last confirmed protected, zero-env,
+zero-deployment authority baseline. CI-3 and CI-4 remain unauthorized.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=NOT_VERIFIED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=0
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_RED1_VITEST_EXTERNAL_TEST_DISCOVERY
+```
+
+The next gate must reconcile the RED 1 runner boundary explicitly while
+retaining strict test-first order. Until then, do not alter the command/root,
+create GREEN artifacts, stage/commit/push code, access services, authorize
+CI-3, start CI-4 or touch production. Detailed evidence:
+`docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.

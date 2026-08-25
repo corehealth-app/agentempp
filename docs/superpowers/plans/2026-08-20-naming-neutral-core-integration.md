@@ -973,3 +973,102 @@ production, TestFlight and App Store remain unauthorized.
 
 Evidence:
 `docs/superpowers/evidence/2026-08-25-ci3-preview-protection-policy-stop.md`.
+
+## Dedicated Public Mobile BFF Authorization — 2026-08-25
+
+The 21 shared-admin blockers are not remediated in this gate and the mixed
+`apps/admin` artifact must not become public. The authorized ingress
+architecture is now `DEDICATED_NEXTJS_MOBILE_BFF_ARTIFACT`: a separate
+`apps/mobile-bff` package named `@mpp/mobile-bff` that exposes only the 40
+frozen `/api/mobile/v1/**` route modules through static named re-export
+wrappers. The handlers remain authoritative in `apps/admin`; no handler logic
+is copied or modified.
+
+The source inventory, whose paths are relative to
+`apps/admin/src/app/api/mobile/v1/`, has 40 modules, zero invalid Next Route
+Handler export and canonical SHA-256
+`7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`.
+Source, closure and structured build-manifest gates must prove exact 40/40
+parity and zero page, layout, middleware, Server Action, public file, catch-all
+or route outside the Mobile API prefix. Admin, Inngest, Stripe and
+administrative media paths must remain 404 both locally and on the public
+Preview.
+
+Implementation is isolated from exact CI-2 base
+`277873755bf29771a10b5f362b522c2e6a6c21d6` on branch
+`codex/ci3-dedicated-mobile-bff-surface-v1` and worktree
+`/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`. It uses TDD, Corepack
+pnpm 10.33.2, a lockfile-only new importer, exact code allowlist, two
+independent implementation reviews, one commit and one non-force push. The old
+detached CI-2 deploy worktree and frozen Mac worktree remain untouched.
+
+The existing Vercel project `agentempp-mobile-bff-staging` is reused, never
+deleted or recreated. Its project SSO remains active while one Preview-only
+deployment is built and inspected at the exact implementation SHA. Only after
+route/build manifests and deployed-artifact review pass may project SSO be
+removed once; the team default remains unchanged. A single fail-closed rollback
+restores `all_except_custom_domains` if a subsequent public probe fails.
+Exactly the three staging variables may be installed as Preview-only metadata;
+the primary/live secret, Production env/deployment, Git Integration, custom
+domain, bypass, CI-4 and production remain prohibited.
+
+The complete executable authority is:
+
+- spec:
+  `docs/superpowers/specs/2026-08-25-dedicated-public-mobile-bff-surface.md`;
+- plan:
+  `docs/superpowers/plans/2026-08-25-dedicated-public-mobile-bff-surface.md`.
+
+CI-3 is not authorized by this section alone. It becomes authorized only after
+`PASS_COMPLETE`: dedicated BFF/public probes verified, a safe synthetic patient
+path `VERIFIED`, authenticated Today `PASS` or
+`DEFERRED_TO_MAC_BY_DESIGN`, and final documentation published. If the BFF is
+verified but the synthetic patient path is missing, `PASS_PARTIAL` preserves
+the Preview and routes to the separate
+`AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING` gate without creating a
+user. Any other material divergence is `STOP_DOCUMENTED`. CI-4 remains
+unauthorized in every outcome of this operation.
+
+### Dedicated BFF authority hardening after Phase A reviews
+
+The dedicated authority uses three non-interchangeable route receipts:
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+WRAPPER_ROUTE_EXPORT_COUNT=40
+WRAPPER_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+BUILD_ROUTE_PATH_COUNT=40
+BUILD_ROUTE_PATH_STREAM_SHA256=abc24332fd370b5d7940ca56b18530a3659ba39b5205faeb2bf36771aa6f3c3a
+```
+
+Source/wrapper encode relative route-file path plus sorted named exports;
+build-route maps each source route to its `/api/mobile/v1/...` URL template and
+encodes sorted paths only. `/_not-found` is internal-only and excluded. The
+prior blockers are frozen as 19 concrete GET paths with stream SHA-256
+`8677245f63ee3b5f1fb36a58c2a36e2eddfe8f9cc2065f74ab65298676a6f718`
+plus two manifest-only action names with SHA-256
+`2cc8eac1a54c3f88673701d4b9ede202f1ec4440bf414ac7696dda341bd53a35`.
+Every HTTP record must be 404/no-redirect and both actions must be absent from
+the dedicated server-reference manifest.
+
+After the SSO forward PATCH, failure of any transport, Mobile API, forbidden
+route, 19-finding or action/page-manifest requirement triggers the one rollback
+PATCH, confirms protection restored, preserves env/deployment and forbids
+reprobe. The current focused security gate is a deterministic 39-file CI-2
+Git-object-derived superset, path-stream SHA-256
+`586a6653c80b06d77293f0d32f6a2166fb93f935c5d53080cbd0971e60b7a3b8`;
+historical 172/172 is not substituted for current execution.
+
+Operationally, `refs/heads/codex/better-ahead-rebranding-design` is the exact
+documentation ref and
+`/Users/eduardohenrique/Developer/bodyflow-production-secret-contract-v1` is
+the untouched Mac evidence path. The VPS resource gate runs before every heavy
+phase; every mutation is ledgered immediately with target/evidence/result/
+rollback. Authority commit/push failure is report-only `STOP_PRE_AUTHORITY` and
+cannot start implementation or services. Final PASS_COMPLETE, PASS_PARTIAL and
+STOP_DOCUMENTED documentation uses the exact paths, dossier transitions,
+subjects, authority parent, review/staging/push gates and marker/macro-prompt
+contracts defined in the dedicated spec/plan. Final preservation rechecks
+empty staging and absent `.vercel` in the old CI-2 worktree, plus local
+`.vercel` untracked/unstaged only in the dedicated deploy worktree.

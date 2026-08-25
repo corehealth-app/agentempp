@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.5
+**Versão do dossiê:** 1.6.6
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2681,3 +2681,107 @@ proteção ou deployment.
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-25-ci3-preview-protection-policy-stop.md`.
+
+---
+
+## 42. Atualização operacional 1.6.6 — autorização do artefato público Mobile BFF dedicado
+
+**Data:** 25/08/2026
+
+A auditoria de ingresso do artefato compartilhado encontrou 21 blockers
+administrativos e concluiu que `apps/admin` não pode perder a Vercel
+Authentication como um todo. A arquitetura autorizada para o próximo gate é
+`DEDICATED_NEXTJS_MOBILE_BFF_ARTIFACT`: um app Next.js separado em
+`apps/mobile-bff`, package `@mpp/mobile-bff`, cuja única superfície roteável é
+`/api/mobile/v1/**`.
+
+Os handlers oficiais permanecem como fonte única em
+`apps/admin/src/app/api/mobile/v1/**/route.ts`. O app dedicado deve criar um
+mirror estático e auditável de wrappers, com named re-exports exatos, sem
+`export *`, cópia de lógica, alteração dos handlers existentes ou correção dos
+21 findings administrativos. O inventário congelado contém 40 route modules,
+zero export inválido e stream canônico SHA-256
+`7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`.
+
+A closure transitiva pode alcançar somente os route modules Mobile API, suas
+libs estritamente necessárias, packages workspace e dependências externas
+comprovadamente requeridas. Ela deve excluir páginas e layouts administrativos,
+Server Actions, middleware, APIs admin/Inngest/Stripe/media administrativas,
+webhooks, callbacks do painel, login, assets públicos e qualquer route fora do
+prefixo Mobile API. Source tests, import-closure tests, build manifests e smoke
+loopback precisam provar 40/40 wrappers, zero superfície proibida, 401 JSON com
+os headers Mobile API para rotas protegidas e 404 sem redirect para rotas
+administrativas.
+
+A implementação futura parte exclusivamente do CI-2
+`277873755bf29771a10b5f362b522c2e6a6c21d6`, em
+`codex/ci3-dedicated-mobile-bff-surface-v1`, worktree
+`/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`, com subject
+`feat(staging): add dedicated Mobile API BFF surface`. A worktree detached
+`/root/agentempp-ci3-staging-bff-v1` e a worktree congelada do Mac permanecem
+intocadas. O plano executável integral está em
+`docs/superpowers/plans/2026-08-25-dedicated-public-mobile-bff-surface.md`, e o
+contrato em
+`docs/superpowers/specs/2026-08-25-dedicated-public-mobile-bff-surface.md`.
+
+O projeto Vercel existente `agentempp-mobile-bff-staging` deve ser reutilizado,
+nunca apagado ou recriado. A proteção SSO permanece ativa enquanto o único
+deployment Preview é construído e inspecionado. Somente após source SHA,
+manifests e revisão de ingresso aprovados ela pode ser removida nesse projeto;
+o team default não muda e um rollback único restaura
+`all_except_custom_domains` se qualquer probe público posterior falhar. Apenas
+as três variáveis staging existentes podem ser enviadas, exclusivamente ao
+target Preview; Production env, Production deployment, Git Integration,
+custom domain, bypass e uso do secret primary/live continuam proibidos.
+
+Esta atualização autoriza somente a sequência documentada do artefato dedicado
+e seus budgets novos e independentes de uma tentativa. Ela não autoriza
+produção, correção das 21 superfícies admin, CI-4, PR, merge, TestFlight ou App
+Store. CI-3 só poderá ser autorizada pela documentação final `PASS_COMPLETE`,
+depois do BFF público verificado e de um caminho de paciente sintético
+`VERIFIED`; com paciente ausente, o resultado obrigatório é `PASS_PARTIAL` e
+um gate separado de provisionamento, sem criar usuário nesta operação.
+
+### Hardening da autoridade após as revisões independentes
+
+Os receipts deixam de usar um hash ambíguo. O stream source e o stream wrapper
+continuam separados por nome e raiz relativa, embora ambos tenham 40 registros
+path/export e SHA-256
+`7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`.
+O stream build é path-only: transforma cada `<segments>/route.ts` em
+`/api/mobile/v1/<segments>`, preserva `[id]`/`[token]`, exclui somente o
+`/_not-found` interno, ordena e codifica `<route-url>\n`; são 40 registros e
+SHA-256
+`abc24332fd370b5d7940ca56b18530a3659ba39b5205faeb2bf36771aa6f3c3a`.
+
+O gate dos 21 findings também é congelado. Há 19 probes HTTP GET concretos — a
+rota API e as 18 páginas, com UUID sintético nos dois paths dinâmicos — no
+stream `GET\0<path>\n`, SHA-256
+`8677245f63ee3b5f1fb36a58c2a36e2eddfe8f9cc2065f74ab65298676a6f718`.
+`deleteFood` e `upsertFood` formam o stream manifest-only de duas linhas,
+SHA-256
+`2cc8eac1a54c3f88673701d4b9ede202f1ec4440bf414ac7696dda341bd53a35`;
+elas nunca são invocadas e devem estar ausentes do server-reference manifest.
+Qualquer falha de transporte, status, JSON/envelope/header/request ID, 404,
+manifest, HTML/Vercel/stack, secret ou PII nos Steps públicos 1–3, depois do
+forward SSO, aciona o único rollback e proíbe repetir probes.
+
+O histórico 172/172 não é tratado como uma lista recuperada. O gate corrente
+deriva deterministicamente do objeto CI-2 um superset seguro de 39 test files,
+com stream de paths SHA-256
+`586a6653c80b06d77293f0d32f6a2166fb93f935c5d53080cbd0971e60b7a3b8`,
+executa esse conjunto e registra a contagem atual. RED 1 usa o Vitest já
+congelado de `apps/admin` após install frozen e cria somente os dois tests
+dedicados; package/config são GREEN 1.
+
+Antes de operação pesada, o resource gate da VPS é obrigatório; toda mutação
+recebe ledger imediato com target, evidence, result e rollback/restore, sem
+valor sensível. A ref documental exata é
+`refs/heads/codex/better-ahead-rebranding-design`; a evidência Mac congelada é
+`/Users/eduardohenrique/Developer/bodyflow-production-secret-contract-v1`.
+Falha do commit/push de autoridade encerra em report-only
+`STOP_PRE_AUTHORITY`, sem código ou serviço. Depois da autoridade publicada,
+os três outcomes usam allowlists, versões, subjects, parent, reviews e push
+exatos definidos integralmente na spec e no plano. A preservação final exige
+staging vazio e `.vercel` ausente na worktree CI-2; `.vercel` local somente na
+worktree dedicada, sempre untracked/unstaged.

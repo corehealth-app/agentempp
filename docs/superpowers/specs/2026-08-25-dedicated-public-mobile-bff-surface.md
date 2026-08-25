@@ -1,0 +1,866 @@
+# Dedicated Public Mobile BFF Surface Specification
+
+**Date:** 2026-08-25
+
+**Status:** authorized design for implementation and Preview verification;
+production and CI-4 are not authorized
+
+**Architecture:** `DEDICATED_NEXTJS_MOBILE_BFF_ARTIFACT`
+
+## 1. Decision and motivation
+
+The existing staging Vercel project was configured with root `apps/admin` and
+inherits Vercel Authentication. Removing that protection from the shared
+artifact is unsafe: the complete application-layer audit found 21 blocking
+admin surfaces in three families—one middleware-exempt route that accepts the
+service-role credential as a public bearer, two food-management Server Actions
+without their own admin authorization, and 18 privileged admin pages without
+authorization colocated with their data access.
+
+This gate does not repair or expose those 21 surfaces. It isolates public
+Mobile API ingress in a separate Next.js application:
+
+```text
+apps/mobile-bff
+package: @mpp/mobile-bff
+public route prefix: /api/mobile/v1/**
+```
+
+The dedicated artifact must contain no admin pages, authenticated dashboard
+pages, root page, login, Server Actions, admin middleware, `/api/admin/**`,
+`/api/inngest/**`, `/api/stripe/**`, administrative `/api/media/**`, webhooks,
+panel callbacks, panel static assets or any application route outside
+`/api/mobile/v1/**`.
+
+## 2. Source-of-truth and mirror contract
+
+Official Mobile API handler logic remains in exactly one place:
+
+```text
+apps/admin/src/app/api/mobile/v1/**/route.ts
+```
+
+The dedicated app creates one static wrapper for each frozen source route at
+the corresponding relative path beneath:
+
+```text
+apps/mobile-bff/src/app/api/mobile/v1/
+```
+
+Each wrapper may contain a stable generated comment and exactly one named
+re-export statement. It must contain no executable logic, alternate handler,
+fallback, catch-all, auth logic, URL or token. `export *` is prohibited. The
+wrapper must re-export exactly the names exported by its source module; it may
+not add or omit a name.
+
+The `@/*` alias in the dedicated app maps exclusively to
+`../admin/src/*`. The webpack alias must be equivalent. The monorepo root is
+the `outputFileTracingRoot`. Existing workspace package extension aliases are
+preserved, and only transitively reached workspace packages are listed in
+`transpilePackages`.
+
+No existing route module may be changed. Handler logic may not be copied or
+duplicated.
+
+## 3. Frozen source route manifest
+
+Every path below is relative to:
+
+```text
+apps/admin/src/app/api/mobile/v1/
+```
+
+Canonicalization sorts relative paths lexicographically, sorts export names
+for each route lexicographically, and encodes each record as:
+
+```text
+<relative-path>\0<comma-separated-export-names>\n
+```
+
+This is the **source route/export stream**. Frozen values:
+
+- route modules: `40`;
+- `SOURCE_ROUTE_EXPORT_STREAM_SHA256`:
+  `7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`;
+- invalid exports: `0`.
+
+```text
+coach/persona/route.ts\tGET,PATCH,runtime
+content/[id]/read/route.ts\tPOST,runtime
+content/[id]/route.ts\tGET,runtime
+content/[id]/save/route.ts\tPOST,runtime
+content/covers/[token]/route.ts\tGET,runtime
+content/route.ts\tGET,runtime
+devices/[id]/route.ts\tDELETE,runtime
+devices/route.ts\tGET,POST,runtime
+entitlements/route.ts\tGET,runtime
+history/route.ts\tGET,runtime
+legal/medication-reminder-disclaimer/accept/route.ts\tPOST,runtime
+legal/medication-reminder-disclaimer/route.ts\tGET,runtime
+me/route.ts\tGET,PATCH,runtime
+media/[id]/complete/route.ts\tPOST,runtime
+media/[id]/process/route.ts\tPOST,runtime
+media/[id]/route.ts\tDELETE,GET,runtime
+media/route.ts\tPOST,runtime
+medications/[id]/history/route.ts\tGET,runtime
+medications/[id]/log/route.ts\tPOST,runtime
+medications/[id]/route.ts\tDELETE,PATCH,runtime
+medications/route.ts\tGET,POST,runtime
+notification-preferences/route.ts\tGET,PATCH,runtime
+onboarding/route.ts\tPOST,runtime
+pending/route.ts\tGET,runtime
+plan/route.ts\tGET,runtime
+profile/route.ts\tGET,runtime
+progress/route.ts\tGET,runtime
+registrations/[id]/confirm/route.ts\tPOST,runtime
+registrations/[id]/route.ts\tDELETE,PATCH,runtime
+registrations/propose/route.ts\tPOST,runtime
+reminders/[id]/route.ts\tPATCH,runtime
+reminders/route.ts\tGET,POST,runtime
+routine/hydration/route.ts\tPOST,runtime
+routine/medications/[id]/taken/route.ts\tPOST,runtime
+routine/supplements/[id]/taken/route.ts\tPOST,runtime
+supplements/[id]/history/route.ts\tGET,runtime
+supplements/[id]/log/route.ts\tPOST,runtime
+supplements/[id]/route.ts\tDELETE,PATCH,runtime
+supplements/route.ts\tGET,POST,runtime
+today/route.ts\tGET,runtime
+```
+
+The only valid Next Route Handler exports for this mirror are:
+
+```text
+GET POST PUT PATCH DELETE HEAD OPTIONS runtime dynamic revalidate fetchCache
+preferredRegion maxDuration dynamicParams
+```
+
+Any source export outside this allowlist, any route-count or path drift, or any
+canonical hash mismatch is a material STOP before wrapper generation.
+
+### 3.1 Separate wrapper and build-route streams
+
+Three different receipts are normative and must never be conflated:
+
+1. `SOURCE_ROUTE_EXPORT_STREAM`: paths relative to
+   `apps/admin/src/app/api/mobile/v1/`, encoded exactly as defined above.
+2. `WRAPPER_ROUTE_EXPORT_STREAM`: paths relative to
+   `apps/mobile-bff/src/app/api/mobile/v1/`, sorted lexicographically; export
+   names for each wrapper sorted lexicographically; each record encoded as
+   `<relative-path>\0<comma-separated-export-names>\n`.
+3. `BUILD_ROUTE_PATH_STREAM`: map each frozen source
+   `<segments>/route.ts` to `/api/mobile/v1/<segments>`, preserving dynamic
+   segment spelling such as `[id]` and `[token]`; sort the URL templates
+   lexicographically and encode each as `<route-url>\n`. The Next-generated
+   internal `/_not-found` is permitted only as an observed internal route and
+   is excluded from this canonical stream.
+
+Because wrapper path/export parity is exact by contract, the source and wrapper
+streams have equal bytes but retain distinct names and receipt fields:
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+WRAPPER_ROUTE_EXPORT_COUNT=40
+WRAPPER_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+BUILD_ROUTE_PATH_COUNT=40
+BUILD_ROUTE_PATH_STREAM_SHA256=abc24332fd370b5d7940ca56b18530a3659ba39b5205faeb2bf36771aa6f3c3a
+```
+
+The exact build-route stream is:
+
+```text
+/api/mobile/v1/coach/persona
+/api/mobile/v1/content
+/api/mobile/v1/content/[id]
+/api/mobile/v1/content/[id]/read
+/api/mobile/v1/content/[id]/save
+/api/mobile/v1/content/covers/[token]
+/api/mobile/v1/devices
+/api/mobile/v1/devices/[id]
+/api/mobile/v1/entitlements
+/api/mobile/v1/history
+/api/mobile/v1/legal/medication-reminder-disclaimer
+/api/mobile/v1/legal/medication-reminder-disclaimer/accept
+/api/mobile/v1/me
+/api/mobile/v1/media
+/api/mobile/v1/media/[id]
+/api/mobile/v1/media/[id]/complete
+/api/mobile/v1/media/[id]/process
+/api/mobile/v1/medications
+/api/mobile/v1/medications/[id]
+/api/mobile/v1/medications/[id]/history
+/api/mobile/v1/medications/[id]/log
+/api/mobile/v1/notification-preferences
+/api/mobile/v1/onboarding
+/api/mobile/v1/pending
+/api/mobile/v1/plan
+/api/mobile/v1/profile
+/api/mobile/v1/progress
+/api/mobile/v1/registrations/[id]
+/api/mobile/v1/registrations/[id]/confirm
+/api/mobile/v1/registrations/propose
+/api/mobile/v1/reminders
+/api/mobile/v1/reminders/[id]
+/api/mobile/v1/routine/hydration
+/api/mobile/v1/routine/medications/[id]/taken
+/api/mobile/v1/routine/supplements/[id]/taken
+/api/mobile/v1/supplements
+/api/mobile/v1/supplements/[id]
+/api/mobile/v1/supplements/[id]/history
+/api/mobile/v1/supplements/[id]/log
+/api/mobile/v1/today
+```
+
+## 4. Exact implementation boundary
+
+The implementation may create or modify only:
+
+```text
+apps/mobile-bff/package.json
+apps/mobile-bff/tsconfig.json
+apps/mobile-bff/next.config.mjs
+apps/mobile-bff/vitest.config.ts
+apps/mobile-bff/next-env.d.ts
+apps/mobile-bff/scripts/verify-route-mirror.mjs
+apps/mobile-bff/scripts/verify-import-closure.mjs
+apps/mobile-bff/scripts/verify-build-surface.mjs
+apps/mobile-bff/src/route-mirror.test.ts
+apps/mobile-bff/src/import-closure.test.ts
+apps/mobile-bff/src/source-surface.test.ts
+apps/mobile-bff/src/app/api/mobile/v1/**/route.ts
+pnpm-lock.yaml
+```
+
+It must not change root `package.json`, `pnpm-workspace.yaml`, `apps/admin`,
+packages, docs, migrations, Supabase files, iOS, assets or strings. The
+workspace already includes `apps/*`.
+
+The new package scripts are exactly the functional gates needed here:
+`build`, `test`, `typecheck`, `verify:routes`, `verify:imports` and
+`verify:build-surface`. Lint is not added as a gate without a dedicated config.
+
+## 5. Dependency and import-closure boundary
+
+The app may import only:
+
+1. the 40 frozen source route modules;
+2. their strictly necessary transitive closure;
+3. workspace packages and external dependencies required by that closure.
+
+Workspace and external dependencies are derived, not guessed. Next, React and
+ReactDOM use the versions already resolved by the lockfile. No existing range
+or package version may change. `@mpp/admin` may be declared as `workspace:*`
+only if needed to install dependencies of imported source files and never as a
+runtime package-root import. The lockfile may change only by adding the new
+importer/package; any unexpected resolution is a STOP.
+
+The closure verifier resolves relative imports and `@` imports and rejects:
+
+```text
+apps/admin/src/app/(admin)/**
+apps/admin/src/app/api/admin/**
+apps/admin/src/app/api/inngest/**
+apps/admin/src/app/api/stripe/**
+apps/admin/src/app/api/media/**
+apps/admin/src/middleware.ts
+apps/admin/src/lib/public-api-path.ts
+any page.tsx
+any layout.tsx
+any file under public/
+any webhook
+any panel callback
+any file with 'use server' outside the Mobile API
+```
+
+Explicitly permitted roots are the Mobile API routes,
+`apps/admin/src/lib/mobile-api/**`,
+`apps/admin/src/lib/supabase/server.ts`, and other local libraries only when
+the resolved closure proves necessity and the file is not an HTTP surface,
+Server Action or admin UI. The verifier prints paths and classifications only,
+never secret values.
+
+## 6. Source, build and runtime proofs
+
+The source-surface proof must report:
+
+- source routes `40` and the frozen path/export hash;
+- wrapper routes `40` with exact path and named-export parity;
+- zero extra or omitted wrappers;
+- zero `export *`, catch-all, root page, layout, middleware, public file,
+  Server Action or route outside `/api/mobile/v1/**`.
+
+After build, structured parsers—not grep alone—must inspect the actual Next 15
+manifests, including the equivalents of:
+
+```text
+.next/server/app-paths-manifest.json
+.next/routes-manifest.json
+.next/server/middleware-manifest.json
+.next/server/server-reference-manifest.json
+```
+
+They must prove that every application route is inside `/api/mobile/v1/**`,
+apart from an internal `/_not-found` generated by Next; the Mobile route count
+and path-stream hash match the frozen manifest; middleware is empty; Server
+Action references are zero; and admin, Inngest, Stripe, administrative media
+and page routes are absent.
+
+The loopback smoke starts only the dedicated build with synthetic values on an
+ephemeral local port. Required results are:
+
+| Request | Required result |
+| --- | --- |
+| `GET /api/mobile/v1/today` | Mobile API `401` JSON |
+| `GET /api/mobile/v1/me` | Mobile API `401` JSON |
+| `GET /api/mobile/v1/content/00000000-0000-4000-8000-000000000000` | auth-first Mobile API `401` or compatible auth envelope |
+| `GET /` | `404` |
+| `GET /login` | `404` |
+| `GET /dashboard` | `404` |
+| `GET /api/admin/send-message` | `404` |
+| `GET /api/inngest` | `404` |
+| `GET /api/stripe/webhook` | `404` |
+| `GET /api/media/00000000-0000-4000-8000-000000000000` | `404` |
+
+Every 401 must be JSON, sanitized and non-HTML, with `Cache-Control` containing
+`no-store`, `Vary` containing `Authorization`, and a request ID. Every 404 must
+avoid redirects, login rendering, sensitive handler execution, stack traces,
+secrets and PII.
+
+### 6.1 Frozen 21-finding acceptance inventory
+
+The prior 21 blockers split into 19 HTTP-reachable records and two Server
+Actions that are manifest-only. The HTTP stream sorts paths lexicographically
+and encodes every record as `<METHOD>\0<concrete-path>\n`. Dynamic page routes
+use the non-sensitive UUID `00000000-0000-4000-8000-000000000000`.
+
+```text
+GET\0/api/admin/send-message
+GET\0/audit
+GET\0/crescimento
+GET\0/dashboard
+GET\0/evaluations
+GET\0/formulas
+GET\0/messages
+GET\0/prompts
+GET\0/prompts/00000000-0000-4000-8000-000000000000
+GET\0/settings/admins
+GET\0/settings/agents
+GET\0/settings/api-keys
+GET\0/settings/calc
+GET\0/settings/crons
+GET\0/settings/foods
+GET\0/settings/global
+GET\0/settings/tools
+GET\0/users
+GET\0/users/00000000-0000-4000-8000-000000000000
+```
+
+```text
+PRIOR_FINDING_HTTP_PROBE_COUNT=19
+PRIOR_FINDING_HTTP_PROBE_STREAM_SHA256=8677245f63ee3b5f1fb36a58c2a36e2eddfe8f9cc2065f74ab65298676a6f718
+```
+
+Every one of the 19 HTTP paths must return 404 with zero redirect, login render,
+sensitive handler execution, stack, secret or PII, locally and after SSO is
+removed. The two food actions are never invoked. Their manifest-only stream
+sorts export names lexicographically and encodes each as `<export-name>\n`:
+
+```text
+deleteFood
+upsertFood
+```
+
+```text
+PRIOR_FINDING_SERVER_ACTION_COUNT=2
+PRIOR_FINDING_SERVER_ACTION_STREAM_SHA256=2cc8eac1a54c3f88673701d4b9ede202f1ec4440bf414ac7696dda341bd53a35
+```
+
+Source inspection must still locate both names in
+`apps/admin/src/app/(admin)/settings/foods/actions.ts`; source and structured
+server-reference manifests for the dedicated app must contain zero references
+to either action and zero Server Action references in total. Page routes must
+also be absent from structured manifests; HTTP 404 probes do not replace that
+proof.
+
+## 7. TDD and local gates
+
+Implementation proceeds in the following proof sequence:
+
+1. RED source surface: frozen source is 40, wrappers are zero, failure is for
+   the absent mirror.
+2. GREEN mirror: package/config and all 40 exact wrappers produce 40/40 parity.
+3. RED closure/surface: tests fail while verifier/configuration proofs are
+   absent.
+4. GREEN closure/surface: denylist, pages, layouts, middleware, Server Actions,
+   public files and out-of-prefix routes are all zero.
+5. RED build manifest: structured build-surface verification fails before the
+   final config/build exists.
+6. GREEN build manifest: actual Next manifests satisfy every route and bundle
+   invariant.
+
+RED 1 has no unnamed bootstrap artifact. Before the first source edit, run the
+VPS resource gate and a frozen install against the unchanged CI-2 base. RED 1
+creates only
+`apps/mobile-bff/src/source-surface.test.ts` and
+`apps/mobile-bff/src/route-mirror.test.ts`; both use Node built-ins. Execute
+them through the already frozen admin Vitest binary:
+
+```text
+corepack pnpm@10.33.2 --dir apps/admin exec vitest run \
+  --config vitest.config.ts \
+  ../mobile-bff/src/source-surface.test.ts \
+  ../mobile-bff/src/route-mirror.test.ts
+```
+
+`--dir apps/admin` makes the command working directory
+`<implementation-worktree>/apps/admin`, so each `../mobile-bff/...` operand
+resolves to `<implementation-worktree>/apps/mobile-bff/...`.
+
+The expected RED proves source count/hash/export allowlist are green, wrapper
+count is exactly zero, and parity fails only for the absent mirror. The
+dedicated `package.json`, `vitest.config.ts` and other package/config paths are
+created in GREEN 1, all within the implementation allowlist.
+
+Toolchain is Node `>=22` and exclusively `corepack pnpm@10.33.2`. Global pnpm,
+`corepack use`, `corepack up`, `corepack install -g`, `corepack enable` and
+`--dangerously-allow-all-builds` are prohibited. A frozen install, package
+tests, typecheck, route/import/build verification, dedicated build using only
+synthetic values, existing Mobile API security tests, and loopback smoke are
+required. The historical unnamed 11-file result of 172/172 is context and is
+not reconstructible as an exact command from published evidence; it must not be
+claimed as the current inventory. Instead, the current gate uses a deterministic
+CI-2 Git-object-derived superset: all
+`apps/admin/src/lib/mobile-api/**/*.test.ts`, all
+`apps/admin/src/app/api/mobile/v1/**/*.test.ts`, plus the RevenueCat route and
+library tests and the two previously tested admin-action files. Sort unique
+repository-relative paths and encode each as `<repo-relative-path>\n`.
+
+```text
+FOCUSED_SECURITY_TEST_FILE_COUNT=39
+FOCUSED_SECURITY_TEST_PATH_STREAM_SHA256=586a6653c80b06d77293f0d32f6a2166fb93f935c5d53080cbd0971e60b7a3b8
+```
+
+The frozen 39 paths are:
+
+```text
+apps/admin/src/app/(admin)/content/actions.test.ts
+apps/admin/src/app/(admin)/settings/coach-messages/actions.test.ts
+apps/admin/src/app/api/mobile/v1/coach/persona/route.test.ts
+apps/admin/src/app/api/mobile/v1/content/covers/[token]/route.test.ts
+apps/admin/src/app/api/mobile/v1/content/route.test.ts
+apps/admin/src/app/api/mobile/v1/legal/medication-reminder-disclaimer/accept/route.test.ts
+apps/admin/src/app/api/mobile/v1/legal/medication-reminder-disclaimer/route.test.ts
+apps/admin/src/app/api/mobile/v1/medications/[id]/history/route.test.ts
+apps/admin/src/app/api/mobile/v1/medications/[id]/log/route.test.ts
+apps/admin/src/app/api/mobile/v1/medications/[id]/route.test.ts
+apps/admin/src/app/api/mobile/v1/medications/route.test.ts
+apps/admin/src/app/api/mobile/v1/notification-preferences/route.test.ts
+apps/admin/src/app/api/mobile/v1/supplements/[id]/history/route.test.ts
+apps/admin/src/app/api/mobile/v1/supplements/[id]/log/route.test.ts
+apps/admin/src/app/api/mobile/v1/supplements/[id]/route.test.ts
+apps/admin/src/app/api/mobile/v1/supplements/route.test.ts
+apps/admin/src/app/api/webhooks/revenuecat/route.test.ts
+apps/admin/src/lib/billing/revenuecat-webhook.test.ts
+apps/admin/src/lib/mobile-api/auth.test.ts
+apps/admin/src/lib/mobile-api/coach-service.test.ts
+apps/admin/src/lib/mobile-api/commands.test.ts
+apps/admin/src/lib/mobile-api/content-cover-capability.test.ts
+apps/admin/src/lib/mobile-api/content-service.test.ts
+apps/admin/src/lib/mobile-api/contracts.test.ts
+apps/admin/src/lib/mobile-api/entitlement-service.test.ts
+apps/admin/src/lib/mobile-api/http.test.ts
+apps/admin/src/lib/mobile-api/idempotency.test.ts
+apps/admin/src/lib/mobile-api/media-service.test.ts
+apps/admin/src/lib/mobile-api/read-model.test.ts
+apps/admin/src/lib/mobile-api/registration-service.test.ts
+apps/admin/src/lib/mobile-api/route.test.ts
+apps/admin/src/lib/mobile-api/routine-adherence-service.test.ts
+apps/admin/src/lib/mobile-api/routine-item-service.test.ts
+apps/admin/src/lib/mobile-api/routine-service.test.ts
+apps/admin/src/lib/mobile-api/supabase-coach.test.ts
+apps/admin/src/lib/mobile-api/supabase-content.test.ts
+apps/admin/src/lib/mobile-api/supabase-routine-adherence.test.ts
+apps/admin/src/lib/mobile-api/supabase-routine-items.test.ts
+apps/admin/src/lib/mobile-api/supabase-routine.test.ts
+```
+
+The exact derivation and execution command is frozen in the implementation
+plan. It must reproduce count/hash before execution and then report the actual
+current Vitest test count with zero failure/skip; it must not substitute the
+historical number 172. The full historical 619-test admin suite is not rerun
+unless a finding, review or attributable failure requires it.
+
+## 8. Git identity, reviews and publication
+
+Authority documentation baseline:
+
+```text
+branch: codex/better-ahead-rebranding-design
+remote ref: refs/heads/codex/better-ahead-rebranding-design
+HEAD: 9c0d9d608a966153285291c14da94bd2e958cb99
+parent: ff8a4ec2f98764b0ff6b34f617288c652ece2f66
+tree: 7c0369c3292842c38a37c90aa93235497b0c9760
+subject: docs(staging): record Mobile API Preview protection policy stop
+Phase A subject: docs(staging): authorize dedicated Mobile API BFF artifact
+```
+
+Implementation identity:
+
+```text
+base: 277873755bf29771a10b5f362b522c2e6a6c21d6
+branch: codex/ci3-dedicated-mobile-bff-surface-v1
+worktree: /root/agentempp-ci3-dedicated-mobile-bff-surface-v1
+subject: feat(staging): add dedicated Mobile API BFF surface
+```
+
+The implementation begins only after the authority commit is remotely
+confirmed. The branch and worktree are created once from the exact CI-2 base,
+without cherry-picking documentation. The old detached deploy worktree
+`/root/agentempp-ci3-staging-bff-v1` and the frozen Mac worktree remain
+untouched.
+
+The exact Mac evidence path is
+`/Users/eduardohenrique/Developer/bodyflow-production-secret-contract-v1`.
+It is evidence-only, has no authority on this VPS and may not be used as an
+implementation source, repaired or modified.
+
+Two independent read-only implementation reviews are mandatory:
+
+- Review A: route/runtime security, exact exports, auth lifecycle,
+  service-role server-only behavior, closure, manifests, 404 boundary,
+  logs/PII and unchanged official calculations.
+- Review B: package dependencies, lockfile, Next config, output tracing,
+  monorepo root, Vercel artifact isolation, source SHA, protection sequencing,
+  rollback and no production.
+
+The gate is 0 Critical and 0 Important. Corrections stay inside the
+implementation allowlist and trigger affected gates plus both reviews again.
+The implementation uses selective staging, one commit and one non-force push;
+there is no upstream setup, PR or merge.
+
+## 9. Existing Vercel project and Preview boundary
+
+Reuse exactly the existing project `agentempp-mobile-bff-staging`, whose ID is
+recorded only by SHA-256
+`26c8edbed7fb4ed89674c43934733686f605f5152551110a14cc2b8798e7584f`.
+Do not delete, recreate or create another project. Initial expectations are
+root `apps/admin`, Next.js, Node 22.x, external sources enabled, no Git
+Integration, no custom domain, zero Preview env, zero Production env, zero
+deployment, and
+`ssoProtection.deploymentType=all_except_custom_domains` with no other
+protection mechanism or exception.
+
+The staging input is the root-only pair
+`/root/.config/agentempp/secrets/ci3-staging-mobile-bff.env` and
+`/root/.config/agentempp/secrets/ci3-staging-mobile-bff.receipt.json`, with
+integral SHA-256 values
+`6aa784b9e5777a8924c4f37c1a9081cd040e399e30abfe5255978e1c1e571b9d`
+and
+`44d0da30244f2340827698caa1aae85410b6a34d5c50a312a8b9e5e9bbe08978`.
+The three value fingerprints are respectively
+`97010b2e836ff65ea00286dd549c7b53588c767be3b89d3b958e5db79901c992`,
+`75f6096cc1475fbc3268203fdf29eea2b839fd98e82ff5e7d6c4f18b6ce1a7c1`
+and
+`76f90c745c5018fce36b9ba6d8b08a2d9bae70c07d40eebf48586bd552c83472`.
+Values are revalidated without printing. Primary/live project
+`xuxehkhdvjivitduarvb`, key `manager_vps_20260825` in state
+`ACTIVE_QUARANTINED_UNUSED`, and
+`/root/.config/agentempp/secrets/agentempp-primary-backend.env` are prohibited
+from this operation and remain untouched.
+
+After the code is published, exactly one seven-field settings PATCH changes
+the root to `apps/mobile-bff` and sets the exact install/build commands while
+leaving SSO and team defaults unchanged. Exactly three staging variables are
+then created in one batch, Preview-only: the two public Supabase variables are
+encrypted and the service-role variable is sensitive, or encrypted only if
+official schema proof shows sensitive unsupported. No raw value is printed;
+the primary/live secret file is never opened or used.
+
+A single Preview deployment must be READY, target Preview, and prove its source
+SHA equals the implementation commit. The raw origin remains in memory and is
+never written to Git, docs, chat or reports. While SSO is still active,
+metadata, sanitized build logs and available deployment outputs must prove the
+dedicated root, exact source, no admin surface, zero pages, zero middleware,
+zero Server Actions, no custom domains, no Production env and no Git
+Integration. Review C must return 0 Critical and 0 Important.
+
+Only then may one project-only PATCH set `ssoProtection` to null. The team
+default is immutable. After that forward PATCH succeeds, failure of **any**
+requirement in public-probe Steps 1–3—HTTPS/certificate/exact-origin, redirect,
+Mobile status/JSON/envelope/header/request-ID, Vercel-page/HTML/stack/secret/PII,
+any forbidden-route assertion, any one of the 19 prior-finding HTTP probes, or
+either manifest-only Server Action/page assertion—triggers exactly one rollback
+PATCH that restores:
+
+```json
+{"ssoProtection":{"deploymentType":"all_except_custom_domains"}}
+```
+
+There is no retry of forward or rollback. After rollback, protection must be
+read back as active, env/deployment are preserved, public probes are not
+repeated, and the operation continues only to STOP documentation. Rollback
+failure is an immediate material-risk STOP.
+
+## 10. Public acceptance and outcome classification
+
+After SSO removal, the three Mobile API probes must return their own sanitized
+401 contract, and `/`, `/login`, `/dashboard`, `/crescimento`, admin, Inngest,
+Stripe and administrative media routes must return 404 without redirect. Every
+materially reachable HTTP path among the 21 prior findings is probed read-only;
+pages and Server Actions are additionally disproved by manifests.
+
+After public probes pass, write the root-only deployment receipt outside Git
+with mode `0600`. It may hold the raw origin solely for Mac handoff and must
+contain no secret value, token or PII. Then search read-only for an explicitly
+synthetic, active, confirmed, patient-role staging identity and an approved
+runtime credential mechanism. Do not create a user, change a password, confirm
+an email or create a profile.
+
+### 10.1 Pre-authority report-only STOP
+
+If the one Phase A authority commit attempt fails, or its one push attempt
+fails, there is no published authority SHA that can serve as the required
+parent. Stop before worktree creation, code or any external service write. Do
+not spend the final-documentation budget and do not create a Git STOP document.
+Record a report-only `STOP_PRE_AUTHORITY` in the task report and recovery ledger
+outside the four-path candidate, preserving target, evidence, result and
+rollback/restore information. If the local commit fails after the four exact
+authority paths have been staged, leave those four paths staged. If it fails
+earlier, preserve the exact observed index/worktree state. In either case,
+record the actual staged and unstaged path lists; do not reset, restore,
+unstage, amend or retry. A failed push preserves the one local authority commit
+and the exact observed index/worktree state, records the actual staged and
+unstaged path lists, and permits no amend or retry. Exact next gates are
+respectively:
+
+```text
+RECONCILE_DEDICATED_BFF_AUTHORITY_DOCUMENTATION_COMMIT
+RECONCILE_DEDICATED_BFF_AUTHORITY_DOCUMENTATION_PUBLICATION
+```
+
+### 10.2 Common final-documentation preflight and gates
+
+Final documentation exists only after the Phase A authority was published.
+Before editing it, re-enter the manager and require branch
+`codex/better-ahead-rebranding-design`, HEAD equal to the published
+`DEDICATED_BFF_AUTHORITY_SHA`, remote ref
+`refs/heads/codex/better-ahead-rebranding-design` equal to the same SHA, empty
+staging, and the canonical 25 historical entries/hash unchanged. The common
+gates are exact outcome allowlist, integral diff, `git diff --check`, zero
+credential/PAT/raw-origin/PII, zero production or CI-4 authorization, two
+independent reviews with 0 Critical/0 Important, selective per-path staging,
+none of the 25 historical entries staged, parent exactly
+`DEDICATED_BFF_AUTHORITY_SHA`, one commit, one non-force fast-forward push, no
+tag/PR/merge, and remote-ref proof.
+
+### 10.3 `PASS_COMPLETE` final-documentation contract
+
+Eligibility requires all BFF/public gates, `SYNTHETIC_PATIENT_PATH=VERIFIED`,
+and authenticated Today `PASS` or `DEFERRED_TO_MAC_BY_DESIGN`. Exact allowlist:
+
+```text
+docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md
+docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-authority.md
+docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
+docs/superpowers/specs/2026-08-25-ci3-today-staging-vertical-slice.md
+docs/superpowers/plans/2026-08-25-ci3-today-staging-vertical-slice.md
+```
+
+Dossier transition: `1.6.6` to `1.7`. Subject:
+`docs(ios): authorize CI-3 after dedicated Mobile BFF verification`. Record
+authority/implementation SHAs and trees, exact code paths, all three route
+stream counts/hashes, closure/lockfile/tests/typecheck/build/smoke/reviews,
+Vercel project/deployment fingerprints, exact source/root/Node, Preview env 3,
+Production env 0, project SSO null, unchanged team default, Mobile 401 headers,
+all forbidden/19-finding 404s, action/page manifest absence, patient/auth probe,
+root-only receipt and zero production. Publish the complete Mac macro-prompt
+for `IMPLEMENT_CI3_TODAY_STAGING` and the `PASS_COMPLETE` markers; CI-4 remains
+unauthorized.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=VERIFIED
+DEDICATED_MOBILE_BFF_BRANCH=codex/ci3-dedicated-mobile-bff-surface-v1
+DEDICATED_MOBILE_BFF_SHA=<exact implementation SHA>
+STAGING_BFF_STATUS=VERIFIED
+STAGING_BFF_PROJECT=agentempp-mobile-bff-staging
+STAGING_BFF_TARGET=PREVIEW
+STAGING_BFF_ROOT=apps/mobile-bff
+STAGING_BFF_NODE_VERSION=22.x
+STAGING_BFF_SOURCE_SHA=<exact implementation SHA>
+STAGING_TODAY_UNAUTHENTICATED_PROBE=VERIFIED
+STAGING_FORBIDDEN_SURFACE_PROBES=VERIFIED
+SYNTHETIC_PATIENT_PATH=VERIFIED
+CI3_STAGING_AUTHORITY_STATUS=VERIFIED
+CI3_DOCUMENTATION_STATUS=PUBLISHED
+CI3_DOCUMENTATION_REMOTE_SHA=<exact final docs SHA>
+NEXT_ENVIRONMENT=MAC_LOCAL
+NEXT_GATE=IMPLEMENT_CI3_TODAY_STAGING
+```
+
+### 10.4 `PASS_PARTIAL` final-documentation contract
+
+Eligibility requires all BFF/public gates and
+`SYNTHETIC_PATIENT_PATH=MISSING`. Exact allowlist:
+
+```text
+docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md
+docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-preview-verification.md
+docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
+```
+
+Dossier transition: `1.6.6` to `1.6.7`. Subject:
+`docs(staging): record verified dedicated Mobile BFF preview`. Record the full
+BFF/public evidence and preservation state, keep CI-3 unauthorized, publish the
+`PASS_PARTIAL` markers and complete macro-prompt for
+`AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING`. No user is created.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=VERIFIED
+DEDICATED_MOBILE_BFF_BRANCH=codex/ci3-dedicated-mobile-bff-surface-v1
+DEDICATED_MOBILE_BFF_SHA=<exact implementation SHA>
+STAGING_BFF_STATUS=VERIFIED
+STAGING_BFF_PROJECT=agentempp-mobile-bff-staging
+STAGING_BFF_TARGET=PREVIEW
+STAGING_BFF_ROOT=apps/mobile-bff
+STAGING_BFF_NODE_VERSION=22.x
+STAGING_BFF_SOURCE_SHA=<exact implementation SHA>
+STAGING_TODAY_UNAUTHENTICATED_PROBE=VERIFIED
+STAGING_FORBIDDEN_SURFACE_PROBES=VERIFIED
+SYNTHETIC_PATIENT_PATH=MISSING
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING
+```
+
+### 10.5 `STOP_DOCUMENTED` final-documentation contract
+
+Any material divergence after the Phase A authority is published selects this
+outcome. Exact allowlist:
+
+```text
+docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md
+docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md
+docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
+```
+
+Dossier transition: `1.6.6` to `1.6.7`. Subject:
+`docs(staging): record dedicated Mobile BFF stop`. Record the last passed gate,
+failed gate, code branch/SHA if created, settings/env/deployment, SSO
+forward/rollback and probes, preserved resources, consumed attempts, zero
+repetition, production untouched, CI-3 unauthorized, `STOP_DOCUMENTED` markers
+and the exact next material gate. Preserve project, env and deployment.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=<NOT_CREATED|IMPLEMENTED_NOT_DEPLOYED|DEPLOYED_PROTECTED|PUBLIC_ROLLED_BACK|NOT_VERIFIED>
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=<0_OR_1>
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=<0_OR_1>
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=<0_OR_1>
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=<0_OR_1>
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=<0_OR_1>
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=<exact material gate>
+```
+
+CI-4, production, production env/deployment, Supabase/database writes, new
+users, PRs, merges, TestFlight and App Store remain prohibited in every
+outcome.
+
+## 11. Independent one-attempt budgets
+
+```text
+AUTHORITY_DOCUMENTATION_COMMIT_ATTEMPTS=1
+AUTHORITY_DOCUMENTATION_PUSH_ATTEMPTS=1
+IMPLEMENTATION_WORKTREE_CREATION_ATTEMPTS=1
+IMPLEMENTATION_COMMIT_ATTEMPTS=1
+IMPLEMENTATION_PUSH_ATTEMPTS=1
+VERCEL_DEDICATED_PROJECT_SETTINGS_PATCH_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1
+VERCEL_LOCAL_LINK_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Partial external state is a STOP, not authorization to retry, delete or
+recreate resources.
+
+## 12. VPS resource and mutation-record controls
+
+Run `/root/.codex/ops/bin/vps-resource-gate.sh` immediately before every
+materially heavy phase: the initial frozen install used to bootstrap RED 1,
+dependency/lockfile installation, focused/full test phase, Next build, local
+server smoke, and Vercel deployment/build trigger. Run it again after any
+resource-related failure or concrete degradation evidence. `BUSY` means heavy
+work runs sequentially; `PRESSURED` is evaluated from the concrete combined
+metrics and does not automatically block; `CRITICAL` blocks heavy work until
+its objective cause is resolved. Lightweight Git/status/diff and read-only
+documentation checks do not require this gate.
+
+Every mutation must be appended immediately to the task recovery ledger with
+exact target, precondition/evidence, result, and rollback or restore location.
+This includes repository edits, generated lockfile/importer, worktree/branch,
+index/staging, commits, pushes, Vercel settings/env/link/deployment/SSO writes,
+the external deployment receipt and final docs. Ledger entries contain only
+names, counts and fingerprints—never secret values, Authorization, raw origin
+or PII. A mutation without a successful ledger entry blocks the next mutation.
+
+## 13. Preservation invariants
+
+- The manager retains its canonical 25 historical `-uall` entries, five
+  tracked modifications, 20 untracked entries, empty staging and historical
+  tracked diff.
+- The existing detached CI-2 deploy worktree remains at the exact CI-2 SHA,
+  tracked-clean, staging-empty and without `.vercel`.
+- The Mac evidence path
+  `/Users/eduardohenrique/Developer/bodyflow-production-secret-contract-v1`
+  remains evidence only and is never imported or modified.
+- The implementation worktree ends at the published implementation commit,
+  tracked-clean, staging-empty and with no upstream.
+- The dedicated deployment worktree ends detached at the implementation SHA,
+  tracked-clean and staging-empty; its local `.vercel` may exist only there,
+  remains untracked/unstaged, and contains no Git-tracked secret.
+- The quarantined primary/live key remains active, isolated, unused and
+  prohibited from this flow.
+- Supabase and database writes are zero.
+- The existing Vercel project is preserved; at most one Preview deployment,
+  zero Production deployments, zero custom domains and zero Git Integration.
+- CI-3 is authorized only by `PASS_COMPLETE`; CI-4 is never started here.
+
+## 14. Final report contract
+
+The final operational report must populate every field group below with exact
+values, counts or explicit `NO`/`N/A`; it must not omit a group or report a raw
+origin:
+
+```text
+OPERATION, FINAL_STATUS
+AUTHORITY_DOCUMENTATION: initial SHA, commit, parent, tree, subject, paths, push, remote
+IMPLEMENTATION: base, branch, worktree, commit, parent, tree, subject, path count,
+  wrapper count, source/wrapper/build-route stream hashes, import closure,
+  lockfile, tests, typecheck, build, local smoke, reviews, push, remote
+VERCEL_PROJECT: name, ID fingerprint, settings attempts, root, Node, framework,
+  build/install commands, outside-root, Git Integration, custom domains, team default
+VERCEL_ENV: batch attempts, names, types, targets, Preview count, Production count,
+  values printed NO, primary secret used NO
+DEPLOYMENT: link attempts, deployment attempts, ID fingerprint, source SHA, target,
+  ready state, root, Node, origin fingerprint, raw origin reported NO,
+  protected inspection
+SSO: initial, forward attempts, final, rollback attempts, team default changed NO
+PUBLIC_PROBES: Mobile 401 count, forbidden 404 count, prior-finding 19/19,
+  action manifest 2/2 absent, no-store, Vary, request ID, redirect, HTML,
+  stack, secret, PII
+SYNTHETIC_PATIENT: status, mechanism, created NO, PII reported NO
+AUTHENTICATED_TODAY: PASS, DEFERRED_TO_MAC_BY_DESIGN, NOT_EXECUTED or FAILED
+DEPLOYMENT_RECEIPT: path, mode, hash, raw origin only there YES, secret values NONE
+FINAL_DOCUMENTATION: outcome, dossier version, commit, parent, tree, subject, push, remote
+PRESERVATION: 25 historical items, existing deploy worktree staging/.vercel,
+  implementation/deployment worktrees, primary/live, Vercel, production, CI-4
+EXTERNAL_ACTIONS: docs commits 1-2, code commit 0/1, code push 0/1,
+  settings PATCH 0/1, Preview env batch 0/1, Preview deployment 0/1,
+  SSO forward 0/1, SSO rollback 0/1, production deployment NO,
+  Supabase write NO, database write NO, PR NO, merge NO, CI-4 NO
+```

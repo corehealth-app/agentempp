@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.4
+**Versão do dossiê:** 1.6.5
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2635,3 +2635,49 @@ indevidamente as demais superfícies de `apps/admin`.
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-25-ci3-staging-bff-reconciliation-stop.md`.
+
+---
+
+## 41. Atualização operacional 1.6.5 — STOP na política de ingresso público do Preview
+
+**Data:** 25/08/2026
+
+A nova autoridade permitia, condicionalmente, remover a Vercel Authentication
+somente do projeto staging, criar três env vars Preview, vincular a worktree e
+executar um deployment. O gate anterior obrigatório era provar que toda a
+superfície compartilhada de `apps/admin` possuía proteção própria no
+application layer.
+
+O inventário read-only classificou 132 unidades: 27 páginas, 48 route handlers,
+54 Server Actions exportadas, dois layouts e um middleware. Zero superfície
+ficou sem classificação. Os testes focados existentes passaram 172/172, mas a
+auditoria encontrou 21 superfícies blocking em três famílias:
+
+- `/api/admin/send-message` é excluído pelo middleware e aceita a própria
+  `SUPABASE_SERVICE_ROLE_KEY` como bearer público;
+- `upsertFood` e `deleteFood` abrem o service client sem autenticação ou
+  autorização admin própria;
+- 18 rotas de página administrativas — 17 diretamente e `/crescimento` por
+  três views transitivas — consultam por `service_role` sem verificar o papel
+  admin junto à leitura privilegiada, dependendo apenas do middleware e do
+  layout pai.
+
+As duas revisões independentes retornaram `NO-GO`, cada uma com 0 Critical,
+3 Important e 1 Minor.
+
+Assim, a arquitetura foi classificada como
+`REQUIRES_DEDICATED_BFF_ONLY_ARTIFACT`. Nenhuma escrita desta autorização foi
+executada: protection PATCH 0/1, env batch 0/1, link 0/1 e deployment 0/1. O
+projeto continua protegido por
+`ssoProtection.deploymentType=all_except_custom_domains`, com zero env, zero
+deployment e zero custom domain. A fonte staging ficou intacta e a fonte
+primary/live não foi aberta.
+
+CI-3 continua não autorizada. O próximo gate material é
+`AUTHORIZE_DEDICATED_PUBLIC_MOBILE_BFF_SURFACE`: separar um artefato público que
+contenha somente `/api/mobile/v1/**`, sem expor o painel e seus endpoints
+administrativos. Essa etapa exige nova autoridade antes de código, env,
+proteção ou deployment.
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-25-ci3-preview-protection-policy-stop.md`.

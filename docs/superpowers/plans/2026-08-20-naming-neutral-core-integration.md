@@ -920,3 +920,56 @@ bypass, custom domains, env creation, deployment, Supabase mutation, CI-3,
 CI-4, production, TestFlight or App Store activity. The next authority must
 choose a safe Preview ingress architecture and grant fresh explicit budgets
 before any further external write can occur.
+
+## CI-3 Public Ingress Application-Layer Audit STOP — 2026-08-25
+
+The condition for removing Vercel Authentication from the existing shared
+`apps/admin` project did not pass. A complete read-only inventory classified
+132 entry-point units with zero unclassified surfaces: 27 pages, 48 route
+handlers, 54 exported Server Actions, two layouts and one middleware.
+
+Twenty-one units are `BLOCKING_UNPROTECTED_SENSITIVE_SURFACE`:
+
+- the middleware-exempt `/api/admin/send-message` route authenticates its
+  public bearer with `SUPABASE_SERVICE_ROLE_KEY` itself;
+- two food-management Server Actions create a service client without their own
+  user/admin authorization;
+- 18 admin page routes open a service client before any page-local or
+  data-layer admin-role authorization: 17 directly and `/crescimento` through
+  three transitive privileged views.
+
+Two independent reviews returned `NO-GO`, each with 0 Critical, 3 Important
+and 1 Minor. The Minor is an unbounded public-path prefix match that could
+silently exempt a future sibling route.
+
+The 40 Mobile API routes retain their bearer/patient/entitlement wrapper, and
+the focused security suite passed 172/172, but those facts do not make the
+entire mixed admin deployment safe for public ingress. The architecture is
+therefore:
+
+```text
+INGRESS_ARCHITECTURE=REQUIRES_DEDICATED_BFF_ONLY_ARTIFACT
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_PROTECTION_PATCH_ATTEMPTS=0/1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0/1
+VERCEL_LOCAL_LINK_ATTEMPTS=0/1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0/1
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=AUTHORIZE_DEDICATED_PUBLIC_MOBILE_BFF_SURFACE
+```
+
+No Vercel or Supabase write occurred. Preserve the existing staging project,
+its inherited protection, zero env and zero deployments. Do not patch the
+shared project public, create a bypass, populate env, link or deploy under this
+authority.
+
+The next authority must design and audit a dedicated public artifact whose
+reachable application surface is limited to `/api/mobile/v1/**`. It must
+define the exact source/build allowlist, route inventory, secret boundary,
+tests, external one-attempt budgets and rollback before any implementation or
+provisioning. Fixing or exposing the existing admin surface, CI-3, CI-4,
+production, TestFlight and App Store remain unauthorized.
+
+Evidence:
+`docs/superpowers/evidence/2026-08-25-ci3-preview-protection-policy-stop.md`.

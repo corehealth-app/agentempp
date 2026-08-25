@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.3
+**Versão do dossiê:** 1.6.4
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2575,3 +2575,63 @@ Evidências detalhadas:
 
 - `docs/superpowers/evidence/2026-08-25-ci2-session-lifecycle-completion.md`;
 - `docs/superpowers/evidence/2026-08-25-ci3-staging-bff-provisioning-stop.md`.
+
+---
+
+## 40. Atualização operacional 1.6.4 — STOP por proteção herdada no Preview
+
+**Data:** 25/08/2026
+
+A reconciliação do schema Vercel foi executada com uma autorização nova e
+independente da tentativa histórica consumida. O schema autenticado do Vercel
+CLI 50.35.0 confirmou que `nodeVersion` não pertence ao request de criação e
+que `nodeVersion: 22.x` pertence ao endpoint de atualização. O preflight
+confirmou novamente a ausência do projeto exato e de deployments associados.
+
+A tentativa de reconciliação 1/1 criou o projeto
+`agentempp-mobile-bff-staging` com somente nome, framework Next.js, root
+`apps/admin` e opt-out de conexão Git. O PATCH 1/1 aplicou Node 22.x, os
+comandos congelados de Corepack/pnpm 10.33.2 e a inclusão dos packages externos
+ao root. O GET posterior confirmou os settings materiais, zero Git Integration
+e zero custom domains. O project ID foi registrado somente pelo fingerprint
+SHA-256
+`26c8edbed7fb4ed89674c43934733686f605f5152551110a14cc2b8798e7584f`.
+
+O mesmo GET revelou que o projeto herdou
+`ssoProtection.deploymentType=all_except_custom_domains` (Vercel
+Authentication). Como o contrato exige que o endpoint Preview
+público alcance a Mobile API e retorne seu próprio envelope 401, essa proteção
+interceptaria o gate. A operação parou antes de copiar qualquer secret, criar
+env vars, vincular a worktree ou executar deployment. A proteção não foi
+desativada, contornada ou alterada.
+
+Estado preservado:
+
+- tentativa histórica de criação: 1/1, falha e sem projeto;
+- tentativa de criação da reconciliação: 1/1, aprovada;
+- total histórico de requests de criação: 2;
+- projeto criado: sim, preservado;
+- PATCH de settings: 1/1, aprovado;
+- env vars Preview: 0; batch attempts: 0/1;
+- env vars Production: 0;
+- local link attempts: 0/1;
+- deployment Preview attempts: 0/1;
+- deployment ID e origem: N/A;
+- source pretendido:
+  `277873755bf29771a10b5f362b522c2e6a6c21d6`;
+- Git Integration e custom domains: ausentes;
+- Supabase e banco: nenhuma escrita;
+- produção: intocada;
+- CI-3: não autorizada.
+
+O projeto e seus settings devem permanecer intactos. Não existe autorização
+para apagar ou recriar o projeto, alterar a proteção, criar bypass/share token,
+inserir env vars ou tentar deployment. Os budgets registrados como 0/1 são
+estado histórico desta execução encerrada e não podem ser reutilizados. O
+próximo gate exato é
+`RECONCILE_STAGING_BFF_PREVIEW_PROTECTION_POLICY`, que deve decidir uma
+arquitetura de ingresso Preview compatível com a Mobile API sem expor
+indevidamente as demais superfícies de `apps/admin`.
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-25-ci3-staging-bff-reconciliation-stop.md`.

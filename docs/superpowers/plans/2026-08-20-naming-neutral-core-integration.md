@@ -879,3 +879,44 @@ Evidence:
 
 - `docs/superpowers/evidence/2026-08-25-ci2-session-lifecycle-completion.md`;
 - `docs/superpowers/evidence/2026-08-25-ci3-staging-bff-provisioning-stop.md`.
+
+## CI-3 Staging BFF Preview Protection STOP — 2026-08-25
+
+The corrected Vercel create sequence consumed its separately authorized
+reconciliation budget. `POST /v11/projects` succeeded with the four-field
+create allowlist, and the single `PATCH /v9/projects/{id}` applied Node 22.x,
+Next.js, root `apps/admin`, the frozen Corepack/pnpm 10.33.2 commands and
+`sourceFilesOutsideRootDirectory=true`. The resulting project has no Git link
+and no custom domain.
+
+The authoritative GET also reported inherited Vercel Authentication as
+`ssoProtection.deploymentType=all_except_custom_domains`. This policy would intercept the
+required unauthenticated Mobile API request before the BFF could return its own
+401 envelope. The operation therefore stopped before env creation, local link
+or deployment. No protection setting, bypass or share token was changed or
+created.
+
+```text
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_CREATED=YES
+VERCEL_PROJECT_CREATION_HISTORICAL_ATTEMPTS=1/1
+VERCEL_PROJECT_CREATION_RECONCILIATION_ATTEMPTS=1/1
+VERCEL_PROJECT_CREATION_TOTAL_HISTORICAL_REQUESTS=2
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=1/1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0/1
+VERCEL_LOCAL_LINK_ATTEMPTS=0/1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0/1
+PRODUCTION_TOUCHED=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_STAGING_BFF_PREVIEW_PROTECTION_POLICY
+```
+
+Preserve the project and applied settings. Every `0/1` count above is closed
+historical state from this completed operation, not reusable authorization.
+This record does not authorize
+project deletion or recreation, Vercel Authentication changes, protection
+bypass, custom domains, env creation, deployment, Supabase mutation, CI-3,
+CI-4, production, TestFlight or App Store activity. The next authority must
+choose a safe Preview ingress architecture and grant fresh explicit budgets
+before any further external write can occur.

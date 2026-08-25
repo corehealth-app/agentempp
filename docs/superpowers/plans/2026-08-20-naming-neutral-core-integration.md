@@ -839,3 +839,43 @@ The detailed authority is
 `docs/superpowers/evidence/2026-08-25-primary-supabase-secret-control-plane-reconciliation.md`.
 This section by itself does not authorize Vercel, deployment, CI-3, production,
 TestFlight or App Store work.
+
+## CI-3 Staging BFF Provisioning STOP — 2026-08-25
+
+CI-2 is complete and remotely published at
+`277873755bf29771a10b5f362b522c2e6a6c21d6`. Local VPS backend readiness gates
+passed against that clean source: 48/48 focused Mobile API tests, 10/10
+official daily-state tests, 619/619 admin tests, typecheck, staging-only build,
+client-bundle service-role scan and two independent reviews with 0/0/0.
+
+The BFF Preview gate did not complete. The preflight proved that project
+`agentempp-mobile-bff-staging` and matching deployments were absent. The one
+authorized project-creation request failed with HTTP 400 because Vercel API v11
+rejects `nodeVersion` as an additional create-project property. The post-failure
+inventory proved that no partial project exists. No environment variable or
+deployment was attempted, and the exhausted request was not retried.
+
+The authoritative state is:
+
+```text
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_CREATED=NO
+VERCEL_PROJECT_CREATION_ATTEMPTS=1/1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0/1
+PRODUCTION_TOUCHED=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_STAGING_BFF_PROVISIONING_STOP
+```
+
+CI-3, CI-4, production, TestFlight and App Store remain unauthorized. A new
+documentation authority must define a create-project request compatible with
+the current API while preserving Node 22, Preview-only scope, root
+`apps/admin`, Corepack pnpm 10.33.2, no Git integration, no custom domain and a
+new explicit one-attempt budget. Do not silently omit the Node constraint or
+reuse the consumed attempt.
+
+Evidence:
+
+- `docs/superpowers/evidence/2026-08-25-ci2-session-lifecycle-completion.md`;
+- `docs/superpowers/evidence/2026-08-25-ci3-staging-bff-provisioning-stop.md`.

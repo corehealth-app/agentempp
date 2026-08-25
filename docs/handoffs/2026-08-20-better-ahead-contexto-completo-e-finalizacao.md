@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.2
+**Versão do dossiê:** 1.6.3
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2530,3 +2530,48 @@ dependem dos gates técnicos e de segurança seguintes.
 
 A evidência detalhada está em
 `docs/superpowers/evidence/2026-08-25-primary-supabase-secret-control-plane-reconciliation.md`.
+
+---
+
+## 39. Atualização operacional 1.6.3 — STOP no provisionamento do BFF Preview
+
+**Data:** 25/08/2026
+
+A CI-2 está publicada e foi revalidada no SHA
+`277873755bf29771a10b5f362b522c2e6a6c21d6`, com 15 paths, tree e parent
+esperados. A worktree detached usada para os gates permaneceu limpa. Nesta VPS,
+48/48 testes focados da Mobile API, 10/10 testes de estado diário, 619/619
+testes do admin, typecheck e build Next.js com a fonte staging passaram. Duas
+revisões independentes pré-Vercel terminaram com 0 Critical, 0 Important e
+0 Minor.
+
+O projeto Vercel exato `agentempp-mobile-bff-staging` e deployments associados
+não existiam no preflight. A única tentativa autorizada de criação do projeto
+terminou com HTTP 400: a API v11 rejeitou `nodeVersion` como propriedade
+adicional. A consulta read-only posterior confirmou que nenhum projeto parcial
+foi criado.
+
+Estado congelado:
+
+- projeto Vercel criado: não;
+- tentativa de criação do projeto: 1/1;
+- variáveis Preview criadas: 0;
+- tentativa de deployment Preview: 0/1;
+- deployment ID: N/A;
+- source pretendido:
+  `277873755bf29771a10b5f362b522c2e6a6c21d6`;
+- produção, banco primary/live, runtime e domínios: intocados;
+- nenhuma segunda tentativa autorizada ou executada;
+- CI-3: não autorizada.
+
+O próximo gate exato é
+`RECONCILE_STAGING_BFF_PROVISIONING_STOP`: uma nova autoridade documental deve
+definir um request compatível com a API atual sem enfraquecer Node 22,
+Preview-only, root `apps/admin`, Corepack/pnpm 10.33.2, zero Git integration e a
+regra de tentativa única. Não se deve reutilizar esta autorização para repetir
+a criação.
+
+Evidências detalhadas:
+
+- `docs/superpowers/evidence/2026-08-25-ci2-session-lifecycle-completion.md`;
+- `docs/superpowers/evidence/2026-08-25-ci3-staging-bff-provisioning-stop.md`.

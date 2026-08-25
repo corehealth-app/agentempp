@@ -761,3 +761,35 @@ It uses direct origin-locked Auth refresh and local-scope logout, app-owned
 single-flight, generation/cancellation and one Keychain-backed session source.
 CI-3, real environment, staging E2E, public naming, production, TestFlight,
 App Store and deployment remain unauthorized. Naming hold remains active.
+
+## VPS Manager Porcelain Enumeration Rule — 2026-08-24
+
+All future VPS manager preservation gates must use this exact canonical
+command:
+
+```text
+LC_ALL=C git status --porcelain=v1 -uall
+```
+
+The compact command without `-uall` is not an equivalent gate. Counts and
+stream hashes may be compared only when they were produced with the same
+enumeration mode.
+
+The canonical baseline remains unchanged:
+
+- 25 total entries;
+- 5 tracked entries;
+- 20 untracked entries;
+- canonical porcelain SHA-256
+  `455000fe5f148dcad3034f03d57e2683deedb8ae5ec655b8a459639117f040e0`.
+
+The compact view of 22 entries is a valid observation, not a divergence and
+not a replacement baseline. Future PAT resumptions must record the exact
+`-uall` command, total/tracked/untracked counts and full-stream SHA-256. No new
+reconciliation is required while those canonical values remain identical; a
+divergence produced by the same canonical command requires STOP.
+
+This rule does not resume PAT work in the current VPS operation and does not
+authorize a staging secret source, Vercel project or deployment, CI-3, CI-4,
+production, TestFlight or App Store activity. CI-2 remains the latest
+published implementation gate.

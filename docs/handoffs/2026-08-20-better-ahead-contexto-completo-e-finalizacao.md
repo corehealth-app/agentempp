@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6
+**Versão do dossiê:** 1.6.1
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -282,7 +282,7 @@ A worktree já estava suja por mudanças do usuário não relacionadas a este
 dossiê. Antes da criação deste arquivo:
 
 - staging vazio;
-- 25 entradas no porcelain;
+- 25 entradas usando `git status --porcelain=v1 -uall`;
 - SHA-256 do porcelain:
   `455000fe5f148dcad3034f03d57e2683deedb8ae5ec655b8a459639117f040e0`;
 - SHA-256 do diff binário tracked:
@@ -2421,3 +2421,52 @@ CI-3 não é autorizada. A fundação de autenticação/sessão real existe, mas
 refresh/logout completo, adapters e staging ainda pendem; o app não está E2E,
 beta-ready ou pronto para Apple. Naming hold, staging, beta, produção e Apple
 continuam pendentes.
+
+---
+
+## 37. Atualização operacional 1.6.1 — reconciliação da enumeração porcelain da VPS
+
+**Data:** 25/08/2026
+
+A auditoria read-only fornecida pelo usuário e a revalidação read-only nesta
+VPS confirmaram que não houve perda de evidência nem mudança material na
+worktree manager. A diferença observada entre 25 e 22 entradas decorre apenas
+do modo de enumeração de arquivos não rastreados pelo Git.
+
+A baseline histórica canônica permanece, sem substituição:
+
+- comando: `LC_ALL=C git status --porcelain=v1 -uall`;
+- 25 entradas usando `git status --porcelain=v1 -uall`;
+- 5 tracked e 20 untracked;
+- SHA-256 do stream integral:
+  `455000fe5f148dcad3034f03d57e2683deedb8ae5ec655b8a459639117f040e0`;
+- SHA-256 do diff binário tracked:
+  `7262d613d02df890c8e0c02922fa778afb90a6b7c27aa25a417bf0c717bdbefb`;
+- staging vazio.
+
+A visão compacta, obtida por
+`LC_ALL=C git status --porcelain=v1`, produz 22 entradas, sendo 5 tracked e
+17 untracked compactas, com SHA-256
+`256e29e64780b2100e569f222d810a49addbe6099254637519c30615c99bd26c`.
+Nela, quatro entradas de diretório — `docs/architecture/`, `docs/audits/`,
+`docs/business/` e `memory/` — representam os mesmos sete arquivos enumerados
+individualmente por `-uall`. A expansão de quatro para sete explica exatamente
+a diferença líquida de três entradas.
+
+Nenhum path desapareceu, foi movido, passou a ser ignored ou foi commitado, e
+nenhum byte histórico mudou. A visão compacta é somente observacional; ela não
+define uma baseline alternativa. Todo futuro gate de preservação da VPS deve
+usar explicitamente `LC_ALL=C git status --porcelain=v1 -uall`, registrar o
+comando, as contagens total/tracked/untracked e o SHA-256 do stream integral, e
+executar STOP se esses valores divergirem quando medidos pelo mesmo comando.
+
+O estado de entrega não avança nesta atualização:
+
+- CI-2 continua publicada e é o próximo gate de implementação autorizado;
+- a staging secret source ainda não foi criada;
+- projeto e deployment Vercel de staging continuam inexistentes;
+- CI-3 continua não autorizada;
+- nenhuma produção foi tocada.
+
+A evidência detalhada está em
+`docs/superpowers/evidence/2026-08-24-vps-manager-porcelain-enumeration-reconciliation.md`.

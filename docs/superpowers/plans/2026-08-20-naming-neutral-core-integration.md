@@ -1331,3 +1331,41 @@ NEXT_GATE=RECONCILE_VERCEL_PREVIEW_ENV_BATCH_CLIENT_FAILURE_WITH_ZERO_REMOTE_ENV
 That gate must diagnose the Vercel client/API contract from current schema,
 installed implementation and verified zero remote state. Any new batch attempt
 requires a separate published authority and fresh explicit budget.
+
+## Vercel Preview env client reconciliation STOP — 2026-08-26
+
+The exclusive read-only gate audited the preserved historical receipts,
+installed Vercel CLI 50.35.0, current authenticated OpenAPI and zero remote
+state. The CLI directly supports `--input -`; the three-object Preview body is
+schema-valid; minimal HOME/auth/scope probes pass. The removed executor source,
+argv and raw error preimage are not recoverable, so the historical client exit
+1 cannot be classified more narrowly without invention.
+
+The installed client also has internal default retries and unbounded
+request/response parsing, which violates the current proposed mechanism's
+one-request/no-auto-retry/bounded requirements. Both independent reviews
+approved the fail-closed result at 0 Critical/0 Important/0 Minor.
+
+```text
+ROOT_CAUSE_PRIMARY=UNRESOLVED
+ENV_BATCH_RETRY_AUTHORIZED=NO
+VERCEL_ENV_TOTAL=0
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+VERCEL_DEPLOYMENT_COUNT=0
+VERCEL_PROJECT_GIT_LINK=ABSENT
+PROJECT_SSO_FINAL=all_except_custom_domains
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_CLIENT_DIAGNOSTIC_EVIDENCE
+```
+
+No retry/delete, deployment, SSO, public probe, patient discovery, Supabase or
+database write occurred. Preserve the configured project, local link metadata,
+all worktrees and primary/live quarantine. A new published authority must
+first establish semantic diagnostic preservation and a provably single-request
+transport; this operation must not execute that next gate.

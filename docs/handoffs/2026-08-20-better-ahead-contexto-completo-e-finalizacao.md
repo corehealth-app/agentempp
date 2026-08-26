@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.11
+**Versão do dossiê:** 1.6.12
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3248,3 +3248,61 @@ NEXT_GATE=RECONCILE_VERCEL_PREVIEW_ENV_BATCH_CLIENT_FAILURE_WITH_ZERO_REMOTE_ENV
 Esse próximo gate deve ser uma nova autoridade read-only para diagnosticar o
 contrato cliente/API usando somente schema, implementação instalada e estado
 remoto zero; não pode repetir o batch sem autorização documental separada.
+
+## 48. Atualização operacional 1.6.12 — reconciliação do cliente Vercel para o batch Preview
+
+A investigação read-only do STOP 1.6.11 terminou fail-closed. O executor
+temporário antigo foi removido como previsto e seu source/argv/erro bruto não
+existe nas fontes sanitizadas permitidas. Foram preservados somente o hash do
+executor `e41caa1…5867e`, o hash diagnóstico `e71d492…01cf`, JSON via stdin,
+a invocação explícita com Node, client exit 1 e executor exit 78. A evidência
+ausente não foi reconstruída por hipótese.
+
+Vercel CLI 50.35.0 e seu source instalado provam que `--input -` lê stdin até
+EOF; uma validação sintética sem rede também passou. O OpenAPI autenticado,
+atualizado em 2026-08-26, prova `POST /v10/projects/{idOrName}/env`, body objeto
+ou array, os tipos `encrypted`/`sensitive`, target `preview` e sucesso HTTP 201.
+Os probes atuais com child env mínimo passaram para `whoami`, Project GET e
+Env GET. Assim, stdin/path e o contexto atual de HOME/auth/scope não explicam
+a falha histórica.
+
+O mesmo source revela retries internos padrão (`retries=3`) e parsing não
+limitado do request/response, sem flag do comando `api` para desativar o retry.
+Isso também impede aprovar o mecanismo de arquivo temporário sob o contrato
+vigente de uma única tentativa, sem retry automático e com limites de bytes.
+As duas revisões independentes terminaram GO em 0 Critical / 0 Important / 0
+Minor após um microdelta puramente enumerativo.
+
+```text
+ROOT_CAUSE_PRIMARY=UNRESOLVED
+ROOT_CAUSE_SECONDARY=CLIENT_RUNTIME_EXECUTION_ERROR
+ROOT_CAUSE_SECONDARY_DETAIL=UNCLASSIFIED
+ENV_BATCH_RETRY_AUTHORIZED=NO
+CORRECTED_MECHANISM=NOT_AUTHORIZED
+VERCEL_PREVIEW_ENV_BATCH_HISTORICAL_ATTEMPTS=1/1
+VERCEL_PREVIEW_ENV_BATCH_RETRY_ATTEMPTS=0/0_NOT_ACTIVATED
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+VERCEL_ENV_TOTAL=0
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+VERCEL_DEPLOYMENT_COUNT=0
+VERCEL_PROJECT_GIT_LINK=ABSENT
+PROJECT_SSO_FINAL=all_except_custom_domains
+STAGING_SECRET_OPENED=NO
+PRIMARY_SECRET_OPENED=NO
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_CLIENT_DIAGNOSTIC_EVIDENCE
+```
+
+Nenhum batch foi repetido, nenhum secret foi aberto, nenhum env foi criado ou
+apagado e nenhum deployment, SSO, Supabase, banco, produção ou CI-4 foi
+alterado. A continuidade exige nova evidência diagnóstica que preserve uma
+classificação sem dados brutos e defina um transporte que consiga provar uma
+única requisição antes de qualquer novo budget.

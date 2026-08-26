@@ -1334,3 +1334,46 @@ Final preservation requires manager history intact; implementation and old
 deploy worktrees untouched; dedicated deploy worktree detached/clean with
 only ignored local `.vercel`; primary/live unused; no Production, CI-4, PR,
 merge, Git Integration or custom domain.
+
+### Replacement diagnostic STOP after the Preview env client failure — dossier 1.6.12
+
+The 1.6.11 env batch cannot resume. Read-only evidence proves CLI 50.35.0
+supports `--input -`, the authenticated OpenAPI accepts the intended batch and
+the preserved auth/scope context passes. The old source/argv/raw error is no
+longer recoverable, so the primary cause is `UNRESOLVED`; do not substitute an
+input-path or schema diagnosis.
+
+The installed CLI's internal default retries and unbounded request/response
+parsing also make the proposed root-only temp-input mechanism incompatible with
+the current one-request/no-auto-retry/bounded contract. No corrected executor,
+self-test, staging secret read, POST, env delete, deployment or SSO action is
+authorized.
+
+- [x] Recover only sanitized evidence and mark the missing executor/argv/error
+  preimage `UNRECOVERED`.
+- [x] Audit CLI help/source, refresh and parse current OpenAPI, and execute only
+  read-only minimal-child-env probes.
+- [x] Obtain independent client/API and secret/filesystem reviews at 0
+  Critical/0 Important.
+- [ ] Publish this five-path reconciliation from exact parent
+  `79fa426b5293489666cc491225f1e9504c076a98` with subject
+  `docs(staging): reconcile Vercel Preview env batch client`.
+- [ ] Stop after remote confirmation; do not execute the next gate.
+
+```text
+ROOT_CAUSE_PRIMARY=UNRESOLVED
+ROOT_CAUSE_SECONDARY=CLIENT_RUNTIME_EXECUTION_ERROR
+ROOT_CAUSE_SECONDARY_DETAIL=UNCLASSIFIED
+ENV_BATCH_RETRY_AUTHORIZED=NO
+VERCEL_PREVIEW_ENV_BATCH_RETRY_ATTEMPTS=0/0_NOT_ACTIVATED
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_CLIENT_DIAGNOSTIC_EVIDENCE
+```
+
+The next authority must define how to preserve a semantic sanitized client/API
+failure receipt and a transport with provable single-request and byte-bound
+behavior. It must grant a new explicit budget before any POST. Do not execute
+that next gate here.

@@ -1049,3 +1049,41 @@ authority/Today paths. `PASS_PARTIAL` and post-authority `STOP_DOCUMENTED`
 transition `1.6.10→1.6.11` and use the 2026-08-26 outcome paths defined by the
 operation. Production, CI-4, Git Integration, custom domain and Production env
 or deployment remain prohibited.
+
+## 16. Vercel Preview env client reconciliation — dossier 1.6.12
+
+The dossier 1.6.11 client STOP is now diagnosed as far as preserved evidence
+allows. The removed executor remains bound only by SHA-256
+`e41caa1bb0befe87471f224a7a04b55e3a11822ec4b6f31c7d73fa3ec645867e`;
+its client failure remains bound only by SHA-256
+`e71d492d1abf97ecf9d984116c77e83470ef08214c21805a6f6085a6528e01cf`.
+Exact source, argv and semantic error preimage are unrecovered.
+
+Installed Vercel CLI 50.35.0 proves `--input -` is supported, while the current
+authenticated OpenAPI accepts the intended exact three-object Preview batch
+and returns HTTP 201. Minimal HOME/auth/scope probes pass. Those facts disprove
+the suspected stdin/path and current auth-context classifications but do not
+identify the historical failure. `ROOT_CAUSE_PRIMARY=UNRESOLVED` is therefore
+mandatory.
+
+The CLI also performs internal default retries and unbounded request/response
+parsing without an `api` retry-disable flag. A temp-body wrapper cannot prove
+one HTTP request or an end-to-end byte bound. `CLI_API_ROOT_ONLY_TEMP_INPUT` is
+not authorized under this contract.
+
+```text
+ENV_BATCH_RETRY_AUTHORIZED=NO
+VERCEL_PREVIEW_ENV_BATCH_RETRY_ATTEMPTS=0/0_NOT_ACTIVATED
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_CLIENT_DIAGNOSTIC_EVIDENCE
+```
+
+This section supersedes only any 1.6.10/1.6.11 continuation that would create
+Preview env or deploy after the historical failure. Settings PATCH and local
+link remain completed/closed. Project env stays 0/0/0, deployments 0, material
+Git link absent and SSO active. Production, Supabase/database writes, CI-3,
+CI-4, PR and merge remain prohibited.

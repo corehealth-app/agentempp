@@ -1369,3 +1369,69 @@ database write occurred. Preserve the configured project, local link metadata,
 all worktrees and primary/live quarantine. A new published authority must
 first establish semantic diagnostic preservation and a provably single-request
 transport; this operation must not execute that next gate.
+
+## CI-3 bounded Vercel one-shot authority — dossier 1.6.13
+
+The historical client cause is permanently classified
+`UNRECOVERABLE_NON_DECISIVE`; remote state is still env `0/0/0`, deployments
+`0`, Project link absent and SSO active. The mutation client is replaced, not
+re-diagnosed by invention.
+
+The remotely publishable authority fixes the root-only V1 identities:
+
+```text
+TRANSPORT_SOURCE_SHA256=b21520e29d260a01cecff1bad17d5f05fb50bffd976aa664afec53bed36d06df
+TRANSPORT_TEST_SHA256=fb5a222849adb3e6902dcc5015acf3608cf194ec5dd0103200f84abb621b6198
+PREFLIGHT_RECEIPT_SHA256=25bb55fe10141d275a7fea582d3aedbb47712e711a4137b74513e65c80c0c539
+SELF_TESTS=30/30_PASS
+SOURCE_TEST_MODE=0400
+```
+
+The transport uses fixed Vercel API origin/TLS, one mutable request, zero
+retry/follow, bounded bodies/headers and closed sanitized claim/receipt
+semantics. It accepts only the exact three Preview env objects and exact SSO
+forward/rollback bodies. Attempt receipt publication precedes readback; every
+ambiguous, partial or failed gate preserves evidence and exits non-zero.
+
+The source receipt is intentionally absent before publication. This section
+supersedes only that impossible timing: after the exact authority commit is
+fast-forward pushed and confirmed remotely, exactly one atomic root-owned
+`0600` receipt may bind that SHA to the two published frozen hashes. No mutable
+mode may run earlier. The exact path is
+`/root/.config/agentempp/control-plane/ci3-vercel-one-shot-v1.source.receipt.json`;
+the JSON contains only `authority_sha`, `source_sha256`, `test_sha256`, and
+`rollback_authorized=true`. Publication requires immediate absence,
+same-directory `O_EXCL|O_NOFOLLOW` temp creation, complete write/file fsync,
+atomic no-overwrite hard link, parent fsync, unlink of only the temporary link,
+second parent fsync, and final root/0600/regular/non-symlink/link-count-one
+descriptor verification.
+
+After receipt and complete Phase E revalidation, one env batch may run. Exact
+success is POST request 1/retry 0/HTTP 201/three exact created/zero failed,
+followed by GET inventory `3/0/0`. Only that state unlocks one protected Preview
+deployment at implementation SHA `e3e1e252b48e42554e75899b950692c05186f60d`,
+then protected artifact review, one SSO forward and public probes. Probe failure
+permits only one provenance-bound protective rollback; no reprobe.
+
+```text
+ONE_SHOT_TRANSPORT_DOCUMENTATION_COMMIT_ATTEMPTS=1
+ONE_SHOT_TRANSPORT_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Those two Phase D budgets are active under the current operation authority.
+Only confirmed remote publication activates the following operational
+budgets:
+
+```text
+VERCEL_PREVIEW_ENV_ONE_SHOT_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_FORWARD_ONE_SHOT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ONE_SHOT_ATTEMPTS=1
+```
+
+Settings PATCH, local link, project creation, CLI env and implementation
+publication remain exhausted/closed. CI-3 remains unauthorized until
+`PASS_COMPLETE`; Production, primary/live, Supabase/database writes, CI-4,
+TestFlight and App Store remain prohibited for every outcome.
+If this authority commit or push fails, stop `STOP_PRE_AUTHORITY` without
+creating the source receipt, opening staging values or issuing POST.

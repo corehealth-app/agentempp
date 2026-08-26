@@ -1087,3 +1087,80 @@ Preview env or deploy after the historical failure. Settings PATCH and local
 link remain completed/closed. Project env stays 0/0/0, deployments 0, material
 Git link absent and SSO active. Production, Supabase/database writes, CI-3,
 CI-4, PR and merge remain prohibited.
+
+## 17. Bounded Vercel one-shot transport — dossier 1.6.13
+
+The historical client failure is `UNRECOVERABLE_NON_DECISIVE`: its removed
+preimage cannot justify a guessed cause, while repeated read-only evidence
+continues to prove remote env `0/0/0` and deployments `0`. Vercel CLI mutation
+is superseded for env and SSO because its retry and response behavior cannot
+satisfy the bounded one-request contract.
+
+The approved V1 transport is root-only and outside Git. Its frozen identities
+are:
+
+```text
+TRANSPORT_SOURCE_SHA256=b21520e29d260a01cecff1bad17d5f05fb50bffd976aa664afec53bed36d06df
+TRANSPORT_TEST_SHA256=fb5a222849adb3e6902dcc5015acf3608cf194ec5dd0103200f84abb621b6198
+TRANSPORT_SOURCE_TEST_MODE=0400
+SELF_TESTS=30/30_PASS
+PREFLIGHT_RECEIPT_SHA256=25bb55fe10141d275a7fea582d3aedbb47712e711a4137b74513e65c80c0c539
+```
+
+It fixes `https://api.vercel.com`, TLS/SNI, closed endpoint IDs, one mutable
+request, zero retry/follow, connection close, 15-second timeouts and bounded
+headers/request/response. Claims are single-use. Attempt receipts use the
+closed sanitized schema and are durably published before readback. Any crash,
+partial response, invalid POST metadata or readback mismatch preserves the
+claim/receipt and forbids retry.
+
+The exact env body remains the ordered three-key Preview batch:
+`NEXT_PUBLIC_SUPABASE_URL` encrypted, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+encrypted, and `SUPABASE_SERVICE_ROLE_KEY` sensitive. Exact POST-created
+metadata and exact GET inventory are separate success gates.
+
+The real preflight proved the expected root, Node, framework, build/install,
+outside-root, absent Project link, active SSO, zero deployments and env 0/0/0.
+It opened neither staging nor primary/live. Independent HTTP and secret reviews
+both have zero Critical/Important.
+
+Source-receipt timing is explicitly narrowed: this authority publishes the
+source/test hashes first. `SOURCE_RECEIPT_STATUS=PENDING_POST_PUSH_BINDING` is
+the only truthful pre-push state. After remote confirmation, exactly one atomic
+root-owned `0600` receipt at
+`/root/.config/agentempp/control-plane/ci3-vercel-one-shot-v1.source.receipt.json`
+may bind the authority SHA to those hashes. Its exact no-extra-field schema is
+`authority_sha`, `source_sha256`, `test_sha256`, and
+`rollback_authorized=true`. Same-directory `O_EXCL|O_NOFOLLOW` temp write,
+file fsync, atomic no-overwrite hard-link publication, parent fsync, temporary
+link removal, second parent fsync and final root/0600/regular/link-count-one
+readback are mandatory. Mutable modes remain blocked until receipt,
+local/remote SHA, frozen modes and hashes all validate.
+
+The current operation authority activates only the Phase D publication
+budgets:
+
+```text
+ONE_SHOT_TRANSPORT_DOCUMENTATION_COMMIT_ATTEMPTS=1
+ONE_SHOT_TRANSPORT_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Only confirmed remote publication activates these operational budgets:
+
+```text
+VERCEL_PREVIEW_ENV_ONE_SHOT_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_FORWARD_ONE_SHOT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ONE_SHOT_ATTEMPTS=1
+```
+
+The rollback predicate is deliberately protective: exact forward attempt
+provenance plus a failed public-probe receipt created only after the forward
+command's successful readback may authorize one restoration of
+`all_except_custom_domains`. It never authorizes a reprobe.
+
+Project creation, settings PATCH, local link, CLI env, implementation commit,
+Production, custom domain, Git Integration, Supabase/database write, CI-3 and
+CI-4 remain closed. CI-3 is authorized only by a later `PASS_COMPLETE`.
+Failure of this authority commit or push is `STOP_PRE_AUTHORITY`, with no
+source receipt creation, staging-value read or POST.

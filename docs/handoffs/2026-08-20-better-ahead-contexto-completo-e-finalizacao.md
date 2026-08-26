@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.12
+**Versão do dossiê:** 1.6.13
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3306,3 +3306,71 @@ apagado e nenhum deployment, SSO, Supabase, banco, produção ou CI-4 foi
 alterado. A continuidade exige nova evidência diagnóstica que preserve uma
 classificação sem dados brutos e defina um transporte que consiga provar uma
 única requisição antes de qualquer novo budget.
+
+## 49. Atualização operacional 1.6.13 — transporte Vercel one-shot com evidência diagnóstica durável
+
+A causa semântica do exit histórico do cliente permanece irrecuperável e não
+decisiva. O executor, argv e erro bruto removidos não foram inventados nem
+reconstruídos. O estado remoto continuou zero. O bloqueio material passou a ser
+tratado pela substituição do cliente mutável, não por uma alegação de causa.
+
+O transporte V1 root-only usa `node:https` contra a origem fixa da API Vercel,
+um request por operação, zero retry, limites de bytes, timeout, TLS e zero
+redirect. Source/test congelados fora do Git:
+
+```text
+TRANSPORT_SOURCE_SHA256=b21520e29d260a01cecff1bad17d5f05fb50bffd976aa664afec53bed36d06df
+TRANSPORT_TEST_SHA256=fb5a222849adb3e6902dcc5015acf3608cf194ec5dd0103200f84abb621b6198
+SOURCE_TEST_MODE=0400
+SELF_TESTS=30/30_PASS
+SOURCE_SCAN_RECEIPT_SHA256=8028ad56755f44f5173ec5f669ad1c285257cd695c1ee02dc088b2f0350ac877
+```
+
+O preflight real executou somente Project GET e Env GET: ambos HTTP 200,
+request count 1, retry 0. Root `apps/mobile-bff`, Node `22.x`, framework
+`nextjs`, build/install e outside-root conferem; link está ausente, SSO ativo,
+deployments 0 e env `0/0/0`. O receipt sanitizado tem SHA-256
+`25bb55fe10141d275a7fea582d3aedbb47712e711a4137b74513e65c80c0c539`.
+Staging e primary/live não foram abertos; token e values não foram reportados.
+
+As revisões finais ficaram em 0 Critical / 0 Important: Review A também ficou
+em 0 Minor; Review B registrou dois Minors não bloqueantes, cobertos pela
+evidência externa de modo/ausência de marcador ACL e pelo predicado
+conservador de rollback documentado na evidência dedicada.
+
+A circularidade do source receipt foi resolvida documentalmente: este commit
+publica primeiro os hashes congelados. O receipt permanece
+`PENDING_POST_PUSH_BINDING` e só pode ser criado uma vez, atomicamente, depois
+do push fast-forward e da confirmação do SHA remoto. Ele deve ligar esse SHA
+aos hashes publicados. Modos mutáveis seguem bloqueados até manager/remoto,
+receipt, hashes e modos `0400` coincidirem.
+
+```text
+HISTORICAL_ROOT_CAUSE=UNRECOVERABLE_NON_DECISIVE
+DIAGNOSTIC_EVIDENCE_STATUS=RECONCILED_BY_DURABLE_ONE_SHOT_RECEIPT
+VERCEL_CLI_MUTATING_USE=SUPERSEDED_FOR_ENV_AND_SSO
+CORRECTED_TRANSPORT=BOUNDED_NODE_HTTPS_ONE_SHOT_V1
+ENV_BATCH_RETRY_AUTHORIZED=YES_ONE_SHOT_NEW_TRANSPORT
+SOURCE_RECEIPT_STATUS=PENDING_POST_PUSH_BINDING
+ONE_SHOT_TRANSPORT_DOCUMENTATION_COMMIT_ATTEMPTS=1
+ONE_SHOT_TRANSPORT_DOCUMENTATION_PUSH_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_ONE_SHOT_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_FORWARD_ONE_SHOT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ONE_SHOT_ATTEMPTS=1
+PRODUCTION=UNTOUCHED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+CI4=NOT_STARTED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=BIND_ONE_SHOT_SOURCE_RECEIPT_AND_REVALIDATE_PHASE_E
+```
+
+Os dois budgets `ONE_SHOT_TRANSPORT_DOCUMENTATION_*` estão ativos pela
+autoridade desta operação. Os budgets Vercel e de documentação final acima só
+se tornam ativos após confirmação remota do commit de autoridade.
+
+Nenhum POST, deployment, SSO, Supabase/database write, produção, CI-3 ou CI-4
+foi executado nesta atualização. Settings PATCH, local link, projeto e
+tentativa CLI histórica continuam fechados e não recebem novo budget. Falha no
+commit ou push desta autoridade encerra `STOP_PRE_AUTHORITY`, sem source
+receipt, leitura de staging ou POST.

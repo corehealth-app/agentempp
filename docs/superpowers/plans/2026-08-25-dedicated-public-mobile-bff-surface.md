@@ -1377,3 +1377,88 @@ The next authority must define how to preserve a semantic sanitized client/API
 failure receipt and a transport with provable single-request and byte-bound
 behavior. It must grant a new explicit budget before any POST. Do not execute
 that next gate here.
+
+### Replacement Task 17R–25R: bounded env transport and dedicated Preview continuation — dossier 1.6.13
+
+Authority parent is the 1.6.12 documentation SHA
+`8085a1d88d9fa0b0afe632a4395b5550b05d4b28`. The authority commit subject is
+`docs(staging): authorize bounded Vercel env transport`. No mutating Vercel
+request may occur before its fast-forward push is confirmed.
+
+- [x] Preserve the historical failure as
+  `UNRECOVERABLE_NON_DECISIVE`; prove remote env/deployment state remains zero.
+- [x] Audit the installed credential store without reporting its value and
+  cache the authenticated OpenAPI contract.
+- [x] Build the root-only V1 transport outside Git with closed modes, fixed
+  origin, one request per operation, zero retry/redirect, bounded bytes,
+  timeout, claims and atomic sanitized receipts.
+- [x] Complete exactly 30 synthetic tests with zero network/secrets and static
+  scans with one `https.request` callsite.
+- [x] Remediate independent Review A/B findings and obtain final gates:
+  Review A `0C/0I/0M`, Review B `0C/0I/2M`.
+- [x] Execute only the real Project GET and Env GET preflight. Require exact
+  settings/link/SSO, deployments 0 and env 0/0/0; preserve receipt SHA-256
+  `25bb55fe10141d275a7fea582d3aedbb47712e711a4137b74513e65c80c0c539`.
+- [x] Freeze source/test at root-owned `0400` with hashes
+  `b21520e29d260a01cecff1bad17d5f05fb50bffd976aa664afec53bed36d06df`
+  and `fb5a222849adb3e6902dcc5015acf3608cf194ec5dd0103200f84abb621b6198`.
+- [ ] Publish exactly the five-path authority allowlist from the exact parent,
+  after two documentation reviews at 0 Critical/Important.
+- [ ] After remote confirmation only, create one atomic root-owned `0600`
+  source receipt at
+  `/root/.config/agentempp/control-plane/ci3-vercel-one-shot-v1.source.receipt.json`.
+  Require immediate absence,
+  exact four-field schema (`authority_sha`, `source_sha256`, `test_sha256`,
+  `rollback_authorized=true`), same-directory `O_EXCL|O_NOFOLLOW` temp,
+  complete write/file fsync, atomic no-overwrite hard link, parent fsync,
+  temporary-link-only unlink, second parent fsync and final
+  root/0600/regular/non-symlink/link-count-one descriptor readback. Pre-push
+  status is exactly `PENDING_POST_PUSH_BINDING`.
+- [ ] Revalidate manager `25` historical entries, all three worktrees,
+  project metadata, frozen source/test, source/preflight receipts, staging
+  metadata/fingerprints, and absent env claim/receipt. The primary source must
+  remain unopened.
+- [ ] Execute `--execute-env-batch` exactly once. Require request 1, retry 0,
+  HTTP 201, exact created metadata, failed 0 and exact GET inventory 3/0/0.
+  Preserve claim/receipt on every outcome; never retry/delete/upsert.
+- [ ] Only after verified env 3/0/0, run deployment preflight, VPS resource
+  gate and exactly one non-production `vercel deploy --yes --meta
+  githubCommitSha=e3e1e252b48e42554e75899b950692c05186f60d` in the dedicated detached
+  worktree. Require READY Preview and exact source/root/Node/framework.
+- [ ] With Project SSO still active, inspect artifacts/logs/routes and obtain
+  Review C at 0 Critical/Important. Require 40 Mobile API routes and zero
+  forbidden/admin/page/middleware/Server Action surface.
+- [ ] Execute one SSO forward through the V1 transport. Require explicit null,
+  exact env 3/0/0, absent link and the READY Preview deployment bound to the
+  implementation SHA.
+- [ ] Run public Mobile 401 and frozen forbidden 404 probes. Any failure creates
+  the provenance-bound failed-probe receipt and permits exactly one protective
+  SSO rollback; never reprobe.
+- [ ] On public PASS, create the protected deployment receipt and perform only
+  read-only synthetic-patient discovery. Publish exactly one final outcome:
+  `PASS_COMPLETE`, `PASS_PARTIAL`, or `STOP_DOCUMENTED`.
+
+Phase D publication budgets activated by the current operation authority:
+
+```text
+ONE_SHOT_TRANSPORT_DOCUMENTATION_COMMIT_ATTEMPTS=1
+ONE_SHOT_TRANSPORT_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Operational and final-outcome budgets activated only by confirmed remote
+publication:
+
+```text
+VERCEL_PREVIEW_ENV_ONE_SHOT_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_FORWARD_ONE_SHOT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ONE_SHOT_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Do not renew project creation, settings PATCH, local link, CLI env batch or
+implementation publication. Production, Supabase/database writes, primary/live
+use, CI-4, PR, merge, tags, TestFlight and App Store remain prohibited.
+Authority commit/push failure is `STOP_PRE_AUTHORITY`: do not create the source
+receipt, open staging values or execute POST.

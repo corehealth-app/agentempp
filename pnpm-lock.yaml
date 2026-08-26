@@ -176,6 +176,55 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  apps/mobile-bff:
+    dependencies:
+      '@mpp/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@mpp/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@mpp/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@mpp/inngest-functions':
+        specifier: workspace:*
+        version: link:../../packages/inngest-functions
+      '@supabase/ssr':
+        specifier: ^0.5.2
+        version: 0.5.2(@supabase/supabase-js@2.105.1)
+      '@supabase/supabase-js':
+        specifier: ^2.48.1
+        version: 2.105.1
+      next:
+        specifier: ^15.1.4
+        version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.5(react@19.2.5)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.17
+      '@types/react':
+        specifier: ^19.0.2
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.2
+        version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+
   eval:
     dependencies:
       '@mpp/agent':

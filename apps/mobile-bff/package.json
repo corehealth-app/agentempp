@@ -1,0 +1,33 @@
+{
+  "name": "@mpp/mobile-bff",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:routes": "node scripts/verify-route-mirror.mjs",
+    "verify:imports": "node scripts/verify-import-closure.mjs",
+    "verify:build-surface": "node scripts/verify-build-surface.mjs"
+  },
+  "dependencies": {
+    "@mpp/agent": "workspace:*",
+    "@mpp/core": "workspace:*",
+    "@mpp/db": "workspace:*",
+    "@mpp/inngest-functions": "workspace:*",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.48.1",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

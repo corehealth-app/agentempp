@@ -1289,3 +1289,45 @@ mandatory. Final documentation parent is `LINK_SCHEMA_AUTHORITY_SHA`:
 PASS_COMPLETE moves `1.6.10→1.7`; PASS_PARTIAL or STOP_DOCUMENTED moves
 `1.6.10→1.6.11`. Production, CI-4, Git Integration, custom domains, Production
 env/deployment, Supabase/database writes, PR and merge remain prohibited.
+
+## CI-3 Preview env batch STOP — 2026-08-26
+
+The local-link authority was remotely published as
+`fb1e0a3b76b831976f1e8b7f129758405b42e694`. A dedicated detached deploy
+worktree was created at implementation SHA
+`e3e1e252b48e42554e75899b950692c05186f60d`, and one explicit existing-project
+local link passed all local gates while Project `link` remained absent. No
+`--repo`, Git connect, project creation, env or deployment occurred during the
+link.
+
+The one real Preview env batch attempt then failed at the Vercel client with
+exit 1. Immediate metadata readback proves Preview/Production/Development env
+`0/0/0`, deployments 0, Project `link` absent and SSO still
+`all_except_custom_domains`. The diagnostic is represented only by SHA-256
+`e71d492d1abf97ecf9d984116c77e83470ef08214c21805a6f6085a6528e01cf`;
+no values or raw response were persisted or reported.
+
+This authority is exhausted:
+
+```text
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1/1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0/1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0/1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0/1
+ENV_RETRY_AUTHORIZED=NO
+DEPLOYMENT_AUTHORIZED=NO
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+```
+
+Do not retry or delete env, deploy, change SSO, run public probes, create a
+patient or start CI-4. Preserve the dedicated worktree and ignored local
+`.vercel` metadata. The next executable gate is read-only:
+
+```text
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_PREVIEW_ENV_BATCH_CLIENT_FAILURE_WITH_ZERO_REMOTE_ENV
+```
+
+That gate must diagnose the Vercel client/API contract from current schema,
+installed implementation and verified zero remote state. Any new batch attempt
+requires a separate published authority and fresh explicit budget.

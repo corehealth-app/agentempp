@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.10
+**Versão do dossiê:** 1.6.11
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3185,3 +3185,66 @@ Produção, CI-4, settings PATCH, Git Integration, custom domain, Production env
 Production deployment, Supabase/database write, PR e merge continuam
 proibidos. CI-3 ainda não está autorizada. A continuação depende do commit
 documental remoto desta atualização.
+
+## 47. Atualização operacional 1.6.11 — STOP no batch Preview do Mobile BFF
+
+**Data:** 26/08/2026
+
+A autoridade de local-link foi publicada e confirmada remotamente em
+`fb1e0a3b76b831976f1e8b7f129758405b42e694`. O preflight pós-autoridade
+preservou o baseline histórico `25/5/20`, confirmou a implementação limpa e
+publicada em `e3e1e252b48e42554e75899b950692c05186f60d`, a worktree CI-2
+intocada e a fonte de staging pelos hashes já autorizados, sem abrir ou usar a
+fonte primária.
+
+A worktree exclusiva
+`/root/agentempp-ci3-dedicated-mobile-bff-deploy-v1` foi criada detached no SHA
+da implementação, tree `a167a6663cb1e476975742bcec51c7207dbcbc26`, limpa e sem
+branch/upstream. O único `vercel link` local autorizado ligou esse diretório ao
+projeto existente sem `--repo`. `.vercel/project.json` é regular, local,
+ignored, mode `0600`, contém somente `orgId`, `projectId` e `projectName` e
+corresponde ao fingerprint/scope esperados. Project GET permaneceu com `link`
+ausente, zero Git Integration, env zero, deployments zero, settings íntegros e
+SSO `all_except_custom_domains`.
+
+O primeiro disparo local do executor JavaScript falhou antes da API porque o
+pathname sem shebang foi interpretado como shell. A investigação comprovou
+env remoto zero; portanto isso não consumiu o budget Vercel. A invocação
+corrigida explicitamente com Node realizou a única tentativa real do batch
+Preview e o cliente Vercel retornou exit 1. O diagnóstico foi reduzido ao
+SHA-256 `e71d492d1abf97ecf9d984116c77e83470ef08214c21805a6f6085a6528e01cf`;
+nenhum valor ou resposta sensível foi persistido ou exibido.
+
+Readback imediato após a falha:
+
+```text
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1/1
+VERCEL_ENV_TOTAL=0
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+VERCEL_PROJECT_GIT_LINK=ABSENT
+VERCEL_GIT_INTEGRATION=NO
+VERCEL_DEPLOYMENT_COUNT=0
+PROJECT_SSO=all_except_custom_domains
+```
+
+O contrato fail-closed proíbe retry ou delete após uma tentativa externa
+falha. Por isso deployment, inspeção protegida, SSO forward/rollback, probes,
+receipt e descoberta de paciente não foram executados. O executor temporário
+foi removido; a worktree dedicada e a metadata local foram preservadas para
+auditoria. Produção, primary/live, Supabase/database, CI-4, PR e merge seguem
+intocados.
+
+```text
+FINAL_STATUS=STOP_DOCUMENTED
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_PREVIEW_ENV_BATCH_CLIENT_FAILURE_WITH_ZERO_REMOTE_ENV
+```
+
+Esse próximo gate deve ser uma nova autoridade read-only para diagnosticar o
+contrato cliente/API usando somente schema, implementação instalada e estado
+remoto zero; não pode repetir o batch sem autorização documental separada.

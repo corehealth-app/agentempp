@@ -1435,3 +1435,49 @@ publication remain exhausted/closed. CI-3 remains unauthorized until
 TestFlight and App Store remain prohibited for every outcome.
 If this authority commit or push fails, stop `STOP_PRE_AUTHORITY` without
 creating the source receipt, opening staging values or issuing POST.
+
+## CI-3 Vercel one-shot Phase E review STOP — dossier 1.6.14
+
+The V1 authority was published at
+`af03a01be7103fa63254da4e95de8b19cc6d78d4`, and the immutable source receipt
+successfully bound that authority to the frozen source/test hashes. Phase E
+passed all manager, worktree, source, receipt, staging metadata/fingerprint and
+primary-denylist checks. No mutable claim or attempt receipt existed.
+
+The required final read-only review nevertheless produced one blocking
+Important. `performMutableWithReadback` returns before Env GET after timeout,
+socket error, non-201 or a partial POST response. It preserves zero-retry and
+the attempt receipt but cannot establish whether the remote inventory is zero,
+partial or complete. Because any Important blocks the authority, the env POST
+was not executed. Deployment, SSO and probes were not started.
+
+```text
+FINAL_STATUS=STOP_DOCUMENTED
+VERCEL_ENV_DIAGNOSTIC_EVIDENCE_STATUS=RECONCILED
+VERCEL_ONE_SHOT_TRANSPORT_STATUS=AUTHORIZED_NOT_EXECUTED
+VERCEL_PREVIEW_ENV_BATCH_STATUS=NOT_EXECUTED
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+ENV_ONE_SHOT_REQUESTS=0/1
+PREVIEW_DEPLOYMENTS=0/1
+SSO_FORWARD_ATTEMPTS=0/1
+SSO_ROLLBACK_ATTEMPTS=0/1
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_ONE_SHOT_AMBIGUOUS_POST_READBACK
+```
+
+Do not modify or execute the frozen V1. The next gate requires a new versioned
+helper and authority that persist the unique POST evidence and implement a
+bounded read-only settlement/quiescence protocol after ambiguous/partial
+outcomes. One immediate GET is not proof because the remote POST may complete
+later. The authority must specify GET budgets, stability conditions and an
+inconclusive terminal state, classify stable zero, partial or exact-three state,
+cover late completion in tests, and never issue a second POST. The complete STOP
+evidence is in
+`docs/superpowers/evidence/2026-08-26-ci3-vercel-one-shot-env-or-mobile-bff-stop.md`.

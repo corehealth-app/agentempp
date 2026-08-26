@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.13
+**Versão do dossiê:** 1.6.14
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3374,3 +3374,62 @@ foi executado nesta atualização. Settings PATCH, local link, projeto e
 tentativa CLI histórica continuam fechados e não recebem novo budget. Falha no
 commit ou push desta autoridade encerra `STOP_PRE_AUTHORITY`, sem source
 receipt, leitura de staging ou POST.
+
+## 50. Atualização operacional 1.6.14 — STOP no review final do env one-shot
+
+A autoridade V1 foi publicada e vinculada corretamente. O commit local/remoto
+`af03a01be7103fa63254da4e95de8b19cc6d78d4` confirmou os hashes congelados, e o
+source receipt root-only `0600` foi criado uma única vez com SHA-256
+`8a981c2c895c2d42f63bde6aefa25e5ae127ac5450f59c13315c102e4d2fbbb8`.
+A Phase E revalidou o manager com os 25 itens históricos, as três worktrees
+exatas e limpas, source/test `0400`, receipts congelados, ausência de claims e
+receipts mutáveis e a fonte staging com três entradas/fingerprints exatos. Os
+valores brutos não foram reportados e a fonte primary/live não foi aberta.
+
+O review read-only final obrigatório divergiu: um revisor registrou GO
+`0 Critical / 0 Important / 0 Minor`; o outro registrou NO-GO
+`0 Critical / 1 Important / 0 Minor`. A inspeção direta confirmou o Important:
+o V1 persiste a evidência do POST, mas retorna antes do GET de inventário quando
+o resultado mutável é timeout, socket error, HTTP diferente de 201 ou resposta
+parcial. Nesse estado ambíguo, o transporte impede corretamente qualquer retry,
+porém não consegue provar se o remoto ficou com zero, uma ou duas, ou as três
+variáveis. Isso contradiz a classificação honesta e fail-closed exigida pela
+autoridade. Como qualquer Important bloqueia o POST, a tentativa não foi
+consumida.
+
+Estado do STOP:
+
+```text
+VERCEL_ENV_DIAGNOSTIC_EVIDENCE_STATUS=RECONCILED
+VERCEL_ONE_SHOT_TRANSPORT_STATUS=AUTHORIZED_NOT_EXECUTED
+VERCEL_PREVIEW_ENV_BATCH_STATUS=NOT_EXECUTED
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+ENV_ONE_SHOT_REQUESTS=0/1
+ENV_CLAIM=ABSENT
+ENV_ATTEMPT_RECEIPT=ABSENT
+PREVIEW_DEPLOYMENTS=0/1
+SSO_FORWARD_ATTEMPTS=0/1
+SSO_ROLLBACK_ATTEMPTS=0/1
+SSO_FINAL=ALL_EXCEPT_CUSTOM_DOMAINS
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_ENV_ONE_SHOT_AMBIGUOUS_POST_READBACK
+```
+
+Nenhum POST, deployment, SSO forward/rollback ou probe foi executado. Nenhum
+claim ou receipt mutável foi criado. O projeto Preview permanece com o último
+inventário read-only confirmado `0/0/0`, zero deployments, Project link ausente
+e proteção SSO ativa. O helper/test V1 e todos os receipts permanecem
+preservados e não podem ser modificados. A retomada exige uma nova versão em
+novo path e uma nova autoridade que desenhe e prove um protocolo read-only
+limitado de estabilização/quiescência após timeout, socket error, non-201 ou
+resultado parcial. Um GET imediato isolado não basta, pois o POST remoto pode
+concluir depois desse snapshot. A autoridade deve fixar budgets de GET,
+condições de estabilidade e classificação inconclusiva, sempre sem um segundo
+POST, além de novos testes, hashes, receipts e publicação remota.

@@ -26,6 +26,13 @@ runner command and obsolete final-documentation parent/version clauses.
 Tasks 4–14 remain literal and may resume only after the reconciled semantic RED
 passes.
 
+**Vercel local-link reconciliation:** for every future execution, dossier
+`1.6.10` and Replacement Task 9R–16R wholly supersede legacy Tasks 9–16. The
+legacy text remains historical evidence only and must not control ordering,
+gates, worktree choice or final-documentation authority. Execute the
+replacement only after its remote authority is confirmed; do not repeat the
+consumed settings PATCH.
+
 ## Global constraints
 
 - Set `set +x` and `umask 077` before sensitive preflights or executors.
@@ -1249,3 +1256,81 @@ NEXT_GATE=<exact material gate>
 ```
 
 Do not execute the next gate in the final documentation task.
+
+### Replacement Task 9R–16R: local-link control and CI-3 continuation
+
+**Authority:** `LINK_SCHEMA_AUTHORITY_SHA`, published with subject
+`docs(staging): reconcile Vercel local-link control` and dossier 1.6.10.
+
+The historical seven-field Task 9 PATCH remains consumed. Its six persistent
+settings passed; the deprecated optional `skipGitConnectDuringLink` field was
+absent/null. Classification B makes Project `link` the sole material Git gate.
+Never repeat the settings PATCH.
+
+```text
+PROJECT_GIT_LINK_BEFORE_LOCAL_LINK=ABSENT
+LOCAL_LINK_COMMAND=VERCEL_LINK_PROJECT_EXPLICIT
+LOCAL_LINK_REPO_FLAG=ABSENT
+VERCEL_GIT_CONNECT_EXECUTED=NO
+PROJECT_GIT_LINK_AFTER_LOCAL_LINK=ABSENT
+LOCAL_PROJECT_JSON_MATCH=YES
+```
+
+- [ ] Revalidate manager 25/5/20, implementation local/remote exact and clean,
+  old CI-2 deploy worktree clean, staging secret metadata/hashes, primary source
+  unopened, exact Vercel settings, `link` absent, env 0/0/0, deployments 0,
+  custom domains 0, SSO active and all other protection exceptions absent.
+- [ ] Create exactly one detached worktree
+  `/root/agentempp-ci3-dedicated-mobile-bff-deploy-v1` at
+  `e3e1e252b48e42554e75899b950692c05186f60d`. Require exact tree, clean tracked
+  state, empty staging, no branch/upstream, `.vercel` absent and ignored.
+- [ ] Require `PROJECT_GIT_LINK_BEFORE_LOCAL_LINK=ABSENT`; run once, inside that
+  worktree, `vercel link --yes --project agentempp-mobile-bff-staging --scope
+  gestao-9664s-projects`. `--repo` and `vercel git connect/disconnect` are
+  prohibited.
+- [ ] Validate local `.vercel/project.json` as a regular non-symlink file with
+  matching project-ID fingerprint and org/scope, no token/secret/env, ignored
+  and unstaged. Require remote Project `link` still absent, Git Integration 0,
+  settings preserved, env 0, deployment 0 and SSO active.
+- [ ] Validate the root-only staging source/receipt without printing values;
+  create exactly three Preview-only env variables in one no-upsert batch, with
+  the two public variables encrypted and service role sensitive unless current
+  official schema proves sensitive unsupported. Require Preview 3,
+  Production/Development 0.
+- [ ] Run pre-deploy review at 0 Critical/Important, resource gate, and one
+  `vercel deploy --yes --meta
+  githubCommitSha=e3e1e252b48e42554e75899b950692c05186f60d`. No prod, repo,
+  alias, domain, token or env value in argv. Require READY Preview and exact
+  metadata; combine declarative metadata with detached SHA/tree and receipts.
+- [ ] While SSO is active, inspect sanitized metadata/logs/artifacts and obtain
+  Review C at 0 Critical/Important. Require dedicated root, Node 22.x, exact
+  40-route/build receipts, zero pages/middleware/Server Actions/admin surface,
+  Git Integration 0 and Production env/deployment 0.
+- [ ] Execute the original one-attempt SSO forward only after Review C. From
+  possible success onward, any ambiguity or public-probe failure triggers the
+  original single fail-closed rollback and forbids reprobe.
+- [ ] After accepted public probes, write the root-only deployment receipt and
+  classify the synthetic patient read-only as VERIFIED or MISSING; never create
+  or mutate a user.
+- [ ] Publish exactly one final outcome document with parent
+  `LINK_SCHEMA_AUTHORITY_SHA`: PASS_COMPLETE `1.6.10→1.7`, PASS_PARTIAL
+  `1.6.10→1.6.11`, or STOP_DOCUMENTED `1.6.10→1.6.11`, using the exact
+  2026-08-26 allowlist and subject from the operation authority.
+
+Fresh budgets:
+
+```text
+DEDICATED_DEPLOY_WORKTREE_CREATION_ATTEMPTS=1
+VERCEL_LOCAL_LINK_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Final preservation requires manager history intact; implementation and old
+deploy worktrees untouched; dedicated deploy worktree detached/clean with
+only ignored local `.vercel`; primary/live unused; no Production, CI-4, PR,
+merge, Git Integration or custom domain.

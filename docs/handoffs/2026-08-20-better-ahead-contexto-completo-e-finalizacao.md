@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.9
+**Versão do dossiê:** 1.6.10
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3106,3 +3106,82 @@ batch, link ou deployment. Esta atualização não executa esse gate.
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.
+
+## 46. Atualização operacional 1.6.10 — reconciliação do controle Vercel de vínculo Git local
+
+**Data:** 26/08/2026
+
+A reconciliação read-only usou Vercel CLI 50.35.0, seu OpenAPI autenticado
+atual, ajuda da CLI, implementação instalada, documentação oficial e Project
+GET sanitizado. O cache OpenAPI atualizado em 26/08/2026 tem SHA-256
+`dc9b5aa7e80f74d96f5bdc57e322a5b1fcd4405ee0bb6c8d6e42cb6d7caf62e3`.
+
+`PATCH /v9/projects/{idOrName}` aceita
+`skipGitConnectDuringLink` como boolean opcional, não nullable e explicitamente
+deprecated. A descrição limita o campo ao opt-out da mensagem da CLI que
+oferece conectar Git durante `vercel link`. PATCH response e Project GET
+podem conter o campo, mas não o incluem nas listas `required`; não há promessa
+de echo ou persistência obrigatória. O Project GET expõe separadamente o objeto
+opcional `link`, com as formas concretas dos providers Git.
+
+A CLI atual confirma que `vercel link --project` liga o diretório local a um
+projeto existente. `vercel git connect` é a operação separada que conecta um
+repositório, e `vercel link --repo` é um fluxo distinto que requer Git
+Integration. No código instalado, o vínculo de um projeto existente retorna
+após escrever a metadata local e não chama a conexão Git. O bundle da CLI não
+consome mais `skipGitConnectDuringLink`.
+
+O OpenAPI autenticado atual não lista um endpoint separado de Git Integration,
+mas a implementação instalada da CLI usa explicitamente
+`POST /v9/projects/{projectId}/link` para conectar e
+`DELETE /v9/projects/{projectId}/link` para desconectar. Isso confirma a
+separação material sem autorizar ou executar nenhuma dessas operações.
+
+A classificação aprovada é:
+
+```text
+LINK_CONTROL_CLASSIFICATION=FIELD_REMOVED_OR_IGNORED_WITH_MATERIAL_GIT_LINK_ABSENT
+```
+
+Duas revisões independentes concluíram GO, cada uma com 0 Critical,
+0 Important e 0 Minor. O projeto continua com o fingerprint esperado, seis
+settings persistentes corretos, `skipGitConnectDuringLink` ausente/null,
+`link` ausente/null, zero Git Integration, zero env, zero deployment, zero
+custom domain e SSO `all_except_custom_domains`.
+
+Consequências vinculantes:
+
+- o PATCH de settings permanece consumido em 1/1 e nunca será repetido;
+- o antigo gate de echo do campo deprecated está `SUPERSEDED`;
+- o estado material é Project `link` ausente antes e depois do vínculo local;
+- o vínculo local será uma única chamada explícita a `vercel link`, com
+  `--yes`, `--project agentempp-mobile-bff-staging` e scope existente
+  `gestao-9664s-projects`;
+- `--repo`, `vercel git connect` e `vercel git disconnect` permanecem
+  proibidos;
+- `.vercel/project.json` deve corresponder ao fingerprint do projeto e ao
+  scope, sem token, secret ou env;
+- o deployment Preview único usará metadata declarativa
+  `githubCommitSha=e3e1e252b48e42554e75899b950692c05186f60d`, combinada com
+  worktree detached limpa, SHA/tree e receipts; a metadata isolada não é
+  tratada como vínculo criptográfico;
+- nenhuma nova escrita Vercel pode começar antes da publicação remota desta
+  autoridade.
+
+Budgets novos após a autoridade remota:
+
+```text
+DEDICATED_DEPLOY_WORKTREE_CREATION_ATTEMPTS=1
+VERCEL_LOCAL_LINK_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+Produção, CI-4, settings PATCH, Git Integration, custom domain, Production env,
+Production deployment, Supabase/database write, PR e merge continuam
+proibidos. CI-3 ainda não está autorizada. A continuação depende do commit
+documental remoto desta atualização.

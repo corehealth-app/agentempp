@@ -12,6 +12,11 @@ supersedes only the prior RED 1 runner command and the obsolete final-outcome
 parent/version clauses. Historical evidence remains authoritative for what was
 attempted and observed.
 
+**Vercel local-link reconciliation:** for every future execution, dossier
+`1.6.10` and Section 15 wholly supersede legacy Tasks/Sections 9–16. The old
+text is retained only as historical evidence and must not control ordering,
+gates, worktree choice or final-documentation authority.
+
 ## 1. Decision and motivation
 
 The existing staging Vercel project was configured with root `apps/admin` and
@@ -979,3 +984,68 @@ EXTERNAL_ACTIONS: docs commits 1-2, code commit 0/1, code push 0/1,
   SSO forward 0/1, SSO rollback 0/1, production deployment NO,
   Supabase write NO, database write NO, PR NO, merge NO, CI-4 NO
 ```
+
+## 15. Vercel local-link control reconciliation — dossier 1.6.10
+
+The single seven-field Task 9 PATCH is historical and consumed. Six persistent
+settings are approved; `skipGitConnectDuringLink` is absent/null. Current
+authenticated OpenAPI classifies that optional boolean as deprecated and does
+not require it in PATCH response or Project GET. Installed CLI 50.35.0 does not
+consume it for an existing project. Classification is:
+
+```text
+LINK_CONTROL_CLASSIFICATION=FIELD_REMOVED_OR_IGNORED_WITH_MATERIAL_GIT_LINK_ABSENT
+SETTINGS_PATCH_RETRY_AUTHORIZED=NO
+```
+
+Project `link`, not the deprecated field, is the material Git-integration
+state. Replace every Task 9+ gate requiring the deprecated field's readback
+with:
+
+```text
+PROJECT_GIT_LINK_BEFORE_LOCAL_LINK=ABSENT
+LOCAL_LINK_COMMAND=VERCEL_LINK_PROJECT_EXPLICIT
+LOCAL_LINK_REPO_FLAG=ABSENT
+VERCEL_GIT_CONNECT_EXECUTED=NO
+PROJECT_GIT_LINK_AFTER_LOCAL_LINK=ABSENT
+LOCAL_PROJECT_JSON_MATCH=YES
+```
+
+Only after remote publication of `LINK_SCHEMA_AUTHORITY_SHA` may one detached
+deploy worktree be created at
+`/root/agentempp-ci3-dedicated-mobile-bff-deploy-v1`, exact implementation SHA
+`e3e1e252b48e42554e75899b950692c05186f60d`. The implementation worktree and
+old CI-2 worktree remain untouched. Run exactly one local link there with
+`vercel link --yes --project agentempp-mobile-bff-staging --scope
+gestao-9664s-projects`; `--repo` and every `vercel git connect/disconnect` are
+prohibited. `.vercel/project.json` must be regular, local-only, ignored,
+project/scope matching and contain no token, secret or env. Project GET must
+still expose no `link` afterward.
+
+After this postcondition, one Preview-only env batch and one protected Preview
+deployment may proceed. Deploy with metadata
+`githubCommitSha=e3e1e252b48e42554e75899b950692c05186f60d`; combine that
+declarative metadata with detached clean SHA/tree and existing build receipts.
+Do not treat it as a cryptographic binding by itself. All original protected
+inspection, Review C, SSO forward/rollback and public-probe gates remain
+mandatory.
+
+Fresh budgets activated only by the remote authority:
+
+```text
+DEDICATED_DEPLOY_WORKTREE_CREATION_ATTEMPTS=1
+VERCEL_LOCAL_LINK_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+The final documentation parent is `LINK_SCHEMA_AUTHORITY_SHA`.
+`PASS_COMPLETE` transitions dossier `1.6.10→1.7` and uses the 2026-08-26
+authority/Today paths. `PASS_PARTIAL` and post-authority `STOP_DOCUMENTED`
+transition `1.6.10→1.6.11` and use the 2026-08-26 outcome paths defined by the
+operation. Production, CI-4, Git Integration, custom domain and Production env
+or deployment remain prohibited.

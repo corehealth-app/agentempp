@@ -1240,3 +1240,52 @@ It must decide whether the already-proven absence of Git Integration is
 sufficient or authorize one new bounded settings action. No env, link,
 deployment or public-ingress action may start before that authority is
 published.
+
+## Vercel Local-Link Control Reconciliation — 2026-08-26
+
+The current authenticated OpenAPI and Vercel CLI 50.35.0 classify
+`skipGitConnectDuringLink` as an optional deprecated boolean whose description
+controls a CLI prompt. PATCH response and Project GET do not require its echo;
+the current existing-project link flow does not consume it. Project `link` is
+the provider-shaped material Git Integration state. Two independent reviews
+approved, each at 0 Critical/Important/Minor:
+
+```text
+LINK_CONTROL_CLASSIFICATION=FIELD_REMOVED_OR_IGNORED_WITH_MATERIAL_GIT_LINK_ABSENT
+SETTINGS_PATCH_PREVIOUS_ATTEMPTS=1/1
+SETTINGS_PATCH_RETRY_AUTHORIZED=NO
+PROJECT_GIT_LINK_BEFORE_LOCAL_LINK=ABSENT
+LOCAL_LINK_COMMAND=VERCEL_LINK_PROJECT_EXPLICIT
+LOCAL_LINK_REPO_FLAG=ABSENT
+VERCEL_GIT_CONNECT_EXECUTED=NO
+PROJECT_GIT_LINK_AFTER_LOCAL_LINK=PENDING
+LOCAL_PROJECT_JSON_MATCH=PENDING
+```
+
+The six persistent settings remain approved; the old field-readback gate is
+`SUPERSEDED`. Only after the documentation commit is remotely confirmed as
+`LINK_SCHEMA_AUTHORITY_SHA` may one detached deploy worktree be created at
+`/root/agentempp-ci3-dedicated-mobile-bff-deploy-v1`, exact implementation SHA
+`e3e1e252b48e42554e75899b950692c05186f60d`. The implementation worktree and
+old CI-2 deploy worktree remain untouched.
+
+One explicit local link is authorized in the dedicated worktree:
+
+```text
+vercel link --yes --project agentempp-mobile-bff-staging --scope gestao-9664s-projects
+```
+
+`--repo`, `vercel git connect` and `vercel git disconnect` are prohibited.
+The local project metadata must match project/scope and contain no token,
+secret or env; Project GET must still show `link` absent afterward. Only then
+may the three-variable Preview env batch and one protected Preview deployment
+proceed. Deploy metadata must include the exact implementation
+`githubCommitSha` and be combined with detached clean SHA/tree and build
+receipts, not treated as isolated cryptographic proof.
+
+The original protected artifact review, one SSO forward, one fail-closed
+rollback, public probes, receipt and read-only patient discovery remain
+mandatory. Final documentation parent is `LINK_SCHEMA_AUTHORITY_SHA`:
+PASS_COMPLETE moves `1.6.10→1.7`; PASS_PARTIAL or STOP_DOCUMENTED moves
+`1.6.10→1.6.11`. Production, CI-4, Git Integration, custom domains, Production
+env/deployment, Supabase/database writes, PR and merge remain prohibited.

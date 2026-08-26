@@ -1,6 +1,17 @@
-# CI-3 dedicated Mobile BFF STOP — RED 1 tests were not discovered
+# CI-3 dedicated Mobile BFF STOP history and current Task 9 gate
 
-**Date:** 2026-08-25
+**Historical start:** 2026-08-25
+
+**Current outcome date:** 2026-08-26
+
+**Current operation:**
+`RECONCILE_RED1_VITEST_EXTERNAL_TEST_DISCOVERY_AND_RESUME_DEDICATED_BFF`
+
+**Current classification:** `STOP_DOCUMENTED`
+
+The original RED discovery STOP below remains historical evidence. The final
+section is the superseding current outcome after the reconciled RED,
+implementation publication and Task 9 settings gate.
 
 **Operation:** `AUTHORIZE_IMPLEMENT_DEPLOY_DEDICATED_PUBLIC_MOBILE_BFF_AND_CONTINUE_CI3`
 
@@ -352,3 +363,173 @@ while preserving test-first order. It must decide whether to change the
 command/root or authorize a RED bootstrap config before any GREEN artifact.
 This record does not execute or authorize that gate, code continuation,
 service access, deployment, production, CI-3 or CI-4.
+
+---
+
+## Current STOP — Task 9 seven-field project PATCH readback
+
+### Authority, RED and implementation
+
+```text
+RED_DISCOVERY_AUTHORITY_SHA=d5bf981a6c3e926eb63ecb39ccc1d3bdabf31459
+RED_DISCOVERY_AUTHORITY_PARENT=6e03d5a67284204ab2781ff049ffe4df40b18961
+RED_DISCOVERY_AUTHORITY_TREE=6efbbd7531835e802d48aa3c1531f55e7a5acce6
+RED_DISCOVERY_AUTHORITY_SUBJECT=docs(staging): reconcile dedicated BFF RED discovery
+DOCUMENTATION_BASELINE_ENTRY_COUNT=25
+DOCUMENTATION_BASELINE_PORCELAIN_SHA256=455000fe5f148dcad3034f03d57e2683deedb8ae5ec655b8a459639117f040e0
+DOCUMENTATION_BASELINE_TRACKED_DIFF_SHA256=7262d613d02df890c8e0c02922fa778afb90a6b7c27aa25a417bf0c717bdbefb
+RED1_DISCOVERED_TEST_FILE_COUNT=2
+RED1_EXECUTED_TEST_COUNT=3
+RED1_PASSED_TEST_COUNT=2
+RED1_FAILED_TEST_COUNT=1
+RED1_SKIPPED_TEST_COUNT=0
+RED1_FAILURE_CLASSIFICATION=MIRROR_ABSENT_ONLY
+RED1_EXIT_CODE=1
+RED1_RECONCILED_NORMALIZED_LOG_SHA256=0b320926087f0f250af2ad5737f0dad85f5cf3935248fe0c4613dc063e6674a9
+```
+
+The RED ran once. The implementation then passed its test-first gates, three
+fix/review rounds and the exact publication contract:
+
+```text
+IMPLEMENTATION_BASE=277873755bf29771a10b5f362b522c2e6a6c21d6
+IMPLEMENTATION_BRANCH=codex/ci3-dedicated-mobile-bff-surface-v1
+IMPLEMENTATION_COMMIT=e3e1e252b48e42554e75899b950692c05186f60d
+IMPLEMENTATION_PARENT=277873755bf29771a10b5f362b522c2e6a6c21d6
+IMPLEMENTATION_TREE=a167a6663cb1e476975742bcec51c7207dbcbc26
+IMPLEMENTATION_SUBJECT=feat(staging): add dedicated Mobile API BFF surface
+IMPLEMENTATION_PATH_COUNT=52
+IMPLEMENTATION_PATH_STREAM_SHA256=f1a4211fca2ea9ecc4ddd9b293ebb4754f56d7a3850aa488a1c3490f0b2999e7
+IMPLEMENTATION_PUSH=YES
+IMPLEMENTATION_REMOTE_SHA=e3e1e252b48e42554e75899b950692c05186f60d
+IMPLEMENTATION_UPSTREAM=NONE
+IMPLEMENTATION_WORKTREE=CLEAN
+IMPLEMENTATION_STAGING=EMPTY
+```
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+WRAPPER_ROUTE_EXPORT_COUNT=40
+WRAPPER_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+BUILD_ROUTE_PATH_COUNT=40
+BUILD_ROUTE_PATH_STREAM_SHA256=abc24332fd370b5d7940ca56b18530a3659ba39b5205faeb2bf36771aa6f3c3a
+BUILD_BUNDLE_SURFACE_STREAM_SHA256=e385efda5cc6455112d3bab1a03955e7732b5a151a907d3ce200e7d3617bf1b4
+IMPORT_CLOSURE_RECORD_COUNT=121
+IMPORT_CLOSURE_STREAM_SHA256=2553c0d366d7c38e778f7509ab64de2ea0f90feb44c20bac29d056d95f36b5f4
+DEDICATED_TESTS=24/24_PASS
+FOCUSED_SECURITY_TEST_FILES=39/39_PASS
+FOCUSED_SECURITY_TESTS=433/433_PASS
+TYPECHECK=PASS
+SYNTHETIC_BUILD=PASS
+BUILD_NFT_REFERENCE_COUNT=4180
+BUILD_NFT_UNIQUE_TARGET_COUNT=151
+BUILD_NFT_REGULAR_FILE_TARGET_COUNT=149
+BUILD_NFT_DIRECTORY_TARGET_COUNT=2
+BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=2
+BUILD_FORBIDDEN_WORKER_COUNT=0
+BUILD_FORBIDDEN_ADMINISTRATIVE_COUNT=0
+LOOPBACK_MOBILE_401=3/3_PASS
+LOOPBACK_FORBIDDEN_404=24/24_PASS
+REVIEW_A=GO_0_CRITICAL_0_IMPORTANT
+REVIEW_B=GO_0_CRITICAL_0_IMPORTANT
+GITHUB_ACTIONS=UNAVAILABLE_NOT_USED
+```
+
+Review A first found that the root Inngest entrypoint pulled workers into the
+four public media bundles. Exact client-only aliasing fixed it. Later review
+rounds made NFT validation fail closed for missing/external/special targets and
+restricted directories to internal package symlinks identifying exactly
+`next` or `@opentelemetry/api`.
+
+### Last successful and failed gates
+
+`LAST_SUCCESSFUL_GATE` is Task 8 implementation publication plus Task 9
+read-only preflight. The preflight proved exactly one expected project, root
+`apps/admin`, Node 22.x, Next.js, external sources enabled, SSO active, env
+0/0, deployments 0, Git Integration 0 and custom domains 0. One automatic
+`.vercel.app` domain is not a custom domain.
+
+`FAILED_GATE` is the single seven-field settings PATCH/readback. Six fields
+applied while `skipGitConnectDuringLink` remained absent/null:
+
+```text
+VERCEL_PROJECT_NAME=agentempp-mobile-bff-staging
+VERCEL_PROJECT_ID_SHA256=26c8edbed7fb4ed89674c43934733686f605f5152551110a14cc2b8798e7584f
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=1/1
+VERCEL_PROJECT_ROOT=apps/mobile-bff
+VERCEL_PROJECT_NODE=22.x
+VERCEL_PROJECT_FRAMEWORK=nextjs
+VERCEL_PROJECT_BUILD_COMMAND=MATCH
+VERCEL_PROJECT_INSTALL_COMMAND=MATCH
+VERCEL_PROJECT_OUTSIDE_ROOT=YES
+VERCEL_PROJECT_SKIP_GIT_CONNECT=ABSENT_OR_NULL
+VERCEL_PROJECT_GIT_INTEGRATION=NO
+VERCEL_PROJECT_CUSTOM_DOMAIN_COUNT=0
+VERCEL_AUTOMATIC_DOMAIN_COUNT=1
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+VERCEL_DEPLOYMENT_COUNT=0
+PROJECT_SSO_INITIAL=all_except_custom_domains
+PROJECT_SSO_FINAL=all_except_custom_domains
+PROJECT_PASSWORD_PROTECTION=ABSENT
+TEAM_DEFAULT_CHANGED=NO
+```
+
+The plan makes a failed or partial PATCH a STOP without retry. No env batch,
+staging-secret read, link, deployment, SSO forward/rollback, public probe,
+deployment receipt or patient discovery started.
+
+### Preservation and final markers
+
+```text
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0/1
+VERCEL_LOCAL_LINK_ATTEMPTS=0/1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0/1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0/1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0/1
+PUBLIC_MOBILE_PROBES=0
+PUBLIC_FORBIDDEN_PROBES=0
+SYNTHETIC_PATIENT_PATH=NOT_EVALUATED
+AUTHENTICATED_TODAY=NOT_EXECUTED
+DEPLOYMENT_RECEIPT=NOT_CREATED
+STAGING_SECRET_FILE_OPENED=NO
+PRIMARY_SECRET_USED=NO
+SUPABASE_WRITE=NO
+DATABASE_WRITE=NO
+PRODUCTION_DEPLOYMENT=NO
+PRODUCTION_CHANGE=NO
+PR=NO
+MERGE=NO
+TAG=NO
+CI3_AUTHORIZED=NO
+CI4=NO
+```
+
+The manager passed the exact authority/remote/25-item preflight before these
+three candidates were edited. The old CI-2 deploy worktree remains detached
+and clean at the base, staging empty and `.vercel` absent. The implementation
+worktree remains clean at the published SHA, staging empty, upstream absent and
+`.vercel` absent. The frozen Mac path was not accessed. No raw origin, secret,
+token, PAT, Authorization header or PII is recorded.
+
+```text
+OPERATION=RECONCILE_RED1_VITEST_EXTERNAL_TEST_DISCOVERY_AND_RESUME_DEDICATED_BFF
+OPERATION_STATUS=STOPPED
+FINAL_STATUS=STOP_DOCUMENTED
+DOSSIER_VERSION=1.6.9
+LAST_SUCCESSFUL_GATE=TASK9_PROJECT_PREFLIGHT_AND_IMPLEMENTATION_PUBLICATION
+FAILED_GATE=TASK9_SINGLE_SEVEN_FIELD_PROJECT_PATCH_READBACK
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_SKIP_GIT_CONNECT_DURING_LINK_SCHEMA
+```
+
+The next authority must reconcile the official current schema/semantics of
+`skipGitConnectDuringLink`, decide whether proven Git Integration absence
+satisfies the intended boundary, and explicitly authorize any new bounded
+settings action. It cannot implicitly start env, link, deployment, ingress,
+production, CI-3 or CI-4.

@@ -1193,3 +1193,50 @@ the single rollback, forbids starting/repeating probes and requires proof that
 protection is active. Rollback failure/ambiguity is a material-risk STOP. The
 STOP enum is restricted to `NOT_VERIFIED`, `IMPLEMENTED_NOT_DEPLOYED`,
 `DEPLOYED_PROTECTED` or `PUBLIC_ROLLED_BACK`.
+
+## Dedicated Mobile BFF Task 9 settings PATCH STOP — 2026-08-26
+
+The reconciled RED authority is
+`d5bf981a6c3e926eb63ecb39ccc1d3bdabf31459`. The dedicated implementation was
+completed, reviewed at zero Critical/Important, committed and published once
+as `e3e1e252b48e42554e75899b950692c05186f60d` on
+`codex/ci3-dedicated-mobile-bff-surface-v1`.
+
+Local gates proved source/wrapper/build `40/40/40`, export hash
+`7154a9a6…79b4`, build path hash `abc24332…3c3a`, closure 121/hash
+`2553c0d3…b5f4`, dedicated tests 24/24, focused security 433/433,
+typecheck/build/verifiers and loopback. Final tracing classified 4,180 NFT
+references into 151 unique targets, 149 files and two semantically allowlisted
+internal package symlinks, with forbidden/missing/external/special zero.
+
+Task 9 preflight passed. Its single seven-field PATCH partially applied: root,
+Node, framework, build command, install command and external-source setting
+match, while `skipGitConnectDuringLink` is absent/null in readback. The project
+has no Git Integration, custom domain, env or deployment; project SSO remains
+`all_except_custom_domains`.
+
+This is `STOP_DOCUMENTED`. The consumed PATCH cannot be retried implicitly.
+Preview env, secret-source read, local link, deployment, SSO forward/rollback,
+public probes and patient discovery did not start. Production, CI-3 and CI-4
+remain unauthorized.
+
+```text
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0
+VERCEL_LOCAL_LINK_ATTEMPTS=0
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_SKIP_GIT_CONNECT_DURING_LINK_SCHEMA
+```
+
+The next authority must reconcile the official current schema and proof for
+`skipGitConnectDuringLink` without treating a new PATCH as an automatic retry.
+It must decide whether the already-proven absence of Git Integration is
+sufficient or authorize one new bounded settings action. No env, link,
+deployment or public-ingress action may start before that authority is
+published.

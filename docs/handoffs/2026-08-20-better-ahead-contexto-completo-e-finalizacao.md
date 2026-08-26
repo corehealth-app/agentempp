@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.8
+**Versão do dossiê:** 1.6.9
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2982,3 +2982,127 @@ comprovada por readback. Falha/ambiguidade do rollback é material-risk STOP. Em
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-25-ci3-red1-vitest-external-discovery-reconciliation.md`.
+
+## 45. Atualização operacional 1.6.9 — STOP no PATCH de settings do Mobile BFF dedicado
+
+**Data:** 26/08/2026
+
+Esta atualização promove o dossiê de `1.6.8` para `1.6.9` e registra o
+outcome obrigatório `STOP_DOCUMENTED` da operação
+`RECONCILE_RED1_VITEST_EXTERNAL_TEST_DISCOVERY_AND_RESUME_DEDICATED_BFF`.
+O RED reconciliado, a implementação e a validação local foram concluídos; o
+STOP ocorreu somente no Task 9, depois do único PATCH de settings permitido
+para o projeto Vercel existente.
+
+### Autoridade e implementação publicada
+
+- Autoridade documental:
+  `d5bf981a6c3e926eb63ecb39ccc1d3bdabf31459`.
+- Implementação base/commit/tree:
+  `277873755bf29771a10b5f362b522c2e6a6c21d6` /
+  `e3e1e252b48e42554e75899b950692c05186f60d` /
+  `a167a6663cb1e476975742bcec51c7207dbcbc26`.
+- Branch: `codex/ci3-dedicated-mobile-bff-surface-v1`.
+- Subject: `feat(staging): add dedicated Mobile API BFF surface`.
+- Publicação: uma tentativa sem force e sem upstream; remote readback exato.
+
+O RED reconciliado descobriu dois arquivos e executou três testes: dois
+passaram, um falhou exclusivamente como `MIRROR_ABSENT_ONLY`, zero skip, exit
+1. O receipt normalizado tem SHA-256
+`0b320926087f0f250af2ad5737f0dad85f5cf3935248fe0c4613dc063e6674a9`.
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+WRAPPER_ROUTE_EXPORT_COUNT=40
+WRAPPER_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+BUILD_ROUTE_PATH_COUNT=40
+BUILD_ROUTE_PATH_STREAM_SHA256=abc24332fd370b5d7940ca56b18530a3659ba39b5205faeb2bf36771aa6f3c3a
+BUILD_BUNDLE_SURFACE_STREAM_SHA256=e385efda5cc6455112d3bab1a03955e7732b5a151a907d3ce200e7d3617bf1b4
+IMPORT_CLOSURE_RECORD_COUNT=121
+IMPORT_CLOSURE_STREAM_SHA256=2553c0d366d7c38e778f7509ab64de2ea0f90feb44c20bac29d056d95f36b5f4
+DEDICATED_TESTS=24/24_PASS
+FOCUSED_SECURITY_TESTS=433/433_PASS
+TYPECHECK=PASS
+SYNTHETIC_BUILD=PASS
+LOOPBACK_MOBILE=3/3_PASS
+LOOPBACK_FORBIDDEN=24/24_PASS
+IMPLEMENTATION_REVIEW_A=GO_0_CRITICAL_0_IMPORTANT
+IMPLEMENTATION_REVIEW_B=GO_0_CRITICAL_0_IMPORTANT
+```
+
+As revisões fecharam antes do commit o grafo de workers Inngest no bundle
+público e dois gates NFT fail-open. O build final resolve somente o client
+publicado e registra 4.180 referências NFT, 151 targets, 149 arquivos e apenas
+dois diretórios estruturais semanticamente allowlisted (`next` e
+`@opentelemetry/api`), com worker/admin/missing/external/special em zero.
+
+### STOP exato do Task 9
+
+O preflight confirmou um único `agentempp-mobile-bff-staging` com o fingerprint
+esperado, root `apps/admin`, Node 22.x, Next.js, external sources habilitado,
+SSO `all_except_custom_domains`, env 0/0, deployments 0, Git Integration 0 e
+custom domain 0. A única entrada de domínio é o domínio automático
+`.vercel.app`.
+
+O PATCH único enviou os sete campos publicados. O readback confirmou seis,
+mas `skipGitConnectDuringLink` permaneceu ausente/null:
+
+```text
+VERCEL_PROJECT_ROOT=apps/mobile-bff
+VERCEL_PROJECT_NODE=22.x
+VERCEL_PROJECT_FRAMEWORK=nextjs
+VERCEL_PROJECT_BUILD_COMMAND=MATCH
+VERCEL_PROJECT_INSTALL_COMMAND=MATCH
+VERCEL_PROJECT_OUTSIDE_ROOT=YES
+VERCEL_PROJECT_SKIP_GIT_CONNECT=ABSENT_OR_NULL
+VERCEL_PROJECT_GIT_INTEGRATION=NO
+VERCEL_PROJECT_CUSTOM_DOMAIN_COUNT=0
+VERCEL_PREVIEW_ENV_COUNT=0
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEPLOYMENT_COUNT=0
+PROJECT_SSO_FINAL=all_except_custom_domains
+TEAM_DEFAULT_CHANGED=NO
+```
+
+O plano classifica qualquer PATCH falho/parcial como STOP sem retry. Não houve
+env batch, leitura da fonte de secrets, link, deployment, SSO forward/rollback,
+probe público, receipt de deployment ou avaliação do paciente sintético.
+
+### Preservação e próximo gate
+
+Antes desta atualização, o manager preservava os 25 itens históricos e staging
+vazio. A worktree CI-2 antiga continua detached/clean no SHA exato e sem
+`.vercel`; a implementação está clean no commit publicado, staging vazio, sem
+upstream e sem `.vercel`. Não houve Supabase/database write, produção, PR,
+merge, tag, CI-3, CI-4, TestFlight ou App Store. GitHub Actions permanece
+`UNAVAILABLE — NOT USED`.
+
+```text
+OPERATION_STATUS=STOPPED
+FINAL_STATUS=STOP_DOCUMENTED
+LAST_SUCCESSFUL_GATE=TASK9_PROJECT_PREFLIGHT_AND_IMPLEMENTATION_PUBLICATION
+FAILED_GATE=TASK9_SINGLE_SEVEN_FIELD_PROJECT_PATCH_READBACK
+DEDICATED_MOBILE_BFF_STATUS=IMPLEMENTED_NOT_DEPLOYED
+STAGING_BFF_STATUS=NOT_VERIFIED
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=0
+VERCEL_LOCAL_LINK_ATTEMPTS=0
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=0
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=0
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=0
+PRODUCTION_DEPLOYMENT=NO
+CI3_AUTHORIZED=NO
+CI4=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RECONCILE_VERCEL_SKIP_GIT_CONNECT_DURING_LINK_SCHEMA
+```
+
+O próximo gate deve reconciliar o schema oficial de
+`skipGitConnectDuringLink`, preservar o budget de zero retry já consumido e
+decidir como validar a ausência de Git Integration antes de qualquer novo env
+batch, link ou deployment. Esta atualização não executa esse gate.
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.

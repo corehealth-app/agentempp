@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.7
+**Versão do dossiê:** 1.6.8
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -2784,7 +2784,8 @@ Falha do commit/push de autoridade encerra em report-only
 os três outcomes usam allowlists, versões, subjects, parent, reviews e push
 exatos definidos integralmente na spec e no plano. A preservação final exige
 staging vazio e `.vercel` ausente na worktree CI-2; `.vercel` local somente na
-worktree dedicada, sempre untracked/unstaged.
+implementation worktree limpa reutilizada para deploy, sempre
+untracked/unstaged; nenhuma deployment worktree dedicada é criada.
 
 ## 43. Atualização operacional 1.6.7 — STOP na descoberta do RED 1 do Mobile BFF dedicado
 
@@ -2850,3 +2851,134 @@ código, tocar serviços, produção, CI-3 ou CI-4.
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.
+
+## 44. Atualização operacional 1.6.8 — reconciliação da descoberta externa do RED 1 do Mobile BFF dedicado
+
+**Data:** 26/08/2026
+
+Esta atualização promove o dossiê de `1.6.7` para `1.6.8` e é a
+autoridade exclusiva para reconciliar a descoberta externa do RED 1. O STOP
+anterior permanece correto como evidência histórica: o Vitest 2.1.9 foi
+executado a partir de `apps/admin`, conservou `apps/admin` como root efetivo,
+descobriu zero test files, executou zero tests e terminou com
+`No test files found`. Isso foi um defeito de root/discovery do comando, não
+um defeito dos testes nem do source manifest.
+
+O receipt source read-only continua válido:
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_INVALID_EXPORT_COUNT=0
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+```
+
+Os dois testes preservam exatamente estes bytes antes da primeira execução
+reconciliada:
+
+```text
+50298447a2956c07693baa80468b70b4fd08a6f556542531b2e7f67428298ab6  apps/mobile-bff/src/source-surface.test.ts
+289b5d447c0c30743553e8f9a5a725fdba0e722ab5ccb0c6e0580f8ed923829f  apps/mobile-bff/src/route-mirror.test.ts
+```
+
+O comando relativo registrado em 1.6.6/1.6.7 fica `SUPERSEDED` para novas
+execuções, sem apagar seu resultado histórico. Depois que esta autoridade
+for publicada e seu SHA remoto for registrado como
+`RED_DISCOVERY_AUTHORITY_SHA`, o único comando RED 1 autorizado, com
+`WORKTREE=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`, é:
+
+```bash
+corepack pnpm@10.33.2 \
+  --dir "$WORKTREE/apps/admin" \
+  exec vitest run \
+  --config "$WORKTREE/apps/admin/vitest.config.ts" \
+  --root "$WORKTREE" \
+  --dir "$WORKTREE/apps/mobile-bff/src" \
+  "$WORKTREE/apps/mobile-bff/src/source-surface.test.ts" \
+  "$WORKTREE/apps/mobile-bff/src/route-mirror.test.ts"
+```
+
+O RED reconciliado tem budget de uma tentativa e só é semântico quando
+todos os critérios abaixo forem verdadeiros na mesma execução:
+
+```text
+RED1_DISCOVERED_TEST_FILE_COUNT=2
+RED1_EXECUTED_TEST_COUNT=>0
+RED1_SOURCE_ROUTE_EXPORT_COUNT=40
+RED1_SOURCE_INVALID_EXPORT_COUNT=0
+RED1_SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+RED1_WRAPPER_ROUTE_EXPORT_COUNT=0
+RED1_FAILURE_CLASSIFICATION=MIRROR_ABSENT_ONLY
+RED1_NO_TEST_FILES_FOUND=NO
+RED1_CONFIG_ERROR=NO
+RED1_MODULE_ERROR=NO
+RED1_SYNTAX_ERROR=NO
+RED1_SOURCE_DRIFT=NO
+RED1_SKIP_TODO_CANCEL=0
+RED1_EXIT_CODE=1
+```
+
+Antes desse RED semântico é proibido criar `package.json`, config Vitest ou
+qualquer outro artefato GREEN em `apps/mobile-bff`, usar
+`--passWithNoTests` ou alterar qualquer byte dos dois testes. A worktree e o
+branch de implementação existentes devem ser reutilizados; esta reconciliação
+não reautoriza criação de worktree, branch, upstream ou novo RED.
+
+Os budgets externos anteriores não são reutilizados implicitamente. Depois da
+confirmação remota de `RED_DISCOVERY_AUTHORITY_SHA`, valem apenas estes novos
+budgets separados:
+
+```text
+RED1_RECONCILED_EXECUTION_ATTEMPTS=1
+IMPLEMENTATION_COMMIT_ATTEMPTS=1
+IMPLEMENTATION_PUSH_ATTEMPTS=1
+VERCEL_DEDICATED_PROJECT_SETTINGS_PATCH_ATTEMPTS=1
+VERCEL_PREVIEW_ENV_BATCH_ATTEMPTS=1
+VERCEL_LOCAL_LINK_ATTEMPTS=1
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_DISABLE_ATTEMPTS=1
+VERCEL_PROJECT_SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+```
+
+As Tasks 4–14 do plano dedicado continuam literalmente somente depois que o
+RED semântico for aprovado. Em qualquer outcome final, a autoridade parental
+exclusiva é `RED_DISCOVERY_AUTHORITY_SHA`: `STOP_DOCUMENTED` e
+`PASS_PARTIAL` promovem `1.6.8` para `1.6.9`, enquanto `PASS_COMPLETE`
+promove `1.6.8` para `1.7`. Esta reconciliação isolada executa zero produção
+e não autoriza CI-3 ou CI-4.
+
+### Hardening Round 1 da reconciliação
+
+Os Steps 1–3 da Task 3 são históricos/concluídos: install frozen e escrita dos
+dois testes não devem ser repetidos. Antes do comando acima, a Fase B exige
+preflight read-only da identidade integral da worktree, dois untracked/hashes,
+staging vazio, tracked clean, lockfile
+`2ea2083229ce0f5b8c1fab28f4324b1840a596939dac369f32b073a8d065dc55`,
+Vitest 2.1.9, config CI-2
+`8bb6705e6315f5a28bdf6cc15cae3ff7526007913c8f7c01acd7279ad0b91266`
+sem `root`/`include` conflitante, source `40/0/hash`, wrapper `0` e zero
+package/config GREEN. O único capability check é
+`corepack pnpm@10.33.2 --dir "$WORKTREE/apps/admin" exec vitest --help`,
+confirmando `--root`, `--dir` e `--config`, sem discovery/list. Install frozen
+só pode ocorrer se o binário estiver ausente; falha seleciona
+`STOP_DOCUMENTED`.
+
+A execução única deve gerar transcript ordenado `key=value\n`, normalizado sem
+ANSI, com fingerprint do comando, Vitest/root/dir/config, contagens de
+files/tests/pass/fail/skip, exit, source/invalid/hash, wrapper e todas as
+classificações. O raw transcript não é receipt. O campo vinculante é
+`RED1_RECONCILED_NORMALIZED_LOG_SHA256=<SHA_REAL>`, e o relatório final inclui
+grupo separado `RED1_RECONCILED`.
+
+As Tasks 11–14 reutilizam a implementation worktree limpa; nenhuma deployment
+worktree nova é criada. A partir do SSO forward, sucesso ou possível sucesso
+obriga rollback único em qualquer falha/ambiguidade posterior, inclusive
+response/readback. Probes não começam nem se repetem; proteção ativa deve ser
+comprovada por readback. Falha/ambiguidade do rollback é material-risk STOP. Em
+`STOP_DOCUMENTED`, os únicos valores autorizados para
+`DEDICATED_MOBILE_BFF_STATUS` são `NOT_VERIFIED`,
+`IMPLEMENTED_NOT_DEPLOYED`, `DEPLOYED_PROTECTED` e `PUBLIC_ROLLED_BACK`.
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-25-ci3-red1-vitest-external-discovery-reconciliation.md`.

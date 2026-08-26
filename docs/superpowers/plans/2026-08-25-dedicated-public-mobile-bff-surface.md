@@ -21,6 +21,11 @@ Corepack pnpm 10.33.2, Vercel Preview, existing Supabase staging source.
 **Spec:**
 `docs/superpowers/specs/2026-08-25-dedicated-public-mobile-bff-surface.md`
 
+**RED 1 discovery reconciliation:** dossier `1.6.8` supersedes only the old
+runner command and obsolete final-documentation parent/version clauses.
+Tasks 4–14 remain literal and may resume only after the reconciled semantic RED
+passes.
+
 ## Global constraints
 
 - Set `set +x` and `umask 077` before sensitive preflights or executors.
@@ -66,11 +71,11 @@ Corepack pnpm 10.33.2, Vercel Preview, existing Supabase staging source.
 ```text
 DOCUMENTATION_BRANCH=codex/better-ahead-rebranding-design
 DOCUMENTATION_REMOTE_REF=refs/heads/codex/better-ahead-rebranding-design
-DOCUMENTATION_BASE=9c0d9d608a966153285291c14da94bd2e958cb99
-DOCUMENTATION_BASE_PARENT=ff8a4ec2f98764b0ff6b34f617288c652ece2f66
-DOCUMENTATION_BASE_TREE=7c0369c3292842c38a37c90aa93235497b0c9760
-DOCUMENTATION_BASE_SUBJECT=docs(staging): record Mobile API Preview protection policy stop
-AUTHORITY_SUBJECT=docs(staging): authorize dedicated Mobile API BFF artifact
+DOCUMENTATION_BASE=6e03d5a67284204ab2781ff049ffe4df40b18961
+DOCUMENTATION_BASE_PARENT=89f8bc1c41073d110fe17ee3c638da3998c31aad
+DOCUMENTATION_BASE_TREE=f871f4bc2b19e84e641b202a2ecfa5ca8f3cd576
+DOCUMENTATION_BASE_SUBJECT=docs(staging): record dedicated Mobile BFF stop
+RED_DISCOVERY_AUTHORITY_SUBJECT=docs(staging): reconcile dedicated BFF RED discovery
 
 IMPLEMENTATION_BASE=277873755bf29771a10b5f362b522c2e6a6c21d6
 IMPLEMENTATION_BASE_PARENT=aba177d7cbb0d9cecb13c5f1099e6b99b6456c93
@@ -108,9 +113,9 @@ PRIOR_FINDING_HTTP_PROBE_STREAM_SHA256=8677245f63ee3b5f1fb36a58c2a36e2eddfe8f9cc
 PRIOR_FINDING_SERVER_ACTION_COUNT=2
 PRIOR_FINDING_SERVER_ACTION_STREAM_SHA256=2cc8eac1a54c3f88673701d4b9ede202f1ec4440bf414ac7696dda341bd53a35
 
-AUTHORITY_DOCUMENTATION_COMMIT_ATTEMPTS=1
-AUTHORITY_DOCUMENTATION_PUSH_ATTEMPTS=1
-IMPLEMENTATION_WORKTREE_CREATION_ATTEMPTS=1
+RED_DISCOVERY_DOCUMENTATION_COMMIT_ATTEMPTS=1
+RED_DISCOVERY_DOCUMENTATION_PUSH_ATTEMPTS=1
+RED1_RECONCILED_EXECUTION_ATTEMPTS=1
 IMPLEMENTATION_COMMIT_ATTEMPTS=1
 IMPLEMENTATION_PUSH_ATTEMPTS=1
 VERCEL_DEDICATED_PROJECT_SETTINGS_PATCH_ATTEMPTS=1
@@ -125,15 +130,17 @@ FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
 
 ---
 
-### Task 1: Publish the Phase A authority
+### Task 1: Publish the reconciled RED discovery authority
 
 **Files:**
 
 - Modify:
   `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`
 - Create:
+  `docs/superpowers/evidence/2026-08-25-ci3-red1-vitest-external-discovery-reconciliation.md`
+- Modify:
   `docs/superpowers/specs/2026-08-25-dedicated-public-mobile-bff-surface.md`
-- Create:
+- Modify:
   `docs/superpowers/plans/2026-08-25-dedicated-public-mobile-bff-surface.md`
 - Modify:
   `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`
@@ -141,8 +148,8 @@ FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
 **Interfaces:**
 
 - Consumes: documentation baseline and canonical 25-entry manager state.
-- Produces: `DEDICATED_BFF_AUTHORITY_SHA`, the only authority that permits the
-  implementation worktree.
+- Produces: `RED_DISCOVERY_AUTHORITY_SHA`, the only authority that permits the
+  reconciled semantic RED and subsequent continuation.
 
 - [ ] **Step 1: Validate the documentation baseline before any write**
 
@@ -155,89 +162,102 @@ FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
   `7262d613d02df890c8e0c02922fa778afb90a6b7c27aa25a417bf0c717bdbefb`
   and empty staged-diff SHA-256.
 
-- [ ] **Step 2: Reproduce the source route inventory read-only**
+- [ ] **Step 2: Preserve the historical STOP and receipts**
 
-  Read route objects from `IMPLEMENTATION_BASE`, sort relative paths and each
-  route's export names lexicographically, encode
-  `<relative-path>\0<exports>\n`, and require 40 records, the frozen hash and
-  zero names outside:
+  Record that the prior `apps/admin` root/discovery found zero test files and
+  ran zero tests, without invalidating either test or the source receipt.
+  Preserve source `40`, invalid exports `0`, source hash
+  `7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4`
+  and the two physical test hashes. Mark the old relative command
+  `SUPERSEDED`; do not erase its historical evidence.
+
+- [ ] **Step 3: Freeze the reconciled command and semantic gate**
+
+  Require absolute `WORKTREE`, explicit absolute `--config`, `--root`, `--dir`
+  and both absolute test paths exactly as Task 3 Step 4 states. Prohibit
+  `--passWithNoTests`, test-byte edits and package/config/GREEN artifacts before
+  the first run. Freeze one execution attempt and every exact semantic field:
 
   ```text
-  GET POST PUT PATCH DELETE HEAD OPTIONS runtime dynamic revalidate fetchCache
-  preferredRegion maxDuration dynamicParams
+  discovered files 2; both files and >0 tests executed; source 40/0/frozen hash;
+  wrapper 0; MIRROR_ABSENT_ONLY; exit 1; no no-files/config/module/syntax/source
+  drift; zero skip/todo/cancel
   ```
 
-- [ ] **Step 3: Validate the four-path authority diff**
+- [ ] **Step 4: Validate the five-path authority diff**
 
   Run `git diff --check`, inspect the integral diff and require that the changed
-  paths equal the four paths listed above. Scan added content for credential or
+  paths equal the five paths listed above. Scan added content for credential or
   PAT shapes, raw real origins, PII, production authorization and CI-4
-  authorization. Require the dossier version and title to be exactly `1.6.6`
-  and `Atualização operacional 1.6.6 — autorização do artefato público Mobile
-  BFF dedicado`.
+  authorization. Require dossier transition `1.6.7 → 1.6.8`, the exact
+  reconciliation title, new independent budgets, worktree reuse and final
+  parent/version clauses.
 
-- [ ] **Step 4: Obtain two independent read-only documentation reviews**
+- [ ] **Step 5: Obtain two independent read-only documentation reviews**
 
   Review A checks security/route/deployment sequencing. Review B checks plan
   completeness, one-attempt budgets, Git identities, final outcomes and
   preservation. Gate: 0 Critical and 0 Important for both.
 
-- [ ] **Step 5: Stage only the four authority paths and commit once**
+- [ ] **Step 6: Stage only the five authority paths and commit once**
 
   Stage every exact path individually. Require none of the 25 historical
   entries staged, run `git diff --cached --check`, inspect cached name-status
   and commit once with:
 
   ```text
-  docs(staging): authorize dedicated Mobile API BFF artifact
+  docs(staging): reconcile dedicated BFF RED discovery
   ```
 
   The parent must be `DOCUMENTATION_BASE`.
 
-- [ ] **Step 6: Push once and prove the remote commit**
+- [ ] **Step 7: Push once and prove the remote commit**
 
   Push the existing documentation branch fast-forward without force. Read back
   its remote ref and record the exact commit as
-  `DEDICATED_BFF_AUTHORITY_SHA`. No implementation may start until the remote
-  ref equals that SHA.
+  `RED_DISCOVERY_AUTHORITY_SHA`. No RED or implementation continuation may
+  start until the remote ref equals that SHA.
 
-- [ ] **Step 7: Use report-only STOP if commit or push fails**
+- [ ] **Step 8: Use report-only STOP if commit or push fails**
 
-  If the authority commit fails after the four exact authority paths were
-  staged, leave those four paths staged; if it fails earlier, preserve the
+  If the authority commit fails after the five exact authority paths were
+  staged, leave those five paths staged; if it fails earlier, preserve the
   exact observed index/worktree state. Record the actual staged and unstaged
-  path lists, and do not reset, restore, unstage, amend or retry. Use
-  `NEXT_GATE=RECONCILE_DEDICATED_BFF_AUTHORITY_DOCUMENTATION_COMMIT`. A failed
-  authority push preserves the single local commit and exact observed
-  index/worktree state, records the actual staged and unstaged path lists,
-  permits no amend/retry, and uses
-  `NEXT_GATE=RECONCILE_DEDICATED_BFF_AUTHORITY_DOCUMENTATION_PUBLICATION`.
+  path lists, exact failed gate and next safe action, and do not reset, restore,
+  unstage, amend or retry. A failed authority push preserves the single local
+  commit and exact observed index/worktree state, records the actual staged and
+  unstaged path lists, and permits no amend/retry.
   In either case write only `STOP_PRE_AUTHORITY` to the task report and recovery
   ledger outside Git, do not spend the final-doc budgets, do not create Git STOP
-  docs, and do not create code/worktrees or call Vercel/Supabase.
+  docs, and do not execute RED, edit code/worktrees or call Vercel/Supabase.
 
-### Task 2: Create the isolated implementation worktree
+### Task 2: Validate and reuse the isolated implementation worktree
+
+> **Reconciled state:** this task is historical and complete. Reuse the existing
+> branch/worktree; worktree creation, branch creation and upstream mutation are
+> not reauthorized.
 
 **Files:**
 
-- Create worktree:
+- Preserve/reuse existing worktree:
   `/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`
 - Preserve read-only:
   `/root/agentempp-ci3-staging-bff-v1`
 
 **Interfaces:**
 
-- Consumes: remotely confirmed `DEDICATED_BFF_AUTHORITY_SHA` and exact CI-2
+- Consumes: remotely confirmed `RED_DISCOVERY_AUTHORITY_SHA` and exact CI-2
   base.
-- Produces: clean branch `codex/ci3-dedicated-mobile-bff-surface-v1` with no
-  upstream.
+- Produces: validated existing branch
+  `codex/ci3-dedicated-mobile-bff-surface-v1` with no upstream and only the two
+  preserved untracked RED tests.
 
-- [ ] **Step 1: Prove the exact base**
+- [ ] **Step 1: Prove the exact existing base**
 
   Require `IMPLEMENTATION_BASE` to be a commit with the frozen parent, tree and
-  subject. Confirm the CI-2 remote branch points to it. Confirm the new local
-  branch, remote branch and worktree path are absent and no registered worktree
-  owns the branch.
+  subject. Confirm the existing local branch and implementation worktree own
+  the exact identity, upstream remains absent, staging is empty, tracked state
+  is clean and the only status paths are the two preserved RED tests.
 
 - [ ] **Step 2: Preserve the old deploy worktree**
 
@@ -245,18 +265,20 @@ FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
   `IMPLEMENTATION_BASE`, tracked-clean, staging-empty and without `.vercel`.
   Do not repair, remove or reuse it.
 
-- [ ] **Step 3: Create the branch/worktree once**
+- [ ] **Step 3: Reuse the branch/worktree without recreation**
 
-  Use the one authorized worktree-creation attempt from the exact base. Require
-  exact HEAD, exact branch, empty staging, clean status and no upstream. Do not
-  base on the documentation manager or cherry-pick docs.
+  Require exact HEAD, exact branch, empty staging, no tracked change and no
+  upstream. Do not recreate, repair, remove or relink the worktree, do not
+  create another branch, and do not cherry-pick documentation.
 
 ### Task 3: RED 1 — freeze source surface and prove mirror absence
 
 **Files:**
 
-- Create: `apps/mobile-bff/src/source-surface.test.ts`
-- Create: `apps/mobile-bff/src/route-mirror.test.ts`
+- Preserve/reuse existing untracked:
+  `apps/mobile-bff/src/source-surface.test.ts`
+- Preserve/reuse existing untracked:
+  `apps/mobile-bff/src/route-mirror.test.ts`
 
 No package/config/bootstrap file is created during RED 1. The dedicated
 `package.json` and `vitest.config.ts` belong to GREEN 1.
@@ -266,46 +288,152 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 - Consumes: frozen 40-record source route/export stream from the spec.
 - Produces: a failing proof whose only expected cause is zero wrappers.
 
-- [ ] **Step 1: Bootstrap the existing test runner without a source edit**
+- [x] **Step 1: Historical/completed — bootstrap the existing runner**
 
-  Run the VPS resource gate. If it permits the heavy operation, run
-  `corepack pnpm@10.33.2 install --frozen-lockfile` against the unchanged CI-2
-  worktree. Require no tracked or lockfile change and log the install result in
-  the recovery ledger. This makes the already locked `@mpp/admin` Vitest binary
-  available without inventing a new importer.
+  The prior frozen install already completed with exit 0, no tracked change and
+  lockfile hash
+  `2ea2083229ce0f5b8c1fab28f4324b1840a596939dac369f32b073a8d065dc55`.
+  Do not repeat it as the normal path of the reconciled preflight.
 
-- [ ] **Step 2: Write source-manifest tests**
+- [x] **Step 2: Historical/completed — source-manifest test written**
 
-  Tests read route modules from the CI-2 source tree, extract only named Next
+  The preserved test reads route modules from the CI-2 source tree, extracts
+  only named Next
   Route Handler exports, sort path/export names and assert count 40, invalid
-  export count zero and canonical SHA-256 `7154a9a…79b4`.
+  export count zero and canonical SHA-256 `7154a9a…79b4`. Do not rewrite it.
 
-- [ ] **Step 3: Write wrapper-parity tests**
+- [x] **Step 3: Historical/completed — wrapper-parity test written**
 
-  Tests enumerate `apps/mobile-bff/src/app/api/mobile/v1/**/route.ts`, require
+  The preserved test enumerates
+  `apps/mobile-bff/src/app/api/mobile/v1/**/route.ts`, requires
   one wrapper per source and parse each wrapper as a single named re-export.
-  They reject extra statements, `export *`, extra paths and export mismatch.
+  It rejects extra statements, `export *`, extra paths and export mismatch. Do
+  not rewrite it.
+
+- [ ] **Step 3R: Run the exact read-only Phase B preflight**
+
+  After remote confirmation of `RED_DISCOVERY_AUTHORITY_SHA`, set
+  `WORKTREE=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1` and revalidate
+  without mutation:
+
+  ```text
+  branch=codex/ci3-dedicated-mobile-bff-surface-v1
+  HEAD=277873755bf29771a10b5f362b522c2e6a6c21d6
+  parent=aba177d7cbb0d9cecb13c5f1099e6b99b6456c93
+  tree=9999e3a05fe4c30d9d1ddd29f0714d263ff3eaf4
+  subject=feat(ios): add secure session lifecycle and user boundary
+  upstream=ABSENT
+  staging=EMPTY
+  tracked=clean
+  untracked=exactly the two preserved RED tests
+  SOURCE_SURFACE_TEST_SHA256=50298447a2956c07693baa80468b70b4fd08a6f556542531b2e7f67428298ab6
+  ROUTE_MIRROR_TEST_SHA256=289b5d447c0c30743553e8f9a5a725fdba0e722ab5ccb0c6e0580f8ed923829f
+  PNPM_LOCKFILE_SHA256=2ea2083229ce0f5b8c1fab28f4324b1840a596939dac369f32b073a8d065dc55
+  VITEST_VERSION=2.1.9
+  ADMIN_VITEST_CONFIG_SHA256=8bb6705e6315f5a28bdf6cc15cae3ff7526007913c8f7c01acd7279ad0b91266
+  ADMIN_VITEST_CONFIG_CONFLICTING_ROOT_OR_INCLUDE=NO
+  SOURCE_ROUTE_EXPORT_COUNT=40
+  SOURCE_ROUTE_INVALID_EXPORT_COUNT=0
+  SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+  WRAPPER_ROUTE_EXPORT_COUNT=0
+  PACKAGE_OR_CONFIG_GREEN_ARTIFACT_COUNT=0
+  ```
+
+  Require the Vitest binary to be available and run only this capability check:
+
+  ```bash
+  corepack pnpm@10.33.2 --dir "$WORKTREE/apps/admin" exec vitest --help
+  ```
+
+  The help output must document `--root`, `--dir` and `--config`. Do not run
+  discovery/list or any other command that could consume the single RED
+  attempt. Only if the binary is absent, run the VPS resource gate and then one
+  `corepack pnpm@10.33.2 install --frozen-lockfile`; require the lockfile hash
+  and all tracked bytes unchanged. Install failure or any preflight divergence
+  selects `STOP_DOCUMENTED` without RED execution, test edit or GREEN artifact.
 
 - [ ] **Step 4: Run RED 1 with the exact existing-package command**
 
-  From the implementation worktree root run:
+  The previously published relative command is `SUPERSEDED`. It retained
+  `apps/admin` as the effective Vitest root/discovery boundary, discovered zero
+  test files, executed zero tests and exited 1 with `No test files found`; this
+  was runner discovery failure, not invalid test/source bytes.
 
-  ```text
-  corepack pnpm@10.33.2 --dir apps/admin exec vitest run \
-    --config vitest.config.ts \
-    ../mobile-bff/src/source-surface.test.ts \
-    ../mobile-bff/src/route-mirror.test.ts
+  After the remote ref confirms `RED_DISCOVERY_AUTHORITY_SHA`, set
+  `WORKTREE=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1` and run exactly
+  once:
+
+  ```bash
+  corepack pnpm@10.33.2 \
+    --dir "$WORKTREE/apps/admin" \
+    exec vitest run \
+    --config "$WORKTREE/apps/admin/vitest.config.ts" \
+    --root "$WORKTREE" \
+    --dir "$WORKTREE/apps/mobile-bff/src" \
+    "$WORKTREE/apps/mobile-bff/src/source-surface.test.ts" \
+    "$WORKTREE/apps/mobile-bff/src/route-mirror.test.ts"
   ```
 
-  `--dir apps/admin` makes the command working directory
-  `<implementation-worktree>/apps/admin`, so each `../mobile-bff/...` operand
-  resolves to `<implementation-worktree>/apps/mobile-bff/...`.
+  Require both test files to execute and every exact field below to be true in
+  the same run:
 
-  Expected: source count/list/export allowlist and
-  `SOURCE_ROUTE_EXPORT_STREAM_SHA256` pass; wrapper count reports exactly `0`;
-  parity fails only because the dedicated mirror does not exist. Any source
-  drift or other failure is a STOP, not a test update. The only RED-created
-  paths are the two explicitly listed test files.
+  ```text
+  RED1_DISCOVERED_TEST_FILE_COUNT=2
+  RED1_EXECUTED_TEST_COUNT=>0
+  RED1_SOURCE_ROUTE_EXPORT_COUNT=40
+  RED1_SOURCE_INVALID_EXPORT_COUNT=0
+  RED1_SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+  RED1_WRAPPER_ROUTE_EXPORT_COUNT=0
+  RED1_FAILURE_CLASSIFICATION=MIRROR_ABSENT_ONLY
+  RED1_NO_TEST_FILES_FOUND=NO
+  RED1_CONFIG_ERROR=NO
+  RED1_MODULE_ERROR=NO
+  RED1_SYNTAX_ERROR=NO
+  RED1_SOURCE_DRIFT=NO
+  RED1_SKIP_TODO_CANCEL=0
+  RED1_EXIT_CODE=1
+  ```
+
+  Before this run, require physical test hashes
+  `50298447a2956c07693baa80468b70b4fd08a6f556542531b2e7f67428298ab6`
+  and `289b5d447c0c30743553e8f9a5a725fdba0e722ab5ccb0c6e0580f8ed923829f`.
+  Do not create a package/config/GREEN artifact, use `--passWithNoTests`, edit
+  either test or rerun. Any non-semantic result is a STOP. Only a fully
+  approved semantic RED permits literal continuation through Tasks 4–14.
+
+  Capture an ordered `key=value\n` transcript normalized without ANSI. Never
+  use the raw transcript as a receipt. The normalized receipt must include:
+
+  ```text
+  RED1_EXACT_COMMAND_FINGERPRINT_SHA256=<SHA_REAL>
+  RED1_VITEST_VERSION=2.1.9
+  RED1_ROOT=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1
+  RED1_DIR=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1/apps/mobile-bff/src
+  RED1_CONFIG=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1/apps/admin/vitest.config.ts
+  RED1_DISCOVERED_TEST_FILE_COUNT=2
+  RED1_EXECUTED_TEST_COUNT=<COUNT_REAL_GT_0>
+  RED1_PASSED_TEST_COUNT=<COUNT_REAL>
+  RED1_FAILED_TEST_COUNT=<COUNT_REAL>
+  RED1_SKIPPED_TEST_COUNT=0
+  RED1_EXIT_CODE=1
+  RED1_SOURCE_ROUTE_EXPORT_COUNT=40
+  RED1_SOURCE_INVALID_EXPORT_COUNT=0
+  RED1_SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+  RED1_WRAPPER_ROUTE_EXPORT_COUNT=0
+  RED1_FAILURE_CLASSIFICATION=MIRROR_ABSENT_ONLY
+  RED1_NO_TEST_FILES_FOUND=NO
+  RED1_CONFIG_ERROR=NO
+  RED1_MODULE_ERROR=NO
+  RED1_SYNTAX_ERROR=NO
+  RED1_SOURCE_DRIFT=NO
+  RED1_SKIP_TODO_CANCEL=0
+  RED1_RECONCILED_NORMALIZED_LOG_SHA256=<SHA_REAL>
+  ```
+
+  The command fingerprint binds the literal reconciled command, Vitest, root,
+  dir, config and both absolute test paths. Missing/divergent receipt data is
+  `STOP_DOCUMENTED` without rerun. After RED approval, revalidate both test
+  hashes byte for byte before the first GREEN mutation.
 
 ### Task 4: GREEN 1 — package, configuration and exact wrapper mirror
 
@@ -707,25 +835,26 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 
 **Files:**
 
-- Preferred detached deployment worktree:
-  `/root/agentempp-ci3-dedicated-mobile-bff-deploy-v1`
-- Local-only `.vercel` inside that deployment worktree.
+- Reuse the clean implementation worktree:
+  `/root/agentempp-ci3-dedicated-mobile-bff-surface-v1`
+- Local-only `.vercel` inside that implementation worktree.
 
 **Interfaces:**
 
 - Consumes: exact implementation SHA and protected configured project.
 - Produces: one READY protected Preview with exact source proof.
 
-- [ ] **Step 1: Prepare an exact clean deployment worktree**
+- [ ] **Step 1: Revalidate the clean implementation worktree for deployment**
 
-  Prefer a new detached worktree at the implementation SHA if its path is
-  absent. Reuse the implementation worktree only if it is clean and the
-  preservation gate still permits it. Never remove or change the old CI-2
-  deploy worktree.
+  Require the existing implementation worktree at the exact published
+  implementation SHA, on its existing branch, tracked-clean, staging-empty and
+  without upstream. Reuse it; no new/detached deployment worktree may be
+  created. Never remove or change the old CI-2 deploy worktree.
 
 - [ ] **Step 2: Link once to the exact existing project**
 
-  Allow `.vercel` only in this worktree and never stage or commit it. Confirm
+  Allow `.vercel` only in the implementation worktree and never stage or commit
+  it. Confirm
   the linked project by ID fingerprint without printing tokens.
 
 - [ ] **Step 3: Deploy once while SSO remains active**
@@ -782,8 +911,10 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 
   Require project SSO null, no password protection, trusted IPs, bypass or
   exception, unchanged team default, dedicated settings preserved, deployment
-  READY, Preview env 3 and Production env 0. Failure or ambiguity is a STOP
-  without retry.
+  READY, Preview env 3 and Production env 0. From the moment the forward PATCH
+  succeeds or may have succeeded, any failure or ambiguity—including the
+  forward response and this readback—must invoke the single rollback in Task 13
+  Step 4. Do not probe while state is ambiguous.
 
 ### Task 13: Run public probes with fail-closed rollback
 
@@ -820,10 +951,14 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   never invoke them. Also require every page route absent from structured
   application manifests.
 
-- [ ] **Step 4: Roll back SSO once if any Step 1–3 requirement fails**
+- [ ] **Step 4: Roll back SSO once after any post-forward failure or ambiguity**
 
-  After the successful SSO forward PATCH, **any** failure in Step 1, 2 or 3
-  triggers at most one rollback PATCH. This includes HTTPS/certificate/origin,
+  From initiation of the forward PATCH, any response that proves neither
+  definite failure-without-mutation nor a safely confirmed public state is
+  treated as possible success. After success or possible success, **any**
+  failure or ambiguity in the forward response, Task 12 Step 4 readback, or
+  Task 13 Steps 1–3 triggers the single rollback PATCH. This includes
+  HTTPS/certificate/origin,
   cross-origin redirect, any wrong status including wrong 4xx, non-JSON or
   invalid envelope, missing `no-store`, `Vary` or request ID, Vercel/HTML/stack,
   secret/PII, any forbidden/19-finding 404 failure, or either action/page
@@ -833,9 +968,10 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   {"ssoProtection":{"deploymentType":"all_except_custom_domains"}}
   ```
 
-  Confirm protection active, do not repeat public probes, preserve env and
-  deployment, and proceed only to STOP documentation. A rollback failure is an
-  immediate material-risk STOP.
+  Confirm protection active by readback, do not start or repeat public probes,
+  preserve env and deployment, and proceed only to STOP documentation. A
+  rollback failure or ambiguous rollback/readback is an immediate material-risk
+  STOP; never leave a post-forward STOP documented as protected without proof.
 
 ### Task 14: Write the deployment receipt and classify the patient gate
 
@@ -889,10 +1025,10 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 - [ ] **Step 0: Re-enter and validate the documentation manager**
 
   Require branch `DOCUMENTATION_BRANCH`, HEAD exactly the published
-  `DEDICATED_BFF_AUTHORITY_SHA`, exact `DOCUMENTATION_REMOTE_REF` at that same
+  `RED_DISCOVERY_AUTHORITY_SHA`, exact `DOCUMENTATION_REMOTE_REF` at that same
   SHA, empty staging, and the canonical 25 historical entries/count/hash and
   historical tracked diff preserved. Any mismatch is a STOP before final-doc
-  edits; do not use the implementation/deployment worktree for documentation.
+  edits; do not use the implementation worktree for documentation.
 
 - [ ] **Step 1: Select `PASS_COMPLETE`, `PASS_PARTIAL` or `STOP_DOCUMENTED`**
 
@@ -913,7 +1049,7 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   docs/superpowers/plans/2026-08-25-ci3-today-staging-vertical-slice.md
   ```
 
-  Update dossier `1.6.6` to `1.7`. Record authority/implementation SHAs,
+  Update dossier `1.6.8` to `1.7`. Record authority/implementation SHAs,
   trees/paths, all three route stream counts/hashes, closure/lockfile/tests/
   typecheck/build/smoke/reviews, Vercel fingerprints, exact source/root/Node,
   Preview env 3/Production env 0, project SSO null, unchanged team default,
@@ -937,7 +1073,7 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
   ```
 
-  Update dossier `1.6.6` to `1.6.7`, record verified BFF/public evidence, keep
+  Update dossier `1.6.8` to `1.6.9`, record verified BFF/public evidence, keep
   CI-3 unauthorized, publish the complete PASS_PARTIAL marker block and
   generate the complete
   `AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING` prompt. Commit subject:
@@ -956,7 +1092,7 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
   ```
 
-  Update dossier `1.6.6` to `1.6.7`; record the last passed gate, failed gate,
+  Update dossier `1.6.8` to `1.6.9`; record the last passed gate, failed gate,
   code branch/SHA if any, project/env/deployment state, SSO forward/rollback,
   probes, preserved resources, no retries, production untouched, CI-3
   unauthorized, the complete STOP marker block and exact next gate. Commit
@@ -977,7 +1113,7 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 
 - [ ] **Step 4: Commit and push once**
 
-  Parent must be exactly `DEDICATED_BFF_AUTHORITY_SHA`. Create one
+  Parent must be exactly `RED_DISCOVERY_AUTHORITY_SHA`. Create one
   outcome-specific commit with the exact subject above and one non-force
   fast-forward push to `DOCUMENTATION_REMOTE_REF`, without tag, PR or merge.
   Read back and record exact local/remote SHA. Log every edit/index/commit/push
@@ -998,10 +1134,9 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   entries and historical tracked diff preserved. Existing deploy worktree:
   detached at exact CI-2 SHA, tracked-clean, staging empty and `.vercel`
   absent. Exact Mac evidence path remains untouched. Implementation worktree:
-  published commit, tracked-clean, staging empty, no upstream. Dedicated
-  deployment worktree: detached implementation SHA, tracked-clean, staging
-  empty, local `.vercel` present only there if linked, untracked/unstaged and no
-  secret in Git.
+  published commit, tracked-clean, staging empty, no upstream, with local
+  `.vercel` present only there if linked, untracked/unstaged and containing no
+  Git-tracked secret. No dedicated deployment worktree exists or is expected.
 
 - [ ] **Step 2: Revalidate external preservation**
 
@@ -1018,7 +1153,14 @@ No package/config/bootstrap file is created during RED 1. The dedicated
 
   ```text
   OPERATION, FINAL_STATUS
-  AUTHORITY_DOCUMENTATION: initial SHA, commit, parent, tree, subject, paths, push, remote
+  DOCUMENTATION_BASELINE: initial SHA, parent, tree, subject, remote, dossier version
+  RED_DISCOVERY_AUTHORITY: paths, reviews, commit, parent, tree, subject, push, remote
+  IMPLEMENTATION_BASELINE: worktree, branch, HEAD, staging, status, test hashes,
+    lockfile hash, Vitest version
+  RED1_RECONCILED: exact command, command fingerprint, Vitest version, root, dir,
+    config, discovered files, executed/passed/failed/skipped tests, exit,
+    source count/invalid/hash, wrapper count, failure classifications,
+    RED1_RECONCILED_NORMALIZED_LOG_SHA256
   IMPLEMENTATION: base, branch, worktree, commit, parent, tree, subject, path count,
     wrapper count, source/wrapper/build-route hashes, import closure, lockfile,
     tests, typecheck, build, local smoke, reviews, push, remote
@@ -1037,8 +1179,9 @@ No package/config/bootstrap file is created during RED 1. The dedicated
   AUTHENTICATED_TODAY: PASS|DEFERRED_TO_MAC_BY_DESIGN|NOT_EXECUTED|FAILED
   DEPLOYMENT_RECEIPT: path, mode, hash, raw origin only there YES, secret values NONE
   FINAL_DOCUMENTATION: outcome, dossier version, commit, parent, tree, subject, push, remote
-  PRESERVATION: manager 25, existing deploy staging/.vercel,
-    implementation/deployment worktrees, primary/live, Vercel, production, CI-4
+  PRESERVATION: manager 25, existing old deploy staging/.vercel,
+    implementation worktree and its local .vercel, no dedicated deployment
+    worktree, primary/live, Vercel, production, CI-4
   EXTERNAL_ACTIONS: docs commits 1-2, code commit/push 0/1,
     settings/env/deployment/SSO forward/rollback 0/1 each,
     Production deployment NO, Supabase/database write NO, PR/merge/CI-4 NO
@@ -1093,7 +1236,7 @@ NEXT_GATE=AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING
 For `STOP_DOCUMENTED`:
 
 ```text
-DEDICATED_MOBILE_BFF_STATUS=<NOT_CREATED|IMPLEMENTED_NOT_DEPLOYED|DEPLOYED_PROTECTED|PUBLIC_ROLLED_BACK|NOT_VERIFIED>
+DEDICATED_MOBILE_BFF_STATUS=<NOT_VERIFIED|IMPLEMENTED_NOT_DEPLOYED|DEPLOYED_PROTECTED|PUBLIC_ROLLED_BACK>
 STAGING_BFF_STATUS=NOT_VERIFIED
 CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
 VERCEL_PROJECT_SETTINGS_PATCH_ATTEMPTS=<0_OR_1>

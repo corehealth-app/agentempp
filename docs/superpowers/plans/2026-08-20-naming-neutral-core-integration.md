@@ -1071,7 +1071,8 @@ STOP_DOCUMENTED documentation uses the exact paths, dossier transitions,
 subjects, authority parent, review/staging/push gates and marker/macro-prompt
 contracts defined in the dedicated spec/plan. Final preservation rechecks
 empty staging and absent `.vercel` in the old CI-2 worktree, plus local
-`.vercel` untracked/unstaged only in the dedicated deploy worktree.
+`.vercel` untracked/unstaged only in the clean implementation worktree reused
+for deployment; no dedicated deploy worktree is created.
 
 ## Dedicated Mobile BFF RED 1 discovery STOP — 2026-08-25
 
@@ -1111,3 +1112,84 @@ retaining strict test-first order. Until then, do not alter the command/root,
 create GREEN artifacts, stage/commit/push code, access services, authorize
 CI-3, start CI-4 or touch production. Detailed evidence:
 `docs/superpowers/evidence/2026-08-25-ci3-dedicated-mobile-bff-stop.md`.
+
+## Dedicated Mobile BFF RED 1 discovery reconciliation — 2026-08-26
+
+The dossier is now `1.6.8`. The STOP above remains the historical record of a
+valid stop: the prior Vitest 2.1.9 command kept root/discovery in `apps/admin`,
+found zero test files, ran zero tests and exited 1 with
+`No test files found`. That command is `SUPERSEDED`; the two tests and the
+source receipt were not invalid. The preserved receipts are:
+
+```text
+SOURCE_ROUTE_EXPORT_COUNT=40
+SOURCE_ROUTE_INVALID_EXPORT_COUNT=0
+SOURCE_ROUTE_EXPORT_STREAM_SHA256=7154a9a67db83e0adc8a2f3bc22e1bdd2be752904c1f416cca43d00ed10679b4
+SOURCE_SURFACE_TEST_SHA256=50298447a2956c07693baa80468b70b4fd08a6f556542531b2e7f67428298ab6
+ROUTE_MIRROR_TEST_SHA256=289b5d447c0c30743553e8f9a5a725fdba0e722ab5ccb0c6e0580f8ed923829f
+```
+
+After the documentation remote confirms `RED_DISCOVERY_AUTHORITY_SHA`, reuse
+the existing branch/worktree only, set
+`WORKTREE=/root/agentempp-ci3-dedicated-mobile-bff-surface-v1` and execute once:
+
+```bash
+corepack pnpm@10.33.2 \
+  --dir "$WORKTREE/apps/admin" \
+  exec vitest run \
+  --config "$WORKTREE/apps/admin/vitest.config.ts" \
+  --root "$WORKTREE" \
+  --dir "$WORKTREE/apps/mobile-bff/src" \
+  "$WORKTREE/apps/mobile-bff/src/source-surface.test.ts" \
+  "$WORKTREE/apps/mobile-bff/src/route-mirror.test.ts"
+```
+
+The semantic gate requires two discovered test files, both files and more than
+zero tests executed, source `40/0` with the frozen hash, wrapper count `0`,
+failure exclusively `MIRROR_ABSENT_ONLY`, exit 1, no
+`No test files found`, config/module/syntax/discovery error or source drift,
+and zero skip/todo/cancel. Before it passes, do not edit either test, create a
+package/config/other GREEN artifact, use `--passWithNoTests` or rerun. Worktree
+creation is not reauthorized. Only then may Tasks 4–14 of the dedicated plan
+continue literally.
+
+Historical external budgets do not roll forward. The reconciliation authority
+has one documentation commit/push attempt; only after remote publication do
+the new one-attempt budgets for the reconciled RED, implementation commit/push,
+settings PATCH, Preview env batch, local link, Preview deployment, project SSO
+forward/rollback and final documentation commit/push become valid, exactly as
+enumerated in the dedicated spec/plan/evidence.
+
+Final documentation uses `RED_DISCOVERY_AUTHORITY_SHA` as its exclusive parent:
+`STOP_DOCUMENTED` and `PASS_PARTIAL` move `1.6.8→1.6.9`, while
+`PASS_COMPLETE` moves `1.6.8→1.7`. This isolated reconciliation performs
+zero production activity and authorizes neither CI-3 nor CI-4. Detailed
+evidence:
+`docs/superpowers/evidence/2026-08-25-ci3-red1-vitest-external-discovery-reconciliation.md`.
+
+### RED 1 reconciliation hardening — Round 1
+
+Task 3 Steps 1–3 are historical/completed; the existing tests are preserved and
+the frozen install is not repeated normally. The active Phase B preflight is
+read-only and requires exact worktree identity/status/test hashes, unchanged
+lockfile hash, Vitest 2.1.9, CI-2 config hash
+`8bb6705e6315f5a28bdf6cc15cae3ff7526007913c8f7c01acd7279ad0b91266`
+without conflicting root/include, source `40/0/hash`, wrapper `0`, zero GREEN
+package/config, and `vitest --help` proof for `--root`/`--dir`/`--config`.
+Discovery/list is prohibited; frozen install occurs only if the binary is
+absent, and failure selects `STOP_DOCUMENTED`.
+
+The single RED produces a no-ANSI ordered normalized receipt binding the exact
+command fingerprint, Vitest/root/dir/config, all file/test/pass/fail/skip/exit
+counts, source/wrapper/classification fields and
+`RED1_RECONCILED_NORMALIZED_LOG_SHA256`. Final reports carry separate
+`DOCUMENTATION_BASELINE`, `RED_DISCOVERY_AUTHORITY`,
+`IMPLEMENTATION_BASELINE` and `RED1_RECONCILED` groups.
+
+Deployment reuses the clean implementation worktree; no new dedicated deploy
+worktree is authorized or expected. After SSO forward succeeds or may have
+succeeded, every failure/ambiguity—including forward response/readback—triggers
+the single rollback, forbids starting/repeating probes and requires proof that
+protection is active. Rollback failure/ambiguity is a material-risk STOP. The
+STOP enum is restricted to `NOT_VERIFIED`, `IMPLEMENTED_NOT_DEPLOYED`,
+`DEPLOYED_PROTECTED` or `PUBLIC_ROLLED_BACK`.

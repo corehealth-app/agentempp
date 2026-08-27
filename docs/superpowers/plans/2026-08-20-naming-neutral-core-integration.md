@@ -1585,3 +1585,61 @@ classification and explicitly defines a bounded recovery. The exact next gate
 is `RECONCILE_UNEXPECTED_VERCEL_PRODUCTION_TARGET_AND_AUTHORIZE_RECOVERY` on
 the VPS. Full evidence:
 `docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`.
+
+## CI-3 first CLI Production bootstrap recovery authority — dossier 1.6.17
+
+The unexpected target is classified
+`FIRST_CLI_DEPLOYMENT_BOOTSTRAP_PRODUCTION`: the general Vercel CLI contract
+says no `--prod` means Preview, while official historical and current Vercel
+Labs references describe the first deployment of a new CLI-created/linked
+project initializing Production and later deployments returning to Preview.
+This explains the observation but does not make the original artifact valid
+staging.
+
+The remotely publishable authority preserves env `3/0/0`, the sole original
+Production/READY/exact-source artifact, generated aliases, active SSO and all
+root-only evidence. Only after its exact four-path commit is remotely confirmed
+may one second deploy use explicit `--target=preview`. Remote target, READY,
+source/root/Node/framework and absent Git Integration are mandatory; any
+failure preserves all deployments, prohibits a third attempt and never unlocks
+delete.
+
+Only a distinct verified Preview permits one removal of the original raw
+deployment ID from the incident receipt. URL, project name, wildcard, Preview,
+project, env and domain removal are prohibited. Three readbacks must converge
+on Production `0`, Preview `1`, total `1`, exact Preview preserved, original
+aliases absent, custom domains zero, link absent, env `3/0/0` and SSO active.
+There is no second delete.
+
+SSO remains active through Review C. Immediately before the single forward,
+fresh Project GET must prove the remote object structurally/canonically equal
+to the frozen original; “active” alone is not enough. If forward/readback is
+ambiguous, original exact means STOP without rollback, null consumes the one
+shared rollback and requires stable restoration, and unresolved means STOP
+without mutation plus escalation. That one rollback budget is shared with a
+later public-probe failure and cannot be used twice.
+
+Final outcomes use `PRODUCTION_RECOVERY_AUTHORITY_SHA` exclusively and
+supersede every historical final allowlist:
+
+- PASS_COMPLETE uses exactly the handoff, dedicated Mobile BFF authority
+  evidence, this naming-neutral plan, Today vertical-slice spec and Today
+  vertical-slice plan at the literal paths frozen in the recovery authority;
+  `1.6.17→1.7`, subject
+  `docs(ios): authorize CI-3 after dedicated Mobile BFF verification`.
+- PASS_PARTIAL uses exactly the handoff,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`
+  and this naming-neutral plan; `1.6.17→1.6.18`, subject
+  `docs(staging): record verified dedicated Mobile BFF preview`, next gate
+  `AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING`.
+- STOP_DOCUMENTED uses exactly the handoff,
+  `docs/superpowers/evidence/2026-08-27-ci3-production-target-recovery-stop.md`
+  and this naming-neutral plan; `1.6.17→1.6.18`, subject
+  `docs(staging): record Production target recovery stop`, with the material
+  next gate and no broader cleanup. The historical single-object STOP evidence
+  path is evidence-only and is not executable for this recovery outcome.
+
+Every outcome keeps primary/live, Supabase/database writes, product production,
+CI-4, TestFlight/App Store, settings/env changes, Git Integration, force, tags,
+PR and merge prohibited. Detailed executable authority:
+`docs/superpowers/evidence/2026-08-27-ci3-first-deployment-production-recovery-authority.md`.

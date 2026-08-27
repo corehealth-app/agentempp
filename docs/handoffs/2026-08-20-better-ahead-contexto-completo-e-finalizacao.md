@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.16
+**Versão do dossiê:** 1.6.17
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3581,3 +3581,62 @@ autorizada. O próximo gate exato é
 
 Evidência completa:
 `docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`.
+
+## 53. Atualização operacional 1.6.17 — recuperação autorizada do bootstrap Production
+
+**Data:** 27/08/2026
+
+O STOP 1.6.16 foi reconciliado sem alterar o projeto remoto. A documentação
+geral atual da Vercel descreve `vercel deploy` sem `--prod` como Preview, mas o
+registro oficial do default production domain e uma referência Vercel Labs
+atual documentam a exceção: o primeiro deployment de um projeto novo criado ou
+vinculado pela CLI inicializa Production; os seguintes retornam ao fluxo
+Preview. O cliente 50.35.0 instalado também converte o target literal
+`preview` no default da API, tornando o readback remoto — e não o argumento ou
+o exit code — a prova material do target.
+
+O estado read-only continua exato: env Preview/Production/Development `3/0/0`,
+um único deployment `production`, `READY` e no source SHA dedicado
+`e3e1e252b48e42554e75899b950692c05186f60d`; dois aliases gerados pela
+plataforma, zero domínio customizado, zero custom environment, Project link
+ausente e SSO `all_except_custom_domains`. O projeto tinha zero deployments
+antes da tentativa congelada; não houve `--prod`, promoção, alias command,
+custom domain, Git Integration ou env Production. Primary/live, Supabase,
+banco e CI-4 permanecem intocados.
+
+```text
+VERCEL_FIRST_DEPLOYMENT_CLASSIFICATION=FIRST_CLI_DEPLOYMENT_BOOTSTRAP_PRODUCTION
+DOCUMENTATION_CONFLICT=GENERAL_PREVIEW_DEFAULT_VS_FIRST_DEPLOYMENT_BOOTSTRAP
+RECOVERY_ORDER=CREATE_AND_VERIFY_PREVIEW_THEN_DELETE_BOOTSTRAP_PRODUCTION
+VERCEL_STAGING_PROJECT_PRODUCTION_TARGET_TOUCHED=YES
+PRIMARY_LIVE_PRODUCT_PRODUCTION_TOUCHED=NO
+```
+
+A recuperação é estritamente bounded. Depois desta authority estar publicada
+remotamente, pode existir uma única segunda tentativa com target explicitamente
+Preview e metadata do source SHA. Se o readback não provar simultaneamente
+`target=preview`, `READY` e o SHA exato, a execução para, não cria terceiro
+deployment e não remove nada. Somente um Preview distinto e integralmente
+verificado ativa uma única remoção do ID exato do bootstrap Production; URL,
+project name, wildcard, remoção do Preview, projeto, env ou domínio permanecem
+proibidos. Readbacks em +10/+20/+40 devem terminar com exatamente um Preview,
+zero Production, env `3/0/0`, aliases do original ausentes e SSO ainda ativo.
+
+SSO permanece ativo durante Preview, inspeção protegida, remoção, settlement e
+Review C. Imediatamente antes do único forward, o objeto remoto precisa ser
+estrutural e canonicamente igual ao descritor original congelado; uma
+classificação genérica “ativo” não basta. Se o forward ou seus readbacks forem
+ambíguos, o objeto original exato termina em STOP sem rollback, `null` consome
+a única tentativa compartilhada de rollback e estado não determinável termina
+em `SSO_STATE=UNRESOLVED` sem nova mutação. O mesmo budget atende eventual
+falha dos probes públicos e nunca pode ser consumido duas vezes.
+
+Os receipts com identidades brutas permanecem root-only fora do Git. Esta
+authority registra apenas o receipt do incidente por SHA-256
+`dae421f7a86897ca16cc09d4a52590bf451a0017695ffc6c7aad8879d6065813`.
+As revisões independentes A e B aprovaram o desenho final com zero Critical,
+zero Important e zero Minor. A execução continua sem alterar settings, envs,
+Git Integration, Supabase, banco, primary/live ou CI-4 e sem PR, merge ou tag.
+
+Autoridade detalhada:
+`docs/superpowers/evidence/2026-08-27-ci3-first-deployment-production-recovery-authority.md`.

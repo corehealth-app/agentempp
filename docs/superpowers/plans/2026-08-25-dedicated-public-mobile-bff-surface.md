@@ -1572,3 +1572,67 @@ CI4=NOT_STARTED
 Authority commit/push failure is `STOP_PRE_AUTHORITY`: no emitter/runner,
 staging-value read, claim, POST, deploy or PATCH may occur. Every mutation must
 be ledgered immediately; no mutation budget may be delegated.
+
+### Replacement Tasks 35R–43R: recover first CLI Production bootstrap — dossier 1.6.17
+
+This section supersedes only the continuation gates after the 1.6.16 unexpected
+Production STOP. Env upserts remain completed at exact `3/0/0`; they are not
+repeated, corrected or deleted. The active operation is
+`RECONCILE_UNEXPECTED_VERCEL_PRODUCTION_TARGET_AND_AUTHORIZE_RECOVERY`.
+
+- [ ] Publish the exact four-path recovery authority from parent
+  `047130f334950ec50de56ac11025cdf9a78b4b96`, subject
+  `docs(staging): authorize recovery from bootstrap Production deployment`,
+  after two documentation reviews at 0 Critical/Important and one fast-forward
+  push. Failure is `STOP_PRE_AUTHORITY` with no deploy/delete.
+- [ ] Revalidate the root-only incident receipt, manager/worktrees, exact
+  implementation, env `3/0/0`, one original Production/READY/exact-source
+  artifact, two generated aliases, custom domains/environments zero, absent
+  Git link, active SSO and fresh budgets `0/1`.
+- [ ] Run the resource gate, then make exactly one second deployment with
+  `--target=preview` and the exact source/recovery metadata. Do not use prod,
+  force, cache override, alias, domain, promotion, redeploy, Git or env/token
+  argv. No third deployment exists.
+- [ ] Require remote `preview`, `READY`, exact source/root/Node/framework and
+  absent Git Integration; create the root-only Preview receipt. A repeated
+  Production target ends at
+  `ESCALATE_VERCEL_FIRST_DEPLOYMENT_TARGET_BEHAVIOR` without delete.
+- [ ] With SSO active, run the three protected minimal probes. If the Preview
+  target/READY/source gates remain exact, a minimal-probe failure may still
+  proceed only to removal followed by STOP; it never unlocks SSO forward.
+- [ ] Remove once only the original deployment ID from the incident receipt.
+  Never pass URL/project/wildcard or remove Preview/project/env/domain. Require
+  +10/+20/+40 settlement at Production `0`, Preview `1`, total `1`, original
+  aliases absent, env `3/0/0`, link absent and SSO active. Never repeat delete.
+- [ ] Inspect the dedicated artifact/manifests/routes and obtain Review C at
+  0 Critical/Important while SSO remains active. Prove 40 Mobile routes and
+  zero admin/pages/actions/middleware.
+- [ ] Immediately before the one forward, require structural equality and
+  canonical hash of remote SSO against the frozen original. Generic active is
+  insufficient. Forward/readback ambiguity uses: original exact→STOP without
+  rollback; null→one rollback plus stable readbacks; unresolved→STOP/escalate
+  without mutation. The one rollback budget is shared with probe failure.
+- [ ] After stable SSO null, execute the full public probe set against only the
+  Preview origin. On failure rollback once, restore original SSO, do not
+  reprobe and preserve Preview/env. On success create the root-only deployment
+  receipt and discover a synthetic staging patient read-only.
+- [ ] Publish exactly one final outcome from parent
+  `PRODUCTION_RECOVERY_AUTHORITY_SHA`: PASS_COMPLETE `1.6.17→1.7`/five paths;
+  PASS_PARTIAL `1.6.17→1.6.18`/three paths; or STOP_DOCUMENTED
+  `1.6.17→1.6.18`/three paths, with the subjects and next gates frozen in the
+  recovery authority evidence. CI-4 stays prohibited.
+
+```text
+RECOVERY_AUTHORITY_COMMIT_ATTEMPTS=1
+RECOVERY_AUTHORITY_PUSH_ATTEMPTS=1
+RECOVERY_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+BOOTSTRAP_PRODUCTION_DELETE_ATTEMPTS=1
+SSO_FORWARD_ATTEMPTS=1
+SSO_ROLLBACK_ATTEMPTS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+DELETE_OPERAND=ORIGINAL_DEPLOYMENT_ID_ONLY
+THIRD_DEPLOYMENT=FORBIDDEN
+PRIMARY_LIVE_PRODUCT_PRODUCTION_TOUCHED=NO
+CI4=NOT_STARTED
+```

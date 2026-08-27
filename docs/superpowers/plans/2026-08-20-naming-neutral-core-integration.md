@@ -1554,3 +1554,34 @@ Production/Development env, Production deploy, Supabase/database writes,
 primary/live use, project creation, settings PATCH, local link, V1–V4, CI-4,
 PR and merge remain prohibited. Detailed authority:
 `docs/superpowers/evidence/2026-08-27-ci3-vercel-single-object-upsert-authority.md`.
+
+## CI-3 single-object env PASS and unexpected Production deployment STOP — dossier 1.6.16
+
+The three authorized single-object upserts passed with one logical invocation
+per key, command exit 0 and stable metadata-only readbacks at +15/+30/+60.
+The final environment inventory is exactly Preview/Production/Development
+`3/0/0`; there was no external retry, second invocation, correction or env
+delete. V1–V4 remained frozen and unexecuted, and the primary/live secret was
+never opened.
+
+The sole deployment command was executed without `--prod`, alias, domain,
+promotion, redeploy or Git connection. It exited 0 and the artifact became
+`READY` with the exact implementation source SHA, but two independent
+read-only observations classified its remote target as `production` instead
+of the required `preview`. Therefore the deployment target gate failed and
+the operation ends as `STOP_DOCUMENTED`.
+
+No deployment retry, promotion, alias, delete, SSO forward, rollback or probe
+is authorized or was executed. The original SSO state, exact env inventory,
+unexpected remote artifact and all bounded evidence remain preserved. This is
+not “zero Production”: `PRODUCTION_UNTOUCHED=NO`, because Vercel classified the
+artifact as Production even though the caller did not request a production
+deployment. Supabase/database writes remain zero; CI-3 remains unauthorized
+and CI-4 has not started.
+
+This section supersedes only the continuation gates of the 1.6.15 operation.
+No external mutation may resume until a new authority reconciles the target
+classification and explicitly defines a bounded recovery. The exact next gate
+is `RECONCILE_UNEXPECTED_VERCEL_PRODUCTION_TARGET_AND_AUTHORIZE_RECOVERY` on
+the VPS. Full evidence:
+`docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`.

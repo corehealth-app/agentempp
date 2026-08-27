@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.15
+**Versão do dossiê:** 1.6.16
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3544,3 +3544,40 @@ CI4=NOT_STARTED
 
 Evidência detalhada:
 `docs/superpowers/evidence/2026-08-27-ci3-vercel-single-object-upsert-authority.md`.
+
+## 52. Atualização operacional 1.6.16 — STOP por deployment classificado como Production
+
+**Data:** 27/08/2026
+
+As três variáveis autorizadas foram publicadas individualmente e estabilizadas
+em Preview. Cada chave consumiu exatamente uma invocação lógica, todas
+terminaram com exit code 0 e não houve retry externo, segunda invocação,
+correção ou delete. Os três readbacks de cada etapa, em +15, +30 e +60,
+confirmaram a progressão exata `1/0/0`, `2/0/0` e `3/0/0` para
+Preview/Production/Development. Os retries internos do Vercel CLI 50.35.0
+permaneceram limitados à mesma requisição idempotente com `upsert=true`.
+
+O único deployment autorizado foi então invocado sem `--prod`, sem alias,
+domínio, promoção, redeploy ou conexão Git. O comando terminou com exit code 0
+e o deployment ficou `READY`, com o SHA de origem esperado. Porém tanto
+`vercel inspect` quanto uma leitura independente pela API oficial classificaram
+o target remoto como `production`, e não `preview`. Esse resultado viola o
+gate material de ambiente e encerra a operação em `STOP_DOCUMENTED`.
+
+Não houve segunda tentativa de deploy, promoção, alias, delete, SSO forward,
+rollback ou probe. O SSO original permanece ativo; os três claims, o lock da
+operação, os testes, a fonte/receipt de staging e a evidência root-only do
+deployment foram preservados. O emissor, o runner e o diretório temporário
+vazio foram removidos somente depois do settlement `3/0/0`, conforme a
+autoridade. O secret primary/live não foi aberto, Supabase e banco não foram
+alterados, e CI-4 não começou.
+
+Para manter a verdade operacional: `PRODUCTION_UNTOUCHED=NO`. Nenhuma mutação
+de Production foi solicitada pelo comando, mas a Vercel criou um artefato
+remoto classificado como Production. Ele foi preservado porque esta autoridade
+não concede delete, rollback ou outra recuperação. CI-3 continua não
+autorizada. O próximo gate exato é
+`RECONCILE_UNEXPECTED_VERCEL_PRODUCTION_TARGET_AND_AUTHORIZE_RECOVERY`, na VPS.
+
+Evidência completa:
+`docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`.

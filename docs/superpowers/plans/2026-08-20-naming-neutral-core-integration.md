@@ -1643,3 +1643,54 @@ Every outcome keeps primary/live, Supabase/database writes, product production,
 CI-4, TestFlight/App Store, settings/env changes, Git Integration, force, tags,
 PR and merge prohibited. Detailed executable authority:
 `docs/superpowers/evidence/2026-08-27-ci3-first-deployment-production-recovery-authority.md`.
+
+## CI-3 dedicated Mobile BFF Preview verification — dossier 1.6.18
+
+The remotely published recovery authority was executed within all bounded
+budgets. One second deployment became the semantic Preview at the exact
+implementation SHA. The original first-CLI bootstrap Production deployment
+was removed once by exact ID and settled at +10/+20/+40 with Production `0`,
+Preview `1`, total `1`, aliases `0`, env `3/0/0`, absent Project link and active
+SSO. There was no third deployment or second delete.
+
+Protected Review C passed at 0 Critical and 0 Important. The artifact contains
+40 Mobile API routes and zero admin routes, authored pages, Server Actions or
+middleware. The sole SSO forward stabilized as null at +10/+20/+40; shared
+rollback remained unused. Public probing passed 30/30: three Mobile 401
+contracts, eight base forbidden routes and all 19 frozen prior findings. The
+root-only final deployment receipt is stable and holds the only raw origin.
+
+Read-only staging discovery then found no Auth user, no eligible explicitly
+synthetic patient and no approved runtime patient credential. It created no
+user/profile/password/session and performed no database write. Therefore this
+operation terminates `PASS_PARTIAL`, not `PASS_COMPLETE`:
+
+```text
+VERCEL_FIRST_DEPLOYMENT_CLASSIFICATION=FIRST_CLI_DEPLOYMENT_BOOTSTRAP_PRODUCTION
+VERCEL_BOOTSTRAP_PRODUCTION_RECOVERY=VERIFIED
+VERCEL_ORIGINAL_PRODUCTION_DEPLOYMENT=REMOVED
+VERCEL_ACTIVE_PRODUCTION_DEPLOYMENT_COUNT=0
+VERCEL_ACTIVE_PREVIEW_DEPLOYMENT_COUNT=1
+VERCEL_RECOVERY_PREVIEW_TARGET=VERIFIED
+VERCEL_PREVIEW_ENV_COUNT=3
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+PRIMARY_LIVE_PRODUCT_PRODUCTION_TOUCHED=NO
+DEDICATED_MOBILE_BFF_STATUS=VERIFIED
+STAGING_BFF_STATUS=VERIFIED
+SYNTHETIC_PATIENT_PATH=MISSING
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING
+```
+
+The verified Preview must be preserved. The next gate is an authoring-only VPS
+operation: it must design, independently review and publish the bounded
+authority for a later execution to provision only a synthetic staging patient
+and approved patient-token mechanism, then stop before any creation. The
+future authority must prohibit a service-role bearer as the patient token,
+changes to primary/live or product Production, CI-4, Preview removal/redeploy,
+changes to the three Vercel envs and repeated SSO/delete operations.
+
+Full outcome evidence:
+`docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`.

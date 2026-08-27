@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.17
+**Versão do dossiê:** 1.6.18
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3640,3 +3640,75 @@ Git Integration, Supabase, banco, primary/live ou CI-4 e sem PR, merge ou tag.
 
 Autoridade detalhada:
 `docs/superpowers/evidence/2026-08-27-ci3-first-deployment-production-recovery-authority.md`.
+
+## 54. Atualização operacional 1.6.18 — BFF dedicado verificado, paciente sintético ausente
+
+**Data:** 27/08/2026
+
+A recuperação bounded do primeiro deployment foi concluída. A única segunda
+tentativa usou `--target=preview`, ficou `READY` no source SHA dedicado
+`e3e1e252b48e42554e75899b950692c05186f60d` e foi classificada honestamente
+como Preview pelo predicado composto congelado: CLI `preview`, API wire
+`target=null` e nunca `production`. A CLI 50.35.0 normaliza o target literal
+Preview para target omitido antes da API; duas revisões independentes
+aprovaram essa equivalência contextual com zero Critical/Important.
+
+Com o Preview distinto e íntegro, a única remoção autorizada do ID do bootstrap
+Production foi consumida. O comando terminou com exit 0 e os readbacks
++10/+20/+40 provaram original ausente, aliases zero, Production `0`, Preview
+semântico `1`, total `1`, env Preview/Production/Development `3/0/0`, Project
+link ausente e SSO ainda ativo. Não houve terceiro deployment, segundo delete,
+remoção do Preview/projeto/env/domínio ou custom domain.
+
+Review C aprovou o ingress dedicado com 0 Critical e 0 Important. Os manifests
+provam 40 Mobile API routes, zero admin routes, zero pages autorais, zero
+Server Actions e zero middleware. A inspeção protegida passou. O único forward
+SSO autorizado retornou HTTP 200; os três snapshots estabilizaram em
+`ssoProtection=null`, Production `0`, Preview `1` READY e env `3/0/0`.
+Rollback permaneceu `0/1`. Os probes públicos passaram 30/30: três contratos
+Mobile 401, oito rotas proibidas base e os 19 achados congelados em 404, sem
+redirect, stack, secret ou PII.
+
+O receipt final do deployment foi publicado fora do Git, root:root 0600, SHA-256
+`f9f2b8cdb4aaa066ceb5ec73978f32d8710c434a9582b68ed9b1375096ce60b6`.
+O origin bruto existe somente nele. TEAM_DEFAULT_MUTATION_REQUESTS permaneceu
+zero e TEAM_DEFAULT_LIVE_STATE não foi observado.
+
+A descoberta posterior foi somente leitura no Supabase staging. O inventário
+retornou zero usuários Auth, zero identidade explicitamente sintética elegível
+e zero mecanismo de credencial runtime aprovado. Nenhum usuário, profile,
+senha, confirmação, token ou dado foi criado ou alterado; PII não foi
+reportada. O service role staging autorizou apenas os GETs de inventário e não
+foi usado como bearer runtime de paciente; primary/live não foi aberto. Logo:
+
+```text
+FINAL_STATUS=PASS_PARTIAL
+VERCEL_FIRST_DEPLOYMENT_CLASSIFICATION=FIRST_CLI_DEPLOYMENT_BOOTSTRAP_PRODUCTION
+VERCEL_BOOTSTRAP_PRODUCTION_RECOVERY=VERIFIED
+VERCEL_ORIGINAL_PRODUCTION_DEPLOYMENT=REMOVED
+VERCEL_ACTIVE_PRODUCTION_DEPLOYMENT_COUNT=0
+VERCEL_ACTIVE_PREVIEW_DEPLOYMENT_COUNT=1
+VERCEL_RECOVERY_PREVIEW_TARGET=VERIFIED
+VERCEL_PREVIEW_ENV_COUNT=3
+VERCEL_PRODUCTION_ENV_COUNT=0
+VERCEL_DEVELOPMENT_ENV_COUNT=0
+PRIMARY_LIVE_PRODUCT_PRODUCTION_TOUCHED=NO
+DEDICATED_MOBILE_BFF_STATUS=VERIFIED
+STAGING_BFF_STATUS=VERIFIED
+SYNTHETIC_PATIENT_PATH=MISSING
+CI3_DOCUMENTATION_STATUS=NOT_AUTHORIZED
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING
+```
+
+O Preview público verificado deve ser preservado. CI-3 continua não autorizada
+porque falta a identidade sintética. A próxima operação é exclusivamente
+documental: deve redigir, revisar e publicar a autoridade bounded para uma
+futura execução provisionar exatamente uma conta staging explicitamente
+sintética, confirmada, patient-role, ativa, não admin/bloqueada/deletada, com
+mecanismo de credencial aprovado e token runtime de paciente — nunca bearer de
+service role — e então parar antes de qualquer criação. CI-4, primary/live,
+produção do produto, TestFlight e App Store permanecem proibidos.
+
+Evidência completa:
+`docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`.

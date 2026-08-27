@@ -1481,3 +1481,76 @@ inconclusive terminal state, classify stable zero, partial or exact-three state,
 cover late completion in tests, and never issue a second POST. The complete STOP
 evidence is in
 `docs/superpowers/evidence/2026-08-26-ci3-vercel-one-shot-env-or-mobile-bff-stop.md`.
+
+## CI-3 Vercel single-object Preview upsert authority — dossier 1.6.15
+
+The V1–V4 transport line remains frozen and unexecuted. The batch array is
+rejected because Vercel CLI 50.35.0 does not serialize arrays through its JSON
+body branch. A plain object is parsed from stdin, serialized with
+`JSON.stringify` and sent as `application/json`; official OpenAPI accepts the
+single object, `upsert=true`, `encrypted`/`sensitive` and Preview target. The
+no-network synthetic proof and two independent reviews passed at 0 Critical,
+0 Important and 0 Minor.
+
+After remote publication of the 1.6.15 authority, CI-3 staging may resume only
+as three sequential logical invocations, one immutable object per key and one
+invocation per key. CLI internal retries reuse that same object and are
+accepted only with `upsert=true`; no outer retry, second invocation, delete or
+correction exists. A durable no-clobber claim is published before each call.
+
+Metadata-only Env GET snapshots at +15, +30 and +60 must be identical before
+the next key: URL encrypted gives total 1, anon encrypted gives total 2 and
+service role sensitive gives total 3, always Preview-only with Production and
+Development zero. Any zero, partial, duplicate, wrong, oscillating or
+inconclusive state is STOP. A nonzero CLI result may pass only as
+`COMMAND_AMBIGUOUS_REMOTE_VERIFIED` when stable remote metadata is exact.
+
+Only stable `3/0/0` unlocks the already authorized one protected Preview
+deployment. READY/source/surface review precede one SSO forward. Forward
+Project GET at +10/+20/+40 must be stable; divergence is STOP without second
+forward and without rollback. Only stable forward state unlocks probes. A
+probe failure triggers the single frozen rollback, no reprobe and preserved
+env/deployment. Patient discovery remains read-only.
+
+Final outcomes use `SINGLE_OBJECT_AUTHORITY_SHA` as parent:
+
+The contracts below wholly supersede every historical final-documentation
+allowlist, dossier transition, subject and macro-prompt instruction, including
+Task 15 from 2026-08-25. Historical outcome instructions are evidence only.
+
+- PASS_COMPLETE: exact five-path allowlist
+  (`docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-authority.md`,
+  `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`,
+  `docs/superpowers/specs/2026-08-27-ci3-today-staging-vertical-slice.md` and
+  `docs/superpowers/plans/2026-08-27-ci3-today-staging-vertical-slice.md`),
+  `1.6.15→1.7`,
+  subject `docs(ios): authorize CI-3 after dedicated Mobile BFF verification`,
+  one commit/push and integral Mac macro-prompt; authorize CI-3 on the Mac,
+  CI-4 prohibited.
+- PASS_PARTIAL: exact three-path allowlist
+  (`docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`
+  and `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`),
+  `1.6.15→1.6.16`,
+  subject `docs(staging): record verified dedicated Mobile BFF preview`, one
+  commit/push and macro-prompt `AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING`
+  without creating a user; CI-3 not authorized.
+- STOP_DOCUMENTED: exact three-path allowlist
+  (`docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`
+  and `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`),
+  `1.6.15→1.6.16`, subject
+  `docs(staging): record single-object Preview env or Mobile BFF stop`, one
+  commit/push and complete key/gate/count/exit/retry/readback/env/deploy/SSO/
+  probe/preservation/Production/CI-3/next-gate record; CI-3 not authorized.
+
+Every outcome also requires empty initial staging, exact allowlist,
+`git diff --check`, full diff and sensitive-data scan, zero Production/CI-4,
+two reviews at zero Critical/Important, selective staging without historical
+paths, exact parent and one non-force commit/push with no tags, PR or merge.
+
+Production/Development env, Production deploy, Supabase/database writes,
+primary/live use, project creation, settings PATCH, local link, V1–V4, CI-4,
+PR and merge remain prohibited. Detailed authority:
+`docs/superpowers/evidence/2026-08-27-ci3-vercel-single-object-upsert-authority.md`.

@@ -1462,3 +1462,113 @@ implementation publication. Production, Supabase/database writes, primary/live
 use, CI-4, PR, merge, tags, TestFlight and App Store remain prohibited.
 Authority commit/push failure is `STOP_PRE_AUTHORITY`: do not create the source
 receipt, open staging values or execute POST.
+
+### Replacement Task 26R–34R: three single-object Preview upserts and CI-3 continuation — dossier 1.6.15
+
+This replacement wholly supersedes the V1 env-batch execution and every later
+V2/V3/V4 proposal for this continuation. V1–V4 remain immutable and may not be
+executed. No V5 is created. The historical array transport is rejected; the
+active operation is
+`RECONCILE_VERCEL_CLI_JSON_ARRAY_TRANSPORT_WITH_SINGLE_OBJECT_UPSERTS_AND_RESUME_CI3`.
+
+- [ ] Publish exactly the four-path documentary authority from parent
+  `73f5a0b2ad633d7302f636168a01e297c5c00d18`, subject
+  `docs(staging): authorize single-object Preview env upserts`, after two
+  documentation reviews at 0 Critical/Important and one fast-forward push.
+- [ ] Only after remote confirmation, create root-only emitter/runner and
+  claim directory outside Git. Use TDD with at least 24 synthetic tests,
+  `node --check`, static scans and one independent 0 Critical/Important review.
+- [ ] Immediate preflight requires exact manager/worktrees, exact project
+  settings/link/SSO, env `0/0/0`, deployments 0, three absent claims, frozen
+  staging file/receipt hashes and fingerprints, and unopened primary/live.
+- [ ] Operation A invokes CLI once for `NEXT_PUBLIC_SUPABASE_URL`, encrypted
+  Preview object with `upsert=true`; require stable metadata-only readbacks at
+  +15/+30/+60 and exact inventory 1.
+- [ ] Only after A, Operation B invokes CLI once for
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, encrypted Preview object; require the same
+  readbacks and exact inventory 2.
+- [ ] Only after B, Operation C invokes CLI once for
+  `SUPABASE_SERVICE_ROLE_KEY`, sensitive Preview object; require the same
+  readbacks and exact inventory 3. Never downgrade the type.
+- [ ] Each pre-invocation claim is exclusive and permanent, with logical
+  budget/count one. Internal CLI retries are accepted only inside that
+  invocation with identical content. There is no external retry, second
+  logical invocation, delete or correction. Zero/partial/wrong/oscillating
+  state is STOP. CLI nonzero is accepted only when exact stable state is
+  independently verified.
+- [ ] After env `3/0/0`, remove only emitter/runner and their owned temporaries,
+  preserve claims, run pre-deploy review and VPS resource gate, then execute
+  one Preview deploy with metadata binding implementation SHA
+  `e3e1e252b48e42554e75899b950692c05186f60d`.
+- [ ] Require READY Preview, exact source/root/Node/framework and protected
+  Review C at 0 Critical/Important before one SSO forward. Stable SSO readbacks
+  precede public probes.
+- [ ] Project GET at +10/+20/+40 must prove the forward state. A divergence is
+  STOP without second forward and without rollback. Only stable forward state
+  unlocks public probes. A probe failure triggers one rollback using the frozen
+  descriptor, stable protection readbacks, no reprobe and preserved
+  env/deployment. Rollback ambiguity is a material-risk STOP.
+- [ ] On public PASS, create the root-only deployment receipt, discover a
+  synthetic patient read-only and publish exactly one outcome from parent
+  `SINGLE_OBJECT_AUTHORITY_SHA` using the complete contracts below.
+
+Final outcome contracts:
+
+The contracts below wholly supersede Task 15 and every older final-documentation
+allowlist, dossier transition, subject and macro-prompt instruction. Historical
+outcome instructions are evidence only and are not executable in this operation.
+
+- PASS_COMPLETE uses exactly
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-authority.md`,
+  `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`,
+  `docs/superpowers/specs/2026-08-27-ci3-today-staging-vertical-slice.md` and
+  `docs/superpowers/plans/2026-08-27-ci3-today-staging-vertical-slice.md`; moves
+  `1.6.15→1.7`; subject
+  `docs(ios): authorize CI-3 after dedicated Mobile BFF verification`; one
+  commit/push; generates the integral Mac macro-prompt.
+- PASS_PARTIAL uses exactly
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`
+  and `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`;
+  moves `1.6.15→1.6.16`; subject
+  `docs(staging): record verified dedicated Mobile BFF preview`; one
+  commit/push; generates `AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING`
+  without creating a user.
+- STOP_DOCUMENTED uses exactly
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`
+  and `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`;
+  moves `1.6.15→1.6.16`; subject
+  `docs(staging): record single-object Preview env or Mobile BFF stop`; one
+  commit/push; records key/gate, logical count, command exit, retry model,
+  readbacks, final env, deployment/SSO/probes, zero second invocation/delete,
+  preserved resources, untouched Production, unauthorized CI-3 and exact next
+  gate.
+- Every final commit requires empty initial staging, exact allowlist,
+  `git diff --check`, full diff and sensitive scan, zero Production/CI-4, two
+  reviews at zero Critical/Important, selective staging without historical
+  paths, exact parent and one non-force commit/push with no tags, PR or merge.
+
+```text
+VERCEL_JSON_ARRAY_TRANSPORT=REJECTED
+VERCEL_SINGLE_PLAIN_OBJECT_TRANSPORT=SUPPORTED
+VERCEL_INTERNAL_RETRIES=ACCEPTED_PER_LOGICAL_KEY_UPSERT
+SINGLE_OBJECT_AUTHORITY_COMMIT_ATTEMPTS=1
+SINGLE_OBJECT_AUTHORITY_PUSH_ATTEMPTS=1
+VERCEL_ENV_LOGICAL_INVOCATIONS_MAX=3
+VERCEL_ENV_LOGICAL_INVOCATIONS_PER_KEY_MAX=1
+VERCEL_ENV_SECOND_LOGICAL_INVOCATION=FORBIDDEN
+VERCEL_ENV_DELETE=FORBIDDEN
+VERCEL_PREVIEW_DEPLOYMENT_ATTEMPTS=1
+VERCEL_PROJECT_SSO_FORWARD_LOGICAL_INVOCATIONS=1
+VERCEL_PROJECT_SSO_ROLLBACK_LOGICAL_INVOCATIONS=1
+FINAL_DOCUMENTATION_COMMIT_ATTEMPTS=1
+FINAL_DOCUMENTATION_PUSH_ATTEMPTS=1
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+```
+
+Authority commit/push failure is `STOP_PRE_AUTHORITY`: no emitter/runner,
+staging-value read, claim, POST, deploy or PATCH may occur. Every mutation must
+be ledgered immediately; no mutation budget may be delegated.

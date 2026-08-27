@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.14
+**Versão do dossiê:** 1.6.15
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3433,3 +3433,114 @@ resultado parcial. Um GET imediato isolado não basta, pois o POST remoto pode
 concluir depois desse snapshot. A autoridade deve fixar budgets de GET,
 condições de estabilidade e classificação inconclusiva, sempre sem um segundo
 POST, além de novos testes, hashes, receipts e publicação remota.
+
+## 51. Atualização operacional 1.6.15 — três upserts Preview com objeto JSON simples
+
+**Data:** 27/08/2026
+
+A investigação do transporte histórico confirmou que o batch em array é
+inválido no Vercel CLI 50.35.0: arrays não entram no caminho de serialização
+JSON do cliente. Nenhum POST real foi executado pelas reconciliações
+posteriores e o inventário remoto continua Preview/Production/Development
+`0/0/0`, com zero deployments e SSO original ativo.
+
+O caminho de objeto JSON simples foi comprovado read-only. O CLI lê stdin,
+aplica `JSON.parse`, reconhece um objeto cujo construtor é `Object`, serializa
+com `JSON.stringify` e envia `Content-Type: application/json`. O OpenAPI
+oficial aceita um único objeto, `upsert=true`, tipos `encrypted` e `sensitive`
+e target `preview`. Um teste sintético sem rede aprovou três objetos e rejeitou
+array. Duas revisões independentes aprovaram o desenho em 0 Critical,
+0 Important e 0 Minor.
+
+Esta autoridade cria exatamente três operações lógicas sequenciais, uma por
+chave: URL pública, chave pública anônima e chave de serviço. Cada operação usa
+um único objeto com somente `key`, `value`, `type` e `target:[preview]`. Os
+retries internos do CLI são aceitos apenas dentro da mesma invocação lógica,
+com conteúdo idêntico e `upsert=true`. Uma segunda invocação lógica para a
+mesma chave é proibida.
+
+Antes de cada invocação, um claim exclusivo e durável deve registrar o budget
+consumido sem conter valor. Depois de cada invocação, Env GET sem decrypt deve
+produzir três snapshots idênticos em +15, +30 e +60 segundos. A sequência só
+avança com inventário exato: `1/0/0`, depois `2/0/0`, depois `3/0/0`, tipos e
+targets corretos e nenhuma chave inesperada. Estado zero, parcial, duplicado,
+errado, oscilante ou inconclusivo termina em STOP sem retry externo, segunda
+invocação, correção ou delete. Exit não zero só pode ser aceito como
+`COMMAND_AMBIGUOUS_REMOTE_VERIFIED` quando os três readbacks provarem o estado
+remoto exato e estável.
+
+V1, V2, V3 e V4 permanecem preservados e não podem ser modificados ou
+executados. Os descritores SSO forward, rollback e original foram revalidados
+por metadata, hash e schema, sem alteração. O secret primary/live permanece
+proibido. Esta etapa autoriza apenas Preview, zero Production/Development,
+zero Supabase/database write e zero CI-4.
+
+Somente depois do inventário `3/0/0` estável poderá ocorrer um único deploy
+Preview protegido, seguido de inspeção e uma operação lógica de SSO forward.
+Os readbacks do forward em +10/+20/+40 devem ser estáveis; qualquer divergência
+nessa fase termina em STOP sem segundo forward e sem rollback. Somente depois
+do forward comprovado os probes públicos são executados. Se qualquer probe
+falhar, uma única operação lógica de rollback é autorizada, seguida dos
+readbacks do objeto original e sem reprobe.
+
+Outcomes:
+
+Os três contratos abaixo supersedem integralmente todas as allowlists,
+versões, subjects e instruções finais históricas, inclusive as do Task 15 de
+25/08. Nenhuma allowlist histórica permanece executável para esta operação.
+
+- `PASS_COMPLETE`: BFF/probes aprovados, caminho de paciente sintético
+  `VERIFIED` e Today `PASS` ou `DEFERRED_TO_MAC_BY_DESIGN`; atualizar
+  `1.6.15→1.7` em exatamente
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-authority.md`,
+  `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`,
+  `docs/superpowers/specs/2026-08-27-ci3-today-staging-vertical-slice.md` e
+  `docs/superpowers/plans/2026-08-27-ci3-today-staging-vertical-slice.md`; parent
+  `SINGLE_OBJECT_AUTHORITY_SHA`; assunto
+  `docs(ios): authorize CI-3 after dedicated Mobile BFF verification`; um
+  commit/push; gerar o macro-prompt integral do Mac; autorizar CI-3 e manter
+  CI-4 proibida.
+- `PASS_PARTIAL`: BFF/probes aprovados e paciente sintético `MISSING`; atualizar
+  `1.6.15→1.6.16` em exatamente
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`
+  e `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`;
+  parent `SINGLE_OBJECT_AUTHORITY_SHA`; assunto
+  `docs(staging): record verified dedicated Mobile BFF preview`; um
+  commit/push; gerar `AUTHORIZE_SYNTHETIC_STAGING_PATIENT_PROVISIONING`, sem
+  criar usuário; preservar Preview e manter CI-3 não autorizada.
+- `STOP_DOCUMENTED`: qualquer divergência depois desta autoridade; atualizar
+  `1.6.15→1.6.16` em exatamente
+  `docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`,
+  `docs/superpowers/evidence/2026-08-27-ci3-single-object-env-or-mobile-bff-stop.md`
+  e `docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md`;
+  parent `SINGLE_OBJECT_AUTHORITY_SHA`; assunto
+  `docs(staging): record single-object Preview env or Mobile BFF stop`; um
+  commit/push; registrar chave/gate, contagem lógica, exit, modelo de retries,
+  readbacks, estado final de env, deployment/SSO/probes, zero segunda
+  invocação/delete, recursos preservados, produção intocada, CI-3 não
+  autorizada e próximo gate exato.
+
+Para qualquer outcome final: staging inicial vazio, allowlist exata,
+`git diff --check`, diff integral, scan de token/fingerprint/secret/raw
+origin/raw ID/PII, zero Production, zero CI-4, duas revisões em zero
+Critical/Important, staging seletivo sem histórico, parent exato, um commit e
+um push sem force, tags, PR ou merge.
+
+```text
+VERCEL_JSON_ARRAY_TRANSPORT=REJECTED
+VERCEL_SINGLE_PLAIN_OBJECT_TRANSPORT=SUPPORTED
+VERCEL_INTERNAL_RETRIES=ACCEPTED_PER_LOGICAL_KEY_UPSERT
+SINGLE_OBJECT_AUTHORITY_COMMIT_ATTEMPTS=1
+SINGLE_OBJECT_AUTHORITY_PUSH_ATTEMPTS=1
+VERCEL_ENV_LOGICAL_INVOCATIONS_MAX=3
+VERCEL_ENV_LOGICAL_INVOCATIONS_PER_KEY_MAX=1
+VERCEL_ENV_SECOND_LOGICAL_INVOCATION=FORBIDDEN
+VERCEL_ENV_DELETE=FORBIDDEN
+PRODUCTION=UNTOUCHED
+CI4=NOT_STARTED
+```
+
+Evidência detalhada:
+`docs/superpowers/evidence/2026-08-27-ci3-vercel-single-object-upsert-authority.md`.

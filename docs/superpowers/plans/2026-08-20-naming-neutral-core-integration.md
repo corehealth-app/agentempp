@@ -1816,3 +1816,56 @@ Publication of this three-path documentation commit authorizes only the future
 operation `EXECUTE_SYNTHETIC_STAGING_PATIENT_PROVISIONING_AND_AUTHENTICATED_TODAY`.
 It does not execute it, authorize CI-4, mutate Vercel, open primary/live or
 touch product Production.
+
+## Synthetic Auth identity readback resume authority — dossier 1.6.20
+
+The one authorized 1.6.19 execution created exactly one synthetic staging Auth
+identity and stopped before sign-in because its launcher required byte-exact
+e-mail equality. The credential's generated local part contained uppercase
+characters, while the official Supabase Auth implementation canonicalizes the
+address with `strings.ToLower` before persistence. Lowercase comparative hashes
+agree across credential, Admin GET, Admin LIST and `auth.users`.
+
+Read-only settlement proved Auth `1`, synthetic match `1`, one e-mail identity
+and zero patient/profile/progress/entitlement/event/storage. Confirmation,
+typed required app metadata, provider, role/audience, phone absence and
+ban/delete/anonymous/SSO predicates are valid. Provider/provider-list
+augmentation, first-provider user metadata, LIST identity projection and
+null/empty fields are documented server or representation semantics.
+
+```text
+ROOT_CAUSE=CLIENT_EXPECTED_RAW_EMAIL_WHILE_AUTH_CANONICALIZED_EMAIL_TO_LOWERCASE
+ROOT_CAUSE_CLASSIFICATION=NORMALIZED_ALIAS_DOCUMENTED
+OFFICIAL_AUTH_SEMANTICS_STREAM_SHA256=14e3a6be89402808e485a87108d7a597bd28616b21c72bc255d8a7d4816cb169
+LOCAL_AUTH_JS_SOURCE_STREAM_SHA256=0252913cf3003ec3224243b9f344793a2730a446f861d5c03a00405596b1dd2c
+DIAGNOSTIC_MATRIX_SHA256=9ddba9fa79f46f82591a8b031f0c36298fd88394fd9e3edfacd188d24f98e812
+REVIEW_A=GO_0_CRITICAL_0_IMPORTANT_0_MINOR
+REVIEW_B=GO_0_CRITICAL_0_IMPORTANT_1_MINOR_SUPPLEMENTAL_TEST_SEQUENCE
+```
+
+After this exact three-path documentation commit is remotely published, one
+later VPS operation may resume only from `AUTH_USER_CREATED`. It must reuse the
+preserved claim, credential, recovery receipt and exact Auth user, compare the
+credential e-mail through documented lowercase canonicalization, and execute
+the remaining sequence once: sign-in, `/me` bootstrap/readback, entitlement
+grant/readback, `/entitlements`, `/today`, then provisioning receipt only on
+complete success.
+
+Create remains consumed `1/1`; a second create is forbidden. Auth update and
+delete are `0/0`. Credential rewrite, claim overwrite/removal, recovery receipt
+removal, deadline change and retry of a consumed gate are forbidden. Remaining
+budgets are sign-in `0/1`, `/me` `0/1`, entitlement `0/1`, entitlement readback
+`0/1`, `/entitlements` `0/1` and `/today` `0/1`. Original ambiguity,
+preservation and rollback rules continue to apply after the resume point.
+
+The cleanup deadline remains `2026-09-11T11:44:11.182Z`; cleanup still needs a
+separate authority. Vercel, SSO, deployment, env, primary/live, product
+Production, CI-3 and CI-4 remain unchanged and outside this authority. The
+complete evidence and next-operation contract are in
+`docs/superpowers/evidence/2026-08-28-ci3-synthetic-auth-identity-readback-diagnostic.md`.
+
+```text
+RESUME_AUTHORITY_STATUS=PUBLISHED_PENDING_COMMIT_IDENTITY
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RESUME_EXISTING_SYNTHETIC_AUTH_IDENTITY_AND_COMPLETE_AUTHENTICATED_TODAY
+```

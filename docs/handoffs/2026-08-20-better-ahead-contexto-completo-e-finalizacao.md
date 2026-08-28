@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.19
+**Versão do dossiê:** 1.6.20
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3813,3 +3813,69 @@ CI4_STARTED=NO
 NEXT_ENVIRONMENT=VPS
 NEXT_GATE=EXECUTE_SYNTHETIC_STAGING_PATIENT_PROVISIONING_AND_AUTHENTICATED_TODAY
 ```
+
+## 56. Atualização operacional 1.6.20 — readback Auth reconciliado e retomada autorizada
+
+**Data:** 28/08/2026
+
+A execução única autorizada em 1.6.19 criou um Auth user sintético e parou
+antes do sign-in em `CREDENTIAL_WRITTEN`, com
+`auth_identity_contract_failed`. Claim, credential e recovery receipt ficaram
+preservados; provisioning receipt não existe. Create `1/1` e readback `1/1`
+foram consumidos; sign-in, `/me`, entitlement, `/entitlements` e `/today`
+permanecem `0/1`.
+
+O diagnóstico read-only usou 35/35 testes sintéticos sem rede, exatamente um
+Admin LIST, um Admin GET e uma consulta SQL oficial sanitizada. Ele confirmou
+Auth total `1`, synthetic match `1`, uma única identidade e-mail, e zero
+patient/profile/progress/entitlement/event/storage.
+
+A causa exata foi a igualdade case-sensitive do launcher. O identificador
+aleatório da credencial continha maiúsculas, enquanto o Supabase Auth aplica
+`strings.ToLower` ao e-mail antes de persistir. O hash do e-mail da credencial
+em minúsculas coincide com Admin GET, Admin LIST e banco. Todos os demais
+campos obrigatórios são válidos: e-mail confirmado, metadata sintética typed,
+provider e identidade e-mail, role/aud authenticated, phone ausente e usuário
+não anônimo, não SSO, não banido e não deletado. A auditoria pré-commit também
+registrou um Minor de sequência: 11 casos suplementares de redaction/order
+foram executados depois dos reads reais, sem rede ou repetição de read; o
+helper já tinha guard de output e revisão estática antes do primeiro read.
+
+`provider`/`providers`, provider identity data e a projeção sem identities do
+LIST foram classificados conforme docs/source oficiais. Toda diferença é
+somente `EXTRA_SERVER_OWNED_DOCUMENTED`, `NORMALIZED_ALIAS_DOCUMENTED` ou
+`NORMALIZED_NULL_EMPTY_DOCUMENTED`. As revisões A e B aprovaram a retomada com
+zero Critical e zero Important; Review B registrou o único Minor de sequência
+acima.
+
+```text
+OFFICIAL_AUTH_SEMANTICS_STREAM_SHA256=14e3a6be89402808e485a87108d7a597bd28616b21c72bc255d8a7d4816cb169
+LOCAL_AUTH_JS_SOURCE_STREAM_SHA256=0252913cf3003ec3224243b9f344793a2730a446f861d5c03a00405596b1dd2c
+DIAGNOSTIC_MATRIX_SHA256=9ddba9fa79f46f82591a8b031f0c36298fd88394fd9e3edfacd188d24f98e812
+RESUME_AUTHORITY_STATUS=PUBLISHED_PENDING_COMMIT_IDENTITY
+STATE_START=AUTH_USER_CREATED
+AUTH_USER_CREATION_ATTEMPTS=1/1_CONSUMED
+SECOND_AUTH_USER_CREATION=NO
+PATIENT_SIGN_IN_ATTEMPTS=0/1
+PATIENT_ME_BOOTSTRAP_ATTEMPTS=0/1
+ENTITLEMENT_CREATION_ATTEMPTS=0/1
+ENTITLEMENTS_ENDPOINT_PROBE_ATTEMPTS=0/1
+AUTHENTICATED_TODAY_PROBE_ATTEMPTS=0/1
+CLEANUP_DEADLINE=2026-09-11T11:44:11.182Z
+SUPABASE_WRITE=NO
+DATABASE_WRITE=NO
+VERCEL_WRITE=NO
+PRIMARY_LIVE_OPENED=NO
+CI3_STARTED=NO
+CI4_STARTED=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=RESUME_EXISTING_SYNTHETIC_AUTH_IDENTITY_AND_COMPLETE_AUTHENTICATED_TODAY
+```
+
+A próxima operação deve reutilizar a identidade e credencial existentes,
+comparar e-mail pelo canonical lowercase documentado e continuar exatamente
+sign-in → `/me` → grant/readback → `/entitlements` → `/today`. Ela não pode
+criar, atualizar ou apagar Auth user, reescrever credential, sobrescrever ou
+remover claim/recovery receipt, alterar deadline, tocar Vercel/primary/live ou
+iniciar CI-4. A autoridade integral está em
+`docs/superpowers/evidence/2026-08-28-ci3-synthetic-auth-identity-readback-diagnostic.md`.

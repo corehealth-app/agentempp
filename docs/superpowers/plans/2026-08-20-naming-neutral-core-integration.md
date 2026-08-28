@@ -1694,3 +1694,125 @@ changes to the three Vercel envs and repeated SSO/delete operations.
 
 Full outcome evidence:
 `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`.
+
+## Synthetic staging patient provisioning authority — dossier 1.6.19
+
+The authoring-only gate has frozen a later one-patient staging operation. It
+does not execute that operation. The verified dedicated BFF remains one READY
+semantic Preview at implementation SHA
+`e3e1e252b48e42554e75899b950692c05186f60d`, with Production `0`, env
+Preview/Production/Development `3/0/0`, SSO `null` and the published public
+probe set `30/30`. Project ref is exactly `xitugspwfxkcluxvrdeg`; primary/live
+is outside the trust boundary.
+
+The source and live staging schema establish three mandatory boundaries:
+
+1. one confirmed Supabase Auth identity with the exact synthetic app-metadata
+   marker;
+2. one active domain patient created canonically by a patient-bearer
+   `GET /api/mobile/v1/me` through `bootstrap_patient_profile()`;
+3. one active `bodyflow_full` entitlement created by the trusted-backend
+   `apply_entitlement_event` RPC.
+
+`/me` and `/entitlements` are entitlement-exempt. `/today` is not and returns
+402 without active access. No manual profile insert, direct entitlement table
+write, patient self-grant or service-role patient bearer is authorized.
+
+The frozen future grant is:
+
+```text
+ENTITLEMENT_KEY=bodyflow_full
+ENTITLEMENT_SOURCE=manual
+ENTITLEMENT_STATUS=active
+ENTITLEMENT_PLAN=trial
+ENTITLEMENT_ENVIRONMENT=sandbox
+ENTITLEMENT_EVENT_TYPE=grant
+ENTITLEMENT_REASON=ci3_synthetic_staging
+ENTITLEMENT_START=GRANT_AT
+ENTITLEMENT_ACCESS_EXPIRY=CREATED_AT_PLUS_14_DAYS
+ENTITLEMENT_GRACE_EXPIRY=NULL
+ENTITLEMENT_CANCEL_AT_PERIOD_END=false
+ENTITLEMENT_ACTOR=one receipt-bound operation UUID
+OPERATION_MARKER_PATTERN=ci3-synthetic-<UTC_COMPACT>-<RANDOM_BASE32>
+ENTITLEMENT_SOURCE_REFERENCE=<OPERATION_MARKER>
+ENTITLEMENT_PROVIDER_EVENT_ID=<OPERATION_MARKER>-grant
+ENTITLEMENT_RPC_ACCEPTANCE=result=applied,exact event ID,exact entitlement ID
+```
+
+Identity is generated only in the future as
+`ci3-synthetic-<UTC_COMPACT>-<RANDOM_BASE32>@example.invalid`, with a CSPRNG
+password of at least 32 random bytes, no phone/invite/real identity and exact
+metadata `synthetic=true`, `environment=staging`,
+`purpose=ci3_authenticated_today`, `schema_version=1` and
+`expires_at=CREATED_AT_PLUS_14_DAYS`. The current official Auth path validates
+e-mail syntax rather than DNS; if the real staging create rejects `.invalid`,
+the operation stops without a second user or fallback identity.
+
+The future exclusive operation claim, credential, provisioning receipt and
+recovery receipt are exact root-only paths under
+`/root/.config/agentempp/secrets`, regular `0600`,
+no-symlink, link-count-one and atomic/no-clobber. Tokens remain memory-only.
+Execution uses Node 24.14.0, Corepack/pnpm 10.33.2 and repository-resolved
+`@supabase/supabase-js` 2.105.1 with separate admin/patient clients and session
+persistence, auto-refresh and URL detection disabled.
+
+The exact order is preflight, in-memory identifiers plus exclusive claim,
+credential material, one Auth create/readback (with at most one read-only
+settlement), one sign-in, one `/me` bootstrap/readback, one entitlement RPC
+accepted only as `result=applied` plus exact readback, one `/entitlements`, one
+`/today` and one atomic provisioning receipt. Every create,
+sign-in, grant, readback and endpoint probe has a one-attempt budget; manual
+profile writes, storage deletes, second user, second entitlement, outer retry
+and existing-user mutation are zero/forbidden.
+
+An ambiguous Auth create has one read-only settlement but preserves claim and
+credential even on zero because completion may arrive late. An ambiguous
+entitlement RPC likewise has one read-only settlement and otherwise preserves
+the entire fixture without rollback. In every rollback branch the claim stays
+as the durable guard; a recovery receipt is published before any safe
+credential removal. Claim removal belongs only to separately authorized final
+cleanup.
+
+Rollback is bounded by exact IDs, synthetic markers and cardinality assertions.
+For an invalid/partial fixture, one no-retry official Supabase `execute_sql`
+invocation of the literal versioned `ROLLBACK_SQL_V1` transaction deletes exact
+event, exact entitlement and exact patient in that order, then one Auth Admin
+call deletes the exact Auth user. It is bound to the canonical 43-row inbound-
+FK digest, locks the patient parent before counting and allows only profile
+`1`, progress `1`, all other children `0`.
+Unexpected FK children or an ambiguous count stops without broader deletion.
+A structurally valid Auth/patient/entitlement whose later bearer validation or
+probe fails is `PRESERVED_FOR_DIAGNOSIS`; it is not
+auto-deleted or recreated. After `TODAY_VERIFIED`, rollback is forbidden and a
+separate cleanup authority must remove the fixture no later than
+`CREATED_AT_PLUS_14_DAYS`, including exact credential and claim removal while
+retaining only sanitized receipts under their documented lifecycle.
+
+Today acceptance requires HTTP 200 JSON, no-store, Vary Authorization,
+matching header/envelope request ID, API v1, a data object, local date,
+calculation version, sources, completion status and source provenance in every
+applicable targets/consumed/Block 7700 structure. The body, PII, credentials,
+tokens, raw IDs and raw Preview origin are never printed or persisted as
+evidence.
+
+Canonical authority hashes:
+
+```text
+SOURCE_CONTRACT_STREAM_SHA256=0540cb5ed3bdc903dd5feda1499fed0eb5fe5b6197c0365f09c19596d6ac44bf
+BOOTSTRAP_FUNCTION_SHA256=94a5de8bc0126fbbc03d1879efaa1a03f6333cb53acc6e9c97362275e679f0ab
+PATIENT_SCHEMA_EXECUTION_GATE_SHA256=0859248cfa92245e27598a3aed82ba6224bc2b378ee21353790ee17890f346e9
+ENTITLEMENT_SOURCE_FUNCTION_SHA256=797feb1288d91e195dd86f7c878c9b87a6f6577d14b19e9cace31b4e42ba68e3
+ENTITLEMENT_RESOLUTION_SHA256=c25d2d1218c0952d26215f7cef57b0f57c3f713ff8c25d8aa33c3771398ececc
+TODAY_RELATIONS_AUTHORING_EVIDENCE_SHA256=af34e74b68050e264930df866e9094372261c23e684e85d2507830477381c903
+TODAY_FUNCTIONS_AUTHORING_EVIDENCE_SHA256=ee15dcc08e3b767c13f2acfe395c9566ebced1d33127d7471b06eb58f5adfc89
+SCHEMA_GATE_V1_SHA256=0859248cfa92245e27598a3aed82ba6224bc2b378ee21353790ee17890f346e9
+PUBLIC_USERS_INBOUND_FK_STREAM_SHA256=a5fffce98a0c33f0fc4271de3e6c13a5993c12855da945074fa3ef87157a138f
+```
+
+The complete contract, state machine, rollback and integral next-operation
+handoff are in
+`docs/superpowers/evidence/2026-08-27-ci3-synthetic-staging-patient-provisioning-authority.md`.
+Publication of this three-path documentation commit authorizes only the future
+operation `EXECUTE_SYNTHETIC_STAGING_PATIENT_PROVISIONING_AND_AUTHENTICATED_TODAY`.
+It does not execute it, authorize CI-4, mutate Vercel, open primary/live or
+touch product Production.

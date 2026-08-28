@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.18
+**Versão do dossiê:** 1.6.19
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3712,3 +3712,104 @@ produção do produto, TestFlight e App Store permanecem proibidos.
 
 Evidência completa:
 `docs/superpowers/evidence/2026-08-27-ci3-dedicated-mobile-bff-preview-verification.md`.
+
+## 55. Atualização operacional 1.6.19 — autoridade bounded do paciente sintético de staging
+
+**Data:** 28/08/2026
+
+Esta atualização é exclusivamente documental. O BFF dedicado verificado em
+1.6.18 permanece preservado: implementação
+`e3e1e252b48e42554e75899b950692c05186f60d`, um Preview semântico READY,
+Production `0`, env Preview/Production/Development `3/0/0`, SSO `null` e
+probes públicos `30/30`. Nenhum deployment, setting, env, SSO, domínio ou alias
+foi alterado. O origin bruto continua somente no receipt root-only de SHA-256
+`f9f2b8cdb4aaa066ceb5ec73978f32d8710c434a9582b68ed9b1375096ce60b6`.
+
+A inspeção read-only do source e do schema staging confirmou que Auth user e
+patient bootstrap não bastam para um Today 200. `/me` é entitlement-exempt e
+é o caminho canônico de bootstrap; `/today` exige uma decisão ativa para a key
+técnica `bodyflow_full`. O staging continuou vazio: Auth users `0`, patients
+sintéticos `0`, entitlements sintéticos ativos `0` e credenciais runtime
+aprovadas `0`.
+
+A authority futura congela:
+
+- uma única identidade `ci3-synthetic-<UTC_COMPACT>-<RANDOM_BASE32>@example.invalid`,
+  sem dados reais, phone, invite, role admin, MFA ou storage;
+- um marker único `ci3-synthetic-<UTC_COMPACT>-<RANDOM_BASE32>`, usado como
+  `source_reference`, e `<OPERATION_MARKER>-grant` como `provider_event_id`;
+- `createUser` uma vez, com e-mail confirmado e app metadata sintética
+  server-controlled, seguida de um único sign-in com token memory-only;
+- um único `GET /me`, que chama `bootstrap_patient_profile` e cria
+  idempotentemente `users`, `user_profiles` e `user_progress`, sem insert
+  manual;
+- um único `apply_entitlement_event` para `bodyflow_full`, source `manual`,
+  status `active`, plan `trial`, environment `sandbox`, reason
+  `ci3_synthetic_staging`, actor UUID da operação e expiry exata em
+  `CREATED_AT_PLUS_14_DAYS`;
+- aceitação do grant somente quando a RPC retorna `result=applied` e os IDs
+  correspondem aos dois readbacks; `duplicate`, `stale` ou mismatch são STOP;
+- um readback/resolver, um `GET /entitlements` e um `GET /today`;
+- rollback exato e de cardinalidade fechada para estados parciais/inválidos;
+  uma fixture estruturalmente válida com falha somente de sign-in/probe é
+  `PRESERVED_FOR_DIAGNOSIS`, sem recriação ou auto-delete;
+- depois de `TODAY_VERIFIED`, nenhum rollback: a fixture é preservada e o
+  cleanup até o prazo de 14 dias exige uma operação posterior separadamente
+  autorizada.
+
+Contratos principais congelados:
+
+```text
+SOURCE_CONTRACT_STREAM_SHA256=0540cb5ed3bdc903dd5feda1499fed0eb5fe5b6197c0365f09c19596d6ac44bf
+BOOTSTRAP_FUNCTION_SHA256=94a5de8bc0126fbbc03d1879efaa1a03f6333cb53acc6e9c97362275e679f0ab
+PATIENT_SCHEMA_EXECUTION_GATE_SHA256=0859248cfa92245e27598a3aed82ba6224bc2b378ee21353790ee17890f346e9
+ENTITLEMENT_SOURCE_FUNCTION_SHA256=797feb1288d91e195dd86f7c878c9b87a6f6577d14b19e9cace31b4e42ba68e3
+ENTITLEMENT_RESOLUTION_SHA256=c25d2d1218c0952d26215f7cef57b0f57c3f713ff8c25d8aa33c3771398ececc
+TODAY_RELATIONS_AUTHORING_EVIDENCE_SHA256=af34e74b68050e264930df866e9094372261c23e684e85d2507830477381c903
+TODAY_FUNCTIONS_AUTHORING_EVIDENCE_SHA256=ee15dcc08e3b767c13f2acfe395c9566ebced1d33127d7471b06eb58f5adfc89
+SCHEMA_GATE_V1_SHA256=0859248cfa92245e27598a3aed82ba6224bc2b378ee21353790ee17890f346e9
+PUBLIC_USERS_INBOUND_FK_STREAM_SHA256=a5fffce98a0c33f0fc4271de3e6c13a5993c12855da945074fa3ef87157a138f
+```
+
+Os arquivos futuros — claim exclusivo, credential, provisioning receipt e
+recovery receipt — ficam sob `/root/.config/agentempp/secrets`, root-owned,
+`0600`, no-clobber e fora do Git. Credential pode conter e-mail/senha
+sintéticos, mas nunca service role, anon key, bearer, origin ou dado de saúde.
+Access/refresh token nunca é persistido. A execução usa Node 24.14.0,
+Corepack/pnpm 10.33.2 e `@supabase/supabase-js` 2.105.1, com clients separados,
+sem sessão persistente, auto-refresh ou detecção de URL.
+
+O rollback inválido/parcial usa somente uma invocação sem retry do conector
+oficial `mcp__codex_apps__supabase_execute_sql` com o `ROLLBACK_SQL_V1`
+literal versionado como `ROLLBACK_SQL_V1@AUTHORITY_SHA` na evidência. O gate
+exige o conjunto fechado de 43 FKs:
+o patient parent é bloqueado antes da contagem e, após remover
+event/entitlement exatos, somente um profile e um progress podem
+existir; todos os demais filhos devem ser zero. Create ambíguo admite um único
+read-only settlement; zero não libera claim/credential porque a criação ainda
+pode concluir tarde. Grant ambíguo também preserva toda a fixture e proíbe
+rollback. Nunca há uma segunda criação. O cleanup posterior remove credential
+e claim até o limite de 14 dias e retém apenas receipts sanitizados.
+
+Esta atualização não cria usuário, profile, entitlement, credencial ou token,
+não executa Today autenticado, não inicia CI-3/CI-4 e não altera Supabase,
+banco, Vercel, primary/live ou produção do produto. A autoridade executável e
+o handoff futuro integral estão em
+`docs/superpowers/evidence/2026-08-27-ci3-synthetic-staging-patient-provisioning-authority.md`.
+
+```text
+SYNTHETIC_PATIENT_AUTHORITY_STATUS=PUBLISHED_PENDING_COMMIT_IDENTITY
+PATIENT_PROVISIONING_ATTEMPTS=0
+AUTH_USER_CREATION_ATTEMPTS=0
+PATIENT_BOOTSTRAP_ATTEMPTS=0
+ENTITLEMENT_CREATION_ATTEMPTS=0
+CREDENTIAL_ISSUANCE_ATTEMPTS=0
+AUTHENTICATED_TODAY_PROBE_ATTEMPTS=0
+SUPABASE_WRITE=NO
+DATABASE_WRITE=NO
+VERCEL_WRITE=NO
+CI3_STARTED=NO
+CI4_STARTED=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=EXECUTE_SYNTHETIC_STAGING_PATIENT_PROVISIONING_AND_AUTHENTICATED_TODAY
+```

@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.6.20
+**Versão do dossiê:** 1.7
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3879,3 +3879,99 @@ criar, atualizar ou apagar Auth user, reescrever credential, sobrescrever ou
 remover claim/recovery receipt, alterar deadline, tocar Vercel/primary/live ou
 iniciar CI-4. A autoridade integral está em
 `docs/superpowers/evidence/2026-08-28-ci3-synthetic-auth-identity-readback-diagnostic.md`.
+
+## 57. Atualização operacional 1.7 — staging autenticado verificado e CI-3 Today autorizada
+
+**Data:** 28/08/2026
+
+A retomada única autorizada pela versão 1.6.20 foi concluída com `PASS`. Ela
+reutilizou a única identidade Auth sintética existente, canonicalizou o e-mail
+somente em memória, realizou exatamente uma tentativa de cada gate restante e
+chegou a `TODAY_VERIFIED`. Nenhum segundo usuário foi criado, o usuário
+existente não foi atualizado ou apagado, e nenhum token foi persistido.
+
+O staging dedicado permaneceu materialmente isolado: existe um único Preview
+semântico `READY` no SHA de implementação
+`e3e1e252b48e42554e75899b950692c05186f60d`, zero deployment Production,
+três variáveis somente em Preview, zero em Production/Development, sem vínculo
+Git, alias customizado, domínio customizado, custom environment ou SSO. O
+origin e os identificadores reais continuam apenas no receipt root-only e não
+foram publicados.
+
+O readback sanitizado confirmou cardinalidade `1/1/1/1/1/1/1` para Auth user,
+Auth identity, patient, profile, progress, entitlement e entitlement event;
+existe exatamente um acesso ativo `bodyflow_full`, zero storage e zero mutação
+de usuário real. `/me`, `/entitlements` e `/today` retornaram HTTP 200 JSON,
+`Cache-Control: no-store`, `Vary: Authorization`, request ID coerente e envelope
+API v1. Today apresentou data local, versão de cálculo, fontes, estado de
+conclusão e proveniência nas seções aplicáveis. Body, token, identidade, dado
+de saúde, origin e IDs não foram persistidos como evidência.
+
+```text
+SYNTHETIC_PATIENT_RESUME_STATUS=PASS
+AUTHENTICATED_TODAY_STATUS=PASS
+AUTH_USER_CREATION_ATTEMPTS=1/1_CONSUMED_PREVIOUSLY
+SECOND_AUTH_USER_CREATION=NO
+PATIENT_SIGN_IN_ATTEMPTS=1/1
+PATIENT_ME_BOOTSTRAP_ATTEMPTS=1/1
+PATIENT_BOOTSTRAP_READBACK_ATTEMPTS=1/1
+ENTITLEMENT_CREATION_ATTEMPTS=1/1
+ENTITLEMENT_READBACK_ATTEMPTS=1/1
+ENTITLEMENT_RESOLUTION_ATTEMPTS=1/1
+ENTITLEMENTS_ENDPOINT_PROBE_ATTEMPTS=1/1
+AUTHENTICATED_TODAY_PROBE_ATTEMPTS=1/1
+TOKEN_PERSISTED=NO
+SERVICE_ROLE_RUNTIME_BEARER=NO
+VERCEL_WRITE=NO
+SUPABASE_WRITE=NO
+PRIMARY_LIVE_OPEN=NO
+PRODUCT_PRODUCTION_WRITE=NO
+CI3_STARTED=NO
+CI4_STARTED=NO
+```
+
+Claim, credential, recovery receipt e provisioning receipt continuam
+root-owned, regulares, `0600`, sem symlink e com link count um. O provisioning
+receipt está em `TODAY_VERIFIED`. A fixture permanece deliberadamente
+preservada para a CI-3, sem dado clínico real, e requer autoridade separada de
+cleanup até `2026-09-11T11:44:11.182Z`.
+
+A publicação documental 1.7 autoriza somente a futura implementação local no
+Mac da vertical Today autenticada, sobre a base CI-2 exata:
+
+```text
+CI2_SHA=277873755bf29771a10b5f362b522c2e6a6c21d6
+CI2_PARENT=aba177d7cbb0d9cecb13c5f1099e6b99b6456c93
+CI2_TREE=9999e3a05fe4c30d9d1ddd29f0714d263ff3eaf4
+CI2_SUBJECT=feat(ios): add secure session lifecycle and user boundary
+CI3_BRANCH=codex/ci3-today-staging-v1
+CI3_WORKTREE=/Users/eduardohenrique/Developer/bodyflow-ci3-today-staging-v1
+CI3_COMMIT_SUBJECT=feat(ios): connect Today to authenticated staging
+NEXT_ENVIRONMENT=MAC_LOCAL
+NEXT_GATE=IMPLEMENT_CI3_TODAY_STAGING_VERTICAL_SLICE
+```
+
+O escopo liga somente configuração local segura, Supabase Auth staging, os
+atores de sessão CI-1/CI-2, `MobileAPITransport`, `GET /api/mobile/v1/today`,
+validação do envelope/headers/DTO e os estados existentes de Today. Cálculos e
+proveniência continuam exclusivamente server-authoritative. History, Plan,
+Progress, Registration, conteúdo, mídia, profile mutation, push, cobrança,
+chat, backend, migração, assets, rebranding amplo, produção e CI-4 permanecem
+fora do escopo.
+
+Valores reais serão transferidos por ponte SSH criptografada para arquivos
+owner-only fora do Git e instalados no container do simulador sem argv, stdout
+ou histórico; `service_role` nunca irá ao Mac. A credencial sintética será
+consumida apenas por bootstrap `DEBUG` e sua cópia no simulador será removida
+após a leitura. Release/beta sem configuração completa falha fechado. Tokens
+continuam limitados à fronteira de sessão CI-1/CI-2.
+
+Esta atualização não criou worktree CI-3, não editou código iOS, não executou
+Xcode/teste/simulador, não repetiu endpoint autenticado e não alterou Vercel,
+Supabase, fixture, primary/live ou produção. Também não executou cleanup,
+CI-3, CI-4, PR, merge, deploy, TestFlight ou App Store. A evidência, a spec e o
+plano executável completos estão, respectivamente, em:
+
+- `docs/superpowers/evidence/2026-08-28-ci3-authenticated-today-staging-completion.md`;
+- `docs/superpowers/specs/2026-08-28-ci3-today-staging-vertical-slice.md`;
+- `docs/superpowers/plans/2026-08-28-ci3-today-staging-vertical-slice.md`.

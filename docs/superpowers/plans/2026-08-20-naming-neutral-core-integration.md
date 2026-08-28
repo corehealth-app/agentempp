@@ -1869,3 +1869,78 @@ RESUME_AUTHORITY_STATUS=PUBLISHED_PENDING_COMMIT_IDENTITY
 NEXT_ENVIRONMENT=VPS
 NEXT_GATE=RESUME_EXISTING_SYNTHETIC_AUTH_IDENTITY_AND_COMPLETE_AUTHENTICATED_TODAY
 ```
+
+## Authenticated staging completion and CI-3 Today authority — dossier 1.7
+
+The single authorized resume completed with `PASS`: it reused the existing
+synthetic Auth identity, consumed each remaining attempt exactly once and
+published a root-only `TODAY_VERIFIED` provisioning receipt. No second user,
+Auth update/delete, token persistence, real-user mutation or service-role
+patient bearer occurred.
+
+Read-only settlement recorded exactly one Auth user, identity, patient,
+profile, progress, entitlement and entitlement event, exactly one active
+`bodyflow_full` access and zero storage. `/me`, `/entitlements` and `/today`
+each returned HTTP 200 JSON with no-store, `Vary: Authorization`, matching
+request identity and API-v1 envelope. Today satisfied the structural source,
+provenance, completion, local-date and calculation-version contract. No raw
+body, token, identity, origin, health data or project/deployment identifier is
+part of Git evidence.
+
+The dedicated BFF remains one semantic Preview `READY` at implementation SHA
+`e3e1e252b48e42554e75899b950692c05186f60d`, with zero Production deployment,
+three Preview-only env entries, no project Git link, custom alias/domain/
+environment or SSO. This authoring operation made no Vercel or Supabase write
+and did not issue a token or call an authenticated endpoint.
+
+The preserved synthetic fixture and four root-only artifacts remain bounded
+by separate cleanup authority and the immutable deadline
+`2026-09-11T11:44:11.182Z`. CI-3 must not clean them implicitly.
+
+Publication of the exact five-path documentation commit authorizes only this
+future Mac operation:
+
+```text
+OPERATION=IMPLEMENT_CI3_TODAY_STAGING_VERTICAL_SLICE
+BASE_SHA=277873755bf29771a10b5f362b522c2e6a6c21d6
+BASE_PARENT=aba177d7cbb0d9cecb13c5f1099e6b99b6456c93
+BASE_TREE=9999e3a05fe4c30d9d1ddd29f0714d263ff3eaf4
+BASE_SUBJECT=feat(ios): add secure session lifecycle and user boundary
+BRANCH=codex/ci3-today-staging-v1
+WORKTREE=/Users/eduardohenrique/Developer/bodyflow-ci3-today-staging-v1
+COMMIT_SUBJECT=feat(ios): connect Today to authenticated staging
+PUSH=ONE_NON_FORCE_WITHOUT_UPSTREAM
+PR=NO
+MERGE=NO
+DEPLOY=NO
+CI4=NO
+```
+
+The slice connects only the owner-only staging configuration bridge,
+Supabase Auth staging, the existing CI-1/CI-2 session lifecycle,
+`MobileAPITransport`, authenticated `GET /api/mobile/v1/today`, strict
+header/envelope/DTO validation and Today presentation states. The server
+remains authoritative for targets, consumed, balances, completion, progress,
+protocol, Block 7700 and source provenance. All other product domains,
+backend/migrations/assets/rebranding, Production, TestFlight, App Store and
+CI-4 remain out of scope.
+
+The Mac bridge may copy only the staging Supabase URL, anon/publishable key,
+approved BFF Preview origin and the synthetic credential through encrypted SSH
+pipes into owner-only `0600` files outside Git. It must never copy
+`service_role`. Values must not appear in argv, stdout, history, logs,
+screenshots or `xcresult`; the Debug-only simulator credential copy is removed
+after import. Tokens remain inside the existing CI-1/CI-2 session boundary and
+Release/beta without complete local configuration remains fail-closed.
+
+Implementation is bound to the exact allowlist and TDD/test/build/scan/review
+gates in:
+
+- `docs/superpowers/evidence/2026-08-28-ci3-authenticated-today-staging-completion.md`;
+- `docs/superpowers/specs/2026-08-28-ci3-today-staging-vertical-slice.md`;
+- `docs/superpowers/plans/2026-08-28-ci3-today-staging-vertical-slice.md`.
+
+This VPS operation does not create the CI-3 worktree, edit iOS, run Xcode,
+repeat sign-in or any endpoint, mutate the fixture, execute cleanup, open
+primary/live, or start CI-3/CI-4. The next environment is `MAC_LOCAL`; the
+next gate is `IMPLEMENT_CI3_TODAY_STAGING_VERTICAL_SLICE`.

@@ -5048,3 +5048,29 @@ reader. Its identity SHA uses the controller/Swift field order
 schema checks may convert through an explicit safe-integer gate; `size`,
 mtime, device and inode never do. This handoff supplies no authority and
 authorizes no real generator execution.
+
+## Atualização operacional 1.7.2 — Node runtime capsule imutável para a ponte CI-3
+
+O STOP do runtime permanece evidência válida. `/usr/bin/node` é aceito somente
+como bootstrap exato, nunca alterado, e o Node NVM é rejeitado. A arquitetura
+`PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V1` autoriza uma cópia
+privada version-addressed, root-owned, `0555`, single-link e com immutable flag
+real. Receipt `0444` e diretório final `0555` também são imutáveis.
+
+O builder Git-bound tem apenas `--self-test`, `--create` e `--verify`. Claim
+O_EXCL/fsync precede um único capability probe e a cópia; o probe remove `i`
+somente de seu próprio arquivo sintético. A publicação é no-clobber, sem alias,
+e exact-existing exige claim original. Closure dinâmica é inventariada e
+ligada por count/hash antes e depois; bibliotecas do SO não são chamadas de
+imutáveis.
+
+Há duas authorities: bridge components/generator permanecem em
+`ba8473799a19aec586b0fe706bb7d4084589c86c`; o runtime usa o commit filho com
+subject `build(ops): authorize immutable VPS Node runtime capsule`. Depois do
+capsule PASS, o generator roda em worktree detached limpa no SHA da bridge e
+somente pelo Node capsule. Bridge output continua endereçado por `ba847...`.
+
+Os gates sintéticos atuais são 127/127 e self-test 8/8, sem rede, secret read,
+system/NVM/package mutation. A execução real fica bloqueada até publicação da
+runtime authority. Primary/live, Supabase, Vercel, produção, Mac, simulador,
+CI-3 Task 2, CI-4 e cleanup permanecem zero.

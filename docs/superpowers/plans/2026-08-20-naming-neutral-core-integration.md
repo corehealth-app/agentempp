@@ -2530,3 +2530,20 @@ authority.
 This precision amendment changes neither the five preserved iOS paths nor the
 frozen Tasks 2–12 and supplies no external authority. Integration remains
 `STOP_PRE_AUTHORITY`.
+
+## Runtime capsule prerequisite — dossier 1.7.2
+
+The prior runtime STOP is preserved and reconciled by
+`PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V1`. `/usr/bin/node` remains
+an unchanged bootstrap-only source; NVM is excluded. One child authority of
+`ba847...` publishes a Git-bound builder, evidence and documentation across
+exactly seven paths. After that authority is remotely confirmed, the builder
+may consume one claim/probe/create budget to publish a root-owned immutable
+private runtime and verify its dynamic closure.
+
+Bridge authority remains `ba847...`. Its generator executes only from the Git
+blob in a detached clean worktree and exclusively with the capsule. The bridge
+budget remains one, credential remains external by path/hash, and the original
+Tasks 2–12 stay frozen until the remote bridge bundle and later Mac terminal
+gate pass. No primary/live, Supabase, Vercel, production, simulator or CI-4
+action is introduced by this prerequisite.

@@ -1206,3 +1206,27 @@ network, privilege, anchor, continuation, commit or push.
    diff, allowlist, mode, sensitive-literal and orphan-process checks.
 
 This is a synthetic/local verification plan and authorizes no real action.
+
+## Round 18 execution plan — immutable VPS Node capsule before bridge create
+
+1. Publish one seven-path runtime authority with parent `ba847...` and subject
+   `build(ops): authorize immutable VPS Node runtime capsule`.
+2. Materialize its builder only by `git cat-file` into
+   `/root/.config/agentempp/runtimes/node/.builders/<runtime-authority>/`.
+3. Use literal `/usr/bin/node` only for builder self-test/create/verify. Never
+   use NVM, PATH fallback or package installation.
+4. Persist the attempt-one claim and fsync it before the single immutable
+   capability probe. Preserve all failure evidence without retry or cleanup.
+5. Copy through the retained source fd, verify bytes/version/core/syntax and
+   closure, promote no-clobber, then freeze Node, receipt and final directory.
+6. Reopen the complete capsule, verify three immutable flags, physical
+   identities, closure and execution, then revalidate `/usr/bin/node` unchanged.
+7. Create a detached clean execution worktree at bridge authority `ba847...`.
+   Materialize the bridge generator only from its published blob and run its
+   syntax/tests/self-test/create exclusively with the capsule.
+8. Consume at most one bridge creation attempt. Do not run the Mac handoff,
+   simulator, Task 2, CI-4, Supabase, Vercel, database or production actions.
+
+No runtime or bridge effect is authorized before the runtime authority remote
+SHA is confirmed. Exact-existing requires its original claim; partial or
+unclaimed state is a terminal STOP.

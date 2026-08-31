@@ -1535,3 +1535,26 @@ Number only through an explicit safe-integer check after the exact physical
 identity has been retained. Original claim, exact-existing, staging, recovery
 and final verification all consume the same owner-only reader and STOP on any
 one-field divergence.
+
+## Round 18 authority amendment: private immutable VPS Node runtime capsule
+
+The VPS bridge generator runtime is no longer an ambient `/usr/bin/node` or
+NVM executable. `/usr/bin/node` is a frozen bootstrap-only source with exact
+SHA-256; it is never chmodded, chowned, updated or given an immutable flag.
+The operational runtime is a private version-addressed copy published by
+`PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V1`.
+
+The runtime builder is itself a root-owned `0600` Git-blob snapshot. Its
+original O_EXCL/fsynced claim precedes one filesystem capability probe and all
+copy effects. The probe proves real immutable semantics and removes the flag
+only from its synthetic file. The final Node is root:root `0555`, receipt is
+root:root `0444`, both are single-link and immutable, and their directory is
+root:root `0555` immutable. No mutable alias exists and no published capsule
+is ever thawed.
+
+The receipt binds the runtime authority separately from bridge authority
+`ba8473799a19aec586b0fe706bb7d4084589c86c`, plus bootstrap identity,
+builder, tools, filesystem and dynamic closure before/after. Only after exact
+verification may a detached clean `ba847...` worktree use the capsule for the
+154 generator tests, self-test and the single bridge `--create`. The bridge
+authority/output generation remains unchanged.

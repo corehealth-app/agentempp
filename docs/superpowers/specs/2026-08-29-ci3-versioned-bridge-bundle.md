@@ -1558,3 +1558,19 @@ builder, tools, filesystem and dynamic closure before/after. Only after exact
 verification may a detached clean `ba847...` worktree use the capsule for the
 154 generator tests, self-test and the single bridge `--create`. The bridge
 authority/output generation remains unchanged.
+
+## Round 19 — full-path Node closure V2
+
+Runtime V1 stays failed at 1/1. V2 uses
+`PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V2` and
+`NOFOLLOW_COMPONENT_CANONICALIZATION_V1`; bridge authority stays `ba847...`.
+Independent dimensions are 7 entries, 7 traversing symlink, 0 traversing none,
+2 final symlinks, 5 final regular/intermediate-only, 9 hops/max2, 7 canonical
+targets and zero duplicates. `direct_entry_count` is not a V2 field.
+
+The BigInt lstat/readlink walker binds trusted parents, bounded target chains,
+cycles/hops, final O_NOFOLLOW descriptor bytes and complete revalidation. A
+durable claim precedes operational ldd; root-only capture permits recovery
+without rerunning the source list. Receipt schema 2 binds corrected hashes,
+classifications, V1 STOP, fresh V2 attempt and false controls. Mac/Task 2 remain
+blocked; credential copy, service-role output and external writes are forbidden.

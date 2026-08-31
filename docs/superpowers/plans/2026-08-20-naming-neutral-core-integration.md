@@ -2560,3 +2560,16 @@ Integration stays frozen. A new authority must define no-follow canonical
 library resolution, cover real loader symlinks in tests and explicitly grant a
 fresh runtime attempt. This STOP performs no retry, cleanup, Mac handoff,
 simulator, Task 2, CI-4 or external-service mutation.
+
+## Runtime capsule V2 authority — dossier 1.7.4
+
+The active operation is
+`RECONCILE_NODE_DYNAMIC_CLOSURE_BASELINE_DRIFT_AND_RESUME_CI3_BRIDGE`.
+It replaces only the runtime prerequisite with a seven-path V2 authority:
+7 entries traverse symlinks, 2 end in symlink, 5 end regular/intermediate-only,
+9 hops/max2. V1 remains frozen 1/1 and bridge authority remains `ba847...`.
+
+Eligibility requires claim-before-ldd, durable capture, no-follow component
+canonicalization, recovery without source refetch, 200+ tests, real baseline
+and two 0C/0I reviews. Mac, Tasks 2–12, external/production actions, credential
+copy, service-role output and fixture cleanup remain frozen until VPS PASS.

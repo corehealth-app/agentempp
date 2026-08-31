@@ -1246,3 +1246,13 @@ remain prohibited. Bridge generator/output are absent and bridge budget remains
 `0/1`. Resume requires a new child authority that specifies safe canonical
 closure binding and explicitly grants a fresh runtime attempt. This round does
 not implement or execute that next gate.
+
+## Round 20 execution — corrected full-path closure V2
+
+1. Preserve V1 and its consumed attempt byte-identically.
+2. Freeze independent 7/7/0, 2/5/5 and 9/max2 dimensions plus the three hashes.
+3. Publish the seven-path authority after 200+ tests, baseline and two 0C/0I reviews.
+4. Materialize only its Git blob; claim/fsync precedes ldd and durable capture.
+5. Walk lstat/readlink components, open final O_NOFOLLOW once and revalidate.
+6. On capsule PASS, execute unchanged `ba847...` exclusively with capsule V2.
+7. Publish one terminal four-path commit; do not run Mac, Task 2, CI-4 or cleanup.

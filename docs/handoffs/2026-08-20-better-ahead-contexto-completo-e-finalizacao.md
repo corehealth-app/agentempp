@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.3
+**Versão do dossiê:** 1.7.4
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5096,3 +5096,33 @@ probe, bridge root e bundle estão ausentes. `/usr/bin/node`, NVM, manager e os
 executado e seu budget continua `0/1`. Próximo gate exige nova authority que
 corrija explicitamente a canonicalização no-follow da closure e autorize uma
 nova tentativa; esta execução não realiza esse gate.
+
+## Atualização operacional 1.7.4 — baseline full-path e closure no-follow V2 do Node capsule
+
+O STOP_PRE_AUTHORITY posterior ao V1 foi correto: `2 symlink / 5 direct`
+classificava somente o componente final, enquanto o walk obrigatório considera
+todo o pathname. Duas observações independentes congelaram 7 loader entries;
+7 atravessam algum symlink, 0 atravessam zero, 2 terminam em symlink, 5
+terminam regulares e são intermediate-only, com 9 hops totais, máximo 2, 7
+targets regulares únicos e zero duplicatas. Os três hashes sanitizados são os
+publicados na evidence V2; nenhum path bruto é documentado.
+
+`PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V2` usa
+`NOFOLLOW_COMPONENT_CANONICALIZATION_V1`: walk por `lstat/readlink`, parent
+root-owned sem escrita group/other, limite/ciclo, revalidação da chain e leitura
+final única via `O_NOFOLLOW`. Claim V2 O_EXCL/fsync precede o `ldd` operacional;
+o capture root-only O_EXCL/fsync permite recovery sem novo source `ldd`. V1
+permanece congelado em 1/1; V2 recebe budget novo 1/1 somente após authority
+remota e reviews 0C/0I.
+
+O probe publica seu receipt durável antes da própria limpeza, impedindo replay
+após crash. O Node final é congelado antes de sua identidade ser ligada; o
+receipt é o último arquivo publicado. O gate autoritativo concluiu 264/264
+testes, self-test 8/8, duas reproduções reais da baseline e Reviews A/B com
+zero Critical/Important.
+
+Bridge components continuam em `ba847379...`; apenas o runtime usa a authority
+V2. Mac handoff e CI-3 Task 2 permanecem bloqueados até runtime e bundle VPS
+PASS. Credential não é copiada, service role/valores não são emitidos e o
+cleanup da fixture segue reservado a outra operação, com deadline preservado
+`2026-09-11T11:44:11.182Z`.

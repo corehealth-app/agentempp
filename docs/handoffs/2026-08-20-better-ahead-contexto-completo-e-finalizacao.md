@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.1
+**Versão do dossiê:** 1.7.3
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5074,3 +5074,25 @@ Os gates sintéticos atuais são 127/127 e self-test 8/8, sem rede, secret read,
 system/NVM/package mutation. A execução real fica bloqueada até publicação da
 runtime authority. Primary/live, Supabase, Vercel, produção, Mac, simulador,
 CI-3 Task 2, CI-4 e cleanup permanecem zero.
+
+## Atualização operacional 1.7.3 — STOP preservado na closure do runtime
+
+A runtime authority foi publicada em
+`f039fe38b35084a33a4b7a3649b1112f26a93fb2`, parent exato `ba847...`, após
+127/127 testes, self-test 8/8 e duas revisões em zero Critical/Important/Minor.
+O builder foi materializado exclusivamente do blob publicado, com owner
+root:root, modo `0600`, single-link, no-clobber e readback exato.
+
+A única invocação autorizada de `--create` terminou fail-closed com
+`ERROR DYNAMIC_CLOSURE`. O diagnóstico read-only mostrou sete entradas no
+`ldd` atual e duas entradas symlink. O reader publicado exige arquivo regular
+direto e rejeita essas duas entradas antes de canonicalizá-las. A falha ocorreu
+antes de claim, probe, cópia, staging ou final; ainda assim o budget lógico do
+runtime está consumido `1/1` e não pode ser repetido.
+
+Somente o snapshot versionado do builder permanece. Capsule, claim, staging,
+probe, bridge root e bundle estão ausentes. `/usr/bin/node`, NVM, manager e os
+25 itens históricos permanecem inalterados. O generator da bridge não foi
+executado e seu budget continua `0/1`. Próximo gate exige nova authority que
+corrija explicitamente a canonicalização no-follow da closure e autorize uma
+nova tentativa; esta execução não realiza esse gate.

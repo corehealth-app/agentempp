@@ -1,9 +1,10 @@
 # CI-3 — STOP do runtime e authority do capsule Node imutável
 
 **Data:** 2026-08-31
-**Dossiê:** 1.7.2
+**Dossiê:** 1.7.3
 **Arquitetura:** `PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V1`
 **Status inicial:** `AUTHORITY_AUTHORED_RUNTIME_NOT_YET_CREATED`
+**Status terminal:** `STOP_DOCUMENTED_DYNAMIC_CLOSURE_PRE_CLAIM`
 
 ## 1. Ruling preservado
 
@@ -119,3 +120,31 @@ Resultado: `GO — 0 Critical / 0 Important / 0 Minor`.
 Review B cobriu continuidade da ponte, authorities duais, allowlist, isolamento
 de secrets, ausência de diff em bridge/package/lock e compatibilidade do handoff
 Mac. Resultado: `GO — 0 Critical / 0 Important / 0 Minor`.
+
+## 9. Publicação e STOP físico
+
+A authority foi publicada por push não-force em
+`f039fe38b35084a33a4b7a3649b1112f26a93fb2`, parent `ba847...`, tree
+`608a75fd973eb19a095127d2fc9d253a271f21d0`. O builder publicado tem blob
+`c2d7173d8b54984a928a447dbfe7ece60975474e` e SHA-256
+`8447f0e59568049c3bbd73a145a6dcde5c5ce84da1253ac0f54e19d097452727`.
+Seu snapshot físico passou owner/mode/link/hash/readback e self-test.
+
+A única invocação `--create` retornou `ERROR DYNAMIC_CLOSURE`. A leitura
+forense posterior confirmou sete entradas no output corrente do `ldd`, das
+quais duas são symlink entries. O builder chama o reader de arquivo regular
+no-follow diretamente nessas entradas, rejeitando-as antes de resolver seu
+target canônico. O problema não foi coberto pelos testes sintéticos nem pelas
+duas revisões prévias.
+
+O STOP ocorreu antes da publicação do claim. Não existem claim, probe,
+staging, diretório final, Node capsule ou receipt. A invocação lógica foi
+consumida `1/1`, portanto não houve retry nem cleanup. O bridge generator não
+foi materializado ou executado; budget da bridge `0/1`.
+
+O bootstrap preserva SHA-256
+`6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd`,
+root:root, `0755`, single-link e sem immutable flag, exatamente como antes.
+Manager e os 25 itens históricos também permanecem byte-preservados. A
+retomada exige nova authority para canonicalizar cada library sem seguir um
+pathname mutável durante a leitura e para conceder novo budget explícito.

@@ -2547,3 +2547,16 @@ budget remains one, credential remains external by path/hash, and the original
 Tasks 2–12 stay frozen until the remote bridge bundle and later Mac terminal
 gate pass. No primary/live, Supabase, Vercel, production, simulator or CI-4
 action is introduced by this prerequisite.
+
+## Runtime capsule STOP — dossier 1.7.3
+
+Runtime authority `f039fe38...` was published, but its single `--create`
+invocation stopped before claim with `ERROR DYNAMIC_CLOSURE`. Two of seven
+current loader entries are symlink entries and the published reader rejects
+them before a safe canonical binding. Runtime budget is consumed `1/1`; no
+capsule exists. Bridge generator and output remain absent with budget `0/1`.
+
+Integration stays frozen. A new authority must define no-follow canonical
+library resolution, cover real loader symlinks in tests and explicitly grant a
+fresh runtime attempt. This STOP performs no retry, cleanup, Mac handoff,
+simulator, Task 2, CI-4 or external-service mutation.

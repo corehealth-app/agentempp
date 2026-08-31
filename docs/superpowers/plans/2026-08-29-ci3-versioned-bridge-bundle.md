@@ -1230,3 +1230,19 @@ This is a synthetic/local verification plan and authorizes no real action.
 No runtime or bridge effect is authorized before the runtime authority remote
 SHA is confirmed. Exact-existing requires its original claim; partial or
 unclaimed state is a terminal STOP.
+
+## Round 19 execution STOP — dynamic closure before runtime claim
+
+The seven-path runtime authority was published at `f039fe38...`. Its Git blob
+snapshot passed physical readback and self-test, but the only authorized
+`--create` invocation stopped with `ERROR DYNAMIC_CLOSURE`. Read-only evidence
+found seven current `ldd` entries, including two symlink entries; the published
+regular-file no-follow reader rejected those entries instead of first binding
+their canonical target safely.
+
+The stop happened before claim, probe, copy, staging or final publication.
+Runtime invocation budget is nevertheless exhausted `1/1`; retry and cleanup
+remain prohibited. Bridge generator/output are absent and bridge budget remains
+`0/1`. Resume requires a new child authority that specifies safe canonical
+closure binding and explicitly grants a fresh runtime attempt. This round does
+not implement or execute that next gate.

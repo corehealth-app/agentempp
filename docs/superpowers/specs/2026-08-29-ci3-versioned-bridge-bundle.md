@@ -1574,3 +1574,30 @@ durable claim precedes operational ldd; root-only capture permits recovery
 without rerunning the source list. Receipt schema 2 binds corrected hashes,
 classifications, V1 STOP, fresh V2 attempt and false controls. Mac/Task 2 remain
 blocked; credential copy, service-role output and external writes are forbidden.
+
+## Round 20 — read-only adoption verifier for the existing V2 capsule
+
+The consumed V2 create attempt is never retried. Its physically complete
+immutable capsule may become operational only through
+`READ_ONLY_NODE_RUNTIME_CAPSULE_V2_ADOPTION_VERIFIER_V1`, a new Git path that
+does not modify or import the V2 builder as an execution entrypoint. The tool
+has only `--self-test` and `--verify-existing`; there is no creation mode.
+
+An authority-addressed adoption claim outside the capsule MUST be written
+O_EXCL/O_NOFOLLOW and fsynced before the real attempt opens capsule artifacts.
+Claim without receipt consumes the one adoption attempt and blocks retry. An
+exact-existing receipt is accepted only with its original byte-exact claim.
+
+Verification reopens all original artifacts no-follow, checks owner, mode,
+nlink, hashes and stable physical identities, verifies all three immutable
+flags, and reconstructs the full closure solely from the durable capture. It
+MUST NOT run loader discovery, immutable capability probing or attribute
+mutation. Source/capsule bytes and identities are compared before/after.
+
+Bounded version and core-module smokes precede two receipt-bound verification
+phases: bootstrap Node and then capsule Node self-hosting the verifier. The
+self-hosted phase creates no second claim or receipt. Only after every gate and
+an unchanged artifact projection may a version-addressed external adoption
+receipt be published last. A PASS receipt binds both authorities, old builder,
+terminal STOP, artifact identities/hashes, closure, smokes and explicit zero
+effect counters. Bridge execution remains conditional on this PASS.

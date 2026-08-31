@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.5
+**Versão do dossiê:** 1.7.6
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5147,3 +5147,35 @@ fixture e sistemas externos estão preservados. Mac, simulador, CI-3 Task 2 e
 CI-4 continuam bloqueados. O próximo gate é uma nova authority para corrigir o
 verifier e adotar read-only o capsule existente; é proibido repetir create,
 source/capsule `ldd`, probe ou `chattr`.
+
+## Atualização operacional 1.7.6 — adoção read-only do Node capsule V2 após fix do verifier
+
+O STOP `030aa2be4e2facc5edbcda143c18a8477e727855` permanece válido. A
+tentativa V2 continua consumida `1/1`; o capsule não será recriado, reparado,
+descongelado nem limpo. A evidência física confirma que claim, capture, probe
+receipt, Node, runtime receipt e diretório final publicados pela authority
+`b08e6326fbd22c96b852ccfe53abdeb254e54bd1` estão completos e imutáveis. O
+runtime receipt conserva SHA-256
+`577fff150c608bfa848c7e9775e92cd02ed427a83484e859480b3e2607a94744`.
+
+A causa exata do STOP é isolada no verifier antigo: a projeção do capability
+probe sofre precedência incorreta e tenta chamar o texto retornado por
+`JSON.stringify`. A reprodução sintética falha com o `TypeError` esperado,
+depois da publicação física, sem filesystem real. O builder V2 e seus testes
+permanecem byte-idênticos.
+
+Esta authority adiciona somente
+`READ_ONLY_NODE_RUNTIME_CAPSULE_V2_ADOPTION_VERIFIER_V1`, com modos fechados
+`--self-test` e `--verify-existing`. Um claim O_EXCL/fsync separado precede a
+abertura dos artifacts; a closure é revalidada exclusivamente pelo capture
+durável com walk no-follow. Owner, mode, nlink, hashes, identities e três flags
+imutáveis são conferidos, seguidos por smoke bounded no Node capsule e por
+verificação bootstrap/self-hosted sem segundo claim. O receipt de adoção é
+externo ao capsule, version-addressed e publicado por último. Controles
+operacionais permanecem `create=false`, `ldd=false`, `probe=false`,
+`chattr=false` e `capsule_mutation=false`.
+
+Somente depois da authority remota e de uma adoção PASS o budget ainda intacto
+da bridge `ba847379...` pode ir de `0/1` a `1/1`, usando exclusivamente o
+capsule adotado. Até lá, Mac, simulador, CI-3 Task 2, CI-4, fixture cleanup,
+Supabase, Vercel, banco, primary/live e produção permanecem bloqueados.

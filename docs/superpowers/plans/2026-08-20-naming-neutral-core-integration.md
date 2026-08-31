@@ -2586,3 +2586,25 @@ Integração continua congelada. Próximo gate requer authority nova para corrig
 o verifier e adotar o capsule existente somente por leitura. Nenhum novo
 create, ldd, probe, chattr, bridge, Mac, Task 2, CI-4, cleanup ou ação externa é
 autorizado por este STOP.
+
+## Runtime capsule V2 read-only adoption authority — dossier 1.7.6
+
+O STOP `030aa2...` continua autoritativo e a criação V2 permanece consumida
+`1/1`. A continuação troca apenas o verifier quebrado por
+`READ_ONLY_NODE_RUNTIME_CAPSULE_V2_ADOPTION_VERIFIER_V1`, em path Git novo e
+sem modificação do builder/teste V2. A causa corrigida é exclusivamente a
+projeção do capability probe; o texto produzido por `JSON.stringify` nunca é
+invocado.
+
+Eligibility exige authority remota, testes sintéticos 120+, duas reviews
+0C/0I, snapshot Git-blob e uma única adoção read-only. Claim externo precede
+qualquer abertura dos artifacts; closure vem somente do capture; owner, mode,
+nlink, hashes, physical identities, source/capsule equality e immutable flags
+são revalidados. Smokes bootstrap/self-hosted são receipt-bound e não criam
+segunda adoção. O receipt externo final exige zero create, discovery, probe,
+attribute mutation, capsule mutation, rede, package manager e secret read.
+
+A bridge continua congelada `0/1` até adoption PASS e, então, pode executar
+uma única vez no SHA `ba847...` exclusivamente pelo capsule adotado. Mac,
+Tasks 2–12, CI-4, fixture cleanup e sistemas externos permanecem bloqueados
+durante a authority.

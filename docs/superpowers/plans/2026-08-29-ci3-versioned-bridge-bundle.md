@@ -1270,3 +1270,29 @@ próximo plano precisa publicar nova authority, corrigir somente a expressão e
 autorizar verificação/adoção read-only do capsule `b08e6326...`. A adoção deve
 ligar authority, builder, claim, capture, probe, receipt, identidade e flags
 existentes sem mutação e sem conceder novo budget de criação.
+
+## Round 22 execution — verifier-only e adoção read-only do capsule V2
+
+1. Preservar o STOP `030aa2...`, a authority `b08e...`, o builder/teste V2 e a
+   tentativa de criação consumida `1/1` byte a byte.
+2. Publicar uma authority sucessora de sete paths com verifier/teste novos e
+   documentação 1.7.6; o verifier aceita somente `--self-test` e
+   `--verify-existing`.
+3. Exigir RED da precedência antiga e da implementação ausente, depois pelo
+   menos 120 testes sintéticos GREEN, self-test, allowlist, diff check e duas
+   revisões 0C/0I.
+4. Materializar o verifier somente por seu blob Git publicado, root-owned,
+   `0600`, single-link, O_EXCL e fsync.
+5. Consumir uma única tentativa de adoção: claim externo primeiro; depois
+   reabrir artifacts, revalidar closure pelo capture e confirmar hashes,
+   identities, bytes e immutable flags sem nova descoberta/probe/mutação.
+6. Executar version/core smoke e as fases receipt-bound bootstrap e self-hosted;
+   publicar o receipt de adoção somente após provar artifacts inalterados.
+7. Apenas em PASS, criar/reusar worktree detached limpa `ba847...`, materializar
+   o generator por blob e consumir sua tentativa `0/1` exclusivamente pelo
+   capsule adotado.
+8. Publicar um segundo commit terminal de quatro paths. Não executar Mac,
+   simulador, Task 2, CI-4, cleanup ou qualquer sistema externo.
+
+Qualquer claim sem receipt, drift físico, failure de smoke/self-host ou estado
+ambíguo é STOP sem retry e sem bridge.

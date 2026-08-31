@@ -1296,3 +1296,22 @@ existentes sem mutação e sem conceder novo budget de criação.
 
 Qualquer claim sem receipt, drift físico, failure de smoke/self-host ou estado
 ambíguo é STOP sem retry e sem bridge.
+
+## Round 23 STOP — reader Git da bridge excede bound publicado
+
+A authority do verifier `461a2e0...` foi publicada e a adoção read-only passou
+na única tentativa. O capsule V2 permanece completo, imutável e byte-idêntico,
+com receipt externo de adoção validado. O generator bridge em `ba847...`
+passou 154/154 testes e self-test 8/8 usando esse capsule.
+
+A única bridge `--create` parou antes do claim com `ERROR GIT_AUTHORITY`. O
+reader publicado usa `spawnSync` com `maxBuffer=64 KiB`, mas sua primeira
+leitura `cat-file` recebe o blob do próprio generator, que tem 82.675 bytes.
+Assim, nenhum input secreto foi aberto e nenhum authority root, claim, staging,
+generation, config ou receipt foi criado. O budget da bridge está consumido
+`1/1`; não repetir, ampliar o buffer localmente ou substituir o entrypoint.
+
+Retomada exige nova authority filha com TDD para blobs acima de 64 KiB, novo
+snapshot Git-bound e concessão explícita de nova tentativa da bridge, mantendo
+o capsule adotado read-only. Este round não executa esse próximo gate, Mac,
+simulador, Task 2, CI-4, cleanup ou ação externa.

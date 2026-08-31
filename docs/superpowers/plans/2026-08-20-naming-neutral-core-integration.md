@@ -2608,3 +2608,20 @@ A bridge continua congelada `0/1` até adoption PASS e, então, pode executar
 uma única vez no SHA `ba847...` exclusivamente pelo capsule adotado. Mac,
 Tasks 2–12, CI-4, fixture cleanup e sistemas externos permanecem bloqueados
 durante a authority.
+
+## Bridge Git-authority reader STOP — dossier 1.7.7
+
+O capsule V2 foi adotado read-only com PASS pela authority `461a2e0...`; sua
+criação não foi repetida e todos os artifacts permaneceram exatos. A bridge
+foi então habilitada uma vez no SHA `ba847...`, após 154/154 testes e self-test
+8/8 executados exclusivamente pelo capsule.
+
+A invocação única parou `ERROR GIT_AUTHORITY` antes do claim. O bound estático
+de 64 KiB do `gitResult` é menor que o blob do próprio generator, de 82.675
+bytes. Bridge budget está consumido `1/1`; output e remote generation continuam
+ausentes. Integração e Tasks 2–12 permanecem congeladas.
+
+O próximo gate precisa de authority nova que teste/corrija o reader para blobs
+publicados reais e conceda budget novo. Não há autorização para retry, patch
+local do snapshot, Mac, simulador, CI-4, cleanup ou sistema externo nesta
+execução.

@@ -81,3 +81,29 @@ consumida da bridge `ba8473799a19aec586b0fe706bb7d4084589c86c`. O generator
 continua vindo de seu blob publicado e roda exclusivamente pelo capsule
 adotado. Esta authority não executa Mac, simulador, CI-3 Task 2, CI-4, cleanup,
 Supabase, Vercel, banco, primary/live ou produção.
+
+## Resultado terminal pós-authority
+
+- verifier authority publicada:
+  `461a2e0dbe091a5c352d5dfdc1952b444f41aac0`;
+- testes do verifier: `155/155`, self-test `8/8`;
+- adoção read-only: `PASS`, tentativa `1/1`;
+- adoption receipt SHA-256:
+  `1cd3843745c3bfa759d3e99f15a92651a8462610089bfb31175fba49b58ec0d3`;
+- capsule original alterado: `NO`;
+- generator bridge: blob/hash exatos, testes `154/154`, self-test `8/8`;
+- bridge `--create`: tentativa `1/1`, `ERROR GIT_AUTHORITY`;
+- claim/generation/config/receipt da bridge: ausentes.
+
+O STOP da bridge ocorreu antes de qualquer source-secret read ou publicação.
+O `gitResult` do generator publicado define `maxBuffer=64 KiB`; sua primeira
+leitura autoritativa de blob tenta receber o próprio generator, com 82.675
+bytes. O subprocesso excede o buffer e é classificado fail-closed como
+`GIT_AUTHORITY`. HEAD, parent, tree, subject e a lista de 13 paths estavam
+corretos; a worktree detached permaneceu limpa.
+
+A tentativa não pode ser repetida. Uma continuação futura precisa publicar
+authority sucessora que corrija explicitamente o bound do reader Git, cubra
+blobs autoritativos acima de 64 KiB e conceda novo budget da bridge. O capsule
+já adotado deve ser reutilizado read-only. Nenhum valor de configuração,
+credential, origin, library path, token, PII ou service role é registrado aqui.

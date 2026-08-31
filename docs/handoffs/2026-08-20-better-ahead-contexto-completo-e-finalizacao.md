@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.6
+**Versão do dossiê:** 1.7.7
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5179,3 +5179,28 @@ Somente depois da authority remota e de uma adoção PASS o budget ainda intacto
 da bridge `ba847379...` pode ir de `0/1` a `1/1`, usando exclusivamente o
 capsule adotado. Até lá, Mac, simulador, CI-3 Task 2, CI-4, fixture cleanup,
 Supabase, Vercel, banco, primary/live e produção permanecem bloqueados.
+
+## Atualização operacional 1.7.7 — capsule adotado e STOP preservado na bridge CI-3
+
+A authority do verifier foi publicada em
+`461a2e0dbe091a5c352d5dfdc1952b444f41aac0`. O snapshot Git-bound foi
+materializado root-only e a única tentativa de adoção read-only retornou PASS.
+Claim e receipt externos foram publicados; o receipt de adoção tem SHA-256
+`1cd3843745c3bfa759d3e99f15a92651a8462610089bfb31175fba49b58ec0d3`.
+Node, runtime receipt, diretório, closure e três immutable flags permaneceram
+exatos. Não houve create, nova descoberta de closure, probe, attribute mutation
+ou capsule mutation.
+
+Depois desse PASS, a worktree detached limpa `ba847379...` e o generator de
+blob exato passaram sintaxe, 154/154 testes e self-test 8/8 pelo capsule
+adotado. A primeira e única invocação real da bridge, contudo, terminou
+`ERROR GIT_AUTHORITY` antes de claim, source-secret read ou output. O reader
+Git publicado limita cada `cat-file` a 64 KiB, enquanto o próprio blob do
+generator tem 82.675 bytes; a ingestão autoritativa é encerrada pelo limite.
+
+O budget da bridge está consumido `1/1`, sem claim, staging, generation,
+config ou receipt. Não existe remote generation para transportar ao Mac.
+A adoção do runtime permanece `VERIFIED_ADOPTED_READ_ONLY`; bridge fica STOP.
+Próximo gate requer nova authority para corrigir o reader Git e conceder nova
+tentativa explícita da bridge. Esta operação não executa essa correção, não
+repete `--create` e não inicia Mac, simulador, CI-3 Task 2, CI-4 ou cleanup.

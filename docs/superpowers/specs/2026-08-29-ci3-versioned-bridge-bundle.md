@@ -1626,3 +1626,17 @@ must materialize the exact Git blob, verify `/bin/zsh`, run `/bin/zsh -n`,
 require empty output and stable launcher identity, then atomically publish an
 owner-only syntax receipt before simulator, claim, SSH or remote read. Any
 failure has zero network/effect and consumes no silent retry.
+
+## Canonical staging receipt successor
+
+The current architecture is
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1`.
+Its authority parent is the published Bridge V2 STOP, and its closed manifest
+contains exactly 15 paths. Bridge V1 and V2 remain consumed predecessors.
+
+The environment receipt accepts no aliases or fallbacks. It requires purpose
+`ci3-staging-mobile-bff`, boolean legacy-key true, exposure `no`, permission
+`api_gateway_keys_read`, and the exact URL/anon/service-role classifications
+documented in the reconciliation evidence. All other schema, ref, preview,
+hash, control-plane, no-write, no-production and no-emission gates remain
+mandatory. Validation is read-only and cannot rewrite either input.

@@ -19,9 +19,11 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const GENERATOR_GIT_PATH = 'scripts/ci3/create-ios-staging-bridge-config.mjs';
-const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b';
-const AUTHORITY_SUBJECT = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
+const AUTHORITY_PARENT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
+const AUTHORITY_SUBJECT = 'build(ops): reconcile staging env receipt for CI-3 bridge';
 const PREDECESSOR_AUTHORITY_COMMIT = 'ba8473799a19aec586b0fe706bb7d4084589c86c';
+const PREDECESSOR_V2_AUTHORITY_COMMIT = 'c8e1d00c8d43912e55c5ecae3b2e3d84ae232026';
+const PREDECESSOR_V2_STOP_COMMIT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
 const PREDECESSOR_LAUNCHER_BLOB_OID = 'ade9531832da39715a815f4c34831780ce5063e3';
 const PREDECESSOR_LAUNCHER_SHA256 = 'c4c33a522125bc08823d9bac4a8344cf674df3e5e375f7c7e4fd22a1bcdf0ac2';
 export const GIT_OBJECT_READER_ARCHITECTURE = 'BOUNDED_GIT_OBJECT_READER_V2';
@@ -40,7 +42,7 @@ const CLOSED_GIT_ENV = Object.freeze({
 const EXPECTED_IMPLEMENTATION_SHA = 'e3e1e252b48e42554e75899b950692c05186f60d';
 const OUTPUT_ROOT = '/root/.config/agentempp/bridges/ci3';
 const PRIMARY_DENYLIST = '/root/.config/agentempp/secrets/agentempp-primary-backend.env';
-const ENV_RECEIPT_PURPOSE = 'ci3_staging_mobile_bff';
+const ENV_RECEIPT_PURPOSE = 'ci3-staging-mobile-bff';
 const DEPLOYMENT_RECEIPT_PURPOSE = 'ci3_dedicated_mobile_bff_deployment';
 const PROVISIONING_RECEIPT_PURPOSE = 'ci3_synthetic_patient';
 const LOCAL_CONFIG_RELATIVE_PATH = 'Library/Application Support/Agentempp/mobile-staging-config.json';
@@ -73,6 +75,12 @@ const INPUT_SIZE_LIMITS = Object.freeze({
 const ENV_NAMES = Object.freeze([
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'NEXT_PUBLIC_SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+]);
+
+const ENV_RECEIPT_VARIABLE_ORDER = Object.freeze([
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
 ]);
 
@@ -276,6 +284,7 @@ export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -409,7 +418,7 @@ export function launcherStructuralSkeleton(bytes) {
 }
 
 export function validateAuthorityTreeManifest(entries) {
-  if (!Array.isArray(entries) || entries.length !== 14) fail('AUTHORITY_TREE_MANIFEST');
+  if (!Array.isArray(entries) || entries.length !== 15) fail('AUTHORITY_TREE_MANIFEST');
   const paths = new Set();
   for (const entry of entries) {
     exactKeys(entry, ['blob_oid', 'path', 'sha256'], 'AUTHORITY_TREE_MANIFEST');
@@ -540,9 +549,9 @@ function validateEnvReceipt(receipt, values) {
   requireBoolean(receipt.values_in_argv, false, 'ENV_RECEIPT_STATE');
   requireBoolean(receipt.values_in_git, false, 'ENV_RECEIPT_STATE');
   requireBoolean(receipt.values_printed, false, 'ENV_RECEIPT_STATE');
-  requireBoolean(receipt.legacy_key_contract, false, 'ENV_RECEIPT_STATE');
+  requireBoolean(receipt.legacy_key_contract, true, 'ENV_RECEIPT_STATE');
   requireBoolean(receipt.preview_branch_verified_via_dashboard_and_api_keys, true, 'ENV_RECEIPT_STATE');
-  if (receipt.local_elevated_secret_exposure !== 'none' || receipt.required_permission_verified !== 'yes') fail('ENV_RECEIPT_STATE');
+  if (receipt.local_elevated_secret_exposure !== 'no' || receipt.required_permission_verified !== 'api_gateway_keys_read') fail('ENV_RECEIPT_STATE');
   requireString(receipt.supabase_project_ref, 'STAGING_REF_MISMATCH');
   requireString(receipt.supabase_parent_project_ref, 'ENV_RECEIPT_STATE');
   if (receipt.supabase_parent_project_ref === receipt.supabase_project_ref) fail('ENV_RECEIPT_STATE');
@@ -551,12 +560,18 @@ function validateEnvReceipt(receipt, values) {
   for (const variable of receipt.variables) {
     exactKeys(variable, ['classification', 'name', 'sha256', 'validated'], 'ENV_RECEIPT_SCHEMA');
     if (!ENV_NAMES.includes(variable.name) || names.includes(variable.name) || variable.validated !== true) fail('ENV_RECEIPT_SCHEMA');
-    const expectedClassification = variable.name === 'SUPABASE_SERVICE_ROLE_KEY' ? 'sensitive' : 'public';
+    const classifications = {
+      NEXT_PUBLIC_SUPABASE_URL: 'public-configuration',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'legacy-public-project-key',
+      SUPABASE_SERVICE_ROLE_KEY: 'legacy-server-sensitive-elevated',
+    };
+    const expectedClassification = classifications[variable.name];
     if (variable.classification !== expectedClassification) fail('ENV_RECEIPT_STATE');
     if (variable.sha256 !== sha256(Buffer.from(values[variable.name]))) fail('ENV_VALUE_HASH');
     names.push(variable.name);
   }
   if (ENV_NAMES.some((name) => !names.includes(name))) fail('ENV_RECEIPT_SCHEMA');
+  if (names.some((name, index) => name !== ENV_RECEIPT_VARIABLE_ORDER[index])) fail('ENV_RECEIPT_SCHEMA');
 }
 
 function validateDeploymentReceipt(receipt) {
@@ -733,7 +748,7 @@ export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, 
   const configBytes = jsonBytes(config);
   const receipt = {
     schema_version: 1,
-    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING',
+    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1',
     created_at_utc: authority.committed_at_utc,
     authority_commit: authority.commit,
     authority_parent: authority.parent,
@@ -1333,7 +1348,7 @@ function validatePublishedContract(configBytes, receiptBytes, claim) {
     fail(code);
   }
   if (supabaseUrl.protocol !== 'https:' || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`) || mobileBffOrigin.protocol !== 'https:') fail(code);
-  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING') fail(code);
+  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1') fail(code);
   if (receipt.authority_parent !== AUTHORITY_PARENT || receipt.authority_parent !== claim.authority_parent
       || receipt.authority_subject !== AUTHORITY_SUBJECT || receipt.authority_subject !== claim.authority_subject
       || !isSha(receipt.authority_tree, [40]) || receipt.authority_tree !== claim.authority_tree) fail(code);

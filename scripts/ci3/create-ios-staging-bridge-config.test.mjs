@@ -8,6 +8,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 const MODULE_URL = new URL('./create-ios-staging-bridge-config.mjs', import.meta.url);
+const GENERATOR_SOURCE = await readFile(MODULE_URL, 'utf8');
 
 let bridge;
 let bridgeLoadError;
@@ -28,6 +29,22 @@ function clone(value) {
 
 function sha(value) {
   return subject().sha256(Buffer.from(value));
+}
+
+const canonicalReceiptSourceContracts = Object.freeze([
+  ['purpose', /const ENV_RECEIPT_PURPOSE = 'ci3-staging-mobile-bff';/],
+  ['legacy key contract', /requireBoolean\(receipt\.legacy_key_contract, true, 'ENV_RECEIPT_STATE'\)/],
+  ['local elevated exposure', /receipt\.local_elevated_secret_exposure !== 'no'/],
+  ['required permission', /receipt\.required_permission_verified !== 'api_gateway_keys_read'/],
+  ['URL classification', /NEXT_PUBLIC_SUPABASE_URL: 'public-configuration'/],
+  ['anon classification', /NEXT_PUBLIC_SUPABASE_ANON_KEY: 'legacy-public-project-key'/],
+  ['service classification', /SUPABASE_SERVICE_ROLE_KEY: 'legacy-server-sensitive-elevated'/],
+]);
+
+for (const [label, pattern] of canonicalReceiptSourceContracts) {
+  test(`[ENV-RECEIPT-RED] canonical ${label} is literal`, () => {
+    assert.match(GENERATOR_SOURCE, pattern);
+  });
 }
 
 test('[LAUNCHER-SKELETON] generator classifies the current launcher as data-only versus the Mac predecessor', async () => {
@@ -356,23 +373,27 @@ function validFixture() {
     key_created: false,
     key_disabled: false,
     key_rotated: false,
-    legacy_key_contract: false,
-    local_elevated_secret_exposure: 'none',
+    legacy_key_contract: true,
+    local_elevated_secret_exposure: 'no',
     preview_branch_verified_via_dashboard_and_api_keys: true,
     production_accessed: false,
-    purpose: 'ci3_staging_mobile_bff',
+    purpose: 'ci3-staging-mobile-bff',
     rejected_env_local_used: false,
-    required_permission_verified: 'yes',
+    required_permission_verified: 'api_gateway_keys_read',
     schema_version: 1,
     supabase_parent_project_ref: 'parentprojectref0001',
     supabase_project_ref: stagingRef,
     values_in_argv: false,
     values_in_git: false,
     values_printed: false,
-    variables: Object.entries(envValues).map(([name, value]) => ({
-      classification: name === 'SUPABASE_SERVICE_ROLE_KEY' ? 'sensitive' : 'public',
+    variables: ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].map((name) => ({
+      classification: name === 'NEXT_PUBLIC_SUPABASE_URL'
+        ? 'public-configuration'
+        : name === 'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+          ? 'legacy-public-project-key'
+          : 'legacy-server-sensitive-elevated',
       name,
-      sha256: sha(value),
+      sha256: sha(envValues[name]),
       validated: true,
     })),
   };
@@ -523,9 +544,9 @@ function validFixture() {
 
   const authority = {
     commit: 'f'.repeat(40),
-    parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b',
+    parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8',
     tree: 'a'.repeat(40),
-    subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge',
+    subject: 'build(ops): reconcile staging env receipt for CI-3 bridge',
     committed_at_utc: '2026-08-29T10:00:00.000Z',
     generator_blob_sha: 'b'.repeat(40),
     generator_file_sha256: 'c'.repeat(64),
@@ -834,6 +855,86 @@ test('rejects a staging project mismatch between source receipt and URL', () => 
   const fixture = validFixture();
   fixture.envReceipt.supabase_project_ref = 'differentprojectref1';
   expectCode('STAGING_REF_MISMATCH', () => validate(fixture));
+});
+
+const receiptMutationCases = Object.freeze([
+  ['purpose underscore fails', (f) => { f.envReceipt.purpose = 'ci3_staging_mobile_bff'; }, 'ENV_RECEIPT_STATE'],
+  ['legacy key false fails', (f) => { f.envReceipt.legacy_key_contract = false; }, 'ENV_RECEIPT_STATE'],
+  ['exposure none fails', (f) => { f.envReceipt.local_elevated_secret_exposure = 'none'; }, 'ENV_RECEIPT_STATE'],
+  ['permission yes fails', (f) => { f.envReceipt.required_permission_verified = 'yes'; }, 'ENV_RECEIPT_STATE'],
+  ['URL generic classification fails', (f) => { f.envReceipt.variables.find((v) => v.name === 'NEXT_PUBLIC_SUPABASE_URL').classification = 'public'; }, 'ENV_RECEIPT_STATE'],
+  ['anon generic classification fails', (f) => { f.envReceipt.variables.find((v) => v.name === 'NEXT_PUBLIC_SUPABASE_ANON_KEY').classification = 'public'; }, 'ENV_RECEIPT_STATE'],
+  ['service generic classification fails', (f) => { f.envReceipt.variables.find((v) => v.name === 'SUPABASE_SERVICE_ROLE_KEY').classification = 'sensitive'; }, 'ENV_RECEIPT_STATE'],
+  ['purpose case variant fails', (f) => { f.envReceipt.purpose = 'CI3-staging-mobile-bff'; }, 'ENV_RECEIPT_STATE'],
+  ['classification alias fails', (f) => { f.envReceipt.variables[0].classification = 'legacy_public_project_key'; }, 'ENV_RECEIPT_STATE'],
+  ['duplicate variable fails', (f) => { f.envReceipt.variables.push(clone(f.envReceipt.variables[0])); }, 'ENV_RECEIPT_SCHEMA'],
+  ['missing variable fails', (f) => { f.envReceipt.variables.pop(); }, 'ENV_RECEIPT_SCHEMA'],
+  ['extra variable fails', (f) => { f.envReceipt.variables.push({ classification: 'public-configuration', name: 'EXTRA', sha256: '0'.repeat(64), validated: true }); }, 'ENV_RECEIPT_SCHEMA'],
+  ['validated false fails', (f) => { f.envReceipt.variables[0].validated = false; }, 'ENV_RECEIPT_SCHEMA'],
+  ['SHA mismatch fails', (f) => { f.envReceipt.variables[0].sha256 = '0'.repeat(64); }, 'ENV_VALUE_HASH'],
+  ['project ref mismatch fails', (f) => { f.envReceipt.supabase_project_ref = 'differentprojectref1'; }, 'STAGING_REF_MISMATCH'],
+  ['parent ref equal fails', (f) => { f.envReceipt.supabase_parent_project_ref = f.envReceipt.supabase_project_ref; }, 'ENV_RECEIPT_STATE'],
+  ['missing preview verification fails', (f) => { delete f.envReceipt.preview_branch_verified_via_dashboard_and_api_keys; }, 'ENV_RECEIPT_SCHEMA'],
+  ['key created true fails', (f) => { f.envReceipt.key_created = true; }, 'ENV_RECEIPT_STATE'],
+  ['key rotated true fails', (f) => { f.envReceipt.key_rotated = true; }, 'ENV_RECEIPT_STATE'],
+  ['key disabled true fails', (f) => { f.envReceipt.key_disabled = true; }, 'ENV_RECEIPT_STATE'],
+  ['production accessed true fails', (f) => { f.envReceipt.production_accessed = true; }, 'ENV_RECEIPT_STATE'],
+  ['database write true fails', (f) => { f.envReceipt.database_write = true; }, 'ENV_RECEIPT_STATE'],
+  ['local exposure variant fails', (f) => { f.envReceipt.local_elevated_secret_exposure = 'NO'; }, 'ENV_RECEIPT_STATE'],
+  ['unknown receipt key fails', (f) => { f.envReceipt.unknown = false; }, 'ENV_RECEIPT_SCHEMA'],
+  ['missing canonical key fails', (f) => { delete f.envReceipt.required_permission_verified; }, 'ENV_RECEIPT_SCHEMA'],
+]);
+
+test('[ENV-RECEIPT-RECONCILIATION 01] canonical complete receipt passes', () => assert.doesNotThrow(() => validate()));
+test('[ENV-RECEIPT-RECONCILIATION 02] sanitized receipt contains no raw env values', () => {
+  const fixture = validFixture();
+  const bytes = JSON.stringify(fixture.envReceipt);
+  for (const value of Object.values(fixture.envValues)) assert.equal(bytes.includes(value), false);
+  assert.doesNotThrow(() => validate(fixture));
+});
+test('[ENV-RECEIPT-RECONCILIATION 03] all three variable hashes remain bound', () => {
+  const fixture = validFixture();
+  for (const variable of fixture.envReceipt.variables) assert.equal(variable.sha256, sha(fixture.envValues[variable.name]));
+});
+test('[ENV-RECEIPT-RECONCILIATION 04] authorized extra gates remain required', () => {
+  const fixture = validFixture(); delete fixture.envReceipt.control_plane_source;
+  expectCode('ENV_RECEIPT_SCHEMA', () => validate(fixture));
+});
+test('[ENV-RECEIPT-RECONCILIATION 05] parent project ref remains distinct', () => {
+  const fixture = validFixture(); fixture.envReceipt.supabase_parent_project_ref = fixture.envReceipt.supabase_project_ref;
+  expectCode('ENV_RECEIPT_STATE', () => validate(fixture));
+});
+receiptMutationCases.forEach(([label, mutate, code], index) => {
+  test(`[ENV-RECEIPT-RECONCILIATION ${String(index + 6).padStart(2, '0')}] ${label}`, () => {
+    const fixture = validFixture(); mutate(fixture); expectCode(code, () => validate(fixture));
+  });
+});
+test('[ENV-RECEIPT-RECONCILIATION 31] receipt bytes are not rewritten', () => {
+  const fixture = validFixture(); const before = JSON.stringify(fixture.envReceipt); validate(fixture); assert.equal(JSON.stringify(fixture.envReceipt), before);
+});
+test('[ENV-RECEIPT-RECONCILIATION 32] env bytes are not rewritten', () => {
+  const fixture = validFixture(); const before = Buffer.from(fixture.envBytes); validate(fixture); assert.deepEqual(fixture.envBytes, before);
+});
+test('[ENV-RECEIPT-RECONCILIATION 33] Bridge V1 lineage remains historical', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_AUTHORITY_COMMIT = 'ba8473799a19aec586b0fe706bb7d4084589c86c'/));
+test('[ENV-RECEIPT-RECONCILIATION 34] Bridge V2 lineage remains historical', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_V2_AUTHORITY_COMMIT = 'c8e1d00c8d43912e55c5ecae3b2e3d84ae232026'/));
+test('[ENV-RECEIPT-RECONCILIATION 35] fresh authority architecture is distinct', () => assert.match(GENERATOR_SOURCE, /WITH_CANONICAL_ENV_RECEIPT_V1/));
+test('[ENV-RECEIPT-RECONCILIATION 36] old authority cannot be current', () => assert.doesNotMatch(GENERATOR_SOURCE, /const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b'/));
+test('[ENV-RECEIPT-RECONCILIATION 37] old claim cannot authorize fresh attempt', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_V2_STOP_COMMIT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8'/));
+test('[ENV-RECEIPT-RECONCILIATION 38] no retroactive claim path exists', () => assert.doesNotMatch(GENERATOR_SOURCE, /retroactiveClaim|retroactive_claim/));
+test('[ENV-RECEIPT-RECONCILIATION 39] runtime adoption is not mutated', () => assert.doesNotMatch(GENERATOR_SOURCE, /runtime.*(?:writeFile|rename|unlink)/i));
+test('[ENV-RECEIPT-RECONCILIATION 40] generator has no ldd probe or chattr', () => assert.doesNotMatch(GENERATOR_SOURCE, /(?:^|\W)(?:ldd|chattr)(?:$|\W)/m));
+test('[ENV-RECEIPT-RECONCILIATION 41] bounded Git reader remains one MiB', () => assert.equal(subject().AUTHORITY_BLOB_LIMIT_BYTES, 1_048_576));
+test('[ENV-RECEIPT-RECONCILIATION 42] zsh gate remains deferred to Mac', () => assert.equal(build().receipt.zsh_syntax_validation_deferred, true));
+test('[ENV-RECEIPT-RECONCILIATION 43] launcher structural skeleton remains equal', () => assert.equal(build().receipt.launcher_structural_skeleton_equal, true));
+test('[ENV-RECEIPT-RECONCILIATION 44] service role is not emitted in config', () => assert.equal(build().configBytes.includes(validFixture().envValues.SUPABASE_SERVICE_ROLE_KEY), false));
+test('[ENV-RECEIPT-RECONCILIATION 45] credential is not copied into output filenames', () => assert.equal(build().receipt.output_filenames.includes('synthetic-patient.credentials.json'), false));
+test('[ENV-RECEIPT-RECONCILIATION 46] receipt and logs expose no raw values', () => {
+  const fixture = validFixture(); const output = build(fixture).receiptBytes;
+  for (const value of Object.values(fixture.envValues)) assert.equal(output.includes(value), false);
+});
+test('[ENV-RECEIPT-RECONCILIATION 47] original receipt variable order remains frozen', () => {
+  const fixture = validFixture(); fixture.envReceipt.variables.reverse();
+  expectCode('ENV_RECEIPT_SCHEMA', () => validate(fixture));
 });
 
 test('rejects an env variable digest mismatch', () => {
@@ -1535,7 +1636,7 @@ test('terminal receipt rejects an incomplete two-scan chain', () => {
 
 test('generator and executable authority share the one exact commit subject', () => {
   const fixture = validFixture();
-  fixture.authority.subject = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
+  fixture.authority.subject = 'build(ops): reconcile staging env receipt for CI-3 bridge';
   assert.doesNotThrow(() => build(fixture));
 });
 
@@ -1800,7 +1901,7 @@ for (const [field, expected] of EXECUTABLE_COMPONENT_EXPECTATIONS) {
   });
 }
 
-test('remote receipt binds the exact fourteen-path authority tree manifest', () => {
+test('remote receipt binds the exact fifteen-path authority tree manifest', () => {
   assert.equal(build().receipt.authority_tree_manifest_sha256, '8'.repeat(64));
 });
 
@@ -1820,8 +1921,8 @@ test('remote receipt freezes the exact ordered six terminal scan IDs', () => {
   assert.deepEqual(build().receipt.terminal_scan_ids, ['argv', 'history', 'terminal-log', 'attachment', 'xcresult', 'runtime']);
 });
 
-test('authority manifest requires exactly fourteen Git paths', () => {
-  const entries = Array.from({ length: 14 }, (_, index) => ({
+test('authority manifest requires exactly fifteen Git paths', () => {
+  const entries = Array.from({ length: 15 }, (_, index) => ({
     path: `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: `${(index % 9) + 1}`.repeat(40),
     sha256: `${(index % 9) + 1}`.repeat(64),
@@ -1839,8 +1940,8 @@ test('authority manifest rejects a thirteen-only path set', () => {
 });
 
 test('authority manifest rejects duplicate Git paths', () => {
-  const entries = Array.from({ length: 14 }, (_, index) => ({
-    path: index === 13 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
+  const entries = Array.from({ length: 15 }, (_, index) => ({
+    path: index === 14 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: 'a'.repeat(40),
     sha256: 'b'.repeat(64),
   }));

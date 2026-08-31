@@ -23,8 +23,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b';
-export const AUTHORITY_SUBJECT = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
+const AUTHORITY_PARENT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
+export const AUTHORITY_SUBJECT = 'build(ops): reconcile staging env receipt for CI-3 bridge';
 const CI3_PARENT = '277873755bf29771a10b5f362b522c2e6a6c21d6';
 const CI3_SUBJECT = 'feat(ios): connect Today to authenticated staging';
 const BUNDLE_ID = 'com.bodyflow.app';
@@ -168,6 +168,7 @@ export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -681,7 +682,7 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   try { supabaseUrl = new URL(config.supabase_url); bffUrl = new URL(config.mobile_bff_origin); } catch { fail(code); }
   if (supabaseUrl.protocol !== 'https:' || bffUrl.protocol !== 'https:'
       || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`)) fail(code);
-  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING'
+  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1'
       || receipt.authority_commit !== context.authority.commit
       || receipt.authority_parent !== context.authority.parent
       || receipt.authority_tree !== context.authority.tree

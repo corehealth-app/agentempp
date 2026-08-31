@@ -1356,3 +1356,17 @@ retry é proibido. Preservar snapshot, capsule e inputs sem cleanup. A retomada
 exige nova authority que escolha explicitamente o contrato correto do env
 receipt, teste a reconciliação e conceda uma nova tentativa independente.
 Mac Gate 0, simulador, SSH, remote reads, Task 2 e CI-4 continuam bloqueados.
+
+## Round 26 — authority canônica do env receipt e tentativa independente
+
+1. Preservar Bridge V1/V2 em `1/1`, seus snapshots e o Node capsule adotado.
+2. Provar hash, metadata, provenance e sete valores canônicos do receipt sem
+   imprimir nenhum valor sensível.
+3. TDD com ao menos 46 casos de reconciliação; preservar reader 48+, generator
+   240+, controller 689+, E2E 44+, launcher 22+ e writer 4+.
+4. Publicar exatamente 15 paths, parent no STOP V2 e subject de reconciliação.
+5. Somente após scans e duas reviews 0C/0I, materializar o generator pelo blob
+   Git e consumir uma tentativa nova 1/1 pelo capsule adotado.
+6. Exigir output versionado, receipt last, zero credential copy, zero
+   service-role/raw values e readback físico integral.
+7. Não executar Gate 0 do Mac, Task 2, CI-4, produção ou cleanup nesta VPS.

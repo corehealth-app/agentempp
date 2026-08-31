@@ -1090,3 +1090,10 @@ controle de fluxo, redirects, quotes, funções e call graph não mudaram.
 `VPS_ZSH_SYNTAX_EXECUTION=NOT_APPLICABLE`. A validação sintática continua
 obrigatória no Mac, pelo blob exato e `/bin/zsh -n`, antes de rede, simulador,
 SSH, claim ou remote read. Bash não é substituto e a VPS não instala zsh.
+
+## Successor receipt ruling
+
+A authority canônica do env receipt muda apenas constants, manifest data e o
+contrato semântico de sete campos. O skeleton do launcher permanece idêntico
+ao predecessor Mac-validado; esta evidência não concede PASS zsh na VPS. O
+Gate 0 continua sendo `/bin/zsh -n` sobre o blob exato antes de toda rede.

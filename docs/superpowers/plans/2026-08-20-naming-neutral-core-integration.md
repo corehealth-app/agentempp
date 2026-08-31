@@ -2658,3 +2658,12 @@ Bridge V2 está consumida 1/1 sem retry. Não existe bundle para o Mac; portanto
 o gate zsh permanece corretamente deferred e não deve ser executado ainda.
 Próximo gate é authoring/reconciliação na VPS do contrato de env receipt e de
 um budget sucessor. CI-3 Tasks 2–12, CI-4, produção e cleanup seguem parados.
+
+## Bridge receipt canonical authority — dossier 1.7.10
+
+A reconciliação comprovou que o receipt físico e sua authority original usam
+sete valores canônicos e que somente o generator V2 divergiu. A nova authority
+é filha do STOP V2, possui 15 paths, purpose versionado próprio e uma tentativa
+independente. Reader bounded, Node capsule adotado, protocols e Gate 0 zsh no
+Mac permanecem inalterados. A VPS pode criar apenas o bundle; CI-3 Task 2,
+CI-4, produção, Supabase/Vercel e cleanup continuam bloqueados.

@@ -12,6 +12,7 @@ const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -65,7 +66,7 @@ async function createRepository(mutate, commitAuthority = true) {
   if (mutate) await mutate(root);
   if (commitAuthority) {
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
-    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize bounded Git blob reader for CI-3 bridge']).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): reconcile staging env receipt for CI-3 bridge']).status, 0);
   }
   return root;
 }
@@ -132,11 +133,11 @@ if (VPS_SOURCE_CONTRACT_MODE) {
     });
   }
   nodeTest('[VPS structural] permits authority parent literal data change', () => {
-    const changed = mutateCurrent('92cccf3dca21a29d601d2f274a67ea2ba284914b', 'a'.repeat(40));
+    const changed = mutateCurrent('456b4643d1a310bc88458a28a9a62a16dde2e1c8', 'a'.repeat(40));
     assert.deepEqual(launcherStructuralSkeleton(changed), launcherStructuralSkeleton(predecessorLauncherBytes));
   });
   nodeTest('[VPS structural] permits authority subject literal data change', () => {
-    const changed = mutateCurrent('build(ops): authorize bounded Git blob reader for CI-3 bridge', 'synthetic authority subject data');
+    const changed = mutateCurrent('build(ops): reconcile staging env receipt for CI-3 bridge', 'synthetic authority subject data');
     assert.deepEqual(launcherStructuralSkeleton(changed), launcherStructuralSkeleton(predecessorLauncherBytes));
   });
   nodeTest('[VPS structural] permits authority manifest literal data change', () => {
@@ -164,18 +165,18 @@ if (VPS_SOURCE_CONTRACT_MODE) {
       assert.throws(() => launcherStructuralSkeleton(bytes), { code: 'LAUNCHER_STRUCTURAL_SKELETON' });
     });
   }
-  nodeTest('[VPS source-contract] authority contains exactly fourteen ordered paths', () => {
-    assert.equal(AUTHORITY_PATHS.length, 14);
-    assert.equal(new Set(AUTHORITY_PATHS).size, 14);
+  nodeTest('[VPS source-contract] authority contains exactly fifteen ordered paths', () => {
+    assert.equal(AUTHORITY_PATHS.length, 15);
+    assert.equal(new Set(AUTHORITY_PATHS).size, 15);
   });
   nodeTest('[VPS source-contract] launcher freezes the V2 authority parent', () => {
-    assert.match(launcherSourceContract, /92cccf3dca21a29d601d2f274a67ea2ba284914b/);
+    assert.match(launcherSourceContract, /456b4643d1a310bc88458a28a9a62a16dde2e1c8/);
   });
-  nodeTest('[VPS source-contract] launcher freezes the bounded-reader subject', () => {
-    assert.match(launcherSourceContract, /build\(ops\): authorize bounded Git blob reader for CI-3 bridge/);
+  nodeTest('[VPS source-contract] launcher freezes the receipt-reconciliation subject', () => {
+    assert.match(launcherSourceContract, /build\(ops\): reconcile staging env receipt for CI-3 bridge/);
   });
   nodeTest('[VPS source-contract] launcher carries the new evidence path', () => {
-    assert.match(launcherSourceContract, /2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority\.md/);
+    assert.match(launcherSourceContract, /2026-08-31-ci3-env-receipt-reconciliation-authority\.md/);
   });
   nodeTest('[VPS source-contract] old authority subject is not current', () => {
     assert.doesNotMatch(launcherSourceContract, /AUTHORITY_SUBJECT.*authorize executable CI-3 bridge tooling/);
@@ -355,7 +356,7 @@ test('pre-commit launcher fails COMPONENT_MISSING and the same exact command pas
     assert.equal(before.stdout, '');
     assert.match(before.stderr, /^ERROR COMPONENT_MISSING\n$/);
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
-    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize bounded Git blob reader for CI-3 bridge']).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): reconcile staging env receipt for CI-3 bridge']).status, 0);
     const after = launch(root);
     assert.equal(after.status, 0, after.stderr);
     assert.match(after.stdout, /^LAUNCHER_SELF_TEST PASS /);

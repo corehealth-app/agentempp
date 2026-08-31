@@ -5254,3 +5254,18 @@ classificação zsh continua deferred ao Mac, não bypassed, mas o handoff Mac n
 pode começar porque não existe bundle remoto. Próximo gate é uma nova authority
 na VPS para reconciliar explicitamente o contrato do staging env receipt e
 conceder uma tentativa sucessora; não repetir a Bridge V2.
+
+## Atualização operacional 1.7.10 — contrato canônico do receipt de staging da ponte CI-3
+
+A proveniência do receipt foi revalidada pelo hash físico, pela authority
+original de control-plane e pelo primeiro commit documental que registrou o
+mesmo hash. Seus sete valores canônicos são purpose com hífens, legacy-key
+true, exposição local `no`, permissão `api_gateway_keys_read` e as três
+classificações específicas de URL, anon e service-role. Nenhuma authority
+posterior os reclassificou; o generator V2 introduziu os aliases incorretos.
+
+A authority sucessora mantém V1/V2 consumidas, reader bounded, capsule adotado,
+zsh deferred ao Mac, hashes e gates de staging/preview/produção. Ela altera
+somente os 15 paths fechados e concede uma tentativa independente após GREEN,
+scans, duas reviews e publicação remota. Não há mutação do receipt, emissão de
+valor, execução do handoff Mac, CI-3 Task 2, CI-4, produção ou cleanup.

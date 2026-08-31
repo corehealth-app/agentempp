@@ -910,7 +910,7 @@ private func validateSemanticRoots(
     ], code)
     guard try string(remoteEntry["sha256"], code) == string(manifest["remote_bundle_sha256"], code),
           try integer(remoteReceipt["schema_version"], code) == 1,
-          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING",
+          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1",
           try string(remoteReceipt["authority_commit"], code) == authority,
           try string(remoteReceipt["authority_parent"], code) == string(attestation["authority_parent"], code),
           try sha256(Data(string(remoteReceipt["authority_subject"], code).utf8)) == string(attestation["authority_subject_sha256"], code),

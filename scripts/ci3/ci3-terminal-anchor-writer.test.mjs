@@ -113,7 +113,7 @@ try {
 if (VPS_SOURCE_CONTRACT_MODE) {
   const writerSourceContract = await readFile(SOURCE_PATH, 'utf8');
   nodeTest('[VPS source-contract] writer requires the V2 bounded-reader remote receipt', () => {
-    assert.match(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING/);
+    assert.match(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1/);
     assert.doesNotMatch(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1/);
   });
   nodeTest('[VPS source-contract] writer requires the Mac-only zsh pre-network gate', () => {
@@ -172,6 +172,7 @@ const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -335,8 +336,8 @@ async function createFixture({
       };
     } else if (role === 'remote-receipt') {
       payload = {
-        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING', created_at_utc: '2026-08-30T12:00:00.000Z',
-        authority_commit: AUTHORITY, authority_parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge',
+        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1', created_at_utc: '2026-08-30T12:00:00.000Z',
+        authority_commit: AUTHORITY, authority_parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): reconcile staging env receipt for CI-3 bridge',
         generator_blob_sha: components().generator.blob_oid, generator_file_sha256: components().generator.sha256,
         controller_blob_oid: components().controller.blob_oid, controller_file_sha256: components().controller.sha256,
         launcher_blob_oid: components().launcher.blob_oid, launcher_file_sha256: components().launcher.sha256,

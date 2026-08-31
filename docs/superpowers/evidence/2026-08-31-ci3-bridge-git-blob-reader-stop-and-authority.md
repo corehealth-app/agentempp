@@ -98,6 +98,15 @@ pre/post, authority bindings e schema foram auditados. Não há reparo apenas de
 sintoma e a criação do bundle independe do runtime zsh.
 Resultado: `0 Critical / 0 Important`.
 
+## Reconciliação sucessora do receipt
+
+O STOP V2 e seu budget `1/1` permanecem históricos. A authority sucessora
+aceita exclusivamente o schema canônico comprovado do receipt físico, adiciona
+a nova evidência ao manifest de 15 paths e concede um budget independente.
+Reader bounded, limite de 1 MiB, zero retry, capsule adotado e gate zsh deferred
+permanecem inalterados. O receipt físico não é reescrito.
+
+
 ## Execução terminal da Bridge V2
 
 Authority publicada/confirmada:

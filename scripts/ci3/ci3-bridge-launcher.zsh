@@ -215,6 +215,7 @@ AUTHORITY_PATHS=(
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md'
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md'
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md'
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md'
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md'
@@ -357,8 +358,8 @@ hash_text() {
 }
 
 if [[ "$MODE" != '--self-test' ]]; then
-  [[ "$AUTHORITY_PARENT" == '92cccf3dca21a29d601d2f274a67ea2ba284914b' ]] || fail GIT_AUTHORITY
-  [[ "$AUTHORITY_SUBJECT" == 'build(ops): authorize bounded Git blob reader for CI-3 bridge' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_PARENT" == '456b4643d1a310bc88458a28a9a62a16dde2e1c8' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_SUBJECT" == 'build(ops): reconcile staging env receipt for CI-3 bridge' ]] || fail GIT_AUTHORITY
 fi
 
 GENERATOR_OID="${GENERATOR_BINDING%% *}"

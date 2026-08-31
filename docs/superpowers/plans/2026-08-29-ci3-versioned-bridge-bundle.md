@@ -1256,3 +1256,17 @@ not implement or execute that next gate.
 5. Walk lstat/readlink components, open final O_NOFOLLOW once and revalidate.
 6. On capsule PASS, execute unchanged `ba847...` exclusively with capsule V2.
 7. Publish one terminal four-path commit; do not run Mac, Task 2, CI-4 or cleanup.
+
+## Round 21 STOP — verifier V2 após publicação física completa
+
+Runtime authority `b08e6326...` foi publicada e a tentativa V2 única foi
+consumida. Claim/capture/probe e o final imutável existem; a revalidação
+read-only de schema, bindings, closure e flags passa. O create, porém, terminou
+sem PASS porque o verifier chama o retorno de `JSON.stringify` ao projetar o
+probe. Runtime fica `PARTIAL_PRESERVED`; bridge continua ausente `0/1`.
+
+Não repetir create/verify publicado, ldd, probe, chattr, bridge ou cleanup. O
+próximo plano precisa publicar nova authority, corrigir somente a expressão e
+autorizar verificação/adoção read-only do capsule `b08e6326...`. A adoção deve
+ligar authority, builder, claim, capture, probe, receipt, identidade e flags
+existentes sem mutação e sem conceder novo budget de criação.

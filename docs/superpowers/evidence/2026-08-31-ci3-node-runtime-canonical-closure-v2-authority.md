@@ -1,6 +1,6 @@
 # CI-3 — authority V2 da closure Node canônica no-follow
 
-**Dossiê:** 1.7.4
+**Dossiê:** 1.7.5
 **Arquitetura:** `PRIVATE_VERSIONED_IMMUTABLE_NODE_RUNTIME_CAPSULE_V2`
 **Algoritmo:** `NOFOLLOW_COMPONENT_CANONICALIZATION_V1`
 **Estado:** `AUTHORITY_AUTHORED_RUNTIME_NOT_YET_CREATED`
@@ -64,3 +64,38 @@ receipt-last: `0 Critical / 0 Important`. Review B cobriu V1 byte-idêntica,
 STOP e budget, claim/capture/recovery, publicação imutável, authorities duais,
 bridge `0/1`, manager e isolamento de secrets/produção: `0 Critical / 0
 Important`.
+
+## Execução terminal — STOP pós-authority
+
+A authority foi publicada em
+`b08e6326fbd22c96b852ccfe53abdeb254e54bd1`, parent `bd2ffd96...`, por um
+único push fast-forward. O builder materializado do blob
+`944f054dea143b766d3b148b91b577bd5b372c7e` tem SHA-256
+`f7eba34fc042a8e25406e465d94f4b6c45e88072b7a1fb313215fb7e32471043`
+e passou metadata, readback, syntax e self-test.
+
+A única invocação V2 `--create` foi consumida `1/1` e retornou
+`ERROR UNEXPECTED` depois de publicar o estado final. O defeito exato está na
+expressão do verifier que aplica `(probe)` ao retorno de `JSON.stringify`, em
+vez de invocar primeiro a closure de projeção do probe. Isso produz `TypeError`
+sanitizado; não é divergência da closure nem dos artefatos.
+
+Diagnóstico estritamente read-only confirmou claim, capture, probe receipt,
+Node, runtime receipt e diretório final. Schema, hashes claim/capture, baseline,
+revalidação sem novo `ldd`, identidade final e os três immutable flags passam.
+O receipt SHA-256 é
+`577fff150c608bfa848c7e9775e92cd02ed427a83484e859480b3e2607a94744`.
+Mesmo fisicamente completo, o capsule é classificado
+`PARTIAL_PRESERVED`: o `--verify` publicado não retornou PASS. Não houve retry,
+thaw ou cleanup.
+
+Bridge permaneceu ausente e `0/1`; generator, Mac, simulador, Task 2 e CI-4
+não foram executados. V1 segue congelada `1/1`; system Node/NVM, manager,
+fixture, credentials, Supabase, Vercel, banco, primary/live e produção não
+mudaram. Próximo gate exige nova authority que corrija somente o verifier e
+defina adoção read-only, sem repetir criação, `ldd`, probe ou `chattr`.
+
+As duas reviews documentais terminais foram concluídas após essa classificação.
+A revisão de fato técnico/causa/estado retornou `0 Critical / 0 Important`; a
+revisão de continuidade, preservação, budget, allowlist e ausência de valores
+brutos também retornou `0 Critical / 0 Important`.

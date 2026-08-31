@@ -2573,3 +2573,16 @@ Eligibility requires claim-before-ldd, durable capture, no-follow component
 canonicalization, recovery without source refetch, 200+ tests, real baseline
 and two 0C/0I reviews. Mac, Tasks 2–12, external/production actions, credential
 copy, service-role output and fixture cleanup remain frozen until VPS PASS.
+
+## Runtime capsule V2 verify STOP — dossier 1.7.5
+
+Authority `b08e6326...` está publicada e a tentativa V2 está consumida `1/1`.
+Os artefatos finais são fisicamente completos e imutáveis, e a closure
+corrigida revalida read-only. O verify obrigatório não retornou PASS devido a
+uma expressão de projeção do probe no verifier publicado. Classificação:
+`PARTIAL_PRESERVED`; bridge permanece ausente `0/1`.
+
+Integração continua congelada. Próximo gate requer authority nova para corrigir
+o verifier e adotar o capsule existente somente por leitura. Nenhum novo
+create, ldd, probe, chattr, bridge, Mac, Task 2, CI-4, cleanup ou ação externa é
+autorizado por este STOP.

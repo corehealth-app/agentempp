@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.4
+**Versão do dossiê:** 1.7.5
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5126,3 +5126,24 @@ V2. Mac handoff e CI-3 Task 2 permanecem bloqueados até runtime e bundle VPS
 PASS. Credential não é copiada, service role/valores não são emitidos e o
 cleanup da fixture segue reservado a outra operação, com deadline preservado
 `2026-09-11T11:44:11.182Z`.
+
+## Atualização operacional 1.7.5 — STOP preservado no verify do Node capsule V2
+
+A authority V2 foi publicada em
+`b08e6326fbd22c96b852ccfe53abdeb254e54bd1` e seu builder Git-blob foi
+materializado e validado. A única tentativa `--create` foi consumida `1/1`.
+Ela publicou claim, capture, probe receipt, Node, runtime receipt e diretório
+final, mas terminou `ERROR UNEXPECTED` durante o verify obrigatório.
+
+O diagnóstico read-only confirmou closure 7/7/0, 2/5/5, 9/max2, três hashes,
+bindings e três immutable flags. A causa é uma precedência incorreta na
+expressão que compara a projeção do capability probe: o retorno de
+`JSON.stringify` é chamado como função. Como o verifier publicado não retornou
+PASS, o estado oficial é `PARTIAL_PRESERVED`, mesmo com artefatos fisicamente
+completos. Não houve segunda invocação, thaw, cleanup ou bridge.
+
+V1 permanece 1/1 congelada e bridge 0/1 ausente. System Node, NVM, manager,
+fixture e sistemas externos estão preservados. Mac, simulador, CI-3 Task 2 e
+CI-4 continuam bloqueados. O próximo gate é uma nova authority para corrigir o
+verifier e adotar read-only o capsule existente; é proibido repetir create,
+source/capsule `ldd`, probe ou `chattr`.

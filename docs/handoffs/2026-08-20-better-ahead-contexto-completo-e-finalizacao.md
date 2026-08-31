@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7
+**Versão do dossiê:** 1.7.1
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -3975,3 +3975,1076 @@ plano executável completos estão, respectivamente, em:
 - `docs/superpowers/evidence/2026-08-28-ci3-authenticated-today-staging-completion.md`;
 - `docs/superpowers/specs/2026-08-28-ci3-today-staging-vertical-slice.md`;
 - `docs/superpowers/plans/2026-08-28-ci3-today-staging-vertical-slice.md`.
+
+## 58. Atualização operacional 1.7.1 — ponte CI-3 versionada após STOP V3
+
+**Data:** 29/08/2026
+
+A implementação local da Task 1 permaneceu preservada no HEAD CI-2, com
+staging vazio e os mesmos cinco paths working. Antes de qualquer Task 2, três
+gerações de ponte Mac→VPS foram adjudicadas. V1 e V2 ficam
+`FROZEN_SUPERSEDED`; V3 terminou `FROZEN_REJECTED_AFTER_ROUND5` e jamais pode
+ser executada.
+
+O STOP V3 é terminal: cinco rodadas consumidas, Review A final
+`0 Critical / 5 Important / 1 Minor`, Review B final
+`0 Critical / 6 Important / 1 Minor`. Os 11 Important foram mantidos sem
+deduplicação. Embora a suíte sintética tenha terminado `174/174`, não existia
+âncora terminal imutável suficiente para scans/fases, alguns bindings ainda
+podiam trocar generation/inode e a policy sintética de `ssh -G` não provava a
+saída nativa real. Não houve SSH, stream, simulador, pair canônico, Supabase,
+Vercel, produção, cleanup ou CI-4.
+
+A arquitetura sucessora é `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1`. Um gerador
+Node core Git-tracked, ligado ao commit/blob/hash, roda futuramente na VPS e
+produz somente config pública sanitizada mais receipt em diretório imutável
+endereçado pelo authority SHA. A credential existente continua em seu path
+root-only; apenas path fixo e hash entram no receipt. `service_role` nunca é
+emitida ou copiada.
+
+No Mac, B0 é estritamente local/no-network e o simulador passa por gate físico
+antes de remote Git ou SSH. O fetch usa `/usr/bin/ssh` e `/usr/bin/ssh -G`
+reais com trust concreto version-addressed/hash-bound por VPS PASS. Há três
+reads exatos com claim/result O_EXCL, tentativa única e zero refetch. O bundle
+local publica `local-publication.receipt.json` pre-terminal por claim+
+receipt-last `link(2)` no-replace. Instalação/scans geram outro receipt
+versionado e um controller privilegiado o ancora fora do bundle, em arquivo
+root-owned O_EXCL/imutável. Isso remove circularidade e reescrita
+autoconsistente no mesmo domínio.
+
+A fronteira receipt-last não oculta fisicamente o config durante toda a janela:
+um crash após o primeiro hardlink pode deixar o diretório final e o config
+visíveis sem receipt. Esse estado é obrigatoriamente `UNPUBLISHED`; nenhum
+consumer pode ler/usar/instalar/streamar o config. Receipt presente significa
+apenas `COMMIT_MARKER_PRESENT_REQUIRES_VALIDATION`, e PASS exige validação
+integral de claim/schema/metadados. Purpose errado ou ausente STOPa mesmo se o
+hash do claim for reescrito de forma autoconsistente; o self-test usa receipt
+sintético completo, sem bypass.
+
+O controller privilegiado também não é autoridade implícita deste handoff.
+Antes de preparar o anchor, deve existir
+`CI3_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY_V1` separado, version-addressed
+e hash-bound, ligando bridge SHA, writer/executable/path/controller, uid/gid
+zero, flags O_EXCL/no-follow, `0444` e `UF_IMMUTABLE`. Ausência é
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`; VPS PASS/Mac/normal executor
+não podem inferir ou cunhar essa autoridade. Nenhuma foi criada nesta task.
+
+O TDD inicial registrou RED `90/1/89` e GREEN `90/90`. A remediação adicionou
+RED `123/91/32`, depois RED `125/123/2`, e terminou GREEN `125/125`, zero
+fail/skip/todo; `node --check` passou e o self-test permaneceu sintético/local
+com network calls zero. Um RED final `126/125/1` cobriu crash entre hardlink e
+de-link. O finding do controller registrou RED `130/126/4`; a integração do
+STOP no builder registrou RED focado `1/0/1`; o GREEN final é `131/131`.
+Nenhum `--create` foi executado.
+
+```text
+CI3_BRIDGE_V1_STATUS=FROZEN_SUPERSEDED
+CI3_BRIDGE_V2_STATUS=FROZEN_SUPERSEDED
+CI3_BRIDGE_V3_STATUS=FROZEN_REJECTED
+CI3_BRIDGE_V3_EXECUTED=NO
+CI3_BRIDGE_ARCHITECTURE=VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1
+CI3_BRIDGE_GENERATOR_TRACKED=YES
+CI3_BRIDGE_GENERATOR_TESTS=131_PASS
+CI3_WORKTREE_PRESERVED=YES
+CI3_IMPLEMENTATION_STARTED_BEYOND_TASK1=NO
+SSH_REAL_EXECUTED=NO
+CONFIG_STREAM_EXECUTED=NO
+CREDENTIAL_STREAM_EXECUTED=NO
+REMOTE_BUNDLE_CREATED=NO
+SIMULATOR_REAL_EXECUTED=NO
+VERCEL_WRITE=NO
+SUPABASE_WRITE=NO
+PRIMARY_LIVE_OPEN=NO
+CLEANUP_EXECUTED=NO
+CI4_STARTED=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=CREATE_VERSIONED_CI3_BRIDGE_BUNDLE_ON_VPS
+```
+
+Handoff VPS, publicado como contrato mas não executado:
+
+```text
+OPERATION=CREATE_VERSIONED_CI3_BRIDGE_BUNDLE_ON_VPS
+NEXT_ENVIRONMENT=VPS
+AUTHORITY_SHA=CONTROLLER_PASS.authority_sha
+AUTHORITY_PARENT=9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52
+AUTHORITY_TREE=CONTROLLER_PASS.authority_tree
+AUTHORITY_SUBJECT=build(ops): authorize executable CI-3 bridge tooling
+GENERATOR=scripts/ci3/create-ios-staging-bridge-config.mjs
+GENERATOR_BLOB=/usr/bin/git rev-parse "$AUTHORITY_SHA:scripts/ci3/create-ios-staging-bridge-config.mjs"
+GENERATOR_SHA256=/usr/bin/git cat-file blob "$AUTHORITY_SHA:scripts/ci3/create-ios-staging-bridge-config.mjs" | /usr/bin/shasum -a 256
+GENERATOR_EXECUTION=/root/.config/agentempp/bridges/ci3/.launchers/$AUTHORITY_SHA/create-ios-staging-bridge-config.mjs --create
+OUTPUT=/root/.config/agentempp/bridges/ci3/AUTHORITY_SHA
+OUTPUT_FILES=mobile-staging-config.json,bridge.receipt.json
+HISTORICAL_GENERATOR_ONLY_TESTS=131_PASS_0_FAIL_0_SKIP_0_TODO
+CREATION_BUDGET=1
+OVERWRITE=NO
+CREDENTIAL_COPY=NO
+SERVICE_ROLE_OUTPUT=NO
+GIT_VERCEL_SUPABASE_PRODUCTION_WRITE=NO
+CI4=NO
+```
+
+Handoff Mac posterior a VPS PASS, também não executado:
+
+```text
+OPERATION=FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3
+NEXT_ENVIRONMENT=MAC_LOCAL
+AUTHORITY_SHA=VPS_PASS.authority_sha
+REMOTE_RECEIPT_SHA256=VPS_PASS.remote.receipt_sha256
+REMOTE_CONFIG_SHA256=REMOTE_RECEIPT.output_config_sha256
+REMOTE_CREDENTIAL_SHA256=d36c96998b5879150d5dbd45a8118de0e50b24a815f5ff5cbeb0d87d449d8208
+SIMULATOR_GATE=BEFORE_SSH
+TRUST_DESCRIPTOR=VPS_PASS.ssh.trust_descriptor_path+trust_descriptor_sha256
+SSH_EFFECTIVE_CONFIG=/usr/bin/ssh -G -F VERIFIED_CONFIG VERIFIED_DESCRIPTOR_ALIAS
+REMOTE_READS=3_TOTAL_1_EACH
+RETRY=NO
+LOCAL_BUNDLE=$HOME/.config/agentempp/ci3/bundles/AUTHORITY_SHA
+NO_REFETCH_AFTER_CLAIM=YES
+LOCAL_RECEIPT=PRE_TERMINAL_PUBLICATION_ONLY
+INSTALL=/usr/bin/install -m 0600
+TERMINAL_RECEIPT=SEPARATE_VERSIONED_AFTER_INSTALL_AND_SCANS
+TERMINAL_ANCHOR=EXTERNAL_ROOT_OWNED_O_EXCL_UCHG
+V1_V2_V3_EXECUTION=NO
+CI3_EXISTING_PATHS=5_PRESERVED
+CI3_ALLOWLIST=23
+CI3_ORIGINAL_TASKS=2_THROUGH_11_AFTER_BRIDGE_PASS
+CONTINUATION_LABEL_12=FINAL_REPORT_ONLY
+CI3_PARENT=277873755bf29771a10b5f362b522c2e6a6c21d6
+CI3_SUBJECT=feat(ios): connect Today to authenticated staging
+CI4=NO
+```
+
+Evidência completa, manifest sanitizado, contrato e plano de execução:
+
+- `docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md`;
+- `docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md`;
+- `docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md`.
+
+## 59. Atualização operacional 1.7.1 — controller executável e âncora terminal
+
+O STOP da §58 permanece histórico e correto: generator-only não era authority
+executável. O complemento 1.7.1 adiciona launcher Git-bound, controller Mac
+único e writer Swift privilegiado aos sete paths anteriores, totalizando treze
+paths. A arquitetura corrente passa a
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1_WITH_EXECUTABLE_MAC_CONTROLLER`.
+
+Os executáveis implementam commit/tree/manifest/component/tool provenance,
+quatro generations, bootstrap/read claims originais, recovery local sem
+refetch, `ssh -G` nativo, gate simulador de sete fases, publication receipt-last,
+install/readback 0600, scans literais `argv`, `history`, `terminal-log`,
+`attachment`, `xcresult`, `runtime` e anchor externo root-owned O_EXCL/fsync/
+immutable. A ausência do privileged-writer claim explícito continua STOP; o
+handoff Mac normal não possui autoridade implícita para mintá-lo.
+
+Os findings fechados, sem deduplicação, são `RA-FINAL-I-1` até
+`RA-FINAL-I-6`, `RB-FINAL-I-1` até `RB-FINAL-I-7`; os Minors separados são
+`RA-FINAL-M-1` e `RB-FINAL-M-1`. A matriz e cada binding receipt/anchor estão na
+spec §12.6.
+
+### Handoff VPS integral — não executar nesta authoring operation
+
+```text
+OPERATION=CREATE_VERSIONED_CI3_BRIDGE_BUNDLE_ON_VPS
+AUTHORITY_ARCHITECTURE=VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1_WITH_EXECUTABLE_MAC_CONTROLLER
+AUTHORITY_SHA=CONTROLLER_PASS.authority_sha
+AUTHORITY_PARENT=9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52
+AUTHORITY_SUBJECT=build(ops): authorize executable CI-3 bridge tooling
+AUTHORITY_MANIFEST_COMMAND=/usr/bin/git ls-tree -r $AUTHORITY_SHA -- [the thirteen literal paths printed below]
+COMPONENTS=generator,controller,launcher,writer
+GENERATOR=scripts/ci3/create-ios-staging-bridge-config.mjs
+GENERATOR_MODE=--create
+GENERATOR_EXECUTION=/root/.config/agentempp/bridges/ci3/.launchers/$AUTHORITY_SHA/create-ios-staging-bridge-config.mjs --create
+REMOTE_OUTPUT=/root/.config/agentempp/bridges/ci3/AUTHORITY_SHA/REMOTE_GENERATION_ID
+REMOTE_FILES=mobile-staging-config.json,bridge.receipt.json
+REMOTE_GENERATION=HASH_BOUND
+CLAIM=DETERMINISTIC_O_EXCL_FSYNC_ATTEMPT_1
+PUBLICATION=NO_REPLACE_RECEIPT_LAST
+OVERWRITE=NO
+RETRY=NO
+CREDENTIAL_COPY=NO
+SERVICE_ROLE_OUTPUT=NO
+TRUST_DESCRIPTOR=SANITIZED_VERSION_ADDRESSED_HASH_BOUND_VPS_PASS
+TRUST_VALUES=DESTINATION_ROOT_PORT_IDENTITY_PUBLIC_FINGERPRINT_HOST_ED25519_FINGERPRINT
+TRUST_CONFIG=ISOLATED_OWNER_ONLY_NO_USER_GLOBAL_INHERITANCE
+TRUST_FALLBACK=NO
+RAW_DESTINATION_ORIGIN_CREDENTIAL_OUTPUT=NO
+NEXT_MAC_HANDOFF=ONLY_AFTER_VPS_PASS
+V1_V2_V3_EXECUTION=NO
+SIMULATOR=NO
+CI3_TASK2=NO
+GIT_VERCEL_SUPABASE_PRODUCTION_WRITE=NO
+```
+
+### Handoff Mac integral — somente depois de VPS PASS; não executar agora
+
+```text
+OPERATION=RUN_EXECUTABLE_CI3_MAC_BRIDGE_CONTROLLER
+ENTRYPOINT=scripts/ci3/ci3-bridge-launcher.zsh
+CONTROLLER=scripts/ci3/ci3-bridge-controller.mjs
+WRITER_SOURCE=scripts/ci3/ci3-terminal-anchor-writer.swift
+AUTHORITY_SHA=VPS_PASS.authority_sha
+AUTHORITY_MANIFEST=CONTROLLER_PASS.authority_manifest_sha256+ordered_entries
+LAUNCH_ATTESTATION=CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2
+CONTROLLER_MODES=plan,verify-simulator,verify-ssh,fetch,install-simulator,scan,write-terminal-anchor,resume,status
+B0=STRICT_LOCAL_NO_NETWORK
+SIMULATOR_PHASES=SELECT_DEVICE,RESOLVE_CONTAINER,INSTALL_PROBE,LAUNCH_PROBE,ACK_PROBE,REMOVE_PROBE,REOBSERVE
+SIMULATOR_BUNDLE_ID=com.bodyflow.app
+SIMULATOR_GATE=BEFORE_BOOTSTRAP_CLAIM_AND_ANY_REMOTE_READ
+SSH_EXECUTABLE=/usr/bin/ssh
+SSH_EFFECTIVE_CONFIG=/usr/bin/ssh -G -F ISOLATED_CONFIG VERIFIED_ALIAS
+SSH_POLICY=ROOT_SINGLE_DESTINATION_NO_AGENT_PASSWORD_KBD_PROXY_FORWARD_CONTROLMASTER
+REMOTE_READS=receipt,config,credential
+REMOTE_READ_BUDGET=1_EACH_NO_RETRY
+CLAIMS=ORIGINAL_O_EXCL_FSYNC_BEFORE_EACH_SPAWN
+RECOVERY=LOCAL_ONLY_NO_REFETCH_NO_RETROACTIVE_CLAIM
+LOCAL_BUNDLE=$HOME/.config/agentempp/ci3/bundles/AUTHORITY_SHA/REMOTE_GENERATION_ID
+LOCAL_PUBLICATION=O_EXCL_FSYNC_NO_REPLACE_RECEIPT_LAST
+ABSENT_LOCAL_RECEIPT=UNPUBLISHED
+INSTALL=/usr/bin/install -m 0600
+INSTALL_DESTINATIONS=Library/Application Support/Agentempp/mobile-staging-config.json;Library/Application Support/Agentempp/synthetic-patient.credentials.json
+CREDENTIAL_SIMULATOR_COPY=REMOVE_AFTER_ACK_AND_REOBSERVE
+TERMINAL_SCAN_IDS=argv,history,terminal-log,attachment,xcresult,runtime
+TERMINAL_MANIFEST=SANITIZED_HASH_BOUND_PHYSICALLY_REVALIDATED
+PRIVILEGED_CLAIM=EXTERNAL_ORIGINAL_O_EXCL_ATTEMPT_1
+PRIVILEGE=ONE_STANDARD_MACOS_ADMIN_PROMPT_NO_PASSWORD_TO_CODEX
+WRITER_BUILD=/usr/bin/xcrun swiftc -parse-as-library -o ROOT_VERSIONED_WRITER AUTHORITY_WRITER_SOURCE
+TERMINAL_ANCHOR=/Library/Application Support/Agentempp/ci3-terminal-authority/AUTHORITY_SHA/TERMINAL_GENERATION_ID/terminal-anchor.json
+TERMINAL_ANCHOR_PUBLICATION=ROOT_WHEEL_0444_O_EXCL_FSYNC_UF_IMMUTABLE
+MISSING_PRIVILEGED_AUTHORITY=STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY
+V1_V2_V3_EXECUTION=NO
+CI3_EXISTING_PATHS=5_PRESERVED
+CI3_ALLOWLIST_PATHS=23_EXACT_FROM_SPEC_SECTION_10
+CI3_NEXT_TASKS=ORIGINAL_TASKS_2_THROUGH_11_ONLY_AFTER_TERMINAL_PASS
+CONTINUATION_LABEL_12=FINAL_REPORT_ONLY
+CI3_PARENT=277873755bf29771a10b5f362b522c2e6a6c21d6
+CI3_SUBJECT=feat(ios): connect Today to authenticated staging
+CI4=NO
+```
+
+Nenhum handoff foi executado. Nenhum SSH connect, rede, simulador real,
+install, stream, remote bundle, privilégio, anchor, Task 2, commit ou push foi
+feito nesta implementação. Antes de reviews independentes e do único commit
+controller, o status é `STOP_PRE_AUTHORITY`, não `PUBLISHED`.
+
+### Fechamento executável da authority 1.7.1
+
+Os modos `plan`, `verify-simulator`, `verify-ssh`, `fetch`,
+`install-simulator`, `scan`, `write-terminal-anchor`, `resume` e `status` não
+são stubs: testes com adapters sintéticos provam que cada modo alcança sua fase
+na mesma máquina de estados do controller. Em execução futura, todos exigem
+primeiro launcher Git-bound e o receipt root-owned imutável
+`mac-operation-authority.v1.json`; authority ausente ou inválida STOP antes de
+simulador, SSH, secret, remote read ou privilégio.
+
+O handoff privilegiado é separado e posterior a `scan`. O operation receipt
+normal fornece apenas `authority_path` e `manifest_path`. O scan congela writer
+source/binary/signature, seis scan receipts, 62 evidências,
+`CI3_TERMINAL_PREPARATION_RECEIPT_V1` e manifest. Um controller externo com
+autoridade privilegiada explícita — não o bridge executor — deve validar esses
+bytes e, sem clobber, criar o claim original e o
+`CI3_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY_V1` root:wheel `0444` +
+`uchg` em:
+
+```text
+/Library/Application Support/Agentempp/ci3-terminal-authority/
+  AUTHORITY_SHA/TERMINAL_GENERATION_ID/privileged-authority.receipt.json
+```
+
+O receipt liga manifest/source/binary/signature/claim/path hashes,
+`attempt=1`, `retry=false`, `raw_values=false` e
+`normal_executor_authorized=false`. Sem autorização concreta para esse writer,
+o próximo operador deve retornar
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`; nenhum handoff VPS/Mac
+implica ou inventa privilégio.
+
+Verificação sintética Round 1, preservada apenas como histórico e substituída
+pela seção Round 3: generator `152/152`, controller `383/383`, launcher `46/46`,
+writer `122/122`, total `703`; nenhum modo real, rede,
+SSH connect, simulator, install, privileged receipt, admin prompt, anchor,
+Task 2, commit ou push foi executado.
+
+O commit futuro deve registrar `100755` para
+`scripts/ci3/ci3-bridge-launcher.zsh` e
+`scripts/ci3/ci3-bridge-controller.mjs`; o source Swift permanece `100644`
+porque o executável é o binary compilado e hash-bound. Antes desse commit, o
+comando direto do launcher retorna `ERROR COMPONENT_MISSING` porque HEAD ainda
+não contém os treze blobs. O teste de transição prova que o mesmo comando passa
+após um commit sintético com os treze paths e modos exatos; isso não é authority
+para fazer o commit real agora.
+
+### Handoff normativo Round 1 — valores e comandos exatos
+
+O commit futuro deve ter parent
+`9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52`, subject
+`build(ops): authorize executable CI-3 bridge tooling` e exatamente os treze
+paths seguintes, em ordem:
+
+```text
+docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md
+docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md
+docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md
+docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md
+docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md
+scripts/ci3/create-ios-staging-bridge-config.mjs
+scripts/ci3/create-ios-staging-bridge-config.test.mjs
+scripts/ci3/ci3-bridge-controller.mjs
+scripts/ci3/ci3-bridge-controller.test.mjs
+scripts/ci3/ci3-bridge-launcher.zsh
+scripts/ci3/ci3-bridge-launcher.test.mjs
+scripts/ci3/ci3-terminal-anchor-writer.swift
+scripts/ci3/ci3-terminal-anchor-writer.test.mjs
+```
+
+O controller resolve cada `AUTHORITY_PATH` por
+`git rev-parse "$AUTHORITY_SHA:$AUTHORITY_PATH"`,
+`git cat-file blob "$AUTHORITY_SHA:$AUTHORITY_PATH" | shasum -a 256` e
+`git ls-tree "$AUTHORITY_SHA" -- "$AUTHORITY_PATH"`; OIDs/hashes finais não
+são embutidos nos próprios blobs porque isso seria circular. Launcher e
+controller exigem `100755`; os outros onze paths, `100644`.
+
+No VPS, `AUTHORITY_SHA`, `VPS_NODE_PATH` e `VPS_NODE_SHA256` vêm do receipt
+controller PASS. O operador valida parent/subject/Node root-owned e executa:
+
+```sh
+REL=scripts/ci3/create-ios-staging-bridge-config.mjs
+OID=$(/usr/bin/git rev-parse "$AUTHORITY_SHA:$REL") || exit 70
+SHA=$(/usr/bin/git cat-file blob "$AUTHORITY_SHA:$REL" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}') || exit 70
+ROOT="/root/.config/agentempp/bridges/ci3/.launchers/$AUTHORITY_SHA"
+/usr/bin/install -d -o root -g root -m 0700 "$ROOT" || exit 70
+TMP=$(/usr/bin/mktemp "$ROOT/.generator.XXXXXXXX") || exit 70
+/usr/bin/git cat-file blob "$AUTHORITY_SHA:$REL" > "$TMP" || exit 70
+/bin/chmod 0600 "$TMP" || exit 70
+test "$(/usr/bin/git hash-object "$TMP")" = "$OID" || exit 70
+test "$(/usr/bin/shasum -a 256 "$TMP" | /usr/bin/awk '{print $1}')" = "$SHA" || exit 70
+FINAL="$ROOT/create-ios-staging-bridge-config.mjs"
+if ! /bin/ln "$TMP" "$FINAL" 2>/dev/null; then /usr/bin/cmp -s "$TMP" "$FINAL" || exit 70; fi
+/bin/rm -f "$TMP" || exit 70
+test "$(/usr/bin/stat -c '%u:%g:%a:%h' "$FINAL")" = 0:0:600:1 || exit 70
+test "$(/usr/bin/shasum -a 256 "$VPS_NODE_PATH" | /usr/bin/awk '{print $1}')" = "$VPS_NODE_SHA256" || exit 70
+"$VPS_NODE_PATH" "$FINAL" --self-test || exit 70
+"$VPS_NODE_PATH" "$FINAL" --create || exit 70
+```
+
+O generator usa os cinco inputs fixos/hashes do código, claim O_EXCL+fsync,
+path `<output>/<authority>/<remote-generation>`, staging same-filesystem e
+hard-link no-replace. Config sem `bridge.receipt.json` é `UNPUBLISHED`; recovery
+não cria generation, não relê inputs e não refaz efeito. O PASS VPS entrega
+somente manifest/hashes/paths versionados e descriptor SSH sanitizado.
+
+No Mac, o modo separado `publish-operation-authority`, com receipt humano
+explicitamente autorizado, instala como
+root:wheel/single-link/`uchg` o Node `0555` e
+`mac-operation-authority.v1.json` `0444` sob
+`/Library/Application Support/Agentempp/ci3-controller-authority/$AUTHORITY_SHA/`.
+A state machine normal não cria essa authority. A sequência inclui:
+
+```sh
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh --self-test
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh publish-operation-authority
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh plan
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh verify-simulator
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh verify-ssh
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh fetch
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh install-simulator
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh scan
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh publish-privileged-writer-authority
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh write-terminal-anchor
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh status
+/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh resume
+```
+
+B0 encerra sete receipts físicos antes de remote Git/read; SSH é primeiro
+`/usr/bin/ssh -G` contra config/known_hosts/identity isolados e descriptor
+ordered duplicate-aware. Fetch permite somente três commands
+`exec /usr/bin/cat -- <exact-path-from-receipt>`, cada um com claim/capture/
+result duráveis e sem refetch. Bundle local é um único directory rename
+no-replace; install persiste `/usr/bin/install -m 0600` + readback; scan tem
+implementação/counters separados para `argv`, `history`, `terminal-log`,
+`attachment`, `xcresult`, `runtime` e revalida inputs no terminal.
+
+Após scan, o modo `publish-privileged-writer-authority` exige outro receipt
+humano, compila os bytes Git-bound via stdin com
+`/usr/bin/xcrun swiftc -parse-as-library`, assina e instala o writer em
+`/Library/Application Support/Agentempp/ci3-terminal-authority/$AUTHORITY_SHA/$TERMINAL_GENERATION_ID/writer/ci3-terminal-anchor-writer`
+root:wheel `0555`, single-link, `uchg`; antes disso publica/fsynca o claim
+original root e depois cria `privileged-authority.receipt.json` root:wheel
+`0444`, single-link, `uchg`,
+ligando source/binary/signature/manifest/claim/anchor path/hash/physical
+identity. O writer elevado consome esse receipt, reabre e recomputa toda a
+cadeia, e só então publica anchor `0444` O_EXCL+fsync+`uchg`. A ausência de
+autoridade do publisher é
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`; nenhum handoff a presume.
+
+GREEN sintético Round 1, histórico e superseded pela seção Round 3: generator
+`152`, controller `383`, launcher `46`, writer `122`, total `703`. Nenhum passo real
+acima, commit/push ou Task 2 foi executado. Estado: `STOP_PRE_AUTHORITY`.
+
+## Handoff executável Round 2 — publishers e recovery fechados
+
+Esta seção substitui a descrição anterior de publishers externos inexistentes.
+Os dois publishers agora são modes do launcher oficial e continuam sujeitos a
+autoridade humana separada. O VPS PASS deve fornecer, por hash e sem valor raw:
+authority/parent/tree/subject, manifest dos 13 paths, quatro component blobs,
+quatro tool identities, quatro generation IDs, operation-authority candidate,
+Node candidate, seis contratos de collector sem surfaces prebuilt, trust descriptor SSH completo,
+três paths remotos hash-bound e os receipts humanos. Nenhum valor pode ser
+digitado como variável livre no Mac.
+
+### Mac — sequência futura exata
+
+No checkout do único commit autorizado, confirmar primeiro que o launcher e o
+controller têm Git mode `100755` e o writer source `100644`. O request do
+Publisher 1 deve existir em:
+
+```text
+~/.config/agentempp/ci3/publisher-input/<authority>/operation-authority.publisher-request.json
+```
+
+Ele referencia candidates/receipts `0600` e seus hashes. O receipt humano
+`CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V1` deve ligar manifest, Node,
+operation authority e a ação
+`PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY`. Então a única invocação é:
+
+```sh
+zsh scripts/ci3/ci3-bridge-launcher.zsh publish-operation-authority
+```
+
+O modo apresenta um prompt admin, cria sem clobber
+`/Library/Application Support/Agentempp/ci3-controller-authority/<authority>/`,
+instala Node/controller `0555`, operation/human/scans `0444`, verifica hashes,
+owner/type/nlink/mode, aplica `uchg`, fsynca tudo e imprime somente PASS. Se a
+generation já existe, a execução STOPa e preserva evidência; não há retry que
+reescreva authority.
+
+Somente após esse PASS, continuar:
+
+```sh
+zsh scripts/ci3/ci3-bridge-launcher.zsh plan
+zsh scripts/ci3/ci3-bridge-launcher.zsh verify-simulator
+zsh scripts/ci3/ci3-bridge-launcher.zsh verify-ssh
+zsh scripts/ci3/ci3-bridge-launcher.zsh fetch
+zsh scripts/ci3/ci3-bridge-launcher.zsh install-simulator
+zsh scripts/ci3/ci3-bridge-launcher.zsh scan
+```
+
+B0 é estritamente local/no-network antes do simulator; `ssh -G` e qualquer read
+remoto ficam depois do simulator PASS. Os três reads usam exatamente
+`/usr/bin/ssh -F <fixed-config> <fixed-alias> 'exec /usr/bin/cat -- <fixed-path>'`,
+sem `--` espúrio no argv e sem quarto read. O trust descriptor liga executável,
+signature/version, config/known-hosts/key/fingerprints/destination e todos os
+records nativos ordered/duplicate-aware. Os paths preservados Task-1 são
+exatamente:
+
+```text
+apps/ios/BodyFlow/BodyFlow/BodyFlowApp.swift
+apps/ios/BodyFlow/BodyFlow/App/AppLaunchConfiguration.swift
+apps/ios/BodyFlow/BodyFlow/Core/Configuration/MobileStagingConfiguration.swift
+apps/ios/BodyFlow/BodyFlowTests/CI3StagingLaunchConfigurationTests.swift
+apps/ios/BodyFlow/BodyFlowTests/MobileStagingConfigurationTests.swift
+```
+
+Depois de `scan`, criar o receipt humano
+`CI3_PRIVILEGED_WRITER_PUBLISHER_AUTHORIZATION_V1` em
+`~/.config/agentempp/ci3/publisher-input/<authority>/<terminal-generation>/`,
+já ligado aos hashes reais de manifest/source/binary. Executar:
+
+```sh
+zsh scripts/ci3/ci3-bridge-launcher.zsh publish-privileged-writer-authority
+zsh scripts/ci3/ci3-bridge-launcher.zsh write-terminal-anchor
+zsh scripts/ci3/ci3-bridge-launcher.zsh status
+zsh scripts/ci3/ci3-bridge-launcher.zsh resume
+```
+
+O segundo publisher cria primeiro o original claim root `0444` e fsync, depois
+instala o writer `0555`; o Node root reabre o binary e computa a identidade
+`uid/gid/mode/nlink/size/mtime_ns/dev/ino` para o privileged authority receipt
+O_EXCL. Claim/binary/receipt são `root:wheel`, single-link e `uchg`. O writer
+reabre todos os 62 evidence roles atuais, incluindo 21 simulator phase e 24
+controller phase roles até `RUN_SCANS`, recomputa os schemas/cross-bindings e só publica anchor
+quando os seis scans `argv`, `history`, `terminal-log`, `attachment`,
+`xcresult`, `runtime` permanecem CLEAN.
+
+Claim sem physical receipt é STOP e nunca repete install/launch/publish/write.
+Receipt existente é reaberto pelo mesmo inode e metadata antes de completar
+result/event. O bundle local surge por um único directory
+`renameatx_np(RENAME_EXCL)`; corrida preserva staging. Nenhuma authority futura
+é presumida: request/receipt ausente continua `STOP_PRE_AUTHORITY` ou
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`.
+
+Este handoff não foi executado nesta authoring operation. Não houve SSH,
+simulator, publisher, admin prompt, bundle real, anchor, commit/push ou Task 2.
+
+## Handoff executável Round 3 — supersede integralmente os blocos Round 1/2
+
+As contagens, schemas e instruções desta seção prevalecem sobre qualquer número
+ou referência a `surface/collector pairs` pré-publicados acima. O estado segue
+`STOP_PRE_AUTHORITY`: nenhum comando operacional, publisher, SSH, simulator,
+anchor, commit, push ou Task 2 foi executado durante a authoring operation.
+
+### Proveniência VPS para o Publisher 1
+
+O PASS VPS autorizado deve materializar quatro inputs independentes: o JSON
+`CI3_MAC_OPERATION_AUTHORITY_V1`, o executável Node, o
+`CI3_VPS_PUBLISHER_INPUT_MANIFEST_V1` e o
+`CI3_VPS_OPERATION_AUTHORITY_PASS_V1`. O manifest enumera exatamente
+`operation-authority` e `node-runtime`, cada um com `path_sha256` e `sha256`,
+e fecha `transfer_payload_sha256`; ele também liga authority, remote/controller
+generation e o root dos seis contratos de collector. O PASS liga parent/tree/
+subject/manifest, source/remote/controller generations, os hashes dos dois
+candidates, o próprio input manifest, os contratos e o transfer payload.
+
+O transfer controller aprovado deve copiar esses bytes para paths locais
+owner-only e produzir o request abaixo já com paths absolutos e hashes; um
+operador não pode digitar ou substituir valores livres:
+
+```text
+~/.config/agentempp/ci3/publisher-input/<authority>/
+  operation-authority.publisher-request.json
+  mac-operation-authority.v1.json
+  node
+  publisher-input.manifest.json
+  vps-operation-authority.pass.json
+  human-authorization.receipt.json
+```
+
+O request `CI3_OPERATION_AUTHORITY_PUBLISHER_REQUEST_V1` referencia os cinco
+inputs por path/hash. O receipt humano liga também os hashes do input manifest
+e do VPS PASS, além de authority manifest, Node e operation authority. O modo
+`publish-operation-authority` reabre tudo no-follow, recompõe todas as relações
+e só então apresenta seu único prompt admin. Ele instala Node/controller
+`0555` e authority/human/PASS/input-manifest `0444`, root:wheel, single-link,
+`uchg`, com readback e fsync. Ele não instala surfaces nem collector receipts.
+Ausência de qualquer valor concreto fornecido pelo PASS é STOP; esta
+documentação não cria a autoridade do transfer controller nem do privileged
+writer publisher.
+
+### B0, simulator e observação física
+
+Antes do primeiro claim do gate simulator, config, credential e ACK devem
+estar ausentes. Antes das claims internas `INSTALL_PROBE` e `LAUNCH_PROBE`, a
+ausência aplicável é revalidada; original execution instala/lança exatamente
+uma vez. Recovery nunca adota um receipt: chama somente o observer tipado,
+reabre devices/runtime/container, destinos, ACK ou ausência final e compara o
+objeto inteiro. Drift ou efeito sem prova inequívoca STOPa sem reexecução.
+
+As dez fases duráveis usam observers tipados sobre alvos reais: authority,
+worktree observation, simulator gate, SSH provenance, local receipt commit
+marker, install receipt, credential ausente, seis scan receipts e anchor root
+imutável. `physical_observation_sha256` é o hash dessa observação reaberta, não
+o hash do receipt que a descreve.
+
+### SSH e seis superfícies finais
+
+`identity_public_key_sha256` é o SHA-256 dos bytes da chave pública;
+`identity_public_key_fingerprint_sha256` é o SHA-256 da saída de fingerprint.
+Os campos são distintos e cruzados pelo descriptor, provenance e writer.
+
+O VPS PASS fornece apenas os seis contratos autenticados, nunca bytes finais
+de surface. Depois de fetch/install e dentro da generation corrente, o
+controller deriva `argv`, `history`, `terminal-log`, `attachment`, `xcresult`
+e `runtime` de sources fixos produzidos pela execução atual. Cada surface
+serializa authority/controller/terminal generations e roots de source com
+hash+identidade física. Cada collector recompõe command/schema/tool, examina
+somente sua surface final, persiste counters e input byte range, reabre os
+bytes/metadata depois do scan e publica um receipt write-once. Recovery aceita
+somente esses seis receipts e surfaces da mesma generation.
+
+### Settlement terminal não circular
+
+O manifest contém 62 roles sem deduplicação: 17 roots centrais, 21 roles das
+sete fases simulator e 24 roles das oito fases controller até `RUN_SCANS`.
+`terminal-preparation.receipt.json` liga o result físico de `RUN_SCANS`. Dois
+contratos posteriores, `INVOKE_WRITER` e `VERIFY_ANCHOR`, formam uma cadeia
+versionada cujo predecessor inicial é esse result. Assim o anchor não contém
+seu próprio hash: o writer privilegiado valida o manifest pre-terminal e
+publica o anchor; o controller observa o anchor root para liquidar os dois
+contratos. Autoridade ausente para publicar/usar o writer root continua
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`.
+
+O writer reabre os 62 roles e recompõe claims/results, expected=capture,
+commands remotos, parent/subject/source commit, read chains, local/remote/
+SSH/simulator/install roots, predecessor/contract/result de cada fase, input
+manifest, terminal receipt, os seis command/schema/tool/output roots e os dois
+settlement contracts. Mutation autoconsistente em qualquer edge STOPa antes de
+`TERMINAL_PASS`.
+
+### Evidência sintética corrente
+
+```text
+GENERATOR=152_PASS
+CONTROLLER=408_PASS
+LAUNCHER=108_PASS
+WRITER=128_PASS
+TOTAL=796_PASS_0_FAIL_0_CANCEL_0_SKIP_0_TODO
+OPERATIONAL_E2E=60_SCENARIOS_10_PHASES_X_6_BOUNDARIES
+REAL_NETWORK_SSH_SIMULATOR_INSTALL_PRIVILEGE_ANCHOR=0
+```
+
+Cada cenário executa o launcher oficial contra um commit sintético de treze
+paths e o writer compilado com `-D CI3_SYNTHETIC_TEST`; as duas fases terminais
+e os seis boundaries estão presentes. Isso é prova local/sintética, não um
+PASS VPS/Mac nem autorização para continuar as Tasks originais 2–11/relatório
+12.
+
+## Handoff executável Round 4 — ainda não autorizado para execução real
+
+Esta seção substitui as contagens 796 e qualquer interpretação anterior de que
+o pre-anchor já fosse PASS. O estado correto é:
+
+```text
+PRE_ANCHOR=PRE_ANCHOR_PENDING_SETTLEMENT/PENDING_VERIFICATION
+TERMINAL_PASS=ONLY_TERMINAL_SETTLEMENT_AFTER_VERIFY_ANCHOR
+EXPECTED_LOCAL_SUITE_DIMENSION=821
+REAL_VPS_SSH_SIMULATOR_PRIVILEGE_ANCHOR_TASK2_ACTIONS=0
+```
+
+### Handoff VPS/Publisher 0
+
+O futuro operador VPS deve materializar, por um publisher externo já
+autorizado, exatamente estes três objetos owner-only e transferi-los como um
+único payload autenticado:
+
+```text
+CI3_VPS_PUBLISHER_INPUT_MANIFEST_V1
+CI3_VPS_OPERATION_AUTHORITY_PASS_V1
+CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1
+```
+
+O issuer receipt é root-owned/immutable e contém a chave pública Ed25519 real,
+`issuer_generation_id`, `issuer_identity_sha256`, authority commit e purpose
+permitido. Nenhuma chave concreta existe neste bundle Git. O PASS é a
+assinatura Ed25519 do JSON canônico sem os campos de assinatura e liga
+authority parent/tree/subject/manifest, operation authority, Node, collector
+contracts, publisher manifest, transfer payload e remote/controller
+generations. Os paths/aliases/destino reais nunca aparecem em log; somente os
+hashes previstos no PASS podem atravessar o handoff. Ausência de issuer root ou
+assinatura válida: `STOP_PRE_AUTHORITY`.
+
+O emissor VPS deve produzir um receipt PASS sanitizado antes de qualquer ação
+Mac. Ele não pode autorizar o prompt administrativo Mac nem o writer terminal;
+essas autoridades continuam separadas.
+
+### Handoff Mac/Publisher 1
+
+O operador Mac futuro recebe os hashes exclusivamente do PASS assinado, cria o
+request owner-only `CI3_OPERATION_AUTHORITY_PUBLISHER_REQUEST_V1` e acrescenta
+o receipt humano separado. O único entrypoint é o launcher Git-bound:
+
+```text
+zsh scripts/ci3/ci3-bridge-launcher.zsh publish-operation-authority
+```
+
+Esse comando futuro deve parar antes do prompt se qualquer input não for
+regular/single-link/no-follow/hash-bound, se o issuer não estiver root-owned e
+imutável, se o PASS não validar ou se o receipt humano não ligar exatamente o
+PASS e o publisher manifest. Dentro do prompt único, Publisher 1 instala com
+`/usr/bin/install` e verifica hash de cada target antes de `chown/chmod/chflags`:
+
+```text
+/Library/Application Support/Agentempp/ci3-controller-authority/<AUTHORITY>/
+  mac-operation-authority.v1.json                 root:wheel 0444 uchg
+  human-authorization.receipt.json                root:wheel 0444 uchg
+  vps-operation-authority.pass.json               root:wheel 0444 uchg
+  vps-issuer-authority.receipt.json               root:wheel 0444 uchg
+  publisher-input.manifest.json                   root:wheel 0444 uchg
+  ssh-trust-descriptor.json                       root:wheel 0444 uchg
+  ssh-identity.pub                                root:wheel 0444 uchg
+  runtime/node                                    root:wheel 0555 uchg
+  runtime/ci3-bridge-controller.mjs               root:wheel 0555 uchg
+```
+
+Depois do prompt, o controller reabre todos os nove targets e valida bytes,
+uid/gid, regular file, nlink=1, modo, immutable flag e parent chain. Isso inclui
+explicitamente o receipt humano, fechando a troca de source durante o prompt.
+
+### Handoff Mac/controller, scans e terminal
+
+B0 é local/no-network. Depois do gate simulator completo, o controller executa
+`/usr/bin/ssh -G -F <CONFIG> <ALIAS>` com descriptor sanitizado/root-bound,
+valida a policy nativa e executa exatamente três argv de leitura com um único
+comando remoto fixo `exec /usr/bin/cat -- <PATH>`. Não existe quarto fetch e
+recovery usa somente captures locais.
+
+As fases seguintes publicam bundle local, instalam/removem credential no
+simulator e produzem os seis sources literais `argv`, `history`,
+`terminal-log`, `attachment`, `xcresult`, `runtime`. Cada source é PRESENT em
+path fixo ou, apenas para `xcresult`, ABSENT com prova fechada. Os scanners
+reabrem source/surface/receipt e o writer recompõe todas as relações.
+
+Publisher 2 permanece outro gate separado:
+
+```text
+zsh scripts/ci3/ci3-bridge-launcher.zsh publish-privileged-writer-authority
+```
+
+Sem receipt/binary root-owned, version-addressed e imutável, o próximo comando
+STOPa. Com autoridade válida, o fluxo futuro é:
+
+```text
+zsh scripts/ci3/ci3-bridge-launcher.zsh write-terminal-anchor
+zsh scripts/ci3/ci3-bridge-launcher.zsh resume
+zsh scripts/ci3/ci3-bridge-launcher.zsh status
+```
+
+`write-terminal-anchor` executa uma única transação privilegiada: publica e
+reabre o pre-anchor pending, deriva e liquida internamente as duas fases
+terminais e publica o settlement. `resume` somente reabre e recompõe os mesmos
+roots; não existe uma segunda invocação privilegiada. Somente o
+`terminal-settlement.json` root-owned append-only/no-clobber pode declarar
+`TERMINAL_PASS`.
+
+### Continuação congelada
+
+Mesmo com settlement real, é obrigatório obter Reviews A e B independentes
+com `0 Critical / 0 Important` e então o único commit do controller. Até lá,
+Tasks originais 2–11/relatório 12, os cinco paths iOS preservados e a allowlist
+exata de 23 paths permanecem congelados. Nesta rodada não houve commit, push,
+VPS, SSH, rede, simulator, prompt, root publisher, anchor ou Task 2.
+
+## Round 5 executable authority correction — supersedes every earlier `--settle` description
+
+The terminal lifecycle now has one privileged writer invocation only. The
+controller invokes the root-owned, immutable, version-addressed writer once
+with `--write`. That same process validates the frozen manifest and external
+roots, publishes and reads back the pending pre-anchor, derives and publishes
+the complete `INVOKE_WRITER` and `VERIFY_ANCHOR`
+claim/physical-receipt/result chains, scans the final terminal bytes with all
+six literal scanners, and publishes and reads back
+`terminal-settlement.json`. `--settle` is not a public or private mode and
+returns `MODE_INVALID`; there is no second elevation or second prompt.
+
+`TERMINAL_PASS` is derived only inside that root transaction. It binds all
+four generation IDs, the authority receipt hash, the pre-anchor hash, both
+contract hashes, every claim/receipt/result edge, the ordered terminal phase
+graph, physical target observations, and the terminal-final six-scan root.
+The normal executor may reopen and recompute this graph but cannot supply a
+terminal triple or settlement manifest.
+
+Remote read bindings are derived again by the writer from the root-owned
+operation authority. Each exact path is paired with exactly
+`exec /usr/bin/cat -- <authority-path>`; the bootstrap claim, each read claim,
+each read result, and the terminal input manifest must match those independent
+derivations. The same operation authority contains the ordered per-phase
+target contracts. Role, state, path hash, owner allowlist, mode allowlist and
+immutability policy must match exactly; a fully rehashed alternate regular
+file is rejected.
+
+The six scans remain distinct and ordered: `argv`, `history`,
+`terminal-log`, `attachment`, `xcresult`, `runtime`. The controller
+collects complete argv, journal/history bytes, event/log bytes, attachment
+bytes and only the closed sanitized runtime allowlist/process identity. The xcresult observation uses the
+fixed generation-addressed operational result path, with an authenticated
+absence receipt when it does not exist. The privileged transaction performs a
+second terminal-final scan over current journal/output, the new pre-anchor,
+phase objects, actual settlement and writer output, then publishes the bound
+`complete-result.json` last.
+
+Publisher 0 is a controller mode reachable only through the separately
+installed root-owned immutable external bootstrap. The user-owned worktree
+launcher rejects it. The bootstrap verifies the external issuer, fixed runtime
+and full root directory chain before reading the fixed issuer/request/key
+inputs, signs Ed25519, creates the PASS no-clobber, fsyncs, freezes and reopens
+it. No real key is embedded; missing external provisioning is
+`STOP_PRE_AUTHORITY`.
+
+Synthetic crash coverage now invokes the actual Swift test writer as the
+`INVOKE_WRITER` phase effect, and `VERIFY_ANCHOR` reopens the artifacts from
+that same causal run. A crash after a durable claim but before any physical
+effect is not healed by replay: it deterministically returns
+`STOP_CLAIM_CONSUMED_NO_RESULT` and publishes no anchor. Other boundaries
+recover with at-most-once effects and exact-existing readback.
+
+All real authority inputs remain absent in this implementation operation.
+Therefore `STOP_PRE_AUTHORITY` remains the only current operational status;
+no VPS publisher, SSH/network, simulator, admin prompt, root publication,
+anchor, Task 2, commit or push was executed.
+
+Each matrix case now uses two distinct Git-bound controller processes: the first exits at the selected synthetic crash, and the second reconstructs maps, physical target bindings, effect counts and journal state exclusively from the durable scenario snapshot before recovery or STOP.
+
+## Round 6 handoff correction
+
+Do not run the Git worktree launcher as root and do not use it for Publisher 0.
+The future VPS operator must first supply the separately authorized root-owned
+immutable Publisher 0 bootstrap and issuer receipt described in the versioned
+bridge spec; absent either, stop. The future Mac operator then consumes only the
+authenticated transfer manifest, installs the exact root-owned immutable SSH
+snapshot and operation authority, and verifies every byte/metadata identity
+before B0. Raw scan payloads precede Base64, environment persistence is closed,
+and `complete-result.json` must exist and bind the actual settlement/final-scan
+bytes before any `COMPLETE` report. `VERIFY_ANCHOR:after-claim` is a STOP, never
+retroactive adoption. No real VPS/Mac/root/network/simulator/Task 2 action has
+been performed here.
+
+### Round 6 causal E2E correction
+
+The 60 synthetic crash/restart cases MUST NOT pre-materialize terminal writer
+evidence. The first or recovery Git-bound controller reaches `INVOKE_WRITER`,
+reopens its own `journal-snapshot.json`, and only then invokes the local
+synthetic materializer with a closed environment. The materializer copies that
+exact snapshot into the mandatory `controller-durable-state-root` evidence
+role, binding scenario ID/hash, physical snapshot-path hash and canonical
+snapshot hash. The controller proves the durable snapshot did not change
+during materialization and reopens the descriptor/evidence; the compiled Swift
+writer independently reopens the role, validates the complete snapshot schema
+and recomputes scenario/snapshot hashes before its single transaction. A claim
+without physical effect still STOPs and never creates this evidence. This is a
+test adapter only, not authority to materialize a real VPS/Mac artifact.
+
+## Round 8 future operator handoff (do not execute from this worktree)
+
+Publisher 0 must first be installed by the external VPS issuer as an immutable
+version-addressed runtime containing fixed Node, controller, launcher, launch
+attestation, authority manifest and the exact ten-line launcher authority.
+The root operator then runs the fixed Node/controller directly under the four
+closed environment entries and the `publish-vps-operation-authority-pass`
+mode. The controller performs the retained-descriptor transaction; absence of
+the issuer receipt, signing key, boundary or any matching hash STOPs. The
+worktree launcher is never that root entrypoint.
+
+The VPS-to-Mac handoff must deliver the authenticated eleven-role transport
+manifest and separately authorized human receipt. Publisher 1 is invoked only
+from the externally installed root-owned
+`ci3-publisher1-bootstrap/<authority>/<generation>/runtime` launcher. It
+installs/reopens the sixteen-target Mac authority set, including the exact five
+SSH snapshot files and generated launcher-bootstrap authority. A path supplied
+only by the normal user is not authority.
+
+After Publisher 1, every future command uses the installed
+`ci3-controller-authority/<authority>/runtime/ci3-bridge-launcher.zsh` with
+`/bin/zsh -f`. The launcher checks root:wheel, single-link, immutable modes and
+all line-authority hashes before fixed Node. For `resume`, the first controller
+process may emit only `PRE_TERMINAL_UNPUBLISHED`. The normal controller has no
+claim/receipt API capable of changing that status. The one privileged writer
+invocation writes/readbacks the anchor and settlement, scans the actual
+reversible final journal plus stdout/stderr/complete/final-scan bytes, then
+publishes the fixed root-owned immutable
+`CI3_PRIVILEGED_TERMINAL_PASS_MARKER_V1` last. The internal terminalizer
+validates that marker and emits its retained stdout bytes directly; there is no
+post-scan pathname `cat`. Missing privileged marker means unpublished, never
+PASS.
+
+Keep the five original iOS changed paths and the exact 23-path continuation
+allowlist already embedded in this handoff. Tasks 2–11 and report Task 12 remain
+frozen until the external authorities exist and this complete handoff passes.
+No real handoff command, admin prompt, SSH, simulator, anchor or Task 2 was run
+in Round 8.
+
+## Round 9 executable handoff correction (still do not execute)
+
+The Round 8 description of a normal-owned `terminal-tail.receipt.json` is
+superseded by the privileged marker above. The future external Mac bootstrap
+must install, as root:wheel immutable objects, the exact materializer authority,
+the VPS issuer receipt and the reviewed Swift binary at:
+
+```text
+/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/<authority>/<controller-generation>/publisher1-materializer.authority.json
+/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/<authority>/<controller-generation>/vps-issuer-authority.receipt.json
+/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/<authority>/<controller-generation>/runtime/ci3-terminal-anchor-writer
+```
+
+The receipt must bind exact path/hash, writer source hash, issuer receipt hash,
+closed environment and `normal_executor_authorized=false`. No key/value is
+invented here; the VPS PASS issuer supplies the concrete authority, otherwise
+the only result is `STOP_PRE_AUTHORITY`. The Mac controller snapshots the
+already authenticated eleven transport roles plus the human receipt and
+derived launcher authority into deterministic owner-only receiver leaves and
+writes one hash-bound transaction request. The fixed root materializer opens
+that request once, independently verifies the root issuer, Ed25519 PASS,
+manifest/operation/attestation/human/SSH bindings and retains all sixteen
+source descriptors.
+
+Publisher 1 then claims durably before its first install effect, creates the
+whole tree through `openat/O_NOFOLLOW/O_EXCL`, freezes all files and directories,
+promotes the single authority directory with `RENAME_EXCL`, fsyncs/readbacks
+through retained descriptors and writes its result. Recovery never refetches
+or repeats the prompt/effect: exact-existing with the original claim is
+reobserved; partial, unclaimed or divergent state STOPs. Source-path and
+ancestor swaps are negative tests. No real receiver, bootstrap, prompt,
+privilege, network, simulator, terminal anchor or continuation Task 2 was
+executed in Round 9.
+
+## Round 10 handoff correction — do not split terminal publication
+
+The future Mac operator must not run an old two-step finalization. The normal
+controller may settle the eight normal phases, scan their actual bytes, write
+the COMPLETE commit-contract event and seal the reversible journal. It must
+then make one privileged writer invocation and perform no normal write after
+that call. `events/COMPLETE.json` is not PASS. Only the externally authorized
+writer may create the two privileged phase roots, settlement/final scans,
+COMPLETE/output frames and, after full readback, the no-clobber
+`terminal-pass.marker.json` as the literal last object. `status`/`resume` must
+return unpublished whenever that exact marker is absent or invalid.
+
+Before Publisher 1, obtain the external V2 materializer authority. It must bind
+the exact fixed request pathname/hash/full physical identity and the exact
+receiver root pathname/hash/descriptor identity. Invoke production only with
+`--publisher1-transaction <fixed-request-path> <expected-sha256>`; never pipe
+stdin and never choose a receiver by suffix. Reobserve the root claim/result
+and complete sixteen-leaf tree before prompting. Exact settled state is reused;
+claim-only, partial or divergent state STOPs without a second admin prompt.
+The privileged install constructs/fsyncs staging, promotes once with
+`RENAME_EXCL`, then freezes and readbacks the destination.
+
+Do not treat the local Darwin promotion probe or the 60 synthetic crash/restart
+scenarios as production authority. They prove ordering and recovery only. The
+real external issuer, immutable Node/materializer, operation authority and
+writer authority have not been supplied. Until they are supplied and verified,
+the executable handoff remains `STOP_PRE_AUTHORITY`; do not run SSH, simulator,
+anchor publication or continuation Task 2.
+
+## Round 11 handoff correction — physical receiver leaves and marker-only recovery
+
+The future external materializer authority must carry one ordered
+`receiver_leaves` entry for each of the exact sixteen Publisher 1 roles. Every
+entry binds `role`, fixed path hash, content hash, `uid`, `gid`, mode `0600`,
+`nlink=1`, size, nanosecond mtime, device, inode and the canonical physical
+identity hash. The owner-only request, original root claim and result preserve
+the same values. The privileged Swift materializer performs
+`fstat-before/read/fstat-after`, compares every field, and immediately before
+the claim reobserves both the retained receiver directory and each leaf with
+descriptor-relative `fstatat`. A same-bytes inode replacement, owner/mode
+drift, hardlink or ancestor swap must STOP before claim, prompt or effect.
+
+Terminal restart must not use the old five-file predicate. The operational
+controller first reads and semantically validates the exact privileged
+`terminal-pass.marker.json` and all of its fixed authority, journal,
+stdout/stderr, COMPLETE, settlement, scan and generation bindings. Only that
+complete root can yield `TERMINAL_PASS`. If the marker is absent but an
+externally authorized writer transaction left an exact recoverable prefix, the
+same reviewed writer transaction may exact-reopen and finish it; a divergent
+prefix STOPs. Crash tests cover the prefix after COMPLETE final scan, after the
+four retained frames, after marker readback and after directory freeze. The
+marker remains the commit boundary, and `resume` obtains PASS only through the
+marker-validating `terminalStatus` path.
+
+The reviewed writer itself is the privilege-continuity mechanism. One
+`osascript` launches the exact root-owned writer binary as a transient
+supervisor; it spawns the same absolute binary under a closed environment as
+the transaction worker. A worker crash is retried once by the still-authorized
+supervisor and exact-reopens the no-clobber roots. A controller restart only
+waits for and revalidates the marker; it never launches a second `osascript`.
+The supervisor is not installed, daemonized or persisted. If the supervisor
+itself dies before the marker, recovery returns `STOP_PRE_AUTHORITY` and does
+not claim PASS or replay an effect. This local run did not prompt for privilege
+or execute any real Publisher, SSH, simulator, anchor or Task 2 action.
+
+## Round 12 handoff correction — immutable-prefix recovery and complete marker root
+
+The future privileged writer must preserve its original anchor claim across
+the final-file publication window. Each fixed file is created with `O_EXCL`,
+written, changed to `0444`, fsynced with its parent, and then receives
+`UF_IMMUTABLE` through the still-retained descriptor. A crash immediately
+before or after `fchflags` may be recovered only when the already validated
+original privileged claim exists and the retained/fstatat object is the exact
+same owner, mode, single-link inode, metadata and bytes. The writer then sets
+or verifies the flag, fsyncs, rereads through the descriptor and revalidates
+the parent entry. A byte-identical preexisting file without that claim STOPs;
+it is never retroactively adopted.
+
+The terminal marker reader no longer accepts nine posterior files as a
+sufficient root. It requires exactly eighteen authority-fixed paths: the prior
+nine plus `pre-anchor.json`, `writer-output.json`,
+`terminal-final-scan.json`, and the claim/receipt/result objects for both
+`INVOKE_WRITER` and `VERIFY_ANCHOR`. It rejects a missing or extra terminal or
+phase-directory entry, reopens every file as root-owned single-link `0444`
+`UF_IMMUTABLE`, revalidates directory identity/mode, and recomputes authority,
+all generations, path hashes, phase triples/graph, physical observations,
+settlement, scan, COMPLETE and marker hashes. Only this exact transitive root
+permits `TERMINAL_PASS`.
+
+Round 12 remained local and synthetic. No external authority, privilege,
+network, SSH, simulator, real anchor or continuation task was used; future
+execution remains `STOP_PRE_AUTHORITY` until those external roots are supplied.
+
+## Round 13 handoff correction — canonical terminal corpus validation
+
+The future `status`, `resume` and terminal-output paths must call one canonical
+terminal-corpus validator, not marker-only or abbreviated authority checks.
+That validator applies the same exact-key privileged-writer authority receipt
+validator used at publication, with independent expectations from the fixed
+operation authority, retained root writer executable and frozen terminal
+manifest. It then validates the complete Swift pre-anchor schema: authority
+tree/manifest/components, all generations, writer source/binary/signature and
+original claim, fixed authority/anchor paths, ordered external-authority and
+phase-target arrays and their recomputed hashes, six ordered scan roots, all 24
+Important IDs, UTC timestamp, pending state and closed boolean policy.
+
+Settlement, phase receipts/results, COMPLETE roots and the receipt-last marker
+are validated in the same call. A corpus whose invalid authority or pre-anchor
+is rehashed through settlement, COMPLETE and marker still STOPs. Exact-existing
+revalidation is deterministic. These local validators supply no external
+issuer, writer authority or privileged artifact; operational execution remains
+`STOP_PRE_AUTHORITY` and Round 13 ran no real action.
+
+## Round 14 handoff correction — all 71 evidence roles are semantic inputs
+
+The future common marker reader MUST execute the fixed absolute immutable
+terminal-writer binary in its read-only `--validate-manifest` mode before it
+can accept a terminal corpus. That mode calls the identical Swift
+`validateManifest()`/`validateSemanticRoots()` path used before publication: it
+reopens all 71 evidence files and six scan receipts with no-follow physical
+bindings and validates their exact role-specific schemas, purposes, attempts,
+retry/raw policies, generations, fixed paths and complete provenance DAG. It
+does not publish, mutate, prompt or acquire privilege.
+
+The validator emits one closed hash-only semantic receipt bound to the exact
+manifest, writer binary/signature/physical identity, ordered evidence roots,
+scan roots and independently recomputed semantic roots. `RUN_SCANS` is reopened
+as the initial predecessor; the two terminal contracts are rebuilt from the
+canonical transition table. `INVOKE_WRITER` and `VERIFY_ANCHOR` claims must bind
+the exact contract hashes and recomputed prior result, never values asserted by
+the manifest. The common reader reexecutes this validation on every marker
+read; it does not persist or accept a normal-user semantic receipt.
+
+Any unavailable writer/external authority, changed evidence, role-class schema
+mutation, disconnected predecessor or contract root remains STOP. This handoff
+adds no real authority and performs no real operation; `STOP_PRE_AUTHORITY`
+continues to govern future execution.
+
+## Round 15 handoff correction — exact cross-language physical identity
+
+Every future Node physical observation MUST use `lstat/stat({ bigint: true })`
+through the retained descriptor and serialize the exact decimal integers in
+this order: `uid;gid;mode&0777;nlink;size;mtimeNs;dev;ino`. It MUST NOT derive
+nanoseconds from `mtimeMs` or pass identity fields through `Number` before
+hashing. JSON metadata may convert bounded fields only after the exact hash is
+formed and MUST STOP when a numeric schema field is not safely representable.
+
+The Swift writer uses the identical field order and exact `st_mtimespec`
+nanoseconds. Root terminal reads, descriptor transactions, scan/local reads,
+capture evidence, SSH snapshots, Publisher authority materialization and
+simulator install observations all share this boundary. A real local compiled
+writer probe with sub-millisecond mtime MUST compare equal; changing one
+nanosecond MUST STOP. This amendment supplies no authority and starts no real
+operation.
+
+## Round 16 handoff correction — promotion and simulator authority
+
+The local publication promoter MUST obtain staging, parent, final-before and
+final-after observations with `lstat(..., { bigint: true })`. It compares
+`dev` and `ino` directly as BigInt, preserves BigInt mode/nlink/uid/gid checks,
+and rejects a final directory whose exact identity differs from the staged
+directory even when both values would collapse to one IEEE-754 Number.
+
+The simulator container authority MUST likewise use a BigInt `lstat` of the
+resolved container and the complete canonical eight-field physical identity
+hash. A VPS/Mac handoff may bind only that exact hash; the former
+`{dev,ino,mode}` Number-derived digest is not authority. Adjacent values
+`9007199254740992` and `9007199254740993` MUST compare and hash differently.
+No simulator or real publication is authorized by this correction.
+
+## Round 17 handoff correction — generator owner-only reader
+
+The generator's owner-only reader MUST retain all eight physical fields as
+BigInt from entry-before through descriptor-before, descriptor-after and
+entry-after. Stable identity compares canonical exact integers and MUST reject
+Number projections, including sizes `9007199254740992` and
+`9007199254740993` that collapse under IEEE-754.
+
+Original-claim, exact-existing, staging and recovery reads use this same
+reader. Its identity SHA uses the controller/Swift field order
+`uid;gid;mode&0777;nlink;size;mtimeNs;dev;ino`. Only bounded owner/mode/link
+schema checks may convert through an explicit safe-integer gate; `size`,
+mtime, device and inode never do. This handoff supplies no authority and
+authorizes no real generator execution.

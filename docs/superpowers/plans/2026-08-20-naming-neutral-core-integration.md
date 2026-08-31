@@ -1944,3 +1944,589 @@ This VPS operation does not create the CI-3 worktree, edit iOS, run Xcode,
 repeat sign-in or any endpoint, mutate the fixture, execute cleanup, open
 primary/live, or start CI-3/CI-4. The next environment is `MAC_LOCAL`; the
 next gate is `IMPLEMENT_CI3_TODAY_STAGING_VERTICAL_SLICE`.
+
+## CI-3 versioned bridge authority — dossier 1.7.1
+
+The initial Mac CI-3 Task-1 worktree remains on CI2 HEAD
+`277873755bf29771a10b5f362b522c2e6a6c21d6`, with empty staging and the same
+five working paths. Task 2 is still blocked behind a bridge PASS.
+
+V1/V2 are frozen superseded. V3 is frozen rejected after five review rounds:
+Review A `0C/5I/1M`, Review B `0C/6I/1M`. Its `174/174` synthetic PASS did not
+overcome the 11 independent static Important findings. There is no sixth V3
+round and no V1/V2/V3 execution.
+
+The replacement gate is `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1`:
+
+1. a Git-tracked Node-core generator on the VPS validates five fixed root-only
+   sources and emits only an immutable version-addressed public config plus a
+   sanitized receipt; it never copies credential or emits service role;
+2. after VPS PASS, Mac B0 is strictly local/no-network, then validates the real
+   simulator before remote Git/SSH and validates a concrete version-addressed
+   trust descriptor supplied and hash-bound by VPS PASS;
+3. three one-shot reads use durable claims/results and zero refetch; the local
+   receipt is pre-terminal and published receipt-last with `link(2)`
+   no-replace; a config-only final pathname may be physically visible after a
+   crash but is explicitly `UNPUBLISHED`, and no consumer may read/use it until
+   the marker exists and the entire contract validates;
+4. install/scans produce a separate versioned terminal receipt, then a
+   privileged controller fixes it in an external root-owned O_EXCL immutable
+   anchor outside the bundle's mutable domain, but only after a separately
+   controller-supplied/hash-bound privileged-writer authority; missing
+   authority STOPs and normal execution cannot infer or mint it;
+5. only anchored PASS releases original CI-3 Tasks 2–11; authority label 12 is
+   final report/preservation only, with the original 23 paths/parent/subject.
+
+Tooling TDD records original RED `90/1/89` and GREEN `90/90`, remediation RED
+`123/91/32`, second RED `125/123/2`, then GREEN `125/125`, zero fail/skip/todo,
+final RED `126/125/1`, controller-finding RED `130/126/4`, authority-builder
+RED `1/0/1`, then GREEN `131/131`, syntax PASS and synthetic local self-test
+with the complete receipt schema and zero network calls. `--create`,
+SSH, streams, simulator, providers, production, cleanup and CI-4 were not run.
+
+```text
+CI3_BRIDGE_ARCHITECTURE=VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1
+CI3_BRIDGE_V3_STATUS=FROZEN_REJECTED
+CI3_BRIDGE_V3_EXECUTED=NO
+CI3_BRIDGE_GENERATOR_TRACKED=YES
+CI3_BRIDGE_GENERATOR_TESTS=131_PASS
+CI3_WORKTREE_PRESERVED=YES
+CI3_IMPLEMENTATION_STARTED_BEYOND_TASK1=NO
+NEXT_ENVIRONMENT=VPS
+NEXT_GATE=CREATE_VERSIONED_CI3_BRIDGE_BUNDLE_ON_VPS
+```
+
+VPS handoff summary, not executed:
+
+```text
+OPERATION=CREATE_VERSIONED_CI3_BRIDGE_BUNDLE_ON_VPS
+AUTHORITY_SHA=CONTROLLER_PASS.authority_sha
+AUTHORITY_PARENT=9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52
+AUTHORITY_SUBJECT=build(ops): authorize executable CI-3 bridge tooling
+GENERATOR=scripts/ci3/create-ios-staging-bridge-config.mjs
+GENERATOR_EXECUTION=/root/.config/agentempp/bridges/ci3/.launchers/$AUTHORITY_SHA/create-ios-staging-bridge-config.mjs --create
+OUTPUT=/root/.config/agentempp/bridges/ci3/AUTHORITY_SHA
+CREATION_BUDGET=1
+OVERWRITE=NO
+CREDENTIAL_COPY=NO
+SERVICE_ROLE_OUTPUT=NO
+```
+
+Mac handoff summary after VPS PASS, not executed:
+
+```text
+OPERATION=FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3
+SIMULATOR_GATE=BEFORE_SSH
+TRUST_DESCRIPTOR=VPS_PASS.ssh.trust_descriptor_path+trust_descriptor_sha256
+SSH_EFFECTIVE_CONFIG=/usr/bin/ssh -G -F VERIFIED_CONFIG VERIFIED_DESCRIPTOR_ALIAS
+REMOTE_READS=3_TOTAL_1_EACH
+RETRY=NO
+NO_REFETCH_AFTER_CLAIM=YES
+LOCAL_BUNDLE=$HOME/.config/agentempp/ci3/bundles/AUTHORITY_SHA
+LOCAL_RECEIPT=PRE_TERMINAL_PUBLICATION_ONLY
+INSTALL=/usr/bin/install -m 0600
+TERMINAL_RECEIPT=SEPARATE_VERSIONED_AFTER_INSTALL_AND_SCANS
+TERMINAL_ANCHOR=EXTERNAL_ROOT_OWNED_O_EXCL_UCHG
+CI3_ORIGINAL_TASKS=2_THROUGH_11_AFTER_BRIDGE_PASS
+CONTINUATION_LABEL_12=FINAL_REPORT_ONLY
+V1_V2_V3_EXECUTION=NO
+CI4=NO
+```
+
+The complete STOP evidence, sanitized manifest, remote/Mac contract and
+executable two-phase plan are:
+
+- `docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md`;
+- `docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md`;
+- `docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md`.
+
+### CI-3 executable bridge authority 1.7.1 addendum
+
+The active successor contract is
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1_WITH_EXECUTABLE_MAC_CONTROLLER`. The prior
+generator-only STOP remains historical evidence; V1/V2/V3 remain frozen and
+must not run.
+
+Task 1 is now split into the authorized bridge phases only: Git-bound launcher,
+local simulator B0, native `ssh -G` trust proof, three claimed reads, receipt-
+last local publication, physical simulator install/removal proof, the exact
+ordered scans `argv`, `history`, `terminal-log`, `attachment`, `xcresult`,
+`runtime`, and the separately authorized privileged terminal writer. Missing
+receipt means unpublished. Missing original claim means
+`REJECT_UNCLAIMED_EXISTING_STATE`. Missing privileged writer authority means
+`STOP_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY`.
+
+The authority consists of exactly thirteen Git paths: the five documentation
+paths, generator and generator test, controller and controller test, launcher
+and launcher test, writer source and writer test. It binds commit/parent/tree,
+the ordered manifest, four components, Node/ssh/Swift/Xcode identities and the
+remote/controller/simulator/terminal generations. A future controller commit
+must be the single commit for all thirteen paths; no intermediate commit is
+authorized.
+
+After terminal PASS, continuity is unchanged: original Task 2 transport, Task
+3 Today adapter, Task 4 dependency wiring, Task 5 Today states, Task 6 staging
+integration, Task 7 XCUI, Task 8 focused/full gates, Task 9 unsigned builds,
+Task 10 scans/reviews and Task 11 selective commit/publication. Label 12 is only
+the final-report wrapper. The five existing paths and the exact 23-path
+allowlist remain the paths listed in the versioned bridge spec §10.
+
+This addendum authorizes tooling implementation and synthetic verification
+only. It did not execute generator `--create`, SSH connect/network, simulator,
+install, streams, VPS bundle, privileged writer, terminal anchor, Task 2,
+Supabase/Vercel/production, commit or push. Handoffs are embedded in the
+versioned bridge plan and dossier and must not run before final independent
+reviews plus the single controller commit.
+
+#### Executable dispatch and privileged boundary closure
+
+The public controller modes are reachable production dispatches, not
+unconditional STOP stubs. Given a valid Git-bound launch attestation and an
+immutable root-owned Mac operation-authority receipt, each mode advances the
+same persisted state machine to its declared phase. Tests invoke those paths
+only through synthetic adapters; no real operational mode ran here.
+
+The normal authority's writer object contains only the fixed
+`authority_path` and `manifest_path`. After the exact ordered scans `argv`,
+`history`, `terminal-log`, `attachment`, `xcresult`, `runtime`, the normal
+controller prepares and freezes the writer source, signed binary, scan/evidence
+set, terminal preparation receipt and manifest. It cannot create the
+privileged authority. A separately authorized external controller must bind
+those already-existing hashes and the original privileged claim in a
+root-owned `CI3_PRIVILEGED_TERMINAL_ANCHOR_WRITER_AUTHORITY_V1` receipt at the
+versioned authority path, mode 0444 with `UF_IMMUTABLE`. Missing privileged-
+writer authority is an explicit STOP; neither the future VPS PASS nor ordinary
+Mac access conveys it.
+
+Historical Round 1 synthetic counts were generator 152, controller 383,
+launcher 46 and writer 122 (703 total); they are superseded by the Round 3
+section. Original Tasks 2 through 11, the five preserved paths and exact 23-path
+allowlist remain unchanged and unexecuted.
+
+The future authority commit must record Git mode `100755` for the official zsh
+launcher and Node controller, and `100644` for the separately compiled Swift
+writer source. The launcher rejects any committed mode drift. The present
+pre-commit `COMPONENT_MISSING` is expected because HEAD lacks the new blobs; a
+synthetic thirteen-path commit proves the exact self-test transition to PASS.
+
+#### Round 1 executable remediation and continuity boundary
+
+The single future authority subject is now
+`build(ops): authorize executable CI-3 bridge tooling`; parent remains
+`9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52`. The authority manifest is exactly
+the five docs plus generator/test, controller/test, launcher/test and writer/
+test listed in the bridge spec §13.1. Final OIDs/SHA-256 values are resolved
+from that one commit with `git rev-parse "$AUTHORITY_SHA:$PATH"` and
+`git cat-file blob "$AUTHORITY_SHA:$PATH" | shasum -a 256`, then persisted in
+the controller PASS; they are not self-referential constants inside the blobs.
+
+The future VPS entrypoint is the root-owned snapshot
+`/root/.config/agentempp/bridges/ci3/.launchers/$AUTHORITY_SHA/create-ios-staging-bridge-config.mjs`.
+It is materialized from `git cat-file`, checked against blob OID/SHA-256 and
+executed by the Node path/hash supplied in the controller PASS, first
+`--self-test`, then `--create`. Its generation claim, staging, no-replace
+links and receipt-last boundary make receipt absence `UNPUBLISHED`; recovery
+does not rerender, reread inputs or allocate a new generation.
+
+On Mac, the official executable entrypoint remains
+`/bin/zsh scripts/ci3/ci3-bridge-launcher.zsh <mode>`. Operational modes need a
+root-owned immutable Node and `mac-operation-authority.v1.json` installed by an
+external publisher. B0's seven physical simulator claims/results precede
+remote Git/read; SSH begins with native `/usr/bin/ssh -G`; fetch is exactly
+three claimed `exec /usr/bin/cat -- <receipt-path>` reads into same-fd captures;
+publication is receipt-last; install persists physical readback; and all six
+surface-specific scans are reopened at terminal time.
+
+The privileged terminal publisher is a separate authority. It compiles with
+`/usr/bin/xcrun swiftc -parse-as-library`, signs and installs the exact writer
+under the version-addressed root authority tree as root:wheel `0555`,
+single-link and `uchg`; then publishes the original claim and privileged
+authority receipt `0444`/`uchg`. Normal execution cannot do so. Missing
+publisher authority STOPs explicitly and no VPS/Mac handoff implies it.
+
+Historical Round 1 gates were generator 152, controller 383, launcher 46 and
+writer 122: 703 total; the Round 3 section is current. This is code evidence only. No real bridge mode,
+publisher, privilege, SSH, simulator, install, anchor, commit/push or Task 2
+ran. Original Tasks 2–11, five preserved paths and 23-path allowlist remain
+unchanged behind terminal PASS.
+
+### CI-3 Round 2 executable authority closure
+
+The prior statement that root publishers were external/unimplemented is
+superseded. The Git-bound launcher now exposes separately authorized
+`publish-operation-authority` and `publish-privileged-writer-authority` modes.
+The first consumes the VPS PASS plus an exact human authorization receipt and
+publishes an immutable versioned Node/controller/operation authority and six
+typed scan collectors. The second runs only after scan, consumes a distinct
+manifest-bound human receipt, publishes the original root claim before the
+writer, and creates the privileged authority receipt from the installed
+writer's physical identity. Neither publisher ran during authoring.
+
+Durable recovery now treats a claim without a physical receipt as consumed and
+ambiguous: it STOPs and never repeats the effect. A present receipt is reopened
+no-follow and its bytes plus full metadata are rehashed before result/event
+recovery. Local publication is a single descriptor-bound
+`renameatx_np(RENAME_EXCL)` of the complete staged directory; unclaimed bundle
+or simulator destinations are rejected. The Swift writer receives and
+semantically recomputes the literal authority manifest, all read roots, seven
+simulator claim/receipt/result triples, seven controller triples, install and
+the six surface-specific scan receipts.
+
+The 48 Round 2 E2E cases, now superseded by Round 3, were eight durable phases by six distinct crash boundaries,
+each using the same state-machine recovery rules and asserting no repeated
+effect. Original Tasks 2–11, label 12, the five preserved paths and exact
+23-path continuation allowlist are unchanged. Task 2 remains blocked until a
+future real terminal PASS and independent `0C/0I` reviews.
+
+### CI-3 Round 3 executable authority integration boundary
+
+This section supersedes earlier 703-test, 48-E2E, 59-role and prepublished scan
+surface statements. Publisher 1 now consumes a schema-exact VPS publisher
+input manifest and VPS operation-authority PASS, both hash-bound to operation
+authority, Node, generations, collector contracts and the transfer payload.
+Its separate human receipt binds those two inputs. The publisher installs the
+immutable runtime/authority/PASS/manifests; it does not install terminal scan
+surfaces. Missing transfer-controller or privileged-publisher authority remains
+an explicit STOP and is not inferred from future VPS/Mac access.
+
+B0 revalidates absent config, credential and ACK before original simulator
+claims. Typed phase observers re-open actual effect targets, and recovery runs
+only observers, never effects or retroactive adoption. SSH provenance keeps the
+public-key byte digest separate from the fingerprint-output digest. The six
+literal scan surfaces are generated after the operation's final sources exist,
+from fixed authenticated roles in the current generation, then scanned and
+reobserved with independent tool/command/schema/output/counter receipts.
+
+The pre-terminal manifest has 62 evidence roles and includes controller phase
+triples through `RUN_SCANS`. Its physical result roots two subsequent contracts,
+`INVOKE_WRITER` and `VERIFY_ANCHOR`, so the anchor never authorizes itself. The
+privileged writer recomputes claims/results/commands/captures, authority and
+source roots, remote/local/SSH/simulator/install relations, all phase chains,
+six scanner relations and terminal settlement before emitting `TERMINAL_PASS`.
+
+Fresh synthetic counts are generator 152, controller 408, launcher 108 and
+writer 128: 796 total with zero fail/cancel/skip/todo. The operational matrix is
+60 scenarios (ten durable phases by six crash boundaries); each invokes the
+official Git-bound launcher and compiled synthetic writer. No operational mode,
+VPS/Mac transfer, network, SSH, simulator, install, privilege, anchor, Task 2,
+commit or push ran. The original Tasks 2–11/report 12, five preserved paths and
+exact 23-path allowlist remain frozen behind a future independently reviewed
+terminal PASS.
+
+### CI-3 Round 4 executable authority integration boundary
+
+This section supersedes the Round 3 statement that the pre-terminal writer
+emits PASS and the 796-test count. The pre-anchor is now strictly
+`PRE_ANCHOR_PENDING_SETTLEMENT/PENDING_VERIFICATION`. A distinct later
+root-owned append-only/no-clobber settlement reopens the actual
+`INVOKE_WRITER` and `VERIFY_ANCHOR` triples; only it may declare
+`TERMINAL_PASS`.
+
+The VPS PASS is no longer merely hash-bound user material. It is signed with an
+externally provisioned Ed25519 issuer whose real public key must arrive in a
+root-owned immutable, versioned authority receipt. The repository contains no
+production key. Publisher 1 installs and then reopens the operation authority,
+VPS PASS, issuer, human receipt, publisher manifest, SSH descriptor/public key
+and Node/controller runtime. Human-receipt source swap is detected by the
+privileged target hash and the post-prompt immutable readback.
+
+The writer reconstructs the complete 13-line authority manifest, verifies the
+external signature and root paths, recomputes the public-key bytes and actual
+`ssh-keygen` fingerprint, compares local components/generations and reopens
+each authority-fixed phase target. A settled controller event never suppresses
+the current typed physical observer. `RUN_SCANS` binds actual fixed sources and
+generation-bound surfaces for the six independent literal IDs; it never
+renames a journal receipt as a source.
+
+The 60 operational cases now enter through the executable Git-bound launcher,
+inject a selected crash into the production state machine, resume or
+fail-close without effect replay, and invoke the Swift test build as the real
+`INVOKE_WRITER` effect. The final suite dimension is 152 generator + 434
+controller + 108 launcher + 137 writer = 831; the implementation report
+records the fresh final gate.
+
+This remains an authority-only preparation. Missing real issuer or privileged
+writer authority is `STOP_PRE_AUTHORITY`, not a future implied permission. No
+real VPS/Mac transfer, SSH/network, simulator mutation, root install, admin
+prompt, anchor, Task 2, commit or push ran. Original Tasks 2–11/report 12, five
+preserved iOS paths and exact 23-path continuation allowlist remain unchanged.
+
+## Round 5 executable authority correction — supersedes every earlier `--settle` description
+
+The terminal lifecycle now has one privileged writer invocation only. The
+controller invokes the root-owned, immutable, version-addressed writer once
+with `--write`. That same process validates the frozen manifest and external
+roots, publishes and reads back the pending pre-anchor, derives and publishes
+the complete `INVOKE_WRITER` and `VERIFY_ANCHOR`
+claim/physical-receipt/result chains, scans the final terminal bytes with all
+six literal scanners, and publishes and reads back
+`terminal-settlement.json`. `--settle` is not a public or private mode and
+returns `MODE_INVALID`; there is no second elevation or second prompt.
+
+`TERMINAL_PASS` is derived only inside that root transaction. It binds all
+four generation IDs, the authority receipt hash, the pre-anchor hash, both
+contract hashes, every claim/receipt/result edge, the ordered terminal phase
+graph, physical target observations, and the terminal-final six-scan root.
+The normal executor may reopen and recompute this graph but cannot supply a
+terminal triple or settlement manifest.
+
+Remote read bindings are derived again by the writer from the root-owned
+operation authority. Each exact path is paired with exactly
+`exec /usr/bin/cat -- <authority-path>`; the bootstrap claim, each read claim,
+each read result, and the terminal input manifest must match those independent
+derivations. The same operation authority contains the ordered per-phase
+target contracts. Role, state, path hash, owner allowlist, mode allowlist and
+immutability policy must match exactly; a fully rehashed alternate regular
+file is rejected.
+
+The six scans remain distinct and ordered: `argv`, `history`,
+`terminal-log`, `attachment`, `xcresult`, `runtime`. The controller
+collects complete argv, journal/history bytes, event/log bytes, attachment
+bytes and only the closed sanitized runtime allowlist/process identity. The xcresult observation uses the
+fixed generation-addressed operational result path, with an authenticated
+absence receipt when it does not exist. The privileged transaction performs a
+second terminal-final scan over current journal/output, the new pre-anchor,
+phase objects, actual settlement and writer output, then publishes the bound
+`complete-result.json` last.
+
+Publisher 0 is a controller mode reachable only through the separately
+installed root-owned immutable external bootstrap. The user-owned worktree
+launcher rejects it. The bootstrap verifies the external issuer, fixed runtime
+and full root directory chain before reading the fixed issuer/request/key
+inputs, signs Ed25519, creates the PASS no-clobber, fsyncs, freezes and reopens
+it. No real key is embedded; missing external provisioning is
+`STOP_PRE_AUTHORITY`.
+
+Synthetic crash coverage now invokes the actual Swift test writer as the
+`INVOKE_WRITER` phase effect, and `VERIFY_ANCHOR` reopens the artifacts from
+that same causal run. A crash after a durable claim but before any physical
+effect is not healed by replay: it deterministically returns
+`STOP_CLAIM_CONSUMED_NO_RESULT` and publishes no anchor. Other boundaries
+recover with at-most-once effects and exact-existing readback.
+
+All real authority inputs remain absent in this implementation operation.
+Therefore `STOP_PRE_AUTHORITY` remains the only current operational status;
+no VPS publisher, SSH/network, simulator, admin prompt, root publication,
+anchor, Task 2, commit or push was executed.
+
+Each matrix case now uses two distinct Git-bound controller processes: the first exits at the selected synthetic crash, and the second reconstructs maps, physical target bindings, effect counts and journal state exclusively from the durable scenario snapshot before recovery or STOP.
+
+## Round 6 continuation gate
+
+Tasks 2–12 remain frozen. Continuation requires the separately installed
+root-owned Publisher 0 bootstrap, authenticated VPS PASS/transfer, root-owned
+immutable Mac operation authority and SSH generation snapshot, semantic raw
+terminal scans, and a single privileged writer transaction ending with a
+read-back `complete-result.json`. The worktree launcher is never Publisher 0;
+all `after-claim` cases fail closed without replay or retroactive adoption.
+Until these real external authorities are supplied and verified, the only
+authorized continuation result is `STOP_PRE_AUTHORITY`.
+
+The 60 local crash/restart cases prohibit a terminal fixture created before the
+protocol. The active Git-bound controller materializes synthetic writer inputs
+only at `INVOKE_WRITER`, after reopening its own durable snapshot. That snapshot
+is byte-stable across the helper, becomes the exact
+`controller-durable-state-root` evidence role, and is bound by path/scenario/
+content hashes checked again by the Swift test writer. `after-claim` never
+adopts an effect or creates the role. This closes test provenance only; it does
+not relax the real external authority STOP or authorize Task 2.
+
+## Round 8 continuation mapping
+
+The original Tasks 2–11 plus report Task 12 remain literal and unchanged. The
+new executable authority work is a prerequisite gate, not a replacement task:
+
+```text
+external Publisher 0 issuer/bootstrap
+  -> signed VPS PASS + authenticated eleven-role transfer
+  -> external Publisher 1 bootstrap
+  -> sixteen root-owned immutable Mac targets + five-file SSH snapshot
+  -> B0 local/simulator gate
+  -> existing CI-3 phase machine
+  -> one privileged writer transaction and VERIFY_ANCHOR
+  -> PRE_TERMINAL_UNPUBLISHED
+  -> privileged marker-last terminal transaction
+  -> retained-byte terminalizer validation/emission
+  -> TERMINAL_PASS
+  -> original Task 2 eligibility
+```
+
+The external and installed launchers must validate the ten-line authority and
+use fixed Node/controller bytes under `env -i`; the worktree launcher cannot
+run any publisher or operational mode. Publisher 0 uses Node-core retained
+descriptors on Linux and the already authorized Swift `openat` helper on
+Darwin; Python is not part of the toolchain. Publisher 1 installs the launcher
+authority and exact SSH snapshot in the same no-clobber root. `status` remains
+pre-terminal until the privileged root-owned marker exists and revalidates
+every final surface.
+
+This mapping authorizes no current VPS/Mac/root/network/simulator/anchor action.
+The real issuer/bootstrap/operation/writer authorities are not present, so the
+only present operational outcome remains `STOP_PRE_AUTHORITY`.
+
+## Round 9 continuation gate
+
+The prior normal-owned terminal tail receipt is removed from the authority
+model. A normal journal can only reach `PRE_TERMINAL_UNPUBLISHED`. The single
+privileged writer invocation owns anchor write/readback, settlement,
+actual-journal/raw-output scans, complete/final-scan validation and the last
+root-owned immutable `CI3_PRIVILEGED_TERMINAL_PASS_MARKER_V1`. The launcher
+uses the fixed controller terminalizer to validate that marker and emit its
+already retained bytes; no post-scan pathname open is permitted.
+
+The Publisher 0 -> Publisher 1 prerequisite is executable once its external
+roots exist: Publisher 0 signs the eleven-role transport; the Mac requires a
+fixed root-owned immutable materializer authority, issuer receipt and Swift
+binary; the normal side snapshots retained authenticated sources; and the
+privileged materializer independently verifies external signature and
+relationships before a durable claim. All source and ancestor walks are
+descriptor-relative/no-follow. One complete staging directory is promoted
+no-clobber, frozen, fsynced and read back. Recovery reobserves the claimed
+effect without refetch or prompt replay and never adopts an unclaimed/partial
+tree.
+
+The original Tasks 2–11 and report Task 12 remain literal and frozen. Their
+eligibility requires a real privileged marker after all four generations and
+all phase/scan roots validate. Because no external issuer/materializer/
+operation/writer authority exists in this local implementation run, the
+current outcome remains `STOP_PRE_AUTHORITY`; no real continuation occurred.
+
+## Round 10 frozen integration amendment
+
+This amendment preserves the original Tasks 2–11 and report Task 12 but
+changes the prerequisite terminal handoff. The normal controller owns only the
+eight pre-terminal phases, their actual six-surface scans, the COMPLETE
+commit-contract event and reversible journal frame. It then performs exactly
+one privileged writer invocation and emits no later normal bytes. The writer
+owns both privileged phase triples, final scans, COMPLETE/output frames and the
+external append-only settlement; its no-clobber PASS marker is the last object.
+No valid marker means `PRE_TERMINAL_UNPUBLISHED`, regardless of earlier files.
+
+Publisher 1 additionally requires the external V2 materializer authority bound
+to one fixed request path/hash/full physical identity and one exact receiver
+descriptor identity. Production rejects stdin, suffix/path-free selection and
+alternate roots. Controller recovery observes the fixed root claim/result/tree
+first and never repeats the admin child for settled state. The root transaction
+constructs and fsyncs staging, performs exclusive promotion, then freezes and
+readbacks destination; any claim-only, partial, unclaimed or divergent state
+STOPs with evidence preserved.
+
+The local non-synthetic Darwin probe and synthetic 60-scenario launcher/writer
+matrix verify these mechanics without installing external authority. They do
+not authorize the original continuation. No real privilege, receiver, SSH,
+network, simulator, terminal anchor or Task 2 was used, so the frozen plan
+remains at `STOP_PRE_AUTHORITY`.
+
+## Round 11 frozen integration amendment
+
+The Publisher 1 prerequisite now includes a closed ordered physical manifest
+for all sixteen receiver leaves. Role/path/content, owner, group, `0600`,
+single-link status, size, mtime, device, inode and identity must agree across
+external authority, request, retained descriptor read, original claim and
+result. This is part of the frozen prerequisite for the five preserved iOS
+paths and exact 23-path continuation allowlist; it does not alter or start the
+original Tasks 2–11 or report Task 12.
+
+The terminal prerequisite is likewise marker-only. A controller restart must
+validate the complete privileged marker root or resume the exact authorized
+writer prefix; no five-file or internal-state shortcut can confer PASS. Crash
+recovery includes the frame/marker/freeze windows, and `resume` reports
+`TERMINAL_PASS` only after privileged `terminalStatus` validation. The single
+root writer invocation is a transient same-binary supervisor, so worker crash
+does not cause a second `osascript`; controller restart only observes/waits.
+Supervisor death without a marker and absence of any external issuer/
+materializer/operation/writer authority both keep the frozen integration at
+`STOP_PRE_AUTHORITY`. No real continuation action occurred in Round 11.
+
+## Round 12 frozen integration amendment
+
+The frozen continuation prerequisite now includes the immutable publication
+edge itself. A post-fsync/pre-`UF_IMMUTABLE` terminal file may be finished only
+by the same validated privileged claim and only after descriptor-stable exact
+bytes, physical identity, parent entry, flag and readback succeed. An
+unclaimed exact-looking file is not recoverable authority.
+
+The prerequisite marker is an exact eighteen-root transitive proof, not the
+former nine-file subset. It covers pre-anchor, writer output, terminal final
+scan and both privileged phase triples in addition to the existing authority,
+journal/output, settlement and COMPLETE roots. Directory sets and metadata,
+file immutability, all four generations, fixed paths, phase graph and physical
+observations are recomputed by the common reader. Any missing, extra or mutated
+root leaves the original Tasks 2–11 and report Task 12 ineligible.
+
+Round 12 changed no continuation path and executed no real continuation,
+external authority, privilege, network, SSH, simulator or anchor. The frozen
+integration therefore remains `STOP_PRE_AUTHORITY`.
+
+## Round 13 frozen integration amendment
+
+Eligibility for the original Tasks 2–11 and report Task 12 now requires the
+single canonical terminal-corpus validator used by operational `status`,
+`resume`, recovery and tail emission. Marker hash consistency alone is not
+sufficient. The exact privileged authority receipt must validate against the
+fixed manifest and retained writer identity, and the complete Swift pre-anchor
+must recompute every authority/component/generation/path/provenance/claim,
+ordered external-root/phase-target/scan/finding set, timestamp and policy
+relationship before settlement and marker validation.
+
+A self-consistently rehashed but semantically invalid inner root remains STOP.
+Only the complete unmodified corpus may be revalidated as exact-existing.
+Round 13 neither changes nor starts the frozen continuation and supplies no
+missing real authority, so integration remains `STOP_PRE_AUTHORITY`.
+
+## Round 14 frozen integration amendment
+
+Eligibility for original Tasks 2–11 and report Task 12 now additionally
+requires publication-equivalent semantic validation of every one of the 71
+evidence roles and six scanners on each terminal marker read. The normal
+controller invokes the fixed immutable writer's read-only validator; it may not
+replace that validator with manifest pointer/order checks or trust a persisted
+normal-user receipt.
+
+The initial terminal predecessor is the independently reopened `RUN_SCANS`
+result. Both terminal contracts come from the fixed transition table and each
+claim binds the exact contract hash plus the prior validated result. A
+self-consistently rehashed alternate contract/predecessor or any mutated role
+class remains STOP. Round 14 neither changes the five preserved iOS paths nor
+starts any continuation task; absent real external authority, integration
+remains `STOP_PRE_AUTHORITY`.
+
+## Round 15 frozen integration amendment
+
+Eligibility for the original continuation now requires exact Node/Swift
+physical-identity parity. Every identity-bearing read uses BigInt filesystem
+stats and the fixed eight-field decimal hash preimage; `mtimeMs` rounding is
+forbidden. Status, resume and terminal tail continue through the same common
+marker reader, so a legitimate immutable writer with sub-millisecond mtime is
+accepted while any one-nanosecond or other physical-field divergence STOPs.
+
+This precision correction does not change the five preserved iOS paths, start
+Tasks 2–12 or provide external authority. Integration remains
+`STOP_PRE_AUTHORITY`.
+
+## Round 16 frozen integration amendment
+
+Continuation eligibility additionally requires an exact BigInt promotion
+proof and exact simulator-container authority. The local bundle destination
+must retain the staging directory's precise `dev`/`ino` after exclusive
+promotion. The simulator authority must bind the resolved directory's full
+eight-field physical identity; the former rounded three-field digest cannot
+authorize any phase.
+
+Adjacent physical values above `2^53` are a mandatory negative boundary and
+must never compare or hash equal. This does not change the five preserved iOS
+paths, start Tasks 2–12 or confer VPS/Mac/root authority; integration remains
+`STOP_PRE_AUTHORITY`.
+
+## Round 17 frozen integration amendment
+
+Continuation eligibility now also requires exact generator owner-only
+observations. Claim, exact-existing, staging and recovery must share the same
+BigInt entry/descriptor/path comparison and the same eight-field physical hash
+used across the controller/Swift boundary. A Number-projected physical field,
+including an otherwise self-consistent adjacent-size collision, is not valid
+authority.
+
+This precision amendment changes neither the five preserved iOS paths nor the
+frozen Tasks 2–12 and supplies no external authority. Integration remains
+`STOP_PRE_AUTHORITY`.

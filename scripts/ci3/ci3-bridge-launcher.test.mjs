@@ -1,0 +1,576 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { chmod, cp, lstat, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
+
+const SOURCE_ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
+const AUTHORITY_PATHS = Object.freeze([
+  'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
+  'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
+  'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
+  'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
+  'scripts/ci3/create-ios-staging-bridge-config.mjs',
+  'scripts/ci3/create-ios-staging-bridge-config.test.mjs',
+  'scripts/ci3/ci3-bridge-controller.mjs',
+  'scripts/ci3/ci3-bridge-controller.test.mjs',
+  'scripts/ci3/ci3-bridge-launcher.zsh',
+  'scripts/ci3/ci3-bridge-launcher.test.mjs',
+  'scripts/ci3/ci3-terminal-anchor-writer.swift',
+  'scripts/ci3/ci3-terminal-anchor-writer.test.mjs',
+]);
+
+let baseRoot;
+let writerBuildRoot;
+let writerTestBinary;
+let setupError;
+
+function git(root, args) {
+  return spawnSync('/usr/bin/git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    env: { PATH: '/usr/bin:/bin' },
+  });
+}
+
+async function createRepository(mutate, commitAuthority = true) {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-repo-'));
+  assert.equal(git(root, ['init', '-q']).status, 0);
+  assert.equal(git(root, ['config', 'user.name', 'Synthetic CI3']).status, 0);
+  assert.equal(git(root, ['config', 'user.email', 'synthetic@example.invalid']).status, 0);
+  await writeFile(path.join(root, '.authority-base'), 'synthetic immutable parent\n');
+  assert.equal(git(root, ['add', '.authority-base']).status, 0);
+  assert.equal(git(root, ['commit', '-q', '-m', 'synthetic authority parent']).status, 0);
+  await writeFile(path.join(root, '.pre-authority-head'), 'synthetic pre-authority head\n');
+  assert.equal(git(root, ['add', '.pre-authority-head']).status, 0);
+  assert.equal(git(root, ['commit', '-q', '-m', 'synthetic pre-authority head']).status, 0);
+  for (const relativePath of AUTHORITY_PATHS) {
+    await mkdir(path.dirname(path.join(root, relativePath)), { recursive: true, mode: 0o700 });
+    await cp(path.join(SOURCE_ROOT, relativePath), path.join(root, relativePath));
+  }
+  await chmod(path.join(root, 'scripts/ci3/ci3-bridge-launcher.zsh'), 0o700);
+  await chmod(path.join(root, 'scripts/ci3/ci3-bridge-controller.mjs'), 0o700);
+  await chmod(path.join(root, 'scripts/ci3/ci3-terminal-anchor-writer.swift'), 0o600);
+  if (mutate) await mutate(root);
+  if (commitAuthority) {
+    assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize executable CI-3 bridge tooling']).status, 0);
+  }
+  return root;
+}
+
+try {
+  baseRoot = await createRepository();
+  writerBuildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-writer-build-'));
+  writerTestBinary = path.join(writerBuildRoot, 'ci3-terminal-anchor-writer-test');
+  const writerCompile = spawnSync('/usr/bin/xcrun', [
+    'swiftc', '-parse-as-library', '-D', 'CI3_SYNTHETIC_TEST',
+    path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.swift'), '-o', writerTestBinary,
+  ], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000 });
+  if (writerCompile.status !== 0) throw new Error(`SWIFTC_FAILED:${writerCompile.stderr}`);
+} catch (error) {
+  setupError = error;
+}
+
+function requireRoot() {
+  assert.ifError(setupError);
+  return baseRoot;
+}
+
+function launch(root = requireRoot(), args = ['--self-test'], extraEnv = {}) {
+  return spawnSync('/bin/zsh', [path.join(root, 'scripts/ci3/ci3-bridge-launcher.zsh'), ...args], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, ...extraEnv },
+    timeout: 15000,
+  });
+}
+
+test.after(async () => {
+  if (baseRoot) await rm(baseRoot, { recursive: true, force: true });
+  if (writerBuildRoot) await rm(writerBuildRoot, { recursive: true, force: true });
+});
+
+const OPERATIONAL_E2E_SCENARIOS = Object.freeze([
+  'VERIFY_AUTHORITY', 'VERIFY_WORKTREE', 'VERIFY_SIMULATOR', 'VERIFY_SSH',
+  'PUBLISH_LOCAL', 'INSTALL_SIMULATOR', 'REMOVE_CREDENTIAL', 'RUN_SCANS',
+  'INVOKE_WRITER', 'VERIFY_ANCHOR',
+].flatMap((phase) => [
+  'before-claim', 'after-claim', 'after-effect', 'after-receipt', 'after-result', 'after-event',
+].map((boundary) => ({ phase, boundary, id: `${phase}:${boundary}` }))));
+
+test('round-3 launcher and writer self-test remain dimension smokes and are not counted as E2E', () => {
+  const launcher = launch();
+  assert.equal(launcher.status, 0, launcher.stderr);
+  assert.match(launcher.stdout, /durable_scenarios=60 terminal_phases=2/);
+  const writer = spawnSync(writerTestBinary, ['--self-test'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+  assert.equal(writer.status, 0, writer.stderr);
+  assert.match(writer.stdout, /semantic_phases=10 scan_surfaces=6/);
+});
+
+for (const scenario of OPERATIONAL_E2E_SCENARIOS) {
+  test(`round-5 causal operational E2E ${scenario.id} recovers or fail-closes without effect replay`, { timeout: 60000 }, async () => {
+    const e2eRoot = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-integrated-e2e-'));
+    let fixtureDescriptor;
+    try {
+      const scenarioSha256 = createHash('sha256').update(scenario.id).digest('hex');
+      const writerSha256 = createHash('sha256').update(await readFile(writerTestBinary)).digest('hex');
+      const fixtureDescriptorPath = path.join(e2eRoot, 'writer-fixture.json');
+      const restartEnvironment = {
+        CI3_SYNTHETIC_E2E_SCENARIO: scenario.id,
+        CI3_SYNTHETIC_SCENARIO_SHA256: scenarioSha256,
+        CI3_SYNTHETIC_E2E_ROOT: e2eRoot,
+        CI3_SYNTHETIC_WRITER_BINARY: writerTestBinary,
+        CI3_SYNTHETIC_WRITER_SHA256: writerSha256,
+        CI3_SYNTHETIC_WRITER_FIXTURE: fixtureDescriptorPath,
+        CI3_SYNTHETIC_WRITER_MATERIALIZER: path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.test.mjs'),
+        CI3_SYNTHETIC_EXTERNAL_RESTART: '1',
+      };
+      const crashed = launch(requireRoot(), ['--self-test'], restartEnvironment);
+      assert.notEqual(crashed.status, 0);
+      assert.equal(crashed.stdout, '');
+      assert.match(crashed.stderr, /^ERROR SYNTHETIC_CRASH\n$/);
+      const launcher = launch(requireRoot(), ['--self-test'], restartEnvironment);
+      assert.equal(launcher.status, 0, launcher.stderr);
+      if (scenario.boundary === 'after-claim'
+          && !['INVOKE_WRITER', 'VERIFY_ANCHOR'].includes(scenario.phase)) {
+        assert.match(launcher.stdout, /integrated_e2e=STOP_CLAIM_CONSUMED_NO_RESULT writer_mode=NOT_INVOKED pre_anchor=NOT_PUBLISHED terminal_settlement=NOT_PUBLISHED/);
+        const stopped = JSON.parse(await readFile(path.join(e2eRoot, scenarioSha256, 'e2e.receipt.json'), 'utf8'));
+        assert.equal(stopped.controller_state, 'STOP_CLAIM_CONSUMED_NO_RESULT');
+        assert.equal(stopped.recovery_resumed, false);
+        assert.equal(stopped.terminal_state, 'NOT_PUBLISHED');
+        return;
+      }
+      assert.match(launcher.stdout, /controller_snapshot=GIT_BOUND integrated_e2e=COMPLETE writer_mode=WRITE pre_anchor=PENDING_VERIFICATION terminal_settlement=TERMINAL_PASS/);
+      fixtureDescriptor = JSON.parse(await readFile(fixtureDescriptorPath, 'utf8'));
+      const scenarioRoot = path.join(e2eRoot, scenarioSha256);
+      const receipt = JSON.parse(await readFile(path.join(scenarioRoot, 'e2e.receipt.json'), 'utf8'));
+      assert.deepEqual(receipt, {
+        schema_version: 1, purpose: 'CI3_SYNTHETIC_OPERATIONAL_E2E_RECEIPT_V2',
+        scenario_id: scenario.id, scenario_sha256: scenarioSha256,
+        phase: scenario.phase, boundary: scenario.boundary,
+        crash_observed: true, recovery_resumed: true, effect_count_at_most_one: true,
+        launcher_snapshot: 'GIT_BOUND', controller_state: 'COMPLETE',
+        writer_mode: 'WRITE', pre_anchor_state: 'PENDING_VERIFICATION',
+        terminal_state: 'TERMINAL_PASS', scan_ids: ['argv', 'history', 'terminal-log', 'attachment', 'xcresult', 'runtime'],
+        raw_values: false,
+      });
+      const preAnchor = JSON.parse(await readFile(path.join(scenarioRoot, 'anchors', 'pre-anchor.json'), 'utf8'));
+      const settlement = JSON.parse(await readFile(path.join(scenarioRoot, 'anchors', 'terminal-settlement.json'), 'utf8'));
+      assert.equal(preAnchor.terminal_state, 'PENDING_VERIFICATION');
+      assert.equal(settlement.terminal_state, 'TERMINAL_PASS');
+      assert.equal(settlement.pre_anchor_sha256, createHash('sha256').update(await readFile(path.join(scenarioRoot, 'anchors', 'pre-anchor.json'))).digest('hex'));
+    } finally {
+      if (!fixtureDescriptor) {
+        try { fixtureDescriptor = JSON.parse(await readFile(path.join(e2eRoot, 'writer-fixture.json'), 'utf8')); } catch {}
+      }
+      if (fixtureDescriptor) {
+        for (const candidate of [
+          path.join(path.dirname(fixtureDescriptor.anchor_path), 'terminal-phases'),
+          path.dirname(fixtureDescriptor.anchor_path),
+          path.dirname(path.dirname(fixtureDescriptor.anchor_path)),
+          fixtureDescriptor.anchor_root,
+        ]) await chmod(candidate, 0o700).catch(() => {});
+      }
+      await rm(e2eRoot, { recursive: true, force: true });
+    }
+  });
+}
+
+test('round-6 writer fixture is materialized lazily from the same durable protocol snapshot', { timeout: 60000 }, async () => {
+  const e2eRoot = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-lazy-writer-e2e-'));
+  let fixtureDescriptor;
+  try {
+    const scenarioId = 'VERIFY_AUTHORITY:before-claim';
+    const scenarioSha256 = createHash('sha256').update(scenarioId).digest('hex');
+    const writerSha256 = createHash('sha256').update(await readFile(writerTestBinary)).digest('hex');
+    const fixtureDescriptorPath = path.join(e2eRoot, 'writer-fixture.json');
+    const restartEnvironment = {
+      CI3_SYNTHETIC_E2E_SCENARIO: scenarioId,
+      CI3_SYNTHETIC_SCENARIO_SHA256: scenarioSha256,
+      CI3_SYNTHETIC_E2E_ROOT: e2eRoot,
+      CI3_SYNTHETIC_WRITER_BINARY: writerTestBinary,
+      CI3_SYNTHETIC_WRITER_SHA256: writerSha256,
+      CI3_SYNTHETIC_WRITER_FIXTURE: fixtureDescriptorPath,
+      CI3_SYNTHETIC_WRITER_MATERIALIZER: path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.test.mjs'),
+      CI3_SYNTHETIC_EXTERNAL_RESTART: '1',
+    };
+    const crashed = launch(requireRoot(), ['--self-test'], restartEnvironment);
+    assert.notEqual(crashed.status, 0);
+    assert.equal(crashed.stderr, 'ERROR SYNTHETIC_CRASH\n');
+    await assert.rejects(readFile(fixtureDescriptorPath), { code: 'ENOENT' });
+
+    const recovered = launch(requireRoot(), ['--self-test'], restartEnvironment);
+    assert.equal(recovered.status, 0, recovered.stderr);
+    fixtureDescriptor = JSON.parse(await readFile(fixtureDescriptorPath, 'utf8'));
+    assert.equal(fixtureDescriptor.protocol_state_path_sha256,
+      createHash('sha256').update(path.join(await realpath(e2eRoot), scenarioSha256, 'protocol-state', 'journal-snapshot.json')).digest('hex'));
+    assert.match(fixtureDescriptor.protocol_state_sha256, /^[a-f0-9]{64}$/);
+    const protocolEvidence = await readFile(path.join(fixtureDescriptor.evidence_root, 'controller-durable-state-root.json'));
+    assert.equal(createHash('sha256').update(protocolEvidence).digest('hex'), fixtureDescriptor.protocol_state_sha256);
+    const protocolRecord = JSON.parse(protocolEvidence);
+    assert.equal(protocolRecord.scenario_id, scenarioId);
+    assert.equal(protocolRecord.scenario_sha256, scenarioSha256);
+    assert.match(recovered.stdout, /integrated_e2e=COMPLETE/);
+  } finally {
+    if (fixtureDescriptor) {
+      for (const candidate of [
+        path.join(path.dirname(fixtureDescriptor.anchor_path), 'terminal-phases'),
+        path.dirname(fixtureDescriptor.anchor_path),
+        path.dirname(path.dirname(fixtureDescriptor.anchor_path)),
+        fixtureDescriptor.anchor_root,
+      ]) await chmod(candidate, 0o700).catch(() => {});
+    }
+    await rm(e2eRoot, { recursive: true, force: true });
+  }
+});
+
+test('launcher/controller synthetic E2E rejects a forged scenario hash before attesting a boundary', () => {
+  const result = launch(requireRoot(), ['--self-test'], {
+    CI3_SYNTHETIC_E2E_SCENARIO: 'VERIFY_ANCHOR:after-event',
+    CI3_SYNTHETIC_SCENARIO_SHA256: '0'.repeat(64),
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /^ERROR SELF_TEST_SCENARIO\n$/);
+});
+
+test('authority source modes require executable launcher/controller and non-executable writer source', async () => {
+  const launcher = await lstat(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-launcher.zsh'));
+  const controller = await lstat(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-controller.mjs'));
+  const writer = await lstat(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.swift'));
+  assert.equal(launcher.mode & 0o111, 0o111);
+  assert.equal(controller.mode & 0o111, 0o111);
+  assert.equal(writer.mode & 0o111, 0);
+});
+
+test('authority commit records launcher/controller as 100755 and writer source as 100644', () => {
+  const root = requireRoot();
+  const gitMode = (relativePath) => git(root, ['ls-tree', 'HEAD', '--', relativePath]).stdout.split(' ')[0];
+  assert.equal(gitMode('scripts/ci3/ci3-bridge-launcher.zsh'), '100755');
+  assert.equal(gitMode('scripts/ci3/ci3-bridge-controller.mjs'), '100755');
+  assert.equal(gitMode('scripts/ci3/ci3-terminal-anchor-writer.swift'), '100644');
+});
+
+test('pre-commit launcher fails COMPONENT_MISSING and the same exact command passes after the thirteen-path commit', async () => {
+  const root = await createRepository(undefined, false);
+  try {
+    const before = launch(root);
+    assert.notEqual(before.status, 0);
+    assert.equal(before.stdout, '');
+    assert.match(before.stderr, /^ERROR COMPONENT_MISSING\n$/);
+    assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize executable CI-3 bridge tooling']).status, 0);
+    const after = launch(root);
+    assert.equal(after.status, 0, after.stderr);
+    assert.match(after.stdout, /^LAUNCHER_SELF_TEST PASS /);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('launcher rejects a committed non-executable controller mode', async () => {
+  const root = await createRepository(async (candidate) => {
+    await chmod(path.join(candidate, 'scripts/ci3/ci3-bridge-controller.mjs'), 0o600);
+  });
+  try {
+    const result = launch(root);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^ERROR COMPONENT_MODE\n$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('launcher self-test succeeds through a Git-bound controller snapshot', () => {
+  const result = launch();
+  assert.equal(result.status, 0, `stderr=${result.stderr}`);
+});
+
+test('launcher self-test emits one sanitized PASS record', () => {
+  const result = launch();
+  assert.match(result.stdout, /^LAUNCHER_SELF_TEST PASS checks=14 network_calls=0 privilege_prompts=0 controller_snapshot=GIT_BOUND durable_scenarios=60 terminal_phases=2\n$/);
+});
+
+test('launcher self-test has empty stderr', () => {
+  assert.equal(launch().stderr, '');
+});
+
+test('launcher self-test reports zero network calls', () => {
+  assert.match(launch().stdout, /network_calls=0/);
+});
+
+test('launcher self-test reports zero privilege prompts', () => {
+  assert.match(launch().stdout, /privilege_prompts=0/);
+});
+
+test('launcher self-test reports a Git-bound controller snapshot', () => {
+  assert.match(launch().stdout, /controller_snapshot=GIT_BOUND/);
+});
+
+test('launcher does not forward controller self-test stdout', () => {
+  assert.equal(launch().stdout.includes('CONTROLLER_SELF_TEST'), false);
+});
+
+test('launcher does not expose its temporary snapshot path', () => {
+  assert.equal(launch().stdout.includes('/tmp/'), false);
+});
+
+const UNKNOWN_ARGS = Object.freeze([
+  'unknown', '--create', '--help', '-h', 'ssh', 'simctl', '/tmp/controller', '../controller', 'current', 'latest',
+]);
+
+for (const argument of UNKNOWN_ARGS) {
+  test(`launcher rejects unknown or arbitrary mode ${argument}`, () => {
+    const result = launch(requireRoot(), [argument]);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^ERROR MODE_INVALID\n$/);
+  });
+}
+
+const EXTRA_ARG_CASES = Object.freeze([
+  ['--self-test', 'value'], ['plan', 'value'], ['verify-simulator', '/tmp/path'],
+  ['verify-ssh', 'host'], ['fetch', 'credential'], ['install-simulator', 'device'],
+  ['scan', 'extra'], ['write-terminal-anchor', 'output'], ['resume', 'generation'], ['status', 'raw'],
+]);
+
+for (const args of EXTRA_ARG_CASES) {
+  test(`launcher rejects extra argv ${JSON.stringify(args)}`, () => {
+    const result = launch(requireRoot(), args);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^ERROR MODE_INVALID\n$/);
+  });
+}
+
+const SENTINEL_ENV_NAMES = Object.freeze([
+  'CI3_HOST', 'CI3_DESTINATION', 'CI3_CREDENTIAL', 'CI3_OUTPUT',
+  'SUPABASE_SERVICE_ROLE_KEY', 'AUTHORIZATION', 'CI3_ORIGIN', 'CI3_RAW_ID',
+]);
+
+for (const name of SENTINEL_ENV_NAMES) {
+  test(`launcher never reports environment value ${name}`, () => {
+    const sentinel = `sentinel-${name.toLowerCase()}`;
+    const result = launch(requireRoot(), ['--self-test'], { [name]: sentinel });
+    assert.equal(result.status, 0);
+    assert.equal(`${result.stdout}${result.stderr}`.includes(sentinel), false);
+  });
+}
+
+test('launcher executes committed controller bytes when worktree controller is replaced', async () => {
+  const root = await createRepository();
+  try {
+    await writeFile(path.join(root, 'scripts/ci3/ci3-bridge-controller.mjs'), '#!/usr/bin/env node\nprocess.stdout.write("WORKTREE_REPLACEMENT_EXECUTED\\n")\n');
+    const result = launch(root);
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.includes('WORKTREE_REPLACEMENT_EXECUTED'), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('launcher rejects a caller-forged Git-bound reexec context', () => {
+  const result = launch(requireRoot(), ['--self-test'], {
+    CI3_GIT_BOUND_REEXEC: '1',
+    CI3_GIT_BOUND_REPO_ROOT: requireRoot(),
+    CI3_GIT_BOUND_AUTHORITY_SHA: '0'.repeat(40),
+    CI3_GIT_BOUND_LAUNCHER_SHA256: '0'.repeat(64),
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /^ERROR LAUNCHER_BOOTSTRAP\n$/);
+});
+
+test('round-8 caller cannot forge the closed bootstrap marker to retain PATH or Node loader hooks', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-forged-bootstrap-marker-'));
+  try {
+    const fakeBin = path.join(root, 'bin');
+    const marker = path.join(root, 'preload-ran');
+    const preload = path.join(root, 'preload.cjs');
+    await mkdir(fakeBin, { mode: 0o700 });
+    await writeFile(preload, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')\n`, { mode: 0o600 });
+    const result = launch(requireRoot(), ['--self-test'], {
+      CI3_CLOSED_ENV_BOOTSTRAP: '1', PATH: `${fakeBin}:${process.env.PATH}`,
+      NODE_OPTIONS: `--require=${preload}`, DYLD_INSERT_LIBRARIES: path.join(root, 'loader.dylib'),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /^ERROR BOOTSTRAP_ENVIRONMENT\n$/);
+    await lstat(marker).then(
+      () => assert.fail('forged bootstrap retained a Node preload'),
+      (error) => assert.equal(error.code, 'ENOENT'),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('operational launcher freezes a root-owned immutable version-addressed Node runtime', async () => {
+  const source = await readFile(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-launcher.zsh'), 'utf8');
+  assert.match(source, /\/Library\/Application Support\/Agentempp\/ci3-controller-authority\/\$AUTHORITY_SHA\/runtime\/node/);
+  assert.match(source, /root:wheel:555:1:/);
+  assert.match(source, /uchg/);
+});
+
+test('launcher rejects its own worktree generation drift', async () => {
+  const root = await createRepository();
+  try {
+    const launcherPath = path.join(root, 'scripts/ci3/ci3-bridge-launcher.zsh');
+    await writeFile(launcherPath, `${await readFile(launcherPath, 'utf8')}\n# drift\n`);
+    await chmod(launcherPath, 0o700);
+    const result = launch(root);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /^ERROR LAUNCHER_GENERATION\n$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('launcher fails closed when committed controller is absent', async () => {
+  const root = await createRepository(async (candidate) => {
+    await rm(path.join(candidate, 'scripts/ci3/ci3-bridge-controller.mjs'));
+    await writeFile(path.join(candidate, 'scripts/ci3/ci3-bridge-controller.mjs'), '');
+  });
+  try {
+    const result = launch(root);
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('launcher fails closed when committed writer source is empty', async () => {
+  const root = await createRepository(async (candidate) => {
+    await writeFile(path.join(candidate, 'scripts/ci3/ci3-terminal-anchor-writer.swift'), '');
+  });
+  try {
+    const result = launch(root);
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('round-6 worktree launcher is never the Publisher 0 root entrypoint', async () => {
+  const source = await readFile(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-launcher.zsh'), 'utf8');
+  const result = launch(requireRoot(), ['publish-vps-operation-authority-pass']);
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /^ERROR STOP_PRE_AUTHORITY\n$/);
+  assert.doesNotMatch(source, /command -v node/);
+  assert.match(source, /PUBLISHER0_EXTERNAL_BOOTSTRAP_REQUIRED/);
+});
+
+test('round-7 launcher ignores PATH Node and strips Node and loader startup hooks before its first Node exec', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-hostile-env-'));
+  try {
+    const fakeBin = path.join(root, 'bin');
+    const fakeNodeMarker = path.join(root, 'fake-node-ran');
+    const preloadMarker = path.join(root, 'node-options-ran');
+    const preloadPath = path.join(root, 'preload.cjs');
+    await mkdir(fakeBin, { mode: 0o700 });
+    await writeFile(preloadPath, `require('node:fs').writeFileSync(${JSON.stringify(preloadMarker)}, 'ran')\n`, { mode: 0o600 });
+    await writeFile(path.join(fakeBin, 'node'), [
+      '#!/bin/zsh',
+      `/usr/bin/touch ${JSON.stringify(fakeNodeMarker)}`,
+      `exec ${JSON.stringify(process.execPath)} "$@"`,
+      '',
+    ].join('\n'), { mode: 0o700 });
+    const result = launch(requireRoot(), ['--self-test'], {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      NODE_OPTIONS: `--require=${preloadPath}`,
+      NODE_PATH: path.join(root, 'modules'),
+      DYLD_INSERT_LIBRARIES: path.join(root, 'synthetic-loader.dylib'),
+      CI3_SYNTHETIC_FIXED_NODE_PATH: process.execPath,
+      CI3_SYNTHETIC_FIXED_NODE_SHA256: createHash('sha256').update(await readFile(process.execPath)).digest('hex'),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    for (const marker of [fakeNodeMarker, preloadMarker]) {
+      await lstat(marker).then(
+        () => assert.fail(`${path.basename(marker)} executed before authority validation`),
+        (error) => assert.equal(error.code, 'ENOENT'),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('round-7 worktree Publisher 1 stops before a PATH-controlled Node can reach the admin publisher', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-publisher1-path-'));
+  try {
+    const fakeBin = path.join(root, 'bin');
+    const marker = path.join(root, 'fake-node-ran');
+    await mkdir(fakeBin, { mode: 0o700 });
+    await writeFile(path.join(fakeBin, 'node'), `#!/bin/zsh\n/usr/bin/touch ${JSON.stringify(marker)}\nexit 0\n`, { mode: 0o700 });
+    const result = launch(requireRoot(), ['publish-operation-authority'], { PATH: `${fakeBin}:${process.env.PATH}` });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /^ERROR STOP_PRE_AUTHORITY\n$/);
+    await lstat(marker).then(
+      () => assert.fail('PATH-controlled Node executed'),
+      (error) => assert.equal(error.code, 'ENOENT'),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('round-8 external launcher validates its immutable line authority before its fixed Node executes', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-external-launcher-'));
+  try {
+    const runtime = path.join(root, 'runtime');
+    await mkdir(runtime, { recursive: true, mode: 0o700 });
+    const launcherPath = path.join(runtime, 'ci3-bridge-launcher.zsh');
+    const nodePath = path.join(runtime, 'node');
+    const controllerPath = path.join(runtime, 'ci3-bridge-controller.mjs');
+    const attestationPath = path.join(runtime, 'launch-attestation.json');
+    const manifestPath = path.join(runtime, 'authority-manifest.v1');
+    const authorityPath = path.join(runtime, 'launcher-bootstrap.authority.v1');
+    await cp(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-launcher.zsh'), launcherPath);
+    await writeFile(nodePath, [
+      '#!/bin/zsh',
+      'if [[ "$1" == "--version" ]]; then print -r -- v99.0.0; exit 0; fi',
+      'print -r -- "CONTROLLER_SELF_TEST PASS checks=1 network_calls=0 privilege_prompts=0"',
+      '',
+    ].join('\n'));
+    await writeFile(controllerPath, 'synthetic external controller\n');
+    await writeFile(attestationPath, '{"synthetic":true}\n');
+    await writeFile(manifestPath, 'synthetic manifest\n');
+    for (const filePath of [launcherPath, nodePath, controllerPath]) await chmod(filePath, 0o500);
+    for (const filePath of [attestationPath, manifestPath]) await chmod(filePath, 0o400);
+    const digestFile = async (filePath) => createHash('sha256').update(await readFile(filePath)).digest('hex');
+    await writeFile(authorityPath, [
+      'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1',
+      `authority_sha ${'a'.repeat(40)}`,
+      `controller_generation_id controller-${'b'.repeat(64)}`,
+      `node_sha256 ${await digestFile(nodePath)}`,
+      `controller_sha256 ${await digestFile(controllerPath)}`,
+      `launcher_sha256 ${await digestFile(launcherPath)}`,
+      `launch_attestation_sha256 ${await digestFile(attestationPath)}`,
+      `authority_manifest_sha256 ${await digestFile(manifestPath)}`,
+      'allowed_modes --self-test',
+      'raw_values false',
+      '',
+    ].join('\n'), { mode: 0o400 });
+    const environment = {
+      CI3_SYNTHETIC_EXTERNAL_LAUNCHER_ROOT: await realpath(root),
+      CI3_SYNTHETIC_EXTERNAL_AUTHORITY_SHA: 'a'.repeat(40),
+    };
+    const pass = spawnSync('/bin/zsh', [launcherPath, '--self-test'], {
+      encoding: 'utf8', env: { PATH: process.env.PATH, ...environment }, timeout: 15000,
+    });
+    assert.equal(pass.status, 0, pass.stderr);
+    assert.match(pass.stdout, /^LAUNCHER_EXTERNAL_SELF_TEST PASS/);
+    await chmod(nodePath, 0o700);
+    await writeFile(nodePath, '#!/bin/zsh\nprint -r -- compromised\n', { mode: 0o500 });
+    await chmod(nodePath, 0o500);
+    const drift = spawnSync('/bin/zsh', [launcherPath, '--self-test'], {
+      encoding: 'utf8', env: { PATH: process.env.PATH, ...environment }, timeout: 15000,
+    });
+    assert.notEqual(drift.status, 0);
+    assert.match(drift.stderr, /^ERROR NODE_IDENTITY\n$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

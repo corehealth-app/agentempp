@@ -2645,3 +2645,16 @@ Após authority remota confirmada, a VPS pode executar somente o generator pelo
 Node capsule adotado. Mesmo em PASS, CI-3 Tasks 2–12 permanecem bloqueadas até
 o Mac satisfazer o gate zsh pre-network. CI-4, produção, Supabase, Vercel,
 banco, primary/live e cleanup permanecem fora do escopo.
+
+## Bridge V2 terminal STOP — dossier 1.7.9
+
+A authority bounded-reader foi publicada em `c8e1d00...` e todos os gates do
+reader permaneceram GREEN. A invocação única da Bridge V2, porém, parou
+`ENV_RECEIPT_STATE` antes de claim/output porque o receipt de staging real não
+satisfaz sete classificações/markers congelados. Nenhum input foi reescrito e
+nenhum valor bruto foi emitido.
+
+Bridge V2 está consumida 1/1 sem retry. Não existe bundle para o Mac; portanto
+o gate zsh permanece corretamente deferred e não deve ser executado ainda.
+Próximo gate é authoring/reconciliação na VPS do contrato de env receipt e de
+um budget sucessor. CI-3 Tasks 2–12, CI-4, produção e cleanup seguem parados.

@@ -1343,3 +1343,16 @@ exit 0/stdout vazio/stderr vazio/hash unchanged e criar
 `mac-zsh-syntax.receipt.json` owner-only/no-clobber. Reabrir e validar o
 receipt antes do simulator gate. Falha: zero rede, zero claim, zero stream,
 STOP sem retry.
+
+## Round 25 STOP — Bridge V2 consumida antes do claim
+
+A authority V2 `c8e1d00...` foi publicada e lida de volta. O snapshot exato
+passou self-test, mas a única tentativa `--create` retornou
+`ERROR ENV_RECEIPT_STATE`. O receipt de staging existente diverge em sete
+campos semânticos do contrato congelado. Nenhum raw value foi reportado.
+
+Não existe claim, staging, generation, config ou receipt V2. O budget é 1/1 e
+retry é proibido. Preservar snapshot, capsule e inputs sem cleanup. A retomada
+exige nova authority que escolha explicitamente o contrato correto do env
+receipt, teste a reconciliação e conceda uma nova tentativa independente.
+Mac Gate 0, simulador, SSH, remote reads, Task 2 e CI-4 continuam bloqueados.

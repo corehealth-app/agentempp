@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.8
+**Versão do dossiê:** 1.7.9
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5234,3 +5234,23 @@ com parent `92cccf3dca21a29d601d2f274a67ea2ba284914b`. O receipt remoto registra
 gate zsh como deferred ao Mac, nunca como PASS na VPS. Runtime Node V2,
 Bridge V1, inputs, fixture, CI-3 Task 2, CI-4 e sistemas externos permanecem
 preservados até a publicação e a única tentativa autorizada da Bridge V2.
+
+## STOP terminal Bridge V2 — staging env receipt incompatível
+
+A authority V2 foi publicada e confirmada no remoto em
+`c8e1d00c8d43912e55c5ecae3b2e3d84ae232026`. O generator exato foi
+materializado pelo blob Git em worktree detached limpa e seu self-test passou
+8/8 pelo Node capsule V2 adotado. A única invocação `--create` autorizada
+terminou `ERROR ENV_RECEIPT_STATE`; o budget V2 está 1/1, sem retry.
+
+O STOP ocorreu antes de claim, staging, generation, config ou receipt. O
+diagnóstico read-only encontrou sete divergências semânticas no receipt de env
+existente: purpose, marcador legacy-key, classificação de elevated exposure,
+classificação de required permission e as classificações das três variáveis.
+Nenhum valor bruto foi reportado e nenhum input foi alterado.
+
+O snapshot Git-bound, o capsule e os cinco inputs permanecem preservados. A
+classificação zsh continua deferred ao Mac, não bypassed, mas o handoff Mac não
+pode começar porque não existe bundle remoto. Próximo gate é uma nova authority
+na VPS para reconciliar explicitamente o contrato do staging env receipt e
+conceder uma tentativa sucessora; não repetir a Bridge V2.

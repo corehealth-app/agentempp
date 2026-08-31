@@ -1,7 +1,7 @@
 # CI-3 Bridge V2 — STOP do reader, reconciliação zsh e authority
 
 **Data:** 2026-08-31
-**Status pré-publicação:** `AUTHORITY_READY_FOR_GATES`
+**Status terminal:** `STOP_DOCUMENTED_ENV_RECEIPT_STATE`
 **Arquitetura:** `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING`
 
 ## Baseline preservada
@@ -97,6 +97,31 @@ SHA-256 e Git object OID incrementais, single body read, zero retry, identity
 pre/post, authority bindings e schema foram auditados. Não há reparo apenas de
 sintoma e a criação do bundle independe do runtime zsh.
 Resultado: `0 Critical / 0 Important`.
+
+## Execução terminal da Bridge V2
+
+Authority publicada/confirmada:
+`c8e1d00c8d43912e55c5ecae3b2e3d84ae232026`, parent `92cccf3d...`, tree
+`d623ac1057ce33520e869d24acaf7f92a033e6a8`, subject exato e 14 paths.
+
+O snapshot do generator foi materializado do blob exato, root-owned 0600 e
+single-link. Self-test: 8/8 PASS, network 0. A única tentativa real 1/1 pelo
+capsule adotado retornou `ERROR ENV_RECEIPT_STATE`. Diagnóstico read-only:
+purpose, legacy-key marker, local elevated exposure, required permission e as
+três variable classifications divergem do contrato congelado.
+
+Estado físico pós-falha: authority root, claim, staging, generation, config e
+receipt ausentes. Snapshot, capsule e inputs preservados; retry NO; cleanup NO.
+Zsh continuou ausente/não executado. Nenhum valor, service-role, credential,
+token, PII, origin, host ou IP foi emitido.
+
+Review documental A confirmou que o STOP não reclassifica o reader GREEN nem
+autoriza retry: `0 Critical / 0 Important`. Review documental B confirmou
+preservação, gate Mac ainda deferred e bloqueio material correto antes do
+handoff: `0 Critical / 0 Important`.
+
+Próximo gate: `AUTHORIZE_ENV_RECEIPT_RECONCILIATION_AND_FRESH_BRIDGE_ATTEMPT`
+na VPS. Não executar esse gate nesta operação.
 
 Review B — launcher/controller/handoff: diff real do launcher limitado aos
 três data bindings autorizados; testes de mutação fecham grammar/flow/redirect/

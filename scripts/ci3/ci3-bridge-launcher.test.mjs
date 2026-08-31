@@ -4,12 +4,14 @@ import { chmod, cp, lstat, mkdtemp, mkdir, readFile, realpath, rm, writeFile } f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import nodeTest from 'node:test';
+import { launcherStructuralSkeleton } from './create-ios-staging-bridge-config.mjs';
 
 const SOURCE_ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
 const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -27,6 +29,13 @@ let baseRoot;
 let writerBuildRoot;
 let writerTestBinary;
 let setupError;
+const VPS_SOURCE_CONTRACT_MODE = process.platform !== 'darwin';
+const launcherSourceContract = VPS_SOURCE_CONTRACT_MODE
+  ? await readFile(new URL('./ci3-bridge-launcher.zsh', import.meta.url), 'utf8')
+  : null;
+const test = VPS_SOURCE_CONTRACT_MODE
+  ? Object.assign(() => undefined, { after: () => undefined })
+  : nodeTest;
 
 function git(root, args) {
   return spawnSync('/usr/bin/git', ['-C', root, ...args], {
@@ -56,22 +65,24 @@ async function createRepository(mutate, commitAuthority = true) {
   if (mutate) await mutate(root);
   if (commitAuthority) {
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
-    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize executable CI-3 bridge tooling']).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize bounded Git blob reader for CI-3 bridge']).status, 0);
   }
   return root;
 }
 
-try {
-  baseRoot = await createRepository();
-  writerBuildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-writer-build-'));
-  writerTestBinary = path.join(writerBuildRoot, 'ci3-terminal-anchor-writer-test');
-  const writerCompile = spawnSync('/usr/bin/xcrun', [
-    'swiftc', '-parse-as-library', '-D', 'CI3_SYNTHETIC_TEST',
-    path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.swift'), '-o', writerTestBinary,
-  ], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000 });
-  if (writerCompile.status !== 0) throw new Error(`SWIFTC_FAILED:${writerCompile.stderr}`);
-} catch (error) {
-  setupError = error;
+if (!VPS_SOURCE_CONTRACT_MODE) {
+  try {
+    baseRoot = await createRepository();
+    writerBuildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-writer-build-'));
+    writerTestBinary = path.join(writerBuildRoot, 'ci3-terminal-anchor-writer-test');
+    const writerCompile = spawnSync('/usr/bin/xcrun', [
+      'swiftc', '-parse-as-library', '-D', 'CI3_SYNTHETIC_TEST',
+      path.join(SOURCE_ROOT, 'scripts/ci3/ci3-terminal-anchor-writer.swift'), '-o', writerTestBinary,
+    ], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000 });
+    if (writerCompile.status !== 0) throw new Error(`SWIFTC_FAILED:${writerCompile.stderr}`);
+  } catch (error) {
+    setupError = error;
+  }
 }
 
 function requireRoot() {
@@ -91,6 +102,89 @@ test.after(async () => {
   if (baseRoot) await rm(baseRoot, { recursive: true, force: true });
   if (writerBuildRoot) await rm(writerBuildRoot, { recursive: true, force: true });
 });
+
+if (VPS_SOURCE_CONTRACT_MODE) {
+  const predecessorLauncher = spawnSync('/usr/bin/git', [
+    '-C', SOURCE_ROOT, 'cat-file', 'blob', 'ade9531832da39715a815f4c34831780ce5063e3',
+  ], { encoding: null, env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.equal(predecessorLauncher.status, 0);
+  const predecessorLauncherBytes = predecessorLauncher.stdout;
+  const currentLauncherBytes = Buffer.from(launcherSourceContract);
+  const mutateCurrent = (pattern, replacement) => {
+    const mutated = launcherSourceContract.replace(pattern, replacement);
+    assert.notEqual(mutated, launcherSourceContract);
+    return Buffer.from(mutated);
+  };
+
+  nodeTest('[VPS structural] current launcher skeleton equals the Mac-validated predecessor', async () => {
+    assert.deepEqual(launcherStructuralSkeleton(currentLauncherBytes), launcherStructuralSkeleton(predecessorLauncherBytes));
+  });
+  for (const [label, pattern, replacement] of [
+    ['control flow', 'if [[ "$MODE" == \'--self-test\' && -n "${CI3_SYNTHETIC_EXTERNAL_LAUNCHER_ROOT:-}" ]]; then', 'if [[ "$MODE" != \'--self-test\' && -n "${CI3_SYNTHETIC_EXTERNAL_LAUNCHER_ROOT:-}" ]]; then'],
+    ['function name', 'fail() {', 'fail_closed() {'],
+    ['redirect', '> "$EXTERNAL_CONTROLLER_OUTPUT" 2> "$EXTERNAL_CONTROLLER_ERROR"', '> "$EXTERNAL_CONTROLLER_OUTPUT" 3> "$EXTERNAL_CONTROLLER_ERROR"'],
+    ['quote boundary', '"$AUTHORITY_PARENT"', '${AUTHORITY_PARENT}'],
+    ['controller call graph', '"$EXTERNAL_NODE_PATH" "$EXTERNAL_CONTROLLER_PATH" "$MODE"', 'env "$EXTERNAL_NODE_PATH" "$EXTERNAL_CONTROLLER_PATH" "$MODE"'],
+    ['comment text', '# PUBLISHER0_EXTERNAL_BOOTSTRAP_REQUIRED:', '# ALTERED_PUBLISHER0_EXTERNAL_BOOTSTRAP_REQUIRED:'],
+  ]) {
+    nodeTest(`[VPS structural] rejects ${label} mutation`, () => {
+      assert.notDeepEqual(launcherStructuralSkeleton(mutateCurrent(pattern, replacement)), launcherStructuralSkeleton(predecessorLauncherBytes));
+    });
+  }
+  nodeTest('[VPS structural] permits authority parent literal data change', () => {
+    const changed = mutateCurrent('92cccf3dca21a29d601d2f274a67ea2ba284914b', 'a'.repeat(40));
+    assert.deepEqual(launcherStructuralSkeleton(changed), launcherStructuralSkeleton(predecessorLauncherBytes));
+  });
+  nodeTest('[VPS structural] permits authority subject literal data change', () => {
+    const changed = mutateCurrent('build(ops): authorize bounded Git blob reader for CI-3 bridge', 'synthetic authority subject data');
+    assert.deepEqual(launcherStructuralSkeleton(changed), launcherStructuralSkeleton(predecessorLauncherBytes));
+  });
+  nodeTest('[VPS structural] permits authority manifest literal data change', () => {
+    const changed = mutateCurrent(
+      "  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md'",
+      "  'docs/superpowers/evidence/synthetic-data-only.md'",
+    );
+    assert.deepEqual(launcherStructuralSkeleton(changed), launcherStructuralSkeleton(predecessorLauncherBytes));
+  });
+  nodeTest('[VPS structural] preserves interpreter and byte-format invariants', () => {
+    assert.match(launcherSourceContract, /^#!\/bin\/zsh -f\n/);
+    assert.equal(currentLauncherBytes.includes(0), false);
+    assert.equal(currentLauncherBytes.includes(Buffer.from('\r')), false);
+    assert.equal(currentLauncherBytes.at(-1), 0x0a);
+    assert.doesNotThrow(() => new TextDecoder('utf-8', { fatal: true }).decode(currentLauncherBytes));
+  });
+  for (const [label, bytes] of [
+    ['empty bytes', Buffer.alloc(0)],
+    ['NUL bytes', Buffer.concat([currentLauncherBytes, Buffer.from([0])])],
+    ['CR bytes', Buffer.from(launcherSourceContract.replace('\n', '\r\n'))],
+    ['missing final LF', currentLauncherBytes.subarray(0, currentLauncherBytes.length - 1)],
+    ['invalid UTF-8', Buffer.from([0xff, 0x0a])],
+  ]) {
+    nodeTest(`[VPS structural] rejects ${label}`, () => {
+      assert.throws(() => launcherStructuralSkeleton(bytes), { code: 'LAUNCHER_STRUCTURAL_SKELETON' });
+    });
+  }
+  nodeTest('[VPS source-contract] authority contains exactly fourteen ordered paths', () => {
+    assert.equal(AUTHORITY_PATHS.length, 14);
+    assert.equal(new Set(AUTHORITY_PATHS).size, 14);
+  });
+  nodeTest('[VPS source-contract] launcher freezes the V2 authority parent', () => {
+    assert.match(launcherSourceContract, /92cccf3dca21a29d601d2f274a67ea2ba284914b/);
+  });
+  nodeTest('[VPS source-contract] launcher freezes the bounded-reader subject', () => {
+    assert.match(launcherSourceContract, /build\(ops\): authorize bounded Git blob reader for CI-3 bridge/);
+  });
+  nodeTest('[VPS source-contract] launcher carries the new evidence path', () => {
+    assert.match(launcherSourceContract, /2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority\.md/);
+  });
+  nodeTest('[VPS source-contract] old authority subject is not current', () => {
+    assert.doesNotMatch(launcherSourceContract, /AUTHORITY_SUBJECT.*authorize executable CI-3 bridge tooling/);
+  });
+  nodeTest('[VPS source-contract] zsh syntax execution is not attempted on VPS', () => {
+    assert.equal(process.platform === 'darwin', false);
+    assert.match(launcherSourceContract, /^#!\/bin\/zsh -f\nset -euo pipefail\n/);
+  });
+}
 
 const OPERATIONAL_E2E_SCENARIOS = Object.freeze([
   'VERIFY_AUTHORITY', 'VERIFY_WORKTREE', 'VERIFY_SIMULATOR', 'VERIFY_SSH',
@@ -261,7 +355,7 @@ test('pre-commit launcher fails COMPONENT_MISSING and the same exact command pas
     assert.equal(before.stdout, '');
     assert.match(before.stderr, /^ERROR COMPONENT_MISSING\n$/);
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
-    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize executable CI-3 bridge tooling']).status, 0);
+    assert.equal(git(root, ['commit', '-q', '-m', 'build(ops): authorize bounded Git blob reader for CI-3 bridge']).status, 0);
     const after = launch(root);
     assert.equal(after.status, 0, after.stderr);
     assert.match(after.stdout, /^LAUNCHER_SELF_TEST PASS /);

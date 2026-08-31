@@ -1,8 +1,8 @@
-# CI-3 Versioned Remote Bridge Artifact V1 — remediated specification
+# CI-3 Versioned Remote Bridge Artifact V2 — bounded-reader specification
 
 **Date:** 2026-08-29
-**Status:** authority/tooling contract; execution deferred
-**Architecture:** `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1_WITH_EXECUTABLE_MAC_CONTROLLER`
+**Status:** successor authority/tooling contract; one VPS creation attempt authorized after publication
+**Architecture:** `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING`
 
 ## 1. Decision and scope
 
@@ -1601,3 +1601,28 @@ an unchanged artifact projection may a version-addressed external adoption
 receipt be published last. A PASS receipt binds both authorities, old builder,
 terminal STOP, artifact identities/hashes, closure, smokes and explicit zero
 effect counters. Bridge execution remains conditional on this PASS.
+
+## Successor contract: bounded Git streaming and Mac-only launcher
+
+Bridge V1 is frozen at 1/1 after its pre-claim 64 KiB reader failure. Bridge
+V2 has an independent 1/1 budget and reads every authority blob with a
+1,048,576-byte ceiling. It verifies object type and size before the body,
+streams exactly once with incremental SHA-256 and bounded stderr, applies a
+timeout, requires exact bytes, and revalidates type/size without reading the
+body again. There is no retry and no `maxBuffer`-only repair.
+
+The zsh launcher is target-specific executable material for `mac_local` at
+`/bin/zsh`. VPS syntax execution is not applicable; installing zsh, creating a
+zsh capsule, or treating Bash as equivalent is forbidden. The authority must
+prove equality between the predecessor and current normalized structural
+skeletons. Normalization may cover only authority path literals, parent and
+subject; all grammar, control flow, redirects, quoting, functions and call
+edges remain byte-relevant.
+
+The remote receipt records `zsh_syntax_validation_deferred=true`, required
+environment `mac_local`, required-before-network true, status
+`not_executed_on_vps`, both equal skeleton hashes and equality true. The Mac
+must materialize the exact Git blob, verify `/bin/zsh`, run `/bin/zsh -n`,
+require empty output and stable launcher identity, then atomically publish an
+owner-only syntax receipt before simulator, claim, SSH or remote read. Any
+failure has zero network/effect and consumes no silent retry.

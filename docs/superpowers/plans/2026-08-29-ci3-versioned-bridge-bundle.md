@@ -1,11 +1,11 @@
 # CI-3 Versioned Bridge Bundle — executable two-environment plan
 
-> **Status:** authored/tested only. Nothing in this plan is executed by the
-> authority operation. V1/V2/V3 stay frozen and CI-3 stays at Task 1.
+> **Status:** Bridge V2 authority may be published and executed once on the
+> VPS. The launcher and all subsequent CI-3 work remain deferred to the Mac.
 
 ## 1. Global invariants
 
-- Architecture is `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1_WITH_EXECUTABLE_MAC_CONTROLLER`.
+- Architecture is `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING`.
 - No raw origin/destination/host/IP/key/credential/token/PII/ID is printed.
 - `--create`, SSH, network, simulator, stream, install, Task 2+, cleanup,
   provider, production and CI-4 are zero in this operation.
@@ -1315,3 +1315,31 @@ Retomada exige nova authority filha com TDD para blobs acima de 64 KiB, novo
 snapshot Git-bound e concessão explícita de nova tentativa da bridge, mantendo
 o capsule adotado read-only. Este round não executa esse próximo gate, Mac,
 simulador, Task 2, CI-4, cleanup ou ação externa.
+
+## Round 24 — authority Bridge V2 e gate zsh environment-correct
+
+1. Preservar a V1 em 1/1 e o capsule Node V2 adotado sem mutação.
+2. Publicar exatamente 14 paths, parent `92cccf3...`, com reader bounded de
+   1 MiB, 48/48 testes específicos, suíte completa e zero retry.
+3. Provar que o skeleton do launcher é igual ao predecessor Mac-validado; se
+   grammar/control-flow/call-graph divergir, STOP e encaminhar ao Mac.
+4. Classificar a VPS como `VPS_ZSH_SYNTAX_EXECUTION=NOT_APPLICABLE`; não
+   instalar zsh nem usar Bash.
+5. Persistir no receipt que `/bin/zsh -n` está deferred ao Mac e é obrigatório
+   antes de simulador, claim, SSH ou qualquer remote read.
+6. Após push/readback da authority, materializar o generator pelo blob Git e
+   executar uma única tentativa `--create` pelo capsule Node adotado.
+7. Exigir claim-before-effect, publication receipt last, output versionado,
+   readback físico, zero credential copy, zero service-role e zero raw values.
+8. Em PASS ou STOP, publicar um único commit documental terminal. Não executar
+   o handoff Mac, Task 2, CI-4 ou cleanup na VPS.
+
+### Mac Gate 0 — antes de toda rede
+
+O handoff deve materializar o launcher pelo blob exato, validar o runtime
+literal `/bin/zsh` (target, owner/mode, hash, versão, assinatura e parent
+chain), executar exatamente `/bin/zsh -n <EXACT_MATERIALIZED_LAUNCHER>`, exigir
+exit 0/stdout vazio/stderr vazio/hash unchanged e criar
+`mac-zsh-syntax.receipt.json` owner-only/no-clobber. Reabrir e validar o
+receipt antes do simulator gate. Falha: zero rede, zero claim, zero stream,
+STOP sem retry.

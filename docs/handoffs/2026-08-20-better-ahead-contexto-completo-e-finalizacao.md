@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.7
+**Versão do dossiê:** 1.7.8
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5204,3 +5204,33 @@ A adoção do runtime permanece `VERIFIED_ADOPTED_READ_ONLY`; bridge fica STOP.
 Próximo gate requer nova authority para corrigir o reader Git e conceder nova
 tentativa explícita da bridge. Esta operação não executa essa correção, não
 repete `--create` e não inicia Mac, simulador, CI-3 Task 2, CI-4 ou cleanup.
+
+## Reconciliação Bridge V2 — reader bounded e gate zsh por ambiente
+
+O STOP 1.7.7 permanece válido: a Bridge V1 `ba847379...` consumiu 1/1 antes
+do claim porque o reader de 64 KiB não comportava o blob de 82.675 bytes.
+A sucessora usa `BOUNDED_GIT_OBJECT_READER_V2`, limite explícito de 1 MiB,
+type/size preflight e postflight, body assíncrono com timeout, stdout/stderr
+bounded, SHA-256 incremental, tamanho exato, zero retry e zero body reread.
+
+O launcher continua sendo um entrypoint exclusivo do Mac. A VPS não possui
+zsh e isso é o estado esperado: `VPS_ZSH_SYNTAX_EXECUTION=NOT_APPLICABLE`.
+Não instalar zsh, não criar runtime zsh e não usar Bash como equivalente. O
+skeleton estrutural do launcher atual e o último blob validado no Mac é o
+mesmo (`ad3ab9d577d413c611bf000f1a64ef351e7060f5eb068dfca11879c163dfc1a8`);
+somente manifest data, parent e subject mudaram.
+
+O primeiro gate do futuro handoff Mac é
+`MAC_GATE_0=EXACT_LAUNCHER_ZSH_SYNTAX`. Antes de simulador, bootstrap claim,
+SSH ou qualquer remote read, o Mac deve materializar o blob exato, validar o
+runtime literal `/bin/zsh`, executar uma única vez `/bin/zsh -n` com stdout e
+stderr vazios, provar launcher unchanged e publicar
+`mac-zsh-syntax.receipt.json` owner-only/no-clobber. Falha implica zero rede,
+zero claim, zero stream e STOP sem retry.
+
+A authority sucessora altera exatamente os 14 paths fechados da Bridge V2 e
+usa o subject `build(ops): authorize bounded Git blob reader for CI-3 bridge`
+com parent `92cccf3dca21a29d601d2f274a67ea2ba284914b`. O receipt remoto registra o
+gate zsh como deferred ao Mac, nunca como PASS na VPS. Runtime Node V2,
+Bridge V1, inputs, fixture, CI-3 Task 2, CI-4 e sistemas externos permanecem
+preservados até a publicação e a única tentativa autorizada da Bridge V2.

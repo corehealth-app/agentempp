@@ -901,13 +901,16 @@ private func validateSemanticRoots(
         "anchor_writer_blob_oid", "anchor_writer_file_sha256", "authority_commit", "authority_parent", "authority_subject", "authority_tree", "authority_tree_manifest_sha256",
         "cleanup_deadline", "controller_blob_oid", "controller_file_sha256", "created_at_utc", "credential_source_path", "credential_source_sha256", "deployment_receipt_sha256",
         "env_development_count", "env_preview_count", "env_production_count", "env_receipt_sha256", "env_source_sha256", "generator_blob_sha", "generator_file_sha256",
-        "implementation_sha", "launcher_blob_oid", "launcher_file_sha256", "output_config_sha256", "output_filenames", "preview_deployment_count", "primary_opened",
+        "implementation_sha", "launcher_blob_oid", "launcher_file_sha256", "launcher_target_environment", "launcher_runtime_path", "launcher_structural_skeleton_equal",
+        "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256", "zsh_syntax_validation_deferred",
+        "zsh_syntax_validation_required_environment", "zsh_syntax_validation_required_before_network", "zsh_syntax_validation_status",
+        "output_config_sha256", "output_filenames", "preview_deployment_count", "primary_opened",
         "production_deployment_count", "provisioning_receipt_sha256", "purpose", "raw_values_reported", "remote_bundle_generation_id", "remote_bundle_immutable", "schema_version",
         "service_role_emitted", "source_env_descriptor_identity_sha256", "source_generation_id", "sso_state", "staging_project_ref", "terminal_scan_ids", "token_emitted",
     ], code)
     guard try string(remoteEntry["sha256"], code) == string(manifest["remote_bundle_sha256"], code),
           try integer(remoteReceipt["schema_version"], code) == 1,
-          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1",
+          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING",
           try string(remoteReceipt["authority_commit"], code) == authority,
           try string(remoteReceipt["authority_parent"], code) == string(attestation["authority_parent"], code),
           try sha256(Data(string(remoteReceipt["authority_subject"], code).utf8)) == string(attestation["authority_subject_sha256"], code),
@@ -926,13 +929,21 @@ private func validateSemanticRoots(
           try bool(remoteReceipt["raw_values_reported"], code) == false,
           try bool(remoteReceipt["primary_opened"], code) == false,
           try bool(remoteReceipt["remote_bundle_immutable"], code),
+          try string(remoteReceipt["launcher_target_environment"], code) == "mac_local",
+          try string(remoteReceipt["launcher_runtime_path"], code) == "/bin/zsh",
+          try bool(remoteReceipt["zsh_syntax_validation_deferred"], code),
+          try string(remoteReceipt["zsh_syntax_validation_required_environment"], code) == "mac_local",
+          try bool(remoteReceipt["zsh_syntax_validation_required_before_network"], code),
+          try string(remoteReceipt["zsh_syntax_validation_status"], code) == "not_executed_on_vps",
+          try bool(remoteReceipt["launcher_structural_skeleton_equal"], code),
+          try string(remoteReceipt["predecessor_launcher_structural_skeleton_sha256"], code) == string(remoteReceipt["current_launcher_structural_skeleton_sha256"], code),
           (try array(remoteReceipt["terminal_scan_ids"], code).compactMap { $0 as? String }) == scanIDs,
           isUTCTimestamp(try string(remoteReceipt["created_at_utc"], code)),
           isUTCTimestamp(try string(remoteReceipt["cleanup_deadline"], code)) else { try fail(code) }
     for field in ["generator_blob_sha", "controller_blob_oid", "launcher_blob_oid", "anchor_writer_blob_oid"] {
         guard isHex(try string(remoteReceipt[field], code), count: 40) else { try fail(code) }
     }
-    for field in ["generator_file_sha256", "controller_file_sha256", "launcher_file_sha256", "anchor_writer_file_sha256", "source_env_descriptor_identity_sha256", "env_source_sha256", "env_receipt_sha256", "deployment_receipt_sha256", "credential_source_sha256", "provisioning_receipt_sha256", "output_config_sha256"] {
+    for field in ["generator_file_sha256", "controller_file_sha256", "launcher_file_sha256", "anchor_writer_file_sha256", "source_env_descriptor_identity_sha256", "env_source_sha256", "env_receipt_sha256", "deployment_receipt_sha256", "credential_source_sha256", "provisioning_receipt_sha256", "output_config_sha256", "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256"] {
         guard isHex(try string(remoteReceipt[field], code), count: 64) else { try fail(code) }
     }
     for (name, oidField, hashField) in [("generator", "generator_blob_sha", "generator_file_sha256"), ("controller", "controller_blob_oid", "controller_file_sha256"), ("launcher", "launcher_blob_oid", "launcher_file_sha256"), ("writer", "anchor_writer_blob_oid", "anchor_writer_file_sha256")] {

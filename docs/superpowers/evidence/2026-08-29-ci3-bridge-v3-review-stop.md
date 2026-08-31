@@ -1077,3 +1077,16 @@ Fresh completed Round 17 gates passed: generator `154/154`, controller
 aggregate `899/899`, zero fail/cancel/skip/todo. Aggregate duration:
 `350569.14525 ms`. Exact Swift compilation/self-test and all final local scope,
 syntax, precision and sensitive-literal gates also passed.
+
+## Successor environment ruling — Bridge V2
+
+Esta evidência histórica não é reclassificada como execução da nova bridge.
+O launcher que ela validou no Mac é o predecessor estrutural da authority V2.
+A comparação na VPS congela skeleton SHA-256 igual em ambos os lados:
+`ad3ab9d577d413c611bf000f1a64ef351e7060f5eb068dfca11879c163dfc1a8`.
+Logo, somente constants, authority bindings e manifest data mudaram; grammar,
+controle de fluxo, redirects, quotes, funções e call graph não mudaram.
+
+`VPS_ZSH_SYNTAX_EXECUTION=NOT_APPLICABLE`. A validação sintática continua
+obrigatória no Mac, pelo blob exato e `/bin/zsh -n`, antes de rede, simulador,
+SSH, claim ou remote read. Bash não é substituto e a VPS não instala zsh.

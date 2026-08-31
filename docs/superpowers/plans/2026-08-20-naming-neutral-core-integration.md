@@ -2625,3 +2625,23 @@ O próximo gate precisa de authority nova que teste/corrija o reader para blobs
 publicados reais e conceda budget novo. Não há autorização para retry, patch
 local do snapshot, Mac, simulador, CI-4, cleanup ou sistema externo nesta
 execução.
+
+## Bridge V2 bounded reader e retomada controlada — dossier 1.7.8
+
+A authority sucessora preserva a V1 em 1/1, mantém o Node capsule V2 adotado
+read-only e concede à Bridge V2 exatamente uma tentativa. O reader consulta
+type/size, exige blob <=1 MiB, faz streaming bounded com timeout e SHA-256
+incremental, exige tamanho exato, revalida metadata e nunca relê ou retenta o
+body.
+
+O launcher permanece Mac-only. Seu skeleton normalizado é igual ao blob já
+validado no Mac; não houve mudança de grammar, fluxo, redirect, quote, função
+ou call graph. Na VPS, zsh está ausente por design e sua execução sintática é
+`NOT_APPLICABLE`, não PASS. O futuro Mac handoff começa com o blob exato e
+`/bin/zsh -n`, publicando receipt owner-only antes de simulador, claim, SSH ou
+remote read. Bash não é substituto.
+
+Após authority remota confirmada, a VPS pode executar somente o generator pelo
+Node capsule adotado. Mesmo em PASS, CI-3 Tasks 2–12 permanecem bloqueadas até
+o Mac satisfazer o gate zsh pre-network. CI-4, produção, Supabase, Vercel,
+banco, primary/live e cleanup permanecem fora do escopo.

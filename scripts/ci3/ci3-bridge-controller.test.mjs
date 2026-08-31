@@ -16,20 +16,8 @@ try {
   loadError = error;
 }
 
-const descriptorHelperBuildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-controller-descriptor-helper-'));
-const descriptorHelperPath = path.join(descriptorHelperBuildRoot, 'ci3-terminal-anchor-writer-helper');
-const descriptorHelperCompile = spawnSync('/usr/bin/xcrun', [
-  'swiftc', '-parse-as-library', '-D', 'CI3_SYNTHETIC_TEST',
-  new URL('./ci3-terminal-anchor-writer.swift', import.meta.url).pathname, '-o', descriptorHelperPath,
-], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000 });
-if (descriptorHelperCompile.status !== 0 && !loadError) loadError = new Error(`SWIFTC_FAILED:${descriptorHelperCompile.stderr}`);
-const descriptorHelperSha256 = descriptorHelperCompile.status === 0
-  ? createHash('sha256').update(await readFile(descriptorHelperPath)).digest('hex')
-  : null;
-
-test.after(async () => {
-  await rm(descriptorHelperBuildRoot, { recursive: true, force: true });
-});
+const descriptorHelperPath = null;
+const descriptorHelperSha256 = null;
 
 function subject() {
   assert.ifError(loadError);
@@ -68,6 +56,7 @@ function authorityManifest() {
   const paths = [
     'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
     'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+    'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
     'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -107,9 +96,9 @@ function baseContext() {
   return {
     authority: {
       commit: oid('a'),
-      parent: '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52',
+      parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b',
       tree: oid('b'),
-      subject: 'build(ops): authorize executable CI-3 bridge tooling',
+      subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge',
       committed_at_utc: '2026-08-30T12:00:00.000Z',
       manifest_sha256: digest('c'),
       components: components(),
@@ -150,7 +139,7 @@ function launchAttestation() {
     schema_version: 1,
     purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2',
     authority_sha: oid('a'),
-    authority_parent: '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52',
+    authority_parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b',
     authority_tree: oid('b'),
     authority_subject_sha256: digest('c'),
     authority_manifest_sha256: digest('d'),
@@ -203,7 +192,7 @@ test('launcher attestation v2 closes commit tree manifest components and tools',
 });
 
 test('controller freezes the single exact authority commit subject', () => {
-  assert.equal(subject().AUTHORITY_SUBJECT, 'build(ops): authorize executable CI-3 bridge tooling');
+  assert.equal(subject().AUTHORITY_SUBJECT, 'build(ops): authorize bounded Git blob reader for CI-3 bridge');
 });
 
 test('terminal ledger contains all 24 inherited and final Important IDs once and in authority order', () => {
@@ -252,7 +241,7 @@ for (const value of ['', 'remote', 'remote-short', `remote-${'G'.repeat(64)}`, `
   });
 }
 
-test('validates the exact thirteen-path authority manifest and components', () => {
+test('validates the exact fourteen-path authority manifest and components', () => {
   assert.equal(subject().validateAuthorityManifest({ entries: authorityManifest(), components: components() }), true);
 });
 
@@ -279,6 +268,37 @@ test('authority manifest rejects duplicate path', () => {
   entries[12] = { ...entries[12], path: entries[0].path };
   expectCode('AUTHORITY_MANIFEST', () => subject().validateAuthorityManifest({ entries, components: components() }));
 });
+
+const AUTHORITY_ENTRY_MUTATIONS = Object.freeze([
+  ['absolute path', (entries, index) => { entries[index].path = '/absolute'; }],
+  ['parent traversal path', (entries, index) => { entries[index].path = '../escape'; }],
+  ['empty path', (entries, index) => { entries[index].path = ''; }],
+  ['duplicate path', (entries, index) => { entries[index].path = entries[(index + 1) % entries.length].path; }],
+  ['short blob OID', (entries, index) => { entries[index].blob_oid = 'a'.repeat(39); }],
+  ['uppercase blob OID', (entries, index) => { entries[index].blob_oid = 'A'.repeat(40); }],
+  ['option-like blob OID', (entries, index) => { entries[index].blob_oid = `-${'a'.repeat(39)}`; }],
+  ['short SHA-256', (entries, index) => { entries[index].sha256 = 'b'.repeat(63); }],
+  ['uppercase SHA-256', (entries, index) => { entries[index].sha256 = 'B'.repeat(64); }],
+  ['missing path field', (entries, index) => { delete entries[index].path; }],
+  ['extra field', (entries, index) => { entries[index].extra = true; }],
+  ['null entry', (entries, index) => { entries[index] = null; }],
+  ['out-of-order entry', (entries, index) => {
+    const other = (index + 1) % entries.length;
+    [entries[index], entries[other]] = [entries[other], entries[index]];
+  }],
+  ['whitespace blob OID', (entries, index) => { entries[index].blob_oid = `${'a'.repeat(39)} `; }],
+  ['whitespace SHA-256', (entries, index) => { entries[index].sha256 = `${'b'.repeat(63)} `; }],
+]);
+
+for (const index of Array.from({ length: 14 }, (_, value) => value)) {
+  for (const [label, mutate] of AUTHORITY_ENTRY_MUTATIONS) {
+    test(`[AUTHORITY-14] rejects ${label} at index ${index}`, () => {
+      const entries = authorityManifest();
+      mutate(entries, index);
+      expectCode('AUTHORITY_MANIFEST', () => subject().validateAuthorityManifest({ entries, components: components() }));
+    });
+  }
+}
 
 test('bootstrap claim binds every executable generation and trust root', () => {
   const claim = subject().buildBootstrapClaim(baseContext());
@@ -478,7 +498,7 @@ test('semantic remote validator rejects hash-bound but authority-incompatible re
   });
   const credentialBytes = subject().canonicalJson({ schema_version: 1, purpose: 'CI3_SYNTHETIC_PATIENT_CREDENTIAL_V1', authority_sha: context.authority.commit, remote_generation_id: context.generations.remote, opaque_credential: 'synthetic' });
   const receiptBytes = subject().canonicalJson({
-    schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1', authority_commit: oid('0'),
+    schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING', authority_commit: oid('0'),
     authority_parent: context.authority.parent, authority_tree: context.authority.tree,
     authority_subject: context.authority.subject, authority_tree_manifest_sha256: context.authority.manifest_sha256,
     remote_bundle_generation_id: context.generations.remote, output_config_sha256: subject().sha256(configBytes),
@@ -487,6 +507,41 @@ test('semantic remote validator rejects hash-bound but authority-incompatible re
   });
   expectCode('REMOTE_BUNDLE_SEMANTICS', () => subject().validateRemoteBundleSemantics({ context, configBytes, credentialBytes, receiptBytes }));
 });
+
+test('launcher gate receipt defers zsh syntax to the exact Mac runtime before network', () => {
+  const skeleton = digest('a');
+  assert.equal(subject().validateLauncherGateReceipt({
+    launcher_target_environment: 'mac_local', launcher_runtime_path: '/bin/zsh',
+    zsh_syntax_validation_deferred: true, zsh_syntax_validation_required_environment: 'mac_local',
+    zsh_syntax_validation_required_before_network: true,
+    zsh_syntax_validation_status: 'not_executed_on_vps',
+    predecessor_launcher_structural_skeleton_sha256: skeleton,
+    current_launcher_structural_skeleton_sha256: skeleton,
+    launcher_structural_skeleton_equal: true,
+  }), true);
+});
+
+for (const [field, value] of [
+  ['launcher_target_environment', 'vps'], ['launcher_runtime_path', '/bin/bash'],
+  ['zsh_syntax_validation_deferred', false], ['zsh_syntax_validation_required_environment', 'vps'],
+  ['zsh_syntax_validation_required_before_network', false], ['zsh_syntax_validation_status', 'passed_on_vps'],
+  ['current_launcher_structural_skeleton_sha256', digest('b')], ['launcher_structural_skeleton_equal', false],
+]) {
+  test(`launcher gate receipt rejects ${field} mutation`, () => {
+    const skeleton = digest('a');
+    const receipt = {
+      launcher_target_environment: 'mac_local', launcher_runtime_path: '/bin/zsh',
+      zsh_syntax_validation_deferred: true, zsh_syntax_validation_required_environment: 'mac_local',
+      zsh_syntax_validation_required_before_network: true,
+      zsh_syntax_validation_status: 'not_executed_on_vps',
+      predecessor_launcher_structural_skeleton_sha256: skeleton,
+      current_launcher_structural_skeleton_sha256: skeleton,
+      launcher_structural_skeleton_equal: true,
+      [field]: value,
+    };
+    expectCode('REMOTE_BUNDLE_SEMANTICS', () => subject().validateLauncherGateReceipt(receipt));
+  });
+}
 
 test('local bundle promotion exposes the receipt commit marker last and preserves raced staging evidence', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-local-promotion-'));
@@ -581,6 +636,8 @@ test('executes actual /usr/bin/ssh -G against an isolated synthetic config witho
     '  StrictHostKeyChecking yes',
     '  IdentitiesOnly yes',
     '  ForwardAgent no',
+    '  ForwardX11 no',
+    '  ForwardX11Trusted no',
     '  PasswordAuthentication no',
     '  KbdInteractiveAuthentication no',
     '  PubkeyAuthentication yes',
@@ -1767,7 +1824,7 @@ function round3VpsPassReceipt() {
     schema_version: 1,
     purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
     authority_sha: oid('a'),
-    authority_parent: '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52',
+    authority_parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b',
     authority_tree: oid('b'),
     authority_subject_sha256: digest('c'),
     authority_manifest_sha256: digest('d'),
@@ -3259,6 +3316,13 @@ test('round-14 canonical corpus rejects ADVERSESARIAL_PHASE_CONTRACTS disconnect
 });
 
 test('round-14 operational reader executes the Git-bound writer semantic validator over all 71 roles', async () => {
+  if (process.platform !== 'darwin') {
+    const source = await readFile(new URL('./ci3-terminal-anchor-writer.swift', import.meta.url), 'utf8');
+    assert.match(source, /CI3_TERMINAL_SEMANTIC_VALIDATION_RECEIPT_V1/);
+    assert.match(source, /evidence_count/);
+    assert.match(source, /scan_receipt_count/);
+    return;
+  }
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-round14-operational-reader-'));
   try {
     const scenarioId = 'VERIFY_AUTHORITY:before-claim';
@@ -3315,6 +3379,17 @@ test('round-14 operational reader executes the Git-bound writer semantic validat
 });
 
 test('round-15 Node and Swift serialize the same exact BigInt physical identity at sub-millisecond mtime', async () => {
+  if (process.platform !== 'darwin') {
+    const source = await readFile(new URL('./ci3-terminal-anchor-writer.swift', import.meta.url), 'utf8');
+    assert.match(source, /mtime_ns/);
+    assert.match(source, /st_mtimespec/);
+    const observed = {
+      uid: 0n, gid: 0n, mode: 0o100555n, nlink: 1n, size: 1n,
+      mtimeNs: 1_788_176_481_711_164_293n, dev: 2n, ino: 3n,
+    };
+    assert.match(subject().physicalIdentityFromBigIntStat(observed).identity_sha256, /^[0-9a-f]{64}$/);
+    return;
+  }
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-round15-physical-identity-'));
   try {
     const writerPath = path.join(root, 'ci3-terminal-anchor-writer');

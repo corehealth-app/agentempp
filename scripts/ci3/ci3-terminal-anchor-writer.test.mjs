@@ -7,7 +7,8 @@ import { spawnSync } from 'node:child_process';
 import nodeTest from 'node:test';
 
 const FIXTURE_HELPER_MODE = process.argv[2] === '--materialize-synthetic-fixture';
-const test = FIXTURE_HELPER_MODE
+const VPS_SOURCE_CONTRACT_MODE = process.platform !== 'darwin' && !FIXTURE_HELPER_MODE;
+const test = FIXTURE_HELPER_MODE || VPS_SOURCE_CONTRACT_MODE
   ? Object.assign(() => undefined, { after: () => undefined })
   : nodeTest;
 
@@ -92,7 +93,7 @@ try {
     if (!path.isAbsolute(binaryPath ?? '')) throw new Error('WRITER_BINARY_REQUIRED');
     binarySha256 = sha(await readFile(binaryPath));
     if (binarySha256 !== process.env.CI3_SYNTHETIC_WRITER_SHA256) throw new Error('WRITER_BINARY_HASH');
-  } else {
+  } else if (!VPS_SOURCE_CONTRACT_MODE) {
     buildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-writer-build-'));
     binaryPath = path.join(buildRoot, 'ci3-terminal-anchor-writer-test');
     const compilation = spawnSync('/usr/bin/xcrun', [
@@ -107,6 +108,32 @@ try {
   }
 } catch (error) {
   setupError = error;
+}
+
+if (VPS_SOURCE_CONTRACT_MODE) {
+  const writerSourceContract = await readFile(SOURCE_PATH, 'utf8');
+  nodeTest('[VPS source-contract] writer requires the V2 bounded-reader remote receipt', () => {
+    assert.match(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING/);
+    assert.doesNotMatch(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1/);
+  });
+  nodeTest('[VPS source-contract] writer requires the Mac-only zsh pre-network gate', () => {
+    for (const literal of [
+      'launcher_target_environment', 'launcher_runtime_path', 'zsh_syntax_validation_deferred',
+      'zsh_syntax_validation_required_environment', 'zsh_syntax_validation_required_before_network',
+      'zsh_syntax_validation_status', 'not_executed_on_vps', 'mac_local', '/bin/zsh',
+    ]) assert.match(writerSourceContract, new RegExp(literal.replace('/', '\\/')));
+  });
+  nodeTest('[VPS source-contract] writer requires equal structural skeleton digests', () => {
+    assert.match(writerSourceContract, /predecessor_launcher_structural_skeleton_sha256/);
+    assert.match(writerSourceContract, /current_launcher_structural_skeleton_sha256/);
+    assert.match(writerSourceContract, /launcher_structural_skeleton_equal/);
+    assert.match(writerSourceContract, /string\(remoteReceipt\["predecessor_launcher_structural_skeleton_sha256"\].*== string\(remoteReceipt\["current_launcher_structural_skeleton_sha256"\]/s);
+  });
+  nodeTest('[VPS source-contract] Swift compilation is deferred to the Mac', () => {
+    assert.equal(process.platform === 'darwin', false);
+    assert.equal(setupError, undefined);
+    assert.equal(buildRoot, undefined);
+  });
 }
 
 function requireBuild() {
@@ -144,6 +171,7 @@ const EVIDENCE_ROLES = Object.freeze([
 const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -263,7 +291,7 @@ async function createFixture({
       payload = {
         schema_version: 1, purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2', authority_sha: AUTHORITY,
         authority_parent: '9'.repeat(40), authority_tree: 'f'.repeat(40),
-        authority_subject_sha256: sha(Buffer.from('build(ops): authorize executable CI-3 bridge tooling')), authority_manifest_sha256: authorityManifestSourceSha256,
+        authority_subject_sha256: sha(Buffer.from('build(ops): authorize bounded Git blob reader for CI-3 bridge')), authority_manifest_sha256: authorityManifestSourceSha256,
         components: components(), tools: Object.fromEntries(['node', 'ssh', 'swiftc', 'xcodebuild'].map((name, index) => [name, {
           binary_sha256: String(index + 1).repeat(64), path_sha256: String(index + 2).repeat(64), version_sha256: String(index + 3).repeat(64),
         }])), raw_values: false,
@@ -307,11 +335,16 @@ async function createFixture({
       };
     } else if (role === 'remote-receipt') {
       payload = {
-        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1', created_at_utc: '2026-08-30T12:00:00.000Z',
-        authority_commit: AUTHORITY, authority_parent: '9'.repeat(40), authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): authorize executable CI-3 bridge tooling',
+        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING', created_at_utc: '2026-08-30T12:00:00.000Z',
+        authority_commit: AUTHORITY, authority_parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge',
         generator_blob_sha: components().generator.blob_oid, generator_file_sha256: components().generator.sha256,
         controller_blob_oid: components().controller.blob_oid, controller_file_sha256: components().controller.sha256,
         launcher_blob_oid: components().launcher.blob_oid, launcher_file_sha256: components().launcher.sha256,
+        launcher_target_environment: 'mac_local', launcher_runtime_path: '/bin/zsh',
+        zsh_syntax_validation_deferred: true, zsh_syntax_validation_required_environment: 'mac_local',
+        zsh_syntax_validation_required_before_network: true, zsh_syntax_validation_status: 'not_executed_on_vps',
+        predecessor_launcher_structural_skeleton_sha256: '8'.repeat(64), current_launcher_structural_skeleton_sha256: '8'.repeat(64),
+        launcher_structural_skeleton_equal: true,
         anchor_writer_blob_oid: components().writer.blob_oid, anchor_writer_file_sha256: components().writer.sha256,
         authority_tree_manifest_sha256: authorityManifestSourceSha256, remote_bundle_generation_id: GENERATIONS.remote,
         source_generation_id: `src-${'1'.repeat(64)}`, source_env_descriptor_identity_sha256: '2'.repeat(64),
@@ -411,7 +444,7 @@ async function createFixture({
         context: {
           authority: {
             commit: AUTHORITY, parent: '9'.repeat(40), tree: 'f'.repeat(40),
-            subject: 'build(ops): authorize executable CI-3 bridge tooling', manifest_sha256: '0'.repeat(64),
+            subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge', manifest_sha256: '0'.repeat(64),
             components: components(),
           },
           generations: GENERATIONS,
@@ -453,7 +486,7 @@ async function createFixture({
       payload = {
         schema_version: 1, purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1', authority_sha: AUTHORITY,
         authority_parent: '9'.repeat(40), authority_tree: 'f'.repeat(40),
-        authority_subject_sha256: sha(Buffer.from('build(ops): authorize executable CI-3 bridge tooling')),
+        authority_subject_sha256: sha(Buffer.from('build(ops): authorize bounded Git blob reader for CI-3 bridge')),
         authority_manifest_sha256: authorityManifestSourceSha256, operation_authority_sha256: '0'.repeat(64),
         node_candidate_sha256: '1'.repeat(64), collector_contracts_sha256: sha(compactJsonBytes(Object.fromEntries(fixtureScanContracts().map((entry) => [entry.id, entry])))),
         publisher_input_manifest_sha256: '0'.repeat(64), source_generation_id: `src-${'2'.repeat(64)}`,

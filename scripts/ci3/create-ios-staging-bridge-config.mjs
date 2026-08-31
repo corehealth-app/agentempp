@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { constants as FS_CONSTANTS } from 'node:fs';
 import {
   link,
@@ -19,8 +19,24 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const GENERATOR_GIT_PATH = 'scripts/ci3/create-ios-staging-bridge-config.mjs';
-const AUTHORITY_PARENT = '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52';
-const AUTHORITY_SUBJECT = 'build(ops): authorize executable CI-3 bridge tooling';
+const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b';
+const AUTHORITY_SUBJECT = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
+const PREDECESSOR_AUTHORITY_COMMIT = 'ba8473799a19aec586b0fe706bb7d4084589c86c';
+const PREDECESSOR_LAUNCHER_BLOB_OID = 'ade9531832da39715a815f4c34831780ce5063e3';
+const PREDECESSOR_LAUNCHER_SHA256 = 'c4c33a522125bc08823d9bac4a8344cf674df3e5e375f7c7e4fd22a1bcdf0ac2';
+export const GIT_OBJECT_READER_ARCHITECTURE = 'BOUNDED_GIT_OBJECT_READER_V2';
+export const AUTHORITY_BLOB_LIMIT_BYTES = 1_048_576;
+const GIT_STDERR_LIMIT_BYTES = 65_536;
+const GIT_COMMAND_TIMEOUT_MS = 10_000;
+const GIT_EXECUTABLE = '/usr/bin/git';
+const CLOSED_GIT_ENV = Object.freeze({
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+  HOME: '/nonexistent',
+  LANG: 'C',
+  LC_ALL: 'C',
+  PATH: '/usr/bin:/bin',
+});
 const EXPECTED_IMPLEMENTATION_SHA = 'e3e1e252b48e42554e75899b950692c05186f60d';
 const OUTPUT_ROOT = '/root/.config/agentempp/bridges/ci3';
 const PRIMARY_DENYLIST = '/root/.config/agentempp/secrets/agentempp-primary-backend.env';
@@ -212,6 +228,15 @@ export const RECEIPT_KEYS = Object.freeze([
   'controller_file_sha256',
   'launcher_blob_oid',
   'launcher_file_sha256',
+  'launcher_target_environment',
+  'launcher_runtime_path',
+  'zsh_syntax_validation_deferred',
+  'zsh_syntax_validation_required_environment',
+  'zsh_syntax_validation_required_before_network',
+  'zsh_syntax_validation_status',
+  'predecessor_launcher_structural_skeleton_sha256',
+  'current_launcher_structural_skeleton_sha256',
+  'launcher_structural_skeleton_equal',
   'anchor_writer_blob_oid',
   'anchor_writer_file_sha256',
   'authority_tree_manifest_sha256',
@@ -250,6 +275,7 @@ export const TERMINAL_SCAN_IDS = Object.freeze([
 export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -339,17 +365,56 @@ export function sha256(bytes) {
 }
 
 export function gitBlobSha(bytes) {
+  return gitObjectOid(bytes, 'sha1');
+}
+
+export function gitObjectOid(bytes, objectFormat) {
   const buffer = Buffer.from(bytes);
-  return createHash('sha1').update(`blob ${buffer.length}\0`).update(buffer).digest('hex');
+  if (!['sha1', 'sha256'].includes(objectFormat)) fail('GIT_AUTHORITY');
+  return createHash(objectFormat).update(`blob ${buffer.length}\0`).update(buffer).digest('hex');
+}
+
+export function launcherStructuralSkeleton(bytes) {
+  const buffer = Buffer.from(bytes ?? []);
+  if (buffer.length === 0 || buffer.includes(0) || buffer.includes(Buffer.from('\r')) || buffer.at(-1) !== 0x0a) {
+    fail('LAUNCHER_STRUCTURAL_SKELETON');
+  }
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    fail('LAUNCHER_STRUCTURAL_SKELETON');
+  }
+  const normalized = [];
+  let authorityPaths = false;
+  for (const line of text.split('\n')) {
+    if (line === 'AUTHORITY_PATHS=(') {
+      authorityPaths = true;
+      normalized.push(line, '  __AUTHORITY_PATHS_LITERAL_DATA__');
+      continue;
+    }
+    if (authorityPaths) {
+      if (line === ')') {
+        authorityPaths = false;
+        normalized.push(line);
+      }
+      continue;
+    }
+    normalized.push(line
+      .replace(/(\[\[ "\$AUTHORITY_PARENT" == )'[^']*'( \]\] \|\| fail GIT_AUTHORITY)/, "$1'__AUTHORITY_PARENT__'$2")
+      .replace(/(\[\[ "\$AUTHORITY_SUBJECT" == )'[^']*'( \]\] \|\| fail GIT_AUTHORITY)/, "$1'__AUTHORITY_SUBJECT__'$2"));
+  }
+  if (authorityPaths) fail('LAUNCHER_STRUCTURAL_SKELETON');
+  return Buffer.from(normalized.join('\n'));
 }
 
 export function validateAuthorityTreeManifest(entries) {
-  if (!Array.isArray(entries) || entries.length !== 13) fail('AUTHORITY_TREE_MANIFEST');
+  if (!Array.isArray(entries) || entries.length !== 14) fail('AUTHORITY_TREE_MANIFEST');
   const paths = new Set();
   for (const entry of entries) {
     exactKeys(entry, ['blob_oid', 'path', 'sha256'], 'AUTHORITY_TREE_MANIFEST');
     if (typeof entry.path !== 'string' || entry.path.length === 0 || entry.path.startsWith('/') || entry.path.includes('..') || paths.has(entry.path)) fail('AUTHORITY_TREE_MANIFEST');
-    if (!isSha(entry.blob_oid, [40]) || !isSha(entry.sha256, [64])) fail('AUTHORITY_TREE_MANIFEST');
+    if (!isSha(entry.blob_oid, [40, 64]) || !isSha(entry.sha256, [64])) fail('AUTHORITY_TREE_MANIFEST');
     paths.add(entry.path);
   }
   return true;
@@ -636,6 +701,14 @@ function validateAuthority(authority) {
   for (const key of ['controller_file_sha256', 'launcher_file_sha256', 'anchor_writer_file_sha256', 'authority_tree_manifest_sha256', 'source_env_descriptor_identity_sha256']) {
     if (!isSha(authority[key], [64])) fail('AUTHORITY_COMPONENTS');
   }
+  if (authority.launcher_target_environment !== 'mac_local' || authority.launcher_runtime_path !== '/bin/zsh'
+      || authority.zsh_syntax_validation_deferred !== true
+      || authority.zsh_syntax_validation_required_environment !== 'mac_local'
+      || authority.zsh_syntax_validation_required_before_network !== true
+      || authority.zsh_syntax_validation_status !== 'not_executed_on_vps'
+      || authority.launcher_structural_skeleton_equal !== true
+      || !isSha(authority.predecessor_launcher_structural_skeleton_sha256, [64])
+      || authority.current_launcher_structural_skeleton_sha256 !== authority.predecessor_launcher_structural_skeleton_sha256) fail('LAUNCHER_GATE');
   if (!/^rb-[a-f0-9]{64}$/.test(authority.remote_bundle_generation_id ?? '') || !/^src-[a-f0-9]{64}$/.test(authority.source_generation_id ?? '')) fail('AUTHORITY_COMPONENTS');
   if (!Number.isFinite(Date.parse(authority.committed_at_utc))) fail('AUTHORITY_COMMIT_TIME');
 }
@@ -660,7 +733,7 @@ export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, 
   const configBytes = jsonBytes(config);
   const receipt = {
     schema_version: 1,
-    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1',
+    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING',
     created_at_utc: authority.committed_at_utc,
     authority_commit: authority.commit,
     authority_parent: authority.parent,
@@ -672,6 +745,15 @@ export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, 
     controller_file_sha256: authority.controller_file_sha256,
     launcher_blob_oid: authority.launcher_blob_oid,
     launcher_file_sha256: authority.launcher_file_sha256,
+    launcher_target_environment: authority.launcher_target_environment,
+    launcher_runtime_path: authority.launcher_runtime_path,
+    zsh_syntax_validation_deferred: authority.zsh_syntax_validation_deferred,
+    zsh_syntax_validation_required_environment: authority.zsh_syntax_validation_required_environment,
+    zsh_syntax_validation_required_before_network: authority.zsh_syntax_validation_required_before_network,
+    zsh_syntax_validation_status: authority.zsh_syntax_validation_status,
+    predecessor_launcher_structural_skeleton_sha256: authority.predecessor_launcher_structural_skeleton_sha256,
+    current_launcher_structural_skeleton_sha256: authority.current_launcher_structural_skeleton_sha256,
+    launcher_structural_skeleton_equal: authority.launcher_structural_skeleton_equal,
     anchor_writer_blob_oid: authority.anchor_writer_blob_oid,
     anchor_writer_file_sha256: authority.anchor_writer_file_sha256,
     authority_tree_manifest_sha256: authority.authority_tree_manifest_sha256,
@@ -781,12 +863,13 @@ function parseJson(bytes, code) {
 }
 
 function gitResult(...args) {
-  const result = spawnSync('/usr/bin/git', ['-C', process.cwd(), ...args], {
-    env: { PATH: '/usr/bin:/bin' },
+  const result = spawnSync(GIT_EXECUTABLE, ['-C', process.cwd(), ...args], {
+    env: CLOSED_GIT_ENV,
     maxBuffer: 64 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: GIT_COMMAND_TIMEOUT_MS,
   });
-  if (result.status !== 0 || result.signal || result.stderr.length !== 0) fail('GIT_AUTHORITY');
+  if (result.error || result.status !== 0 || result.signal || result.stderr.length !== 0) fail('GIT_AUTHORITY');
   return result.stdout;
 }
 
@@ -794,12 +877,276 @@ function gitText(...args) {
   return gitResult(...args).toString('utf8').trim();
 }
 
+function readerCanonicalSha256(fields) {
+  return sha256(Buffer.from(Object.entries(fields)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}\n`)
+    .join('')));
+}
+
+function safeMode(metadata) {
+  return Number(metadata.mode & 0o777n);
+}
+
+async function validateSafeRootOwnedPath(candidate, expectedKind) {
+  if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) fail('GIT_AUTHORITY');
+  const parts = candidate.split('/').filter(Boolean);
+  let current = '/';
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    let metadata;
+    try {
+      metadata = await lstat(current, { bigint: true });
+    } catch {
+      fail('GIT_AUTHORITY');
+    }
+    const final = index === parts.length - 1;
+    const kindValid = final && expectedKind === 'file' ? metadata.isFile() : metadata.isDirectory();
+    if (!kindValid || metadata.isSymbolicLink() || metadata.uid !== 0n || (safeMode(metadata) & 0o022) !== 0) fail('GIT_AUTHORITY');
+  }
+}
+
+async function readSafeFileIdentity(candidate) {
+  await validateSafeRootOwnedPath(candidate, 'file');
+  let handle;
+  try {
+    handle = await open(candidate, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    const before = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    if (identitySha256(identity(before)) !== identitySha256(identity(after))) fail('GIT_AUTHORITY');
+    return Object.freeze({
+      sha256: sha256(bytes),
+      identity_sha256: identitySha256(identity(after)),
+    });
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    fail('GIT_AUTHORITY');
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+function runGitMetadata(repositoryRoot, args, adapters = {}) {
+  const run = adapters.runMetadata ?? ((argv) => spawnSync(GIT_EXECUTABLE, argv, {
+    cwd: repositoryRoot,
+    env: CLOSED_GIT_ENV,
+    maxBuffer: GIT_STDERR_LIMIT_BYTES,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+  }));
+  const result = run(['-C', repositoryRoot, ...args]);
+  if (!result || result.error || result.status !== 0 || result.signal !== null
+      || !Buffer.isBuffer(result.stdout) || !Buffer.isBuffer(result.stderr)
+      || result.stderr.length !== 0 || result.stdout.length > GIT_STDERR_LIMIT_BYTES) fail('GIT_AUTHORITY');
+  return result.stdout;
+}
+
+function exactGitLine(repositoryRoot, args, pattern, adapters = {}) {
+  const bytes = runGitMetadata(repositoryRoot, args, adapters);
+  const text = bytes.toString('utf8');
+  if (!text.endsWith('\n') || text.slice(0, -1).includes('\n') || !pattern.test(text.slice(0, -1))) fail('GIT_AUTHORITY');
+  return text.slice(0, -1);
+}
+
+async function gitExecutableIdentity(adapters = {}) {
+  if (adapters.gitExecutableIdentity) return adapters.gitExecutableIdentity();
+  const physical = await readSafeFileIdentity(GIT_EXECUTABLE);
+  const result = spawnSync(GIT_EXECUTABLE, ['--version'], {
+    env: CLOSED_GIT_ENV,
+    maxBuffer: GIT_STDERR_LIMIT_BYTES,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+  });
+  if (result.error || result.status !== 0 || result.signal !== null || result.stderr.length !== 0
+      || !/^git version [0-9]+(?:\.[0-9]+)+(?:\.[A-Za-z0-9._-]+)?\n$/.test(result.stdout.toString('utf8'))) fail('GIT_AUTHORITY');
+  return Object.freeze({
+    sha256: physical.sha256,
+    identity_sha256: physical.identity_sha256,
+    version_sha256: sha256(result.stdout),
+  });
+}
+
+async function repositoryIdentity(repositoryRoot, adapters = {}) {
+  if (adapters.repositoryIdentity) return adapters.repositoryIdentity();
+  const topLevel = exactGitLine(repositoryRoot, ['rev-parse', '--show-toplevel'], /^\/.+$/, adapters);
+  if (path.resolve(topLevel) !== path.resolve(repositoryRoot)) fail('GIT_AUTHORITY');
+  const commonDir = exactGitLine(repositoryRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir'], /^\/.+$/, adapters);
+  const metadata = await lstat(commonDir, { bigint: true });
+  const repositoryMetadata = await lstat(repositoryRoot, { bigint: true });
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || metadata.uid !== 0n || (safeMode(metadata) & 0o022) !== 0
+      || !repositoryMetadata.isDirectory() || repositoryMetadata.isSymbolicLink() || repositoryMetadata.uid !== 0n
+      || (safeMode(repositoryMetadata) & 0o022) !== 0) fail('GIT_AUTHORITY');
+  const objectFormat = exactGitLine(repositoryRoot, ['rev-parse', '--show-object-format'], /^(?:sha1|sha256)$/, adapters);
+  return Object.freeze({
+    object_format: objectFormat,
+    sha256: readerCanonicalSha256({
+      common_dir_sha256: sha256(Buffer.from(commonDir)),
+      identity_sha256: identitySha256(identity(metadata)),
+      object_format: objectFormat,
+      repository_root_sha256: sha256(Buffer.from(path.resolve(repositoryRoot))),
+    }),
+  });
+}
+
+function parseObjectSize(value) {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) fail('GIT_AUTHORITY');
+  const size = Number(value);
+  if (!Number.isSafeInteger(size) || size < 0 || size > AUTHORITY_BLOB_LIMIT_BYTES) fail('GIT_AUTHORITY');
+  return size;
+}
+
+function readBlobBodyStream({ adapters = {}, expectedSize, objectFormat, oid, repositoryRoot }) {
+  const spawnBody = adapters.spawnBody ?? ((argv) => spawn(GIT_EXECUTABLE, argv, {
+    cwd: repositoryRoot,
+    env: CLOSED_GIT_ENV,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }));
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawnBody(['-C', repositoryRoot, 'cat-file', 'blob', oid]);
+    } catch {
+      reject(new BridgeError('GIT_AUTHORITY'));
+      return;
+    }
+    let settled = false;
+    let stdoutLength = 0;
+    let stderrLength = 0;
+    let overflow = false;
+    const chunks = [];
+    const digest = createHash('sha256');
+    const objectDigest = createHash(objectFormat).update(`blob ${expectedSize}\0`);
+    let timer;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const terminate = () => {
+      overflow = true;
+      try { child.kill('SIGKILL'); } catch { /* fail closed at close */ }
+      finish(new BridgeError('GIT_AUTHORITY'));
+    };
+    timer = setTimeout(() => terminate(), adapters.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS);
+    child.once('error', () => finish(new BridgeError('GIT_AUTHORITY')));
+    child.stdout.on('data', (chunk) => {
+      const bytes = Buffer.from(chunk);
+      stdoutLength += bytes.length;
+      if (stdoutLength > expectedSize || stdoutLength > AUTHORITY_BLOB_LIMIT_BYTES) {
+        terminate();
+        return;
+      }
+      chunks.push(bytes);
+      digest.update(bytes);
+      objectDigest.update(bytes);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderrLength += Buffer.byteLength(chunk);
+      if (stderrLength > GIT_STDERR_LIMIT_BYTES) terminate();
+    });
+    child.once('close', (status, signal) => {
+      if (overflow || status !== 0 || signal !== null || stderrLength !== 0 || stdoutLength !== expectedSize) {
+        finish(new BridgeError('GIT_AUTHORITY'));
+        return;
+      }
+      const bytes = Buffer.concat(chunks, stdoutLength);
+      const digestHex = digest.digest('hex');
+      const objectOid = objectDigest.digest('hex');
+      if (bytes.length !== stdoutLength || sha256(bytes) !== digestHex || gitObjectOid(bytes, objectFormat) !== objectOid) {
+        finish(new BridgeError('GIT_AUTHORITY'));
+        return;
+      }
+      finish(null, Object.freeze({ bytes, bytes_read: stdoutLength, object_oid: objectOid, sha256: digestHex }));
+    });
+  });
+}
+
+export async function readGitBlobBounded({
+  adapters = {},
+  authorityPath,
+  expectedBlobOid,
+  expectedFileSha256,
+  oid,
+  repositoryRoot = process.cwd(),
+} = {}) {
+  if (!path.isAbsolute(repositoryRoot) || path.resolve(repositoryRoot) !== repositoryRoot
+      || typeof authorityPath !== 'string' || authorityPath.length === 0 || authorityPath.startsWith('/')
+      || authorityPath.includes('..') || authorityPath.includes('\0')) fail('GIT_AUTHORITY');
+  const gitBefore = await gitExecutableIdentity(adapters);
+  const repositoryBefore = await repositoryIdentity(repositoryRoot, adapters);
+  const oidLength = repositoryBefore.object_format === 'sha1' ? 40 : 64;
+  const oidPattern = new RegExp(`^[0-9a-f]{${oidLength}}$`);
+  if (typeof oid !== 'string' || !oidPattern.test(oid) || expectedBlobOid !== oid) fail('GIT_AUTHORITY');
+  if (expectedFileSha256 !== undefined && !/^[0-9a-f]{64}$/.test(expectedFileSha256)) fail('GIT_AUTHORITY');
+  const objectType = exactGitLine(repositoryRoot, ['cat-file', '-t', oid], /^blob$/, adapters);
+  if (objectType !== 'blob') fail('GIT_AUTHORITY');
+  const expectedSize = parseObjectSize(exactGitLine(repositoryRoot, ['cat-file', '-s', oid], /^(?:0|[1-9][0-9]*)$/, adapters));
+  const preflightSha256 = readerCanonicalSha256({
+    authority_path: authorityPath,
+    git_executable_sha256: gitBefore.sha256,
+    object_format: repositoryBefore.object_format,
+    object_type: objectType,
+    oid,
+    repository_identity_sha256: repositoryBefore.sha256,
+    size: expectedSize,
+  });
+  const streamed = await readBlobBodyStream({ adapters, expectedSize, objectFormat: repositoryBefore.object_format, oid, repositoryRoot });
+  if (streamed.object_oid !== oid || (expectedFileSha256 !== undefined && streamed.sha256 !== expectedFileSha256)) fail('GIT_AUTHORITY');
+  const objectTypeAfter = exactGitLine(repositoryRoot, ['cat-file', '-t', oid], /^blob$/, adapters);
+  const sizeAfter = parseObjectSize(exactGitLine(repositoryRoot, ['cat-file', '-s', oid], /^(?:0|[1-9][0-9]*)$/, adapters));
+  const repositoryAfter = await repositoryIdentity(repositoryRoot, adapters);
+  const gitAfter = await gitExecutableIdentity(adapters);
+  if (objectTypeAfter !== objectType || sizeAfter !== expectedSize || repositoryAfter.sha256 !== repositoryBefore.sha256
+      || repositoryAfter.object_format !== repositoryBefore.object_format || gitAfter.sha256 !== gitBefore.sha256
+      || gitAfter.identity_sha256 !== gitBefore.identity_sha256 || gitAfter.version_sha256 !== gitBefore.version_sha256) fail('GIT_AUTHORITY');
+  const postflightSha256 = readerCanonicalSha256({
+    bytes_read: streamed.bytes_read,
+    git_executable_sha256: gitAfter.sha256,
+    object_type: objectTypeAfter,
+    oid,
+    repository_identity_sha256: repositoryAfter.sha256,
+    sha256: streamed.sha256,
+    size: sizeAfter,
+  });
+  return Object.freeze({
+    oid,
+    object_type: 'blob',
+    expected_size: expectedSize,
+    bytes_read: streamed.bytes_read,
+    sha256: streamed.sha256,
+    bytes: streamed.bytes,
+    git_executable_sha256: gitAfter.sha256,
+    repository_identity_sha256: repositoryAfter.sha256,
+    preflight_sha256: preflightSha256,
+    postflight_sha256: postflightSha256,
+    attempt: 1,
+    retry: false,
+  });
+}
+
+function treeBlobOid(repositoryRoot, commit, gitPath) {
+  const line = exactGitLine(repositoryRoot, ['ls-tree', commit, '--', gitPath], /^100[67][0-7]{2} blob [0-9a-f]{40,64}\t.+$/);
+  const match = /^100[67][0-7]{2} blob ([0-9a-f]{40,64})\t(.+)$/.exec(line);
+  if (!match || match[2] !== gitPath) fail('GIT_AUTHORITY');
+  return match[1];
+}
+
 async function readGitAuthority() {
-  const repositoryRoot = gitText('rev-parse', '--show-toplevel');
+  const repositoryRoot = path.resolve(gitText('rev-parse', '--show-toplevel'));
   if (path.resolve(repositoryRoot) !== path.resolve(process.cwd())) fail('GIT_AUTHORITY');
   const commit = gitText('rev-parse', 'HEAD');
-  const committedGeneratorBytes = gitResult('cat-file', 'blob', `${commit}:${GENERATOR_GIT_PATH}`);
-  const expectedBlobSha = gitText('rev-parse', `${commit}:${GENERATOR_GIT_PATH}`);
+  const expectedBlobSha = treeBlobOid(repositoryRoot, commit, GENERATOR_GIT_PATH);
+  const generatorRead = await readGitBlobBounded({
+    authorityPath: GENERATOR_GIT_PATH,
+    expectedBlobOid: expectedBlobSha,
+    oid: expectedBlobSha,
+    repositoryRoot,
+  });
+  const committedGeneratorBytes = generatorRead.bytes;
   const expectedSnapshotPath = path.join(OUTPUT_ROOT, '.launchers', commit, path.basename(GENERATOR_GIT_PATH));
   if (path.resolve(SCRIPT_PATH) !== expectedSnapshotPath) fail('GENERATOR_LAUNCHER_REQUIRED');
   let handle;
@@ -821,12 +1168,24 @@ async function readGitAuthority() {
     after: identity(descriptorAfter), before: identity(descriptorBefore), expectedBlobSha,
     gitBlobBytes: committedGeneratorBytes, snapshotBytes,
   });
-  const manifestEntries = AUTHORITY_PATHS.map((gitPath) => {
-    const bytes = gitResult('cat-file', 'blob', `${commit}:${gitPath}`);
-    const blobOid = gitText('rev-parse', `${commit}:${gitPath}`);
-    if (gitBlobSha(bytes) !== blobOid) fail('GIT_AUTHORITY');
-    return { path: gitPath, blob_oid: blobOid, sha256: sha256(bytes) };
-  });
+  const manifestEntries = [];
+  const manifestBlobBytes = new Map();
+  const manifestReadsByOid = new Map([[expectedBlobSha, generatorRead]]);
+  for (const gitPath of AUTHORITY_PATHS) {
+    const blobOid = treeBlobOid(repositoryRoot, commit, gitPath);
+    let read = manifestReadsByOid.get(blobOid);
+    if (!read) {
+      read = await readGitBlobBounded({
+        authorityPath: gitPath,
+        expectedBlobOid: blobOid,
+        oid: blobOid,
+        repositoryRoot,
+      });
+      manifestReadsByOid.set(blobOid, read);
+    }
+    manifestBlobBytes.set(gitPath, read.bytes);
+    manifestEntries.push({ path: gitPath, blob_oid: blobOid, sha256: read.sha256 });
+  }
   validateAuthorityTreeManifest(manifestEntries);
   const manifestSha256 = sha256(Buffer.from(jsonBytes(manifestEntries)));
   const component = (gitPath) => {
@@ -834,6 +1193,20 @@ async function readGitAuthority() {
     if (!entry) fail('GIT_AUTHORITY');
     return entry;
   };
+  const predecessorLauncherOid = treeBlobOid(repositoryRoot, PREDECESSOR_AUTHORITY_COMMIT, 'scripts/ci3/ci3-bridge-launcher.zsh');
+  if (predecessorLauncherOid !== PREDECESSOR_LAUNCHER_BLOB_OID) fail('LAUNCHER_STRUCTURAL_SKELETON');
+  const predecessorLauncherRead = await readGitBlobBounded({
+    authorityPath: 'scripts/ci3/ci3-bridge-launcher.zsh',
+    expectedBlobOid: PREDECESSOR_LAUNCHER_BLOB_OID,
+    expectedFileSha256: PREDECESSOR_LAUNCHER_SHA256,
+    oid: PREDECESSOR_LAUNCHER_BLOB_OID,
+    repositoryRoot,
+  });
+  const currentLauncherRead = manifestEntries.find(({ path: candidate }) => candidate === 'scripts/ci3/ci3-bridge-launcher.zsh');
+  if (!currentLauncherRead) fail('LAUNCHER_STRUCTURAL_SKELETON');
+  const predecessorLauncherStructuralSkeletonSha256 = sha256(launcherStructuralSkeleton(predecessorLauncherRead.bytes));
+  const currentLauncherStructuralSkeletonSha256 = sha256(launcherStructuralSkeleton(manifestBlobBytes.get('scripts/ci3/ci3-bridge-launcher.zsh')));
+  if (currentLauncherStructuralSkeletonSha256 !== predecessorLauncherStructuralSkeletonSha256) fail('LAUNCHER_STRUCTURAL_SKELETON');
   const authority = {
     commit,
     parent: gitText('rev-parse', 'HEAD^'),
@@ -846,6 +1219,15 @@ async function readGitAuthority() {
     controller_file_sha256: component('scripts/ci3/ci3-bridge-controller.mjs').sha256,
     launcher_blob_oid: component('scripts/ci3/ci3-bridge-launcher.zsh').blob_oid,
     launcher_file_sha256: component('scripts/ci3/ci3-bridge-launcher.zsh').sha256,
+    launcher_target_environment: 'mac_local',
+    launcher_runtime_path: '/bin/zsh',
+    zsh_syntax_validation_deferred: true,
+    zsh_syntax_validation_required_environment: 'mac_local',
+    zsh_syntax_validation_required_before_network: true,
+    zsh_syntax_validation_status: 'not_executed_on_vps',
+    predecessor_launcher_structural_skeleton_sha256: predecessorLauncherStructuralSkeletonSha256,
+    current_launcher_structural_skeleton_sha256: currentLauncherStructuralSkeletonSha256,
+    launcher_structural_skeleton_equal: true,
     anchor_writer_blob_oid: component('scripts/ci3/ci3-terminal-anchor-writer.swift').blob_oid,
     anchor_writer_file_sha256: component('scripts/ci3/ci3-terminal-anchor-writer.swift').sha256,
     authority_tree_manifest_sha256: manifestSha256,
@@ -951,7 +1333,7 @@ function validatePublishedContract(configBytes, receiptBytes, claim) {
     fail(code);
   }
   if (supabaseUrl.protocol !== 'https:' || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`) || mobileBffOrigin.protocol !== 'https:') fail(code);
-  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1') fail(code);
+  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING') fail(code);
   if (receipt.authority_parent !== AUTHORITY_PARENT || receipt.authority_parent !== claim.authority_parent
       || receipt.authority_subject !== AUTHORITY_SUBJECT || receipt.authority_subject !== claim.authority_subject
       || !isSha(receipt.authority_tree, [40]) || receipt.authority_tree !== claim.authority_tree) fail(code);
@@ -963,6 +1345,14 @@ function validatePublishedContract(configBytes, receiptBytes, claim) {
   for (const key of ['controller_file_sha256', 'launcher_file_sha256', 'anchor_writer_file_sha256', 'authority_tree_manifest_sha256', 'source_env_descriptor_identity_sha256']) {
     if (!isSha(receipt[key], [64]) || receipt[key] !== claim[key]) fail(code);
   }
+  if (receipt.launcher_target_environment !== 'mac_local' || receipt.launcher_runtime_path !== '/bin/zsh'
+      || receipt.zsh_syntax_validation_deferred !== true
+      || receipt.zsh_syntax_validation_required_environment !== 'mac_local'
+      || receipt.zsh_syntax_validation_required_before_network !== true
+      || receipt.zsh_syntax_validation_status !== 'not_executed_on_vps'
+      || receipt.launcher_structural_skeleton_equal !== true
+      || !isSha(receipt.predecessor_launcher_structural_skeleton_sha256, [64])
+      || receipt.current_launcher_structural_skeleton_sha256 !== receipt.predecessor_launcher_structural_skeleton_sha256) fail(code);
   if (!/^rb-[a-f0-9]{64}$/.test(receipt.remote_bundle_generation_id) || receipt.remote_bundle_generation_id !== claim.remote_bundle_generation_id) fail(code);
   if (!/^src-[a-f0-9]{64}$/.test(receipt.source_generation_id) || receipt.source_generation_id !== claim.source_generation_id) fail(code);
   if (!Number.isFinite(Date.parse(receipt.created_at_utc)) || receipt.output_config_sha256 !== sha256(configBytes)) fail(code);
@@ -1530,6 +1920,15 @@ async function runSyntheticSelfTest() {
         controller_file_sha256: '3'.repeat(64),
         launcher_blob_oid: '4'.repeat(40),
         launcher_file_sha256: '4'.repeat(64),
+        launcher_target_environment: 'mac_local',
+        launcher_runtime_path: '/bin/zsh',
+        zsh_syntax_validation_deferred: true,
+        zsh_syntax_validation_required_environment: 'mac_local',
+        zsh_syntax_validation_required_before_network: true,
+        zsh_syntax_validation_status: 'not_executed_on_vps',
+        predecessor_launcher_structural_skeleton_sha256: 'a'.repeat(64),
+        current_launcher_structural_skeleton_sha256: 'a'.repeat(64),
+        launcher_structural_skeleton_equal: true,
         anchor_writer_blob_oid: '5'.repeat(40),
         anchor_writer_file_sha256: '5'.repeat(64),
         authority_tree_manifest_sha256: '6'.repeat(64),

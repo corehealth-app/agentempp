@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { chmod, link, lstat, mkdtemp, mkdir, open, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import { chmod, link, lstat, mkdtemp, mkdir, open, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 const MODULE_URL = new URL('./create-ios-staging-bridge-config.mjs', import.meta.url);
@@ -27,6 +29,309 @@ function clone(value) {
 function sha(value) {
   return subject().sha256(Buffer.from(value));
 }
+
+test('[LAUNCHER-SKELETON] generator classifies the current launcher as data-only versus the Mac predecessor', async () => {
+  const predecessor = spawnSync('/usr/bin/git', [
+    '-C', path.resolve(new URL('../..', import.meta.url).pathname),
+    'cat-file', 'blob', 'ade9531832da39715a815f4c34831780ce5063e3',
+  ], { encoding: null, env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.equal(predecessor.status, 0);
+  const current = await readFile(new URL('./ci3-bridge-launcher.zsh', import.meta.url));
+  assert.deepEqual(subject().launcherStructuralSkeleton(current), subject().launcherStructuralSkeleton(predecessor.stdout));
+});
+
+test('[GIT-READER] bounded reader crosses the real 82,675-byte authority boundary', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-git-reader-red-'));
+  try {
+    assert.equal(spawnSync('/usr/bin/git', ['init', '-q', root], {
+      env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+    }).status, 0);
+    const blobBytes = Buffer.alloc(82_675, 0x61);
+    const blobPath = path.join(root, 'authority-blob.bin');
+    await writeFile(blobPath, blobBytes);
+    const oidResult = spawnSync('/usr/bin/git', ['-C', root, 'hash-object', '-w', blobPath], {
+      encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    assert.equal(oidResult.status, 0, oidResult.stderr);
+    const oid = oidResult.stdout.trim();
+
+    const result = await subject().readGitBlobBounded({
+      authorityPath: 'synthetic/authority-blob.bin',
+      expectedBlobOid: oid,
+      expectedFileSha256: subject().sha256(blobBytes),
+      oid,
+      repositoryRoot: root,
+    });
+    assert.equal(result.bytes_read, 82_675);
+    assert.deepEqual(result.bytes, blobBytes);
+    assert.equal(result.attempt, 1);
+    assert.equal(result.retry, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+const READER_OID = subject().gitObjectOid(Buffer.from('bounded'), 'sha1');
+const READER_GIT_IDENTITY = Object.freeze({
+  sha256: '1'.repeat(64), identity_sha256: '2'.repeat(64), version_sha256: '3'.repeat(64),
+});
+const READER_REPOSITORY_IDENTITY = Object.freeze({ object_format: 'sha1', sha256: '4'.repeat(64) });
+
+function fakeReaderAdapters({
+  body = Buffer.from('bounded'), bodyStatus = 0, bodySignal = null, bodyStderr = Buffer.alloc(0),
+  bodyChunks, close = true, gitIdentities = [READER_GIT_IDENTITY, READER_GIT_IDENTITY],
+  metadataError = {}, objectTypes = ['blob', 'blob'], repositoryIdentities = [READER_REPOSITORY_IDENTITY, READER_REPOSITORY_IDENTITY],
+  sizes = [body.length, body.length], timeoutMs = 100,
+} = {}) {
+  const counters = { body: 0, gitIdentity: 0, killed: 0, repositoryIdentity: 0, size: 0, type: 0 };
+  const result = (stdout, errorKind) => ({
+    error: errorKind === 'error' ? new Error('synthetic') : undefined,
+    signal: errorKind === 'signal' ? 'SIGTERM' : null,
+    status: errorKind === 'status' ? 1 : 0,
+    stderr: errorKind === 'stderr' ? Buffer.from('synthetic') : Buffer.alloc(0),
+    stdout: Buffer.from(stdout),
+  });
+  const adapters = {
+    timeoutMs,
+    gitExecutableIdentity: async () => gitIdentities[Math.min(counters.gitIdentity++, gitIdentities.length - 1)],
+    repositoryIdentity: async () => repositoryIdentities[Math.min(counters.repositoryIdentity++, repositoryIdentities.length - 1)],
+    runMetadata: (argv) => {
+      if (argv.includes('-t')) {
+        const index = counters.type++;
+        return result(`${objectTypes[Math.min(index, objectTypes.length - 1)]}\n`, metadataError.type);
+      }
+      if (argv.includes('-s')) {
+        const index = counters.size++;
+        return result(`${sizes[Math.min(index, sizes.length - 1)]}\n`, metadataError.size);
+      }
+      throw new Error(`unexpected metadata argv: ${argv.join(' ')}`);
+    },
+    spawnBody: () => {
+      counters.body += 1;
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = () => {
+        counters.killed += 1;
+        queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
+        return true;
+      };
+      queueMicrotask(() => {
+        if (!close) return;
+        for (const chunk of bodyChunks ?? [body]) child.stdout.write(chunk);
+        if (bodyStderr.length > 0) child.stderr.write(bodyStderr);
+        child.stdout.end();
+        child.stderr.end();
+        queueMicrotask(() => child.emit('close', bodyStatus, bodySignal));
+      });
+      return child;
+    },
+  };
+  return { adapters, counters };
+}
+
+function fakeReaderInput(adapters, overrides = {}) {
+  return {
+    adapters,
+    authorityPath: 'synthetic/bounded-blob.bin',
+    expectedBlobOid: READER_OID,
+    oid: READER_OID,
+    repositoryRoot: '/synthetic/repository',
+    ...overrides,
+  };
+}
+
+async function expectReaderCode(input, code = 'GIT_AUTHORITY') {
+  await assert.rejects(subject().readGitBlobBounded(input), (error) => error?.code === code);
+}
+
+async function createRealReaderRepository(bytes) {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-git-reader-real-'));
+  assert.equal(spawnSync('/usr/bin/git', ['init', '-q', root], { env: { PATH: '/usr/bin:/bin' } }).status, 0);
+  const blobPath = path.join(root, 'blob.bin');
+  await writeFile(blobPath, bytes);
+  const result = spawnSync('/usr/bin/git', ['-C', root, 'hash-object', '-w', blobPath], {
+    encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return { oid: result.stdout.trim(), root };
+}
+
+for (const size of [0, 1, 65_535, 65_536, 65_537, 1_048_576]) {
+  test(`[GIT-READER] accepts exact boundary size ${size}`, async () => {
+    const bytes = Buffer.alloc(size, size % 251);
+    const { oid, root } = await createRealReaderRepository(bytes);
+    try {
+      const result = await subject().readGitBlobBounded({
+        authorityPath: `synthetic/boundary-${size}.bin`, expectedBlobOid: oid,
+        expectedFileSha256: subject().sha256(bytes), oid, repositoryRoot: root,
+      });
+      assert.equal(result.bytes_read, size);
+      assert.equal(result.sha256, subject().sha256(bytes));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test('[GIT-READER] rejects 1,048,577 bytes before body spawn', async () => {
+  const body = Buffer.alloc(1_048_577, 0x61);
+  const { adapters, counters } = fakeReaderAdapters({ body, sizes: [body.length, body.length] });
+  await expectReaderCode(fakeReaderInput(adapters));
+  assert.equal(counters.body, 0);
+});
+
+for (const [label, oid] of [
+  ['missing OID', undefined], ['short OID', 'a'.repeat(39)], ['long OID', 'a'.repeat(41)],
+  ['uppercase OID', 'A'.repeat(40)], ['option-like OID', `-${'a'.repeat(39)}`],
+  ['rev expression', `${'a'.repeat(38)}^1`], ['path expression', `${'a'.repeat(38)}:x`],
+  ['whitespace OID', `${'a'.repeat(39)} `], ['NUL OID', `${'a'.repeat(39)}\0`],
+]) {
+  test(`[GIT-READER] rejects ${label}`, async () => {
+    const { adapters, counters } = fakeReaderAdapters();
+    await expectReaderCode(fakeReaderInput(adapters, { expectedBlobOid: oid, oid }));
+    assert.equal(counters.body, 0);
+  });
+}
+
+test('[GIT-READER] accepts SHA-256 OID only for SHA-256 object format', async () => {
+  const oid = subject().gitObjectOid(Buffer.from('bounded'), 'sha256');
+  const repository = Object.freeze({ object_format: 'sha256', sha256: '5'.repeat(64) });
+  const { adapters } = fakeReaderAdapters({ repositoryIdentities: [repository, repository] });
+  const result = await subject().readGitBlobBounded(fakeReaderInput(adapters, { expectedBlobOid: oid, oid }));
+  assert.equal(result.oid, oid);
+});
+
+test('[GIT-READER] rejects SHA-1 OID in SHA-256 object format', async () => {
+  const repository = Object.freeze({ object_format: 'sha256', sha256: '5'.repeat(64) });
+  const { adapters } = fakeReaderAdapters({ repositoryIdentities: [repository, repository] });
+  await expectReaderCode(fakeReaderInput(adapters));
+});
+
+for (const objectType of ['tree', 'commit', 'tag']) {
+  test(`[GIT-READER] rejects ${objectType} object type`, async () => {
+    const { adapters, counters } = fakeReaderAdapters({ objectTypes: [objectType, objectType] });
+    await expectReaderCode(fakeReaderInput(adapters));
+    assert.equal(counters.body, 0);
+  });
+}
+
+for (const [label, metadataError] of [
+  ['nonzero type process', { type: 'status' }], ['signalled type process', { type: 'signal' }],
+  ['stderr type process', { type: 'stderr' }], ['errored size process', { size: 'error' }],
+  ['nonzero size process', { size: 'status' }], ['stderr size process', { size: 'stderr' }],
+]) {
+  test(`[GIT-READER] rejects ${label}`, async () => {
+    const { adapters, counters } = fakeReaderAdapters({ metadataError });
+    await expectReaderCode(fakeReaderInput(adapters));
+    assert.equal(counters.body, 0);
+  });
+}
+
+for (const [label, options] of [
+  ['nonzero body process', { bodyStatus: 1 }], ['signalled body process', { bodyStatus: null, bodySignal: 'SIGTERM' }],
+  ['body stderr', { bodyStderr: Buffer.from('synthetic') }],
+  ['short body', { body: Buffer.from('short'), sizes: [6, 6] }],
+  ['long body', { body: Buffer.from('longer'), sizes: [4, 4] }],
+  ['stderr over 64 KiB', { bodyStderr: Buffer.alloc(65_537), body: Buffer.from('bounded') }],
+]) {
+  test(`[GIT-READER] rejects ${label}`, async () => {
+    const { adapters } = fakeReaderAdapters(options);
+    await expectReaderCode(fakeReaderInput(adapters));
+  });
+}
+
+test('[GIT-READER] times out and kills a stalled body process', async () => {
+  const { adapters, counters } = fakeReaderAdapters({ close: false, timeoutMs: 5 });
+  await expectReaderCode(fakeReaderInput(adapters));
+  assert.equal(counters.killed, 1);
+});
+
+test('[GIT-READER] kills output that exceeds the declared size', async () => {
+  const { adapters, counters } = fakeReaderAdapters({ body: Buffer.from('too-long'), sizes: [3, 3] });
+  await expectReaderCode(fakeReaderInput(adapters));
+  assert.equal(counters.killed, 1);
+});
+
+test('[GIT-READER] performs exactly one body spawn with zero retry', async () => {
+  const { adapters, counters } = fakeReaderAdapters();
+  const result = await subject().readGitBlobBounded(fakeReaderInput(adapters));
+  assert.equal(counters.body, 1);
+  assert.equal(result.attempt, 1);
+  assert.equal(result.retry, false);
+});
+
+test('[GIT-READER] postflight does not reread the body', async () => {
+  const { adapters, counters } = fakeReaderAdapters();
+  await subject().readGitBlobBounded(fakeReaderInput(adapters));
+  assert.equal(counters.body, 1);
+  assert.equal(counters.type, 2);
+  assert.equal(counters.size, 2);
+});
+
+test('[GIT-READER] rejects type drift', async () => {
+  const { adapters } = fakeReaderAdapters({ objectTypes: ['blob', 'tree'] });
+  await expectReaderCode(fakeReaderInput(adapters));
+});
+
+test('[GIT-READER] rejects size drift', async () => {
+  const { adapters } = fakeReaderAdapters({ sizes: [7, 8] });
+  await expectReaderCode(fakeReaderInput(adapters));
+});
+
+test('[GIT-READER] rejects repository identity drift', async () => {
+  const drifted = Object.freeze({ object_format: 'sha1', sha256: '6'.repeat(64) });
+  const { adapters } = fakeReaderAdapters({ repositoryIdentities: [READER_REPOSITORY_IDENTITY, drifted] });
+  await expectReaderCode(fakeReaderInput(adapters));
+});
+
+test('[GIT-READER] rejects Git executable drift', async () => {
+  const drifted = Object.freeze({ ...READER_GIT_IDENTITY, sha256: '7'.repeat(64) });
+  const { adapters } = fakeReaderAdapters({ gitIdentities: [READER_GIT_IDENTITY, drifted] });
+  await expectReaderCode(fakeReaderInput(adapters));
+});
+
+test('[GIT-READER] rejects tree/blob OID mismatch', async () => {
+  const { adapters } = fakeReaderAdapters();
+  await expectReaderCode(fakeReaderInput(adapters, { expectedBlobOid: 'b'.repeat(40) }));
+});
+
+test('[GIT-OBJECT-BINDING] rejects body whose computed Git object identity differs from requested OID', async () => {
+  const { adapters } = fakeReaderAdapters({ body: Buffer.from('bounded') });
+  await expectReaderCode(fakeReaderInput(adapters, { expectedBlobOid: 'a'.repeat(40), oid: 'a'.repeat(40) }));
+});
+
+test('[GIT-READER] rejects expected file SHA mismatch', async () => {
+  const { adapters } = fakeReaderAdapters();
+  await expectReaderCode(fakeReaderInput(adapters, { expectedFileSha256: 'f'.repeat(64) }));
+});
+
+test('[GIT-READER] returns only the bounded reader contract fields', async () => {
+  const { adapters } = fakeReaderAdapters();
+  const result = await subject().readGitBlobBounded(fakeReaderInput(adapters));
+  assert.deepEqual(Object.keys(result).sort(), [
+    'attempt', 'bytes', 'bytes_read', 'expected_size', 'git_executable_sha256', 'object_type', 'oid',
+    'postflight_sha256', 'preflight_sha256', 'repository_identity_sha256', 'retry', 'sha256',
+  ].sort());
+});
+
+test('[GIT-READER] rejects unsafe authority path', async () => {
+  const { adapters, counters } = fakeReaderAdapters();
+  await expectReaderCode(fakeReaderInput(adapters, { authorityPath: '../escape' }));
+  assert.equal(counters.body, 0);
+});
+
+test('[GIT-READER] duplicate blob is allowed only across distinct manifest paths', () => {
+  const entries = subject().AUTHORITY_PATHS.map((entryPath) => ({
+    path: entryPath, blob_oid: READER_OID, sha256: 'b'.repeat(64),
+  }));
+  assert.equal(subject().validateAuthorityTreeManifest(entries), true);
+});
+
+test('[GIT-READER] architecture and one MiB limit are frozen', () => {
+  assert.equal(subject().GIT_OBJECT_READER_ARCHITECTURE, 'BOUNDED_GIT_OBJECT_READER_V2');
+  assert.equal(subject().AUTHORITY_BLOB_LIMIT_BYTES, 1_048_576);
+});
 
 function validFixture() {
   const envValues = {
@@ -218,9 +523,9 @@ function validFixture() {
 
   const authority = {
     commit: 'f'.repeat(40),
-    parent: '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52',
+    parent: '92cccf3dca21a29d601d2f274a67ea2ba284914b',
     tree: 'a'.repeat(40),
-    subject: 'build(ops): authorize executable CI-3 bridge tooling',
+    subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge',
     committed_at_utc: '2026-08-29T10:00:00.000Z',
     generator_blob_sha: 'b'.repeat(40),
     generator_file_sha256: 'c'.repeat(64),
@@ -228,6 +533,15 @@ function validFixture() {
     controller_file_sha256: '3'.repeat(64),
     launcher_blob_oid: '4'.repeat(40),
     launcher_file_sha256: '5'.repeat(64),
+    launcher_target_environment: 'mac_local',
+    launcher_runtime_path: '/bin/zsh',
+    zsh_syntax_validation_deferred: true,
+    zsh_syntax_validation_required_environment: 'mac_local',
+    zsh_syntax_validation_required_before_network: true,
+    zsh_syntax_validation_status: 'not_executed_on_vps',
+    predecessor_launcher_structural_skeleton_sha256: 'a'.repeat(64),
+    current_launcher_structural_skeleton_sha256: 'a'.repeat(64),
+    launcher_structural_skeleton_equal: true,
     anchor_writer_blob_oid: '6'.repeat(40),
     anchor_writer_file_sha256: '7'.repeat(64),
     authority_tree_manifest_sha256: '8'.repeat(64),
@@ -694,6 +1008,23 @@ test('receipt binds the generator commit and Git blob', () => {
   const receipt = build(fixture).receipt;
   assert.equal(receipt.authority_commit, fixture.authority.commit);
   assert.equal(receipt.generator_blob_sha, fixture.authority.generator_blob_sha);
+});
+
+test('receipt defers the exact launcher zsh syntax gate to Mac before network', () => {
+  const receipt = build().receipt;
+  assert.equal(receipt.launcher_target_environment, 'mac_local');
+  assert.equal(receipt.launcher_runtime_path, '/bin/zsh');
+  assert.equal(receipt.zsh_syntax_validation_deferred, true);
+  assert.equal(receipt.zsh_syntax_validation_required_environment, 'mac_local');
+  assert.equal(receipt.zsh_syntax_validation_required_before_network, true);
+  assert.equal(receipt.zsh_syntax_validation_status, 'not_executed_on_vps');
+});
+
+test('receipt binds equal predecessor and current launcher structural skeletons', () => {
+  const receipt = build().receipt;
+  assert.match(receipt.predecessor_launcher_structural_skeleton_sha256, /^[a-f0-9]{64}$/);
+  assert.equal(receipt.current_launcher_structural_skeleton_sha256, receipt.predecessor_launcher_structural_skeleton_sha256);
+  assert.equal(receipt.launcher_structural_skeleton_equal, true);
 });
 
 test('receipt binds every source hash', () => {
@@ -1204,7 +1535,7 @@ test('terminal receipt rejects an incomplete two-scan chain', () => {
 
 test('generator and executable authority share the one exact commit subject', () => {
   const fixture = validFixture();
-  fixture.authority.subject = 'build(ops): authorize executable CI-3 bridge tooling';
+  fixture.authority.subject = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
   assert.doesNotThrow(() => build(fixture));
 });
 
@@ -1469,7 +1800,7 @@ for (const [field, expected] of EXECUTABLE_COMPONENT_EXPECTATIONS) {
   });
 }
 
-test('remote receipt binds the exact thirteen-path authority tree manifest', () => {
+test('remote receipt binds the exact fourteen-path authority tree manifest', () => {
   assert.equal(build().receipt.authority_tree_manifest_sha256, '8'.repeat(64));
 });
 
@@ -1489,8 +1820,8 @@ test('remote receipt freezes the exact ordered six terminal scan IDs', () => {
   assert.deepEqual(build().receipt.terminal_scan_ids, ['argv', 'history', 'terminal-log', 'attachment', 'xcresult', 'runtime']);
 });
 
-test('authority manifest requires exactly thirteen Git paths', () => {
-  const entries = Array.from({ length: 13 }, (_, index) => ({
+test('authority manifest requires exactly fourteen Git paths', () => {
+  const entries = Array.from({ length: 14 }, (_, index) => ({
     path: `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: `${(index % 9) + 1}`.repeat(40),
     sha256: `${(index % 9) + 1}`.repeat(64),
@@ -1498,8 +1829,8 @@ test('authority manifest requires exactly thirteen Git paths', () => {
   assert.equal(subject().validateAuthorityTreeManifest(entries), true);
 });
 
-test('authority manifest rejects a twelfth-only path set', () => {
-  const entries = Array.from({ length: 12 }, (_, index) => ({
+test('authority manifest rejects a thirteen-only path set', () => {
+  const entries = Array.from({ length: 13 }, (_, index) => ({
     path: `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: 'a'.repeat(40),
     sha256: 'b'.repeat(64),
@@ -1508,8 +1839,8 @@ test('authority manifest rejects a twelfth-only path set', () => {
 });
 
 test('authority manifest rejects duplicate Git paths', () => {
-  const entries = Array.from({ length: 13 }, (_, index) => ({
-    path: index === 12 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
+  const entries = Array.from({ length: 14 }, (_, index) => ({
+    path: index === 13 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: 'a'.repeat(40),
     sha256: 'b'.repeat(64),
   }));

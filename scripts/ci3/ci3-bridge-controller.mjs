@@ -23,8 +23,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const AUTHORITY_PARENT = '9f5cbb61a7266c6e0f40179fc6dcdafd55aecd52';
-export const AUTHORITY_SUBJECT = 'build(ops): authorize executable CI-3 bridge tooling';
+const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b';
+export const AUTHORITY_SUBJECT = 'build(ops): authorize bounded Git blob reader for CI-3 bridge';
 const CI3_PARENT = '277873755bf29771a10b5f362b522c2e6a6c21d6';
 const CI3_SUBJECT = 'feat(ios): connect Today to authenticated staging';
 const BUNDLE_ID = 'com.bodyflow.app';
@@ -167,6 +167,7 @@ export const IMPORTANT_FINDINGS = Object.freeze([
 export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -614,7 +615,12 @@ const REMOTE_RECEIPT_KEYS = Object.freeze([
   'schema_version', 'purpose', 'created_at_utc', 'authority_commit', 'authority_parent',
   'authority_tree', 'authority_subject', 'generator_blob_sha', 'generator_file_sha256',
   'controller_blob_oid', 'controller_file_sha256', 'launcher_blob_oid',
-  'launcher_file_sha256', 'anchor_writer_blob_oid', 'anchor_writer_file_sha256',
+  'launcher_file_sha256', 'launcher_target_environment', 'launcher_runtime_path',
+  'zsh_syntax_validation_deferred', 'zsh_syntax_validation_required_environment',
+  'zsh_syntax_validation_required_before_network', 'zsh_syntax_validation_status',
+  'predecessor_launcher_structural_skeleton_sha256',
+  'current_launcher_structural_skeleton_sha256', 'launcher_structural_skeleton_equal',
+  'anchor_writer_blob_oid', 'anchor_writer_file_sha256',
   'authority_tree_manifest_sha256', 'remote_bundle_generation_id', 'source_generation_id',
   'source_env_descriptor_identity_sha256', 'env_source_sha256', 'env_receipt_sha256',
   'deployment_receipt_sha256', 'credential_source_path', 'credential_source_sha256',
@@ -634,6 +640,19 @@ const REMOTE_SOURCE_AUTHORITY = Object.freeze({
   provisioning_receipt_sha256: '5ed29995fa906d3774384d5a1aa9157516fa9f3e3dd0d320beff138b6aeedfcb',
   implementation_sha: 'e3e1e252b48e42554e75899b950692c05186f60d',
 });
+
+export function validateLauncherGateReceipt(receipt, code = 'REMOTE_BUNDLE_SEMANTICS') {
+  if (!isPlainObject(receipt)
+      || receipt.launcher_target_environment !== 'mac_local' || receipt.launcher_runtime_path !== '/bin/zsh'
+      || receipt.zsh_syntax_validation_deferred !== true
+      || receipt.zsh_syntax_validation_required_environment !== 'mac_local'
+      || receipt.zsh_syntax_validation_required_before_network !== true
+      || receipt.zsh_syntax_validation_status !== 'not_executed_on_vps'
+      || receipt.launcher_structural_skeleton_equal !== true
+      || !isSha(receipt.predecessor_launcher_structural_skeleton_sha256, [64])
+      || receipt.current_launcher_structural_skeleton_sha256 !== receipt.predecessor_launcher_structural_skeleton_sha256) fail(code);
+  return true;
+}
 
 export function validateRemoteBundleSemantics({ context, configBytes, credentialBytes, receiptBytes }) {
   const code = 'REMOTE_BUNDLE_SEMANTICS';
@@ -662,7 +681,7 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   try { supabaseUrl = new URL(config.supabase_url); bffUrl = new URL(config.mobile_bff_origin); } catch { fail(code); }
   if (supabaseUrl.protocol !== 'https:' || bffUrl.protocol !== 'https:'
       || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`)) fail(code);
-  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1'
+  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING'
       || receipt.authority_commit !== context.authority.commit
       || receipt.authority_parent !== context.authority.parent
       || receipt.authority_tree !== context.authority.tree
@@ -677,6 +696,7 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
       || receipt.credential_source_sha256 !== sha256(credentialBytes)
       || receipt.raw_values_reported !== false
       || JSON.stringify(receipt.terminal_scan_ids) !== JSON.stringify(TERMINAL_SCAN_IDS)) fail(code);
+  validateLauncherGateReceipt(receipt, code);
   const componentFields = {
     generator: ['generator_blob_sha', 'generator_file_sha256'],
     controller: ['controller_blob_oid', 'controller_file_sha256'],
@@ -758,6 +778,7 @@ const SSH_G_ALLOWED_KEYS = new Set([
   'streamlocalbindunlink', 'stricthostkeychecking', 'tcpkeepalive', 'tunnel',
   'verifyhostkeydns', 'visualhostkey', 'updatehostkeys',
   'enableescapecommandline', 'warnweakcrypto', 'applemultipath',
+  'gssapikexalgorithms', 'gssapikeyexchange', 'gssapirenewalforcesrekey', 'gssapitrustdns',
   'canonicalizemaxdots', 'connectionattempts', 'forwardx11timeout',
   'numberofpasswordprompts', 'serveralivecountmax', 'serveraliveinterval',
   'requiredrsasize', 'obscurekeystroketiming', 'ciphers', 'hostkeyalgorithms',
@@ -1098,8 +1119,11 @@ export async function descriptorRelativeFileTransaction({
         }
         const after = await leaf.stat({ bigint: true });
         const relative = await lstat(leafPath, { bigint: true });
-        const immutableOutput = runFixedCommand('/usr/bin/lsattr', ['-d', '--', leafPath]);
-        const immutable = /^\S*i\S*\s/.test(immutableOutput.stdout.toString('utf8'));
+        let immutable = false;
+        if (requireImmutable || makeImmutable) {
+          const immutableOutput = runFixedCommand('/usr/bin/lsattr', ['-d', '--', path.join(retained.at(-1).path, parts.at(-1))]);
+          immutable = /^\S*i\S*\s/.test(immutableOutput.stdout.toString('utf8'));
+        }
         if (requireImmutable && !immutable) fail('DESCRIPTOR_TRANSACTION');
         if (!canonicalJson(descriptorIdentity(before)).equals(canonicalJson(descriptorIdentity(after)))
             || !canonicalJson(descriptorIdentity(after)).equals(canonicalJson(descriptorIdentity(relative)))) {
@@ -1118,7 +1142,7 @@ export async function descriptorRelativeFileTransaction({
       const observed = await entry.handle.stat({ bigint: true });
       const observedMetadata = metadataFromBigIntStat(observed, 'DESCRIPTOR_TRANSACTION');
       let immutable = false;
-      if (process.platform === 'linux') {
+      if (process.platform === 'linux' && (requireImmutable || makeImmutable)) {
         const attributes = runFixedCommand('/usr/bin/lsattr', ['-d', '--', entry.path]);
         immutable = /^\S*i\S*\s/.test(attributes.stdout.toString('utf8'));
       }

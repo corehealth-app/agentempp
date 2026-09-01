@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.12
+**Versão do dossiê:** 1.7.13
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5423,3 +5423,67 @@ Vercel, Supabase, banco, primary/live ou produção.
 O próximo ambiente continua `MAC_LOCAL`; o próximo gate continua
 `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`, agora precedido somente
 pelo bootstrap Git bounded aqui autorizado e seguido imediatamente pelo Gate 0.
+
+## Atualização operacional 1.7.13 — executor Mac compatível da ponte CI-3
+
+A compatibility suite Mac preservou STOP em `1323/1409`, com 86 falhas, zero
+skip/todo e 86 identificadores classificados. Os quatro grupos foram provados
+por RED focado antes do GREEN: helper descriptor Darwin materializado (3),
+fixture writer completa (75), separação entre modos físicos owner-only e modos
+Git (1), e policy explícita de repository identity Mac com suporte ao sufixo
+atestado do Apple Git (7). As classificações são Mac operational, cross-platform
+protocol e VPS+Mac operational, sem bypass de plataforma.
+
+A authority sucessora é `MAC_EXECUTOR_AUTHORITY_V1`, parent
+`65a06d3e7426117ea80679933f6a7bb611be5988`, subject
+`build(ops): authorize mac-compatible CI-3 bridge executor` e manifest exato de
+17 paths. Ela não substitui a authority remota predecessora
+`7a929b0cebb28c339010dd5bf115e67b79523156`: bundle, cinco inputs, config,
+receipt, derivação e claims permanecem read-only. Verdict:
+`REMOTE_BUNDLE_COMPATIBILITY=REUSE_READ_ONLY`.
+
+Nenhuma operação externa foi executada nesta authoring task: zero network
+operacional, simulator, SSH, remote read, privilégio, CI-3 worktree ou produção.
+Depois de reviews independentes, a publicação futura precisa produzir um novo
+Gate 0 `/bin/zsh -n` sobre os blobs exatos; o receipt antigo não é reutilizável.
+O cleanup deadline preservado é `2026-09-11T11:44:11.182Z`.
+
+## Atualização operacional 1.7.14 — correções da review Mac do executor
+
+O normalizador estrutural voltou a ser byte-idêntico ao contrato do generator
+remoto; nenhuma declaração nova é apagada do skeleton. O predecessor remoto
+permanece ligado pelo controller/writer e pelo manifesto da authority Mac, não
+por uma exceção alcançável no caminho Linux/root. Portanto o bundle existente
+continua candidato a `REUSE_READ_ONLY` sem rerun do generator.
+
+A cadeia Mac passa a ligar simultaneamente executor, launch attestation,
+authority/generation/receipt/config remotos, object-bootstrap e base CI-3 por
+um digest canônico sem valores brutos. O launch attestation faz o primeiro
+binding pelo manifesto de 17 paths; bootstrap e local receipt carregam o digest;
+o writer o recompõe da evidência antes de aceitar a cadeia.
+
+O reader current-UID agora possui rota Darwin realmente alcançável antes do
+launcher: um request privado seleciona um único blob local por OID/hash, que é
+materializado no-clobber e produz receipt sanitizado com zero rede. O dispatcher
+Linux/root e seus três modos permanecem inalterados. Esta authoring task não
+executou fetch, Gate 0, SSH, simulator, remote read, privilégio ou CI-3.
+
+## Atualização operacional 1.7.15 — provenance Git completa antes do Gate 0
+
+A grammar genérica de `git --version` voltou ao acceptance set exato do
+predecessor. O sufixo Apple só é aceito depois que a policy Darwin explícita
+valida plataforma, UID, root e attestation; policy ausente no Linux/root não
+altera a criação remota. `parseMode()`, schemas, cinco inputs, derivação,
+claims/publicação e manifesto remoto de 16 paths permanecem preservados.
+
+O request object-bootstrap V2 liga commit executor, parent/lineage exatos,
+tree, subject hash, raiz literal do manifesto de 17 paths e o mode/path/OID/hash
+do alvo. O reader prova commit/tree e todos os `ls-tree` antes de qualquer body,
+verifica o conteúdo bounded de todos os 17 entries e materializa somente o alvo
+em `0600`, no-clobber. O blob órfão deixou de ser aceito.
+
+Não existe mais receipt isolado nessa fase: sucesso da CLI tem stdout/stderr
+vazios. O primeiro receipt continua sendo o launch attestation versionado do
+Gate 0 `/bin/zsh -n`; bootstrap, local receipt e writer consomem o hash desse
+gate pela cadeia dual-root. Nenhum fetch, Gate 0 operacional, SSH, simulator,
+remote read, privilégio, CI-3 ou produção foi executado nesta correção local.

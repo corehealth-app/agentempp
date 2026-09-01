@@ -12,6 +12,9 @@ private let scannerSchemaHashes = [
     "runtime": "53aa749f147360e7e77312ac012c7f595b773ed2248cb12d7165fa729706477a",
 ]
 private let ci3SourceCommit = "277873755bf29771a10b5f362b522c2e6a6c21d6"
+private let remoteBundlePredecessorAuthority = "7a929b0cebb28c339010dd5bf115e67b79523156"
+private let remoteBundlePredecessorParent = "70a7d60dd9c4224e3be9072ce5fbd966bd534560"
+private let remoteBundlePredecessorSubject = "build(ops): reconcile remaining CI-3 bridge input contracts"
 private let findingIDs = [
     "RA1-I-5", "A4-I-1", "A4-I-3", "A5-I-1", "A5-I-2",
     "RA0-I-4", "RA0-I-7", "R2-I-2", "R5-I-1", "R5-I-2", "R5-I-3",
@@ -27,8 +30,9 @@ private let authorityPaths = [
     "docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md",
     "docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md",
     "docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md",
-    "docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md",
     "docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md",
+    "docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md",
+    "docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md",
     "docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md",
     "docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md",
     "docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md",
@@ -784,7 +788,7 @@ private func validateSemanticRoots(
               try string(actual["blob_oid"], code) == string(expected["blob_oid"], code),
               try string(actual["sha256"], code) == string(expected["sha256"], code) else { try fail(code) }
     }
-    let (_, _, attestation) = try evidenceObject(evidence, role: "launch-attestation", code)
+    let (attestationEntry, _, attestation) = try evidenceObject(evidence, role: "launch-attestation", code)
     try exactKeys(attestation, ["authority_manifest_sha256", "authority_parent", "authority_sha", "authority_subject_sha256", "authority_tree", "components", "purpose", "raw_values", "schema_version", "tools"], code)
     guard try integer(attestation["schema_version"], code) == 1,
           try string(attestation["purpose"], code) == "CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2",
@@ -817,7 +821,8 @@ private func validateSemanticRoots(
     let (bootstrapEntry, _, bootstrap) = try evidenceObject(evidence, role: "bootstrap-claim", code)
     try exactKeys(bootstrap, [
         "attempt", "authority_manifest_sha256", "authority_sha", "components", "controller_generation_id",
-        "raw_values", "remote_bundle_path_sha256", "remote_generation_id", "remote_receipt_path_sha256", "retry",
+        "dual_authority_roots_sha256", "launch_attestation_sha256", "raw_values",
+        "remote_bundle_path_sha256", "remote_generation_id", "remote_receipt_path_sha256", "retry",
         "schema_version", "simulator_gate_sha256", "simulator_generation_id", "ssh_code_signature_sha256",
         "ssh_effective_config_sha256", "ssh_executable_sha256", "ssh_trust_descriptor_sha256",
         "terminal_generation_id", "purpose",
@@ -827,6 +832,7 @@ private func validateSemanticRoots(
           try string(bootstrap["purpose"], code) == "CI3_MAC_BRIDGE_BOOTSTRAP_CLAIM_V1",
           try string(bootstrap["authority_sha"], code) == authority,
           try string(bootstrap["authority_manifest_sha256"], code) == string(manifest["authority_manifest_sha256"], code),
+          try string(bootstrap["launch_attestation_sha256"], code) == string(attestationEntry["sha256"], code),
           try string(bootstrap["controller_generation_id"], code) == string(generations["controller"], code),
           try string(bootstrap["remote_generation_id"], code) == string(generations["remote"], code),
           try string(bootstrap["simulator_generation_id"], code) == string(generations["simulator"], code),
@@ -835,7 +841,7 @@ private func validateSemanticRoots(
           try string(bootstrap["remote_receipt_path_sha256"], code) == sha256(Data(remotePaths["receipt"]!.utf8)),
           try integer(bootstrap["attempt"], code) == 1, try bool(bootstrap["retry"], code) == false,
           try bool(bootstrap["raw_values"], code) == false else { try fail(code) }
-    for field in ["remote_bundle_path_sha256", "remote_receipt_path_sha256", "simulator_gate_sha256", "ssh_code_signature_sha256", "ssh_effective_config_sha256", "ssh_executable_sha256", "ssh_trust_descriptor_sha256"] {
+    for field in ["dual_authority_roots_sha256", "launch_attestation_sha256", "remote_bundle_path_sha256", "remote_receipt_path_sha256", "simulator_gate_sha256", "ssh_code_signature_sha256", "ssh_effective_config_sha256", "ssh_executable_sha256", "ssh_trust_descriptor_sha256"] {
         guard isHex(try string(bootstrap[field], code), count: 64) else { try fail(code) }
     }
     let bootstrapComponents = try dictionary(bootstrap["components"], code)
@@ -900,6 +906,7 @@ private func validateSemanticRoots(
 
     semanticSection = "REMOTE"
     let (remoteEntry, _, remoteReceipt) = try evidenceObject(evidence, role: "remote-receipt", code)
+    semanticSection = "REMOTE_KEYS"
     try exactKeys(remoteReceipt, [
         "anchor_writer_blob_oid", "anchor_writer_file_sha256", "authority_commit", "authority_parent", "authority_subject", "authority_tree", "authority_tree_manifest_sha256",
         "cleanup_deadline", "controller_blob_oid", "controller_file_sha256", "created_at_utc", "credential_source_path", "credential_source_sha256", "deployment_receipt_sha256", "deployment_node",
@@ -912,16 +919,17 @@ private func validateSemanticRoots(
         "production_deployment_count", "provisioning_receipt_sha256", "purpose", "raw_values_reported", "remote_bundle_generation_id", "remote_bundle_immutable", "schema_version",
         "service_role_emitted", "source_env_descriptor_identity_sha256", "source_generation_id", "sso_state", "staging_project_ref", "synthetic_marker_sha256", "terminal_scan_ids", "token_emitted",
     ], code)
+    semanticSection = "REMOTE_PREDECESSOR"
     guard try string(remoteEntry["sha256"], code) == string(manifest["remote_bundle_sha256"], code),
           try integer(remoteReceipt["schema_version"], code) == 1,
           try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1",
-          try string(remoteReceipt["authority_commit"], code) == authority,
-          try string(remoteReceipt["authority_parent"], code) == string(attestation["authority_parent"], code),
-          try sha256(Data(string(remoteReceipt["authority_subject"], code).utf8)) == string(attestation["authority_subject_sha256"], code),
-          try string(remoteReceipt["authority_tree"], code) == string(manifest["authority_tree"], code),
-          try string(remoteReceipt["authority_tree_manifest_sha256"], code) == string(manifest["authority_manifest_sha256"], code),
+          try string(remoteReceipt["authority_commit"], code) == remoteBundlePredecessorAuthority,
+          try string(remoteReceipt["authority_parent"], code) == remoteBundlePredecessorParent,
+          try string(remoteReceipt["authority_subject"], code) == remoteBundlePredecessorSubject,
           try string(remoteReceipt["remote_bundle_generation_id"], code) == string(generations["remote"], code),
-          isGeneration(try string(remoteReceipt["source_generation_id"], code), prefix: "src"),
+          isGeneration(try string(remoteReceipt["source_generation_id"], code), prefix: "src") else { try fail(code) }
+    semanticSection = "REMOTE_RUNTIME"
+    guard
           try integer(remoteReceipt["preview_deployment_count"], code) == 1,
           try integer(remoteReceipt["production_deployment_count"], code) == 0,
           try integer(remoteReceipt["env_preview_count"], code) == 3,
@@ -930,7 +938,9 @@ private func validateSemanticRoots(
           try string(remoteReceipt["deployment_node"], code) == "22.x",
           try string(remoteReceipt["execution_runtime_adoption_authority_sha"], code) == "461a2e0dbe091a5c352d5dfdc1952b444f41aac0",
           try string(remoteReceipt["execution_runtime_node_sha256"], code) == "6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd",
-          try string(remoteReceipt["execution_runtime_status"], code) == "VERIFIED_ADOPTED_READ_ONLY",
+          try string(remoteReceipt["execution_runtime_status"], code) == "VERIFIED_ADOPTED_READ_ONLY" else { try fail(code) }
+    semanticSection = "REMOTE_SAFETY"
+    guard
           remoteReceipt["sso_state"] is NSNull,
           try bool(remoteReceipt["service_role_emitted"], code) == false,
           try bool(remoteReceipt["token_emitted"], code) == false,
@@ -954,11 +964,6 @@ private func validateSemanticRoots(
     for field in ["generator_file_sha256", "controller_file_sha256", "launcher_file_sha256", "anchor_writer_file_sha256", "source_env_descriptor_identity_sha256", "env_source_sha256", "env_receipt_sha256", "deployment_receipt_sha256", "credential_source_sha256", "synthetic_marker_sha256", "provisioning_receipt_sha256", "output_config_sha256", "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256"] {
         guard isHex(try string(remoteReceipt[field], code), count: 64) else { try fail(code) }
     }
-    for (name, oidField, hashField) in [("generator", "generator_blob_sha", "generator_file_sha256"), ("controller", "controller_blob_oid", "controller_file_sha256"), ("launcher", "launcher_blob_oid", "launcher_file_sha256"), ("writer", "anchor_writer_blob_oid", "anchor_writer_file_sha256")] {
-        let component = try dictionary(components[name], code)
-        guard try string(remoteReceipt[oidField], code) == string(component["blob_oid"], code),
-              try string(remoteReceipt[hashField], code) == string(component["sha256"], code) else { try fail(code) }
-    }
     guard (try array(remoteReceipt["output_filenames"], code).compactMap { $0 as? String }) == ["mobile-staging-config.json", "bridge.receipt.json"] else { try fail(code) }
     guard let receiptRead = readResults["receipt"], let configRead = readResults["config"], let credentialRead = readResults["credential"],
           try string(receiptRead.1["capture_sha256"], code) == string(remoteEntry["sha256"], code),
@@ -968,22 +973,40 @@ private func validateSemanticRoots(
           try string(operationContextRemote["config_sha256"], code) == string(remoteReceipt["output_config_sha256"], code),
           try string(operationContextRemote["credential_sha256"], code) == string(remoteReceipt["credential_source_sha256"], code) else { try fail("TERMINAL_REMOTE_ROOTS") }
 
+    semanticSection = "DUAL_AUTHORITY_ROOTS"
+    let dualAuthorityRoots: [String: Any] = [
+        "schema_version": 1,
+        "purpose": "CI3_MAC_DUAL_AUTHORITY_ROOTS_V1",
+        "executor_authority_sha": authority,
+        "launch_attestation_sha256": try string(attestationEntry["sha256"], code),
+        "remote_bundle_authority_sha": remoteBundlePredecessorAuthority,
+        "remote_generation_id": try string(generations["remote"], code),
+        "remote_receipt_sha256": try string(remoteEntry["sha256"], code),
+        "remote_config_sha256": try string(remoteReceipt["output_config_sha256"], code),
+        "object_bootstrap_authority_sha": try string(attestation["authority_parent"], code),
+        "ci3_authority_base_sha": ci3SourceCommit,
+        "raw_values": false,
+    ]
+    guard try string(bootstrap["dual_authority_roots_sha256"], code) == sha256(compactJSONBytes(dualAuthorityRoots)) else { try fail(code) }
+
     semanticSection = "LOCAL"
     let (localEntry, _, localReceipt) = try evidenceObject(evidence, role: "local-receipt", code)
     semanticSection = "LOCAL_FIELDS"
-    try exactKeys(localReceipt, ["authority_sha", "bootstrap_claim_sha256", "components", "config_sha256", "credential_sha256", "generations", "purpose", "raw_values", "read_claim_chain_sha256", "read_result_chain_sha256", "remote_receipt_sha256", "schema_version", "simulator_gate_sha256", "ssh_provenance_sha256", "terminal_scan_ids", "terminal_state"], code)
+    try exactKeys(localReceipt, ["authority_sha", "bootstrap_claim_sha256", "components", "config_sha256", "credential_sha256", "dual_authority_roots_sha256", "generations", "launch_attestation_sha256", "purpose", "raw_values", "read_claim_chain_sha256", "read_result_chain_sha256", "remote_receipt_sha256", "schema_version", "simulator_gate_sha256", "ssh_provenance_sha256", "terminal_scan_ids", "terminal_state"], code)
     guard try string(localEntry["sha256"], code) == string(manifest["local_bundle_sha256"], code),
           try integer(localReceipt["schema_version"], code) == 1,
           try string(localReceipt["purpose"], code) == "CI3_LOCAL_BRIDGE_RECEIPT_V1",
           try string(localReceipt["authority_sha"], code) == authority,
           try string(localReceipt["bootstrap_claim_sha256"], code) == string(bootstrapEntry["sha256"], code),
+          try string(localReceipt["launch_attestation_sha256"], code) == string(bootstrap["launch_attestation_sha256"], code),
+          try string(localReceipt["dual_authority_roots_sha256"], code) == string(bootstrap["dual_authority_roots_sha256"], code),
           try string(localReceipt["remote_receipt_sha256"], code) == string(remoteEntry["sha256"], code),
           try compactJSONBytes(dictionary(localReceipt["components"], code)) == compactJSONBytes(components),
           try compactJSONBytes(dictionary(localReceipt["generations"], code)) == compactJSONBytes(generations),
           (try array(localReceipt["terminal_scan_ids"], code).compactMap { $0 as? String }) == scanIDs,
           try string(localReceipt["terminal_state"], code) == "PENDING_INSTALL_AND_SCANS",
           try bool(localReceipt["raw_values"], code) == false else { try fail(code) }
-    for field in ["config_sha256", "credential_sha256", "read_claim_chain_sha256", "read_result_chain_sha256", "simulator_gate_sha256", "ssh_provenance_sha256"] {
+    for field in ["config_sha256", "credential_sha256", "dual_authority_roots_sha256", "launch_attestation_sha256", "read_claim_chain_sha256", "read_result_chain_sha256", "simulator_gate_sha256", "ssh_provenance_sha256"] {
         guard isHex(try string(localReceipt[field], code), count: 64) else { try fail(code) }
     }
     semanticSection = "LOCAL_CHAIN"

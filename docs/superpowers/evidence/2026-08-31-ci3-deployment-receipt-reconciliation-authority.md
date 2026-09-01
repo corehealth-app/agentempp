@@ -228,3 +228,19 @@ As reviews documentais terminais A e B terminaram cada uma com
 não houve zsh, SSH, simulador, provider/database/production write, CI-3 Task 2,
 CI-4 ou cleanup. Próximo gate: `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`
 no Mac local, começando pelo Gate 0 `/bin/zsh -n` exato pre-network.
+
+## Read-only compatibility with the Mac executor successor
+
+Este deployment receipt continua evidência imutável da authority remota
+`7a929b0cebb28c339010dd5bf115e67b79523156`; ele não é reatribuído ao executor
+Mac. O executor sucessor usa parent `65a06d3e7426117ea80679933f6a7bb611be5988`,
+subject `build(ops): authorize mac-compatible CI-3 bridge executor` e manifest
+exato de 17 paths. Controller e writer validam explicitamente as duas
+attestations sem exigir que tree/manifest/component hashes remotos sejam os do
+executor local.
+
+Generator creation, config/receipt schemas, generation/path derivation, cinco
+inputs e claim/publication semantics permanecem iguais; portanto
+`REMOTE_BUNDLE_COMPATIBILITY=REUSE_READ_ONLY`. O Gate 0 desse receipt não é
+reutilizável para o novo launcher: após publicação futura será obrigatório um
+novo `/bin/zsh -n`, ainda antes de qualquer network operacional.

@@ -151,3 +151,18 @@ quote/function/call graph/comment; skeletons iguais; classificação VPS N/A;
 gate Mac `/bin/zsh -n` exato antes de rede; controller e writer exigem todos
 os fields e igualdade. Nenhuma segurança foi enfraquecida.
 Resultado: `0 Critical / 0 Important`.
+
+## Successor Mac repository identity policy
+
+O reader root-owned VPS permanece default e inalterado. Somente quando uma
+policy `CI3_MAC_REPOSITORY_IDENTITY_POLICY_V1` explícita é fornecida no Darwin,
+o reader aceita o UID atual, após validar root físico canônico, SHA-256 do root,
+attestation SHA-256, modos owner-only e grammar do `/usr/bin/git`; o sufixo
+atestado ` (Apple Git-N)` é aceito sem relaxar versões arbitrárias. Policy
+ausente continua fail-closed no contrato root-only.
+
+O executor sucessor é separado do bundle remoto: manifest de executor com 17
+paths e parent `65a06d3e7426117ea80679933f6a7bb611be5988`; receipt/config remotos continuam
+presos ao predecessor `7a929b0cebb28c339010dd5bf115e67b79523156`.
+`REMOTE_BUNDLE_COMPATIBILITY=REUSE_READ_ONLY`. Nenhuma leitura remota, rede,
+SSH, simulator ou mutação da worktree CI-3 ocorreu nesta correção.

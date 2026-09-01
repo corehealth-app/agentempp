@@ -7,6 +7,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const MODULE_URL = new URL('./ci3-bridge-controller.mjs', import.meta.url);
+const EXECUTOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
+const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+const EXECUTOR_AUTHORITY_SUBJECT_SHA256 = createHash('sha256').update(EXECUTOR_AUTHORITY_SUBJECT).digest('hex');
 
 let controller;
 let loadError;
@@ -16,12 +19,47 @@ try {
   loadError = error;
 }
 
-const descriptorHelperPath = null;
-const descriptorHelperSha256 = null;
+let descriptorHelperBuildRoot;
+let descriptorHelperPath = null;
+let descriptorHelperSha256 = null;
+let descriptorHelperSetupError;
+
+if (process.platform === 'darwin') {
+  try {
+    descriptorHelperBuildRoot = await mkdtemp(path.join(tmpdir(), 'ci3-descriptor-helper-build-'));
+    descriptorHelperPath = path.join(descriptorHelperBuildRoot, 'ci3-descriptor-helper');
+    const compilation = spawnSync('/usr/bin/xcrun', [
+      'swiftc', '-parse-as-library', '-D', 'CI3_SYNTHETIC_TEST',
+      new URL('./ci3-terminal-anchor-writer.swift', import.meta.url).pathname,
+      '-o', descriptorHelperPath,
+    ], {
+      encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000,
+    });
+    if (compilation.status !== 0 || compilation.signal !== null || compilation.stderr !== '') {
+      throw new Error('DESCRIPTOR_HELPER_COMPILE');
+    }
+    descriptorHelperSha256 = createHash('sha256').update(await readFile(descriptorHelperPath)).digest('hex');
+  } catch (error) {
+    descriptorHelperSetupError = error;
+  }
+}
 
 function subject() {
   assert.ifError(loadError);
   return controller;
+}
+
+test.after(async () => {
+  if (descriptorHelperBuildRoot) await rm(descriptorHelperBuildRoot, { recursive: true, force: true });
+});
+
+function requireDescriptorHelper() {
+  assert.ifError(descriptorHelperSetupError);
+  if (process.platform === 'darwin') {
+    assert.equal(path.isAbsolute(descriptorHelperPath ?? ''), true);
+    assert.match(descriptorHelperSha256 ?? '', /^[0-9a-f]{64}$/);
+  }
+  return { helperPath: descriptorHelperPath, helperSha256: descriptorHelperSha256 };
 }
 
 function expectCode(code, operation) {
@@ -57,8 +95,9 @@ function authorityManifest() {
     'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
     'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
     'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
-    'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
     'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
+    'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+    'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
     'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -98,11 +137,12 @@ function baseContext() {
   return {
     authority: {
       commit: oid('a'),
-      parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
+      parent: EXECUTOR_AUTHORITY_PARENT,
       tree: oid('b'),
-      subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
+      subject: EXECUTOR_AUTHORITY_SUBJECT,
       committed_at_utc: '2026-08-30T12:00:00.000Z',
       manifest_sha256: digest('c'),
+      launch_attestation_sha256: digest('d'),
       components: components(),
     },
     generations: {
@@ -176,9 +216,9 @@ function launchAttestation() {
     schema_version: 1,
     purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2',
     authority_sha: oid('a'),
-    authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
+    authority_parent: EXECUTOR_AUTHORITY_PARENT,
     authority_tree: oid('b'),
-    authority_subject_sha256: digest('c'),
+    authority_subject_sha256: EXECUTOR_AUTHORITY_SUBJECT_SHA256,
     authority_manifest_sha256: digest('d'),
     components: components(),
     tools: {
@@ -229,7 +269,7 @@ test('launcher attestation v2 closes commit tree manifest components and tools',
 });
 
 test('controller freezes the single exact authority commit subject', () => {
-  assert.equal(subject().AUTHORITY_SUBJECT, 'build(ops): reconcile remaining CI-3 bridge input contracts');
+  assert.equal(subject().AUTHORITY_SUBJECT, EXECUTOR_AUTHORITY_SUBJECT);
 });
 
 test('terminal ledger contains all 24 inherited and final Important IDs once and in authority order', () => {
@@ -278,7 +318,7 @@ for (const value of ['', 'remote', 'remote-short', `remote-${'G'.repeat(64)}`, `
   });
 }
 
-test('validates the exact sixteen-path authority manifest and components', () => {
+test('validates the exact seventeen-path Mac executor authority manifest and components', () => {
   assert.equal(subject().validateAuthorityManifest({ entries: authorityManifest(), components: components() }), true);
 });
 
@@ -327,9 +367,15 @@ const AUTHORITY_ENTRY_MUTATIONS = Object.freeze([
   ['whitespace SHA-256', (entries, index) => { entries[index].sha256 = `${'b'.repeat(63)} `; }],
 ]);
 
-for (const index of Array.from({ length: 15 }, (_, value) => value)) {
+const AUTHORITY_MUTATION_INDEXES = Array.from({ length: subject().AUTHORITY_PATHS.length }, (_, value) => value);
+
+test('[AUTHORITY-MANIFEST] mutation matrix covers every authority path', () => {
+  assert.deepEqual(AUTHORITY_MUTATION_INDEXES, subject().AUTHORITY_PATHS.map((_, index) => index));
+});
+
+for (const index of AUTHORITY_MUTATION_INDEXES) {
   for (const [label, mutate] of AUTHORITY_ENTRY_MUTATIONS) {
-    test(`[AUTHORITY-15] rejects ${label} at index ${index}`, () => {
+    test(`[AUTHORITY-17] rejects ${label} at index ${index}`, () => {
       const entries = authorityManifest();
       mutate(entries, index);
       expectCode('AUTHORITY_MANIFEST', () => subject().validateAuthorityManifest({ entries, components: components() }));
@@ -343,11 +389,43 @@ test('bootstrap claim binds every executable generation and trust root', () => {
   assert.equal(claim.attempt, 1);
   assert.equal(claim.retry, false);
   assert.deepEqual(claim.components, components());
+  assert.equal(claim.launch_attestation_sha256, baseContext().authority.launch_attestation_sha256);
+  assert.equal(claim.dual_authority_roots_sha256, subject().sha256(subject().canonicalJson(
+    subject().buildMacDualAuthorityRoots(baseContext()),
+  )));
 });
+
+test('Mac dual-authority roots contain only the exact hash and generation bindings', () => {
+  const roots = subject().buildMacDualAuthorityRoots(baseContext());
+  assert.deepEqual(Object.keys(roots).sort(), [
+    'ci3_authority_base_sha', 'executor_authority_sha', 'launch_attestation_sha256',
+    'object_bootstrap_authority_sha', 'purpose', 'raw_values',
+    'remote_bundle_authority_sha', 'remote_config_sha256', 'remote_generation_id',
+    'remote_receipt_sha256', 'schema_version',
+  ].sort());
+  assert.equal(roots.raw_values, false);
+  assert.equal(roots.purpose, 'CI3_MAC_DUAL_AUTHORITY_ROOTS_V1');
+});
+
+for (const field of [
+  'executor_authority_sha', 'launch_attestation_sha256', 'remote_bundle_authority_sha',
+  'remote_generation_id', 'remote_receipt_sha256', 'remote_config_sha256',
+  'object_bootstrap_authority_sha', 'ci3_authority_base_sha',
+]) {
+  test(`Mac dual-authority digest rejects isolated ${field} mutation`, () => {
+    const roots = structuredClone(subject().buildMacDualAuthorityRoots(baseContext()));
+    const expected = subject().sha256(subject().canonicalJson(roots));
+    roots[field] = field === 'remote_generation_id'
+      ? generation('remote', '0')
+      : (roots[field].length === 40 ? oid('0') : digest('0'));
+    expectCode('DUAL_AUTHORITY_ROOTS', () => subject().validateMacDualAuthorityRootsDigest(roots, expected));
+  });
+}
 
 const BOOTSTRAP_MUTATIONS = Object.freeze([
   ['purpose', 'wrong'], ['attempt', 2], ['retry', true],
   ['authority_sha', oid('0')], ['authority_manifest_sha256', digest('0')],
+  ['launch_attestation_sha256', digest('0')], ['dual_authority_roots_sha256', digest('0')],
   ['remote_bundle_path_sha256', digest('0')], ['remote_receipt_path_sha256', digest('0')],
   ['simulator_gate_sha256', digest('0')], ['ssh_executable_sha256', digest('0')],
   ['ssh_effective_config_sha256', digest('0')], ['controller_generation_id', generation('controller', '0')],
@@ -545,6 +623,20 @@ test('semantic remote validator rejects hash-bound but authority-incompatible re
   expectCode('REMOTE_BUNDLE_SEMANTICS', () => subject().validateRemoteBundleSemantics({ context, configBytes, credentialBytes, receiptBytes }));
 });
 
+test('dual authority accepts only the preserved remote predecessor under the Mac executor', () => {
+  const config = { bridge_authority_sha: '7a929b0cebb28c339010dd5bf115e67b79523156' };
+  const receipt = {
+    authority_commit: '7a929b0cebb28c339010dd5bf115e67b79523156',
+    authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
+    authority_subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
+  };
+  assert.equal(subject().validateRemoteBundleAuthorityBinding({ config, receipt }), true);
+  expectCode('REMOTE_BUNDLE_SEMANTICS', () => subject().validateRemoteBundleAuthorityBinding({
+    config: { bridge_authority_sha: baseContext().authority.commit },
+    receipt: { ...receipt, authority_commit: baseContext().authority.commit },
+  }));
+});
+
 test('launcher gate receipt defers zsh syntax to the exact Mac runtime before network', () => {
   const skeleton = digest('a');
   assert.equal(subject().validateLauncherGateReceipt({
@@ -655,43 +747,59 @@ test('SSH policy rejects a native key outside the frozen complete allowlist', ()
   expectCode('SSH_POLICY', () => subject().validateSshSecurityPolicy([{ key: 'futureunknownoption', value: 'no', ordinal: 0 }]));
 });
 
-test('executes actual /usr/bin/ssh -G against an isolated synthetic config without network', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'ci3-ssh-g-'));
-  const configPath = path.join(root, 'ssh_config');
-  const knownHostsPath = path.join(root, 'known_hosts');
-  const identityPath = path.join(root, 'identity');
-  await writeFile(knownHostsPath, '', { mode: 0o600 });
-  await writeFile(identityPath, 'synthetic-not-a-key\n', { mode: 0o600 });
-  await writeFile(configPath, [
-    'Host ci3-synthetic',
-    '  HostName example.invalid',
-    '  User root',
-    '  Port 22',
-    `  IdentityFile ${identityPath}`,
-    `  UserKnownHostsFile ${knownHostsPath}`,
-    '  GlobalKnownHostsFile none',
-    '  StrictHostKeyChecking yes',
-    '  IdentitiesOnly yes',
-    '  ForwardAgent no',
-    '  ForwardX11 no',
-    '  ForwardX11Trusted no',
-    '  PasswordAuthentication no',
-    '  KbdInteractiveAuthentication no',
-    '  PubkeyAuthentication yes',
-    '  ProxyCommand none',
-    '  ControlMaster no',
-    '  PermitLocalCommand no',
-    '  ClearAllForwardings yes',
-    '  ExitOnForwardFailure yes',
-    '  GatewayPorts no',
-    '  HostbasedAuthentication no',
-    '  GSSAPIAuthentication no',
-    '  RequestTTY no',
+test('deterministic ssh-G adapter validates exact argv environment parser and order without a subprocess', async () => {
+  const configPath = '/synthetic/ssh_config';
+  const invocations = [];
+  const nativeOutput = Buffer.from([
+    'host ci3-synthetic',
+    'user root',
+    'hostname example.invalid',
+    'port 22',
+    'identityfile /synthetic/one',
+    'identityfile /synthetic/two',
+    'stricthostkeychecking yes',
+    'identitiesonly yes',
+    'forwardagent no',
+    'passwordauthentication no',
+    'kbdinteractiveauthentication no',
+    'pubkeyauthentication yes',
+    'controlmaster no',
+    'permitlocalcommand no',
+    'clearallforwardings yes',
+    'exitonforwardfailure yes',
+    'gatewayports no',
+    'hostbasedauthentication no',
+    'gssapiauthentication no',
+    'requesttty no',
     '',
-  ].join('\n'), { mode: 0o600 });
-  const result = await subject().runSshG({ alias: 'ci3-synthetic', configPath });
+  ].join('\n'));
+  const result = await subject().runSshG({
+    alias: 'ci3-synthetic', configPath,
+    adapters: {
+      spawnSshG: (invocation) => {
+        invocations.push(invocation);
+        return { status: 0, signal: null, stderr: Buffer.alloc(0), stdout: nativeOutput };
+      },
+    },
+  });
+  assert.deepEqual(invocations, [{
+    executable: '/usr/bin/ssh', args: ['-G', '-F', configPath, 'ci3-synthetic'],
+    options: {
+      encoding: null,
+      env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      maxBuffer: 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  }]);
   assert.equal(result.exit, 0);
-  assert.ok(result.records.length > 20);
+  assert.deepEqual(result.records.map(({ key }) => key), [
+    'host', 'user', 'hostname', 'port', 'identityfile', 'identityfile',
+    'stricthostkeychecking', 'identitiesonly', 'forwardagent',
+    'passwordauthentication', 'kbdinteractiveauthentication', 'pubkeyauthentication',
+    'controlmaster', 'permitlocalcommand', 'clearallforwardings',
+    'exitonforwardfailure', 'gatewayports', 'hostbasedauthentication',
+    'gssapiauthentication', 'requesttty',
+  ]);
   assert.equal(result.network_calls, 0);
 });
 
@@ -1861,9 +1969,9 @@ function round3VpsPassReceipt() {
     schema_version: 1,
     purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
     authority_sha: oid('a'),
-    authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
+    authority_parent: EXECUTOR_AUTHORITY_PARENT,
     authority_tree: oid('b'),
-    authority_subject_sha256: digest('c'),
+    authority_subject_sha256: EXECUTOR_AUTHORITY_SUBJECT_SHA256,
     authority_manifest_sha256: digest('d'),
     operation_authority_sha256: digest('e'),
     node_candidate_sha256: digest('f'),
@@ -1886,7 +1994,7 @@ function round3VpsPassReceipt() {
 test('round-3 Publisher 1 requires a VPS PASS root that binds every materialized input', () => {
   const receipt = round3VpsPassReceipt();
   assert.equal(subject().validateVpsOperationAuthorityPass(receipt, {
-    authoritySha: oid('a'), authorityTree: oid('b'), authoritySubjectSha256: digest('c'),
+    authoritySha: oid('a'), authorityTree: oid('b'), authoritySubjectSha256: EXECUTOR_AUTHORITY_SUBJECT_SHA256,
     authorityManifestSha256: digest('d'), operationAuthoritySha256: digest('e'),
     nodeCandidateSha256: digest('f'), collectorContractsSha256: digest('1'),
     publisherInputManifestSha256: digest('2'), remoteGenerationId: generation('remote', '3'),
@@ -1894,7 +2002,7 @@ test('round-3 Publisher 1 requires a VPS PASS root that binds every materialized
   }), true);
   receipt.operation_authority_sha256 = digest('0');
   expectCode('VPS_OPERATION_AUTHORITY_PASS', () => subject().validateVpsOperationAuthorityPass(receipt, {
-    authoritySha: oid('a'), authorityTree: oid('b'), authoritySubjectSha256: digest('c'),
+    authoritySha: oid('a'), authorityTree: oid('b'), authoritySubjectSha256: EXECUTOR_AUTHORITY_SUBJECT_SHA256,
     authorityManifestSha256: digest('d'), operationAuthoritySha256: digest('e'),
     nodeCandidateSha256: digest('f'), collectorContractsSha256: digest('1'),
     publisherInputManifestSha256: digest('2'), remoteGenerationId: generation('remote', '3'),
@@ -2484,6 +2592,7 @@ test('round-7 SSH physical snapshot binds and reobserves all five installed file
 });
 
 test('round-7 descriptor-relative transaction reads and exclusively publishes through one retained chain', async () => {
+  requireDescriptorHelper();
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-dirfd-transaction-'));
   try {
     await mkdir(path.join(root, 'authority'), { mode: 0o700 });
@@ -2529,6 +2638,7 @@ test('round-7 descriptor-relative transaction reads and exclusively publishes th
 });
 
 test('round-7 descriptor-relative transaction rejects an intermediate symlink and writable runtime', async () => {
+  requireDescriptorHelper();
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-dirfd-negative-'));
   try {
     await mkdir(path.join(root, 'outside'), { mode: 0o700 });
@@ -2542,8 +2652,11 @@ test('round-7 descriptor-relative transaction rejects an intermediate symlink an
       helperPath: descriptorHelperPath, helperSha256: descriptorHelperSha256,
     }));
     await rm(path.join(root, 'runtime'));
-    await mkdir(path.join(root, 'runtime'), { mode: 0o777 });
-    await writeFile(path.join(root, 'runtime', 'node'), 'synthetic-node', { mode: 0o600 });
+    const writableRuntime = path.join(root, 'runtime');
+    await mkdir(writableRuntime, { mode: 0o777 });
+    await chmod(writableRuntime, 0o777);
+    assert.equal((await lstat(writableRuntime)).mode & 0o777, 0o777);
+    await writeFile(path.join(writableRuntime, 'node'), 'synthetic-node', { mode: 0o600 });
     await rejectCode('DESCRIPTOR_CHAIN', () => subject().descriptorRelativeFileTransaction({
       root,
       relativePath: 'runtime/node',
@@ -2557,6 +2670,7 @@ test('round-7 descriptor-relative transaction rejects an intermediate symlink an
 });
 
 test('round-7 retained directory identities stop a physical ancestor swap before leaf creation', async () => {
+  requireDescriptorHelper();
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-dirfd-swap-'));
   try {
     await mkdir(path.join(root, 'authority'), { mode: 0o700 });

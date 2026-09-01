@@ -1110,3 +1110,18 @@ O novo receipt remoto registra separadamente `deployment_node=22.x` e a
 authority de adoption do capsule. Essa separação não muda o executable do Mac
 nem reabre qualquer comando remoto. O Gate 0 permanece `/bin/zsh -n` sobre o
 blob exato antes de simulador, SSH, claims ou network.
+
+## Mac-compatible executor successor ruling
+
+O STOP Mac `1323/1409` (86 falhas, zero skip/todo) foi decomposto em quatro
+grupos causais e cada grupo recebeu RED focado antes do GREEN. A correção é
+limitada ao executor/test fixtures: helper Swift real no Darwin, fixture writer
+completa, asserts físicos e Git separados, e policy Mac explícita de repository
+identity. Não existe blanket platform bypass.
+
+`MAC_EXECUTOR_AUTHORITY_V1` usa parent `65a06d3e7426117ea80679933f6a7bb611be5988`,
+subject `build(ops): authorize mac-compatible CI-3 bridge executor` e 17 paths.
+O bundle remoto continua preso a `7a929b0cebb28c339010dd5bf115e67b79523156`;
+compatibilidade é `REUSE_READ_ONLY`. O Gate 0 histórico permanece evidência,
+mas não pode autorizar o novo executor: novo blob exige novo `/bin/zsh -n`
+pre-network. Esta atualização apenas autorou evidência e código local.

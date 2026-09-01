@@ -87,3 +87,18 @@ project refs e relações entre os cinco inputs permanecem fail-closed.
 como `0/1_NOT_EXECUTED_SUPERSEDED`. Seu snapshot pode permanecer para auditoria,
 mas a authority root, claim, staging, generation, config e receipt continuam
 ausentes e ela não pode ser executada.
+
+## Mac executor compatibility boundary
+
+O env receipt e seus sete valores canônicos permanecem read-only sob a authority
+remota predecessora `7a929b0cebb28c339010dd5bf115e67b79523156`.
+`MAC_EXECUTOR_AUTHORITY_V1` é uma authority local distinta, com parent
+`65a06d3e7426117ea80679933f6a7bb611be5988`, subject
+`build(ops): authorize mac-compatible CI-3 bridge executor` e manifest de 17
+paths. Nenhuma mudança foi feita no schema, nos cinco inputs ou na derivação de
+generation/path; verdict `REMOTE_BUNDLE_COMPATIBILITY=REUSE_READ_ONLY`.
+
+O baseline Mac permaneceu STOP em `1323/1409`, 86 falhas e zero skip/todo antes
+dos RED/GREEN focados. Esta task não consumiu env receipt, credential, service
+role ou output remoto, e realizou zero network/SSH/simulator. O executor futuro
+precisa de novo Gate 0 exato; a prova histórica não pode ser reaproveitada.

@@ -1721,3 +1721,39 @@ simulator, `/usr/bin/ssh -G`, SSH, remote reads, claims, config/credential or
 any operational network. Its receipt includes bootstrap authority, fetch count
 0 or 1 and `network-after-bootstrap-before-gate0=false`. Fetch/readback/Gate 0
 failure is terminal and has no retry. Predecessor bridges remain prohibited.
+
+## MAC_EXECUTOR_AUTHORITY_V1 successor contract
+
+The Mac executor successor freezes parent
+`65a06d3e7426117ea80679933f6a7bb611be5988`, subject
+`build(ops): authorize mac-compatible CI-3 bridge executor`, the object-bootstrap
+lineage and an exact ordered 17-path manifest. The launch attestation binds that
+executor directly and the remaining root set transitively through its exact
+authority-manifest hash. The bootstrap claim binds the launch-attestation hash
+and a canonical dual-root digest covering the executor, remote predecessor,
+remote generation, remote receipt/config hashes, object-bootstrap authority and
+CI-3 authority/base. Read claims inherit the bootstrap hash; the local receipt
+repeats both hash roots; the writer recomputes the digest from evidence. Config
+and deployment receipt remain explicitly bound to remote predecessor
+`7a929b0cebb28c339010dd5bf115e67b79523156`.
+
+This is a dual-attestation contract, not a remote regeneration. If generator
+creation, config/receipt schema, generation/path derivation, any of the five
+inputs or claim/publication semantics changes, compatibility becomes
+`REGEN_REQUIRED`; otherwise it is `REUSE_READ_ONLY`. The successor remains in
+the latter class only while the Linux/root normalizer, create dispatcher and
+remote schemas remain unchanged. The Mac UID policy is explicit and attested.
+A Darwin-only object-bootstrap runtime route accepts a private V2 request bound
+to the executor commit, exact parent/lineage, tree, subject hash, ordered
+17-path manifest root and target mode/path/OID/content. It validates commit,
+tree and all `ls-tree` entries before body reads, verifies every manifest body
+through the bounded reader, then materializes one target owner-only/no-clobber
+with no network. Linux rejects that route before the existing root-owned create
+path. The route is silent and creates no receipt; the versioned Gate 0 launch
+attestation is the auditable consumer whose hash enters the dual-root chain.
+
+The old Gate 0 receipt is never transferable across executor authorities. A
+new exact `/bin/zsh -n` receipt is mandatory after the successor blobs are
+published/materialized and before simulator, ssh configuration, SSH, claims,
+three reads or any operational network. No retry or predecessor execution is
+permitted after a Gate 0 failure.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { chmod, link, lstat, mkdtemp, mkdir, open, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdtemp, mkdir, open, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -57,6 +57,15 @@ test('[LAUNCHER-SKELETON] generator classifies the current launcher as data-only
   assert.deepEqual(subject().launcherStructuralSkeleton(current), subject().launcherStructuralSkeleton(predecessor.stdout));
 });
 
+test('[LAUNCHER-SKELETON] a new remote authority declaration is structural outside the frozen literal regions', () => {
+  const predecessor = Buffer.from("#!/bin/zsh -f\nAUTHORITY_PATHS=(\n  'synthetic'\n)\n");
+  const changed = Buffer.from("#!/bin/zsh -f\nREMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\nAUTHORITY_PATHS=(\n  'synthetic'\n)\n");
+  assert.notDeepEqual(
+    subject().launcherStructuralSkeleton(changed),
+    subject().launcherStructuralSkeleton(predecessor),
+  );
+});
+
 test('[GIT-READER] bounded reader crosses the real 82,675-byte authority boundary', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-git-reader-red-'));
   try {
@@ -71,13 +80,15 @@ test('[GIT-READER] bounded reader crosses the real 82,675-byte authority boundar
     });
     assert.equal(oidResult.status, 0, oidResult.stderr);
     const oid = oidResult.stdout.trim();
+    const repositoryRoot = await realpath(root);
 
     const result = await subject().readGitBlobBounded({
       authorityPath: 'synthetic/authority-blob.bin',
       expectedBlobOid: oid,
       expectedFileSha256: subject().sha256(blobBytes),
       oid,
-      repositoryRoot: root,
+      repositoryIdentityPolicy: macRepositoryIdentityPolicy(repositoryRoot),
+      repositoryRoot,
     });
     assert.equal(result.bytes_read, 82_675);
     assert.deepEqual(result.bytes, blobBytes);
@@ -162,6 +173,55 @@ async function expectReaderCode(input, code = 'GIT_AUTHORITY') {
   await assert.rejects(subject().readGitBlobBounded(input), (error) => error?.code === code);
 }
 
+function macRepositoryIdentityPolicy(repositoryRoot) {
+  return subject().repositoryIdentityPolicyForAuthorityRead(repositoryRoot);
+}
+
+test('[GIT-READER] operational authority read derives the exact attested Mac policy', () => {
+  const repositoryRoot = '/synthetic/repository';
+  const policy = subject().repositoryIdentityPolicyForAuthorityRead(repositoryRoot);
+  if (process.platform !== 'darwin') {
+    assert.equal(policy, undefined);
+    return;
+  }
+  const expected = {
+    platform: 'darwin', purpose: 'CI3_MAC_REPOSITORY_IDENTITY_POLICY_V1', raw_values: false,
+    repository_root_sha256: subject().sha256(Buffer.from(repositoryRoot)), uid: process.getuid(),
+  };
+  assert.deepEqual(policy, {
+    ...expected,
+    attestation_sha256: subject().sha256(Buffer.from([
+      `platform=${expected.platform}\n`,
+      `purpose=${expected.purpose}\n`,
+      `raw_values=${expected.raw_values}\n`,
+      `repository_root_sha256=${expected.repository_root_sha256}\n`,
+      `uid=${expected.uid}\n`,
+    ].join(''))),
+  });
+});
+
+test('[GIT-READER] Linux/root grammar rejects the Apple Git suffix without a repository policy', () => {
+  const repositoryRoot = '/synthetic/repository';
+  assert.equal(subject().validateGitVersionOutputForRepositoryPolicy(
+    Buffer.from('git version 2.39.5\n'), repositoryRoot, undefined,
+  ), true);
+  assert.throws(
+    () => subject().validateGitVersionOutputForRepositoryPolicy(
+      Buffer.from('git version 2.39.5 (Apple Git-154)\n'), repositoryRoot, undefined,
+    ),
+    (error) => error?.code === 'GIT_AUTHORITY',
+  );
+});
+
+test('[GIT-READER] attested Darwin repository policy accepts the Apple Git suffix', () => {
+  if (process.platform !== 'darwin') return;
+  const repositoryRoot = '/synthetic/repository';
+  const policy = subject().repositoryIdentityPolicyForAuthorityRead(repositoryRoot);
+  assert.equal(subject().validateGitVersionOutputForRepositoryPolicy(
+    Buffer.from('git version 2.39.5 (Apple Git-154)\n'), repositoryRoot, policy,
+  ), true);
+});
+
 async function createRealReaderRepository(bytes) {
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-git-reader-real-'));
   assert.equal(spawnSync('/usr/bin/git', ['init', '-q', root], { env: { PATH: '/usr/bin:/bin' } }).status, 0);
@@ -171,8 +231,215 @@ async function createRealReaderRepository(bytes) {
     encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   assert.equal(result.status, 0, result.stderr);
-  return { oid: result.stdout.trim(), root };
+  return { oid: result.stdout.trim(), root: await realpath(root) };
 }
+
+function runLocalGit(repositoryRoot, args) {
+  const result = spawnSync('/usr/bin/git', ['-C', repositoryRoot, ...args], {
+    encoding: 'utf8', env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+    stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  return result.stdout.trim();
+}
+
+function canonicalFieldDigest(fields) {
+  return subject().sha256(Buffer.from(Object.entries(fields)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}\n`)
+    .join('')));
+}
+
+async function createCommittedMacAuthorityRepository(launcherBytes) {
+  const createdRoot = await mkdtemp(path.join(tmpdir(), 'ci3-mac-authority-real-'));
+  const root = await realpath(createdRoot);
+  assert.equal(spawnSync('/usr/bin/git', ['init', '-q', root], {
+    env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+  }).status, 0);
+  runLocalGit(root, ['config', 'user.name', 'Synthetic CI3']);
+  runLocalGit(root, ['config', 'user.email', 'synthetic@example.invalid']);
+  await writeFile(path.join(root, '.lineage-seed'), 'synthetic parent\n', { mode: 0o600 });
+  runLocalGit(root, ['add', '--', '.lineage-seed']);
+  runLocalGit(root, ['commit', '-q', '-m', 'Synthetic parent']);
+  const parent = runLocalGit(root, ['rev-parse', 'HEAD']);
+  const bytesByPath = new Map();
+  for (const [index, authorityPath] of subject().MAC_EXECUTOR_AUTHORITY_PATHS.entries()) {
+    const bytes = authorityPath === 'scripts/ci3/ci3-bridge-launcher.zsh'
+      ? launcherBytes
+      : Buffer.from(`synthetic authority path ${index}\n`);
+    const absolutePath = path.join(root, authorityPath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, bytes, { mode: authorityPath.endsWith('.zsh') ? 0o755 : 0o644 });
+    if (authorityPath.endsWith('.zsh')) await chmod(absolutePath, 0o755);
+    bytesByPath.set(authorityPath, bytes);
+  }
+  runLocalGit(root, ['add', '--', ...subject().MAC_EXECUTOR_AUTHORITY_PATHS]);
+  const authoritySubject = 'Synthetic Mac executor authority';
+  runLocalGit(root, ['commit', '-q', '-m', authoritySubject]);
+  const authoritySha = runLocalGit(root, ['rev-parse', 'HEAD']);
+  const authorityTree = runLocalGit(root, ['rev-parse', 'HEAD^{tree}']);
+  const authorityManifest = subject().MAC_EXECUTOR_AUTHORITY_PATHS.map((authorityPath) => {
+    const line = runLocalGit(root, ['ls-tree', authoritySha, '--', authorityPath]);
+    const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(line);
+    assert.ok(match);
+    assert.equal(match[3], authorityPath);
+    return {
+      path: authorityPath,
+      git_mode: match[1],
+      blob_oid: match[2],
+      sha256: subject().sha256(bytesByPath.get(authorityPath)),
+    };
+  });
+  const authorityManifestSha256 = subject().sha256(Buffer.from(authorityManifest
+    .map(({ path: authorityPath, blob_oid: blobOid, sha256 }) => `${authorityPath} ${blobOid} ${sha256}\n`)
+    .join('')));
+  const launcherEntry = authorityManifest.find(({ path: authorityPath }) => authorityPath === 'scripts/ci3/ci3-bridge-launcher.zsh');
+  assert.ok(launcherEntry);
+  return {
+    authorityManifest,
+    launcherBytes,
+    request: {
+      schema_version: 1,
+      purpose: 'CI3_MAC_OBJECT_BOOTSTRAP_READ_REQUEST_V2',
+      repository_root: root,
+      executor_authority_sha: authoritySha,
+      executor_authority_parent: parent,
+      executor_authority_lineage_sha256: canonicalFieldDigest({
+        executor_authority_parent: parent,
+        executor_authority_sha: authoritySha,
+      }),
+      executor_authority_tree: authorityTree,
+      executor_authority_subject_sha256: subject().sha256(Buffer.from(`${authoritySubject}\n`)),
+      executor_authority_manifest: authorityManifest,
+      executor_authority_manifest_sha256: authorityManifestSha256,
+      authority_path: launcherEntry.path,
+      expected_git_mode: launcherEntry.git_mode,
+      expected_blob_oid: launcherEntry.blob_oid,
+      expected_file_sha256: launcherEntry.sha256,
+      destination_path: '',
+    },
+    root,
+  };
+}
+
+test('[GIT-READER] runtime dispatch preserves Linux create semantics and exposes object bootstrap only on Darwin', () => {
+  assert.equal(subject().parseRuntimeInvocation(['--create'], 'linux').mode, 'create');
+  assert.throws(
+    () => subject().parseRuntimeInvocation(['--mac-object-bootstrap-read', '/synthetic/request.json'], 'linux'),
+    (error) => error?.code === 'MODE_INVALID',
+  );
+  assert.deepEqual(
+    subject().parseRuntimeInvocation(['--mac-object-bootstrap-read', '/synthetic/request.json'], 'darwin'),
+    { mode: 'mac-object-bootstrap-read', requestPath: '/synthetic/request.json' },
+  );
+});
+
+test('[GIT-READER] reachable Mac object-bootstrap CLI proves a committed 17-path authority and is silent before Gate 0', async () => {
+  const launcherBytes = Buffer.from('#!/bin/zsh -f\nexit 0\n');
+  const repository = await createCommittedMacAuthorityRepository(launcherBytes);
+  const requestRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'ci3-mac-object-bootstrap-request-')));
+  try {
+    const destinationPath = path.join(requestRoot, 'ci3-bridge-launcher.zsh');
+    const requestPath = path.join(requestRoot, 'request.json');
+    await writeFile(requestPath, `${JSON.stringify({ ...repository.request, destination_path: destinationPath })}\n`, { mode: 0o600 });
+    await chmod(requestPath, 0o600);
+    const result = spawnSync(process.execPath, [
+      MODULE_URL.pathname, '--mac-object-bootstrap-read', requestPath,
+    ], {
+      encoding: 'utf8', env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
+    });
+    if (process.platform !== 'darwin') {
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /^ERROR MODE_INVALID\n$/);
+      return;
+    }
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, '');
+    assert.deepEqual(await readFile(destinationPath), launcherBytes);
+    assert.equal((await lstat(destinationPath)).mode & 0o777, 0o600);
+    const syntax = spawnSync('/bin/zsh', ['-n', destinationPath], {
+      encoding: 'utf8', env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
+    });
+    assert.equal(syntax.status, 0, syntax.stderr);
+    assert.equal(syntax.stdout, '');
+    assert.equal(syntax.stderr, '');
+  } finally {
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(requestRoot, { recursive: true, force: true });
+  }
+});
+
+test('[GIT-READER] Mac object-bootstrap rejects every Git authority mutation before a blob body', async () => {
+  if (process.platform !== 'darwin') return;
+  const repository = await createCommittedMacAuthorityRepository(Buffer.from('#!/bin/zsh -f\nexit 0\n'));
+  const destinationRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'ci3-mac-object-bootstrap-negative-')));
+  try {
+    const launcherIndex = repository.authorityManifest.findIndex(({ path: authorityPath }) => authorityPath === repository.request.authority_path);
+    const otherEntry = repository.authorityManifest[(launcherIndex + 1) % repository.authorityManifest.length];
+    const cases = [
+      ['commit', (request) => {
+        request.executor_authority_sha = '0'.repeat(40);
+        request.executor_authority_lineage_sha256 = canonicalFieldDigest({
+          executor_authority_parent: request.executor_authority_parent,
+          executor_authority_sha: request.executor_authority_sha,
+        });
+      }],
+      ['parent', (request) => {
+        request.executor_authority_parent = '0'.repeat(40);
+        request.executor_authority_lineage_sha256 = canonicalFieldDigest({
+          executor_authority_parent: request.executor_authority_parent,
+          executor_authority_sha: request.executor_authority_sha,
+        });
+      }],
+      ['lineage', (request) => { request.executor_authority_lineage_sha256 = '0'.repeat(64); }],
+      ['tree', (request) => { request.executor_authority_tree = '0'.repeat(40); }],
+      ['subject hash', (request) => { request.executor_authority_subject_sha256 = '0'.repeat(64); }],
+      ['manifest root', (request) => { request.executor_authority_manifest_sha256 = '0'.repeat(64); }],
+      ['path', (request) => { request.authority_path = otherEntry.path; }],
+      ['OID', (request) => { request.expected_blob_oid = otherEntry.blob_oid; }],
+      ['expected mode', (request) => { request.expected_git_mode = '100644'; }],
+      ['manifest mode', (request) => {
+        request.executor_authority_manifest[launcherIndex].git_mode = '100644';
+        request.expected_git_mode = '100644';
+      }],
+      ['content', (request) => { request.expected_file_sha256 = '0'.repeat(64); }],
+    ];
+    for (const [index, [label, mutate]] of cases.entries()) {
+      const request = clone(repository.request);
+      request.destination_path = path.join(destinationRoot, `negative-${index}`);
+      mutate(request);
+      let bodyReads = 0;
+      await assert.rejects(
+        subject().materializeMacObjectBootstrapBlob(request, {
+          readerAdapters: { spawnBody: () => { bodyReads += 1; throw new Error('BODY_MUST_NOT_RUN'); } },
+        }),
+        (error) => error?.code === 'MAC_OBJECT_BOOTSTRAP',
+        label,
+      );
+      assert.equal(bodyReads, 0, label);
+    }
+    const existingRequest = clone(repository.request);
+    existingRequest.destination_path = path.join(destinationRoot, 'existing');
+    await writeFile(existingRequest.destination_path, 'preserve\n', { mode: 0o600 });
+    let existingBodyReads = 0;
+    await assert.rejects(
+      subject().materializeMacObjectBootstrapBlob(existingRequest, {
+        readerAdapters: { spawnBody: () => { existingBodyReads += 1; throw new Error('BODY_MUST_NOT_RUN'); } },
+      }),
+      (error) => error?.code === 'MAC_OBJECT_BOOTSTRAP',
+    );
+    assert.equal(existingBodyReads, 0);
+    assert.equal(await readFile(existingRequest.destination_path, 'utf8'), 'preserve\n');
+  } finally {
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(destinationRoot, { recursive: true, force: true });
+  }
+});
 
 for (const size of [0, 1, 65_535, 65_536, 65_537, 1_048_576]) {
   test(`[GIT-READER] accepts exact boundary size ${size}`, async () => {
@@ -181,7 +448,8 @@ for (const size of [0, 1, 65_535, 65_536, 65_537, 1_048_576]) {
     try {
       const result = await subject().readGitBlobBounded({
         authorityPath: `synthetic/boundary-${size}.bin`, expectedBlobOid: oid,
-        expectedFileSha256: subject().sha256(bytes), oid, repositoryRoot: root,
+        expectedFileSha256: subject().sha256(bytes), oid,
+        repositoryIdentityPolicy: macRepositoryIdentityPolicy(root), repositoryRoot: root,
       });
       assert.equal(result.bytes_read, size);
       assert.equal(result.sha256, subject().sha256(bytes));
@@ -190,6 +458,16 @@ for (const size of [0, 1, 65_535, 65_536, 65_537, 1_048_576]) {
     }
   });
 }
+
+test('[GIT-READER] rejects an unattested Mac repository identity policy before body spawn', async () => {
+  if (process.platform !== 'darwin') return;
+  const { adapters, counters } = fakeReaderAdapters();
+  const policy = macRepositoryIdentityPolicy('/synthetic/repository');
+  await expectReaderCode(fakeReaderInput(adapters, {
+    repositoryIdentityPolicy: { ...policy, attestation_sha256: '0'.repeat(64) },
+  }));
+  assert.equal(counters.body, 0);
+});
 
 test('[GIT-READER] rejects 1,048,577 bytes before body spawn', async () => {
   const body = Buffer.alloc(1_048_577, 0x61);

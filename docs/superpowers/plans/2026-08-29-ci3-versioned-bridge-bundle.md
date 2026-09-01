@@ -1494,3 +1494,69 @@ objects. It cannot use SSH, open secrets/config/credential, access the
 operational VPS, start simulator or create operational claims. It never
 recreates the VPS bundle or runs a predecessor bridge. CI-4 and cleanup remain
 prohibited.
+
+## Successor executor publication plan
+
+1. Preserve the remote bundle authority
+   `7a929b0cebb28c339010dd5bf115e67b79523156` and its five inputs read-only.
+2. After independent reviews, create the `MAC_EXECUTOR_AUTHORITY_V1` commit with
+   parent `65a06d3e7426117ea80679933f6a7bb611be5988`, exact subject and 17 paths.
+3. Read back commit/tree/manifest/components through the bounded object bootstrap;
+   do not map the remote receipt to the executor authority.
+4. Materialize the exact launcher and produce a new `/bin/zsh -n` Gate 0 receipt.
+   The historical receipt is not reusable.
+5. Only after Gate 0 PASS may the existing simulator/SSH/three-read protocol
+   resume; any failure is STOP without retry.
+
+Compatibility remains `REUSE_READ_ONLY` because generator creation, schemas,
+generation/path derivation, five inputs and claim/publication semantics are
+unchanged. This authoring step performs none of publication, fetch, Gate 0,
+simulator, SSH, remote reading, privilege, CI-3 mutation, CI-4 or cleanup.
+
+### Review-B round-1 corrections before publication
+
+1. Keep `launcherStructuralSkeleton()` byte-identical to the remote generator
+   baseline. Do not normalize a new predecessor declaration; keep that binding
+   in the Mac controller/writer authority instead.
+2. Bind the launch attestation transitively through the 17-path manifest, then
+   make the bootstrap claim and local receipt carry the canonical dual-root
+   digest and launch-attestation hash. The writer must reconstruct the digest
+   from evidence and mutation tests must cover every root independently.
+3. Keep `parseMode()` and Linux/root creation unchanged. Add a separate
+   Darwin-only dispatcher that validates the executor commit/tree/lineage and
+   complete 17-path manifest, then materializes exactly one local launcher via
+   the bounded Git reader, no-clobber and with empty success output. It creates
+   no standalone receipt; Gate 0 remains the first versioned receipt.
+4. Re-run the focused groups, exact owner manifest, full four-file suite and
+   added-line scans before requesting both independent reviews again.
+
+### Review-B round-2 remediation plan
+
+**Goal:** preserve the predecessor Linux/root create contract while making the
+Darwin object-bootstrap path prove the complete published executor Git
+authority before materialization.
+
+**Architecture:** the generic Git-version grammar remains the predecessor
+grammar. The Apple suffix is accepted only after validation of the explicit
+Darwin repository policy. A private request carries the executor
+commit/parent/lineage/tree/subject hash and an ordered 17-path manifest; all
+commit, tree and `ls-tree` metadata are validated before any blob body, then
+each manifest content hash is verified with the bounded reader. The
+pre-Gate-0 materializer is intentionally silent and produces no standalone
+receipt; the existing versioned Gate-0 launch attestation is the first receipt
+and the bootstrap/local/writer chain consumes its hash.
+
+- [x] Add Linux-negative and attested-Darwin-positive Git grammar tests; observe RED.
+- [x] Gate the Apple grammar only on a validated Darwin policy; observe GREEN.
+- [x] Replace the orphan-blob fixture with a real two-commit, 17-path Git tree.
+- [x] Add mutation negatives for commit, parent/lineage, tree, subject,
+      manifest root, path, OID, mode, content and an existing destination;
+      observe RED.
+- [x] Validate the exact Git provenance and ordered manifest before body reads;
+      observe GREEN.
+- [x] Require empty stdout/stderr and `/bin/zsh -n` over the materialized bytes;
+      remove the isolated receipt/output; observe RED then GREEN.
+- [x] Drive authority-manifest mutations from `AUTHORITY_PATHS.length` and
+      prove both final indices are rejected.
+- [ ] Re-run focused, exact 86-identifier, full-suite and sanitized diff gates;
+      do not publish or perform any external operation.

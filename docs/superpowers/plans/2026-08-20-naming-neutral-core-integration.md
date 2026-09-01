@@ -2759,3 +2759,20 @@ continue the existing `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`
 handoff through simulator, SSH, three reads, local publication,
 install/removal, six scans, terminal anchor and Tasks 2–12. No cleanup or CI-4
 is authorized.
+
+## Mac-compatible executor authority continuation
+
+The continuation now requires `MAC_EXECUTOR_AUTHORITY_V1`: parent
+`65a06d3e7426117ea80679933f6a7bb611be5988`, subject
+`build(ops): authorize mac-compatible CI-3 bridge executor`, object-bootstrap
+lineage and exact ordered 17-path manifest. The preserved remote bundle stays
+under `7a929b0cebb28c339010dd5bf115e67b79523156`; dual attestation prevents either
+authority from impersonating the other.
+
+The compatibility verdict is `REUSE_READ_ONLY`. No remote generator creation,
+config/receipt schema, generation/path, five-input or claim/publication contract
+changed. Once independent reviews allow publication, read back the exact new
+objects and create a fresh Gate 0 `/bin/zsh -n` receipt. Never reuse the old
+Gate 0, and do not begin simulator, `/usr/bin/ssh -G`, SSH, claims or reads
+before the fresh PASS. The cleanup deadline remains
+`2026-09-11T11:44:11.182Z`.

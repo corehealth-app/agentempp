@@ -23,12 +23,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const AUTHORITY_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
-export const AUTHORITY_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
+const AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
+export const AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+export const REMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA = '7a929b0cebb28c339010dd5bf115e67b79523156';
+const REMOTE_BUNDLE_PREDECESSOR_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
+const REMOTE_BUNDLE_PREDECESSOR_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
 const DEPLOYMENT_NODE_CANONICAL = '22.x';
 const EXECUTION_RUNTIME_ADOPTION_AUTHORITY_SHA = '461a2e0dbe091a5c352d5dfdc1952b444f41aac0';
 const EXECUTION_RUNTIME_NODE_SHA256 = '6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd';
 const CI3_PARENT = '277873755bf29771a10b5f362b522c2e6a6c21d6';
+export const MAC_DUAL_AUTHORITY_STATIC_ROOTS = Object.freeze({
+  ci3_authority_base_sha: CI3_PARENT,
+  object_bootstrap_authority_sha: AUTHORITY_PARENT,
+  remote_bundle_authority_sha: REMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA,
+});
 const CI3_SUBJECT = 'feat(ios): connect Today to authenticated staging';
 const BUNDLE_ID = 'com.bodyflow.app';
 const SSH_PATH = '/usr/bin/ssh';
@@ -171,8 +179,9 @@ export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
   'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -334,19 +343,68 @@ function validateComponents(components, code) {
   }
 }
 
+export function validateMacDualAuthorityRootsDigest(roots, expectedDigest) {
+  const code = 'DUAL_AUTHORITY_ROOTS';
+  exactKeys(roots, [
+    'ci3_authority_base_sha', 'executor_authority_sha', 'launch_attestation_sha256',
+    'object_bootstrap_authority_sha', 'purpose', 'raw_values',
+    'remote_bundle_authority_sha', 'remote_config_sha256', 'remote_generation_id',
+    'remote_receipt_sha256', 'schema_version',
+  ], code);
+  if (roots.schema_version !== 1 || roots.purpose !== 'CI3_MAC_DUAL_AUTHORITY_ROOTS_V1'
+      || roots.raw_values !== false
+      || roots.ci3_authority_base_sha !== MAC_DUAL_AUTHORITY_STATIC_ROOTS.ci3_authority_base_sha
+      || roots.object_bootstrap_authority_sha !== MAC_DUAL_AUTHORITY_STATIC_ROOTS.object_bootstrap_authority_sha
+      || roots.remote_bundle_authority_sha !== MAC_DUAL_AUTHORITY_STATIC_ROOTS.remote_bundle_authority_sha) fail(code);
+  for (const field of [
+    'ci3_authority_base_sha', 'executor_authority_sha', 'object_bootstrap_authority_sha',
+    'remote_bundle_authority_sha',
+  ]) requireSha(roots[field], code, [40]);
+  for (const field of ['launch_attestation_sha256', 'remote_config_sha256', 'remote_receipt_sha256']) {
+    requireSha(roots[field], code);
+  }
+  try { validateGenerationId(roots.remote_generation_id); } catch { fail(code); }
+  requireSha(expectedDigest, code);
+  if (sha256(canonicalJson(roots)) !== expectedDigest) fail(code);
+  return true;
+}
+
+export function buildMacDualAuthorityRoots(context) {
+  const roots = {
+    schema_version: 1,
+    purpose: 'CI3_MAC_DUAL_AUTHORITY_ROOTS_V1',
+    executor_authority_sha: context?.authority?.commit,
+    launch_attestation_sha256: context?.authority?.launch_attestation_sha256,
+    remote_bundle_authority_sha: MAC_DUAL_AUTHORITY_STATIC_ROOTS.remote_bundle_authority_sha,
+    remote_generation_id: context?.generations?.remote,
+    remote_receipt_sha256: context?.remote?.receipt_sha256,
+    remote_config_sha256: context?.remote?.config_sha256,
+    object_bootstrap_authority_sha: MAC_DUAL_AUTHORITY_STATIC_ROOTS.object_bootstrap_authority_sha,
+    ci3_authority_base_sha: MAC_DUAL_AUTHORITY_STATIC_ROOTS.ci3_authority_base_sha,
+    raw_values: false,
+  };
+  const digest = sha256(canonicalJson(roots));
+  validateMacDualAuthorityRootsDigest(roots, digest);
+  return Object.freeze(roots);
+}
+
 export function buildBootstrapClaim(context) {
   const code = 'BOOTSTRAP_CLAIM';
   const { authority, generations, remote, simulator_gate_sha256: simulatorGateSha256, ssh } = context ?? {};
   if (!isSha(authority?.commit, [40]) || authority.parent !== AUTHORITY_PARENT || authority.subject !== AUTHORITY_SUBJECT) fail(code);
   requireSha(authority.manifest_sha256, code);
+  requireSha(authority.launch_attestation_sha256, code);
   validateComponents(authority.components, code);
   for (const generation of Object.values(generations ?? {})) validateGenerationId(generation);
   for (const value of [remote?.bundle_path_sha256, remote?.receipt_path_sha256, simulatorGateSha256, ssh?.executable_sha256, ssh?.effective_config_sha256, ssh?.trust_descriptor_sha256]) requireSha(value, code);
+  const dualAuthorityRoots = buildMacDualAuthorityRoots(context);
   return {
     schema_version: 1,
     purpose: 'CI3_MAC_BRIDGE_BOOTSTRAP_CLAIM_V1',
     authority_sha: authority.commit,
     authority_manifest_sha256: authority.manifest_sha256,
+    launch_attestation_sha256: authority.launch_attestation_sha256,
+    dual_authority_roots_sha256: sha256(canonicalJson(dualAuthorityRoots)),
     components: structuredClone(authority.components),
     remote_bundle_path_sha256: remote.bundle_path_sha256,
     remote_receipt_path_sha256: remote.receipt_path_sha256,
@@ -661,6 +719,15 @@ export function validateLauncherGateReceipt(receipt, code = 'REMOTE_BUNDLE_SEMAN
   return true;
 }
 
+export function validateRemoteBundleAuthorityBinding({ config, receipt } = {}, code = 'REMOTE_BUNDLE_SEMANTICS') {
+  if (!isPlainObject(config) || !isPlainObject(receipt)
+      || config.bridge_authority_sha !== REMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA
+      || receipt.authority_commit !== REMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA
+      || receipt.authority_parent !== REMOTE_BUNDLE_PREDECESSOR_PARENT
+      || receipt.authority_subject !== REMOTE_BUNDLE_PREDECESSOR_SUBJECT) fail(code);
+  return true;
+}
+
 export function validateRemoteBundleSemantics({ context, configBytes, credentialBytes, receiptBytes }) {
   const code = 'REMOTE_BUNDLE_SEMANTICS';
   let config;
@@ -675,8 +742,8 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   exactKeys(config, REMOTE_CONFIG_KEYS, code);
   exactKeys(credential, REMOTE_CREDENTIAL_KEYS, code);
   exactKeys(receipt, REMOTE_RECEIPT_KEYS, code);
+  validateRemoteBundleAuthorityBinding({ config, receipt }, code);
   if (config.schema_version !== 1 || config.environment !== 'staging'
-      || config.bridge_authority_sha !== context?.authority?.commit
       || typeof config.staging_project_ref !== 'string'
       || !config.staging_project_ref
       || typeof config.supabase_url !== 'string'
@@ -689,11 +756,6 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   if (supabaseUrl.protocol !== 'https:' || bffUrl.protocol !== 'https:'
       || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`)) fail(code);
   if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1'
-      || receipt.authority_commit !== context.authority.commit
-      || receipt.authority_parent !== context.authority.parent
-      || receipt.authority_tree !== context.authority.tree
-      || receipt.authority_subject !== context.authority.subject
-      || receipt.authority_tree_manifest_sha256 !== context.authority.manifest_sha256
       || receipt.remote_bundle_generation_id !== context.generations.remote
       || !/^src-[a-f0-9]{64}$/.test(receipt.source_generation_id ?? '')
       || receipt.output_config_sha256 !== sha256(configBytes)
@@ -715,9 +777,9 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
     launcher: ['launcher_blob_oid', 'launcher_file_sha256'],
     writer: ['anchor_writer_blob_oid', 'anchor_writer_file_sha256'],
   };
-  for (const [name, [oidField, hashField]] of Object.entries(componentFields)) {
-    if (receipt[oidField] !== context.authority.components[name].blob_oid
-        || receipt[hashField] !== context.authority.components[name].sha256) fail(code);
+  for (const [oidField, hashField] of Object.values(componentFields)) {
+    requireSha(receipt[oidField], code, [40]);
+    requireSha(receipt[hashField], code);
   }
   validateSyntheticCredentialContract(credential, {
     cleanupDeadline: config.cleanup_deadline,
@@ -728,8 +790,7 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   for (const [field, expected] of Object.entries(REMOTE_SOURCE_AUTHORITY)) {
     if (receipt[field] !== expected) fail(code);
   }
-  if (receipt.created_at_utc !== context.authority.committed_at_utc
-      || !Number.isFinite(Date.parse(receipt.created_at_utc))
+  if (!Number.isFinite(Date.parse(receipt.created_at_utc))
       || JSON.stringify(receipt.output_filenames) !== JSON.stringify(['mobile-staging-config.json', 'bridge.receipt.json'])
       || receipt.preview_deployment_count !== 1 || receipt.production_deployment_count !== 0
       || receipt.env_preview_count !== 3 || receipt.env_production_count !== 0
@@ -838,15 +899,28 @@ export function validateSshSecurityPolicy(records) {
   return true;
 }
 
-export async function runSshG({ alias, configPath }) {
+export async function runSshG({ alias, configPath, adapters = null }) {
   if (!/^ci3-[a-z0-9-]+$/.test(alias ?? '') || !path.isAbsolute(configPath ?? '')) fail('SSH_G_INPUT');
-  const result = spawnSync(SSH_PATH, ['-G', '-F', configPath, alias], {
-    encoding: null,
-    env: CLOSED_BOOTSTRAP_ENVIRONMENT,
-    maxBuffer: 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
+  if (adapters !== null) {
+    exactKeys(adapters, ['spawnSshG'], 'SSH_G_INPUT');
+    if (typeof adapters.spawnSshG !== 'function') fail('SSH_G_INPUT');
+  }
+  const invocation = Object.freeze({
+    executable: SSH_PATH,
+    args: Object.freeze(['-G', '-F', configPath, alias]),
+    options: Object.freeze({
+      encoding: null,
+      env: CLOSED_BOOTSTRAP_ENVIRONMENT,
+      maxBuffer: 1024 * 1024,
+      stdio: Object.freeze(['ignore', 'pipe', 'pipe']),
+    }),
   });
-  if (result.status !== 0 || result.signal || result.stderr.length !== 0) fail('SSH_G_EXECUTION');
+  const result = adapters === null
+    ? spawnSync(invocation.executable, invocation.args, invocation.options)
+    : await adapters.spawnSshG(invocation);
+  if (!isPlainObject(result) || result.status !== 0 || result.signal
+      || !Buffer.isBuffer(result.stdout) || !Buffer.isBuffer(result.stderr)
+      || result.stderr.length !== 0) fail('SSH_G_EXECUTION');
   const records = parseSshG(result.stdout);
   validateSshSecurityPolicy(records);
   return { exit: 0, records, sha256: sha256(result.stdout), network_calls: 0 };
@@ -4423,7 +4497,7 @@ function syntheticContext() {
   return {
     authority: {
       commit: 'a'.repeat(40), parent: AUTHORITY_PARENT, tree: 'b'.repeat(40), subject: AUTHORITY_SUBJECT,
-      manifest_sha256: 'c'.repeat(64),
+      manifest_sha256: 'c'.repeat(64), launch_attestation_sha256: 'd'.repeat(64),
       components: { generator: component('generator', '1'), controller: component('controller', '2'), launcher: component('launcher', '3'), writer: component('writer', '4') },
     },
     generations: {
@@ -5341,7 +5415,8 @@ export async function createOperationalRuntime({
   let authorityRecord;
   try { authorityRecord = JSON.parse((await readPrivilegedAuthorityFile(authorityPath, null)).toString('utf8')); } catch { fail('STOP_PRE_AUTHORITY'); }
   const authority = validateOperationAuthority(authorityRecord, launchAttestation);
-  const context = authority.context;
+  const context = structuredClone(authority.context);
+  context.authority.launch_attestation_sha256 = sha256(canonicalJson(launchAttestation));
   const expectedSshSnapshotRoot = path.join(versionRoot, 'ssh-snapshots', context.generations.controller);
   const expectedSshSnapshotPaths = {
     config_path: path.join(expectedSshSnapshotRoot, 'ssh_config'),
@@ -6462,6 +6537,8 @@ export async function createOperationalRuntime({
         schema_version: 1, purpose: 'CI3_LOCAL_BRIDGE_RECEIPT_V1', authority_sha: context.authority.commit,
         components: context.authority.components, generations: context.generations,
         bootstrap_claim_sha256: sha256(canonicalJson(bootstrapClaim)),
+        launch_attestation_sha256: bootstrapClaim.launch_attestation_sha256,
+        dual_authority_roots_sha256: bootstrapClaim.dual_authority_roots_sha256,
         read_claim_chain_sha256: sha256(canonicalJson(readClaims)),
         read_result_chain_sha256: sha256(canonicalJson(readResults)),
         remote_receipt_sha256: sha256(receiptBytes), config_sha256: sha256(configBytes),

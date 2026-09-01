@@ -10,6 +10,7 @@ import {
   mkdtemp,
   open,
   readdir,
+  realpath,
   rm,
   unlink,
 } from 'node:fs/promises';
@@ -323,6 +324,26 @@ export const AUTHORITY_PATHS = Object.freeze([
   'scripts/ci3/ci3-terminal-anchor-writer.test.mjs',
 ]);
 
+export const MAC_EXECUTOR_AUTHORITY_PATHS = Object.freeze([
+  'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
+  'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
+  'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
+  'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
+  'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
+  'scripts/ci3/create-ios-staging-bridge-config.mjs',
+  'scripts/ci3/create-ios-staging-bridge-config.test.mjs',
+  'scripts/ci3/ci3-bridge-controller.mjs',
+  'scripts/ci3/ci3-bridge-controller.test.mjs',
+  'scripts/ci3/ci3-bridge-launcher.zsh',
+  'scripts/ci3/ci3-bridge-launcher.test.mjs',
+  'scripts/ci3/ci3-terminal-anchor-writer.swift',
+  'scripts/ci3/ci3-terminal-anchor-writer.test.mjs',
+]);
+
 export const IMPORTANT_FINDINGS = Object.freeze([
   { id: 'RA1-I-5', reviewer: 'A', architecture: 'terminal receipt anchors every scan and phase hash', test: 'terminal scan receipt binding', receipt_field: 'terminal_scan_receipt_hashes', terminal_gate: 'terminal receipt required' },
   { id: 'A4-I-1', reviewer: 'A', architecture: 'immutable version-addressed terminal evidence root', test: 'phase chains bound to terminal receipt', receipt_field: 'terminal_phase_root_sha256', terminal_gate: 'terminal phase root exact' },
@@ -460,6 +481,15 @@ export function parseMode(argv) {
   if (argv[0] === '--preflight-inputs') return 'preflight-inputs';
   if (argv[0] === '--create') return 'create';
   fail('MODE_INVALID');
+}
+
+export function parseRuntimeInvocation(argv, platform = process.platform) {
+  if (platform === 'darwin' && Array.isArray(argv) && argv.length === 2
+      && argv[0] === '--mac-object-bootstrap-read'
+      && path.isAbsolute(argv[1]) && path.resolve(argv[1]) === argv[1]) {
+    return { mode: 'mac-object-bootstrap-read', requestPath: argv[1] };
+  }
+  return { mode: parseMode(argv) };
 }
 
 const PHYSICAL_IDENTITY_FIELDS = Object.freeze(['uid', 'gid', 'mode', 'nlink', 'size', 'mtimeNs', 'dev', 'ino']);
@@ -1051,6 +1081,42 @@ function readerCanonicalSha256(fields) {
     .join('')));
 }
 
+export function repositoryIdentityPolicyForAuthorityRead(repositoryRoot) {
+  if (!path.isAbsolute(repositoryRoot ?? '') || path.resolve(repositoryRoot) !== repositoryRoot) fail('GIT_AUTHORITY');
+  if (process.platform !== 'darwin') return undefined;
+  if (typeof process.getuid !== 'function') fail('GIT_AUTHORITY');
+  const attested = {
+    platform: 'darwin',
+    purpose: 'CI3_MAC_REPOSITORY_IDENTITY_POLICY_V1',
+    raw_values: false,
+    repository_root_sha256: sha256(Buffer.from(repositoryRoot)),
+    uid: process.getuid(),
+  };
+  return Object.freeze({ ...attested, attestation_sha256: readerCanonicalSha256(attested) });
+}
+
+function validatedRepositoryIdentityPolicy(repositoryRoot, policy) {
+  if (policy === undefined) return Object.freeze({ attestationSha256: null, expectedUid: 0n });
+  exactKeys(policy, [
+    'attestation_sha256', 'platform', 'purpose', 'raw_values', 'repository_root_sha256', 'uid',
+  ], 'GIT_AUTHORITY');
+  const attested = {
+    platform: policy.platform,
+    purpose: policy.purpose,
+    raw_values: policy.raw_values,
+    repository_root_sha256: policy.repository_root_sha256,
+    uid: policy.uid,
+  };
+  if (policy.platform !== 'darwin' || process.platform !== 'darwin'
+      || policy.purpose !== 'CI3_MAC_REPOSITORY_IDENTITY_POLICY_V1'
+      || policy.raw_values !== false
+      || !Number.isSafeInteger(policy.uid) || policy.uid < 0
+      || typeof process.getuid !== 'function' || policy.uid !== process.getuid()
+      || policy.repository_root_sha256 !== sha256(Buffer.from(path.resolve(repositoryRoot)))
+      || policy.attestation_sha256 !== readerCanonicalSha256(attested)) fail('GIT_AUTHORITY');
+  return Object.freeze({ attestationSha256: policy.attestation_sha256, expectedUid: BigInt(policy.uid) });
+}
+
 function safeMode(metadata) {
   return Number(metadata.mode & 0o777n);
 }
@@ -1116,7 +1182,18 @@ function exactGitLine(repositoryRoot, args, pattern, adapters = {}) {
   return text.slice(0, -1);
 }
 
-async function gitExecutableIdentity(adapters = {}) {
+export function validateGitVersionOutputForRepositoryPolicy(versionBytes, repositoryRoot, explicitPolicy) {
+  const policy = validatedRepositoryIdentityPolicy(repositoryRoot, explicitPolicy);
+  if (!Buffer.isBuffer(versionBytes)) fail('GIT_AUTHORITY');
+  const genericGrammar = /^git version [0-9]+(?:\.[0-9]+)+(?:\.[A-Za-z0-9._-]+)?\n$/;
+  const attestedDarwinGrammar = /^git version [0-9]+(?:\.[0-9]+)+(?:\.[A-Za-z0-9._-]+)?(?: \(Apple Git-[0-9]+\))?\n$/;
+  if (!(policy.attestationSha256 === null ? genericGrammar : attestedDarwinGrammar).test(versionBytes.toString('utf8'))) {
+    fail('GIT_AUTHORITY');
+  }
+  return true;
+}
+
+async function gitExecutableIdentity(repositoryRoot, repositoryIdentityPolicy, adapters = {}) {
   if (adapters.gitExecutableIdentity) return adapters.gitExecutableIdentity();
   const physical = await readSafeFileIdentity(GIT_EXECUTABLE);
   const result = spawnSync(GIT_EXECUTABLE, ['--version'], {
@@ -1125,8 +1202,8 @@ async function gitExecutableIdentity(adapters = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: GIT_COMMAND_TIMEOUT_MS,
   });
-  if (result.error || result.status !== 0 || result.signal !== null || result.stderr.length !== 0
-      || !/^git version [0-9]+(?:\.[0-9]+)+(?:\.[A-Za-z0-9._-]+)?\n$/.test(result.stdout.toString('utf8'))) fail('GIT_AUTHORITY');
+  if (result.error || result.status !== 0 || result.signal !== null || result.stderr.length !== 0) fail('GIT_AUTHORITY');
+  validateGitVersionOutputForRepositoryPolicy(result.stdout, repositoryRoot, repositoryIdentityPolicy);
   return Object.freeze({
     sha256: physical.sha256,
     identity_sha256: physical.identity_sha256,
@@ -1134,25 +1211,40 @@ async function gitExecutableIdentity(adapters = {}) {
   });
 }
 
-async function repositoryIdentity(repositoryRoot, adapters = {}) {
-  if (adapters.repositoryIdentity) return adapters.repositoryIdentity();
+async function repositoryIdentity(repositoryRoot, adapters = {}, explicitPolicy) {
+  const policy = validatedRepositoryIdentityPolicy(repositoryRoot, explicitPolicy);
+  if (adapters.repositoryIdentity) {
+    const observed = await adapters.repositoryIdentity();
+    if (policy.attestationSha256 === null) return observed;
+    return Object.freeze({
+      ...observed,
+      sha256: readerCanonicalSha256({
+        repository_identity_policy_sha256: policy.attestationSha256,
+        repository_identity_sha256: observed.sha256,
+      }),
+    });
+  }
   const topLevel = exactGitLine(repositoryRoot, ['rev-parse', '--show-toplevel'], /^\/.+$/, adapters);
   if (path.resolve(topLevel) !== path.resolve(repositoryRoot)) fail('GIT_AUTHORITY');
   const commonDir = exactGitLine(repositoryRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir'], /^\/.+$/, adapters);
   const metadata = await lstat(commonDir, { bigint: true });
   const repositoryMetadata = await lstat(repositoryRoot, { bigint: true });
-  if (!metadata.isDirectory() || metadata.isSymbolicLink() || metadata.uid !== 0n || (safeMode(metadata) & 0o022) !== 0
-      || !repositoryMetadata.isDirectory() || repositoryMetadata.isSymbolicLink() || repositoryMetadata.uid !== 0n
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || metadata.uid !== policy.expectedUid || (safeMode(metadata) & 0o022) !== 0
+      || !repositoryMetadata.isDirectory() || repositoryMetadata.isSymbolicLink() || repositoryMetadata.uid !== policy.expectedUid
       || (safeMode(repositoryMetadata) & 0o022) !== 0) fail('GIT_AUTHORITY');
   const objectFormat = exactGitLine(repositoryRoot, ['rev-parse', '--show-object-format'], /^(?:sha1|sha256)$/, adapters);
+  const identityFields = {
+    common_dir_sha256: sha256(Buffer.from(commonDir)),
+    identity_sha256: identitySha256(identity(metadata)),
+    object_format: objectFormat,
+    repository_root_sha256: sha256(Buffer.from(path.resolve(repositoryRoot))),
+  };
+  if (policy.attestationSha256 !== null) {
+    identityFields.repository_identity_policy_sha256 = policy.attestationSha256;
+  }
   return Object.freeze({
     object_format: objectFormat,
-    sha256: readerCanonicalSha256({
-      common_dir_sha256: sha256(Buffer.from(commonDir)),
-      identity_sha256: identitySha256(identity(metadata)),
-      object_format: objectFormat,
-      repository_root_sha256: sha256(Buffer.from(path.resolve(repositoryRoot))),
-    }),
+    sha256: readerCanonicalSha256(identityFields),
   });
 }
 
@@ -1238,13 +1330,14 @@ export async function readGitBlobBounded({
   expectedBlobOid,
   expectedFileSha256,
   oid,
+  repositoryIdentityPolicy,
   repositoryRoot = process.cwd(),
 } = {}) {
   if (!path.isAbsolute(repositoryRoot) || path.resolve(repositoryRoot) !== repositoryRoot
       || typeof authorityPath !== 'string' || authorityPath.length === 0 || authorityPath.startsWith('/')
       || authorityPath.includes('..') || authorityPath.includes('\0')) fail('GIT_AUTHORITY');
-  const gitBefore = await gitExecutableIdentity(adapters);
-  const repositoryBefore = await repositoryIdentity(repositoryRoot, adapters);
+  const gitBefore = await gitExecutableIdentity(repositoryRoot, repositoryIdentityPolicy, adapters);
+  const repositoryBefore = await repositoryIdentity(repositoryRoot, adapters, repositoryIdentityPolicy);
   const oidLength = repositoryBefore.object_format === 'sha1' ? 40 : 64;
   const oidPattern = new RegExp(`^[0-9a-f]{${oidLength}}$`);
   if (typeof oid !== 'string' || !oidPattern.test(oid) || expectedBlobOid !== oid) fail('GIT_AUTHORITY');
@@ -1265,8 +1358,8 @@ export async function readGitBlobBounded({
   if (streamed.object_oid !== oid || (expectedFileSha256 !== undefined && streamed.sha256 !== expectedFileSha256)) fail('GIT_AUTHORITY');
   const objectTypeAfter = exactGitLine(repositoryRoot, ['cat-file', '-t', oid], /^blob$/, adapters);
   const sizeAfter = parseObjectSize(exactGitLine(repositoryRoot, ['cat-file', '-s', oid], /^(?:0|[1-9][0-9]*)$/, adapters));
-  const repositoryAfter = await repositoryIdentity(repositoryRoot, adapters);
-  const gitAfter = await gitExecutableIdentity(adapters);
+  const repositoryAfter = await repositoryIdentity(repositoryRoot, adapters, repositoryIdentityPolicy);
+  const gitAfter = await gitExecutableIdentity(repositoryRoot, repositoryIdentityPolicy, adapters);
   if (objectTypeAfter !== objectType || sizeAfter !== expectedSize || repositoryAfter.sha256 !== repositoryBefore.sha256
       || repositoryAfter.object_format !== repositoryBefore.object_format || gitAfter.sha256 !== gitBefore.sha256
       || gitAfter.identity_sha256 !== gitBefore.identity_sha256 || gitAfter.version_sha256 !== gitBefore.version_sha256) fail('GIT_AUTHORITY');
@@ -1295,6 +1388,195 @@ export async function readGitBlobBounded({
   });
 }
 
+async function readMacObjectBootstrapRequest(requestPath) {
+  const code = 'MAC_OBJECT_BOOTSTRAP';
+  if (process.platform !== 'darwin' || typeof process.getuid !== 'function' || typeof process.getgid !== 'function'
+      || !path.isAbsolute(requestPath ?? '') || path.resolve(requestPath) !== requestPath
+      || await realpath(requestPath).catch(() => null) !== requestPath) fail(code);
+  let handle;
+  let before;
+  let after;
+  let bytes;
+  try {
+    handle = await open(requestPath, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
+        || before.uid !== BigInt(process.getuid()) || before.gid !== BigInt(process.getgid())
+        || ![0o400, 0o600].includes(Number(before.mode & 0o777n))
+        || before.size < 1n || before.size > 65_536n) fail(code);
+    bytes = await handle.readFile();
+    after = await handle.stat({ bigint: true });
+  } catch (error) {
+    if (error?.code === code) throw error;
+    fail(code);
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+  assertStableIdentity(identity(before), identity(after));
+  if (bytes.length !== Number(after.size) || bytes.includes(0) || bytes.includes(Buffer.from('\r')) || bytes.at(-1) !== 0x0a) fail(code);
+  let request;
+  try { request = JSON.parse(bytes.toString('utf8')); } catch { fail(code); }
+  return validateMacObjectBootstrapRequest(request);
+}
+
+function macExecutorAuthorityManifestBytes(entries) {
+  return Buffer.from(entries
+    .map(({ path: authorityPath, blob_oid: blobOid, sha256: fileSha256 }) => `${authorityPath} ${blobOid} ${fileSha256}\n`)
+    .join(''));
+}
+
+export function validateMacObjectBootstrapRequest(request) {
+  const code = 'MAC_OBJECT_BOOTSTRAP';
+  exactKeys(request, [
+    'authority_path', 'destination_path', 'executor_authority_lineage_sha256',
+    'executor_authority_manifest', 'executor_authority_manifest_sha256',
+    'executor_authority_parent', 'executor_authority_sha', 'executor_authority_subject_sha256',
+    'executor_authority_tree', 'expected_blob_oid', 'expected_file_sha256', 'expected_git_mode',
+    'purpose', 'repository_root', 'schema_version',
+  ], code);
+  if (request.schema_version !== 1 || request.purpose !== 'CI3_MAC_OBJECT_BOOTSTRAP_READ_REQUEST_V2'
+      || !path.isAbsolute(request.repository_root ?? '') || path.resolve(request.repository_root) !== request.repository_root
+      || !isSha(request.executor_authority_sha, [40]) || !isSha(request.executor_authority_parent, [40])
+      || !isSha(request.executor_authority_tree, [40]) || !isSha(request.executor_authority_subject_sha256, [64])
+      || !isSha(request.executor_authority_manifest_sha256, [64])
+      || !isSha(request.executor_authority_lineage_sha256, [64])
+      || request.executor_authority_lineage_sha256 !== readerCanonicalSha256({
+        executor_authority_parent: request.executor_authority_parent,
+        executor_authority_sha: request.executor_authority_sha,
+      })
+      || !isSha(request.expected_blob_oid, [40]) || !isSha(request.expected_file_sha256, [64])
+      || !/^(?:100644|100755)$/.test(request.expected_git_mode ?? '')
+      || !path.isAbsolute(request.destination_path ?? '') || path.resolve(request.destination_path) !== request.destination_path) fail(code);
+  if (!Array.isArray(request.executor_authority_manifest)
+      || request.executor_authority_manifest.length !== MAC_EXECUTOR_AUTHORITY_PATHS.length) fail(code);
+  for (let index = 0; index < request.executor_authority_manifest.length; index += 1) {
+    const entry = request.executor_authority_manifest[index];
+    exactKeys(entry, ['blob_oid', 'git_mode', 'path', 'sha256'], code);
+    if (entry.path !== MAC_EXECUTOR_AUTHORITY_PATHS[index]
+        || !/^(?:100644|100755)$/.test(entry.git_mode)
+        || !isSha(entry.blob_oid, [40]) || !isSha(entry.sha256, [64])) fail(code);
+  }
+  if (sha256(macExecutorAuthorityManifestBytes(request.executor_authority_manifest))
+      !== request.executor_authority_manifest_sha256) fail(code);
+  const target = request.executor_authority_manifest.find(({ path: authorityPath }) => authorityPath === request.authority_path);
+  if (!target || target.git_mode !== request.expected_git_mode
+      || target.blob_oid !== request.expected_blob_oid || target.sha256 !== request.expected_file_sha256) fail(code);
+  return request;
+}
+
+async function readMacExecutorAuthorityTarget(request, repositoryIdentityPolicy, readerAdapters) {
+  const code = 'MAC_OBJECT_BOOTSTRAP';
+  const repositoryRoot = request.repository_root;
+  const commitType = exactGitLine(repositoryRoot, ['cat-file', '-t', request.executor_authority_sha], /^commit$/, readerAdapters);
+  const resolvedCommit = exactGitLine(
+    repositoryRoot, ['rev-parse', `${request.executor_authority_sha}^{commit}`], /^[0-9a-f]{40}$/, readerAdapters,
+  );
+  const lineage = exactGitLine(
+    repositoryRoot, ['rev-list', '--parents', '-n', '1', request.executor_authority_sha],
+    /^[0-9a-f]{40}(?: [0-9a-f]{40})+$/, readerAdapters,
+  );
+  const tree = exactGitLine(
+    repositoryRoot, ['rev-parse', `${request.executor_authority_sha}^{tree}`], /^[0-9a-f]{40}$/, readerAdapters,
+  );
+  const treeType = exactGitLine(repositoryRoot, ['cat-file', '-t', tree], /^tree$/, readerAdapters);
+  const subject = exactGitLine(
+    repositoryRoot, ['show', '-s', '--format=%s', request.executor_authority_sha], /^[^\0\r\n]{1,512}$/, readerAdapters,
+  );
+  if (commitType !== 'commit' || resolvedCommit !== request.executor_authority_sha
+      || lineage !== `${request.executor_authority_sha} ${request.executor_authority_parent}`
+      || tree !== request.executor_authority_tree || treeType !== 'tree'
+      || sha256(Buffer.from(`${subject}\n`)) !== request.executor_authority_subject_sha256) fail(code);
+  for (const entry of request.executor_authority_manifest) {
+    const line = exactGitLine(
+      repositoryRoot, ['ls-tree', request.executor_authority_sha, '--', entry.path],
+      /^(?:100644|100755) blob [0-9a-f]{40}\t.+$/, readerAdapters,
+    );
+    const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(line);
+    if (!match || match[1] !== entry.git_mode || match[2] !== entry.blob_oid || match[3] !== entry.path) fail(code);
+  }
+  const readsByOid = new Map();
+  for (const entry of request.executor_authority_manifest) {
+    let read = readsByOid.get(entry.blob_oid);
+    if (!read) {
+      read = await readGitBlobBounded({
+        adapters: readerAdapters,
+        authorityPath: entry.path,
+        expectedBlobOid: entry.blob_oid,
+        expectedFileSha256: entry.sha256,
+        oid: entry.blob_oid,
+        repositoryIdentityPolicy,
+        repositoryRoot,
+      });
+      readsByOid.set(entry.blob_oid, read);
+    }
+    if (read.sha256 !== entry.sha256) fail(code);
+  }
+  const target = readsByOid.get(request.expected_blob_oid);
+  if (!target || target.sha256 !== request.expected_file_sha256) fail(code);
+  return target;
+}
+
+export async function materializeMacObjectBootstrapBlob(unvalidatedRequest, { readerAdapters = {} } = {}) {
+  const code = 'MAC_OBJECT_BOOTSTRAP';
+  if (process.platform !== 'darwin' || typeof process.getuid !== 'function' || typeof process.getgid !== 'function') fail(code);
+  const request = validateMacObjectBootstrapRequest(unvalidatedRequest);
+  const repositoryIdentityPolicy = repositoryIdentityPolicyForAuthorityRead(request?.repository_root);
+  if (!repositoryIdentityPolicy) fail(code);
+  const destinationParent = path.dirname(request.destination_path);
+  const parentPhysical = await realpath(destinationParent).catch(() => null);
+  const parentMetadata = await lstat(destinationParent, { bigint: true }).catch(() => null);
+  if (parentPhysical !== destinationParent || !parentMetadata?.isDirectory() || parentMetadata.isSymbolicLink()
+      || parentMetadata.uid !== BigInt(process.getuid()) || parentMetadata.gid !== BigInt(process.getgid())
+      || (Number(parentMetadata.mode & 0o777n) & 0o077) !== 0) fail(code);
+  const existing = await lstat(request.destination_path).catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (existing !== null) fail(code);
+  let read;
+  try {
+    read = await readMacExecutorAuthorityTarget(request, repositoryIdentityPolicy, readerAdapters);
+  } catch {
+    fail(code);
+  }
+  let handle;
+  let created = false;
+  try {
+    handle = await open(
+      request.destination_path,
+      FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL | FS_CONSTANTS.O_NOFOLLOW,
+      0o600,
+    );
+    created = true;
+    await handle.writeFile(read.bytes);
+    await handle.sync();
+  } catch (error) {
+    if (error?.code === 'EEXIST' || error?.code === 'ELOOP') fail(code);
+    throw error;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+  try {
+    const metadata = await lstat(request.destination_path, { bigint: true });
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1n
+        || metadata.uid !== BigInt(process.getuid()) || metadata.gid !== BigInt(process.getgid())
+        || Number(metadata.mode & 0o777n) !== 0o600 || metadata.size !== BigInt(read.bytes.length)) fail(code);
+    const verifyHandle = await open(request.destination_path, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    let observed;
+    try { observed = await verifyHandle.readFile(); } finally { await verifyHandle.close(); }
+    if (!observed.equals(read.bytes)) fail(code);
+  } catch (error) {
+    if (created) await unlink(request.destination_path).catch(() => {});
+    if (error?.code === code) throw error;
+    fail(code);
+  }
+}
+
+async function runMacObjectBootstrapReader(requestPath) {
+  const request = await readMacObjectBootstrapRequest(requestPath);
+  return materializeMacObjectBootstrapBlob(request);
+}
+
 function treeBlobOid(repositoryRoot, commit, gitPath) {
   const line = exactGitLine(repositoryRoot, ['ls-tree', commit, '--', gitPath], /^100[67][0-7]{2} blob [0-9a-f]{40,64}\t.+$/);
   const match = /^100[67][0-7]{2} blob ([0-9a-f]{40,64})\t(.+)$/.exec(line);
@@ -1305,12 +1587,14 @@ function treeBlobOid(repositoryRoot, commit, gitPath) {
 async function readGitAuthority() {
   const repositoryRoot = path.resolve(gitText('rev-parse', '--show-toplevel'));
   if (path.resolve(repositoryRoot) !== path.resolve(process.cwd())) fail('GIT_AUTHORITY');
+  const repositoryIdentityPolicy = repositoryIdentityPolicyForAuthorityRead(repositoryRoot);
   const commit = gitText('rev-parse', 'HEAD');
   const expectedBlobSha = treeBlobOid(repositoryRoot, commit, GENERATOR_GIT_PATH);
   const generatorRead = await readGitBlobBounded({
     authorityPath: GENERATOR_GIT_PATH,
     expectedBlobOid: expectedBlobSha,
     oid: expectedBlobSha,
+    repositoryIdentityPolicy,
     repositoryRoot,
   });
   const committedGeneratorBytes = generatorRead.bytes;
@@ -1346,6 +1630,7 @@ async function readGitAuthority() {
         authorityPath: gitPath,
         expectedBlobOid: blobOid,
         oid: blobOid,
+        repositoryIdentityPolicy,
         repositoryRoot,
       });
       manifestReadsByOid.set(blobOid, read);
@@ -1367,6 +1652,7 @@ async function readGitAuthority() {
     expectedBlobOid: PREDECESSOR_LAUNCHER_BLOB_OID,
     expectedFileSha256: PREDECESSOR_LAUNCHER_SHA256,
     oid: PREDECESSOR_LAUNCHER_BLOB_OID,
+    repositoryIdentityPolicy,
     repositoryRoot,
   });
   const currentLauncherRead = manifestEntries.find(({ path: candidate }) => candidate === 'scripts/ci3/ci3-bridge-launcher.zsh');
@@ -2137,9 +2423,10 @@ async function runSyntheticSelfTest() {
 
 async function main() {
   try {
-    const mode = parseMode(process.argv.slice(2));
-    if (mode === 'self-test') await runSyntheticSelfTest();
-    else if (mode === 'preflight-inputs') process.stdout.write(`${JSON.stringify(await preflightSourceInputs())}\n`);
+    const invocation = parseRuntimeInvocation(process.argv.slice(2));
+    if (invocation.mode === 'self-test') await runSyntheticSelfTest();
+    else if (invocation.mode === 'preflight-inputs') process.stdout.write(`${JSON.stringify(await preflightSourceInputs())}\n`);
+    else if (invocation.mode === 'mac-object-bootstrap-read') await runMacObjectBootstrapReader(invocation.requestPath);
     else await createBundle();
   } catch (error) {
     process.stderr.write(`${sanitizeError(error)}\n`);

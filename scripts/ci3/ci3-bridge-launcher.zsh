@@ -215,8 +215,9 @@ AUTHORITY_PATHS=(
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md'
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md'
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md'
-  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md'
   'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md'
+  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md'
+  'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md'
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md'
@@ -359,8 +360,8 @@ hash_text() {
 }
 
 if [[ "$MODE" != '--self-test' ]]; then
-  [[ "$AUTHORITY_PARENT" == '70a7d60dd9c4224e3be9072ce5fbd966bd534560' ]] || fail GIT_AUTHORITY
-  [[ "$AUTHORITY_SUBJECT" == 'build(ops): reconcile remaining CI-3 bridge input contracts' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_PARENT" == '65a06d3e7426117ea80679933f6a7bb611be5988' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_SUBJECT" == 'build(ops): authorize mac-compatible CI-3 bridge executor' ]] || fail GIT_AUTHORITY
 fi
 
 GENERATOR_OID="${GENERATOR_BINDING%% *}"

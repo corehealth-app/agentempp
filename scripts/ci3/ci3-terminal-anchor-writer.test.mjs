@@ -21,6 +21,11 @@ const FINDING_IDS = Object.freeze([
   ...Array.from({ length: 7 }, (_, index) => `RB-FINAL-I-${index + 1}`),
 ]);
 const AUTHORITY = 'a'.repeat(40);
+const EXECUTOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
+const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+const REMOTE_BUNDLE_PREDECESSOR = '7a929b0cebb28c339010dd5bf115e67b79523156';
+const REMOTE_BUNDLE_PREDECESSOR_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
+const REMOTE_BUNDLE_PREDECESSOR_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
 const WRITER_INVOCATION_TIMEOUT_MS = 60000;
 const GENERATIONS = Object.freeze({
   remote: `remote-${'b'.repeat(64)}`,
@@ -172,7 +177,9 @@ const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
   'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -291,8 +298,8 @@ async function createFixture({
     } else if (role === 'launch-attestation') {
       payload = {
         schema_version: 1, purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2', authority_sha: AUTHORITY,
-        authority_parent: '9'.repeat(40), authority_tree: 'f'.repeat(40),
-        authority_subject_sha256: sha(Buffer.from('build(ops): authorize bounded Git blob reader for CI-3 bridge')), authority_manifest_sha256: authorityManifestSourceSha256,
+        authority_parent: EXECUTOR_AUTHORITY_PARENT, authority_tree: 'f'.repeat(40),
+        authority_subject_sha256: sha(Buffer.from(EXECUTOR_AUTHORITY_SUBJECT)), authority_manifest_sha256: authorityManifestSourceSha256,
         components: components(), tools: Object.fromEntries(['node', 'ssh', 'swiftc', 'xcodebuild'].map((name, index) => [name, {
           binary_sha256: String(index + 1).repeat(64), path_sha256: String(index + 2).repeat(64), version_sha256: String(index + 3).repeat(64),
         }])), raw_values: false,
@@ -337,7 +344,8 @@ async function createFixture({
     } else if (role === 'remote-receipt') {
       payload = {
         schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1', created_at_utc: '2026-08-30T12:00:00.000Z',
-        authority_commit: AUTHORITY, authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
+        authority_commit: REMOTE_BUNDLE_PREDECESSOR, authority_parent: REMOTE_BUNDLE_PREDECESSOR_PARENT,
+        authority_tree: '8'.repeat(40), authority_subject: REMOTE_BUNDLE_PREDECESSOR_SUBJECT,
         generator_blob_sha: components().generator.blob_oid, generator_file_sha256: components().generator.sha256,
         controller_blob_oid: components().controller.blob_oid, controller_file_sha256: components().controller.sha256,
         launcher_blob_oid: components().launcher.blob_oid, launcher_file_sha256: components().launcher.sha256,
@@ -347,12 +355,13 @@ async function createFixture({
         predecessor_launcher_structural_skeleton_sha256: '8'.repeat(64), current_launcher_structural_skeleton_sha256: '8'.repeat(64),
         launcher_structural_skeleton_equal: true,
         anchor_writer_blob_oid: components().writer.blob_oid, anchor_writer_file_sha256: components().writer.sha256,
-        authority_tree_manifest_sha256: authorityManifestSourceSha256, remote_bundle_generation_id: GENERATIONS.remote,
+        authority_tree_manifest_sha256: '9'.repeat(64), remote_bundle_generation_id: GENERATIONS.remote,
         source_generation_id: `src-${'1'.repeat(64)}`, source_env_descriptor_identity_sha256: '2'.repeat(64),
         env_source_sha256: '3'.repeat(64), env_receipt_sha256: '4'.repeat(64), deployment_receipt_sha256: '5'.repeat(64),
         deployment_node: '22.x', execution_runtime_adoption_authority_sha: '461a2e0dbe091a5c352d5dfdc1952b444f41aac0',
         execution_runtime_node_sha256: '6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd', execution_runtime_status: 'VERIFIED_ADOPTED_READ_ONLY',
         credential_source_path: '/root/.config/agentempp/secrets/ci3-synthetic-patient.credentials.json', credential_source_sha256: '4'.repeat(64),
+        synthetic_marker_sha256: '6'.repeat(64),
         provisioning_receipt_sha256: '7'.repeat(64), output_config_sha256: '3'.repeat(64),
         output_filenames: ['mobile-staging-config.json', 'bridge.receipt.json'], staging_project_ref: 'syntheticref', implementation_sha: 'e3e1e252b48e42554e75899b950692c05186f60d',
         preview_deployment_count: 1, production_deployment_count: 0, env_preview_count: 3, env_production_count: 0, env_development_count: 0,
@@ -446,8 +455,8 @@ async function createFixture({
         schema_version: 1, purpose: 'CI3_MAC_OPERATION_AUTHORITY_V1', raw_values: false,
         context: {
           authority: {
-            commit: AUTHORITY, parent: '9'.repeat(40), tree: 'f'.repeat(40),
-            subject: 'build(ops): authorize bounded Git blob reader for CI-3 bridge', manifest_sha256: '0'.repeat(64),
+            commit: AUTHORITY, parent: EXECUTOR_AUTHORITY_PARENT, tree: 'f'.repeat(40),
+            subject: EXECUTOR_AUTHORITY_SUBJECT, manifest_sha256: '0'.repeat(64),
             components: components(),
           },
           generations: GENERATIONS,
@@ -488,8 +497,8 @@ async function createFixture({
     } else if (role === 'vps-pass-root') {
       payload = {
         schema_version: 1, purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1', authority_sha: AUTHORITY,
-        authority_parent: '9'.repeat(40), authority_tree: 'f'.repeat(40),
-        authority_subject_sha256: sha(Buffer.from('build(ops): authorize bounded Git blob reader for CI-3 bridge')),
+        authority_parent: EXECUTOR_AUTHORITY_PARENT, authority_tree: 'f'.repeat(40),
+        authority_subject_sha256: sha(Buffer.from(EXECUTOR_AUTHORITY_SUBJECT)),
         authority_manifest_sha256: authorityManifestSourceSha256, operation_authority_sha256: '0'.repeat(64),
         node_candidate_sha256: '1'.repeat(64), collector_contracts_sha256: sha(compactJsonBytes(Object.fromEntries(fixtureScanContracts().map((entry) => [entry.id, entry])))),
         publisher_input_manifest_sha256: '0'.repeat(64), source_generation_id: `src-${'2'.repeat(64)}`,
@@ -726,9 +735,21 @@ async function createFixture({
   const remoteEntry = evidence.find(({ role }) => role === 'remote-receipt');
   const simulatorEntry = evidence.find(({ role }) => role === 'simulator-gate');
   const sshEntry = evidence.find(({ role }) => role === 'ssh-provenance');
+  const launchEntry = evidence.find(({ role }) => role === 'launch-attestation');
+  const dualAuthorityRoots = {
+    schema_version: 1, purpose: 'CI3_MAC_DUAL_AUTHORITY_ROOTS_V1',
+    executor_authority_sha: AUTHORITY, launch_attestation_sha256: launchEntry.sha256,
+    remote_bundle_authority_sha: REMOTE_BUNDLE_PREDECESSOR,
+    remote_generation_id: GENERATIONS.remote, remote_receipt_sha256: remoteEntry.sha256,
+    remote_config_sha256: '3'.repeat(64), object_bootstrap_authority_sha: EXECUTOR_AUTHORITY_PARENT,
+    ci3_authority_base_sha: simulatorGatePayload.result.receipt.source_commit, raw_values: false,
+  };
+  const dualAuthorityRootsSha256 = sha(compactJsonBytes(dualAuthorityRoots));
   const bootstrapRewrite = await rewriteEvidenceObject(evidence, 'bootstrap-claim', (object) => {
     object.simulator_gate_sha256 = simulatorEntry.sha256;
     object.ssh_trust_descriptor_sha256 = sshDescriptorRoot.sha256;
+    object.launch_attestation_sha256 = launchEntry.sha256;
+    object.dual_authority_roots_sha256 = dualAuthorityRootsSha256;
   });
   const finalizedClaims = [];
   const finalizedResults = [];
@@ -749,6 +770,8 @@ async function createFixture({
   }
   const localRewrite = await rewriteEvidenceObject(evidence, 'local-receipt', (object) => {
     object.bootstrap_claim_sha256 = bootstrapRewrite.entry.sha256;
+    object.launch_attestation_sha256 = launchEntry.sha256;
+    object.dual_authority_roots_sha256 = dualAuthorityRootsSha256;
     object.remote_receipt_sha256 = remoteEntry.sha256;
     object.read_claim_chain_sha256 = sha(compactJsonBytes(finalizedClaims));
     object.read_result_chain_sha256 = sha(compactJsonBytes(finalizedResults));

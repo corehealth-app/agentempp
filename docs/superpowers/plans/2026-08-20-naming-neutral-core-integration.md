@@ -2714,3 +2714,17 @@ e subject `build(ops): reconcile remaining CI-3 bridge input contracts`.
 Revalidar então o blob Git exato e só depois consumir uma tentativa independente
 1/1. Gate 0 zsh permanece no Mac; Task 2, CI-4, produção e cleanup continuam
 fora desta operação.
+
+## Canonical five-input bundle terminal PASS — dossier 1.7.11
+
+Authority `7a929b0cebb28c339010dd5bf115e67b79523156` foi publicada com 16 paths e
+confirmada no remoto. O blob exato passou syntax, 426/426 generator, 708/708
+controller, 22/22 launcher, 4/4 writer, self-test 8/8 e preflight completo. A
+tentativa sucessora 1/1 criou a geração versionada
+`rb-b1ec265eb71070f50932a4d7af8af5fed4ba4937c8858319d3550b76a04880ad`.
+
+Claim-before-effect, receipt-last, readback físico, zero credential copy, zero
+service-role e zero raw marker/e-mail/senha passaram. Inputs, capsule e
+predecessors permaneceram exatos. O gate seguinte é exclusivamente no Mac:
+`FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`, começando por `/bin/zsh -n`
+do launcher blob exato antes de rede. Nenhum próximo gate foi executado na VPS.

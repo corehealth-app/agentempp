@@ -188,3 +188,43 @@ read-only resolveu acidentalmente o Node padrão NVM e encerrou em `ENOENT` por
 um path de deployment receipt incorreto. Não houve output de valor, mutation,
 generator ou tentativa. O scan foi repetido integralmente pelo capsule adotado
 com o path canônico e terminou com zero sensitive raw matches.
+
+## Terminal PASS — canonical five-input bundle
+
+```text
+AUTHORITY_SHA=7a929b0cebb28c339010dd5bf115e67b79523156
+AUTHORITY_PARENT=70a7d60dd9c4224e3be9072ce5fbd966bd534560
+AUTHORITY_TREE=902a89cab73ebe5ea78b246a9961aa20a6eaaf96
+AUTHORITY_REMOTE_READBACK=PASS
+INPUT_CONTRACT_AUTHORITY_ATTEMPTS=1/1
+INPUT_CONTRACT_AUTHORITY_RETRY=NO
+BRIDGE_CLAIM_BEFORE_EFFECT=YES
+BRIDGE_REMOTE_GENERATION_ID=rb-b1ec265eb71070f50932a4d7af8af5fed4ba4937c8858319d3550b76a04880ad
+BRIDGE_REMOTE_RECEIPT_PATH_HASH=e76eac812e1aff61a19f9e3797f3a4b90da56eddadaba2e0b43c71c69d21c8a2
+BRIDGE_REMOTE_RECEIPT_SHA256=349842c03aaaa039ddaf0da9e14ccb6b7793618cb346ab301de7f45fa146c10d
+BRIDGE_REMOTE_CONFIG_PATH_HASH=ee92379f73ed156ebbbb5141ea4b8efe83de6aba40925e2643c97e789a868ba8
+BRIDGE_REMOTE_CONFIG_SHA256=5132de192dba24912d65aa61228606864e3e86a56c04593cf63126c66554ee2a
+SYNTHETIC_CREDENTIAL_PATH_HASH=3ece3ed674cd3ffd605565f05170297b549fa50fcf9c9ad1a8ea1bfe1702a677
+SYNTHETIC_CREDENTIAL_SHA256=d36c96998b5879150d5dbd45a8118de0e50b24a815f5ff5cbeb0d87d449d8208
+SYNTHETIC_MARKER_SHA256=9f768034584af72f213b9d89816d4f1d506141a37375477369a4817180e4bdd3
+SERVICE_ROLE_OUTPUT=NO
+CREDENTIAL_COPY=NO
+RAW_MARKER_REPORTED=NO
+RAW_EMAIL_REPORTED=NO
+RAW_PASSWORD_REPORTED=NO
+RAW_VALUES_REPORTED=NO
+```
+
+O snapshot exato tinha blob `9bfb6006847ab63471021755c19f44ab8cf556db`,
+SHA-256 `d1d7958db00daebcaa823fdfdc3aced873e7167c8cd56931f6f5d56ddd27ec4f`,
+110.710 bytes, root:root 0600 e nlink 1. Os gates pós-authority repetiram
+generator 426/426, controller 708/708, launcher 22/22, writer 4/4, self-test
+8/8 e preflight físico/semântico completo antes da única invocação. O readback
+final confirmou claim 1, dois outputs, publication receipt last e zero raw
+marker/e-mail/password/service-role.
+
+As reviews documentais terminais A e B terminaram cada uma com
+`0 Critical / 0 Important`. Nenhum input, capsule ou predecessor foi alterado;
+não houve zsh, SSH, simulador, provider/database/production write, CI-3 Task 2,
+CI-4 ou cleanup. Próximo gate: `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`
+no Mac local, começando pelo Gate 0 `/bin/zsh -n` exato pre-network.

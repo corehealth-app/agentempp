@@ -1425,3 +1425,25 @@ CI-3 Task 2, CI-4 or cleanup.
 7. Materialize the exact Git blob, repeat preflight, then consume one fresh
    no-retry `--create` attempt only after both reviews are 0C/0I.
 8. Publish one terminal documentation commit and stop before the Mac handoff.
+
+## Round 29 terminal PASS — canonical bundle ready for Mac Gate 0
+
+Authority `7a929b0cebb28c339010dd5bf115e67b79523156` was published and read back
+exactly. The exact Git-blob snapshot passed all inherited suites, self-test and
+the shared five-input physical/semantic preflight. The sole successor attempt
+was consumed 1/1 and created generation
+`rb-b1ec265eb71070f50932a4d7af8af5fed4ba4937c8858319d3550b76a04880ad`
+with claim-before-effect, receipt-last publication and physical readback.
+
+Remote receipt/config SHA-256 are
+`349842c03aaaa039ddaf0da9e14ccb6b7793618cb346ab301de7f45fa146c10d` and
+`5132de192dba24912d65aa61228606864e3e86a56c04593cf63126c66554ee2a`.
+Credential is referenced only by path hash and content hash; its bytes are not
+in the bundle. Marker is represented only by SHA-256. Raw marker, email,
+password and service-role are absent. Inputs, runtime capsule, V1/V2/c517 and
+external systems remain unchanged.
+
+The VPS phase is terminal. Do not rerun `--create`. The next environment is
+Mac local and the first action is exact-blob `/bin/zsh -n` before network,
+simulator, claims, SSH or the three remote reads. CI-3 Task 2 and CI-4 remain
+unstarted here.

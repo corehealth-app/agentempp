@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.10
+**Versão do dossiê:** 1.7.11
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5342,3 +5342,36 @@ deployment, credential, provisioning e relações cruzadas, com zero write,
 claim, output, receipt, rede, SSH ou primary/live. Marker, e-mail e senha não
 foram emitidos. A authority só pode ser publicada após testes, scans e duas
 reviews 0C/0I; a única tentativa real permanece posterior ao readback remoto.
+
+## Atualização operacional 1.7.11 — bundle canônico dos cinco inputs publicado
+
+A authority de 16 paths foi publicada e confirmada no remoto em
+`7a929b0cebb28c339010dd5bf115e67b79523156`, parent
+`70a7d60dd9c4224e3be9072ce5fbd966bd534560`, tree
+`902a89cab73ebe5ea78b246a9961aa20a6eaaf96`, subject
+`build(ops): reconcile remaining CI-3 bridge input contracts`. O generator
+versionado foi materializado do blob Git exato, passou novamente syntax,
+426/426, 708/708, 22/22, 4/4, self-test 8/8 e o preflight integral.
+
+A única tentativa autorizada foi consumida 1/1 e terminou `CREATE PASS`. O
+claim durável precedeu a publicação; a geração remota é
+`rb-b1ec265eb71070f50932a4d7af8af5fed4ba4937c8858319d3550b76a04880ad`.
+Receipt e config passaram readback físico no-follow, owner-only, single-link e
+hash-bound. Seus hashes são, respectivamente,
+`349842c03aaaa039ddaf0da9e14ccb6b7793618cb346ab301de7f45fa146c10d` e
+`5132de192dba24912d65aa61228606864e3e86a56c04593cf63126c66554ee2a`;
+os path hashes são `e76eac812e1aff61a19f9e3797f3a4b90da56eddadaba2e0b43c71c69d21c8a2`
+e `ee92379f73ed156ebbbb5141ea4b8efe83de6aba40925e2643c97e789a868ba8`.
+
+A credential não foi copiada: path hash
+`3ece3ed674cd3ffd605565f05170297b549fa50fcf9c9ad1a8ea1bfe1702a677`,
+SHA-256 `d36c96998b5879150d5dbd45a8118de0e50b24a815f5ff5cbeb0d87d449d8208`.
+O marker permanece representado somente pelo SHA-256
+`9f768034584af72f213b9d89816d4f1d506141a37375477369a4817180e4bdd3`.
+Marker, e-mail, senha e service-role brutos tiveram zero matches no bundle.
+Inputs e capsule permaneceram byte-idênticos; nenhuma ação Vercel, Supabase,
+banco, primary/live, produção, simulador, CI-3 Task 2, CI-4 ou cleanup ocorreu.
+
+O próximo ambiente é o Mac local. O primeiro gate permanece a materialização
+dos 16 blobs exatos e `/bin/zsh -n` do launcher antes de qualquer rede, claim,
+SSH ou remote read. Este handoff não foi executado na VPS.

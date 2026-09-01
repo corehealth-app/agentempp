@@ -2776,3 +2776,28 @@ objects and create a fresh Gate 0 `/bin/zsh -n` receipt. Never reuse the old
 Gate 0, and do not begin simulator, `/usr/bin/ssh -G`, SSH, claims or reads
 before the fresh PASS. The cleanup deadline remains
 `2026-09-11T11:44:11.182Z`.
+
+## Terminal Mac executor result
+
+The successor authority was published after the exact failure manifest,
+`1460/1460` final tests, static gates and two independent zero-Critical,
+zero-Important reviews. Its 17 published blobs were materialized and rechecked
+locally without another fetch. The new exact-launcher Gate 0 passed with empty
+stdout/stderr and a new receipt; the historical receipt is preserved.
+
+Continuation then stopped at `STOP_PRE_AUTHORITY`: the fixed external
+root-owned Publisher 1 bootstrap and controller authority are not installed on
+this Mac. The Git worktree launcher cannot lawfully create or replace them.
+Accordingly simulator, `ssh -G`, SSH, three reads, bundle creation, scans,
+writer/anchor and CI-3 Tasks 2–12 remain unexecuted. The remote bundle remains
+unchanged and compatible as `REUSE_READ_ONLY`; the fixture and five CI-3 paths
+are preserved. Apart from the authorized documentary Git push/readback, no
+bridge, VPS, Supabase, Vercel, database or production system was modified.
+
+The next gate is external provisioning and validation of the immutable
+Publisher 1 chain for the already published executor authority. The resumed
+flow must retain the same new Gate 0 binding, exactly three claim-before-read
+operations, no retry/refetch and terminal anchor before any CI-3 mutation.
+Pre-publication tooling exposed local non-secret commit metadata and identifiers
+once; this deviation is recorded without repeating the values, and no config,
+credential or token value was fetched or transferred.

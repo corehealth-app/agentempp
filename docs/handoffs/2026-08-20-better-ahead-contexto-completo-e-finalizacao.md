@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.13
+**Versão do dossiê:** 1.7.14
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5487,3 +5487,40 @@ vazios. O primeiro receipt continua sendo o launch attestation versionado do
 Gate 0 `/bin/zsh -n`; bootstrap, local receipt e writer consomem o hash desse
 gate pela cadeia dual-root. Nenhum fetch, Gate 0 operacional, SSH, simulator,
 remote read, privilégio, CI-3 ou produção foi executado nesta correção local.
+
+## Registro terminal 1.7.14 — STOP_PRE_AUTHORITY do executor Mac publicado
+
+A authority sucessora do executor Mac foi publicada com os 17 paths exatos,
+parent e subject exigidos, suite final `1460/1460` e duas reviews independentes
+com `0 Critical / 0 Important`. Os 86 failures originais permanecem
+contabilizados em quatro root causes comprovadas, sem unresolved, skip, todo ou
+expected failure. A compatibilidade final é `REUSE_READ_ONLY`: generator,
+schemas, cinco inputs, generation/path e claims/publicação remotos não mudaram;
+o bundle remoto continua um predecessor distinto e read-only.
+
+Os blobs publicados foram materializados pelo object database local, sem novo
+fetch, com no-clobber, owner-only, `fsync` e readback. A suite publicada passou
+`1460/1460`, o writer compilou e o novo Gate 0 `/bin/zsh -n` passou com exit 0 e
+stdout/stderr vazios. Um receipt versionado novo foi preservado junto do receipt
+histórico, sem reutilizá-lo.
+
+O primeiro preflight pós-Gate-0 encontrou ausentes o
+`ci3-publisher1-bootstrap` root-owned e o `ci3-controller-authority` externo.
+O launcher fixo rejeita corretamente qualquer modo operacional fora dessa
+cadeia autenticada e proíbe usar a worktree como Publisher 0. Como o issuer,
+materializer e runtime externos necessários não estão provisionados no Mac,
+o resultado terminal é `STOP_PRE_AUTHORITY` antes de simulator, `ssh -G`, SSH,
+claims, três reads, bundle local, scans, writer, anchor ou CI-3 Tasks 2–12.
+
+Não houve escrita em VPS, Supabase, Vercel, banco, primary/live, produção ou
+fixture; também não houve cleanup, CI-4, PR, merge, deploy, TestFlight ou App
+Store. Os cinco paths da worktree CI-3 seguem preservados. Durante tooling
+pré-publicação houve uma exposição local acidental de metadados de commit e
+identificadores não secretos; nenhum valor de config/credential/token foi
+transferido e o desvio fica registrado, sem repetir os valores.
+
+Próximo gate: provisionar externamente o Publisher 1 imutável e autenticado
+para esta mesma authority do executor Mac. A retomada deve consumir o Gate 0
+novo preservado, executar simulator antes de `ssh -G`, manter exatamente três
+reads sem retry/refetch e publicar a terminal anchor antes de qualquer mutação
+da CI-3.

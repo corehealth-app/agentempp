@@ -1558,5 +1558,33 @@ and the bootstrap/local/writer chain consumes its hash.
       remove the isolated receipt/output; observe RED then GREEN.
 - [x] Drive authority-manifest mutations from `AUTHORITY_PATHS.length` and
       prove both final indices are rejected.
-- [ ] Re-run focused, exact 86-identifier, full-suite and sanitized diff gates;
-      do not publish or perform any external operation.
+- [x] Re-run focused, exact 86-identifier, full-suite and sanitized diff gates;
+      publish the reviewed successor authority through the authorized Git push
+      and remote readback, without bridge or production operation.
+
+## Terminal execution record — Mac successor authority
+
+- [x] Preserve and account for the original 86/86 failures in four proven
+      root-cause groups with zero unresolved.
+- [x] Pass the final Mac authority suite `1460/1460`, zero fail/skip/todo.
+- [x] Obtain two final reviews with zero Critical and zero Important findings.
+- [x] Publish exactly 17 authority paths with the required parent and subject.
+- [x] Classify the remote bundle `REUSE_READ_ONLY`; do not regenerate or mutate it.
+- [x] Materialize and revalidate exact published blobs without a new fetch.
+- [x] Compile the published writer and pass a new exact-launcher Gate 0 with a
+      distinct versioned receipt while preserving the historical receipt.
+- [x] Fail closed at `STOP_PRE_AUTHORITY` because the separately authenticated
+      root-owned Publisher 1 bootstrap and controller authority are absent.
+- [x] Keep simulator, `ssh -G`, SSH, claims, reads, bundle, scans, privileged
+      writer, terminal anchor and CI-3 Tasks 2–12 unexecuted after the STOP.
+- [x] Preserve the remote bundle, fixture, five CI-3 paths and all bridge,
+      infrastructure and production systems; the authorized documentary Git
+      push/readback is recorded separately.
+
+Continuation requires externally provisioning the immutable Publisher 1
+bootstrap for the already published Mac executor authority. Do not substitute
+the Git worktree launcher, do not create an ad-hoc root tree, and do not advance
+to simulator or SSH until that external authority is verified. A local
+tool-output discipline deviation involving non-secret commit metadata and
+identifiers is recorded without reproducing any value; no config, credential
+or token was fetched.

@@ -278,3 +278,41 @@ Fresh round-2 verification passed `50/50` focused, `434/434` generator,
 `751/751` controller, exact owner identifiers `86/86` and the full four-file
 suite `1460/1460` under `umask 077`, with zero fail/cancel/skip/todo. Static and
 added-line scans are recorded in the task report.
+
+## Published execution and terminal STOP
+
+The successor authority was committed with the required parent and subject,
+its exact 17-path manifest was pushed fast-forward, and remote readback matched
+the local commit. Two final independent reviews reported zero Critical and zero
+Important findings. The remote compatibility verdict remains
+`REUSE_READ_ONLY`; no remote bundle byte or contract was changed.
+
+The exact published blobs were materialized from the local object database with
+exclusive owner-only writes, no symlinks, fsync and readback. The published
+four-file suite passed `1460/1460`, with zero fail/cancel/skip/todo, and the
+published Swift writer compiled. No second Git fetch occurred. A new Gate 0 ran
+`/bin/zsh -n` against the exact published launcher, returned exit 0 with empty
+stdout/stderr and produced a new versioned owner-only receipt while preserving
+the historical receipt.
+
+The post-Gate-0 external-authority preflight found no installed immutable
+root-owned Publisher 1 bootstrap and no installed controller authority at the
+fixed external root. The launcher is designed to reject every operational mode
+outside that separately authenticated chain. Its issuer/materializer/runtime
+inputs are not present on this Mac, so manufacturing a substitute from the Git
+worktree would violate the reviewed contract. The terminal result is therefore
+`STOP_PRE_AUTHORITY`.
+
+Simulator, real `ssh -G`, SSH, claims, all three remote reads, local bundle,
+simulator credential installation, six scans, privileged writer, terminal
+anchor and CI-3 Tasks 2–12 were not executed. The remote bundle, fixture, five
+CI-3 paths and all predecessor evidence remain preserved. There were no writes
+to VPS, Supabase, Vercel, database or production and no cleanup or next gate.
+Pre-publication tooling accidentally displayed local commit metadata and
+non-secret identifiers; this evidence records the output-discipline deviation
+without repeating any value. No config, credential or token value was fetched
+or transferred.
+
+The next gate is external provisioning of the authenticated immutable
+Publisher 1 bootstrap for this same Mac executor authority. Only then may the
+existing successor Gate 0 evidence authorize the ordered operational sequence.

@@ -1447,3 +1447,50 @@ The VPS phase is terminal. Do not rerun `--create`. The next environment is
 Mac local and the first action is exact-blob `/bin/zsh -n` before network,
 simulator, claims, SSH or the three remote reads. CI-3 Task 2 and CI-4 remain
 unstarted here.
+
+## Round 30 — bounded Git object bootstrap before Mac Gate 0
+
+The Mac STOP caused by missing local Git objects is preserved. Before Gate 0,
+perform only this decision:
+
+1. Snapshot manager and CI-3 HEAD/status/staging without network.
+2. Check local existence and identity of the object-bootstrap authority SHA
+   supplied by the handoff, its terminal-documentation parent, the bridge
+   authority and launcher blob.
+3. If all four exist and validate, set fetch count to `0/1`.
+4. Otherwise validate exact origin
+   `https://github.com/corehealth-app/agentempp.git` and execute once, without
+   retry:
+
+   ```bash
+   GIT_TERMINAL_PROMPT=0 \
+   git -C /Users/eduardohenrique/Developer/bodyflow \
+     -c maintenance.auto=false \
+     -c gc.auto=0 \
+     fetch \
+     --no-tags \
+     --no-recurse-submodules \
+     origin \
+     refs/heads/codex/better-ahead-rebranding-design:refs/remotes/origin/codex/better-ahead-rebranding-design
+   ```
+
+5. Require the remote-tracking ref at the new authority whose parent is
+   `cc9e8c681d53689314f553c82624ec452b7d2542`; validate object type/size,
+   bridge authority `7a929b0cebb28c339010dd5bf115e67b79523156`, its 16 paths
+   and launcher `100755`/`918de148626fbfa642a4ac97a1e2057092ecffb8`/
+   `7d4fd15564a90be5d6892ca04f03d85b7c2391a0eb9d3fffa1c2ea03adde5d1d`.
+6. Prove both worktrees and staging snapshots unchanged. Any failure or
+   ambiguity STOPs before Gate 0 and consumes the only fetch opportunity.
+7. Materialize the launcher from the exact local blob and execute one
+   `/bin/zsh -n`. Require exit zero, empty stdout/stderr, stable identity and a
+   no-clobber receipt that records fetch count 0 or 1 and zero operational
+   network after bootstrap.
+8. Only after Gate 0 PASS continue the existing simulator gate,
+   `/usr/bin/ssh -G`, exactly three reads, local bundle, simulator
+   install/removal, six scans, terminal anchor and original CI-3 Tasks 2–12.
+
+The optional fetch updates only a remote-tracking ref and may carry only Git
+objects. It cannot use SSH, open secrets/config/credential, access the
+operational VPS, start simulator or create operational claims. It never
+recreates the VPS bundle or runs a predecessor bridge. CI-4 and cleanup remain
+prohibited.

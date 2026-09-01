@@ -1689,3 +1689,35 @@ implementation identities must agree across the five inputs.
 readers and the same source-document validator as `--create`, returning only a
 closed sanitized PASS/failure projection. It performs zero writes, claims,
 outputs, receipts, retries, network, SSH or primary/live opens.
+
+## Pre-Gate0 Git object bootstrap V1
+
+`PRE_GATE0_GIT_OBJECT_BOOTSTRAP_V1` is a narrow availability prerequisite for
+the Mac launcher. It does not modify the bridge architecture, current bridge
+authority `7a929b0cebb28c339010dd5bf115e67b79523156`, generation, config,
+receipt, credential boundary, simulator protocol, SSH protocol, three-read
+budget, six scans, terminal anchor or CI-3 continuation.
+
+The Mac begins with a local object-availability decision. The object-bootstrap
+authority SHA supplied by the handoff, its terminal-documentation parent, the
+bridge authority and launcher blob must all exist and validate to require zero
+fetch. If any is absent, at most one logical invocation may update only
+`refs/remotes/origin/codex/better-ahead-rebranding-design` from exact HTTPS
+origin `https://github.com/corehealth-app/agentempp.git`, using the literal
+no-tags/no-submodules/no-maintenance/no-gc command frozen in the companion plan
+and evidence. There is no force refspec, prune, shallow mutation, checkout,
+local branch update, pull, merge, rebase or retry.
+
+The fetch transports Git commits/blobs only and is classified
+`code-provenance network`. It may not access the operational VPS, SSH, bundle,
+config, credential, secrets, simulator, remote-read claims or CI-3 worktree.
+After the fetch, readback must prove the new authority parent, remote-tracking
+tip, current bridge authority, ordered 16-path manifest, exact launcher
+`100755`/blob/SHA and byte-identical manager and CI-3 states.
+
+Only then may the launcher be materialized from the local object database.
+`MAC_GATE_0=EXACT_LAUNCHER_ZSH_SYNTAX` remains mandatory and must pass before
+simulator, `/usr/bin/ssh -G`, SSH, remote reads, claims, config/credential or
+any operational network. Its receipt includes bootstrap authority, fetch count
+0 or 1 and `network-after-bootstrap-before-gate0=false`. Fetch/readback/Gate 0
+failure is terminal and has no retry. Predecessor bridges remain prohibited.

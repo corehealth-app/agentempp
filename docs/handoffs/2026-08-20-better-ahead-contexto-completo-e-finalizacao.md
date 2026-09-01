@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.11
+**Versão do dossiê:** 1.7.12
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5375,3 +5375,51 @@ banco, primary/live, produção, simulador, CI-3 Task 2, CI-4 ou cleanup ocorreu
 O próximo ambiente é o Mac local. O primeiro gate permanece a materialização
 dos 16 blobs exatos e `/bin/zsh -n` do launcher antes de qualquer rede, claim,
 SSH ou remote read. Este handoff não foi executado na VPS.
+
+## Atualização operacional 1.7.12 — bootstrap Git limitado antes do Gate 0 do Mac
+
+O STOP reportado pelo Mac é válido: a documentação terminal, a authority da
+bridge ou o launcher exato ainda não estavam disponíveis no object database
+local, enquanto a authority 1.7.11 proibia toda rede antes do Gate 0. Isso
+formava uma circularidade, pois `/bin/zsh -n` exige primeiro os bytes exatos do
+launcher.
+
+`PRE_GATE0_GIT_OBJECT_BOOTSTRAP_V1` resolve somente essa disponibilidade. O
+Mac começa com um preflight local. Se a nova authority de object-bootstrap
+informada neste handoff, seu parent documental, a authority
+`7a929b0cebb28c339010dd5bf115e67b79523156` e o blob do launcher já existirem
+e validarem, usa zero fetch. Se algum objeto faltar, pode executar no máximo uma
+invocação lógica de `git fetch`, sem retry, tags, prune, submodules, shallow,
+force-refspec, checkout, pull, merge ou rebase, atualizando somente
+`refs/remotes/origin/codex/better-ahead-rebranding-design` a partir do origin
+HTTPS exato `https://github.com/corehealth-app/agentempp.git`.
+
+Esse tráfego é exclusivamente `code-provenance network`: transporta commits e
+blobs Git públicos/privados já versionados. Não é `operational network` e não
+pode alcançar a VPS operacional, bundle, config, credential, secrets,
+simulador, SSH, remote reads ou claims. Depois do fetch opcional, a execução
+revalida ref, lineage, authority, manifesto de 16 paths, mode/OID/SHA do
+launcher e a invariância das duas worktrees. Qualquer falha ou ambiguidade
+termina em STOP sem Gate 0 nem segunda tentativa.
+
+O Gate 0 não foi reduzido. Após o bootstrap, e antes de simulador,
+`/usr/bin/ssh -G`, SSH, três remote reads, claims ou qualquer rede operacional,
+o Mac materializa o blob exato
+`918de148626fbfa642a4ac97a1e2057092ecffb8` e executa uma única vez
+`/bin/zsh -n`, exigindo exit zero, stdout/stderr vazios e identidade estável. O
+receipt liga a authority desta reconciliação, a authority da bridge, o launcher,
+o fetch count 0 ou 1 e a prova de que não houve rede operacional antes do gate.
+
+O bundle VPS permanece PASS e não foi recriado ou alterado: geração
+`rb-b1ec265eb71070f50932a4d7af8af5fed4ba4937c8858319d3550b76a04880ad`,
+receipt SHA-256
+`349842c03aaaa039ddaf0da9e14ccb6b7793618cb346ab301de7f45fa146c10d`
+e config SHA-256
+`5132de192dba24912d65aa61228606864e3e86a56c04593cf63126c66554ee2a`.
+Credential e service role não fazem parte do bootstrap. A VPS não executou o
+handoff Mac, simulator, CI-3 Task 2, CI-4, cleanup ou qualquer escrita em
+Vercel, Supabase, banco, primary/live ou produção.
+
+O próximo ambiente continua `MAC_LOCAL`; o próximo gate continua
+`FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`, agora precedido somente
+pelo bootstrap Git bounded aqui autorizado e seguido imediatamente pelo Gate 0.

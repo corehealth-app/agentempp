@@ -2728,3 +2728,34 @@ service-role e zero raw marker/e-mail/senha passaram. Inputs, capsule e
 predecessors permaneceram exatos. O gate seguinte é exclusivamente no Mac:
 `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`, começando por `/bin/zsh -n`
 do launcher blob exato antes de rede. Nenhum próximo gate foi executado na VPS.
+
+## Mac pre-Gate0 Git object bootstrap authority — dossier 1.7.12
+
+The Mac STOP is preserved: Gate 0 could not start because its exact launcher
+object was unavailable locally while the predecessor prohibited all pre-gate
+network. `PRE_GATE0_GIT_OBJECT_BOOTSTRAP_V1` authorizes only the minimum Git
+object acquisition needed to resolve that circularity.
+
+The Mac first checks the object-bootstrap authority SHA supplied by the
+handoff, its terminal-documentation parent, bridge authority and launcher blob
+locally. If all four are present and valid, it performs zero fetch. Otherwise it may
+execute exactly one logical no-retry HTTPS fetch from origin
+`https://github.com/corehealth-app/agentempp.git`, with no tags, prune,
+submodules, shallow change or force refspec, updating only
+`refs/remotes/origin/codex/better-ahead-rebranding-design`. It may receive only
+commits/blobs and may not open secrets, config, credential, bundle or connect
+to the operational VPS.
+
+Post-fetch readback proves the new authority parent, current bridge authority
+`7a929b0cebb28c339010dd5bf115e67b79523156`, 16-path manifest, launcher mode/
+OID/SHA and unchanged manager/CI-3 worktrees. Failure is STOP with no retry.
+Then, and still before all operational network, the Mac materializes the exact
+launcher and executes `/bin/zsh -n`. Simulator, `/usr/bin/ssh -G`, SSH, three
+remote reads, claims and config/credential remain blocked until that Gate 0
+passes.
+
+The current bundle generation and hashes remain unchanged. After Gate 0 PASS,
+continue the existing `FETCH_VERSIONED_CI3_BRIDGE_BUNDLE_AND_RESUME_CI3`
+handoff through simulator, SSH, three reads, local publication,
+install/removal, six scans, terminal anchor and Tasks 2–12. No cleanup or CI-4
+is authorized.

@@ -2667,3 +2667,11 @@ sete valores canônicos e que somente o generator V2 divergiu. A nova authority
 independente. Reader bounded, Node capsule adotado, protocols e Gate 0 zsh no
 Mac permanecem inalterados. A VPS pode criar apenas o bundle; CI-3 Task 2,
 CI-4, produção, Supabase/Vercel e cleanup continuam bloqueados.
+
+## Bridge receipt canonical terminal STOP — dossier 1.7.11
+
+A authority canônica está publicada, mas a tentativa não começou. O env
+receipt passou; o deployment receipt falhou no preflight em dois campos
+semânticos (`purpose` e `node`). Portanto o budget sucessor permanece `0/1`,
+sem claim/output. O próximo gate é reconciliar documentalmente o deployment
+receipt. Mac Gate 0, CI-3 Tasks 2–12, CI-4, produção e cleanup seguem parados.

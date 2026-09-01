@@ -5269,3 +5269,16 @@ zsh deferred ao Mac, hashes e gates de staging/preview/produção. Ela altera
 somente os 15 paths fechados e concede uma tentativa independente após GREEN,
 scans, duas reviews e publicação remota. Não há mutação do receipt, emissão de
 valor, execução do handoff Mac, CI-3 Task 2, CI-4, produção ou cleanup.
+
+## Atualização operacional 1.7.11 — STOP pre-attempt no deployment receipt
+
+A authority canônica foi publicada e o snapshot Git-bound passou self-test e
+leitura bounded dos 15 blobs. O env receipt físico passou integralmente o
+contrato reconciliado. Antes de `--create`, porém, o próximo gate detectou duas
+divergências semânticas no deployment receipt preservado: `purpose` e `node`.
+
+Nenhuma tentativa sucessora foi consumida (`0/1`), e não existe authority root,
+claim, staging, generation, config ou receipt. O snapshot, capsule, adoption,
+cinco inputs e V1/V2 permanecem preservados. Próximo gate é uma nova authority
+para reconciliar explicitamente o deployment receipt; Gate 0 do Mac, CI-3 Task
+2, CI-4, produção e cleanup continuam não executados.

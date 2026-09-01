@@ -61,3 +61,16 @@ package/lockfile inalterados, ausência de material sensível e ausência de
 mutação do receipt/runtime. Review A (receipt/provenance/generator) e Review B
 (continuidade executável/preservação) concluíram GO com
 `0 Critical / 0 Important` cada.
+
+## Resultado terminal pós-authority
+
+A authority foi publicada e confirmada. O snapshot materializado do blob Git
+passou self-test `8/8`, e o reader bounded leu os 15 blobs. Capsule e adoption
+receipt permaneceram exatos. O env receipt físico passou o contrato canônico.
+
+O preflight do deployment receipt então retornou
+`DEPLOYMENT_RECEIPT_STATE`. Diagnóstico read-only e sanitizado localizou duas
+divergências de expectativa: os campos `purpose` e `node`; todos os demais
+gates daquele receipt passaram. O comando `--create` não foi invocado, logo a
+tentativa sucessora permanece `0/1`, sem claim ou output. O próximo gate é
+`RECONCILE_DEPLOYMENT_RECEIPT_CONTRACT_AND_FRESH_BRIDGE_ATTEMPT`.

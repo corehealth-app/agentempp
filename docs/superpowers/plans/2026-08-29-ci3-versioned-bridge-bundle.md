@@ -1370,3 +1370,15 @@ Mac Gate 0, simulador, SSH, remote reads, Task 2 e CI-4 continuam bloqueados.
 6. Exigir output versionado, receipt last, zero credential copy, zero
    service-role/raw values e readback físico integral.
 7. Não executar Gate 0 do Mac, Task 2, CI-4, produção ou cleanup nesta VPS.
+
+## Round 27 STOP — deployment receipt diverge antes da tentativa
+
+A authority do Round 26 foi publicada e o env receipt canônico passou. O
+preflight seguinte parou em `DEPLOYMENT_RECEIPT_STATE`: exatamente `purpose` e
+`node` divergem das expectativas herdadas do generator, enquanto os demais
+gates do deployment receipt passam. Nenhum valor bruto foi emitido.
+
+`--create` não foi executado; o novo budget permanece `0/1`. Claim, staging,
+generation, config e receipt estão ausentes. Preservar snapshot, capsule,
+adoption e cinco inputs sem cleanup. A retomada requer authority específica
+para o deployment receipt; não executar Mac Gate 0, Task 2 ou CI-4.

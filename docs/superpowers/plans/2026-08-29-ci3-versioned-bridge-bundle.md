@@ -1382,3 +1382,46 @@ gates do deployment receipt passam. Nenhum valor bruto foi emitido.
 generation, config e receipt estão ausentes. Preservar snapshot, capsule,
 adoption e cinco inputs sem cleanup. A retomada requer authority específica
 para o deployment receipt; não executar Mac Gate 0, Task 2 ou CI-4.
+
+## Round 28 — reconcile canonical deployment receipt and grant one fresh attempt
+
+1. Preserve Bridge V1/V2 as consumed and c517 as unexecuted superseded.
+2. Prove from the physical hash-bound receipt and Preview authority the exact
+   purpose `ci3-dedicated-mobile-bff-deployment` and Vercel Node `22.x`.
+3. Keep the adopted capsule as an independent execution-runtime contract.
+4. TDD the two failures independently, then require at least 62 reconciliation
+   cases and all inherited deployment gates.
+5. Expand the closed authority manifest to exactly 16 paths with the new
+   deployment reconciliation evidence; update generator, controller, launcher,
+   writer and tests consistently.
+6. Run the real read-only five-input preflight with zero writes/claims/outputs,
+   unchanged hashes, all suites, scans and two 0C/0I reviews.
+7. Publish one authority commit with parent `70a7d60…` and exact subject
+   `build(ops): reconcile remaining CI-3 bridge input contracts`.
+8. Only after remote readback, materialize the generator from its exact Git blob
+   and execute one `--create` through the adopted capsule. Never execute c517.
+9. On PASS, validate physical config/receipt, publish terminal docs and print
+   the Mac handoff. On failure, preserve all state and publish terminal STOP.
+
+This round performs no zsh, simulator, SSH, provider/database/production write,
+CI-3 Task 2, CI-4 or cleanup.
+
+## Round 29 — reconcile all remaining five-input contracts
+
+1. Preserve the correct marker STOP, all 16 candidate paths, empty staging,
+   prior GREENs and all predecessor budgets.
+2. Prove the operation-scoped marker grammar from `e4159e85…`, the frozen
+   creator, claim/credential/recovery/provisioning receipts and ledgers without
+   emitting raw values.
+3. Build a closed reconciliation matrix and change only proven
+   `GENERATOR_EXPECTATION_BUG` fields; any ambiguity remains a pre-authority
+   STOP.
+4. TDD at least 90 marker, cross-document, preservation and preflight cases.
+5. Add `--preflight-inputs` through the same readers and validator used by
+   `--create`; require all five semantic gates PASS and zero side effects.
+6. Publish exactly 16 paths with architecture
+   `VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1`
+   and subject `build(ops): reconcile remaining CI-3 bridge input contracts`.
+7. Materialize the exact Git blob, repeat preflight, then consume one fresh
+   no-retry `--create` attempt only after both reviews are 0C/0I.
+8. Publish one terminal documentation commit and stop before the Mac handoff.

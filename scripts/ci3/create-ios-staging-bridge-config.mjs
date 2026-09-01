@@ -19,11 +19,20 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const GENERATOR_GIT_PATH = 'scripts/ci3/create-ios-staging-bridge-config.mjs';
-const AUTHORITY_PARENT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
-const AUTHORITY_SUBJECT = 'build(ops): reconcile staging env receipt for CI-3 bridge';
+export const AUTHORITY_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
+export const AUTHORITY_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
 const PREDECESSOR_AUTHORITY_COMMIT = 'ba8473799a19aec586b0fe706bb7d4084589c86c';
 const PREDECESSOR_V2_AUTHORITY_COMMIT = 'c8e1d00c8d43912e55c5ecae3b2e3d84ae232026';
 const PREDECESSOR_V2_STOP_COMMIT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
+const PREDECESSOR_ENV_RECEIPT_AUTHORITY_COMMIT = 'c5172be7752f79c1acbf0e68d0d75a6bd880948a';
+const PREDECESSOR_ENV_RECEIPT_STOP_COMMIT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
+export const BRIDGE_LINEAGE = Object.freeze({
+  bridge_v1_attempts: '1/1_CONSUMED_NO_RETRY',
+  bridge_v2_attempts: '1/1_CONSUMED_NO_RETRY',
+  env_receipt_authority_sha: PREDECESSOR_ENV_RECEIPT_AUTHORITY_COMMIT,
+  env_receipt_attempts: '0/1_NOT_EXECUTED_SUPERSEDED',
+  env_receipt_stop_sha: PREDECESSOR_ENV_RECEIPT_STOP_COMMIT,
+});
 const PREDECESSOR_LAUNCHER_BLOB_OID = 'ade9531832da39715a815f4c34831780ce5063e3';
 const PREDECESSOR_LAUNCHER_SHA256 = 'c4c33a522125bc08823d9bac4a8344cf674df3e5e375f7c7e4fd22a1bcdf0ac2';
 export const GIT_OBJECT_READER_ARCHITECTURE = 'BOUNDED_GIT_OBJECT_READER_V2';
@@ -43,8 +52,18 @@ const EXPECTED_IMPLEMENTATION_SHA = 'e3e1e252b48e42554e75899b950692c05186f60d';
 const OUTPUT_ROOT = '/root/.config/agentempp/bridges/ci3';
 const PRIMARY_DENYLIST = '/root/.config/agentempp/secrets/agentempp-primary-backend.env';
 const ENV_RECEIPT_PURPOSE = 'ci3-staging-mobile-bff';
-const DEPLOYMENT_RECEIPT_PURPOSE = 'ci3_dedicated_mobile_bff_deployment';
-const PROVISIONING_RECEIPT_PURPOSE = 'ci3_synthetic_patient';
+export const DEPLOYMENT_RECEIPT_PURPOSE = 'ci3-dedicated-mobile-bff-deployment';
+export const DEPLOYMENT_NODE_CANONICAL = '22.x';
+export const EXECUTION_RUNTIME_ATTESTATION = Object.freeze({
+  adoption_authority_sha: '461a2e0dbe091a5c352d5dfdc1952b444f41aac0',
+  creation_authority_sha: 'b08e6326fbd22c96b852ccfe53abdeb254e54bd1',
+  node_sha256: '6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd',
+  status: 'VERIFIED_ADOPTED_READ_ONLY',
+});
+const PROVISIONING_RECEIPT_PURPOSE = 'ci3_authenticated_today';
+const PROVISIONING_RECEIPT_AUTHORITY = '5cecaa7af3f2c61f387e4e2d77a2b5e61f2d9a1c';
+const SYNTHETIC_MARKER_PATTERN_VERSION = 'CI3_SYNTHETIC_OPERATION_MARKER_V1';
+const SYNTHETIC_MARKER_LENGTH = 47;
 const LOCAL_CONFIG_RELATIVE_PATH = 'Library/Application Support/Agentempp/mobile-staging-config.json';
 const LOCAL_CREDENTIAL_RELATIVE_PATH = 'Library/Application Support/Agentempp/synthetic-patient.credentials.json';
 
@@ -254,8 +273,13 @@ export const RECEIPT_KEYS = Object.freeze([
   'env_source_sha256',
   'env_receipt_sha256',
   'deployment_receipt_sha256',
+  'deployment_node',
+  'execution_runtime_adoption_authority_sha',
+  'execution_runtime_node_sha256',
+  'execution_runtime_status',
   'credential_source_path',
   'credential_source_sha256',
+  'synthetic_marker_sha256',
   'provisioning_receipt_sha256',
   'output_config_sha256',
   'output_filenames',
@@ -285,6 +309,7 @@ export const AUTHORITY_PATHS = Object.freeze([
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -418,7 +443,7 @@ export function launcherStructuralSkeleton(bytes) {
 }
 
 export function validateAuthorityTreeManifest(entries) {
-  if (!Array.isArray(entries) || entries.length !== 15) fail('AUTHORITY_TREE_MANIFEST');
+  if (!Array.isArray(entries) || entries.length !== 16) fail('AUTHORITY_TREE_MANIFEST');
   const paths = new Set();
   for (const entry of entries) {
     exactKeys(entry, ['blob_oid', 'path', 'sha256'], 'AUTHORITY_TREE_MANIFEST');
@@ -432,6 +457,7 @@ export function validateAuthorityTreeManifest(entries) {
 export function parseMode(argv) {
   if (!Array.isArray(argv) || argv.length !== 1) fail('MODE_INVALID');
   if (argv[0] === '--self-test') return 'self-test';
+  if (argv[0] === '--preflight-inputs') return 'preflight-inputs';
   if (argv[0] === '--create') return 'create';
   fail('MODE_INVALID');
 }
@@ -585,7 +611,7 @@ function validateDeploymentReceipt(receipt) {
     prior_findings: receipt.public_probes.prior_findings,
   }, 'DEPLOYMENT_RECEIPT_SCHEMA');
   if (receipt.schema_version !== 1 || receipt.purpose !== DEPLOYMENT_RECEIPT_PURPOSE) fail('DEPLOYMENT_RECEIPT_STATE');
-  if (receipt.framework !== 'nextjs' || receipt.node !== '24.14.0' || receipt.root !== 'apps/mobile-bff') fail('DEPLOYMENT_RECEIPT_STATE');
+  if (receipt.framework !== 'nextjs' || receipt.node !== DEPLOYMENT_NODE_CANONICAL || receipt.root !== 'apps/mobile-bff') fail('DEPLOYMENT_RECEIPT_STATE');
   if (receipt.mobile_route_count !== receipt.route_count || receipt.route_count !== 40) fail('DEPLOYMENT_RECEIPT_STATE');
   if (receipt.public_probes.attempted !== receipt.public_probes.passed
     || receipt.public_probes.attempted !== receipt.public_probes.mobile + receipt.public_probes.forbidden_base + receipt.public_probes.prior_findings) fail('DEPLOYMENT_RECEIPT_STATE');
@@ -623,10 +649,49 @@ function validateDeploymentReceipt(receipt) {
   if (receipt.origin_sha256 !== sha256(Buffer.from(receipt.preview_origin))) fail('PREVIEW_ORIGIN');
 }
 
+export function validateExecutionRuntimeAttestation(attestation) {
+  exactKeys(attestation, ['adoption_authority_sha', 'creation_authority_sha', 'node_sha256', 'status'], 'EXECUTION_RUNTIME_ATTESTATION');
+  for (const key of ['adoption_authority_sha', 'creation_authority_sha']) {
+    if (!isSha(attestation[key], [40])) fail('EXECUTION_RUNTIME_ATTESTATION');
+  }
+  if (!isSha(attestation.node_sha256, [64]) || attestation.status !== 'VERIFIED_ADOPTED_READ_ONLY') fail('EXECUTION_RUNTIME_ATTESTATION');
+  for (const [key, value] of Object.entries(EXECUTION_RUNTIME_ATTESTATION)) {
+    if (attestation[key] !== value) fail('EXECUTION_RUNTIME_ATTESTATION');
+  }
+  return true;
+}
+
+export function validateSyntheticOperationMarker(marker) {
+  if (typeof marker !== 'string' || marker.length !== SYNTHETIC_MARKER_LENGTH
+      || Buffer.byteLength(marker, 'utf8') !== SYNTHETIC_MARKER_LENGTH
+      || Buffer.from(marker, 'utf8').toString('utf8') !== marker
+      || /[\u0000-\u0020\u007f]/u.test(marker)) fail('SYNTHETIC_MARKER');
+  const match = /^ci3-synthetic-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z-([A-Z2-7]{16})$/.exec(marker);
+  if (!match) fail('SYNTHETIC_MARKER');
+  const [, year, month, day, hour, minute, second] = match;
+  const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`);
+  const compact = Number.isFinite(parsed.getTime())
+    ? parsed.toISOString().replace(/[-:]/g, '').replace(/\.000Z$/, 'Z')
+    : '';
+  if (compact !== `${year}${month}${day}T${hour}${minute}${second}Z`) fail('SYNTHETIC_MARKER');
+  return Object.freeze({
+    valid: true,
+    marker_sha256: sha256(Buffer.from(marker, 'utf8')),
+    pattern_version: SYNTHETIC_MARKER_PATTERN_VERSION,
+    raw: false,
+  });
+}
+
 function validateCredential(credential) {
   exactKeys(credential, CREDENTIAL_KEYS, 'CREDENTIAL_SCHEMA');
-  if (credential.schema_version !== 1 || credential.environment !== 'staging' || credential.cleanup_required !== true || credential.synthetic_marker !== 'ci3-synthetic-patient') fail('CREDENTIAL_STATE');
   for (const key of ['created_at', 'email', 'expires_at', 'password', 'project_ref', 'synthetic_marker']) requireString(credential[key], 'CREDENTIAL_SCHEMA');
+  if (credential.schema_version !== 1 || credential.environment !== 'staging' || credential.cleanup_required !== true) fail('CREDENTIAL_STATE');
+  validateSyntheticOperationMarker(credential.synthetic_marker);
+  if (credential.email !== `${credential.synthetic_marker}@example.invalid`) fail('CREDENTIAL_EMAIL_RELATION');
+  if (credential.password.length < 20 || credential.password.length > 4096) fail('CREDENTIAL_STATE');
+  const createdAt = Date.parse(credential.created_at);
+  const expiresAt = Date.parse(credential.expires_at);
+  if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || expiresAt <= createdAt) fail('CREDENTIAL_STATE');
 }
 
 function validateProvisioningReceipt(receipt, deploymentReceipt) {
@@ -640,20 +705,42 @@ function validateProvisioningReceipt(receipt, deploymentReceipt) {
   requireNonnegativeIntegers(receipt.attempts, 'PROVISIONING_RECEIPT_SCHEMA');
   requireNonnegativeIntegers(receipt.fixture_counts, 'PROVISIONING_RECEIPT_SCHEMA');
   requireNonnegativeIntegers(receipt.supabase_http_request_counts, 'PROVISIONING_RECEIPT_SCHEMA');
-  if (receipt.schema_version !== 1 || receipt.purpose !== PROVISIONING_RECEIPT_PURPOSE || !isSha(receipt.authority_sha, [40])) fail('PROVISIONING_RECEIPT_STATE');
-  if (receipt.cleanup_deadline_class !== 'future' || receipt.auth_reused !== true || receipt.synthetic_marker !== 'ci3-synthetic-patient') fail('PROVISIONING_RECEIPT_STATE');
+  for (const key of [
+    'actor_id', 'auth_user_id', 'authority_sha', 'cleanup_deadline',
+    'cleanup_deadline_class', 'created_at', 'email_canonicalization',
+    'entitlement_id', 'environment', 'event_id', 'expires_at', 'grant_at',
+    'implementation_sha', 'implementation_tree', 'operation_id', 'patient_id',
+    'project_ref', 'purpose', 'state', 'synthetic_marker',
+  ]) requireString(receipt[key], 'PROVISIONING_RECEIPT_SCHEMA');
+  for (const requestId of Object.values(receipt.request_ids)) requireString(requestId, 'PROVISIONING_RECEIPT_SCHEMA');
+  for (const digest of Object.values(receipt.response_structure_sha256)) {
+    if (!isSha(digest, [64])) fail('PROVISIONING_RECEIPT_SCHEMA');
+  }
+  const createdAt = Date.parse(receipt.created_at);
+  const expiresAt = Date.parse(receipt.expires_at);
+  const cleanupDeadline = Date.parse(receipt.cleanup_deadline);
+  const grantAt = Date.parse(receipt.grant_at);
+  if (![createdAt, expiresAt, cleanupDeadline, grantAt].every(Number.isFinite)) fail('PROVISIONING_RECEIPT_SCHEMA');
+  if (receipt.schema_version !== 1 || receipt.purpose !== PROVISIONING_RECEIPT_PURPOSE || receipt.authority_sha !== PROVISIONING_RECEIPT_AUTHORITY) fail('PROVISIONING_RECEIPT_STATE');
+  if (receipt.cleanup_deadline_class !== 'CREATED_AT_PLUS_14_DAYS' || receipt.auth_reused !== true || receipt.email_canonicalization !== 'NORMALIZED_ALIAS_DOCUMENTED') fail('PROVISIONING_RECEIPT_STATE');
+  if (expiresAt <= createdAt) fail('PROVISIONING_RECEIPT_STATE');
+  validateSyntheticOperationMarker(receipt.synthetic_marker);
   const expectedAttempts = {
-    auth_create: 1, auth_create_settlement: 1, auth_delete_rollback: 0,
+    auth_create: 1, auth_create_settlement: 0, auth_delete_rollback: 0,
     auth_preflight: 1, auth_readback: 1, auth_update: 0, bootstrap_readback: 1,
     entitlement_grant: 1, entitlement_readback: 1, entitlement_resolution: 1,
-    entitlement_settlement: 1, entitlements_probe: 1, me_probe: 1,
+    entitlement_settlement: 0, entitlements_probe: 1, me_probe: 1,
     rollback_database_transaction: 0, rollback_settlement_read: 0, sign_in: 1,
     today_probe: 1,
   };
   for (const [key, value] of Object.entries(expectedAttempts)) if (receipt.attempts[key] !== value) fail('PROVISIONING_RECEIPT_STATE');
-  const expectedFixtureCounts = { auth: 1, entitlement: 1, event: 1, identity: 1, patient: 1, profile: 1, progress: 0, storage: 0 };
+  const expectedFixtureCounts = { auth: 1, entitlement: 1, event: 1, identity: 1, patient: 1, profile: 1, progress: 1, storage: 0 };
   for (const [key, value] of Object.entries(expectedFixtureCounts)) if (receipt.fixture_counts[key] !== value) fail('PROVISIONING_RECEIPT_STATE');
-  if (receipt.supabase_http_request_counts.patient !== 3 || receipt.supabase_http_request_counts.service !== 4) fail('PROVISIONING_RECEIPT_STATE');
+  if (receipt.supabase_http_request_counts.patient !== 1 || receipt.supabase_http_request_counts.service !== 7) fail('PROVISIONING_RECEIPT_STATE');
+  for (const [hashKey, idKey] of [['auth_user', 'auth_user_id'], ['entitlement', 'entitlement_id'], ['event', 'event_id'], ['patient', 'patient_id']]) {
+    requireString(receipt[idKey], 'PROVISIONING_RECEIPT_SCHEMA');
+    if (receipt.id_hashes[hashKey] !== sha256(Buffer.from(receipt[idKey], 'utf8'))) fail('PROVISIONING_RECEIPT_STATE');
+  }
   if (receipt.implementation_tree !== deploymentReceipt.implementation_tree) fail('IMPLEMENTATION_SHA');
   if (receipt.state !== 'TODAY_VERIFIED') fail('PROVISIONING_STATE');
   if (receipt.environment !== 'staging' || receipt.cleanup_required !== true) fail('PROVISIONING_STATE');
@@ -685,21 +772,80 @@ export function validateSourceDocuments({ credential, deploymentReceipt, envByte
   }
   if (supabaseUrl.protocol !== 'https:' || !supabaseUrl.hostname.startsWith(`${stagingRef}.`)) fail('STAGING_REF_MISMATCH');
   if (credential.project_ref !== stagingRef || provisioningReceipt.project_ref !== stagingRef) fail('CREDENTIAL_PROJECT');
-  if (credential.synthetic_marker !== provisioningReceipt.synthetic_marker) fail('CREDENTIAL_STATE');
+  if (credential.environment !== provisioningReceipt.environment) fail('CREDENTIAL_STATE');
+  if (credential.synthetic_marker !== provisioningReceipt.synthetic_marker) fail('CREDENTIAL_MARKER_RELATION');
+  if (credential.email !== `${provisioningReceipt.synthetic_marker}@example.invalid`) fail('CREDENTIAL_EMAIL_RELATION');
+  if (credential.created_at !== provisioningReceipt.created_at) fail('CREDENTIAL_STATE');
   if (credential.expires_at !== provisioningReceipt.cleanup_deadline || provisioningReceipt.expires_at !== provisioningReceipt.cleanup_deadline) fail('CLEANUP_DEADLINE');
   const deadline = Date.parse(provisioningReceipt.cleanup_deadline);
+  const createdAt = Date.parse(provisioningReceipt.created_at);
   const current = now instanceof Date ? now.getTime() : Date.parse(now);
-  if (!Number.isFinite(deadline) || !Number.isFinite(current) || deadline <= current) fail('CLEANUP_DEADLINE');
+  if (!Number.isFinite(deadline) || !Number.isFinite(createdAt) || !Number.isFinite(current)
+      || deadline <= current || deadline - createdAt !== 14 * 24 * 60 * 60 * 1000) fail('CLEANUP_DEADLINE');
   if (deploymentReceipt.implementation_sha !== provisioningReceipt.implementation_sha) fail('IMPLEMENTATION_SHA');
 
   return Object.freeze({
     cleanupDeadline: provisioningReceipt.cleanup_deadline,
+    deploymentNode: deploymentReceipt.node,
     implementationSha: deploymentReceipt.implementation_sha,
+    syntheticMarkerSha256: sha256(Buffer.from(credential.synthetic_marker, 'utf8')),
     mobileBffOrigin: deploymentReceipt.preview_origin,
     stagingProjectRef: stagingRef,
     previewDeploymentCount: deploymentReceipt.target === 'preview' && deploymentReceipt.ready_state === 'READY' ? 1 : 0,
     supabaseAnonKey: values.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseUrl: values.NEXT_PUBLIC_SUPABASE_URL,
+  });
+}
+
+export const SOURCE_DOCUMENT_VALIDATOR = validateSourceDocuments;
+
+async function loadAndValidateSourceInputs({ now = new Date(), readInput = readFixedInput } = {}) {
+  if (typeof readInput !== 'function') fail('PREFLIGHT_ADAPTER');
+  const sources = {};
+  for (const kind of Object.keys(INPUT_PATHS)) sources[kind] = await readInput(kind, 0);
+  const credential = parseJson(sources.credential.bytes, 'CREDENTIAL_JSON');
+  const provisioningReceipt = parseJson(sources.provisioningReceipt.bytes, 'PROVISIONING_JSON');
+  const validated = SOURCE_DOCUMENT_VALIDATOR({
+    credential,
+    deploymentReceipt: parseJson(sources.deploymentReceipt.bytes, 'DEPLOYMENT_JSON'),
+    envBytes: sources.env.bytes,
+    envReceipt: parseJson(sources.envReceipt.bytes, 'ENV_RECEIPT_JSON'),
+    now,
+    provisioningReceipt,
+  });
+  return { credential, provisioningReceipt, sources, validated };
+}
+
+export async function preflightSourceInputs(options = {}) {
+  const loaded = await loadAndValidateSourceInputs(options);
+  const marker = validateSyntheticOperationMarker(loaded.credential.synthetic_marker);
+  return Object.freeze({
+    all_five_inputs_semantic_preflight: 'PASS',
+    claims_created: 0,
+    cleanup_deadline_class: loaded.provisioningReceipt.cleanup_deadline_class,
+    credential_physical: 'PASS',
+    credential_semantic_preflight: 'PASS',
+    cross_document_relations_preflight: 'PASS',
+    deployment_receipt_physical: 'PASS',
+    deployment_receipt_semantic_preflight: 'PASS',
+    env_receipt_physical: 'PASS',
+    env_receipt_semantic_preflight: 'PASS',
+    env_source_physical: 'PASS',
+    network_calls: 0,
+    outputs_created: 0,
+    primary_open: false,
+    provisioning_receipt_physical: 'PASS',
+    provisioning_receipt_semantic_preflight: 'PASS',
+    raw_values_reported: false,
+    receipts_created: 0,
+    retries: 0,
+    ssh_calls: 0,
+    staging_created: 0,
+    synthetic_marker_credential_provisioning_equal: true,
+    synthetic_marker_email_relation: 'PASS',
+    synthetic_marker_pattern: 'VALID_OPERATION_SCOPED',
+    synthetic_marker_sha256: marker.marker_sha256,
+    writes: 0,
   });
 }
 
@@ -730,6 +876,7 @@ function validateAuthority(authority) {
 
 export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, validated }) {
   validateAuthority(authority);
+  validateExecutionRuntimeAttestation(EXECUTION_RUNTIME_ATTESTATION);
   if (credentialSourcePath !== INPUT_PATHS.credential) fail('CREDENTIAL_PATH');
   for (const key of ['env_source_sha256', 'env_receipt_sha256', 'deployment_receipt_sha256', 'credential_source_sha256', 'provisioning_receipt_sha256']) {
     if (!isSha(hashes?.[key], [64])) fail('SOURCE_HASH_BINDING');
@@ -748,7 +895,7 @@ export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, 
   const configBytes = jsonBytes(config);
   const receipt = {
     schema_version: 1,
-    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1',
+    purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1',
     created_at_utc: authority.committed_at_utc,
     authority_commit: authority.commit,
     authority_parent: authority.parent,
@@ -778,8 +925,13 @@ export function buildBundleArtifacts({ authority, credentialSourcePath, hashes, 
     env_source_sha256: hashes.env_source_sha256,
     env_receipt_sha256: hashes.env_receipt_sha256,
     deployment_receipt_sha256: hashes.deployment_receipt_sha256,
+    deployment_node: validated.deploymentNode,
+    execution_runtime_adoption_authority_sha: EXECUTION_RUNTIME_ATTESTATION.adoption_authority_sha,
+    execution_runtime_node_sha256: EXECUTION_RUNTIME_ATTESTATION.node_sha256,
+    execution_runtime_status: EXECUTION_RUNTIME_ATTESTATION.status,
     credential_source_path: credentialSourcePath,
     credential_source_sha256: hashes.credential_source_sha256,
+    synthetic_marker_sha256: validated.syntheticMarkerSha256,
     provisioning_receipt_sha256: hashes.provisioning_receipt_sha256,
     output_config_sha256: sha256(Buffer.from(configBytes)),
     output_filenames: ['mobile-staging-config.json', 'bridge.receipt.json'],
@@ -1348,7 +1500,11 @@ function validatePublishedContract(configBytes, receiptBytes, claim) {
     fail(code);
   }
   if (supabaseUrl.protocol !== 'https:' || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`) || mobileBffOrigin.protocol !== 'https:') fail(code);
-  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1') fail(code);
+  if (receipt.schema_version !== 1 || receipt.authority_commit !== claim.authority_commit || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1') fail(code);
+  if (receipt.deployment_node !== DEPLOYMENT_NODE_CANONICAL
+      || receipt.execution_runtime_adoption_authority_sha !== EXECUTION_RUNTIME_ATTESTATION.adoption_authority_sha
+      || receipt.execution_runtime_node_sha256 !== EXECUTION_RUNTIME_ATTESTATION.node_sha256
+      || receipt.execution_runtime_status !== EXECUTION_RUNTIME_ATTESTATION.status) fail(code);
   if (receipt.authority_parent !== AUTHORITY_PARENT || receipt.authority_parent !== claim.authority_parent
       || receipt.authority_subject !== AUTHORITY_SUBJECT || receipt.authority_subject !== claim.authority_subject
       || !isSha(receipt.authority_tree, [40]) || receipt.authority_tree !== claim.authority_tree) fail(code);
@@ -1371,6 +1527,7 @@ function validatePublishedContract(configBytes, receiptBytes, claim) {
   if (!/^rb-[a-f0-9]{64}$/.test(receipt.remote_bundle_generation_id) || receipt.remote_bundle_generation_id !== claim.remote_bundle_generation_id) fail(code);
   if (!/^src-[a-f0-9]{64}$/.test(receipt.source_generation_id) || receipt.source_generation_id !== claim.source_generation_id) fail(code);
   if (!Number.isFinite(Date.parse(receipt.created_at_utc)) || receipt.output_config_sha256 !== sha256(configBytes)) fail(code);
+  if (!isSha(receipt.synthetic_marker_sha256, [64])) fail(code);
   if (JSON.stringify(receipt.output_filenames) !== JSON.stringify(['mobile-staging-config.json', 'bridge.receipt.json'])) fail(code);
   if (receipt.credential_source_path !== INPUT_PATHS.credential || receipt.staging_project_ref !== config.staging_project_ref || receipt.implementation_sha !== EXPECTED_IMPLEMENTATION_SHA) fail(code);
   if (receipt.cleanup_deadline !== config.cleanup_deadline || !Number.isFinite(Date.parse(receipt.cleanup_deadline))) fail(code);
@@ -1858,16 +2015,7 @@ async function createBundle() {
     process.stdout.write(`CREATE PASS status=${recovered.status} authority_sha=${authority.commit} config_sha256=${receipt.output_config_sha256}\n`);
     return;
   }
-  const sources = {};
-  for (const kind of Object.keys(INPUT_PATHS)) sources[kind] = await readFixedInput(kind, 0);
-  const validated = validateSourceDocuments({
-    credential: parseJson(sources.credential.bytes, 'CREDENTIAL_JSON'),
-    deploymentReceipt: parseJson(sources.deploymentReceipt.bytes, 'DEPLOYMENT_JSON'),
-    envBytes: sources.env.bytes,
-    envReceipt: parseJson(sources.envReceipt.bytes, 'ENV_RECEIPT_JSON'),
-    now: new Date(),
-    provisioningReceipt: parseJson(sources.provisioningReceipt.bytes, 'PROVISIONING_JSON'),
-  });
+  const { sources, validated } = await loadAndValidateSourceInputs();
   const sourceGenerationId = `src-${sha256(Buffer.from(jsonBytes(Object.fromEntries(
     Object.entries(sources).map(([kind, source]) => [kind, source.sha256]),
   ))))}`;
@@ -1961,10 +2109,12 @@ async function runSyntheticSelfTest() {
       },
       validated: {
         cleanupDeadline: '2099-08-29T00:00:00.000Z',
+        deploymentNode: DEPLOYMENT_NODE_CANONICAL,
         implementationSha: EXPECTED_IMPLEMENTATION_SHA,
         mobileBffOrigin: 'https://mobile-bff-preview.invalid',
         previewDeploymentCount: 1,
         stagingProjectRef: 'syntheticstagingref',
+        syntheticMarkerSha256: 'a'.repeat(64),
         supabaseAnonKey: 'synthetic-anon-key',
         supabaseUrl: 'https://syntheticstagingref.supabase.invalid',
       },
@@ -1989,6 +2139,7 @@ async function main() {
   try {
     const mode = parseMode(process.argv.slice(2));
     if (mode === 'self-test') await runSyntheticSelfTest();
+    else if (mode === 'preflight-inputs') process.stdout.write(`${JSON.stringify(await preflightSourceInputs())}\n`);
     else await createBundle();
   } catch (error) {
     process.stderr.write(`${sanitizeError(error)}\n`);

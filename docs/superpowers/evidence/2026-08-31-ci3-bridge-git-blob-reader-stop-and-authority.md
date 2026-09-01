@@ -98,6 +98,19 @@ pre/post, authority bindings e schema foram auditados. Não há reparo apenas de
 sintoma e a criação do bundle independe do runtime zsh.
 Resultado: `0 Critical / 0 Important`.
 
+## Deployment receipt successor continuity
+
+O reader `BOUNDED_GIT_OBJECT_READER_V2` permanece com limite explícito de
+1 MiB, object type/size antes do body, streaming contado, stderr limitado,
+timeout, tamanho exato, SHA-256 incremental, revalidação type/size e zero retry.
+A authority sucessora apenas amplia o manifest fechado de 15 para 16 paths ao
+adicionar a evidência do deployment receipt. O caso real de 82.675 bytes deve
+continuar PASS antes da publicação.
+
+Bridge V1 e Bridge V2 seguem consumidas em 1/1. A authority `c5172be7…` não
+executou `--create`, não criou claim/output e fica superseded. Nenhuma dessas
+linhagens pode ser usada como authority corrente ou ganhar claim retroativo.
+
 ## Reconciliação sucessora do receipt
 
 O STOP V2 e seu budget `1/1` permanecem históricos. A authority sucessora

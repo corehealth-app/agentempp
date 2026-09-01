@@ -23,8 +23,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const AUTHORITY_PARENT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8';
-export const AUTHORITY_SUBJECT = 'build(ops): reconcile staging env receipt for CI-3 bridge';
+const AUTHORITY_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
+export const AUTHORITY_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
+const DEPLOYMENT_NODE_CANONICAL = '22.x';
+const EXECUTION_RUNTIME_ADOPTION_AUTHORITY_SHA = '461a2e0dbe091a5c352d5dfdc1952b444f41aac0';
+const EXECUTION_RUNTIME_NODE_SHA256 = '6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd';
 const CI3_PARENT = '277873755bf29771a10b5f362b522c2e6a6c21d6';
 const CI3_SUBJECT = 'feat(ios): connect Today to authenticated staging';
 const BUNDLE_ID = 'com.bodyflow.app';
@@ -169,6 +172,7 @@ export const AUTHORITY_PATHS = Object.freeze([
   'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
   'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
   'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -624,8 +628,10 @@ const REMOTE_RECEIPT_KEYS = Object.freeze([
   'anchor_writer_blob_oid', 'anchor_writer_file_sha256',
   'authority_tree_manifest_sha256', 'remote_bundle_generation_id', 'source_generation_id',
   'source_env_descriptor_identity_sha256', 'env_source_sha256', 'env_receipt_sha256',
-  'deployment_receipt_sha256', 'credential_source_path', 'credential_source_sha256',
-  'provisioning_receipt_sha256', 'output_config_sha256', 'output_filenames',
+  'deployment_receipt_sha256', 'deployment_node',
+  'execution_runtime_adoption_authority_sha', 'execution_runtime_node_sha256',
+  'execution_runtime_status', 'credential_source_path', 'credential_source_sha256',
+  'synthetic_marker_sha256', 'provisioning_receipt_sha256', 'output_config_sha256', 'output_filenames',
   'staging_project_ref', 'implementation_sha', 'preview_deployment_count',
   'production_deployment_count', 'env_preview_count', 'env_production_count',
   'env_development_count', 'sso_state', 'cleanup_deadline', 'service_role_emitted',
@@ -682,7 +688,7 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
   try { supabaseUrl = new URL(config.supabase_url); bffUrl = new URL(config.mobile_bff_origin); } catch { fail(code); }
   if (supabaseUrl.protocol !== 'https:' || bffUrl.protocol !== 'https:'
       || !supabaseUrl.hostname.startsWith(`${config.staging_project_ref}.`)) fail(code);
-  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1'
+  if (receipt.schema_version !== 1 || receipt.purpose !== 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1'
       || receipt.authority_commit !== context.authority.commit
       || receipt.authority_parent !== context.authority.parent
       || receipt.authority_tree !== context.authority.tree
@@ -695,6 +701,11 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
       || context.remote.config_sha256 !== sha256(configBytes)
       || context.remote.credential_sha256 !== sha256(credentialBytes)
       || receipt.credential_source_sha256 !== sha256(credentialBytes)
+      || receipt.synthetic_marker_sha256 !== sha256(Buffer.from(credential.synthetic_marker, 'utf8'))
+      || receipt.deployment_node !== DEPLOYMENT_NODE_CANONICAL
+      || receipt.execution_runtime_adoption_authority_sha !== EXECUTION_RUNTIME_ADOPTION_AUTHORITY_SHA
+      || receipt.execution_runtime_node_sha256 !== EXECUTION_RUNTIME_NODE_SHA256
+      || receipt.execution_runtime_status !== 'VERIFIED_ADOPTED_READ_ONLY'
       || receipt.raw_values_reported !== false
       || JSON.stringify(receipt.terminal_scan_ids) !== JSON.stringify(TERMINAL_SCAN_IDS)) fail(code);
   validateLauncherGateReceipt(receipt, code);
@@ -708,17 +719,12 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
     if (receipt[oidField] !== context.authority.components[name].blob_oid
         || receipt[hashField] !== context.authority.components[name].sha256) fail(code);
   }
-  if (credential.schema_version !== 1 || credential.environment !== 'staging'
-      || credential.cleanup_required !== true || credential.synthetic_marker !== 'ci3-synthetic-patient'
-      || credential.project_ref !== config.staging_project_ref
-      || !Number.isFinite(Date.parse(credential.created_at))
-      || !Number.isFinite(Date.parse(credential.expires_at))
-      || Date.parse(credential.expires_at) <= Date.parse(credential.created_at)
-      || credential.expires_at !== config.cleanup_deadline
-      || receipt.cleanup_deadline !== config.cleanup_deadline
-      || receipt.staging_project_ref !== config.staging_project_ref
-      || typeof credential.email !== 'string' || !credential.email.includes('@')
-      || typeof credential.password !== 'string' || credential.password.length === 0) fail(code);
+  validateSyntheticCredentialContract(credential, {
+    cleanupDeadline: config.cleanup_deadline,
+    projectRef: config.staging_project_ref,
+  }, code);
+  if (receipt.cleanup_deadline !== config.cleanup_deadline
+      || receipt.staging_project_ref !== config.staging_project_ref) fail(code);
   for (const [field, expected] of Object.entries(REMOTE_SOURCE_AUTHORITY)) {
     if (receipt[field] !== expected) fail(code);
   }
@@ -732,6 +738,27 @@ export function validateRemoteBundleSemantics({ context, configBytes, credential
       || receipt.primary_opened !== false || receipt.remote_bundle_immutable !== true) fail(code);
   for (const field of ['source_env_descriptor_identity_sha256']) requireSha(receipt[field], code);
   return { config, credential, receipt };
+}
+
+export function validateSyntheticCredentialContract(credential, expected, code = 'REMOTE_BUNDLE_SEMANTICS') {
+  const marker = credential?.synthetic_marker;
+  if (typeof marker !== 'string' || marker.length !== 47 || Buffer.byteLength(marker, 'utf8') !== 47
+      || Buffer.from(marker, 'utf8').toString('utf8') !== marker || /[\u0000-\u0020\u007f]/u.test(marker)) fail(code);
+  const match = /^ci3-synthetic-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z-[A-Z2-7]{16}$/.exec(marker);
+  if (!match) fail(code);
+  const [, year, month, day, hour, minute, second] = match;
+  const timestamp = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`);
+  if (!Number.isFinite(timestamp.getTime())
+      || timestamp.toISOString().replace(/[-:]/g, '').replace(/\.000Z$/, 'Z') !== `${year}${month}${day}T${hour}${minute}${second}Z`) fail(code);
+  if (credential.schema_version !== 1 || credential.environment !== 'staging'
+      || credential.cleanup_required !== true || credential.project_ref !== expected?.projectRef
+      || !Number.isFinite(Date.parse(credential.created_at))
+      || !Number.isFinite(Date.parse(credential.expires_at))
+      || Date.parse(credential.expires_at) <= Date.parse(credential.created_at)
+      || credential.expires_at !== expected?.cleanupDeadline
+      || credential.email !== `${marker}@example.invalid`
+      || typeof credential.password !== 'string' || credential.password.length < 20 || credential.password.length > 4096) fail(code);
+  return true;
 }
 
 const FORBIDDEN_SSH_VALUES = Object.freeze({

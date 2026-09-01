@@ -84,7 +84,7 @@ Semantic validation supplements the frozen whole-file hashes:
 - URL is HTTPS and its host-derived project ref equals env receipt,
   credential and provisioning refs;
 - deployment is schema `1`, purpose
-  `ci3_dedicated_mobile_bff_deployment`, staging/Preview/READY, framework,
+  `ci3-dedicated-mobile-bff-deployment`, staging/Preview/READY, framework,
   runtime/root exact, implementation SHA
   `e3e1e252b48e42554e75899b950692c05186f60d` and tree bound, route counts
   equal, origin hash relationally exact, Preview probes satisfy
@@ -92,8 +92,8 @@ Semantic validation supplements the frozen whole-file hashes:
   env `3/0/0`, SSO null, no link/alias/domain/API target/token/mutation;
 - credential is exact nine-key schema `1`, staging, cleanup/marker bound, with
   token/service-role/user/patient extras absent;
-- provisioning is exact schema `1`, purpose `ci3_synthetic_patient`, authority
-  SHA-shaped and frozen by source hash, `TODAY_VERIFIED`, staging,
+- provisioning is exact schema `1`, purpose `ci3_authenticated_today`, authority
+  `5cecaa7af3f2c61f387e4e2d77a2b5e61f2d9a1c`, `TODAY_VERIFIED`, staging,
   implementation SHA/tree bound, exact attempts/fixture/request counts,
   deadline bound, and no primary/production/token/service-role/Vercel/CI start.
 
@@ -1640,3 +1640,52 @@ The environment receipt accepts no aliases or fallbacks. It requires purpose
 documented in the reconciliation evidence. All other schema, ref, preview,
 hash, control-plane, no-write, no-production and no-emission gates remain
 mandatory. Validation is read-only and cannot rewrite either input.
+
+## Canonical deployment receipt successor
+
+The current successor architecture is
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1`.
+Its authority parent is `70a7d60dd9c4224e3be9072ce5fbd966bd534560`,
+its exact subject is `build(ops): reconcile remaining CI-3 bridge input contracts`,
+and its closed manifest contains 16 paths.
+
+The deployment receipt requires literal purpose
+`ci3-dedicated-mobile-bff-deployment` and literal Vercel Node `22.x`. It keeps
+framework `nextjs`, root `apps/mobile-bff`, Preview/READY, Production zero,
+env `3/0/0`, SSO null, route/probe arithmetic, hashes, implementation and
+origin bindings unchanged. No alias, range, normalization, fallback, unknown
+key or receipt rewrite is accepted.
+
+Deployment Node is independent from the adopted immutable VPS execution
+runtime. The remote bridge receipt binds both separately: `deployment_node`
+and execution runtime adoption authority/hash/status. Missing or divergent
+runtime adoption fails without comparing deployment Node to `process.version`
+or the capsule version.
+
+Bridge V1/V2 stay consumed; c517 stays unexecuted and superseded. The successor
+gets one fresh no-retry attempt only after the 16-path authority is published
+and the five-input read-only preflight passes. The Mac exact-blob zsh Gate 0,
+three remote reads, six scans, terminal anchor and CI-3 base remain unchanged.
+
+## Canonical credential and provisioning input contracts
+
+The credential marker is an operation-scoped identifier matching only
+`ci3-synthetic-YYYYMMDDTHHMMSSZ-[A-Z2-7]{16}`. Calendar components must round
+trip exactly; whitespace, controls, aliases, case folding, normalization,
+suffixes and the static family label are rejected. Only its SHA-256 may enter
+sanitized evidence. Credential e-mail must be the exact marker plus
+`@example.invalid`; Supabase lowercase canonicalization does not modify the
+marker.
+
+The provisioning receipt requires purpose `ci3_authenticated_today`, authority
+`5cecaa7af3f2c61f387e4e2d77a2b5e61f2d9a1c`, state `TODAY_VERIFIED`, cleanup
+class `CREATED_AT_PLUS_14_DAYS`, canonicalization class
+`NORMALIZED_ALIAS_DOCUMENTED`, fixture cardinalities `1/1/1/1/1/1/1/0`, the
+published attempt counters, patient/service HTTP counts `1/7`, and exact ID
+hash bindings. Marker, project ref, environment, creation/expiry/deadline and
+implementation identities must agree across the five inputs.
+
+`--preflight-inputs` is the only third CLI mode. It uses the exact source
+readers and the same source-document validator as `--create`, returning only a
+closed sanitized PASS/failure projection. It performs zero writes, claims,
+outputs, receipts, retries, network, SSH or primary/live opens.

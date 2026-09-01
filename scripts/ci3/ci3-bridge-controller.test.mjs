@@ -58,6 +58,7 @@ function authorityManifest() {
     'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
     'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
     'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+    'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
     'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
@@ -97,9 +98,9 @@ function baseContext() {
   return {
     authority: {
       commit: oid('a'),
-      parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8',
+      parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
       tree: oid('b'),
-      subject: 'build(ops): reconcile staging env receipt for CI-3 bridge',
+      subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
       committed_at_utc: '2026-08-30T12:00:00.000Z',
       manifest_sha256: digest('c'),
       components: components(),
@@ -135,12 +136,47 @@ function baseContext() {
   };
 }
 
+test('[CANONICAL-INPUTS] controller accepts only the operation-scoped credential marker and exact email relation', () => {
+  const marker = 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR';
+  assert.equal(subject().validateSyntheticCredentialContract({
+    cleanup_required: true,
+    created_at: '2026-08-28T11:44:11.182Z',
+    email: `${marker}@example.invalid`,
+    environment: 'staging',
+    expires_at: '2099-09-11T11:44:11.182Z',
+    password: 'synthetic-only-not-a-real-secret',
+    project_ref: 'syntheticref',
+    schema_version: 1,
+    synthetic_marker: marker,
+  }, { cleanupDeadline: '2099-09-11T11:44:11.182Z', projectRef: 'syntheticref' }), true);
+});
+
+for (const [label, mutate] of [
+  ['static family label', (credential) => { credential.synthetic_marker = 'ci3-synthetic-patient'; }],
+  ['email mismatch', (credential) => { credential.email = 'wrong@example.invalid'; }],
+  ['lowercase Base32 alias', (credential) => { credential.synthetic_marker = credential.synthetic_marker.toLowerCase(); }],
+]) {
+  test(`[CANONICAL-INPUTS] controller rejects ${label}`, () => {
+    const marker = 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR';
+    const credential = {
+      cleanup_required: true, created_at: '2026-08-28T11:44:11.182Z',
+      email: `${marker}@example.invalid`, environment: 'staging',
+      expires_at: '2099-09-11T11:44:11.182Z', password: 'synthetic-only-not-a-real-secret',
+      project_ref: 'syntheticref', schema_version: 1, synthetic_marker: marker,
+    };
+    mutate(credential);
+    assert.throws(() => subject().validateSyntheticCredentialContract(credential, {
+      cleanupDeadline: '2099-09-11T11:44:11.182Z', projectRef: 'syntheticref',
+    }), (error) => error?.code === 'REMOTE_BUNDLE_SEMANTICS');
+  });
+}
+
 function launchAttestation() {
   return {
     schema_version: 1,
     purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2',
     authority_sha: oid('a'),
-    authority_parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8',
+    authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
     authority_tree: oid('b'),
     authority_subject_sha256: digest('c'),
     authority_manifest_sha256: digest('d'),
@@ -193,7 +229,7 @@ test('launcher attestation v2 closes commit tree manifest components and tools',
 });
 
 test('controller freezes the single exact authority commit subject', () => {
-  assert.equal(subject().AUTHORITY_SUBJECT, 'build(ops): reconcile staging env receipt for CI-3 bridge');
+  assert.equal(subject().AUTHORITY_SUBJECT, 'build(ops): reconcile remaining CI-3 bridge input contracts');
 });
 
 test('terminal ledger contains all 24 inherited and final Important IDs once and in authority order', () => {
@@ -242,7 +278,7 @@ for (const value of ['', 'remote', 'remote-short', `remote-${'G'.repeat(64)}`, `
   });
 }
 
-test('validates the exact fifteen-path authority manifest and components', () => {
+test('validates the exact sixteen-path authority manifest and components', () => {
   assert.equal(subject().validateAuthorityManifest({ entries: authorityManifest(), components: components() }), true);
 });
 
@@ -499,7 +535,7 @@ test('semantic remote validator rejects hash-bound but authority-incompatible re
   });
   const credentialBytes = subject().canonicalJson({ schema_version: 1, purpose: 'CI3_SYNTHETIC_PATIENT_CREDENTIAL_V1', authority_sha: context.authority.commit, remote_generation_id: context.generations.remote, opaque_credential: 'synthetic' });
   const receiptBytes = subject().canonicalJson({
-    schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1', authority_commit: oid('0'),
+    schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1', authority_commit: oid('0'),
     authority_parent: context.authority.parent, authority_tree: context.authority.tree,
     authority_subject: context.authority.subject, authority_tree_manifest_sha256: context.authority.manifest_sha256,
     remote_bundle_generation_id: context.generations.remote, output_config_sha256: subject().sha256(configBytes),
@@ -1825,7 +1861,7 @@ function round3VpsPassReceipt() {
     schema_version: 1,
     purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
     authority_sha: oid('a'),
-    authority_parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8',
+    authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
     authority_tree: oid('b'),
     authority_subject_sha256: digest('c'),
     authority_manifest_sha256: digest('d'),

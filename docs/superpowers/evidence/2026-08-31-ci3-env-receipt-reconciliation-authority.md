@@ -74,3 +74,16 @@ divergências de expectativa: os campos `purpose` e `node`; todos os demais
 gates daquele receipt passaram. O comando `--create` não foi invocado, logo a
 tentativa sucessora permanece `0/1`, sem claim ou output. O próximo gate é
 `RECONCILE_DEPLOYMENT_RECEIPT_CONTRACT_AND_FRESH_BRIDGE_ATTEMPT`.
+
+## Successor deployment contract
+
+O env receipt continua canônico e imutável. A operação sucessora corrige apenas
+as duas expectativas que divergiram no preflight: purpose físico
+`ci3-dedicated-mobile-bff-deployment` e Node Vercel físico `22.x`. Os outros
+gates do deployment receipt, os sete valores canônicos do env receipt, hashes,
+project refs e relações entre os cinco inputs permanecem fail-closed.
+
+`c5172be7752f79c1acbf0e68d0d75a6bd880948a` é classificada definitivamente
+como `0/1_NOT_EXECUTED_SUPERSEDED`. Seu snapshot pode permanecer para auditoria,
+mas a authority root, claim, staging, generation, config e receipt continuam
+ausentes e ela não pode ser executada.

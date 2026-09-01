@@ -26,6 +26,9 @@ private let componentPaths = [
 private let authorityPaths = [
     "docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md",
     "docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md",
+    "docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md",
+    "docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md",
+    "docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md",
     "docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md",
     "docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md",
     "docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md",
@@ -899,18 +902,19 @@ private func validateSemanticRoots(
     let (remoteEntry, _, remoteReceipt) = try evidenceObject(evidence, role: "remote-receipt", code)
     try exactKeys(remoteReceipt, [
         "anchor_writer_blob_oid", "anchor_writer_file_sha256", "authority_commit", "authority_parent", "authority_subject", "authority_tree", "authority_tree_manifest_sha256",
-        "cleanup_deadline", "controller_blob_oid", "controller_file_sha256", "created_at_utc", "credential_source_path", "credential_source_sha256", "deployment_receipt_sha256",
+        "cleanup_deadline", "controller_blob_oid", "controller_file_sha256", "created_at_utc", "credential_source_path", "credential_source_sha256", "deployment_receipt_sha256", "deployment_node",
+        "execution_runtime_adoption_authority_sha", "execution_runtime_node_sha256", "execution_runtime_status",
         "env_development_count", "env_preview_count", "env_production_count", "env_receipt_sha256", "env_source_sha256", "generator_blob_sha", "generator_file_sha256",
         "implementation_sha", "launcher_blob_oid", "launcher_file_sha256", "launcher_target_environment", "launcher_runtime_path", "launcher_structural_skeleton_equal",
         "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256", "zsh_syntax_validation_deferred",
         "zsh_syntax_validation_required_environment", "zsh_syntax_validation_required_before_network", "zsh_syntax_validation_status",
         "output_config_sha256", "output_filenames", "preview_deployment_count", "primary_opened",
         "production_deployment_count", "provisioning_receipt_sha256", "purpose", "raw_values_reported", "remote_bundle_generation_id", "remote_bundle_immutable", "schema_version",
-        "service_role_emitted", "source_env_descriptor_identity_sha256", "source_generation_id", "sso_state", "staging_project_ref", "terminal_scan_ids", "token_emitted",
+        "service_role_emitted", "source_env_descriptor_identity_sha256", "source_generation_id", "sso_state", "staging_project_ref", "synthetic_marker_sha256", "terminal_scan_ids", "token_emitted",
     ], code)
     guard try string(remoteEntry["sha256"], code) == string(manifest["remote_bundle_sha256"], code),
           try integer(remoteReceipt["schema_version"], code) == 1,
-          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1",
+          try string(remoteReceipt["purpose"], code) == "VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1",
           try string(remoteReceipt["authority_commit"], code) == authority,
           try string(remoteReceipt["authority_parent"], code) == string(attestation["authority_parent"], code),
           try sha256(Data(string(remoteReceipt["authority_subject"], code).utf8)) == string(attestation["authority_subject_sha256"], code),
@@ -923,6 +927,10 @@ private func validateSemanticRoots(
           try integer(remoteReceipt["env_preview_count"], code) == 3,
           try integer(remoteReceipt["env_production_count"], code) == 0,
           try integer(remoteReceipt["env_development_count"], code) == 0,
+          try string(remoteReceipt["deployment_node"], code) == "22.x",
+          try string(remoteReceipt["execution_runtime_adoption_authority_sha"], code) == "461a2e0dbe091a5c352d5dfdc1952b444f41aac0",
+          try string(remoteReceipt["execution_runtime_node_sha256"], code) == "6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd",
+          try string(remoteReceipt["execution_runtime_status"], code) == "VERIFIED_ADOPTED_READ_ONLY",
           remoteReceipt["sso_state"] is NSNull,
           try bool(remoteReceipt["service_role_emitted"], code) == false,
           try bool(remoteReceipt["token_emitted"], code) == false,
@@ -943,7 +951,7 @@ private func validateSemanticRoots(
     for field in ["generator_blob_sha", "controller_blob_oid", "launcher_blob_oid", "anchor_writer_blob_oid"] {
         guard isHex(try string(remoteReceipt[field], code), count: 40) else { try fail(code) }
     }
-    for field in ["generator_file_sha256", "controller_file_sha256", "launcher_file_sha256", "anchor_writer_file_sha256", "source_env_descriptor_identity_sha256", "env_source_sha256", "env_receipt_sha256", "deployment_receipt_sha256", "credential_source_sha256", "provisioning_receipt_sha256", "output_config_sha256", "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256"] {
+    for field in ["generator_file_sha256", "controller_file_sha256", "launcher_file_sha256", "anchor_writer_file_sha256", "source_env_descriptor_identity_sha256", "env_source_sha256", "env_receipt_sha256", "deployment_receipt_sha256", "credential_source_sha256", "synthetic_marker_sha256", "provisioning_receipt_sha256", "output_config_sha256", "predecessor_launcher_structural_skeleton_sha256", "current_launcher_structural_skeleton_sha256"] {
         guard isHex(try string(remoteReceipt[field], code), count: 64) else { try fail(code) }
     }
     for (name, oidField, hashField) in [("generator", "generator_blob_sha", "generator_file_sha256"), ("controller", "controller_blob_oid", "controller_file_sha256"), ("launcher", "launcher_blob_oid", "launcher_file_sha256"), ("writer", "anchor_writer_blob_oid", "anchor_writer_file_sha256")] {

@@ -2675,3 +2675,42 @@ receipt passou; o deployment receipt falhou no preflight em dois campos
 semânticos (`purpose` e `node`). Portanto o budget sucessor permanece `0/1`,
 sem claim/output. O próximo gate é reconciliar documentalmente o deployment
 receipt. Mac Gate 0, CI-3 Tasks 2–12, CI-4, produção e cleanup seguem parados.
+
+## Deployment receipt canonical authority — dossier 1.7.10
+
+A retomada autorizada é
+`RECONCILE_DEPLOYMENT_RECEIPT_CONTRACT_AND_FRESH_BRIDGE_ATTEMPT`. O receipt
+físico permanece imutável e prova purpose
+`ci3-dedicated-mobile-bff-deployment`, Node Vercel `22.x`, framework `nextjs`
+e root `apps/mobile-bff`. O capsule adotado da VPS é contrato separado e não
+altera o campo `node` do deployment.
+
+A successor authority nasce do STOP `70a7d60…`, possui 16 paths e arquitetura
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1`.
+V1/V2 seguem 1/1; c517 segue 0/1, não executada, superseded e sem claim/output.
+Apenas após preflight dos cinco inputs, testes, scans, reviews, publicação e
+readback remoto existe uma tentativa independente 0/1.
+
+Se o bundle passar, o próximo ambiente é Mac local no Gate 0 `/bin/zsh -n`
+do launcher blob exato. A VPS não executa esse handoff, simulador, CI-3 Task 2,
+CI-4, provider/database/production write ou cleanup.
+
+## Canonical five-input authority — dossier 1.7.10
+
+O marker sintético é identificador por operação no formato fechado publicado,
+não o label estático da família. Credential e provisioning receipt devem
+coincidir byte-exact no marker, project ref, environment e tempos; o e-mail é
+marker mais o domínio reservado, sem aplicar a canonicalização Auth ao marker.
+O provisioning receipt final exige purpose `ci3_authenticated_today`, authority
+de resume `5cecaa7…`, estado `TODAY_VERIFIED`, progress `1`, settlement counters
+`0/0` e contadores HTTP patient/service `1/7`.
+
+Antes da authority, `--preflight-inputs` precisa validar os cinco inputs pelo
+mesmo caminho de `--create`, com zero write/claim/output/receipt/network/SSH e
+sem raw marker/e-mail/senha. Após testes, scans e duas reviews 0C/0I, publicar
+os mesmos 16 paths sob arquitetura
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1`
+e subject `build(ops): reconcile remaining CI-3 bridge input contracts`.
+Revalidar então o blob Git exato e só depois consumir uma tentativa independente
+1/1. Gate 0 zsh permanece no Mac; Task 2, CI-4, produção e cleanup continuam
+fora desta operação.

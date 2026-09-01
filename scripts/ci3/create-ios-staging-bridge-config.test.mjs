@@ -361,7 +361,7 @@ function validFixture() {
   );
   const stagingRef = 'stagingprojectref01';
   const implementationSha = 'e3e1e252b48e42554e75899b950692c05186f60d';
-  const cleanupDeadline = '2099-09-11T11:44:11.182Z';
+  const cleanupDeadline = '2026-09-11T11:44:11.182Z';
   const previewOrigin = 'https://mobile-bff-preview.invalid';
 
   const envReceipt = {
@@ -417,7 +417,7 @@ function validFixture() {
     implementation_tree: '4'.repeat(40),
     incident_receipt_sha256: '5'.repeat(64),
     mobile_route_count: 40,
-    node: '24.14.0',
+    node: '22.x',
     origin_sha256: sha(previewOrigin),
     original_removal_verified: true,
     preview_deployment_id_sha256: '7'.repeat(64),
@@ -434,7 +434,7 @@ function validFixture() {
       prior_findings: 19,
       summary_sha256: 'a'.repeat(64),
     },
-    purpose: 'ci3_dedicated_mobile_bff_deployment',
+    purpose: 'ci3-dedicated-mobile-bff-deployment',
     ready_state: 'READY',
     recovery_authority_sha: 'b'.repeat(40),
     removed_original_deployment_id_sha256: 'c'.repeat(64),
@@ -452,20 +452,20 @@ function validFixture() {
   const credential = {
     cleanup_required: true,
     created_at: '2026-08-28T11:44:11.182Z',
-    email: 'synthetic@example.invalid',
+    email: 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR@example.invalid',
     environment: 'staging',
     expires_at: cleanupDeadline,
     password: 'synthetic-only-not-a-real-secret',
     project_ref: stagingRef,
     schema_version: 1,
-    synthetic_marker: 'ci3-synthetic-patient',
+    synthetic_marker: 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR',
   };
 
   const provisioningReceipt = {
     actor_id: 'synthetic-actor-id',
     attempts: {
       auth_create: 1,
-      auth_create_settlement: 1,
+      auth_create_settlement: 0,
       auth_delete_rollback: 0,
       auth_preflight: 1,
       auth_readback: 1,
@@ -474,7 +474,7 @@ function validFixture() {
       entitlement_grant: 1,
       entitlement_readback: 1,
       entitlement_resolution: 1,
-      entitlement_settlement: 1,
+      entitlement_settlement: 0,
       entitlements_probe: 1,
       me_probe: 1,
       rollback_database_transaction: 0,
@@ -484,14 +484,14 @@ function validFixture() {
     },
     auth_reused: true,
     auth_user_id: 'synthetic-auth-id',
-    authority_sha: 'd'.repeat(40),
+    authority_sha: '5cecaa7af3f2c61f387e4e2d77a2b5e61f2d9a1c',
     ci3_started: false,
     ci4_started: false,
     cleanup_deadline: cleanupDeadline,
-    cleanup_deadline_class: 'future',
+    cleanup_deadline_class: 'CREATED_AT_PLUS_14_DAYS',
     cleanup_required: true,
     created_at: '2026-08-28T11:44:11.182Z',
-    email_canonicalization: 'normalized_alias_documented',
+    email_canonicalization: 'NORMALIZED_ALIAS_DOCUMENTED',
     entitlement_id: 'synthetic-entitlement-id',
     environment: 'staging',
     event_id: 'synthetic-event-id',
@@ -503,16 +503,16 @@ function validFixture() {
       identity: 1,
       patient: 1,
       profile: 1,
-      progress: 0,
+      progress: 1,
       storage: 0,
     },
     grant_at: '2026-08-28T11:44:11.182Z',
     health_data_absent: true,
     id_hashes: {
-      auth_user: 'e'.repeat(64),
-      entitlement: 'f'.repeat(64),
-      event: '0'.repeat(64),
-      patient: '1'.repeat(64),
+      auth_user: sha('synthetic-auth-id'),
+      entitlement: sha('synthetic-entitlement-id'),
+      event: sha('synthetic-event-id'),
+      patient: sha('synthetic-patient-id'),
     },
     implementation_sha: implementationSha,
     implementation_tree: '4'.repeat(40),
@@ -521,7 +521,7 @@ function validFixture() {
     primary_live_open: false,
     product_production_write: false,
     project_ref: stagingRef,
-    purpose: 'ci3_synthetic_patient',
+    purpose: 'ci3_authenticated_today',
     raw_response_absent: true,
     request_ids: {
       entitlements: 'synthetic-request-entitlements',
@@ -536,17 +536,17 @@ function validFixture() {
     schema_version: 1,
     service_role_patient_bearer: false,
     state: 'TODAY_VERIFIED',
-    supabase_http_request_counts: { patient: 3, service: 4 },
-    synthetic_marker: 'ci3-synthetic-patient',
+    supabase_http_request_counts: { patient: 1, service: 7 },
+    synthetic_marker: 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR',
     token_persisted: false,
     vercel_write: false,
   };
 
   const authority = {
     commit: 'f'.repeat(40),
-    parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8',
+    parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560',
     tree: 'a'.repeat(40),
-    subject: 'build(ops): reconcile staging env receipt for CI-3 bridge',
+    subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
     committed_at_utc: '2026-08-29T10:00:00.000Z',
     generator_blob_sha: 'b'.repeat(40),
     generator_file_sha256: 'c'.repeat(64),
@@ -605,6 +605,286 @@ function validate(fixture = validFixture(), now = new Date('2026-08-29T12:00:00.
   });
 }
 
+const CANONICAL_SYNTHETIC_MARKER = 'ci3-synthetic-20260828T114411Z-ABCDEFGHJKLMNPQR';
+
+function canonicalInputFixture() {
+  const fixture = validFixture();
+  fixture.credential.synthetic_marker = CANONICAL_SYNTHETIC_MARKER;
+  fixture.credential.email = `${CANONICAL_SYNTHETIC_MARKER}@example.invalid`;
+  fixture.provisioningReceipt.synthetic_marker = CANONICAL_SYNTHETIC_MARKER;
+  fixture.provisioningReceipt.purpose = 'ci3_authenticated_today';
+  fixture.provisioningReceipt.authority_sha = '5cecaa7af3f2c61f387e4e2d77a2b5e61f2d9a1c';
+  fixture.provisioningReceipt.cleanup_deadline_class = 'CREATED_AT_PLUS_14_DAYS';
+  fixture.provisioningReceipt.email_canonicalization = 'NORMALIZED_ALIAS_DOCUMENTED';
+  fixture.provisioningReceipt.fixture_counts.progress = 1;
+  fixture.provisioningReceipt.attempts.auth_create_settlement = 0;
+  fixture.provisioningReceipt.attempts.entitlement_settlement = 0;
+  fixture.provisioningReceipt.supabase_http_request_counts = { patient: 1, service: 7 };
+  fixture.provisioningReceipt.id_hashes = {
+    auth_user: sha(fixture.provisioningReceipt.auth_user_id),
+    entitlement: sha(fixture.provisioningReceipt.entitlement_id),
+    event: sha(fixture.provisioningReceipt.event_id),
+    patient: sha(fixture.provisioningReceipt.patient_id),
+  };
+  return fixture;
+}
+
+function expectInputCode(code, mutate) {
+  const fixture = canonicalInputFixture();
+  mutate?.(fixture);
+  assert.throws(() => validate(fixture), (error) => error?.code === code);
+}
+
+test('[ADDITIONAL-INPUT 001] operation-scoped marker and all canonical input relations pass', () => {
+  assert.doesNotThrow(() => validate(canonicalInputFixture()));
+});
+
+test('[ADDITIONAL-INPUT 002] marker validator returns only a sanitized deterministic digest', () => {
+  const first = subject().validateSyntheticOperationMarker(CANONICAL_SYNTHETIC_MARKER);
+  const second = subject().validateSyntheticOperationMarker(CANONICAL_SYNTHETIC_MARKER);
+  assert.deepEqual(first, second);
+  assert.deepEqual(Object.keys(first).sort(), ['marker_sha256', 'pattern_version', 'raw', 'valid']);
+  assert.equal(first.marker_sha256, sha(CANONICAL_SYNTHETIC_MARKER));
+  assert.equal(first.raw, false);
+  assert.equal(first.valid, true);
+});
+
+const invalidMarkerCases = [
+  ['003', 'static family label', 'ci3-synthetic-patient'],
+  ['004', 'empty', ''],
+  ['005', 'null', null],
+  ['006', 'numeric', 42],
+  ['007', 'leading whitespace', ` ${CANONICAL_SYNTHETIC_MARKER}`],
+  ['008', 'trailing whitespace', `${CANONICAL_SYNTHETIC_MARKER} `],
+  ['009', 'embedded whitespace', CANONICAL_SYNTHETIC_MARKER.replace('T', ' T')],
+  ['010', 'control', `${CANONICAL_SYNTHETIC_MARKER}\u0007`],
+  ['011', 'NUL', `${CANONICAL_SYNTHETIC_MARKER}\u0000`],
+  ['012', 'wrong prefix', CANONICAL_SYNTHETIC_MARKER.replace('ci3-', 'ci4-')],
+  ['013', 'malformed UTC', CANONICAL_SYNTHETIC_MARKER.replace('T114411Z', '114411Z')],
+  ['014', 'invalid calendar', CANONICAL_SYNTHETIC_MARKER.replace('20260828', '20260230')],
+  ['015', 'invalid hour', CANONICAL_SYNTHETIC_MARKER.replace('T114411Z', 'T254411Z')],
+  ['016', 'invalid Base32 alphabet', CANONICAL_SYNTHETIC_MARKER.replace(/R$/, '0')],
+  ['017', 'short Base32', CANONICAL_SYNTHETIC_MARKER.slice(0, -1)],
+  ['018', 'long Base32', `${CANONICAL_SYNTHETIC_MARKER}A`],
+  ['019', 'extra suffix', `${CANONICAL_SYNTHETIC_MARKER}-extra`],
+  ['020', 'lowercase Base32', CANONICAL_SYNTHETIC_MARKER.replace('ABCDEFGH', 'abcdefgh')],
+  ['021', 'uppercase prefix', CANONICAL_SYNTHETIC_MARKER.replace('ci3', 'CI3')],
+  ['022', 'Unicode lookalike', CANONICAL_SYNTHETIC_MARKER.replace('A', '\u0391')],
+  ['023', 'Unicode normalization variant', CANONICAL_SYNTHETIC_MARKER.replace('A', 'A\u0301')],
+  ['024', 'underlong marker', 'ci3-synthetic-A'],
+  ['025', 'overlong marker', `${CANONICAL_SYNTHETIC_MARKER}${'A'.repeat(256)}`],
+  ['026', 'missing Z', CANONICAL_SYNTHETIC_MARKER.replace('Z-', '-')],
+  ['027', 'lowercase z', CANONICAL_SYNTHETIC_MARKER.replace('Z-', 'z-')],
+];
+
+for (const [number, label, marker] of invalidMarkerCases) {
+  test(`[ADDITIONAL-INPUT ${number}] rejects ${label} marker without reflection`, () => {
+    assert.throws(() => subject().validateSyntheticOperationMarker(marker), (error) => {
+      assert.equal(error?.code, 'SYNTHETIC_MARKER');
+      if (typeof marker === 'string' && marker.length > 0) assert.equal(String(error).includes(marker), false);
+      return true;
+    });
+  });
+}
+
+const crossDocumentCases = [
+  ['028', 'credential/provisioning marker mismatch', 'CREDENTIAL_MARKER_RELATION', (f) => { f.provisioningReceipt.synthetic_marker = CANONICAL_SYNTHETIC_MARKER.replace(/R$/, 'S'); }],
+  ['029', 'credential email local-part mismatch', 'CREDENTIAL_EMAIL_RELATION', (f) => { f.credential.email = 'different@example.invalid'; }],
+  ['030', 'wrong reserved domain', 'CREDENTIAL_EMAIL_RELATION', (f) => { f.credential.email = `${CANONICAL_SYNTHETIC_MARKER}@example.com`; }],
+  ['031', 'project ref mismatch', 'CREDENTIAL_PROJECT', (f) => { f.credential.project_ref = 'differentprojectref'; }],
+  ['032', 'environment mismatch', 'CREDENTIAL_STATE', (f) => { f.credential.environment = 'production'; }],
+  ['033', 'expires mismatch', 'CLEANUP_DEADLINE', (f) => { f.credential.expires_at = '2099-09-10T11:44:11.182Z'; }],
+  ['034', 'cleanup deadline mismatch', 'CLEANUP_DEADLINE', (f) => { f.provisioningReceipt.cleanup_deadline = '2099-09-10T11:44:11.182Z'; }],
+  ['035', 'provisioning state mismatch', 'PROVISIONING_STATE', (f) => { f.provisioningReceipt.state = 'ENTITLEMENT_VERIFIED'; }],
+  ['036', 'implementation SHA mismatch', 'IMPLEMENTATION_SHA', (f) => { f.provisioningReceipt.implementation_sha = 'a'.repeat(40); }],
+  ['037', 'implementation tree mismatch', 'IMPLEMENTATION_SHA', (f) => { f.provisioningReceipt.implementation_tree = 'a'.repeat(40); }],
+  ['038', 'Auth user ID cannot replace marker', 'SYNTHETIC_MARKER', (f) => { f.credential.synthetic_marker = f.provisioningReceipt.auth_user_id; }],
+  ['039', 'operation ID cannot replace marker', 'SYNTHETIC_MARKER', (f) => { f.credential.synthetic_marker = f.provisioningReceipt.operation_id; }],
+];
+
+for (const [number, label, code, mutate] of crossDocumentCases) {
+  test(`[ADDITIONAL-INPUT ${number}] ${label} fails closed`, () => expectInputCode(code, mutate));
+}
+
+test('[ADDITIONAL-INPUT 040] marker never enters generated config', () => {
+  const fixture = canonicalInputFixture();
+  assert.equal(build(fixture).configBytes.includes(CANONICAL_SYNTHETIC_MARKER), false);
+});
+
+test('[ADDITIONAL-INPUT 041] marker never enters bridge receipt', () => {
+  const fixture = canonicalInputFixture();
+  assert.equal(build(fixture).receiptBytes.includes(CANONICAL_SYNTHETIC_MARKER), false);
+});
+
+test('[ADDITIONAL-INPUT 042] marker never enters validation exception text', () => {
+  const fixture = canonicalInputFixture();
+  fixture.credential.email = 'wrong@example.invalid';
+  assert.throws(() => validate(fixture), (error) => !String(error).includes(CANONICAL_SYNTHETIC_MARKER));
+});
+
+test('[ADDITIONAL-INPUT 043] sanitized marker preflight carries only its digest', async () => {
+  const result = await subject().preflightSourceInputs({
+    now: new Date('2026-08-29T12:00:00.000Z'),
+    readInput: syntheticInputReader(canonicalInputFixture()),
+  });
+  assert.equal(JSON.stringify(result).includes(CANONICAL_SYNTHETIC_MARKER), false);
+  assert.equal(result.synthetic_marker_sha256, sha(CANONICAL_SYNTHETIC_MARKER));
+});
+
+function syntheticInputReader(fixture) {
+  const byKind = {
+    env: fixture.envBytes,
+    envReceipt: Buffer.from(JSON.stringify(fixture.envReceipt)),
+    deploymentReceipt: Buffer.from(JSON.stringify(fixture.deploymentReceipt)),
+    credential: Buffer.from(JSON.stringify(fixture.credential)),
+    provisioningReceipt: Buffer.from(JSON.stringify(fixture.provisioningReceipt)),
+  };
+  const calls = [];
+  const reader = async (kind) => {
+    calls.push(kind);
+    const bytes = byKind[kind];
+    return { bytes, sha256: sha(bytes) };
+  };
+  reader.calls = calls;
+  return reader;
+}
+
+test('[ADDITIONAL-INPUT 044] preflight reads exactly the five fixed inputs once', async () => {
+  const reader = syntheticInputReader(canonicalInputFixture());
+  await subject().preflightSourceInputs({ now: new Date('2026-08-29T12:00:00.000Z'), readInput: reader });
+  assert.deepEqual(reader.calls, ['env', 'envReceipt', 'deploymentReceipt', 'credential', 'provisioningReceipt']);
+});
+
+const preflightFailures = [
+  ['045', 'env', (f) => { f.envBytes = Buffer.from('invalid\n'); }, 'ENV_SCHEMA'],
+  ['046', 'deployment', (f) => { f.deploymentReceipt.node = '20.x'; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['047', 'credential', (f) => { f.credential.schema_version = 2; }, 'CREDENTIAL_STATE'],
+  ['048', 'provisioning', (f) => { f.provisioningReceipt.state = 'FAILED'; }, 'PROVISIONING_STATE'],
+  ['049', 'cross-document', (f) => { f.provisioningReceipt.project_ref = 'different'; }, 'CREDENTIAL_PROJECT'],
+];
+
+for (const [number, label, mutate, code] of preflightFailures) {
+  test(`[ADDITIONAL-INPUT ${number}] preflight ${label} failure blocks`, async () => {
+    const fixture = canonicalInputFixture(); mutate(fixture);
+    await assert.rejects(subject().preflightSourceInputs({ now: new Date('2026-08-29T12:00:00.000Z'), readInput: syntheticInputReader(fixture) }), (error) => error?.code === code);
+  });
+}
+
+for (const [number, field] of [
+  ['050', 'claims_created'], ['051', 'staging_created'], ['052', 'outputs_created'], ['053', 'receipts_created'],
+  ['054', 'network_calls'], ['055', 'ssh_calls'], ['056', 'primary_open'], ['057', 'raw_values_reported'], ['058', 'retries'],
+]) {
+  test(`[ADDITIONAL-INPUT ${number}] preflight reports ${field} as zero or false`, async () => {
+    const result = await subject().preflightSourceInputs({ now: new Date('2026-08-29T12:00:00.000Z'), readInput: syntheticInputReader(canonicalInputFixture()) });
+    assert.ok(result[field] === 0 || result[field] === false);
+  });
+}
+
+test('[ADDITIONAL-INPUT 059] preflight and create share the exported validation function identity', () => {
+  assert.equal(subject().SOURCE_DOCUMENT_VALIDATOR, subject().validateSourceDocuments);
+});
+
+test('[ADDITIONAL-INPUT 060] CLI accepts preflight-inputs as the third and final mode', () => {
+  assert.equal(subject().parseMode(['--preflight-inputs']), 'preflight-inputs');
+  assert.throws(() => subject().parseMode(['--fourth-mode']), (error) => error?.code === 'MODE_INVALID');
+});
+
+const existingContractMutations = [
+  ['061', 'env receipt purpose', 'ENV_RECEIPT_STATE', (f) => { f.envReceipt.purpose = 'wrong'; }],
+  ['062', 'deployment purpose', 'DEPLOYMENT_RECEIPT_STATE', (f) => { f.deploymentReceipt.purpose = 'wrong'; }],
+  ['063', 'deployment node', 'DEPLOYMENT_RECEIPT_STATE', (f) => { f.deploymentReceipt.node = '21.x'; }],
+  ['065', 'credential key set', 'CREDENTIAL_SCHEMA', (f) => { f.credential.extra = true; }],
+  ['066', 'provisioning key set', 'PROVISIONING_RECEIPT_SCHEMA', (f) => { f.provisioningReceipt.extra = true; }],
+  ['067', 'fixture count auth', 'PROVISIONING_RECEIPT_STATE', (f) => { f.provisioningReceipt.fixture_counts.auth = 2; }],
+  ['068', 'attempt auth create', 'PROVISIONING_RECEIPT_STATE', (f) => { f.provisioningReceipt.attempts.auth_create = 2; }],
+  ['069', 'Today state', 'PROVISIONING_STATE', (f) => { f.provisioningReceipt.state = 'ENTITLEMENT_VERIFIED'; }],
+  ['070', 'token persisted', 'TOKEN_STATE', (f) => { f.provisioningReceipt.token_persisted = true; }],
+  ['071', 'service role bearer', 'SERVICE_ROLE_BEARER', (f) => { f.provisioningReceipt.service_role_patient_bearer = true; }],
+  ['072', 'primary live open', 'PRIMARY_LIVE_STATE', (f) => { f.provisioningReceipt.primary_live_open = true; }],
+  ['073', 'Vercel write', 'PROVISIONING_STATE', (f) => { f.provisioningReceipt.vercel_write = true; }],
+  ['074', 'CI3 started', 'PROVISIONING_STATE', (f) => { f.provisioningReceipt.ci3_started = true; }],
+  ['075', 'CI4 started', 'PROVISIONING_STATE', (f) => { f.provisioningReceipt.ci4_started = true; }],
+  ['076', 'expired deadline', 'CLEANUP_DEADLINE', (f) => { f.provisioningReceipt.created_at = '2019-12-18T00:00:00.000Z'; f.provisioningReceipt.grant_at = f.provisioningReceipt.created_at; f.credential.created_at = f.provisioningReceipt.created_at; f.provisioningReceipt.cleanup_deadline = '2020-01-01T00:00:00.000Z'; f.provisioningReceipt.expires_at = f.provisioningReceipt.cleanup_deadline; f.credential.expires_at = f.provisioningReceipt.cleanup_deadline; }],
+];
+
+for (const [number, label, code, mutate] of existingContractMutations) {
+  test(`[ADDITIONAL-INPUT ${number}] preserves ${label} gate`, () => expectInputCode(code, mutate));
+}
+
+test('[ADDITIONAL-INPUT 064] preserves execution runtime separation gate', () => {
+  assert.throws(() => subject().validateExecutionRuntimeAttestation({
+    adoption_authority_sha: '461a2e0dbe091a5c352d5dfdc1952b444f41aac0',
+    creation_authority_sha: 'b08e6326fbd22c96b852ccfe53abdeb254e54bd1',
+    node_sha256: '22.x',
+    status: 'VERIFIED_ADOPTED_READ_ONLY',
+  }), (error) => error?.code === 'EXECUTION_RUNTIME_ATTESTATION');
+});
+
+for (const [number, label, assertion] of [
+  ['077', 'credential purpose remains outside credential schema', (f) => !Object.hasOwn(f.credential, 'purpose')],
+  ['078', 'provisioning purpose is static family label', (f) => f.provisioningReceipt.purpose === 'ci3_authenticated_today'],
+  ['079', 'operation marker is distinct from operation ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.operation_id],
+  ['080', 'operation marker is distinct from actor ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.actor_id],
+  ['081', 'operation marker is distinct from Auth ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.auth_user_id],
+  ['082', 'operation marker is distinct from patient ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.patient_id],
+  ['083', 'operation marker is distinct from entitlement ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.entitlement_id],
+  ['084', 'operation marker is distinct from event ID', (f) => f.provisioningReceipt.synthetic_marker !== f.provisioningReceipt.event_id],
+  ['085', 'bounded reader architecture remains V2', () => subject().GIT_OBJECT_READER_ARCHITECTURE === 'BOUNDED_GIT_OBJECT_READER_V2'],
+  ['086', 'zsh syntax remains deferred', (f) => f.authority.zsh_syntax_validation_deferred === true],
+  ['087', 'launcher skeleton remains equal', (f) => f.authority.launcher_structural_skeleton_equal === true],
+  ['088', 'service-role never enters config', (f) => !build(f).configBytes.includes(f.envValues.SUPABASE_SERVICE_ROLE_KEY)],
+  ['089', 'credential bytes never enter config', (f) => !build(f).configBytes.includes(f.credential.password)],
+  ['090', 'raw marker email and password remain absent from bundle artifacts', (f) => !`${build(f).configBytes}${build(f).receiptBytes}`.includes(f.credential.email) && !`${build(f).configBytes}${build(f).receiptBytes}`.includes(f.credential.password) && !`${build(f).configBytes}${build(f).receiptBytes}`.includes(f.credential.synthetic_marker)],
+]) {
+  test(`[ADDITIONAL-INPUT ${number}] ${label}`, () => assert.equal(assertion(canonicalInputFixture()), true));
+}
+
+for (const [number, field] of [
+  ['091', 'env_source_physical'],
+  ['092', 'env_receipt_physical'],
+  ['093', 'deployment_receipt_physical'],
+  ['094', 'credential_physical'],
+  ['095', 'provisioning_receipt_physical'],
+]) {
+  test(`[ADDITIONAL-INPUT ${number}] preflight reports ${field} PASS after the shared bounded reader succeeds`, async () => {
+    const result = await subject().preflightSourceInputs({
+      now: new Date('2026-08-29T12:00:00.000Z'),
+      readInput: syntheticInputReader(canonicalInputFixture()),
+    });
+    assert.equal(result[field], 'PASS');
+  });
+}
+
+test('[ADDITIONAL-INPUT 096] bridge receipt carries only the operation marker digest', () => {
+  const fixture = canonicalInputFixture();
+  const artifacts = build(fixture);
+  assert.equal(artifacts.receipt.synthetic_marker_sha256, sha(CANONICAL_SYNTHETIC_MARKER));
+  assert.equal(artifacts.receiptBytes.includes(CANONICAL_SYNTHETIC_MARKER), false);
+});
+
+for (const [number, label, code, mutate] of [
+  ['097', 'credential expiry before creation', 'CREDENTIAL_STATE', (f) => { f.credential.created_at = f.credential.expires_at; f.provisioningReceipt.created_at = f.credential.created_at; }],
+  ['098', 'malformed provisioning grant timestamp', 'PROVISIONING_RECEIPT_SCHEMA', (f) => { f.provisioningReceipt.grant_at = 'not-a-date'; }],
+  ['099', 'empty request ID', 'PROVISIONING_RECEIPT_SCHEMA', (f) => { f.provisioningReceipt.request_ids.today = ''; }],
+  ['100', 'malformed response structure digest', 'PROVISIONING_RECEIPT_SCHEMA', (f) => { f.provisioningReceipt.response_structure_sha256.today = 'not-a-sha'; }],
+  ['101', 'empty operation ID', 'PROVISIONING_RECEIPT_SCHEMA', (f) => { f.provisioningReceipt.operation_id = ''; }],
+  ['102', 'cleanup class inconsistent with fourteen days', 'CLEANUP_DEADLINE', (f) => { f.provisioningReceipt.created_at = '2026-08-29T11:44:11.182Z'; f.credential.created_at = f.provisioningReceipt.created_at; }],
+]) {
+  test(`[ADDITIONAL-INPUT ${number}] rejects ${label}`, () => expectInputCode(code, mutate));
+}
+
+test('[DEPLOYMENT-RECEIPT-RED-PURPOSE] accepts the exact physical deployment purpose', () => {
+  const fixture = validFixture();
+  fixture.deploymentReceipt.purpose = 'ci3-dedicated-mobile-bff-deployment';
+  assert.doesNotThrow(() => validate(fixture));
+});
+
+test('[DEPLOYMENT-RECEIPT-RED-NODE] accepts the exact Vercel deployment Node independently of the VPS execution runtime', () => {
+  const fixture = validFixture();
+  fixture.deploymentReceipt.node = '22.x';
+  assert.doesNotThrow(() => validate(fixture));
+});
+
 function build(fixture = validFixture()) {
   const validated = validate(fixture);
   return subject().buildBundleArtifacts({
@@ -615,6 +895,157 @@ function build(fixture = validFixture()) {
     validated,
   });
 }
+
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 01] canonical complete receipt passes', () => assert.doesNotThrow(() => validate()));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 02] canonical purpose is exact', () => assert.equal(subject().DEPLOYMENT_RECEIPT_PURPOSE, 'ci3-dedicated-mobile-bff-deployment'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 03] canonical deployment node is exact', () => assert.equal(subject().DEPLOYMENT_NODE_CANONICAL, '22.x'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 04] framework and root remain exact', () => {
+  const fixture = validFixture();
+  assert.deepEqual([fixture.deploymentReceipt.framework, fixture.deploymentReceipt.root], ['nextjs', 'apps/mobile-bff']);
+  assert.doesNotThrow(() => validate(fixture));
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 05] deployment and execution nodes remain independent', () => {
+  const validated = validate();
+  assert.equal(validated.deploymentNode, '22.x');
+  assert.notEqual(subject().EXECUTION_RUNTIME_ATTESTATION.node_sha256, validated.deploymentNode);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 06] exact runtime adoption attestation is required and passes', () => {
+  assert.equal(subject().validateExecutionRuntimeAttestation(clone(subject().EXECUTION_RUNTIME_ATTESTATION)), true);
+});
+
+for (const [index, value] of [
+  ['07', 'ci3_dedicated_mobile_bff_deployment'],
+  ['08', 'CI3-DEDICATED-MOBILE-BFF-DEPLOYMENT'],
+  ['09', ' ci3-dedicated-mobile-bff-deployment'],
+  ['10', 'ci3-dedicated-mobile-bff-deployment '],
+  ['11', ''],
+  ['12', 'deployment'],
+  ['13', 'ci3-staging-mobile-bff'],
+]) {
+  test(`[DEPLOYMENT-RECEIPT-RECONCILIATION ${index}] rejects noncanonical purpose`, () => {
+    const fixture = validFixture();
+    fixture.deploymentReceipt.purpose = value;
+    expectCode('DEPLOYMENT_RECEIPT_STATE', () => validate(fixture));
+  });
+}
+
+for (const [index, value, code = 'DEPLOYMENT_RECEIPT_STATE'] of [
+  ['14', '24.14.0'], ['15', '22'], ['16', '22.0'], ['17', '22.*'], ['18', '>=22'],
+  ['19', 'nodejs22.x'], ['20', ' 22.x'], ['21', undefined, 'DEPLOYMENT_RECEIPT_SCHEMA'],
+  ['22', 22], ['23', null],
+]) {
+  test(`[DEPLOYMENT-RECEIPT-RECONCILIATION ${index}] rejects noncanonical deployment node`, () => {
+    const fixture = validFixture();
+    if (value === undefined) delete fixture.deploymentReceipt.node;
+    else fixture.deploymentReceipt.node = value;
+    expectCode(code, () => validate(fixture));
+  });
+}
+
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 24] execution runtime version cannot alter deployment node', () => assert.equal(validate().deploymentNode, '22.x'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 25] deployment node never selects the VPS executable', () => {
+  assert.equal(subject().validateExecutionRuntimeAttestation(clone(subject().EXECUTION_RUNTIME_ATTESTATION)), true);
+  assert.equal(validate().deploymentNode, '22.x');
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 26] missing adoption attestation fails', () => expectCode('EXECUTION_RUNTIME_ATTESTATION', () => subject().validateExecutionRuntimeAttestation({})));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 27] adoption node digest mismatch fails', () => {
+  const attestation = clone(subject().EXECUTION_RUNTIME_ATTESTATION);
+  attestation.node_sha256 = '0'.repeat(64);
+  expectCode('EXECUTION_RUNTIME_ATTESTATION', () => subject().validateExecutionRuntimeAttestation(attestation));
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 28] process runtime version is not a deployment-node equality gate', () => {
+  assert.doesNotThrow(() => validate());
+  assert.notEqual(process.version, subject().DEPLOYMENT_NODE_CANONICAL);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 29] capsule status mismatch fails', () => {
+  const attestation = clone(subject().EXECUTION_RUNTIME_ATTESTATION);
+  attestation.status = 'UNVERIFIED';
+  expectCode('EXECUTION_RUNTIME_ATTESTATION', () => subject().validateExecutionRuntimeAttestation(attestation));
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 30] bundle receipt keeps deployment and execution bindings separate', () => {
+  const receipt = build().receipt;
+  assert.equal(receipt.deployment_node, '22.x');
+  assert.equal(receipt.execution_runtime_adoption_authority_sha, subject().EXECUTION_RUNTIME_ATTESTATION.adoption_authority_sha);
+  assert.equal(receipt.execution_runtime_node_sha256, subject().EXECUTION_RUNTIME_ATTESTATION.node_sha256);
+});
+
+for (const [index, mutate, code] of [
+  ['31', (f) => { f.deploymentReceipt.framework = 'other'; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['32', (f) => { f.deploymentReceipt.root = 'apps/other'; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['33', (f) => { f.deploymentReceipt.route_count = 39; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['34', (f) => { f.deploymentReceipt.public_probes.passed = 29; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['35', (f) => { f.deploymentReceipt.target = 'production'; }, 'PREVIEW_TARGET'],
+  ['36', (f) => { f.deploymentReceipt.ready_state = 'BUILDING'; }, 'PREVIEW_STATE'],
+  ['37', (f) => { f.deploymentReceipt.production_deployment_count = 1; }, 'PRODUCTION_COUNT'],
+  ['38', (f) => { f.deploymentReceipt.env_preview_count = 2; }, 'ENV_COUNTS'],
+  ['39', (f) => { f.deploymentReceipt.sso_protection = 'enabled'; }, 'SSO_STATE'],
+  ['40', (f) => { f.deploymentReceipt.implementation_sha = '0'.repeat(40); }, 'IMPLEMENTATION_SHA'],
+  ['41', (f) => { f.deploymentReceipt.project_link_absent = false; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['42', (f) => { f.deploymentReceipt.original_removal_verified = false; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['43', (f) => { f.deploymentReceipt.secret_values_absent = false; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['44', (f) => { f.deploymentReceipt.token_absent = false; }, 'DEPLOYMENT_RECEIPT_STATE'],
+  ['45', (f) => { f.deploymentReceipt.preview_origin = 'http://mobile-bff-preview.invalid'; }, 'PREVIEW_ORIGIN'],
+  ['46', (f) => { f.deploymentReceipt.origin_sha256 = '0'.repeat(64); }, 'PREVIEW_ORIGIN'],
+  ['47', (f) => { f.deploymentReceipt.unknown = true; }, 'DEPLOYMENT_RECEIPT_SCHEMA'],
+  ['48', (f) => { delete f.deploymentReceipt.framework; }, 'DEPLOYMENT_RECEIPT_SCHEMA'],
+]) {
+  test(`[DEPLOYMENT-RECEIPT-RECONCILIATION ${index}] preserves an existing deployment gate`, () => {
+    const fixture = validFixture();
+    mutate(fixture);
+    expectCode(code, () => validate(fixture));
+  });
+}
+
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 49] validation never mutates deployment receipt bytes', () => {
+  const fixture = validFixture();
+  const before = JSON.stringify(fixture.deploymentReceipt);
+  validate(fixture);
+  assert.equal(JSON.stringify(fixture.deploymentReceipt), before);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 50] validation never mutates env bytes', () => {
+  const fixture = validFixture();
+  const before = Buffer.from(fixture.envBytes);
+  validate(fixture);
+  assert.deepEqual(fixture.envBytes, before);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 51] all five source hash bindings remain unchanged', () => {
+  const fixture = validFixture();
+  const before = JSON.stringify(fixture.hashes);
+  build(fixture);
+  assert.equal(JSON.stringify(fixture.hashes), before);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 52] Bridge V1 remains consumed without retry', () => assert.equal(subject().BRIDGE_LINEAGE.bridge_v1_attempts, '1/1_CONSUMED_NO_RETRY'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 53] Bridge V2 remains consumed without retry', () => assert.equal(subject().BRIDGE_LINEAGE.bridge_v2_attempts, '1/1_CONSUMED_NO_RETRY'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 54] c517 remains unexecuted superseded with no retroactive claim', () => assert.equal(subject().BRIDGE_LINEAGE.env_receipt_attempts, '0/1_NOT_EXECUTED_SUPERSEDED'));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 55] new version-addressed output differs from c517', () => {
+  assert.notEqual(authorityPublicationRoot('/tmp/ci3', build()), path.join('/tmp/ci3', subject().BRIDGE_LINEAGE.env_receipt_authority_sha));
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 56] bounded Git reader still accepts 82,675 bytes', async () => {
+  const bytes = Buffer.alloc(82_675, 0x61);
+  const oid = subject().gitObjectOid(bytes, 'sha1');
+  const { adapters } = fakeReaderAdapters({ body: bytes, sizes: [bytes.length, bytes.length] });
+  const result = await subject().readGitBlobBounded(fakeReaderInput(adapters, { expectedBlobOid: oid, expectedFileSha256: subject().sha256(bytes), oid }));
+  assert.equal(result.bytes_read, 82_675);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 57] zsh syntax remains deferred to the Mac', () => assert.equal(build().receipt.zsh_syntax_validation_deferred, true));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 58] launcher structural normalization is stable', async () => {
+  const bytes = await readFile(new URL('./ci3-bridge-launcher.zsh', import.meta.url));
+  assert.deepEqual(subject().launcherStructuralSkeleton(bytes), subject().launcherStructuralSkeleton(bytes));
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 59] credential is referenced but never copied into receipt', () => {
+  const fixture = validFixture();
+  const receiptBytes = build(fixture).receiptBytes;
+  assert.equal(receiptBytes.includes(fixture.credential.password), false);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 60] service role is never emitted', () => assert.equal(build().receipt.service_role_emitted, false));
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 61] raw origin never enters bridge receipt', () => {
+  const fixture = validFixture();
+  assert.equal(build(fixture).receiptBytes.includes(fixture.deploymentReceipt.preview_origin), false);
+});
+test('[DEPLOYMENT-RECEIPT-RECONCILIATION 62] raw values and tokens remain absent', () => {
+  const receipt = build().receipt;
+  assert.deepEqual([receipt.raw_values_reported, receipt.token_emitted, receipt.primary_opened], [false, false, false]);
+});
 
 function authorityPublicationRoot(outputRoot, artifacts) {
   return path.join(outputRoot, artifacts.receipt.authority_commit);
@@ -917,7 +1348,7 @@ test('[ENV-RECEIPT-RECONCILIATION 32] env bytes are not rewritten', () => {
 });
 test('[ENV-RECEIPT-RECONCILIATION 33] Bridge V1 lineage remains historical', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_AUTHORITY_COMMIT = 'ba8473799a19aec586b0fe706bb7d4084589c86c'/));
 test('[ENV-RECEIPT-RECONCILIATION 34] Bridge V2 lineage remains historical', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_V2_AUTHORITY_COMMIT = 'c8e1d00c8d43912e55c5ecae3b2e3d84ae232026'/));
-test('[ENV-RECEIPT-RECONCILIATION 35] fresh authority architecture is distinct', () => assert.match(GENERATOR_SOURCE, /WITH_CANONICAL_ENV_RECEIPT_V1/));
+test('[ENV-RECEIPT-RECONCILIATION 35] fresh authority architecture is distinct', () => assert.match(GENERATOR_SOURCE, /WITH_CANONICAL_INPUT_CONTRACTS_V1/));
 test('[ENV-RECEIPT-RECONCILIATION 36] old authority cannot be current', () => assert.doesNotMatch(GENERATOR_SOURCE, /const AUTHORITY_PARENT = '92cccf3dca21a29d601d2f274a67ea2ba284914b'/));
 test('[ENV-RECEIPT-RECONCILIATION 37] old claim cannot authorize fresh attempt', () => assert.match(GENERATOR_SOURCE, /PREDECESSOR_V2_STOP_COMMIT = '456b4643d1a310bc88458a28a9a62a16dde2e1c8'/));
 test('[ENV-RECEIPT-RECONCILIATION 38] no retroactive claim path exists', () => assert.doesNotMatch(GENERATOR_SOURCE, /retroactiveClaim|retroactive_claim/));
@@ -1011,7 +1442,11 @@ test('rejects an unverified provisioning state', () => {
 
 test('rejects an expired cleanup deadline', () => {
   const fixture = validFixture();
+  fixture.provisioningReceipt.created_at = '2026-07-18T00:00:00.000Z';
+  fixture.provisioningReceipt.grant_at = fixture.provisioningReceipt.created_at;
+  fixture.credential.created_at = fixture.provisioningReceipt.created_at;
   fixture.provisioningReceipt.cleanup_deadline = '2026-08-01T00:00:00.000Z';
+  fixture.provisioningReceipt.expires_at = fixture.provisioningReceipt.cleanup_deadline;
   fixture.credential.expires_at = fixture.provisioningReceipt.cleanup_deadline;
   expectCode('CLEANUP_DEADLINE', () => validate(fixture));
 });
@@ -1454,7 +1889,7 @@ for (const [name, mutate, code] of [
   ['provisioning purpose', (fixture) => { fixture.provisioningReceipt.purpose = 'other'; }, 'PROVISIONING_RECEIPT_STATE'],
   ['provisioning authority shape', (fixture) => { fixture.provisioningReceipt.authority_sha = 'not-a-sha'; }, 'PROVISIONING_RECEIPT_STATE'],
   ['provisioning implementation tree binding', (fixture) => { fixture.provisioningReceipt.implementation_tree = '0'.repeat(40); }, 'IMPLEMENTATION_SHA'],
-  ['provisioning fixture counts', (fixture) => { fixture.provisioningReceipt.fixture_counts.progress = 1; }, 'PROVISIONING_RECEIPT_STATE'],
+  ['provisioning fixture counts', (fixture) => { fixture.provisioningReceipt.fixture_counts.progress = 2; }, 'PROVISIONING_RECEIPT_STATE'],
 ]) {
   test(`rejects critical ${name}`, () => {
     const fixture = validFixture();
@@ -1636,7 +2071,7 @@ test('terminal receipt rejects an incomplete two-scan chain', () => {
 
 test('generator and executable authority share the one exact commit subject', () => {
   const fixture = validFixture();
-  fixture.authority.subject = 'build(ops): reconcile staging env receipt for CI-3 bridge';
+  fixture.authority.subject = 'build(ops): reconcile remaining CI-3 bridge input contracts';
   assert.doesNotThrow(() => build(fixture));
 });
 
@@ -1901,7 +2336,7 @@ for (const [field, expected] of EXECUTABLE_COMPONENT_EXPECTATIONS) {
   });
 }
 
-test('remote receipt binds the exact fifteen-path authority tree manifest', () => {
+test('remote receipt binds the exact sixteen-path authority tree manifest', () => {
   assert.equal(build().receipt.authority_tree_manifest_sha256, '8'.repeat(64));
 });
 
@@ -1921,8 +2356,8 @@ test('remote receipt freezes the exact ordered six terminal scan IDs', () => {
   assert.deepEqual(build().receipt.terminal_scan_ids, ['argv', 'history', 'terminal-log', 'attachment', 'xcresult', 'runtime']);
 });
 
-test('authority manifest requires exactly fifteen Git paths', () => {
-  const entries = Array.from({ length: 15 }, (_, index) => ({
+test('authority manifest requires exactly sixteen Git paths', () => {
+  const entries = Array.from({ length: 16 }, (_, index) => ({
     path: `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: `${(index % 9) + 1}`.repeat(40),
     sha256: `${(index % 9) + 1}`.repeat(64),
@@ -1940,8 +2375,8 @@ test('authority manifest rejects a thirteen-only path set', () => {
 });
 
 test('authority manifest rejects duplicate Git paths', () => {
-  const entries = Array.from({ length: 15 }, (_, index) => ({
-    path: index === 14 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
+  const entries = Array.from({ length: 16 }, (_, index) => ({
+    path: index === 15 ? 'synthetic/path-00' : `synthetic/path-${String(index).padStart(2, '0')}`,
     blob_oid: 'a'.repeat(40),
     sha256: 'b'.repeat(64),
   }));

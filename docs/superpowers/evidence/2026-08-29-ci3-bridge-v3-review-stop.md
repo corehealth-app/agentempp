@@ -1097,3 +1097,16 @@ A authority canônica do env receipt muda apenas constants, manifest data e o
 contrato semântico de sete campos. O skeleton do launcher permanece idêntico
 ao predecessor Mac-validado; esta evidência não concede PASS zsh na VPS. O
 Gate 0 continua sendo `/bin/zsh -n` sobre o blob exato antes de toda rede.
+
+## Successor deployment receipt ruling
+
+A reconciliação do deployment receipt altera apenas bindings de dados do
+launcher: parent, subject e manifest de 16 paths. O skeleton estrutural deve
+permanecer byte-equal ao predecessor Mac-validado; shebang, funções, fluxo,
+redirects, quotes, pipelines, traps, FDs e call graph não mudam. A VPS continua
+sem instalar ou executar zsh, e não pode declarar syntax PASS.
+
+O novo receipt remoto registra separadamente `deployment_node=22.x` e a
+authority de adoption do capsule. Essa separação não muda o executable do Mac
+nem reabre qualquer comando remoto. O Gate 0 permanece `/bin/zsh -n` sobre o
+blob exato antes de simulador, SSH, claims ou network.

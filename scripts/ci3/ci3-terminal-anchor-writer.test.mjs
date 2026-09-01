@@ -113,7 +113,7 @@ try {
 if (VPS_SOURCE_CONTRACT_MODE) {
   const writerSourceContract = await readFile(SOURCE_PATH, 'utf8');
   nodeTest('[VPS source-contract] writer requires the V2 bounded-reader remote receipt', () => {
-    assert.match(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1/);
+    assert.match(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1/);
     assert.doesNotMatch(writerSourceContract, /VERSIONED_REMOTE_BRIDGE_ARTIFACT_V1/);
   });
   nodeTest('[VPS source-contract] writer requires the Mac-only zsh pre-network gate', () => {
@@ -336,8 +336,8 @@ async function createFixture({
       };
     } else if (role === 'remote-receipt') {
       payload = {
-        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_ENV_RECEIPT_V1', created_at_utc: '2026-08-30T12:00:00.000Z',
-        authority_commit: AUTHORITY, authority_parent: '456b4643d1a310bc88458a28a9a62a16dde2e1c8', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): reconcile staging env receipt for CI-3 bridge',
+        schema_version: 1, purpose: 'VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1', created_at_utc: '2026-08-30T12:00:00.000Z',
+        authority_commit: AUTHORITY, authority_parent: '70a7d60dd9c4224e3be9072ce5fbd966bd534560', authority_tree: 'f'.repeat(40), authority_subject: 'build(ops): reconcile remaining CI-3 bridge input contracts',
         generator_blob_sha: components().generator.blob_oid, generator_file_sha256: components().generator.sha256,
         controller_blob_oid: components().controller.blob_oid, controller_file_sha256: components().controller.sha256,
         launcher_blob_oid: components().launcher.blob_oid, launcher_file_sha256: components().launcher.sha256,
@@ -350,6 +350,8 @@ async function createFixture({
         authority_tree_manifest_sha256: authorityManifestSourceSha256, remote_bundle_generation_id: GENERATIONS.remote,
         source_generation_id: `src-${'1'.repeat(64)}`, source_env_descriptor_identity_sha256: '2'.repeat(64),
         env_source_sha256: '3'.repeat(64), env_receipt_sha256: '4'.repeat(64), deployment_receipt_sha256: '5'.repeat(64),
+        deployment_node: '22.x', execution_runtime_adoption_authority_sha: '461a2e0dbe091a5c352d5dfdc1952b444f41aac0',
+        execution_runtime_node_sha256: '6295488653f0d93b0a157841746fef7e72cc4328cfb60c4bbe0ca2668a836ffd', execution_runtime_status: 'VERIFIED_ADOPTED_READ_ONLY',
         credential_source_path: '/root/.config/agentempp/secrets/ci3-synthetic-patient.credentials.json', credential_source_sha256: '4'.repeat(64),
         provisioning_receipt_sha256: '7'.repeat(64), output_config_sha256: '3'.repeat(64),
         output_filenames: ['mobile-staging-config.json', 'bridge.receipt.json'], staging_project_ref: 'syntheticref', implementation_sha: 'e3e1e252b48e42554e75899b950692c05186f60d',

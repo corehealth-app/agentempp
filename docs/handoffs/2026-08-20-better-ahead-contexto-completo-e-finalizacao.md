@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.9
+**Versão do dossiê:** 1.7.10
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5282,3 +5282,63 @@ claim, staging, generation, config ou receipt. O snapshot, capsule, adoption,
 cinco inputs e V1/V2 permanecem preservados. Próximo gate é uma nova authority
 para reconciliar explicitamente o deployment receipt; Gate 0 do Mac, CI-3 Task
 2, CI-4, produção e cleanup continuam não executados.
+
+## Atualização operacional 1.7.10 — contrato canônico do deployment receipt da ponte CI-3
+
+O STOP anterior permanece válido. O receipt físico, root-only e hash-bound,
+prova o purpose literal `ci3-dedicated-mobile-bff-deployment`, o Node Vercel
+literal `22.x`, framework `nextjs`, root `apps/mobile-bff` e a authority de
+recuperação do Preview `7b08e67c81e63b3302de6d8642b3855f5ec60ed9`.
+O commit final do Preview é `34636d321d5d5fa2d108a88ffda2dc2a7072de90`.
+Nenhum receipt ou secret foi alterado.
+
+A nova arquitetura é
+`VERSIONED_REMOTE_BRIDGE_ARTIFACT_V2_BOUNDED_GIT_BLOB_STREAMING_WITH_CANONICAL_INPUT_CONTRACTS_V1`,
+com parent `70a7d60dd9c4224e3be9072ce5fbd966bd534560`, subject
+`build(ops): reconcile remaining CI-3 bridge input contracts` e 16 paths fechados.
+`deploymentReceipt.node=22.x` descreve exclusivamente a configuração/runtime
+Vercel; o capsule privado executado na VPS continua ancorado nas authorities
+`b08e6326fbd22c96b852ccfe53abdeb254e54bd1` e
+`461a2e0dbe091a5c352d5dfdc1952b444f41aac0`. Os dois contratos não são
+normalizados nem comparados.
+
+Bridge V1 e V2 permanecem consumidas sem retry. `c5172be7…` permanece
+`0/1_NOT_EXECUTED_SUPERSEDED`, sem claim/output, e nunca pode ser executada.
+A authority sucessora recebe orçamento independente `0/1` somente após testes,
+preflight dos cinco inputs, scans, duas reviews sem Critical/Important,
+publicação e readback remoto. Zsh continua N/A na VPS e `/bin/zsh -n` permanece
+Gate 0 obrigatório no Mac antes de rede. CI-3 Task 2, CI-4, produção e cleanup
+continuam bloqueados nesta fase.
+
+### STOP pre-authority durante o preflight integral
+
+O preflight read-only dos cinco inputs revelou uma divergência adicional em
+`CREDENTIAL_STATE`: somente o contrato de `synthetic_marker` não corresponde à
+expectativa herdada; o valor físico não foi relatado. Schema, environment,
+cleanup flag, key set, metadata e hash da credential permanecem exatos. Como a
+authority desta rodada autorizava apenas purpose/node do deployment receipt,
+nenhum commit/push ou tentativa foi permitido. Próximo gate:
+`RECONCILE_ADDITIONAL_BRIDGE_INPUT_CONTRACT`.
+
+### Contratos completos dos cinco inputs
+
+A authority histórica `e4159e85…`, o launcher contemporâneo e os artifacts
+hash-bound provam que `synthetic_marker` é específico da operação, no formato
+fechado `ci3-synthetic-YYYYMMDDTHHMMSSZ-[A-Z2-7]{16}`. Ele coincide entre
+claim, credential, recovery e provisioning, relaciona-se byte-exact ao e-mail
+no domínio reservado e permanece distinto do e-mail canonicalizado pelo Auth e
+de todos os IDs da fixture. Somente seu SHA-256 sanitizado é documentado:
+`9f768034584af72f213b9d89816d4f1d506141a37375477369a4817180e4bdd3`.
+
+O provisioning receipt físico exige purpose `ci3_authenticated_today`,
+authority `5cecaa7…`, cleanup class `CREATED_AT_PLUS_14_DAYS`, canonicalization
+class `NORMALIZED_ALIAS_DOCUMENTED`, progress `1`, settlements `0/0` e HTTP
+counts patient/service `1/7`. Todos foram classificados como
+`GENERATOR_EXPECTATION_BUG`; os inputs permaneceram imutáveis.
+
+O novo `--preflight-inputs` usa os mesmos readers e a mesma
+`validateSourceDocuments` do `--create`. O preflight físico passou env,
+deployment, credential, provisioning e relações cruzadas, com zero write,
+claim, output, receipt, rede, SSH ou primary/live. Marker, e-mail e senha não
+foram emitidos. A authority só pode ser publicada após testes, scans e duas
+reviews 0C/0I; a única tentativa real permanece posterior ao readback remoto.

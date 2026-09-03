@@ -5880,3 +5880,25 @@ fail/cancel/skip/todo. Generator, schema, paths e input contract remotos
 permanecem read-only. Não houve rede, SSH real, admin/root, produção, CI-3,
 stage, commit, push, retry externo ou cleanup. O estado permanece
 `STOP_PRE_AUTHORITY`, pendente de duas novas reviews independentes.
+
+## Atualização operacional 1.7.25 — authority publicada, Gate 0 PASS e STOP documentado
+
+A authority semantic-safe sucessora foi publicada por fast-forward e relida no
+remoto. As reviews finais independentes fecharam em `0 Critical / 0 Important`
+em ambos os lados. A materialização owner-only dos 16 paths alterados e do par
+generator/test herdado passou por readback; a suíte final executada dos blobs
+publicados passou `2052/2052`, sem fail/cancel/skip/todo. Os writers operacional
+e de preflight ficaram distintos e capability-separated, o installer foi
+compilado da fonte publicada e o novo Gate 0 passou com exit zero, stdout/stderr
+vazios e launcher inalterado.
+
+O executor publicado foi então chamado uma única vez em `--prepare` e falhou
+fechado antes de qualquer efeito. O corpus frozen de produção exigido pelo
+próprio contrato não existe e não há construtor publicado/autorizado para
+produzir context, launch attestation, operation authority, payloads Node/SSH e
+operation authorities reais. Inventar esses bindings de segurança e valores
+futuros de simulador/SSH seria incompatível com a authority. Publisher0 e
+Publisher1 permanecem `0/1`; não houve SSH, claim, processo filho, prompt admin,
+simulador, root write, remote read, CI-3 Task 2 ou cleanup. O estado terminal é
+`STOP_DOCUMENTED`; próximo gate material não executado:
+`AUTHORIZE_PRODUCTION_FROZEN_INPUT_CONSTRUCTOR_V1`.

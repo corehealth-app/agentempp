@@ -3103,3 +3103,22 @@ reboot/reattachment, real launchd/root prompt, Terminal/Xcode/simulator or
 privileged effects. Generator, schema, paths and input contract remain
 `REUSE_READ_ONLY`; no external effect occurred. Status remains
 `STOP_PRE_AUTHORITY`.
+
+## CI-3 published successor terminal checkpoint — 1.7.25
+
+The semantic-safe successor is published and remotely read back, with two
+independent final reviews at `0 Critical / 0 Important`. Exact materialization,
+capability-separated writer builds, exact installer build and the new Gate 0
+pass. The final exact-blob aggregate passes `2052/2052` with zero
+fail/cancel/skip/todo; predecessor receipts and authorities and the remote
+bundle remain preserved.
+
+The first production-mode boundary then stopped safely. A single exact
+`--prepare` invocation found no frozen production corpus and no
+published/authorized constructor for its context, launch attestation,
+operation authority, Node/SSH payloads or operation authorities. Those values
+cannot be inferred without inventing security and future simulator/SSH
+bindings. No attempt marker, claim, child process, SSH, admin prompt,
+simulator, root write, remote read, CI-3 Task 2 or cleanup occurred. Terminal
+state is `STOP_DOCUMENTED`; the material next gate
+`AUTHORIZE_PRODUCTION_FROZEN_INPUT_CONSTRUCTOR_V1` remains unexecuted.

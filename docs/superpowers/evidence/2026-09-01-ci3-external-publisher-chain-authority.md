@@ -434,3 +434,27 @@ controller 743/743, launcher 115/115, writer 227/227 and read-only generator
 input contract remain read-only. No network, real SSH, admin/root, production,
 CI-3, stage, commit, push, external retry or cleanup occurred. Status remains
 `STOP_PRE_AUTHORITY`, pending two fresh independent reviews.
+
+## Published successor and terminal stop evidence — 1.7.25
+
+The semantic-safe successor authority was committed, pushed by fast-forward,
+and read back from the remote. Both final independent reviews reported
+`0 Critical / 0 Important`. Owner-only exact-blob materialization covered the
+16 changed paths plus the inherited generator/test pair. The final published
+aggregate passed `2052/2052` with zero fail/cancel/skip/todo. The operational
+and semantic-preflight writers are distinct capability-separated binaries, the
+installer was compiled from its exact published source, and the new Gate 0
+passed with exit zero, empty stdout/stderr and an unchanged launcher.
+
+The exact published executable was then invoked once in `--prepare`. It failed
+closed before an attempt marker, claim, child process or production owner root
+could be created because the required production frozen corpus is absent and
+no published or authorized constructor exists for it. The missing corpus
+includes real context, launch attestation, operation authority, Publisher0
+Node/SSH payloads and operation authorities. Synthesizing those security and
+future simulator/SSH bindings is not authorized. Publisher0 and Publisher1
+remain `0/1`; operational network/SSH, admin prompt, simulator, root write,
+remote read, CI-3 Task 2 and cleanup remain zero. Terminal status is
+`STOP_DOCUMENTED`; the
+unexecuted material next gate is
+`AUTHORIZE_PRODUCTION_FROZEN_INPUT_CONSTRUCTOR_V1`.

@@ -623,3 +623,25 @@ privileged publication are not proved. Literal JS/Swift mutation parity
 remains 103 = 97 + 6. Generator, schema, paths and input contract remain
 read-only; no external effect occurred and status remains
 `STOP_PRE_AUTHORITY`.
+
+## Published successor compatibility and terminal stop — 1.7.25
+
+The successor authority and both `0 Critical / 0 Important` final reviews are
+now remotely published evidence. Exact-blob readback, separate production and
+semantic-preflight writer compilation, exact installer compilation, and the
+new Gate 0 all pass. After correcting only the materialized repository identity
+required by the test harness, the exact published aggregate passes
+`2052/2052`, with zero fail/cancel/skip/todo. Predecessor bindings and Gate 0
+receipts remain preserved, and the remote bundle remains read-only and
+unregenerated.
+
+Operational compatibility cannot proceed safely from this authority alone.
+The CLI requires a fully frozen production corpus before `--prepare`, but no
+published/authorized constructor exists and no such corpus is present. The
+single exact `--prepare` invocation returned fail-closed before any attempt or
+effect. Creating the missing context, launch attestation, operation authority,
+Node/SSH payloads and operation authorities by inference would invent
+security-critical bindings. Publisher0/Publisher1 budgets therefore remain
+`0/1`; simulator, operational SSH, remote reads, root writes, admin prompts and
+CI-3 Task 2 remain untouched. Status is `STOP_DOCUMENTED`, pending but not
+executing `AUTHORIZE_PRODUCTION_FROZEN_INPUT_CONSTRUCTOR_V1`.

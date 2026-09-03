@@ -1924,3 +1924,28 @@ launchd/root prompt, Terminal, Xcode, simulator and privileged effects are not
 proved. Generator, bundle schema, remote paths and inputs remain read-only. No
 network, real SSH, admin/root, production, CI-3, stage, commit, push or
 external effect occurred.
+
+## Published successor terminal checkpoint — 1.7.25
+
+- [x] Publish and remotely read back the semantic-safe successor authority.
+- [x] Obtain two final independent reviews with `0 Critical / 0 Important`.
+- [x] Materialize the exact 16 changed blobs plus inherited generator/test
+      blobs with owner-only readback.
+- [x] Pass the exact published aggregate `2052/2052`, with zero
+      fail/cancel/skip/todo.
+- [x] Compile capability-separated operational/preflight writers and the
+      Publisher1 installer from exact published sources.
+- [x] Pass a new Gate 0 with exit zero, empty stdout/stderr and unchanged
+      launcher; preserve all predecessor Gate 0 receipts.
+- [x] Invoke exact `--prepare` once and confirm fail-closed before attempt,
+      claim, child process, network, privilege, simulator or root write.
+- [ ] Publish an authorized production frozen-input constructor for the real
+      context, launch attestation, operation authority, Node/SSH payloads and
+      operation authorities.
+
+The last item is a material authority gap, not an operational retry. No safe
+published implementation can synthesize those security-critical and future
+simulator/SSH bindings. Publisher0 and Publisher1 remain `0/1`, operational
+reads remain `0/3`, CI-3 Task 2 has not started, and no cleanup ran. Current
+state is `STOP_DOCUMENTED`; next gate
+`AUTHORIZE_PRODUCTION_FROZEN_INPUT_CONSTRUCTOR_V1` was not executed.

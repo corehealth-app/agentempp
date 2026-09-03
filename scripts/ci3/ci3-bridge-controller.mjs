@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash, createPrivateKey, createPublicKey, sign as signSignature, verify as verifySignature } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign as signSignature, verify as verifySignature } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { constants as FS_CONSTANTS } from 'node:fs';
 import {
@@ -23,8 +23,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
-export const AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+const AUTHORITY_PARENT = 'd4f7d37bbac98b5b0e37b459528a8d5c6adb3622';
+export const AUTHORITY_SUBJECT = 'build(ops): authorize semantic-safe Publisher chain for CI-3';
 export const REMOTE_BUNDLE_PREDECESSOR_AUTHORITY_SHA = '7a929b0cebb28c339010dd5bf115e67b79523156';
 const REMOTE_BUNDLE_PREDECESSOR_PARENT = '70a7d60dd9c4224e3be9072ce5fbd966bd534560';
 const REMOTE_BUNDLE_PREDECESSOR_SUBJECT = 'build(ops): reconcile remaining CI-3 bridge input contracts';
@@ -177,16 +177,15 @@ export const IMPORTANT_FINDINGS = Object.freeze([
 
 export const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
-  'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-09-01-ci3-external-publisher-chain-authority.md',
   'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
-  'scripts/ci3/create-ios-staging-bridge-config.mjs',
-  'scripts/ci3/create-ios-staging-bridge-config.test.mjs',
+  'scripts/ci3/ci3-external-publisher-chain.mjs',
+  'scripts/ci3/ci3-external-publisher-chain.test.mjs',
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.test.mjs',
   'scripts/ci3/ci3-bridge-controller.mjs',
   'scripts/ci3/ci3-bridge-controller.test.mjs',
   'scripts/ci3/ci3-bridge-launcher.zsh',
@@ -230,6 +229,11 @@ export function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+export function gitBlobOid(bytes) {
+  const source = Buffer.from(bytes);
+  return createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${source.length}\0`), source])).digest('hex');
+}
+
 export function canonicalJson(value) {
   const normalize = (candidate) => {
     if (Array.isArray(candidate)) return candidate.map(normalize);
@@ -243,6 +247,8 @@ export function parseControllerMode(argv) {
   const allowed = new Set([
     '--self-test', '--terminalize-tail', 'plan', 'verify-simulator', 'verify-ssh', 'fetch',
     'install-simulator', 'scan', 'write-terminal-anchor', 'resume', 'status',
+    'materialize-publisher0-bootstrap', 'bootstrap-publisher0-physical-boundary',
+    'bootstrap-publisher0-transaction',
     'publish-vps-operation-authority-pass', 'publish-operation-authority',
     'publish-privileged-writer-authority',
   ]);
@@ -270,6 +276,8 @@ export function validateLaunchAttestation(attestation) {
   requireSha(attestation.authority_tree, code, [40]);
   requireSha(attestation.authority_subject_sha256, code);
   requireSha(attestation.authority_manifest_sha256, code);
+  if (attestation.authority_parent !== AUTHORITY_PARENT
+      || attestation.authority_subject_sha256 !== sha256(Buffer.from(AUTHORITY_SUBJECT))) fail(code);
   validateComponents(attestation.components, code);
   exactKeys(attestation.tools, ['node', 'ssh', 'swiftc', 'xcodebuild'], code);
   for (const identity of Object.values(attestation.tools)) {
@@ -308,6 +316,12 @@ export function validateAuthorityManifest({ entries, components }) {
   exactKeys(components, ['controller', 'generator', 'launcher', 'writer'], code);
   for (const [name, expectedPath] of Object.entries(COMPONENT_PATHS)) {
     exactKeys(components[name], ['blob_oid', 'path', 'sha256'], code);
+    if (name === 'generator') {
+      if (components[name].path !== expectedPath) fail(code);
+      requireSha(components[name].blob_oid, code, [40]);
+      requireSha(components[name].sha256, code);
+      continue;
+    }
     const entry = entries.find(({ path: candidate }) => candidate === expectedPath);
     if (!entry || components[name].path !== expectedPath || components[name].blob_oid !== entry.blob_oid || components[name].sha256 !== entry.sha256) fail(code);
   }
@@ -1916,6 +1930,271 @@ export async function emitRetainedScannedTerminalBytes({
   } finally { await handle.close(); }
 }
 
+export function validatePublisher0CausalBootstrapRequest(request) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  exactKeys(request, [
+    'attempt', 'authority_manifest_sha256', 'authority_parent', 'authority_sha',
+    'authority_subject_sha256', 'authority_tree', 'bootstrap_generation_id',
+    'controller', 'launcher', 'node_sha256', 'purpose', 'raw_values', 'retry',
+    'schema_version',
+  ], code);
+  if (request.schema_version !== 1
+      || request.purpose !== 'CI3_VPS_PUBLISHER0_CAUSAL_BOOTSTRAP_REQUEST_V1'
+      || request.authority_parent !== AUTHORITY_PARENT
+      || request.authority_subject_sha256 !== sha256(Buffer.from(AUTHORITY_SUBJECT))
+      || request.attempt !== 1 || request.retry !== false || request.raw_values !== false) fail(code);
+  requireSha(request.authority_sha, code, [40]);
+  requireSha(request.authority_parent, code, [40]);
+  requireSha(request.authority_tree, code, [40]);
+  for (const field of ['authority_subject_sha256', 'authority_manifest_sha256', 'node_sha256']) {
+    requireSha(request[field], code);
+  }
+  for (const [role, expectedPath] of [
+    ['controller', COMPONENT_PATHS.controller], ['launcher', COMPONENT_PATHS.launcher],
+  ]) {
+    exactKeys(request[role], ['git_blob_oid', 'git_path', 'sha256'], code);
+    if (request[role].git_path !== expectedPath) fail(code);
+    requireSha(request[role].git_blob_oid, code, [40]);
+    requireSha(request[role].sha256, code);
+  }
+  const generationRoot = {
+    authority_sha: request.authority_sha,
+    authority_parent: request.authority_parent,
+    authority_tree: request.authority_tree,
+    authority_subject_sha256: request.authority_subject_sha256,
+    authority_manifest_sha256: request.authority_manifest_sha256,
+    node_sha256: request.node_sha256,
+    controller: request.controller,
+    launcher: request.launcher,
+  };
+  if (request.bootstrap_generation_id !== `bootstrap-${sha256(canonicalJson(generationRoot))}`) fail(code);
+  return true;
+}
+
+export async function materializePublisher0GitBoundBootstrap({
+  requestBytes, requestSha256, processState, io,
+} = {}) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  if (!Buffer.isBuffer(requestBytes) || requestBytes.length === 0 || sha256(requestBytes) !== requestSha256
+      || !isPlainObject(processState) || !isPlainObject(io)) fail(code);
+  let request;
+  try { request = JSON.parse(requestBytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(request).equals(requestBytes)) fail(code);
+  validatePublisher0CausalBootstrapRequest(request);
+  exactKeys(processState, ['controller_bytes', 'environment', 'exec_path', 'node_bytes', 'script_path'], code);
+  if (!Buffer.isBuffer(processState.node_bytes) || !Buffer.isBuffer(processState.controller_bytes)
+      || !canonicalJson(processState.environment).equals(canonicalJson(CLOSED_BOOTSTRAP_ENVIRONMENT))) fail(code);
+  const objectRoot = `/var/lib/agentempp/ci3-authority-objects/${request.authority_sha}`;
+  const expectedNodePath = `${objectRoot}/runtime/node-${request.node_sha256}`;
+  const expectedControllerPath = `${objectRoot}/git/${request.controller.git_blob_oid}/ci3-bridge-controller.mjs`;
+  if (processState.exec_path !== expectedNodePath || processState.script_path !== expectedControllerPath
+      || sha256(processState.node_bytes) !== request.node_sha256
+      || sha256(processState.controller_bytes) !== request.controller.sha256
+      || gitBlobOid(processState.controller_bytes) !== request.controller.git_blob_oid) fail(code);
+  exactKeys(io, [
+    'invokeInstalled', 'observeInstalled', 'publishInstalled', 'readAuthorityManifest',
+    'readIssuerReceipt', 'readLaunchAttestation', 'readLauncherBlob',
+  ], code);
+  for (const method of Object.keys(io)) if (typeof io[method] !== 'function') fail(code);
+  const [launcherBytes, launchAttestationBytes, authorityManifestBytes, issuerReceiptBytes] = await Promise.all([
+    io.readLauncherBlob(), io.readLaunchAttestation(), io.readAuthorityManifest(), io.readIssuerReceipt(),
+  ]).catch(() => fail(code));
+  if (![launcherBytes, launchAttestationBytes, authorityManifestBytes, issuerReceiptBytes]
+    .every((bytes) => Buffer.isBuffer(bytes) && bytes.length > 0)) fail(code);
+  if (sha256(launcherBytes) !== request.launcher.sha256
+      || gitBlobOid(launcherBytes) !== request.launcher.git_blob_oid
+      || sha256(authorityManifestBytes) !== request.authority_manifest_sha256) fail(code);
+  let launchAttestation;
+  let issuerReceipt;
+  try {
+    launchAttestation = JSON.parse(launchAttestationBytes.toString('utf8'));
+    issuerReceipt = JSON.parse(issuerReceiptBytes.toString('utf8'));
+  } catch { fail(code); }
+  if (!canonicalJson(launchAttestation).equals(launchAttestationBytes)
+      || !canonicalJson(issuerReceipt).equals(issuerReceiptBytes)) fail(code);
+  validateLaunchAttestation(launchAttestation);
+  validateVpsExternalIssuerAuthority(issuerReceipt);
+  parseAuthorityManifestBytes(authorityManifestBytes, launchAttestation.components);
+  if (launchAttestation.authority_sha !== request.authority_sha
+      || launchAttestation.authority_parent !== request.authority_parent
+      || launchAttestation.authority_tree !== request.authority_tree
+      || launchAttestation.authority_subject_sha256 !== request.authority_subject_sha256
+      || launchAttestation.authority_manifest_sha256 !== request.authority_manifest_sha256
+      || launchAttestation.tools.node.binary_sha256 !== request.node_sha256
+      || !canonicalJson(launchAttestation.components.controller).equals(canonicalJson({
+        path: request.controller.git_path, blob_oid: request.controller.git_blob_oid, sha256: request.controller.sha256,
+      }))
+      || !canonicalJson(launchAttestation.components.launcher).equals(canonicalJson({
+        path: request.launcher.git_path, blob_oid: request.launcher.git_blob_oid, sha256: request.launcher.sha256,
+      }))
+      || issuerReceipt.authority_sha !== request.authority_sha) fail(code);
+  const root = `/var/lib/agentempp/ci3-publisher0-bootstrap/${request.authority_sha}/${request.bootstrap_generation_id}`;
+  const runtimeRoot = `${root}/runtime`;
+  const boundary = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER0_BOOTSTRAP_AUTHORITY_V2',
+    authority_sha: request.authority_sha, bootstrap_generation_id: request.bootstrap_generation_id, root,
+    node_path: `${runtimeRoot}/node`, node_sha256: request.node_sha256,
+    controller_path: `${runtimeRoot}/ci3-bridge-controller.mjs`, controller_sha256: request.controller.sha256,
+    launcher_path: `${runtimeRoot}/ci3-bridge-launcher.zsh`, launcher_sha256: request.launcher.sha256,
+    launch_attestation_path: `${runtimeRoot}/launch-attestation.json`,
+    launch_attestation_sha256: sha256(launchAttestationBytes),
+    authority_manifest_path: `${runtimeRoot}/authority-manifest.v1`,
+    authority_manifest_sha256: request.authority_manifest_sha256,
+    descriptor_backend: 'NODE_CORE_PROC_FD_V1',
+    issuer_receipt_sha256: sha256(issuerReceiptBytes),
+    materializer_mode: 'publish-vps-operation-authority-pass',
+    allowed_environment: CLOSED_BOOTSTRAP_ENVIRONMENT,
+    user_checkout_executable: false, raw_values: false,
+  };
+  const files = {
+    authority: canonicalJson(boundary), node: processState.node_bytes,
+    controller: processState.controller_bytes, launcher: launcherBytes,
+    launch_attestation: launchAttestationBytes, authority_manifest: authorityManifestBytes,
+  };
+  const existing = await io.observeInstalled({ boundary, files });
+  let state = 'EXISTS_VERIFIED';
+  let effectExecutions = 0;
+  if (existing === null) {
+    const published = await io.publishInstalled({ boundary, files });
+    if (published !== 'CREATED') fail(code);
+    state = 'CREATED';
+    effectExecutions = 1;
+  } else if (existing !== 'EXISTS_VERIFIED') fail(code);
+  const stdout = await io.invokeInstalled({ boundary });
+  if (!Buffer.isBuffer(stdout) || stdout.length === 0) fail(code);
+  let authenticated;
+  try { authenticated = JSON.parse(stdout.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(authenticated).equals(stdout)
+      || authenticated.schema_version !== 2
+      || authenticated.purpose !== 'CI3_AUTHENTICATED_PUBLISHER0_OUTPUT_V2'
+      || authenticated.authority_sha !== request.authority_sha
+      || authenticated.attempt !== 1 || authenticated.retry !== false || authenticated.raw_values !== false) fail(code);
+  return Object.freeze({ state, stdout, effect_executions: effectExecutions, raw_values: false });
+}
+
+async function ensureFixedVpsRootDirectory(directory, mode = 0o755) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0 || process.geteuid() !== 0
+      || (directory !== '/var/lib/agentempp/ci3-publisher0-bootstrap'
+        && !directory.startsWith('/var/lib/agentempp/ci3-publisher0-bootstrap/'))) fail('STOP_PRE_AUTHORITY');
+  try { await mkdir(directory, { mode }); } catch (error) { if (error?.code !== 'EEXIST') fail(code); }
+  const observed = await lstat(directory, { bigint: true }).catch(() => fail(code));
+  if (!observed.isDirectory() || observed.isSymbolicLink() || observed.uid !== 0n || observed.gid !== 0n
+      || Number(observed.mode & 0o777n) !== mode || (mode & 0o022) !== 0) fail(code);
+}
+
+async function publishPublisher0BootstrapTree({ boundary, files }) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0 || process.geteuid() !== 0) fail('STOP_PRE_AUTHORITY');
+  const fixedBase = '/var/lib/agentempp/ci3-publisher0-bootstrap';
+  const authorityBase = `${fixedBase}/${boundary.authority_sha}`;
+  const finalRoot = boundary.root;
+  const stagingRoot = `${authorityBase}/.${boundary.bootstrap_generation_id}.staging`;
+  for (const directory of [fixedBase, authorityBase]) await ensureFixedVpsRootDirectory(directory);
+  await lstat(finalRoot).then(() => fail(code), (error) => { if (error?.code !== 'ENOENT') fail(code); });
+  await lstat(stagingRoot).then(() => fail(code), (error) => { if (error?.code !== 'ENOENT') fail(code); });
+  await mkdir(stagingRoot, { mode: 0o700 }).catch(() => fail(code));
+  const runtimeRoot = path.join(stagingRoot, 'runtime');
+  await mkdir(runtimeRoot, { mode: 0o700 }).catch(() => fail(code));
+  const entries = [
+    [path.join(stagingRoot, 'publisher0-bootstrap-authority.json'), files.authority, 0o444],
+    [path.join(runtimeRoot, 'node'), files.node, 0o555],
+    [path.join(runtimeRoot, 'ci3-bridge-controller.mjs'), files.controller, 0o555],
+    [path.join(runtimeRoot, 'ci3-bridge-launcher.zsh'), files.launcher, 0o555],
+    [path.join(runtimeRoot, 'launch-attestation.json'), files.launch_attestation, 0o444],
+    [path.join(runtimeRoot, 'authority-manifest.v1'), files.authority_manifest, 0o444],
+  ];
+  for (const [filePath, bytes, mode] of entries) {
+    const handle = await open(
+      filePath, FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL | FS_CONSTANTS.O_NOFOLLOW, mode,
+    ).catch(() => fail(code));
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+      await chmod(filePath, mode);
+    } finally { await handle.close(); }
+    runFixedCommand('/usr/bin/chattr', ['+i', '--', filePath]);
+  }
+  await fsyncDirectory(runtimeRoot);
+  await chmod(runtimeRoot, 0o555);
+  await fsyncDirectory(stagingRoot);
+  await chmod(stagingRoot, 0o555);
+  await rename(stagingRoot, finalRoot).catch(() => fail(code));
+  await fsyncDirectory(authorityBase);
+  runFixedCommand('/usr/bin/chattr', ['+i', '--', path.join(finalRoot, 'runtime')]);
+  runFixedCommand('/usr/bin/chattr', ['+i', '--', finalRoot]);
+  return 'CREATED';
+}
+
+async function observePublisher0BootstrapTree(boundary) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  const boundaryPath = path.join(boundary.root, 'publisher0-bootstrap-authority.json');
+  const exists = await lstat(boundaryPath).catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    fail(code);
+  });
+  if (exists === null) return null;
+  const expected = [
+    [boundaryPath, canonicalJson(boundary), 0o444],
+    [boundary.node_path, null, 0o555, boundary.node_sha256],
+    [boundary.controller_path, null, 0o555, boundary.controller_sha256],
+    [boundary.launcher_path, null, 0o555, boundary.launcher_sha256],
+    [boundary.launch_attestation_path, null, 0o444, boundary.launch_attestation_sha256],
+    [boundary.authority_manifest_path, null, 0o444, boundary.authority_manifest_sha256],
+  ];
+  for (const [filePath, expectedBytes, mode, expectedSha = null] of expected) {
+    const observed = await readVpsRootImmutableFile(filePath, mode, code);
+    if ((expectedBytes !== null && !observed.equals(expectedBytes))
+        || (expectedSha !== null && sha256(observed) !== expectedSha)) fail(code);
+  }
+  return 'EXISTS_VERIFIED';
+}
+
+async function createPublisher0CausalBootstrapIo(request) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  validatePublisher0CausalBootstrapRequest(request);
+  const objectRoot = `/var/lib/agentempp/ci3-authority-objects/${request.authority_sha}`;
+  const launcherPath = `${objectRoot}/git/${request.launcher.git_blob_oid}/ci3-bridge-launcher.zsh`;
+  const artifactRoot = `${objectRoot}/artifacts`;
+  return {
+    readLauncherBlob: () => readVpsRootImmutableFile(launcherPath, 0o555, code),
+    readLaunchAttestation: () => readVpsRootImmutableFile(`${artifactRoot}/launch-attestation.json`, 0o444, code),
+    readAuthorityManifest: () => readVpsRootImmutableFile(`${artifactRoot}/authority-manifest.v1`, 0o444, code),
+    readIssuerReceipt: () => readVpsRootImmutableFile(`/etc/agentempp/ci3-publisher0-issuers/${request.authority_sha}.json`, 0o444, code),
+    observeInstalled: ({ boundary }) => observePublisher0BootstrapTree(boundary),
+    publishInstalled: ({ boundary, files }) => publishPublisher0BootstrapTree({ boundary, files }),
+    invokeInstalled: async ({ boundary }) => {
+      const result = spawnSync(boundary.node_path, [boundary.controller_path, 'publish-vps-operation-authority-pass'], {
+        encoding: null, env: CLOSED_BOOTSTRAP_ENVIRONMENT, stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 120000, maxBuffer: 256 * 1024 * 1024,
+      });
+      if (result.status !== 0 || result.signal !== null || result.error
+          || result.stderr.length !== 0 || result.stdout.length === 0) fail(code);
+      return result.stdout;
+    },
+  };
+}
+
+export async function dispatchPublisher0CausalBootstrapCli({
+  argv, readStdin, observeProcess, createIo, materialize = materializePublisher0GitBoundBootstrap, emit,
+} = {}) {
+  const code = 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP';
+  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== 'materialize-publisher0-bootstrap'
+      || !isSha(argv[1]) || typeof readStdin !== 'function' || typeof observeProcess !== 'function'
+      || typeof createIo !== 'function' || typeof materialize !== 'function' || typeof emit !== 'function') fail(code);
+  parseControllerMode([argv[0]]);
+  const requestBytes = await readStdin();
+  if (!Buffer.isBuffer(requestBytes) || requestBytes.length === 0 || sha256(requestBytes) !== argv[1]) fail(code);
+  const [processState, io] = await Promise.all([observeProcess(requestBytes), createIo(requestBytes)]);
+  const result = await materialize({ requestBytes, requestSha256: argv[1], processState, io });
+  if (!isPlainObject(result) || !['CREATED', 'EXISTS_VERIFIED'].includes(result.state)
+      || !Buffer.isBuffer(result.stdout) || result.stdout.length === 0
+      || !Number.isInteger(result.effect_executions) || ![0, 1].includes(result.effect_executions)
+      || result.raw_values !== false) fail(code);
+  await emit(result.stdout);
+  return { state: result.state, effect_executions: result.effect_executions, raw_values: false };
+}
+
 export async function validatePublisher0BootstrapBoundary({ boundary, processState, chain } = {}) {
   const code = 'VPS_PUBLISHER0_BOOTSTRAP';
   if (!isPlainObject(boundary) || !isPlainObject(processState) || !Array.isArray(chain)) fail(code);
@@ -2818,6 +3097,642 @@ async function readVpsRootImmutableFile(filePath, mode, code, { returnObservatio
   return returnObservation ? observed : observed.bytes;
 }
 
+function publisher0RemoteRootPrefix() {
+  const code = 'VPS_PUBLISHER0_ZERO_PRESEED';
+  const synthetic = process.env.CI3_SYNTHETIC_TEST === '1';
+  const prefix = process.env.CI3_SYNTHETIC_PUBLISHER0_REMOTE_ROOT;
+  if (prefix === undefined) {
+    if (synthetic) fail(code);
+    if (typeof process.getuid !== 'function' || process.getuid() !== 0 || process.geteuid() !== 0) fail('STOP_PRE_AUTHORITY');
+    return '';
+  }
+  if (!synthetic || !path.isAbsolute(prefix) || prefix === '/' || prefix.includes('\0')
+      || prefix.includes('\r') || prefix.includes('\n') || path.normalize(prefix) !== prefix) fail(code);
+  return prefix;
+}
+
+function publisher0PhysicalPath(prefix, fixedPath, code = 'VPS_PUBLISHER0_ZERO_PRESEED') {
+  if (!path.isAbsolute(fixedPath) || !fixedPath.startsWith('/var/lib/agentempp/')) fail(code);
+  return prefix === '' ? fixedPath : path.join(prefix, fixedPath.slice(1));
+}
+
+async function ensurePublisher0Directory(directory, mode, { synthetic, code }) {
+  let created = false;
+  try {
+    await mkdir(directory, { mode });
+    created = true;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') fail(code);
+  }
+  if (created) await chmod(directory, mode);
+  const observed = await lstat(directory, { bigint: true }).catch(() => fail(code));
+  const expectedUid = BigInt(synthetic ? process.getuid() : 0);
+  const expectedGid = BigInt(synthetic ? process.getgid() : 0);
+  if (!observed.isDirectory() || observed.isSymbolicLink() || observed.uid !== expectedUid
+      || observed.gid !== expectedGid || Number(observed.mode & 0o777n) !== mode) fail(code);
+  if (created) await fsyncDirectory(path.dirname(directory));
+}
+
+async function readPublisher0ExactFile(filePath, mode, {
+  synthetic, code, requireImmutable = true, expectedNlink = 1n,
+}) {
+  let handle;
+  try {
+    handle = await open(filePath, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    const before = await handle.stat({ bigint: true });
+    const expectedUid = BigInt(synthetic ? process.getuid() : 0);
+    const expectedGid = BigInt(synthetic ? process.getgid() : 0);
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== expectedNlink
+        || before.uid !== expectedUid || before.gid !== expectedGid
+        || Number(before.mode & 0o777n) !== mode) fail(code);
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    const named = await lstat(filePath, { bigint: true });
+    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
+        || after.mtimeNs !== before.mtimeNs || named.dev !== after.dev || named.ino !== after.ino
+        || named.size !== after.size || named.mtimeNs !== after.mtimeNs) fail(code);
+    if (!synthetic && requireImmutable) {
+      const flags = runFixedCommand('/usr/bin/lsattr', ['-d', '--', filePath]).stdout.toString('utf8');
+      if (!flags.split(/\s+/u)[0]?.includes('i')) fail(code);
+    }
+    return bytes;
+  } catch (error) {
+    if (error instanceof ControllerError) throw error;
+    fail(code);
+  } finally { await handle?.close().catch(() => undefined); }
+}
+
+async function writeOrVerifyPublisher0ExactFile(filePath, bytes, mode, options) {
+  const { synthetic, code, makeImmutable = true } = options;
+  let handle;
+  let created = false;
+  try {
+    handle = await open(
+      filePath,
+      FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL | FS_CONSTANTS.O_NOFOLLOW,
+      mode,
+    );
+    created = true;
+    await handle.writeFile(bytes);
+    await handle.chmod(mode);
+    await handle.sync();
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      if (error instanceof ControllerError) throw error;
+      fail(code);
+    }
+  } finally { await handle?.close().catch(() => undefined); }
+  if (created) {
+    if (!synthetic && makeImmutable) runFixedCommand('/usr/bin/chattr', ['+i', '--', filePath]);
+    await fsyncDirectory(path.dirname(filePath));
+  }
+  const observed = await readPublisher0ExactFile(filePath, mode, {
+    ...options, requireImmutable: makeImmutable,
+  });
+  if (!observed.equals(bytes)) fail(code);
+  return created ? 'CREATED' : 'EXISTS_VERIFIED';
+}
+
+async function publishPublisher0SyntheticBarrierNoReplace(filePath, bytes, code) {
+  const stagingPath = `${filePath}.publishing`;
+  await lstat(filePath).then(() => fail(code), (error) => { if (error?.code !== 'ENOENT') fail(code); });
+  let handle;
+  try {
+    handle = await open(
+      stagingPath,
+      FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL | FS_CONSTANTS.O_NOFOLLOW,
+      0o600,
+    );
+    await handle.writeFile(bytes);
+    await handle.chmod(0o600);
+    await handle.sync();
+  } catch (error) {
+    if (error instanceof ControllerError) throw error;
+    fail(code);
+  } finally { await handle?.close().catch(() => undefined); }
+  const staged = await readPublisher0ExactFile(stagingPath, 0o600, {
+    synthetic: true, code, requireImmutable: false,
+  });
+  if (!staged.equals(bytes)) fail(code);
+  try { await link(stagingPath, filePath); } catch { fail(code); }
+  await fsyncDirectory(path.dirname(filePath));
+  await unlink(stagingPath).catch(() => fail(code));
+  await fsyncDirectory(path.dirname(filePath));
+  const published = await readPublisher0ExactFile(filePath, 0o600, {
+    synthetic: true, code, requireImmutable: false,
+  });
+  if (!published.equals(bytes)) fail(code);
+}
+
+function validatePublisher0ZeroPreseedRequest(request) {
+  const code = 'VPS_PUBLISHER0_ZERO_PRESEED';
+  exactKeys(request, [
+    'attempt', 'authority_manifest_sha256', 'authority_parent', 'authority_sha',
+    'authority_subject_sha256', 'authority_tree', 'bootstrap_generation_id',
+    'collector_contracts_sha256', 'controller', 'controller_generation_id', 'entries',
+    'input_provenance_sha256', 'launcher', 'node_sha256', 'operation_authority_sha256',
+    'purpose', 'raw_values', 'remote_generation_id', 'retry', 'schema_version',
+    'transaction_generation_id',
+  ], code);
+  if (request.schema_version !== 1 || request.purpose !== 'CI3_VPS_PUBLISHER0_ZERO_PRESEED_REQUEST_V1'
+      || request.authority_parent !== AUTHORITY_PARENT
+      || request.authority_subject_sha256 !== sha256(Buffer.from(AUTHORITY_SUBJECT))
+      || request.attempt !== 1 || request.retry !== false || request.raw_values !== false
+      || !/^bootstrap-[a-f0-9]{64}$/.test(request.bootstrap_generation_id ?? '')
+      || !/^publisher0-[a-f0-9]{64}$/.test(request.transaction_generation_id ?? '')) fail(code);
+  for (const field of ['authority_sha', 'authority_parent', 'authority_tree']) requireSha(request[field], code, [40]);
+  for (const field of [
+    'authority_subject_sha256', 'authority_manifest_sha256', 'collector_contracts_sha256',
+    'input_provenance_sha256', 'node_sha256', 'operation_authority_sha256',
+  ]) requireSha(request[field], code);
+  for (const value of [request.remote_generation_id, request.controller_generation_id]) validateGenerationId(value);
+  for (const [role, expectedPath] of [
+    ['controller', COMPONENT_PATHS.controller], ['launcher', COMPONENT_PATHS.launcher],
+  ]) {
+    exactKeys(request[role], ['git_blob_oid', 'git_path', 'sha256'], code);
+    if (request[role].git_path !== expectedPath) fail(code);
+    requireSha(request[role].git_blob_oid, code, [40]);
+    requireSha(request[role].sha256, code);
+  }
+  if (!Array.isArray(request.entries) || request.entries.length !== PUBLISHER_TRANSPORT_ROLES.length) fail(code);
+  const decoded = {};
+  const normalized = [];
+  for (const [index, entry] of request.entries.entries()) {
+    exactKeys(entry, [
+      'byte_length', 'bytes_base64', 'git_blob_oid', 'git_path', 'mode',
+      'relative_path', 'role', 'sha256',
+    ], code);
+    const role = PUBLISHER_TRANSPORT_ROLES[index];
+    if (entry.role !== role || !Number.isSafeInteger(entry.byte_length) || entry.byte_length <= 0
+        || ![0o400, 0o444, 0o555].includes(entry.mode)) fail(code);
+    const expectedRelativePath = role === 'node-runtime' ? `runtime/node-${request.node_sha256}`
+      : role === 'controller' ? `git/${request.controller.git_blob_oid}/ci3-bridge-controller.mjs`
+        : role === 'launcher-runtime' ? `git/${request.launcher.git_blob_oid}/ci3-bridge-launcher.zsh`
+          : `inputs/${role}.payload`;
+    if (entry.relative_path !== expectedRelativePath || path.posix.normalize(entry.relative_path) !== entry.relative_path
+        || entry.relative_path.startsWith('/') || entry.relative_path.includes('..')) fail(code);
+    const gitComponent = role === 'controller' ? request.controller : role === 'launcher-runtime' ? request.launcher : null;
+    if (entry.git_path !== (gitComponent?.git_path ?? null)
+        || entry.git_blob_oid !== (gitComponent?.git_blob_oid ?? null)) fail(code);
+    if (typeof entry.bytes_base64 !== 'string') fail(code);
+    const bytes = Buffer.from(entry.bytes_base64, 'base64');
+    if (bytes.length !== entry.byte_length || bytes.toString('base64') !== entry.bytes_base64
+        || sha256(bytes) !== entry.sha256) fail(code);
+    if (gitComponent !== null && gitBlobOid(bytes) !== gitComponent.git_blob_oid) fail(code);
+    decoded[role] = bytes;
+    normalized.push({
+      role, relative_path: entry.relative_path, sha256: entry.sha256, byte_length: entry.byte_length,
+      mode: entry.mode, git_path: entry.git_path, git_blob_oid: entry.git_blob_oid,
+    });
+  }
+  const provenance = {
+    authority_sha: request.authority_sha,
+    authority_manifest_sha256: request.authority_manifest_sha256,
+    entries: normalized,
+  };
+  if (request.input_provenance_sha256 !== sha256(canonicalJson(provenance))
+      || request.transaction_generation_id !== `publisher0-${sha256(canonicalJson(provenance))}`
+      || decoded['node-runtime'] === undefined || sha256(decoded['node-runtime']) !== request.node_sha256
+      || sha256(decoded.controller) !== request.controller.sha256
+      || sha256(decoded['launcher-runtime']) !== request.launcher.sha256
+      || sha256(decoded['authority-manifest']) !== request.authority_manifest_sha256
+      || sha256(decoded['operation-authority']) !== request.operation_authority_sha256) fail(code);
+  let attestation;
+  try { attestation = JSON.parse(decoded['launch-attestation'].toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(attestation).equals(decoded['launch-attestation'])) fail(code);
+  validateLaunchAttestation(attestation);
+  parseAuthorityManifestBytes(decoded['authority-manifest'], attestation.components);
+  if (attestation.authority_sha !== request.authority_sha
+      || attestation.authority_parent !== request.authority_parent
+      || attestation.authority_tree !== request.authority_tree
+      || attestation.authority_subject_sha256 !== request.authority_subject_sha256
+      || attestation.authority_manifest_sha256 !== request.authority_manifest_sha256
+      || attestation.tools.node.binary_sha256 !== request.node_sha256) fail(code);
+  return Object.freeze({ request, decoded: Object.freeze(decoded), attestation });
+}
+
+function buildPublisher0Issuer({ authoritySha, privateKey }) {
+  const code = 'VPS_PUBLISHER0_ZERO_PRESEED';
+  let publicDer;
+  try { publicDer = Buffer.from(createPublicKey(privateKey).export({ type: 'spki', format: 'der' })); } catch { fail(code); }
+  if (publicDer.length < 32) fail(code);
+  const publicRaw = publicDer.subarray(publicDer.length - 32);
+  const issuerGenerationId = `issuer-${sha256(publicRaw)}`;
+  const issuer = {
+    schema_version: 1, purpose: 'CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1', authority_sha: authoritySha,
+    issuer_generation_id: issuerGenerationId, public_key_algorithm: 'Ed25519',
+    public_key_raw_base64: publicRaw.toString('base64'), public_key_sha256: sha256(publicRaw),
+    issuer_identity_sha256: sha256(Buffer.concat([Buffer.from(authoritySha), Buffer.from(issuerGenerationId), publicRaw])),
+    allowed_pass_purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    normal_executor_authorized: false, raw_values: false,
+  };
+  validateVpsExternalIssuerAuthority(issuer);
+  return issuer;
+}
+
+function publisher0PhysicalRecord(observed) {
+  return {
+    uid: observed.uid.toString(), gid: observed.gid.toString(),
+    mode: Number(observed.mode & 0o777n), nlink: observed.nlink.toString(),
+    dev: observed.dev.toString(), ino: observed.ino.toString(), size: observed.size.toString(),
+    mtime_ns: observed.mtimeNs.toString(),
+  };
+}
+
+function samePublisher0PhysicalStat(left, right) {
+  return left.uid === right.uid && left.gid === right.gid && left.mode === right.mode
+    && left.nlink === right.nlink && left.dev === right.dev && left.ino === right.ino
+    && left.size === right.size && left.mtimeNs === right.mtimeNs;
+}
+
+async function observePublisher0FrozenFile(filePath, relativePath, expected, options) {
+  const { synthetic, code } = options;
+  let handle;
+  try {
+    handle = await open(filePath, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    const before = await handle.stat({ bigint: true });
+    const expectedUid = BigInt(synthetic ? process.getuid() : 0);
+    const expectedGid = BigInt(synthetic ? process.getgid() : 0);
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
+        || before.uid !== expectedUid || before.gid !== expectedGid
+        || Number(before.mode & 0o777n) !== expected.mode) fail(code);
+    await handle.sync();
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    const named = await lstat(filePath, { bigint: true });
+    if (!samePublisher0PhysicalStat(before, after) || !samePublisher0PhysicalStat(after, named)
+        || !bytes.equals(expected.bytes)) fail(code);
+    let immutable = 'SYNTHETIC_MODE_FREEZE';
+    if (!synthetic) {
+      const flags = runFixedCommand('/usr/bin/lsattr', ['-d', '--', filePath]).stdout.toString('utf8').split(/\s+/u)[0];
+      if (!flags?.includes('i')) fail(code);
+      immutable = 'LSATTR_IMMUTABLE';
+    }
+    return {
+      kind: 'file', relative_path: relativePath, ...publisher0PhysicalRecord(after),
+      content_sha256: sha256(bytes), identity_sha256: physicalIdentitySha256({
+        uid: after.uid, gid: after.gid, mode: after.mode, nlink: after.nlink,
+        size: after.size, mtime_ns: after.mtimeNs, dev: after.dev, ino: after.ino,
+      }),
+      immutable,
+    };
+  } catch (error) {
+    if (error instanceof ControllerError) throw error;
+    fail(code);
+  } finally { await handle?.close().catch(() => undefined); }
+}
+
+async function observePublisher0FrozenDirectory(directoryPath, relativePath, expectedChildren, options) {
+  const { synthetic, code } = options;
+  let handle;
+  try {
+    handle = await open(directoryPath, FS_CONSTANTS.O_RDONLY | FS_CONSTANTS.O_NOFOLLOW);
+    const before = await handle.stat({ bigint: true });
+    const expectedUid = BigInt(synthetic ? process.getuid() : 0);
+    const expectedGid = BigInt(synthetic ? process.getgid() : 0);
+    if (!before.isDirectory() || before.isSymbolicLink() || before.nlink < 1n
+        || before.uid !== expectedUid || before.gid !== expectedGid
+        || Number(before.mode & 0o777n) !== 0o555) fail(code);
+    await handle.sync();
+    const names = (await readdir(directoryPath)).sort();
+    const after = await handle.stat({ bigint: true });
+    const named = await lstat(directoryPath, { bigint: true });
+    if (!samePublisher0PhysicalStat(before, after) || !samePublisher0PhysicalStat(after, named)
+        || names.join('\n') !== [...expectedChildren].sort().join('\n')) fail(code);
+    let immutable = 'SYNTHETIC_MODE_FREEZE';
+    if (!synthetic) {
+      const flags = runFixedCommand('/usr/bin/lsattr', ['-d', '--', directoryPath]).stdout.toString('utf8').split(/\s+/u)[0];
+      if (!flags?.includes('i')) fail(code);
+      immutable = 'LSATTR_IMMUTABLE';
+    }
+    return {
+      kind: 'directory', relative_path: relativePath, ...publisher0PhysicalRecord(after),
+      identity_sha256: physicalIdentitySha256({
+        uid: after.uid, gid: after.gid, mode: after.mode, nlink: after.nlink,
+        size: after.size, mtime_ns: after.mtimeNs, dev: after.dev, ino: after.ino,
+      }),
+      immutable,
+    };
+  } catch (error) {
+    if (error instanceof ControllerError) throw error;
+    fail(code);
+  } finally { await handle?.close().catch(() => undefined); }
+}
+
+function publisher0ExpectedObjectTree(validated, requestBytes) {
+  const files = new Map(validated.request.entries.map((entry) => [
+    entry.relative_path, { bytes: validated.decoded[entry.role], mode: entry.mode },
+  ]));
+  files.set('publisher0-bootstrap.request.json', { bytes: requestBytes, mode: 0o444 });
+  const children = new Map([['.', new Set()]]);
+  for (const relativePath of files.keys()) {
+    const parts = relativePath.split('/');
+    let parent = '.';
+    for (let index = 0; index < parts.length; index += 1) {
+      const name = parts[index];
+      if (!children.has(parent)) children.set(parent, new Set());
+      children.get(parent).add(name);
+      if (index < parts.length - 1) {
+        parent = parent === '.' ? name : `${parent}/${name}`;
+        if (!children.has(parent)) children.set(parent, new Set());
+      }
+    }
+  }
+  return { files, children };
+}
+
+async function observePublisher0ExactObjectTree({ objectRoot, validated, requestBytes, synthetic, code }) {
+  const expected = publisher0ExpectedObjectTree(validated, requestBytes);
+  const observations = [];
+  for (const [relativePath, names] of [...expected.children.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    const directoryPath = relativePath === '.' ? objectRoot : path.join(objectRoot, relativePath);
+    observations.push(await observePublisher0FrozenDirectory(directoryPath, relativePath, names, { synthetic, code }));
+  }
+  for (const [relativePath, file] of [...expected.files.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    observations.push(await observePublisher0FrozenFile(
+      path.join(objectRoot, relativePath), relativePath, file, { synthetic, code },
+    ));
+  }
+  await fsyncDirectory(path.dirname(objectRoot));
+  return observations;
+}
+
+async function awaitSyntheticPublisher0PhysicalBarrier({ prefix, requestSha256, code }) {
+  const stage = process.env.CI3_SYNTHETIC_PUBLISHER0_PHYSICAL_BARRIER;
+  if (stage === undefined) return;
+  if (process.env.CI3_SYNTHETIC_TEST !== '1' || prefix === '' || stage !== 'physical-freeze-readback') fail(code);
+  const barrierRoot = path.join(prefix, '.ci3-synthetic-barriers');
+  await ensurePublisher0Directory(barrierRoot, 0o700, { synthetic: true, code });
+  const prepared = {
+    schema_version: 1, purpose: 'CI3_SYNTHETIC_PUBLISHER0_PHYSICAL_BARRIER_V1',
+    stage, request_sha256: requestSha256, decision: 'PREPARED', raw_values: false,
+  };
+  const preparedBytes = canonicalJson(prepared);
+  const preparedPath = path.join(barrierRoot, 'publisher0-physical-freeze-readback.prepared.json');
+  await publishPublisher0SyntheticBarrierNoReplace(preparedPath, preparedBytes, code);
+  const releasePath = path.join(barrierRoot, 'publisher0-physical-freeze-readback.continue.json');
+  const deadline = Date.now() + 30_000;
+  let releaseBytes = null;
+  while (releaseBytes === null && Date.now() < deadline) {
+    try { releaseBytes = await readPublisher0ExactFile(releasePath, 0o600, { synthetic: true, code }); } catch (error) {
+      if (error instanceof ControllerError && error.code === code) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } else throw error;
+    }
+  }
+  if (releaseBytes === null) fail(code);
+  let release;
+  try { release = JSON.parse(releaseBytes.toString('utf8')); } catch { fail(code); }
+  exactKeys(release, [
+    'decision', 'prepared_sha256', 'purpose', 'raw_values', 'request_sha256', 'schema_version', 'stage',
+  ], code);
+  if (!canonicalJson(release).equals(releaseBytes) || release.schema_version !== 1
+      || release.purpose !== 'CI3_SYNTHETIC_PUBLISHER0_PHYSICAL_BARRIER_RELEASE_V1'
+      || release.stage !== stage || release.request_sha256 !== requestSha256
+      || release.prepared_sha256 !== sha256(preparedBytes) || release.decision !== 'CONTINUE'
+      || release.raw_values !== false) fail(code);
+}
+
+export async function runPublisher0PhysicalBootstrapBoundary({ requestPath, requestSha256 } = {}) {
+  const code = 'VPS_PUBLISHER0_PHYSICAL_BOUNDARY';
+  requireSha(requestSha256, code);
+  const prefix = publisher0RemoteRootPrefix();
+  const synthetic = prefix !== '';
+  const requestBytes = await readPublisher0ExactFile(requestPath, 0o444, { synthetic, code });
+  if (sha256(requestBytes) !== requestSha256) fail(code);
+  let request;
+  try { request = JSON.parse(requestBytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(request).equals(requestBytes)) fail(code);
+  const validated = validatePublisher0ZeroPreseedRequest(request);
+  const objectRoot = publisher0PhysicalPath(
+    prefix, `/var/lib/agentempp/ci3-authority-objects/${request.authority_sha}`, code,
+  );
+  if (requestPath !== path.join(objectRoot, 'publisher0-bootstrap.request.json')) fail(code);
+  const before = await observePublisher0ExactObjectTree({
+    objectRoot, validated, requestBytes, synthetic, code,
+  });
+  await awaitSyntheticPublisher0PhysicalBarrier({ prefix, requestSha256, code });
+  const after = await observePublisher0ExactObjectTree({
+    objectRoot, validated, requestBytes, synthetic, code,
+  });
+  if (!canonicalJson(after).equals(canonicalJson(before))) fail(code);
+  return runPublisher0ZeroPreseedTransaction({ requestPath, requestSha256 });
+}
+
+export async function runPublisher0ZeroPreseedTransaction({ requestPath, requestSha256 } = {}) {
+  const code = 'VPS_PUBLISHER0_ZERO_PRESEED';
+  requireSha(requestSha256, code);
+  const prefix = publisher0RemoteRootPrefix();
+  const synthetic = prefix !== '';
+  const requestBytes = await readPublisher0ExactFile(requestPath, 0o444, { synthetic, code });
+  if (sha256(requestBytes) !== requestSha256) fail(code);
+  let request;
+  try { request = JSON.parse(requestBytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(request).equals(requestBytes)) fail(code);
+  const validated = validatePublisher0ZeroPreseedRequest(request);
+  const fixedObjectRoot = `/var/lib/agentempp/ci3-authority-objects/${request.authority_sha}`;
+  const objectRoot = publisher0PhysicalPath(prefix, fixedObjectRoot, code);
+  const expectedRequestPath = path.join(objectRoot, 'publisher0-bootstrap.request.json');
+  if (requestPath !== expectedRequestPath) fail(code);
+  for (const entry of request.entries) {
+    const observed = await readPublisher0ExactFile(path.join(objectRoot, entry.relative_path), entry.mode, { synthetic, code });
+    if (!observed.equals(validated.decoded[entry.role])) fail(code);
+  }
+
+  const fixedAuthorityBase = `/var/lib/agentempp/ci3-vps-authority/${request.authority_sha}`;
+  const fixedTransactionRoot = `${fixedAuthorityBase}/${request.transaction_generation_id}`;
+  const authorityBase = publisher0PhysicalPath(prefix, fixedAuthorityBase, code);
+  const transactionRoot = publisher0PhysicalPath(prefix, fixedTransactionRoot, code);
+  const directorySequence = synthetic
+    ? [prefix, path.join(prefix, 'var'), path.join(prefix, 'var/lib'), path.join(prefix, 'var/lib/agentempp'),
+      path.join(prefix, 'var/lib/agentempp/ci3-vps-authority'), authorityBase]
+    : ['/var/lib/agentempp', '/var/lib/agentempp/ci3-vps-authority', authorityBase];
+  for (const directory of directorySequence) {
+    await ensurePublisher0Directory(directory, directory === prefix ? 0o700 : 0o755, { synthetic, code });
+  }
+  const claim = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER0_TRANSACTION_CLAIM_V1',
+    authority_sha: request.authority_sha, transaction_generation_id: request.transaction_generation_id,
+    bootstrap_request_sha256: requestSha256, input_provenance_sha256: request.input_provenance_sha256,
+    payload_roles: PUBLISHER_TRANSPORT_ROLES, attempt: 1, retry: false, raw_values: false,
+  };
+  const claimBytes = canonicalJson(claim);
+  const claimPath = path.join(transactionRoot, 'publisher0.claim.json');
+  const finalTransactionEntries = [
+    'authenticated-publisher0-output.json', 'authenticated-publisher0-output.prepared.json',
+    'issuer-authority.receipt.json', 'issuer-signing-key.pkcs8',
+    'publisher-input', 'publisher-input-manifest.json', 'publisher0.claim.json',
+    'vps-operation-authority.pass.json', 'vps-operation-authority.unsigned.json',
+  ].sort();
+  const preparedTransactionEntries = [
+    'authenticated-publisher0-output.prepared.json', 'issuer-authority.receipt.json', 'issuer-signing-key.pkcs8',
+    'publisher-input', 'publisher-input-manifest.json', 'publisher0.claim.json',
+    'vps-operation-authority.pass.json', 'vps-operation-authority.unsigned.json',
+  ].sort();
+  let transactionCreated = false;
+  try {
+    await mkdir(transactionRoot, { mode: 0o700 });
+    transactionCreated = true;
+    await chmod(transactionRoot, 0o700);
+    await fsyncDirectory(authorityBase);
+  } catch (error) {
+    if (error?.code !== 'EEXIST') fail(code);
+  }
+  const transactionStat = await lstat(transactionRoot, { bigint: true }).catch(() => fail(code));
+  const expectedUid = BigInt(synthetic ? process.getuid() : 0);
+  const expectedGid = BigInt(synthetic ? process.getgid() : 0);
+  if (!transactionStat.isDirectory() || transactionStat.isSymbolicLink()
+      || transactionStat.uid !== expectedUid || transactionStat.gid !== expectedGid
+      || Number(transactionStat.mode & 0o777n) !== (transactionCreated ? 0o700 : 0o555)) fail(code);
+  if (transactionCreated) {
+    if ((await readdir(transactionRoot)).length !== 0) fail(code);
+    await writeOrVerifyPublisher0ExactFile(claimPath, claimBytes, 0o444, { synthetic, code });
+  } else {
+    const observedClaim = await readPublisher0ExactFile(claimPath, 0o444, { synthetic, code });
+    if (!observedClaim.equals(claimBytes)) fail(code);
+    if ((await readdir(transactionRoot)).sort().join('\n') !== finalTransactionEntries.join('\n')) fail(code);
+    const existingPayloadRoot = path.join(transactionRoot, 'publisher-input');
+    const payloadStat = await lstat(existingPayloadRoot, { bigint: true }).catch(() => fail(code));
+    if (!payloadStat.isDirectory() || payloadStat.isSymbolicLink()
+        || payloadStat.uid !== expectedUid || payloadStat.gid !== expectedGid
+        || Number(payloadStat.mode & 0o777n) !== 0o555
+        || (await readdir(existingPayloadRoot)).sort().join('\n')
+          !== PUBLISHER_TRANSPORT_ROLES.map((role) => `${role}.payload`).sort().join('\n')) fail(code);
+  }
+  const transactionExisted = !transactionCreated;
+  const outputPath = path.join(transactionRoot, 'authenticated-publisher0-output.prepared.json');
+
+  const keyPath = path.join(transactionRoot, 'issuer-signing-key.pkcs8');
+  let privateKey;
+  if (transactionExisted) {
+    privateKey = createPrivateKey({
+      key: await readPublisher0ExactFile(keyPath, 0o400, { synthetic, code }), format: 'der', type: 'pkcs8',
+    });
+  } else {
+    const generated = generateKeyPairSync('ed25519');
+    privateKey = generated.privateKey;
+    const privateDer = Buffer.from(privateKey.export({ type: 'pkcs8', format: 'der' }));
+    await writeOrVerifyPublisher0ExactFile(keyPath, privateDer, 0o400, { synthetic, code });
+  }
+  if (privateKey.asymmetricKeyType !== 'ed25519') fail(code);
+  const issuer = buildPublisher0Issuer({ authoritySha: request.authority_sha, privateKey });
+  const issuerBytes = canonicalJson(issuer);
+  await writeOrVerifyPublisher0ExactFile(
+    path.join(transactionRoot, 'issuer-authority.receipt.json'), issuerBytes, 0o444, { synthetic, code },
+  );
+
+  const payloadRoot = path.join(transactionRoot, 'publisher-input');
+  try { await ensurePublisher0Directory(payloadRoot, 0o700, { synthetic, code }); } catch (error) {
+    if (error?.code !== code) throw error;
+    const observed = await lstat(payloadRoot, { bigint: true }).catch(() => { throw error; });
+    if (!observed.isDirectory() || Number(observed.mode & 0o777n) !== 0o555) throw error;
+  }
+  const manifestEntries = PUBLISHER_TRANSPORT_ROLES.map((role) => ({
+    role,
+    path_sha256: sha256(Buffer.from(`${fixedTransactionRoot}/publisher-input/${role}.payload`)),
+    sha256: sha256(validated.decoded[role]),
+  }));
+  const manifest = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2', authority_sha: request.authority_sha,
+    remote_generation_id: request.remote_generation_id, controller_generation_id: request.controller_generation_id,
+    collector_contracts_sha256: request.collector_contracts_sha256, entries: manifestEntries,
+    transfer_payload_sha256: sha256(canonicalJson(manifestEntries)), raw_values: false,
+  };
+  const manifestBytes = canonicalJson(manifest);
+  const unsigned = {
+    schema_version: 1, purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1', authority_sha: request.authority_sha,
+    authority_parent: request.authority_parent, authority_tree: request.authority_tree,
+    authority_subject_sha256: request.authority_subject_sha256,
+    authority_manifest_sha256: request.authority_manifest_sha256,
+    operation_authority_sha256: request.operation_authority_sha256,
+    node_candidate_sha256: request.node_sha256,
+    collector_contracts_sha256: request.collector_contracts_sha256,
+    publisher_input_manifest_sha256: sha256(manifestBytes), remote_generation_id: request.remote_generation_id,
+    controller_generation_id: request.controller_generation_id,
+    transfer_payload_sha256: manifest.transfer_payload_sha256,
+    issuer_authority_sha256: sha256(issuerBytes), issuer_key_sha256: issuer.public_key_sha256,
+    source_generation_id: `src-${sha256(issuerBytes)}`, attempt: 1, retry: false, raw_values: false,
+  };
+  await writeOrVerifyPublisher0ExactFile(
+    path.join(transactionRoot, 'vps-operation-authority.unsigned.json'), canonicalJson(unsigned), 0o444, { synthetic, code },
+  );
+  for (const role of PUBLISHER_TRANSPORT_ROLES) {
+    await writeOrVerifyPublisher0ExactFile(
+      path.join(payloadRoot, `${role}.payload`), validated.decoded[role], role === 'ssh-private-key' ? 0o400 : 0o444,
+      { synthetic, code },
+    );
+  }
+  const pass = signVpsOperationAuthorityPass({ unsigned, issuer, privateKey });
+  const passBytes = canonicalJson(pass);
+  await writeOrVerifyPublisher0ExactFile(
+    path.join(transactionRoot, 'vps-operation-authority.pass.json'), passBytes, 0o444, { synthetic, code },
+  );
+  await writeOrVerifyPublisher0ExactFile(
+    path.join(transactionRoot, 'publisher-input-manifest.json'), manifestBytes, 0o444, { synthetic, code },
+  );
+  const encodedPayloads = PUBLISHER_TRANSPORT_ROLES.map((role) => ({
+    role, bytes_base64: validated.decoded[role].toString('base64'), sha256: sha256(validated.decoded[role]),
+  }));
+  const output = {
+    schema_version: 2, purpose: 'CI3_AUTHENTICATED_PUBLISHER0_OUTPUT_V2', authority_sha: request.authority_sha,
+    remote_generation_id: request.remote_generation_id, controller_generation_id: request.controller_generation_id,
+    issuer, pass, transport_manifest: manifest, payloads: encodedPayloads,
+    payload_set_sha256: sha256(canonicalJson(encodedPayloads.map(({ role, sha256: payloadSha256 }) => ({ role, sha256: payloadSha256 })))),
+    attempt: 1, retry: false, raw_values: false,
+  };
+  const outputBytes = canonicalJson(output);
+  await writeOrVerifyPublisher0ExactFile(outputPath, outputBytes, 0o444, {
+    synthetic, code, makeImmutable: false, expectedNlink: transactionExisted ? 2n : 1n,
+  });
+  const expectedTransactionEntries = transactionExisted ? finalTransactionEntries : preparedTransactionEntries;
+  if ((await readdir(transactionRoot)).sort().join('\n') !== expectedTransactionEntries.join('\n')) fail(code);
+  if ((await readdir(payloadRoot)).sort().join('\n')
+      !== PUBLISHER_TRANSPORT_ROLES.map((role) => `${role}.payload`).sort().join('\n')) fail(code);
+  await fsyncDirectory(payloadRoot);
+  if (!transactionExisted) {
+    await chmod(payloadRoot, 0o555);
+    await chmod(transactionRoot, 0o555);
+    if (synthetic) {
+      runFixedCommand('/bin/chmod', ['+a', `user:${userInfo().username} allow add_file`, transactionRoot]);
+    }
+  }
+  if (Number((await lstat(payloadRoot)).mode & 0o777) !== 0o555) fail(code);
+  if (Number((await lstat(transactionRoot)).mode & 0o777) !== 0o555) fail(code);
+  await fsyncDirectory(transactionRoot);
+  await fsyncDirectory(authorityBase);
+  if (!synthetic) {
+    runFixedCommand('/usr/bin/chattr', ['+i', '--', payloadRoot]);
+  }
+  await readPublisher0ExactFile(outputPath, 0o444, {
+    synthetic, code, requireImmutable: false, expectedNlink: transactionExisted ? 2n : 1n,
+  });
+  for (const [filePath, mode, expectedBytes] of [
+    [claimPath, 0o444, claimBytes],
+    [keyPath, 0o400, Buffer.from(privateKey.export({ type: 'pkcs8', format: 'der' }))],
+    [path.join(transactionRoot, 'issuer-authority.receipt.json'), 0o444, issuerBytes],
+    [path.join(transactionRoot, 'vps-operation-authority.unsigned.json'), 0o444, canonicalJson(unsigned)],
+    [path.join(transactionRoot, 'vps-operation-authority.pass.json'), 0o444, passBytes],
+    [path.join(transactionRoot, 'publisher-input-manifest.json'), 0o444, manifestBytes],
+  ]) {
+    if (!(await readPublisher0ExactFile(filePath, mode, { synthetic, code })).equals(expectedBytes)) fail(code);
+  }
+  for (const role of PUBLISHER_TRANSPORT_ROLES) {
+    const mode = role === 'ssh-private-key' ? 0o400 : 0o444;
+    const bytes = await readPublisher0ExactFile(path.join(payloadRoot, `${role}.payload`), mode, { synthetic, code });
+    if (!bytes.equals(validated.decoded[role])) fail(code);
+  }
+  verifySignedVpsOperationAuthorityPass(pass, issuer);
+  validatePublisherTransportManifest(manifest, {
+    authoritySha: request.authority_sha, remoteGenerationId: request.remote_generation_id,
+    controllerGenerationId: request.controller_generation_id,
+    collectorContractsSha256: request.collector_contracts_sha256, entries: manifest.entries,
+  });
+  return Object.freeze({
+    state: transactionExisted ? 'EXISTS_VERIFIED' : 'CREATED', output_bytes: outputBytes,
+    effect_executions: transactionExisted ? 0 : 1, raw_values: false,
+  });
+}
+
 export async function createVpsOperationAuthorityPassPublisher({ launchAttestation, bootstrapBoundary = null, io = null } = {}) {
   validateLaunchAttestation(launchAttestation);
   const code = 'VPS_PUBLISHER0';
@@ -2828,23 +3743,32 @@ export async function createVpsOperationAuthorityPassPublisher({ launchAttestati
   const requestPath = path.join(authorityRoot, 'vps-operation-authority.unsigned.json');
   const privateKeyPath = path.join(authorityRoot, 'issuer-signing-key.pkcs8');
   const passPath = path.join(authorityRoot, 'vps-operation-authority.pass.json');
+  const manifestPath = path.join(authorityRoot, 'publisher-input-manifest.json');
+  const authenticatedOutputPath = path.join(authorityRoot, 'authenticated-publisher0-output.json');
+  const payloadPath = (role) => path.join(authorityRoot, 'publisher-input', `${role}.payload`);
+  const persistRootImmutable = async (filePath, bytes, mode) => {
+    const published = await descriptorRelativeFileTransaction({
+      root: '/', relativePath: filePath.slice(1), operation: 'create-exclusive', bytes,
+      expectedMode: mode, expectedUid: 0, expectedGid: 0,
+      allowedDirectoryModes: [0o755, 0o700, 0o555],
+      makeImmutable: true, requireImmutable: true,
+    }).catch((error) => {
+      if (error?.code === 'DESCRIPTOR_NO_CLOBBER') fail('VPS_PUBLISHER0_NO_CLOBBER');
+      throw error;
+    });
+    if (!published.bytes.equals(bytes) || published.immutable !== true) fail(code);
+    return 'CREATED';
+  };
   const operationalIO = io ?? {
     readIssuer: () => readVpsRootImmutableFile(issuerPath, 0o444, code),
     readUnsignedRequest: () => readVpsRootImmutableFile(requestPath, 0o444, code),
     readPrivateKey: () => readVpsRootImmutableFile(privateKeyPath, 0o400, code),
-    publishNoClobber: async (bytes) => {
-      const published = await descriptorRelativeFileTransaction({
-        root: '/', relativePath: passPath.slice(1), operation: 'create-exclusive', bytes,
-        expectedMode: 0o444, expectedUid: 0, expectedGid: 0,
-        allowedDirectoryModes: [0o755, 0o700, 0o555],
-        makeImmutable: true, requireImmutable: true,
-      }).catch((error) => {
-        if (error?.code === 'DESCRIPTOR_NO_CLOBBER') fail('VPS_PUBLISHER0_NO_CLOBBER');
-        throw error;
-      });
-      if (!published.bytes.equals(bytes) || published.immutable !== true) fail(code);
-      return 'CREATED';
-    },
+    publishNoClobber: (bytes) => persistRootImmutable(passPath, bytes, 0o444),
+    readTransportPayload: (role) => readVpsRootImmutableFile(
+      payloadPath(role), role === 'ssh-private-key' ? 0o400 : 0o444, code,
+    ),
+    persistTransportManifest: (bytes) => persistRootImmutable(manifestPath, bytes, 0o444),
+    persistAuthenticatedOutput: (bytes) => persistRootImmutable(authenticatedOutputPath, bytes, 0o444),
   };
   for (const method of ['readIssuer', 'readUnsignedRequest', 'readPrivateKey', 'publishNoClobber']) {
     if (typeof operationalIO[method] !== 'function') fail(code);
@@ -2873,7 +3797,67 @@ export async function createVpsOperationAuthorityPassPublisher({ launchAttestati
       const bytes = canonicalJson(signed);
       const status = await operationalIO.publishNoClobber(bytes);
       if (status !== 'CREATED') fail(code);
-      return { status, pass_sha256: sha256(bytes), raw_values: false };
+      const envelopeMethods = ['readTransportPayload', 'persistAuthenticatedOutput'];
+      const producesEnvelope = envelopeMethods.every((method) => typeof operationalIO[method] === 'function');
+      if (!producesEnvelope) return { status, pass_sha256: sha256(bytes), raw_values: false };
+      const payloads = Object.fromEntries(await Promise.all(PUBLISHER_TRANSPORT_ROLES.map(async (role) => {
+        const payload = await operationalIO.readTransportPayload(role);
+        if (!Buffer.isBuffer(payload) || payload.length === 0) fail(code);
+        return [role, payload];
+      })));
+      if (sha256(payloads['node-runtime']) !== launchAttestation.tools.node.binary_sha256
+          || sha256(payloads.controller) !== launchAttestation.components.controller.sha256
+          || sha256(payloads['launcher-runtime']) !== launchAttestation.components.launcher.sha256
+          || sha256(payloads['launch-attestation']) !== sha256(canonicalJson(launchAttestation))
+          || sha256(payloads['authority-manifest']) !== launchAttestation.authority_manifest_sha256
+          || sha256(payloads['operation-authority']) !== signed.operation_authority_sha256) fail(code);
+      const entries = PUBLISHER_TRANSPORT_ROLES.map((role) => ({
+        role, path_sha256: sha256(Buffer.from(payloadPath(role))), sha256: sha256(payloads[role]),
+      }));
+      let manifestBytes;
+      if (typeof operationalIO.readTransportManifest === 'function') {
+        manifestBytes = await operationalIO.readTransportManifest();
+      } else {
+        const manifest = {
+          schema_version: 1, purpose: 'CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2',
+          authority_sha: signed.authority_sha, remote_generation_id: signed.remote_generation_id,
+          controller_generation_id: signed.controller_generation_id,
+          collector_contracts_sha256: signed.collector_contracts_sha256, entries,
+          transfer_payload_sha256: sha256(canonicalJson(entries)), raw_values: false,
+        };
+        manifestBytes = canonicalJson(manifest);
+        if (typeof operationalIO.persistTransportManifest !== 'function'
+            || await operationalIO.persistTransportManifest(manifestBytes) !== 'CREATED') fail(code);
+      }
+      if (!Buffer.isBuffer(manifestBytes) || manifestBytes.length === 0) fail(code);
+      let manifest;
+      try { manifest = JSON.parse(manifestBytes.toString('utf8')); } catch { fail(code); }
+      if (!canonicalJson(manifest).equals(manifestBytes)) fail(code);
+      validatePublisherTransportManifest(manifest, {
+        authoritySha: signed.authority_sha, remoteGenerationId: signed.remote_generation_id,
+        controllerGenerationId: signed.controller_generation_id,
+        collectorContractsSha256: signed.collector_contracts_sha256,
+        entries: manifest.entries,
+      });
+      if (signed.publisher_input_manifest_sha256 !== sha256(manifestBytes)
+          || signed.transfer_payload_sha256 !== manifest.transfer_payload_sha256) fail(code);
+      const encodedPayloads = PUBLISHER_TRANSPORT_ROLES.map((role) => ({
+        role, bytes_base64: payloads[role].toString('base64'), sha256: sha256(payloads[role]),
+      }));
+      const output = {
+        schema_version: 2, purpose: 'CI3_AUTHENTICATED_PUBLISHER0_OUTPUT_V2',
+        authority_sha: signed.authority_sha,
+        remote_generation_id: signed.remote_generation_id,
+        controller_generation_id: signed.controller_generation_id,
+        issuer, pass: signed, transport_manifest: manifest, payloads: encodedPayloads,
+        payload_set_sha256: sha256(canonicalJson(encodedPayloads.map(({ role, sha256: payloadSha256 }) => ({
+          role, sha256: payloadSha256,
+        })))),
+        attempt: 1, retry: false, raw_values: false,
+      };
+      const outputBytes = canonicalJson(output);
+      if (await operationalIO.persistAuthenticatedOutput(outputBytes) !== 'CREATED') fail(code);
+      return { status, pass_sha256: sha256(bytes), output_bytes: outputBytes, raw_values: false };
     },
   };
 }
@@ -3650,6 +4634,92 @@ export async function runProtocol({ adapters, context, journal, stopAfter = 'COM
   return outcome();
 }
 
+export async function publishPrivilegedWriterAuthority({
+  authoritySha, controllerGenerationId,
+  authorityRequestPath, authorityRequestSha256,
+  predecessorSettlementPath, predecessorSettlementSha256,
+  writerPath, writerSha256, targetObservations, effect,
+} = {}) {
+  const code = 'PRIVILEGED_AUTHORITY_PUBLISHER';
+  requireSha(authoritySha, code, [40]);
+  try { validateGenerationId(controllerGenerationId); } catch { fail(code); }
+  for (const filePath of [authorityRequestPath, predecessorSettlementPath, writerPath]) {
+    if (!path.isAbsolute(filePath ?? '') || filePath.includes('/../')) fail(code);
+  }
+  for (const digest of [authorityRequestSha256, predecessorSettlementSha256, writerSha256]) {
+    requireSha(digest, code);
+  }
+  if (!Array.isArray(targetObservations) || targetObservations.length === 0
+      || typeof effect !== 'function') fail(code);
+  const normalizedTargets = [];
+  const roles = new Set();
+  for (const observation of targetObservations) {
+    exactKeys(observation, ['role', 'sha256'], code);
+    if (typeof observation.role !== 'string' || !/^[a-z0-9-]+$/u.test(observation.role)
+        || roles.has(observation.role)) fail(code);
+    requireSha(observation.sha256, code);
+    roles.add(observation.role);
+    normalizedTargets.push({ role: observation.role, sha256: observation.sha256 });
+  }
+  const [requestObserved, settlementObserved, writerObserved] = await Promise.all([
+    readBoundLocalFile(authorityRequestPath, {
+      code, expectedSha256: authorityRequestSha256, modes: [0o400, 0o600],
+    }),
+    readBoundLocalFile(predecessorSettlementPath, {
+      code, expectedSha256: predecessorSettlementSha256, modes: [0o600],
+    }),
+    readBoundLocalFile(writerPath, {
+      code, expectedSha256: writerSha256, modes: [0o500, 0o555],
+    }),
+  ]);
+  let authorityRequest;
+  let predecessorSettlement;
+  try {
+    authorityRequest = JSON.parse(requestObserved.bytes.toString('utf8'));
+    predecessorSettlement = JSON.parse(settlementObserved.bytes.toString('utf8'));
+  } catch { fail(code); }
+  if (!canonicalJson(authorityRequest).equals(requestObserved.bytes)
+      || !canonicalJson(predecessorSettlement).equals(settlementObserved.bytes)
+      || authorityRequest.schema_version !== 1 || predecessorSettlement.schema_version !== 1
+      || ![
+        'CI3_OPERATION_AUTHORITY_PUBLISHER_REQUEST_V1',
+        'CI3_PRIVILEGED_WRITER_PUBLISHER_AUTHORIZATION_V1',
+      ].includes(authorityRequest.purpose)
+      || ![
+        'CI3_PUBLISHER1_CONTROLLER_SETTLEMENT_V1', 'CI3_TERMINAL_ANCHOR_MANIFEST_V1',
+      ].includes(predecessorSettlement.purpose)
+      || authorityRequest.authority_sha !== authoritySha
+      || predecessorSettlement.authority_sha !== authoritySha
+      || authorityRequest.raw_values !== false || predecessorSettlement.raw_values !== false) fail(code);
+  const observedControllerGenerations = [
+    authorityRequest.controller_generation_id,
+    predecessorSettlement.controller_generation_id,
+    predecessorSettlement.generations?.controller,
+  ].filter((value) => value !== undefined);
+  if (observedControllerGenerations.length === 0
+      || observedControllerGenerations.some((value) => value !== controllerGenerationId)) fail(code);
+  const proof = Object.freeze({
+    authority_sha: authoritySha,
+    controller_generation_id: controllerGenerationId,
+    authority_request_sha256: sha256(requestObserved.bytes),
+    predecessor_settlement_sha256: sha256(settlementObserved.bytes),
+    writer_sha256: sha256(writerObserved.bytes),
+    target_count: normalizedTargets.length,
+    target_set_sha256: sha256(canonicalJson(normalizedTargets)),
+    raw_values: false,
+  });
+  const effected = await effect(proof);
+  if (!isPlainObject(effected)) fail(code);
+  exactKeys(effected, ['effect_executions', 'privilege_prompts', 'raw_values'], code);
+  if (![0, 1].includes(effected.effect_executions)
+      || ![0, 1].includes(effected.privilege_prompts)
+      || effected.raw_values !== false) fail(code);
+  return Object.freeze({
+    status: 'CREATED', effect_executions: effected.effect_executions,
+    privilege_prompts: effected.privilege_prompts, proof, raw_values: false,
+  });
+}
+
 export async function dispatchControllerMode({ mode, adapters, context, journal }) {
   parseControllerMode([mode]);
   if (mode === '--self-test') fail('MODE_INVALID');
@@ -3662,7 +4732,12 @@ export async function dispatchControllerMode({ mode, adapters, context, journal 
   if (mode === 'publish-vps-operation-authority-pass') {
     const published = await adapters.publishVpsOperationAuthorityPass();
     if (published?.status !== 'CREATED' || published.raw_values !== false) fail('VPS_PUBLISHER0');
-    return { mode, state: 'VPS_OPERATION_AUTHORITY_PASS_PUBLISHED', raw_values: false };
+    const outcome = { mode, state: 'VPS_OPERATION_AUTHORITY_PASS_PUBLISHED', raw_values: false };
+    if (published.output_bytes !== undefined) {
+      if (!Buffer.isBuffer(published.output_bytes) || published.output_bytes.length === 0) fail('VPS_PUBLISHER0');
+      Object.defineProperty(outcome, 'output_bytes', { value: published.output_bytes, enumerable: false });
+    }
+    return outcome;
   }
   if (mode === 'publish-operation-authority') {
     const published = await adapters.publishOperationAuthority();
@@ -3736,32 +4811,58 @@ function runAdminPublisher(shellScript, code) {
 export function validatePublisherHumanAuthorizationReceipt(record, expected) {
   const code = 'OPERATION_AUTHORITY_PUBLISHER';
   exactKeys(record, [
-    'approved_action', 'attempt', 'authority_manifest_sha256', 'authority_sha',
-    'node_binary_sha256', 'operation_authority_sha256', 'publisher_input_manifest_sha256',
-    'purpose', 'raw_values', 'retry', 'schema_version',
-    'vps_operation_authority_pass_sha256',
+    'approved_action', 'attempt', 'authority_manifest_sha256', 'authority_projection_sha256', 'authority_sha',
+    'authorization_request_gid', 'authorization_request_identity_sha256', 'authorization_request_mode',
+    'authorization_request_nlink', 'authorization_request_path_sha256', 'authorization_request_sha256',
+    'authorization_request_uid', 'authorized_gid', 'authorized_uid', 'confirmation_sha256',
+    'issuer_authority_sha256', 'node_binary_sha256', 'operation_authority_sha256',
+    'prompt_budget', 'prompt_sha256', 'publisher_input_manifest_sha256',
+    'publisher_installer_compile_authority_sha256', 'publisher_installer_expected_binary_sha256',
+    'publisher_installer_git_blob_oid', 'publisher_installer_git_path',
+    'publisher_installer_provenance_sha256', 'publisher_installer_source_sha256',
+    'purpose', 'raw_values', 'receiver_leaves_sha256', 'receiver_root_identity_sha256',
+    'receiver_root_path_sha256', 'retry', 'schema_version', 'vps_operation_authority_pass_sha256',
   ], code);
   exactKeys(expected, [
-    'authorityManifestSha256', 'authoritySha', 'nodeBinarySha256',
+    'authorityManifestSha256', 'authorityProjectionSha256', 'authoritySha', 'nodeBinarySha256',
     'operationAuthoritySha256', 'publisherInputManifestSha256',
     'vpsOperationAuthorityPassSha256',
   ], code);
-  if (record.schema_version !== 1
-      || record.purpose !== 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V1'
+  if (record.schema_version !== 2
+      || record.purpose !== 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V2'
       || record.approved_action !== 'PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY'
       || record.authority_sha !== expected.authoritySha
       || record.authority_manifest_sha256 !== expected.authorityManifestSha256
+      || record.authority_projection_sha256 !== expected.authorityProjectionSha256
       || record.node_binary_sha256 !== expected.nodeBinarySha256
       || record.operation_authority_sha256 !== expected.operationAuthoritySha256
       || record.publisher_input_manifest_sha256 !== expected.publisherInputManifestSha256
       || record.vps_operation_authority_pass_sha256 !== expected.vpsOperationAuthorityPassSha256
+      || record.publisher_installer_git_path !== 'scripts/ci3/ci3-publisher1-bootstrap-installer.swift'
+      || !Number.isInteger(record.authorization_request_uid) || record.authorization_request_uid <= 0
+      || !Number.isInteger(record.authorization_request_gid) || record.authorization_request_gid <= 0
+      || record.authorization_request_mode !== 0o600 || record.authorization_request_nlink !== 1
+      || !Number.isInteger(record.authorized_uid) || record.authorized_uid <= 0
+      || !Number.isInteger(record.authorized_gid) || record.authorized_gid <= 0
+      || record.prompt_budget !== 1
       || record.attempt !== 1 || record.retry !== false || record.raw_values !== false) fail(code);
+  for (const field of [
+    'authority_manifest_sha256', 'authority_projection_sha256', 'node_binary_sha256', 'operation_authority_sha256',
+    'publisher_input_manifest_sha256', 'vps_operation_authority_pass_sha256', 'issuer_authority_sha256',
+    'authorization_request_identity_sha256', 'authorization_request_path_sha256', 'authorization_request_sha256',
+    'receiver_leaves_sha256', 'receiver_root_identity_sha256', 'receiver_root_path_sha256',
+    'publisher_installer_compile_authority_sha256', 'publisher_installer_expected_binary_sha256',
+    'publisher_installer_provenance_sha256', 'publisher_installer_source_sha256',
+    'prompt_sha256', 'confirmation_sha256',
+  ]) requireSha(record[field], code);
+  requireSha(record.publisher_installer_git_blob_oid, code, [40]);
   return true;
 }
 
 export const EXTERNAL_OPERATIONAL_LAUNCHER_MODES = Object.freeze([
-  'plan', 'verify-simulator', 'verify-ssh', 'fetch', 'install-simulator', 'scan',
-  'write-terminal-anchor', 'resume', 'status', 'publish-privileged-writer-authority',
+  '--self-test', 'plan', 'verify-simulator', 'verify-ssh', 'fetch', 'install-simulator', 'scan',
+  'write-terminal-anchor', 'resume', 'publish-operation-authority',
+  'publish-privileged-writer-authority', 'status',
 ]);
 
 export function buildExternalLauncherAuthority({
@@ -4079,7 +5180,7 @@ async function readPublisher1MaterializerAuthority(context) {
   const code = 'STOP_PRE_AUTHORITY';
   const bootstrapRoot = path.join(
     '/Library/Application Support/Agentempp/ci3-publisher1-bootstrap',
-    context.authority.commit, context.generations.controller,
+    context.authority.commit, `bootstrap-${context.authority.manifest_sha256}`,
   );
   const authorityPath = path.join(bootstrapRoot, 'publisher1-materializer.authority.json');
   const binaryPath = path.join(bootstrapRoot, 'runtime', 'ci3-terminal-anchor-writer');
@@ -4118,9 +5219,22 @@ async function readPublisher1MaterializerAuthority(context) {
   return { authority, authorityPath, binaryPath, binary };
 }
 
-export async function createOperationAuthorityPublisher({ launchAttestation } = {}) {
+export async function createOperationAuthorityPublisher({ launchAttestation, io = null } = {}) {
   validateLaunchAttestation(launchAttestation);
-  const requestRoot = path.join(homedir(), '.config/agentempp/ci3/publisher-input', launchAttestation.authority_sha);
+  if (io !== null) {
+    exactKeys(io, [
+      'homeDirectory', 'invokeAdmin', 'observePublisher1', 'persistReceipt',
+      'readPublisher1MaterializerAuthority', 'readRootImmutableFile',
+    ], 'OPERATION_AUTHORITY_PUBLISHER');
+    if (!path.isAbsolute(io.homeDirectory ?? '') || io.homeDirectory.includes('/../')
+        || typeof io.invokeAdmin !== 'function' || typeof io.observePublisher1 !== 'function'
+        || typeof io.persistReceipt !== 'function' || typeof io.readPublisher1MaterializerAuthority !== 'function'
+        || typeof io.readRootImmutableFile !== 'function') fail('OPERATION_AUTHORITY_PUBLISHER');
+  }
+  const publisherHome = io?.homeDirectory ?? userInfo().homedir;
+  const readRootFile = io?.readRootImmutableFile ?? readRootImmutableFile;
+  const readMaterializer = io?.readPublisher1MaterializerAuthority ?? readPublisher1MaterializerAuthority;
+  const requestRoot = path.join(publisherHome, '.config/agentempp/ci3/publisher-input', launchAttestation.authority_sha);
   const requestPath = path.join(requestRoot, 'operation-authority.publisher-request.json');
   return {
     publishOperationAuthority: async () => {
@@ -4170,7 +5284,7 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
       ]) requireSha(request[field], 'OPERATION_AUTHORITY_PUBLISHER');
       if (request.node_candidate_sha256 !== launchAttestation.tools.node.binary_sha256) fail('OPERATION_AUTHORITY_PUBLISHER');
       const authorityCandidate = await readBoundLocalFile(request.authority_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.authority_candidate_sha256, modes: [0o600, 0o400] });
-      const nodeCandidate = await readBoundLocalFile(request.node_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.node_candidate_sha256, modes: [0o755, 0o555, 0o700, 0o500] });
+      const nodeCandidate = await readBoundLocalFile(request.node_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.node_candidate_sha256, modes: [0o755, 0o555, 0o700, 0o500, 0o600] });
       const controllerCandidate = await readBoundLocalFile(request.controller_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.controller_candidate_sha256, modes: [0o600, 0o400, 0o700, 0o500] });
       const launcherCandidate = await readBoundLocalFile(request.launcher_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.launcher_candidate_sha256, modes: [0o700, 0o500, 0o600, 0o400] });
       const launchAttestationCandidate = await readBoundLocalFile(request.launch_attestation_candidate_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.launch_attestation_candidate_sha256, modes: [0o600, 0o400] });
@@ -4190,7 +5304,7 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
       const humanReceipt = await readBoundLocalFile(request.human_authorization_receipt_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.human_authorization_receipt_sha256, modes: [0o600, 0o400] });
       const publisherInputManifest = await readBoundLocalFile(request.publisher_input_manifest_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.publisher_input_manifest_sha256, modes: [0o600, 0o400] });
       const vpsPass = await readBoundLocalFile(request.vps_operation_authority_pass_path, { code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: request.vps_operation_authority_pass_sha256, modes: [0o600, 0o400] });
-      const vpsIssuer = await readRootImmutableFile(
+      const vpsIssuer = await readRootFile(
         request.vps_issuer_authority_path, request.vps_issuer_authority_sha256,
         0o444, 'STOP_PRE_AUTHORITY',
       );
@@ -4234,8 +5348,8 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
         { role: 'ssh-public-key', path: request.ssh_public_key_candidate_path, sha256: request.ssh_public_key_candidate_sha256 },
         { role: 'ssh-trust-descriptor', path: request.ssh_trust_descriptor_candidate_path, sha256: request.ssh_trust_descriptor_candidate_sha256 },
       ];
-      const expectedEntries = materializedInputs.map(({ role, path: inputPath, sha256: value }) => ({
-        role, path_sha256: sha256(Buffer.from(inputPath)), sha256: value,
+      const expectedEntries = materializedInputs.map(({ role, sha256: value }, index) => ({
+        role, path_sha256: inputManifest.entries?.[index]?.path_sha256, sha256: value,
       }));
       validatePublisherTransportManifest(inputManifest, {
         authoritySha: launchAttestation.authority_sha,
@@ -4260,6 +5374,18 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
       validatePublisherHumanAuthorizationReceipt(humanAuthorization, {
         authoritySha: launchAttestation.authority_sha,
         authorityManifestSha256: launchAttestation.authority_manifest_sha256,
+        authorityProjectionSha256: sha256(canonicalJson({
+          authority_sha: vpsPassReceipt.authority_sha,
+          authority_parent: vpsPassReceipt.authority_parent,
+          authority_tree: vpsPassReceipt.authority_tree,
+          authority_subject_sha256: vpsPassReceipt.authority_subject_sha256,
+          authority_manifest_sha256: vpsPassReceipt.authority_manifest_sha256,
+          operation_authority_sha256: vpsPassReceipt.operation_authority_sha256,
+          node_candidate_sha256: vpsPassReceipt.node_candidate_sha256,
+          collector_contracts_sha256: vpsPassReceipt.collector_contracts_sha256,
+          remote_generation_id: vpsPassReceipt.remote_generation_id,
+          controller_generation_id: vpsPassReceipt.controller_generation_id,
+        })),
         nodeBinarySha256: request.node_candidate_sha256,
         operationAuthoritySha256: request.authority_candidate_sha256,
         publisherInputManifestSha256: request.publisher_input_manifest_sha256,
@@ -4321,7 +5447,7 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
         requestRoot, 'receiver', authorityRecord.context.generations.remote,
         authorityRecord.context.generations.controller, request.publisher_input_manifest_sha256,
       );
-      await ensurePrivateDirectoryChain(homedir(), receiverRoot);
+      await ensurePrivateDirectoryChain(publisherHome, receiverRoot);
       for (const [role, bytes] of Object.entries(bytesByRole)) {
         await writeOnceBytes(path.join(receiverRoot, `${role}.payload`), bytes);
       }
@@ -4337,19 +5463,37 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
           identity_sha256: physicalIdentitySha256(observed.metadata),
         };
       }
-      const publisher1Request = buildPublisher1TransactionRequest({
+      const canonicalPublisher1Request = buildPublisher1TransactionRequest({
         context: authorityRecord.context,
         receiverRoot,
         receiverManifestSha256: request.publisher_input_manifest_sha256,
         shaByRole: expectedShaByRole,
         sourceObservationsByRole,
       });
-      const publisher1RequestBytes = canonicalJson(publisher1Request);
       const publisher1RequestPath = path.join(requestRoot, 'publisher1-transaction.request.json');
-      await writeOnceBytes(publisher1RequestPath, publisher1RequestBytes);
       const requestObservation = await readBoundLocalFile(publisher1RequestPath, {
-        code: 'OPERATION_AUTHORITY_PUBLISHER', expectedSha256: sha256(publisher1RequestBytes), modes: [0o600],
+        code: 'OPERATION_AUTHORITY_PUBLISHER', modes: [0o600],
       });
+      let publisher1Request;
+      try { publisher1Request = JSON.parse(requestObservation.bytes.toString('utf8')); } catch { fail('OPERATION_AUTHORITY_PUBLISHER'); }
+      const expectedPublisher1Request = io === null
+        ? canonicalPublisher1Request
+        : {
+            ...canonicalPublisher1Request,
+            destination_parent: publisher1Request?.destination_parent,
+            state_root: publisher1Request?.state_root,
+          };
+      if (io !== null && (
+        !path.isAbsolute(publisher1Request?.destination_parent ?? '')
+        || !path.isAbsolute(publisher1Request?.state_root ?? '')
+        || publisher1Request.destination_parent.includes('/../')
+        || publisher1Request.state_root.includes('/../')
+        || !publisher1Request.destination_parent.startsWith(`${publisherHome}${path.sep}`)
+        || !publisher1Request.state_root.startsWith(`${publisherHome}${path.sep}`)
+      )) fail('OPERATION_AUTHORITY_PUBLISHER');
+      const publisher1RequestBytes = canonicalJson(expectedPublisher1Request);
+      if (!requestObservation.bytes.equals(publisher1RequestBytes)) fail('OPERATION_AUTHORITY_PUBLISHER');
+      publisher1Request = expectedPublisher1Request;
       const receiverStat = await lstat(receiverRoot, { bigint: true });
       if (!receiverStat.isDirectory() || receiverStat.isSymbolicLink()
           || receiverStat.uid !== BigInt(process.getuid()) || receiverStat.gid !== BigInt(process.getgid())
@@ -4358,7 +5502,15 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
       const receiverMetadata = receiverPhysical.metadata;
       const requestIdentitySha256 = physicalIdentitySha256(requestObservation.metadata);
       const receiverRootIdentitySha256 = receiverPhysical.identity_sha256;
-      const materializer = await readPublisher1MaterializerAuthority(authorityRecord.context);
+      const materializer = await readMaterializer(authorityRecord.context, {
+        publisher1RequestPath, publisher1RequestBytes, requestObservation,
+        receiverRoot, receiverRootIdentitySha256, receiverLeaves: publisher1Request.entries.map((entry) => ({
+          role: entry.role, path_sha256: entry.source_path_sha256, sha256: entry.source_sha256,
+          uid: entry.source_uid, gid: entry.source_gid, mode: entry.source_mode,
+          nlink: entry.source_nlink, size: entry.source_size, mtime_ns: entry.source_mtime_ns,
+          dev: entry.source_dev, ino: entry.source_ino, identity_sha256: entry.source_identity_sha256,
+        })),
+      });
       if (materializer.authority.issuer_authority_sha256 !== request.vps_issuer_authority_sha256) fail('STOP_PRE_AUTHORITY');
       validatePublisher1MaterializerAuthorityBinding({
         schema_version: materializer.authority.schema_version, purpose: materializer.authority.purpose,
@@ -4473,10 +5625,13 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
           result_sha256: sha256(resultObserved.bytes), tree_verified: true, raw_values: false,
         };
       };
-      return runPublisher1ControllerTransaction({
-        expected, observe,
-        invokeAdmin: async () => runAdminPublisher(commands.join('\n'), 'OPERATION_AUTHORITY_PUBLISHER'),
-        persistReceipt: async (settled) => writeOnceJson(
+      const transactionObservation = io === null ? observe : async () => io.observePublisher1({
+        expected, expectedShaByRole, bytesByRole, installation, publisher1Request,
+      });
+      const transactionAdmin = io === null
+        ? async () => runAdminPublisher(commands.join('\n'), 'OPERATION_AUTHORITY_PUBLISHER')
+        : async () => io.invokeAdmin({ expected, expectedShaByRole, bytesByRole, installation, publisher1Request });
+      const transactionReceipt = io === null ? async (settled) => writeOnceJson(
           path.join(requestRoot, 'publisher1-controller.settlement.json'),
           {
             schema_version: 1, purpose: 'CI3_PUBLISHER1_CONTROLLER_SETTLEMENT_V1',
@@ -4486,7 +5641,10 @@ export async function createOperationAuthorityPublisher({ launchAttestation } = 
             claim_sha256: settled.claim_sha256, result_sha256: settled.result_sha256,
             tree_verified: true, raw_values: false,
           },
-        ),
+        ) : async (settled) => io.persistReceipt({ settled, expectedShaByRole, installation });
+      return runPublisher1ControllerTransaction({
+        expected, observe: transactionObservation, invokeAdmin: transactionAdmin,
+        persistReceipt: transactionReceipt,
       });
     },
   };
@@ -6167,8 +7325,24 @@ export async function createOperationalRuntime({
         `${shellQuote(operationNodePath)} -e ${shellQuote("const fs=require('fs');for(const p of process.argv.slice(1)){const f=fs.openSync(p,'r');fs.fsyncSync(f);fs.closeSync(f)}")} ${immutable.map(shellQuote).join(' ')} ${shellQuote(writerRoot)} ${shellQuote(targetRoot)} ${shellQuote(path.dirname(targetRoot))}`,
         "printf 'PRIVILEGED_AUTHORITY_PUBLISHER PASS\\n'",
       ];
-      runAdminPublisher(commands.join('\n'), code);
-      return { status: 'CREATED', raw_values: false };
+      const consumed = await publishPrivilegedWriterAuthority({
+        authoritySha: context.authority.commit,
+        controllerGenerationId: context.generations.controller,
+        authorityRequestPath: requestPath,
+        authorityRequestSha256: sha256(requestObserved.bytes),
+        predecessorSettlementPath: manifestPath,
+        predecessorSettlementSha256: manifestSha256,
+        writerPath: prepared.binaryPath,
+        writerSha256: prepared.binarySha256,
+        targetObservations: terminalManifest.evidence.map(({ role, sha256: value }) => ({
+          role, sha256: value,
+        })),
+        effect: async () => {
+          runAdminPublisher(commands.join('\n'), code);
+          return { effect_executions: 1, privilege_prompts: 1, raw_values: false };
+        },
+      });
+      return { status: consumed.status, raw_values: false };
     },
     recoverPhase: async () => fail('CLAIM_CONSUMED_NO_RESULT'),
     verifyAuthority: async () => {
@@ -7124,17 +8298,330 @@ export function sanitizeError(error) {
   return `ERROR ${code}`;
 }
 
+async function runSyntheticInstalledOperationE2E({ launchAttestation } = {}) {
+  const code = 'STOP_PRE_AUTHORITY';
+  if (!isPlainObject(launchAttestation)) return null;
+  const runtimeRoot = path.dirname(SCRIPT_PATH);
+  const externalVersionRoot = path.dirname(runtimeRoot);
+  const authorityRoot = path.dirname(externalVersionRoot);
+  const installBase = path.dirname(authorityRoot);
+  if (path.basename(runtimeRoot) !== 'runtime' || path.basename(installBase) !== 'publisher1-install-base') return null;
+  const operationHome = path.dirname(installBase);
+  const expectedRelativeVersionRoot = path.join(
+    'publisher1-install-base', launchAttestation.authority_sha,
+    `bootstrap-${launchAttestation.authority_manifest_sha256}`,
+  );
+  if (operationHome === '/' || path.relative(operationHome, externalVersionRoot) !== expectedRelativeVersionRoot
+      || SCRIPT_PATH !== path.join(externalVersionRoot, 'runtime', 'ci3-bridge-controller.mjs')) fail(code);
+  const requestRoot = path.join(
+    operationHome, '.config', 'agentempp', 'ci3', 'publisher-input', launchAttestation.authority_sha,
+  );
+  const operationRequestPath = path.join(requestRoot, 'operation-authority.publisher-request.json');
+  const operationRequestExists = await lstat(operationRequestPath).then(
+    () => true,
+    (error) => { if (error?.code === 'ENOENT') return false; throw error; },
+  );
+  if (!operationRequestExists) return null;
+  const operationRequest = await readBoundLocalFile(operationRequestPath, { code, modes: [0o600] });
+  let operationRequestRecord;
+  try { operationRequestRecord = JSON.parse(operationRequest.bytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(operationRequestRecord).equals(operationRequest.bytes)
+      || operationRequestRecord.schema_version !== 1
+      || operationRequestRecord.purpose !== 'CI3_OPERATION_AUTHORITY_PUBLISHER_REQUEST_V1'
+      || operationRequestRecord.authority_sha !== launchAttestation.authority_sha
+      || !path.isAbsolute(operationRequestRecord.authority_candidate_path ?? '')
+      || operationRequestRecord.authority_candidate_path.includes('/../')) fail(code);
+  const operationAuthorityCandidate = await readBoundLocalFile(operationRequestRecord.authority_candidate_path, {
+    code, expectedSha256: operationRequestRecord.authority_candidate_sha256, modes: [0o400, 0o600],
+  });
+  let operationAuthorityRecord;
+  try { operationAuthorityRecord = JSON.parse(operationAuthorityCandidate.bytes.toString('utf8')); } catch { fail(code); }
+  const terminalGenerationId = operationAuthorityRecord?.context?.generations?.terminal;
+  if (!canonicalJson(operationAuthorityRecord).equals(operationAuthorityCandidate.bytes)
+      || operationAuthorityRecord.schema_version !== 1
+      || operationAuthorityRecord.purpose !== 'CI3_MAC_OPERATION_AUTHORITY_V1'
+      || operationAuthorityRecord.context?.authority?.commit !== launchAttestation.authority_sha) fail(code);
+  try { validateGenerationId(terminalGenerationId); } catch { fail(code); }
+  const installedIssuerPath = path.join(externalVersionRoot, 'vps-issuer-authority.receipt.json');
+  const installedMaterializerPath = path.join(externalVersionRoot, 'publisher1-materializer.authority.json');
+  const installedWriterPath = path.join(externalVersionRoot, 'runtime', 'ci3-terminal-anchor-writer');
+  const installedMaterializer = await readBoundLocalFile(installedMaterializerPath, { code, modes: [0o444] });
+  let materializerAuthority;
+  try { materializerAuthority = JSON.parse(installedMaterializer.bytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(materializerAuthority).equals(installedMaterializer.bytes)
+      || materializerAuthority.schema_version !== 2
+      || materializerAuthority.purpose !== 'CI3_PUBLISHER1_MATERIALIZER_AUTHORITY_V2'
+      || materializerAuthority.authority_sha !== launchAttestation.authority_sha) fail(code);
+  validateGenerationId(materializerAuthority.controller_generation_id);
+  const descriptor = Object.freeze({
+    authority_sha: launchAttestation.authority_sha,
+    controller_generation_id: materializerAuthority.controller_generation_id,
+    operation_home: operationHome,
+    operation_request_sha256: sha256(operationRequest.bytes),
+    receipt_path: path.join(operationHome, 'round4-installed-operation-e2e.receipt.json'),
+  });
+  let materializerBinary = null;
+  let writerInvocations = 0;
+  let finalTargetObservations = [];
+  const publisher = await createOperationAuthorityPublisher({
+    launchAttestation,
+    io: {
+      homeDirectory: descriptor.operation_home,
+      readRootImmutableFile: async (filePath, expectedSha256, mode, readCode) => {
+        const expectedFixedPath = path.join(
+          '/Library/Application Support/Agentempp/ci3-publisher1-bootstrap', descriptor.authority_sha,
+          `bootstrap-${launchAttestation.authority_manifest_sha256}`, 'vps-issuer-authority.receipt.json',
+        );
+        if (filePath !== expectedFixedPath || mode !== 0o444 || readCode !== code) fail(code);
+        const observed = await readBoundLocalFile(installedIssuerPath, {
+          code, expectedSha256, modes: [0o444],
+        });
+        return { bytes: observed.bytes, metadata: observed.metadata, immutable: true };
+      },
+      readPublisher1MaterializerAuthority: async (context, binding) => {
+        if (context.authority.commit !== descriptor.authority_sha
+            || context.generations.controller !== descriptor.controller_generation_id
+            || binding.publisher1RequestPath !== path.join(requestRoot, 'publisher1-transaction.request.json')) fail(code);
+        const authorityObserved = await readBoundLocalFile(installedMaterializerPath, { code, modes: [0o444] });
+        const binaryObserved = await readBoundLocalFile(installedWriterPath, { code, modes: [0o555] });
+        let authority;
+        try { authority = JSON.parse(authorityObserved.bytes.toString('utf8')); } catch { fail(code); }
+        if (!canonicalJson(authority).equals(authorityObserved.bytes)
+            || authority.materializer_sha256 !== sha256(binaryObserved.bytes)) fail(code);
+        materializerBinary = binaryObserved;
+        return {
+          authority, authorityPath: installedMaterializerPath, binaryPath: installedWriterPath,
+          binary: { bytes: binaryObserved.bytes, metadata: binaryObserved.metadata, immutable: true },
+        };
+      },
+      observePublisher1: async ({ expected, expectedShaByRole, bytesByRole, publisher1Request }) => {
+        const versionRoot = path.join(publisher1Request.destination_parent, descriptor.authority_sha);
+        const claimPath = path.join(publisher1Request.state_root, 'publisher1.claim.json');
+        const resultPath = path.join(publisher1Request.state_root, 'publisher1.result.json');
+        const existence = await Promise.all([claimPath, resultPath, versionRoot].map((candidate) => lstat(candidate).then(
+          () => true, (error) => { if (error?.code === 'ENOENT') return false; throw error; },
+        )));
+        if (existence.every((value) => value === false)) return { state: 'ABSENT' };
+        if (!existence.every((value) => value === true)) return { state: 'PARTIAL' };
+        const claimObserved = await readBoundLocalFile(claimPath, { code, modes: [0o444] });
+        const resultObserved = await readBoundLocalFile(resultPath, { code, modes: [0o444] });
+        let claim;
+        let result;
+        try {
+          claim = JSON.parse(claimObserved.bytes.toString('utf8'));
+          result = JSON.parse(resultObserved.bytes.toString('utf8'));
+        } catch { fail(code); }
+        if (!canonicalJson(claim).equals(claimObserved.bytes) || !canonicalJson(result).equals(resultObserved.bytes)
+            || claim.purpose !== 'CI3_PUBLISHER1_TRANSACTION_CLAIM_V1'
+            || claim.authority_sha !== descriptor.authority_sha
+            || claim.request_sha256 !== expected.request_sha256
+            || result.purpose !== 'CI3_PUBLISHER1_TRANSACTION_RESULT_V1'
+            || result.claim_sha256 !== sha256(claimObserved.bytes)
+            || result.request_sha256 !== expected.request_sha256
+            || result.terminal_state !== 'PUBLISHED'
+            || !Array.isArray(result.observations) || result.observations.length !== 16
+            || !Array.isArray(result.source_observations) || result.source_observations.length !== 16) fail(code);
+        const targetObservations = [];
+        if (publisher1Request.entries.length !== 16 || Object.keys(bytesByRole).length !== 16) fail(code);
+        for (const entry of publisher1Request.entries) {
+          const targetPath = path.join(versionRoot, entry.destination_relative_path);
+          if (!targetPath.startsWith(`${versionRoot}${path.sep}`)) fail(code);
+          const observed = await readBoundLocalFile(targetPath, {
+            code, expectedSha256: expectedShaByRole[entry.role], modes: [entry.mode],
+          });
+          targetObservations.push({
+            role: entry.role, sha256: sha256(observed.bytes), mode: observed.metadata.mode,
+            identity_sha256: physicalIdentitySha256(observed.metadata),
+          });
+        }
+        finalTargetObservations = targetObservations;
+        return {
+          state: 'SETTLED', ...expected, claim_sha256: sha256(claimObserved.bytes),
+          result_sha256: sha256(resultObserved.bytes), tree_verified: true, raw_values: false,
+        };
+      },
+      invokeAdmin: async ({ publisher1Request }) => {
+        if (materializerBinary === null || publisher1Request.entries.length !== 16) fail(code);
+        writerInvocations += 1;
+        if (writerInvocations !== 1) fail(code);
+        const publisher1RequestPath = path.join(requestRoot, 'publisher1-transaction.request.json');
+        const requestBytes = canonicalJson(publisher1Request);
+        const invoked = spawnSync(installedWriterPath, [
+          '--publisher1-transaction', publisher1RequestPath, sha256(requestBytes),
+        ], {
+          encoding: null, env: CLOSED_BOOTSTRAP_ENVIRONMENT,
+          stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000, maxBuffer: 64 * 1024,
+        });
+        if (invoked.status !== 0 || invoked.signal || invoked.error || invoked.stderr.length !== 0
+            || invoked.stdout.toString('utf8') !== 'PUBLISHER1_TRANSACTION PASS status=CREATED effect_executions=1\n') fail(code);
+      },
+      persistReceipt: async ({ settled }) => {
+        await writeOnceJson(path.join(requestRoot, 'publisher1-controller.settlement.json'), {
+          schema_version: 1, purpose: 'CI3_PUBLISHER1_CONTROLLER_SETTLEMENT_V1',
+          authority_sha: settled.authority_sha,
+          controller_generation_id: settled.controller_generation_id,
+          request_sha256: settled.request_sha256, receiver_root_sha256: settled.receiver_root_sha256,
+          claim_sha256: settled.claim_sha256, result_sha256: settled.result_sha256,
+          tree_verified: true, raw_values: false,
+        });
+      },
+    },
+  });
+  const published = await publisher.publishOperationAuthority();
+  if (published.status !== 'CREATED' || published.raw_values !== false || writerInvocations !== 1
+      || finalTargetObservations.length !== 16) fail(code);
+  const writer = await readBoundLocalFile(installedWriterPath, { code, modes: [0o555] });
+  const settlementPath = path.join(requestRoot, 'publisher1-controller.settlement.json');
+  const settlement = await readBoundLocalFile(settlementPath, { code, modes: [0o600] });
+  const surfaceRoot = path.join(requestRoot, 'round4-scan-surfaces');
+  await ensurePrivateDirectory(surfaceRoot);
+  const operationalResultRoot = path.join(surfaceRoot, 'operational-results');
+  await ensurePrivateDirectory(operationalResultRoot);
+  const xcresultPath = path.join(operationalResultRoot, 'installed-operation.xcresult');
+  if (process.argv.length !== 3 || process.argv[1] !== SCRIPT_PATH || process.argv[2] !== '--self-test') fail(code);
+  const installedInvocationArgv = [path.join(runtimeRoot, 'node'), ...process.argv.slice(1)];
+  const actualSurfaces = await collectActualTerminalSurfaces({
+    argv: installedInvocationArgv,
+    historyPaths: [operationRequestPath],
+    terminalLogPaths: [settlementPath],
+    attachmentPaths: [operationRequestPath, settlementPath],
+    xcresultPath,
+    runtime: {
+      executable: installedInvocationArgv[0],
+      exec_argv: [...process.execArgv],
+      environment: sanitizeTerminalRuntimeEnvironment(CLOSED_BOOTSTRAP_ENVIRONMENT),
+    },
+  });
+  const sourceObservations = await materializeTerminalScanSources({
+    root: surfaceRoot,
+    records: {
+      argv: actualSurfaces.argv,
+      history: actualSurfaces.history,
+      'terminal-log': actualSurfaces['terminal-log'],
+      attachment: actualSurfaces.attachment,
+      runtime: actualSurfaces.runtime,
+    },
+    sourcePaths: { xcresult: xcresultPath },
+  });
+  const scanResults = [];
+  for (const id of TERMINAL_SCAN_IDS) {
+    const sourceObservation = sourceObservations[id];
+    const sourceBytes = sourceObservation.state === 'PRESENT'
+      ? (await readBoundLocalFile(sourceObservation.path, {
+        code, expectedSha256: sourceObservation.content_sha256, modes: [0o600],
+      })).bytes
+      : Buffer.alloc(0);
+    const surfaceBytes = buildFinalScanSurfaceBytes({
+      scanId: id,
+      authoritySha: descriptor.authority_sha,
+      controllerGenerationId: descriptor.controller_generation_id,
+      terminalGenerationId,
+      sourceRoots: [{
+        role: SCAN_SURFACE_CONTRACTS[id].source_role,
+        sha256: sha256(sourceBytes),
+        identity_sha256: sourceObservation.identity_sha256 ?? sourceObservation.absence_observation_sha256,
+      }],
+      sourceBytes,
+      sourceObservation,
+    });
+    const surfacePath = path.join(surfaceRoot, `${id}.surface`);
+    await writeOnceBytes(surfacePath, surfaceBytes);
+    const surface = await readBoundLocalFile(surfacePath, {
+      code, expectedSha256: sha256(surfaceBytes), modes: [0o600],
+    });
+    const scanned = scanTerminalSurface(id, surface.bytes);
+    if (scanned.total !== 0) fail(code);
+    scanResults.push({
+      id, match_count: scanned.total, scanner_schema_sha256: scannerSchemaSha256(id),
+      surface_sha256: sha256(surface.bytes), surface_byte_length: surface.bytes.length,
+      surface_role: SCAN_SURFACE_CONTRACTS[id].source_role,
+    });
+  }
+  const scanSurfaceSetSha256 = sha256(canonicalJson(
+    scanResults.map(({ id, surface_sha256: surfaceSha256 }) => ({ id, surface_sha256: surfaceSha256 })),
+  ));
+  const laterDispatchPath = path.join(requestRoot, 'later-writer.no-effect.dispatch.json');
+  let laterDispatchSha256 = null;
+  const laterDispatch = await dispatchControllerMode({
+    mode: 'publish-privileged-writer-authority',
+    adapters: {
+      publishPrivilegedWriterAuthority: async () => publishPrivilegedWriterAuthority({
+        authoritySha: descriptor.authority_sha,
+        controllerGenerationId: descriptor.controller_generation_id,
+        authorityRequestPath: operationRequestPath,
+        authorityRequestSha256: descriptor.operation_request_sha256,
+        predecessorSettlementPath: settlementPath,
+        predecessorSettlementSha256: sha256(settlement.bytes),
+        writerPath: installedWriterPath,
+        writerSha256: sha256(writer.bytes),
+        targetObservations: finalTargetObservations.map(({ role, sha256: targetSha256 }) => ({
+          role, sha256: targetSha256,
+        })),
+        effect: async (proof) => {
+          if (proof.target_count !== 16 || proof.authority_sha !== descriptor.authority_sha
+              || proof.controller_generation_id !== descriptor.controller_generation_id
+              || proof.authority_request_sha256 !== descriptor.operation_request_sha256
+              || proof.predecessor_settlement_sha256 !== sha256(settlement.bytes)
+              || proof.writer_sha256 !== sha256(writer.bytes)) fail(code);
+          laterDispatchSha256 = await writeOnceJson(laterDispatchPath, {
+            schema_version: 1, purpose: 'CI3_SYNTHETIC_LATER_WRITER_NO_EFFECT_DISPATCH_V1',
+            authority_sha: descriptor.authority_sha,
+            controller_generation_id: descriptor.controller_generation_id,
+            operation_request_sha256: descriptor.operation_request_sha256,
+            publisher1_settlement_sha256: sha256(settlement.bytes), writer_sha256: sha256(writer.bytes),
+            target_count: finalTargetObservations.length,
+            dispatch_mode: 'publish-privileged-writer-authority',
+            dispatch_state: 'PRIVILEGED_WRITER_AUTHORITY_PUBLISHED',
+            consumer_implementation: 'publishPrivilegedWriterAuthority',
+            effect_seam_position: 'BELOW_CONSUMER', effect_executions: 0,
+            privilege_prompts: 0, raw_values: false,
+          });
+          return { effect_executions: 0, privilege_prompts: 0, raw_values: false };
+        },
+      }),
+    },
+  });
+  if (laterDispatch.state !== 'PRIVILEGED_WRITER_AUTHORITY_PUBLISHED'
+      || laterDispatch.raw_values !== false || laterDispatchSha256 === null) fail(code);
+  await writeOnceJson(descriptor.receipt_path, {
+    schema_version: 1, purpose: 'CI3_SYNTHETIC_INSTALLED_OPERATION_E2E_RECEIPT_V1',
+    authority_sha: descriptor.authority_sha,
+    controller_generation_id: descriptor.controller_generation_id,
+    operation_request_sha256: descriptor.operation_request_sha256,
+    settlement_sha256: sha256(settlement.bytes), target_count: finalTargetObservations.length,
+    target_observations: finalTargetObservations, scan_results: scanResults,
+    operational_collectors: true, collector_implementation: 'collectActualTerminalSurfaces',
+    scan_surface_set_sha256: scanSurfaceSetSha256,
+    later_writer_sha256: sha256(writer.bytes), later_writer_reachable: true,
+    later_writer_dispatch_receipt_sha256: laterDispatchSha256,
+    terminal_privilege_invocations: 0, attempt: 1, retry: false, raw_values: false,
+  });
+  return true;
+}
+
 async function main() {
   try {
-    const mode = parseControllerMode(process.argv.slice(2));
+    const rawArguments = process.argv.slice(2);
+    const materializerRequestSha256 = rawArguments[0] === 'materialize-publisher0-bootstrap'
+      && rawArguments.length === 2 ? rawArguments[1] : null;
+    const publisher0PhysicalBoundary = rawArguments[0] === 'bootstrap-publisher0-physical-boundary'
+      && rawArguments.length === 3 ? { request_path: rawArguments[1], request_sha256: rawArguments[2] } : null;
+    const publisher0Transaction = rawArguments[0] === 'bootstrap-publisher0-transaction'
+      && rawArguments.length === 3 ? { request_path: rawArguments[1], request_sha256: rawArguments[2] } : null;
+    const mode = materializerRequestSha256 === null && publisher0PhysicalBoundary === null && publisher0Transaction === null
+      ? parseControllerMode(rawArguments)
+      : parseControllerMode([rawArguments[0]]);
     let publisher0Boundary = null;
     if (mode === '--self-test') {
       const attestationPath = path.join(path.dirname(SCRIPT_PATH), 'launch-attestation.json');
+      let selfTestAttestation = null;
       try {
-        validateLaunchAttestation(JSON.parse(await readFile(attestationPath, 'utf8')));
+        selfTestAttestation = JSON.parse(await readFile(attestationPath, 'utf8'));
+        validateLaunchAttestation(selfTestAttestation);
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error;
       }
+      await runSyntheticInstalledOperationE2E({ launchAttestation: selfTestAttestation });
       const outcome = await runSyntheticProtocol({
         scenarioId: process.env.CI3_SYNTHETIC_E2E_SCENARIO ?? null,
         scenarioSha256: process.env.CI3_SYNTHETIC_SCENARIO_SHA256 ?? null,
@@ -7149,6 +8636,53 @@ async function main() {
       } else {
         process.stdout.write(`CONTROLLER_SELF_TEST PASS checks=${outcome.journal_records} network_calls=0 privilege_prompts=0\n`);
       }
+      return;
+    }
+    if (mode === 'materialize-publisher0-bootstrap') {
+      await dispatchPublisher0CausalBootstrapCli({
+        argv: rawArguments,
+        readStdin: () => readFile(0).catch(() => fail('VPS_PUBLISHER0_CAUSAL_BOOTSTRAP')),
+        observeProcess: async (requestBytes) => {
+          let request;
+          try { request = JSON.parse(requestBytes.toString('utf8')); } catch { fail('VPS_PUBLISHER0_CAUSAL_BOOTSTRAP'); }
+          validatePublisher0CausalBootstrapRequest(request);
+          const objectRoot = `/var/lib/agentempp/ci3-authority-objects/${request.authority_sha}`;
+          if (process.execPath !== `${objectRoot}/runtime/node-${request.node_sha256}`
+              || SCRIPT_PATH !== `${objectRoot}/git/${request.controller.git_blob_oid}/ci3-bridge-controller.mjs`) {
+            fail('VPS_PUBLISHER0_CAUSAL_BOOTSTRAP');
+          }
+          return {
+            exec_path: process.execPath, script_path: SCRIPT_PATH,
+            environment: Object.fromEntries(Object.entries(process.env).sort(([left], [right]) => left.localeCompare(right))),
+            node_bytes: await readVpsRootImmutableFile(process.execPath, 0o555, 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP'),
+            controller_bytes: await readVpsRootImmutableFile(SCRIPT_PATH, 0o555, 'VPS_PUBLISHER0_CAUSAL_BOOTSTRAP'),
+          };
+        },
+        createIo: async (requestBytes) => {
+          let request;
+          try { request = JSON.parse(requestBytes.toString('utf8')); } catch { fail('VPS_PUBLISHER0_CAUSAL_BOOTSTRAP'); }
+          return createPublisher0CausalBootstrapIo(request);
+        },
+        emit: (bytes) => new Promise((resolve, reject) => {
+          process.stdout.write(bytes, (error) => (error ? reject(error) : resolve()));
+        }),
+      });
+      return;
+    }
+    if (mode === 'bootstrap-publisher0-transaction') {
+      const result = await runPublisher0ZeroPreseedTransaction({
+        requestPath: publisher0Transaction.request_path,
+        requestSha256: publisher0Transaction.request_sha256,
+      });
+      process.stdout.write(result.output_bytes);
+      return;
+    }
+    if (mode === 'bootstrap-publisher0-physical-boundary') {
+      const result = await runPublisher0PhysicalBootstrapBoundary({
+        requestPath: publisher0PhysicalBoundary.request_path,
+        requestSha256: publisher0PhysicalBoundary.request_sha256,
+      });
+      process.stdout.write(result.output_bytes);
       return;
     }
     if (mode === 'publish-vps-operation-authority-pass') publisher0Boundary = await assertPublisher0FixedProcessBoundary();
@@ -7175,6 +8709,10 @@ async function main() {
       return;
     }
     const outcome = await dispatchControllerMode({ mode, ...runtime });
+    if (mode === 'publish-vps-operation-authority-pass' && Buffer.isBuffer(outcome.output_bytes)) {
+      process.stdout.write(outcome.output_bytes);
+      return;
+    }
     if (outcome.state === 'PRE_TERMINAL_UNPUBLISHED') {
       process.stdout.write(`CONTROLLER ${mode.toUpperCase()} PRE_TERMINAL state=${outcome.state} raw_values=false\n`);
     } else {
@@ -7186,4 +8724,7 @@ async function main() {
   }
 }
 
-if (process.argv[1] && path.basename(process.argv[1]) === path.basename(SCRIPT_PATH)) await main();
+if (process.env.CI3_PINNED_CONTROLLER_IMPORT !== '1' && process.argv[1]
+    && (path.basename(process.argv[1]) === path.basename(SCRIPT_PATH)
+    || process.argv.includes('bootstrap-publisher0-physical-boundary')
+    || process.env.CI3_PINNED_PUBLISHER0_BOOTSTRAP === '1')) await main();

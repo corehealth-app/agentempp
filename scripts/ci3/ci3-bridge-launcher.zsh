@@ -213,16 +213,15 @@ CONTROLLER_PATH='scripts/ci3/ci3-bridge-controller.mjs'
 WRITER_PATH='scripts/ci3/ci3-terminal-anchor-writer.swift'
 AUTHORITY_PATHS=(
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md'
-  'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md'
-  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md'
-  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md'
-  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md'
+  'docs/superpowers/evidence/2026-09-01-ci3-external-publisher-chain-authority.md'
   'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md'
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md'
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md'
-  'scripts/ci3/create-ios-staging-bridge-config.mjs'
-  'scripts/ci3/create-ios-staging-bridge-config.test.mjs'
+  'scripts/ci3/ci3-external-publisher-chain.mjs'
+  'scripts/ci3/ci3-external-publisher-chain.test.mjs'
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.swift'
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.test.mjs'
   'scripts/ci3/ci3-bridge-controller.mjs'
   'scripts/ci3/ci3-bridge-controller.test.mjs'
   'scripts/ci3/ci3-bridge-launcher.zsh'
@@ -360,8 +359,8 @@ hash_text() {
 }
 
 if [[ "$MODE" != '--self-test' ]]; then
-  [[ "$AUTHORITY_PARENT" == '65a06d3e7426117ea80679933f6a7bb611be5988' ]] || fail GIT_AUTHORITY
-  [[ "$AUTHORITY_SUBJECT" == 'build(ops): authorize mac-compatible CI-3 bridge executor' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_PARENT" == 'd4f7d37bbac98b5b0e37b459528a8d5c6adb3622' ]] || fail GIT_AUTHORITY
+  [[ "$AUTHORITY_SUBJECT" == 'build(ops): authorize semantic-safe Publisher chain for CI-3' ]] || fail GIT_AUTHORITY
 fi
 
 GENERATOR_OID="${GENERATOR_BINDING%% *}"

@@ -7,9 +7,11 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const MODULE_URL = new URL('./ci3-bridge-controller.mjs', import.meta.url);
-const EXECUTOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
-const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+const EXECUTOR_AUTHORITY_PARENT = 'd4f7d37bbac98b5b0e37b459528a8d5c6adb3622';
+const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize semantic-safe Publisher chain for CI-3';
 const EXECUTOR_AUTHORITY_SUBJECT_SHA256 = createHash('sha256').update(EXECUTOR_AUTHORITY_SUBJECT).digest('hex');
+const PREDECESSOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
+const PREDECESSOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
 
 let controller;
 let loadError;
@@ -93,16 +95,15 @@ function generation(prefix, character) {
 function authorityManifest() {
   const paths = [
     'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
-    'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
-    'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
-    'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
-    'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+    'docs/superpowers/evidence/2026-09-01-ci3-external-publisher-chain-authority.md',
     'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
     'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
     'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
-    'scripts/ci3/create-ios-staging-bridge-config.mjs',
-    'scripts/ci3/create-ios-staging-bridge-config.test.mjs',
+    'scripts/ci3/ci3-external-publisher-chain.mjs',
+    'scripts/ci3/ci3-external-publisher-chain.test.mjs',
+    'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+    'scripts/ci3/ci3-publisher1-bootstrap-installer.test.mjs',
     'scripts/ci3/ci3-bridge-controller.mjs',
     'scripts/ci3/ci3-bridge-controller.test.mjs',
     'scripts/ci3/ci3-bridge-launcher.zsh',
@@ -117,8 +118,10 @@ function authorityManifest() {
   }));
   for (const [name, component] of Object.entries(components())) {
     const entry = entries.find(({ path: entryPath }) => entryPath === component.path);
-    entry.blob_oid = component.blob_oid;
-    entry.sha256 = component.sha256;
+    if (entry) {
+      entry.blob_oid = component.blob_oid;
+      entry.sha256 = component.sha256;
+    }
     assert.ok(name);
   }
   return entries;
@@ -272,6 +275,14 @@ test('controller freezes the single exact authority commit subject', () => {
   assert.equal(subject().AUTHORITY_SUBJECT, EXECUTOR_AUTHORITY_SUBJECT);
 });
 
+test('successor controller accepts only the semantic-safe lineage and rejects the predecessor lineage', () => {
+  assert.equal(subject().validateLaunchAttestation(launchAttestation()), true);
+  const predecessor = launchAttestation();
+  predecessor.authority_parent = PREDECESSOR_AUTHORITY_PARENT;
+  predecessor.authority_subject_sha256 = createHash('sha256').update(PREDECESSOR_AUTHORITY_SUBJECT).digest('hex');
+  expectCode('LAUNCHER_REQUIRED', () => subject().validateLaunchAttestation(predecessor));
+});
+
 test('terminal ledger contains all 24 inherited and final Important IDs once and in authority order', () => {
   assert.deepEqual(subject().IMPORTANT_FINDINGS.map(({ id }) => id), FINDING_IDS);
   assert.equal(new Set(FINDING_IDS).size, 24);
@@ -368,6 +379,28 @@ const AUTHORITY_ENTRY_MUTATIONS = Object.freeze([
 ]);
 
 const AUTHORITY_MUTATION_INDEXES = Array.from({ length: subject().AUTHORITY_PATHS.length }, (_, value) => value);
+
+test('successor authority manifest contains exactly sixteen local paths and keeps the remote generator outside', () => {
+  assert.deepEqual(subject().AUTHORITY_PATHS, [
+    'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
+    'docs/superpowers/evidence/2026-09-01-ci3-external-publisher-chain-authority.md',
+    'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
+    'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
+    'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
+    'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
+    'scripts/ci3/ci3-external-publisher-chain.mjs',
+    'scripts/ci3/ci3-external-publisher-chain.test.mjs',
+    'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+    'scripts/ci3/ci3-publisher1-bootstrap-installer.test.mjs',
+    'scripts/ci3/ci3-bridge-controller.mjs',
+    'scripts/ci3/ci3-bridge-controller.test.mjs',
+    'scripts/ci3/ci3-bridge-launcher.zsh',
+    'scripts/ci3/ci3-bridge-launcher.test.mjs',
+    'scripts/ci3/ci3-terminal-anchor-writer.swift',
+    'scripts/ci3/ci3-terminal-anchor-writer.test.mjs',
+  ]);
+  assert.equal(subject().AUTHORITY_PATHS.includes('scripts/ci3/create-ios-staging-bridge-config.mjs'), false);
+});
 
 test('[AUTHORITY-MANIFEST] mutation matrix covers every authority path', () => {
   assert.deepEqual(AUTHORITY_MUTATION_INDEXES, subject().AUTHORITY_PATHS.map((_, index) => index));
@@ -1633,6 +1666,26 @@ test('controller exposes separately authorized one-shot publishers as closed pub
   assert.equal(subject().parseControllerMode(['publish-privileged-writer-authority']), 'publish-privileged-writer-authority');
 });
 
+test('successor downstream authority is complete from Publisher1 through operation authority controller targets six scans and privileged writer', async () => {
+  assert.deepEqual(subject().EXTERNAL_OPERATIONAL_LAUNCHER_MODES.slice(-3), [
+    'publish-operation-authority', 'publish-privileged-writer-authority', 'status',
+  ]);
+  const operation = await subject().dispatchControllerMode({
+    mode: 'publish-operation-authority',
+    adapters: { publishOperationAuthority: async () => ({ status: 'CREATED', raw_values: false }) },
+  });
+  assert.equal(operation.state, 'OPERATION_AUTHORITY_PUBLISHED');
+  expectCode('PROTOCOL_TRANSITION', () => subject().advanceProtocol('CREDENTIAL_REMOVED', 'COMPLETE'));
+  assert.equal(subject().TERMINAL_SCAN_IDS.length, 6);
+  assert.equal(subject().advanceProtocol('CREDENTIAL_REMOVED', 'RUN_SCANS'), 'SCANNED');
+  assert.equal(subject().advanceProtocol('SCANNED', 'COMPLETE'), 'COMPLETE');
+  const privileged = await subject().dispatchControllerMode({
+    mode: 'publish-privileged-writer-authority',
+    adapters: { publishPrivilegedWriterAuthority: async () => ({ status: 'CREATED', raw_values: false }) },
+  });
+  assert.equal(privileged.state, 'PRIVILEGED_WRITER_AUTHORITY_PUBLISHED');
+});
+
 test('privileged publisher builds the original claim before any root writer installation', () => {
   const claim = subject().buildPrivilegedPublisherClaim({
     authoritySha: oid('a'), terminalGenerationId: generation('terminal', 'b'),
@@ -1686,21 +1739,47 @@ for (const [mode, adapterName, state] of [
 
 test('operation publisher consumes a schema-exact human authorization receipt bound to the authority', () => {
   const receipt = {
-    schema_version: 1, purpose: 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V1',
+    schema_version: 2, purpose: 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V2',
     authority_sha: oid('a'), authority_manifest_sha256: digest('b'),
+    authority_projection_sha256: digest('0'),
     node_binary_sha256: digest('c'), operation_authority_sha256: digest('d'),
     publisher_input_manifest_sha256: digest('e'), vps_operation_authority_pass_sha256: digest('f'),
     approved_action: 'PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY',
+    issuer_authority_sha256: digest('1'), authorization_request_path_sha256: digest('2'),
+    authorization_request_sha256: digest('3'), authorization_request_identity_sha256: digest('4'),
+    authorization_request_uid: 501, authorization_request_gid: 20,
+    authorization_request_mode: 0o600, authorization_request_nlink: 1,
+    receiver_root_path_sha256: digest('5'), receiver_root_identity_sha256: digest('6'),
+    receiver_leaves_sha256: digest('7'),
+    publisher_installer_git_path: 'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+    publisher_installer_git_blob_oid: oid('8'), publisher_installer_source_sha256: digest('9'),
+    publisher_installer_provenance_sha256: digest('a'),
+    publisher_installer_compile_authority_sha256: digest('b'),
+    publisher_installer_expected_binary_sha256: digest('c'),
+    prompt_sha256: digest('d'), prompt_budget: 1, authorized_uid: 501, authorized_gid: 20,
+    confirmation_sha256: digest('e'),
     attempt: 1, retry: false, raw_values: false,
   };
   assert.equal(subject().validatePublisherHumanAuthorizationReceipt(receipt, {
-    authoritySha: oid('a'), authorityManifestSha256: digest('b'),
+    authoritySha: oid('a'), authorityManifestSha256: digest('b'), authorityProjectionSha256: digest('0'),
     nodeBinarySha256: digest('c'), operationAuthoritySha256: digest('d'),
     publisherInputManifestSha256: digest('e'), vpsOperationAuthorityPassSha256: digest('f'),
   }), true);
   delete receipt.approved_action;
   expectCode('OPERATION_AUTHORITY_PUBLISHER', () => subject().validatePublisherHumanAuthorizationReceipt(receipt, {
-    authoritySha: oid('a'), authorityManifestSha256: digest('b'),
+    authoritySha: oid('a'), authorityManifestSha256: digest('b'), authorityProjectionSha256: digest('0'),
+    nodeBinarySha256: digest('c'), operationAuthoritySha256: digest('d'),
+    publisherInputManifestSha256: digest('e'), vpsOperationAuthorityPassSha256: digest('f'),
+  }));
+  const predecessor = {
+    schema_version: 1, purpose: 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V1',
+    authority_sha: oid('a'), authority_manifest_sha256: digest('b'),
+    node_binary_sha256: digest('c'), operation_authority_sha256: digest('d'),
+    publisher_input_manifest_sha256: digest('e'), vps_operation_authority_pass_sha256: digest('f'),
+    approved_action: 'PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY', attempt: 1, retry: false, raw_values: false,
+  };
+  expectCode('OPERATION_AUTHORITY_PUBLISHER', () => subject().validatePublisherHumanAuthorizationReceipt(predecessor, {
+    authoritySha: oid('a'), authorityManifestSha256: digest('b'), authorityProjectionSha256: digest('0'),
     nodeBinarySha256: digest('c'), operationAuthoritySha256: digest('d'),
     publisherInputManifestSha256: digest('e'), vpsOperationAuthorityPassSha256: digest('f'),
   }));
@@ -2421,6 +2500,76 @@ test('round-5 Publisher 0 operational adapter consumes root authority and publis
   assert.equal(subject().verifySignedVpsOperationAuthorityPass(JSON.parse(published), issuer), true);
 });
 
+test('round-9 installed Publisher 0 emits and persists the complete authenticated transport envelope', async () => {
+  const attestation = launchAttestation();
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const publicKeyBytes = Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url');
+  const issuer = {
+    schema_version: 1, purpose: 'CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1', authority_sha: attestation.authority_sha,
+    issuer_generation_id: `issuer-${'1'.repeat(64)}`, issuer_identity_sha256: digest('2'),
+    public_key_algorithm: 'Ed25519', public_key_raw_base64: publicKeyBytes.toString('base64'),
+    public_key_sha256: subject().sha256(publicKeyBytes), allowed_pass_purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    normal_executor_authorized: false, raw_values: false,
+  };
+  const roles = [
+    'node-runtime', 'controller', 'launcher-runtime', 'launch-attestation', 'authority-manifest',
+    'operation-authority', 'ssh-config', 'ssh-known-hosts', 'ssh-private-key', 'ssh-public-key', 'ssh-trust-descriptor',
+  ];
+  const payloads = Object.fromEntries(roles.map((role, index) => [role, Buffer.from(`authenticated-${index}\n`)]));
+  payloads['node-runtime'] = Buffer.from('node-runtime\n');
+  payloads.controller = Buffer.from('controller-runtime\n');
+  payloads['launcher-runtime'] = Buffer.from('launcher-runtime\n');
+  attestation.tools.node.binary_sha256 = subject().sha256(payloads['node-runtime']);
+  attestation.components.controller.sha256 = subject().sha256(payloads.controller);
+  attestation.components.launcher.sha256 = subject().sha256(payloads['launcher-runtime']);
+  attestation.authority_manifest_sha256 = subject().sha256(payloads['authority-manifest']);
+  payloads['launch-attestation'] = subject().canonicalJson(attestation);
+  const entries = roles.map((role, index) => ({
+    role, path_sha256: String((index % 8) + 1).repeat(64), sha256: subject().sha256(payloads[role]),
+  }));
+  const manifest = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2', authority_sha: attestation.authority_sha,
+    remote_generation_id: generation('remote', '8'), controller_generation_id: generation('controller', '9'),
+    collector_contracts_sha256: digest('7'), entries,
+    transfer_payload_sha256: subject().sha256(subject().canonicalJson(entries)), raw_values: false,
+  };
+  const unsigned = round3VpsPassReceipt();
+  delete unsigned.signed_payload_sha256;
+  delete unsigned.signature_base64;
+  Object.assign(unsigned, {
+    authority_sha: attestation.authority_sha, authority_parent: attestation.authority_parent,
+    authority_tree: attestation.authority_tree, authority_subject_sha256: attestation.authority_subject_sha256,
+    authority_manifest_sha256: attestation.authority_manifest_sha256,
+    node_candidate_sha256: attestation.tools.node.binary_sha256,
+    operation_authority_sha256: subject().sha256(payloads['operation-authority']),
+    collector_contracts_sha256: manifest.collector_contracts_sha256,
+    remote_generation_id: manifest.remote_generation_id, controller_generation_id: manifest.controller_generation_id,
+    publisher_input_manifest_sha256: subject().sha256(subject().canonicalJson(manifest)),
+    transfer_payload_sha256: manifest.transfer_payload_sha256,
+    issuer_authority_sha256: subject().sha256(subject().canonicalJson(issuer)), issuer_key_sha256: issuer.public_key_sha256,
+  });
+  let persistedOutput;
+  const runtime = await subject().createVpsOperationAuthorityPassPublisher({
+    launchAttestation: attestation,
+    io: {
+      readIssuer: async () => subject().canonicalJson(issuer),
+      readUnsignedRequest: async () => subject().canonicalJson(unsigned),
+      readPrivateKey: async () => privateKey.export({ format: 'der', type: 'pkcs8' }),
+      publishNoClobber: async () => 'CREATED',
+      readTransportManifest: async () => subject().canonicalJson(manifest),
+      readTransportPayload: async (role) => payloads[role],
+      persistAuthenticatedOutput: async (bytes) => { persistedOutput = bytes; return 'CREATED'; },
+    },
+  });
+  const result = await runtime.publishVpsOperationAuthorityPass();
+  const output = JSON.parse(result.output_bytes.toString('utf8'));
+  assert.deepEqual(result.output_bytes, persistedOutput);
+  assert.equal(output.purpose, 'CI3_AUTHENTICATED_PUBLISHER0_OUTPUT_V2');
+  assert.deepEqual(output.payloads.map(({ role }) => role), roles);
+  assert.equal(output.pass.publisher_input_manifest_sha256, subject().sha256(subject().canonicalJson(output.transport_manifest)));
+  assert.equal(output.payload_set_sha256, subject().sha256(subject().canonicalJson(output.payloads.map(({ role, sha256 }) => ({ role, sha256 })))));
+});
+
 test('round-6 Publisher 0 accepts only an externally installed immutable bootstrap with fixed runtime and empty environment', async () => {
   const authoritySha = oid('a');
   const generationId = generation('bootstrap', 'b');
@@ -2848,6 +2997,121 @@ test('round-7 Publisher 0 bootstrap binds the complete runtime and materializer 
     mutate(candidate);
     await rejectCode('VPS_PUBLISHER0_BOOTSTRAP', () => subject().validatePublisher0BootstrapBoundary(candidate));
   }
+});
+
+test('round-9 Publisher 0 causal bootstrap validates exact Git blob provenance and materializes before installed dispatch', async () => {
+  const attestation = launchAttestation();
+  const nodeBytes = Buffer.from('exact-node-runtime\n');
+  const controllerBytes = Buffer.from('exact-controller-source\n');
+  const launcherBytes = Buffer.from('exact-launcher-source\n');
+  const gitBlobOid = (bytes) => createHash('sha1')
+    .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes])).digest('hex');
+  attestation.tools.node.binary_sha256 = subject().sha256(nodeBytes);
+  attestation.components.controller.blob_oid = gitBlobOid(controllerBytes);
+  attestation.components.controller.sha256 = subject().sha256(controllerBytes);
+  attestation.components.launcher.blob_oid = gitBlobOid(launcherBytes);
+  attestation.components.launcher.sha256 = subject().sha256(launcherBytes);
+  const componentByPath = new Map(Object.values(attestation.components).map((value) => [value.path, value]));
+  const manifestBytes = Buffer.from(subject().AUTHORITY_PATHS.map((entryPath, index) => {
+    const component = componentByPath.get(entryPath);
+    return component
+      ? `${entryPath} ${component.blob_oid} ${component.sha256}`
+      : `${entryPath} ${String((index % 8) + 1).repeat(40)} ${String((index % 8) + 1).repeat(64)}`;
+  }).join('\n') + '\n');
+  attestation.authority_manifest_sha256 = subject().sha256(manifestBytes);
+  const issuerBytes = subject().canonicalJson({
+    schema_version: 1, purpose: 'CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1',
+    authority_sha: attestation.authority_sha, issuer_generation_id: `issuer-${'1'.repeat(64)}`,
+    public_key_algorithm: 'Ed25519', public_key_raw_base64: Buffer.alloc(32, 1).toString('base64'),
+    public_key_sha256: subject().sha256(Buffer.alloc(32, 1)), issuer_identity_sha256: digest('2'),
+    allowed_pass_purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1', normal_executor_authorized: false, raw_values: false,
+  });
+  const generationRoot = {
+    authority_sha: attestation.authority_sha,
+    authority_parent: attestation.authority_parent,
+    authority_tree: attestation.authority_tree,
+    authority_subject_sha256: attestation.authority_subject_sha256,
+    authority_manifest_sha256: attestation.authority_manifest_sha256,
+    node_sha256: attestation.tools.node.binary_sha256,
+    controller: {
+      git_path: attestation.components.controller.path,
+      git_blob_oid: attestation.components.controller.blob_oid,
+      sha256: attestation.components.controller.sha256,
+    },
+    launcher: {
+      git_path: attestation.components.launcher.path,
+      git_blob_oid: attestation.components.launcher.blob_oid,
+      sha256: attestation.components.launcher.sha256,
+    },
+  };
+  const request = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER0_CAUSAL_BOOTSTRAP_REQUEST_V1',
+    ...generationRoot,
+    bootstrap_generation_id: `bootstrap-${subject().sha256(subject().canonicalJson(generationRoot))}`,
+    attempt: 1, retry: false, raw_values: false,
+  };
+  const requestBytes = subject().canonicalJson(request);
+  const objectRoot = `/var/lib/agentempp/ci3-authority-objects/${attestation.authority_sha}`;
+  const calls = [];
+  const authenticated = subject().canonicalJson({
+    schema_version: 2, purpose: 'CI3_AUTHENTICATED_PUBLISHER0_OUTPUT_V2',
+    authority_sha: attestation.authority_sha, attempt: 1, retry: false, raw_values: false,
+  });
+  const result = await subject().materializePublisher0GitBoundBootstrap({
+    requestBytes, requestSha256: subject().sha256(requestBytes),
+    processState: {
+      exec_path: `${objectRoot}/runtime/node-${request.node_sha256}`,
+      script_path: `${objectRoot}/git/${request.controller.git_blob_oid}/ci3-bridge-controller.mjs`,
+      environment: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      node_bytes: nodeBytes, controller_bytes: controllerBytes,
+    },
+    io: {
+      readLauncherBlob: async () => launcherBytes,
+      readLaunchAttestation: async () => subject().canonicalJson(attestation),
+      readAuthorityManifest: async () => manifestBytes,
+      readIssuerReceipt: async () => issuerBytes,
+      observeInstalled: async () => { calls.push('observe-absent'); return null; },
+      publishInstalled: async ({ boundary, files }) => {
+        calls.push('publish');
+        assert.equal(boundary.controller_sha256, subject().sha256(controllerBytes));
+        assert.deepEqual(Object.keys(files), ['authority', 'node', 'controller', 'launcher', 'launch_attestation', 'authority_manifest']);
+        return 'CREATED';
+      },
+      invokeInstalled: async ({ boundary }) => {
+        calls.push('invoke-installed');
+        assert.match(boundary.controller_path, /\/bootstrap-[a-f0-9]{64}\/runtime\/ci3-bridge-controller\.mjs$/);
+        return authenticated;
+      },
+    },
+  });
+  assert.deepEqual(calls, ['observe-absent', 'publish', 'invoke-installed']);
+  assert.equal(result.state, 'CREATED');
+  assert.deepEqual(result.stdout, authenticated);
+  assert.equal(result.effect_executions, 1);
+  assert.equal(subject().parseControllerMode(['materialize-publisher0-bootstrap']), 'materialize-publisher0-bootstrap');
+});
+
+test('round-9 Publisher 0 private CLI dispatch crosses stdin and emits only authenticated bytes without real root or SSH', async () => {
+  const requestBytes = subject().canonicalJson({ purpose: 'synthetic-private-cli-input', raw_values: false });
+  const requestSha256 = subject().sha256(requestBytes);
+  const emitted = [];
+  const calls = [];
+  const result = await subject().dispatchPublisher0CausalBootstrapCli({
+    argv: ['materialize-publisher0-bootstrap', requestSha256],
+    readStdin: async () => requestBytes,
+    observeProcess: async () => ({ synthetic: true }),
+    createIo: async () => ({ synthetic: true }),
+    materialize: async (input) => {
+      calls.push(input);
+      return { state: 'CREATED', stdout: Buffer.from('{"purpose":"authenticated"}\n'), effect_executions: 1, raw_values: false };
+    },
+    emit: async (bytes) => { emitted.push(bytes); },
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].requestBytes, requestBytes);
+  assert.equal(calls[0].requestSha256, requestSha256);
+  assert.deepEqual(emitted, [Buffer.from('{"purpose":"authenticated"}\n')]);
+  assert.deepEqual(result, { state: 'CREATED', effect_executions: 1, raw_values: false });
 });
 
 test('round-8 resume is pre-terminal until the receipt-last controller tail is settled', async () => {
@@ -3797,6 +4061,452 @@ test('round-9 Publisher 1 adapter builds only the fixed descriptor transaction a
   );
   assert.doesNotMatch(publisherSource, /\/usr\/bin\/install|readRootImmutableFile\(targetPath/);
   assert.match(publisherSource, /--publisher1-transaction/);
+});
+
+async function realOperationPublisherFixture() {
+  const homeDirectory = await mkdtemp(path.join(tmpdir(), 'ci3-real-operation-consumer-'));
+  const requestRoot = path.join(
+    homeDirectory, '.config/agentempp/ci3/publisher-input', oid('a'),
+  );
+  const candidateRoot = path.join(requestRoot, 'candidates');
+  await mkdir(candidateRoot, { recursive: true, mode: 0o700 });
+  const candidatePath = (role) => path.join(candidateRoot, `${role}.payload`);
+  const nodeBytes = Buffer.from('synthetic-successor-node-runtime\n');
+  const controllerBytes = Buffer.from('synthetic-successor-controller\n');
+  const launcherBytes = Buffer.from('synthetic-successor-launcher\n');
+  const writerBytes = Buffer.from('synthetic-successor-writer-source\n');
+  const authorityManifestBytes = Buffer.from('synthetic-successor-authority-manifest\n');
+  const sshBytes = {
+    'ssh-config': Buffer.from('Host successor-fixture\n'),
+    'ssh-known-hosts': Buffer.from('successor.invalid ssh-ed25519 synthetic\n'),
+    'ssh-private-key': Buffer.from('synthetic-private-key-material\n'),
+    'ssh-public-key': Buffer.from('ssh-ed25519 synthetic-successor\n'),
+    'ssh-trust-descriptor': subject().canonicalJson({
+      purpose: 'CI3_SYNTHETIC_SSH_TRUST_DESCRIPTOR_V1', raw_values: false,
+    }),
+  };
+  const successorComponents = {
+    generator: { path: 'scripts/ci3/create-ios-staging-bridge-config.mjs', blob_oid: oid('1'), sha256: digest('1') },
+    controller: { path: 'scripts/ci3/ci3-bridge-controller.mjs', blob_oid: oid('2'), sha256: subject().sha256(controllerBytes) },
+    launcher: { path: 'scripts/ci3/ci3-bridge-launcher.zsh', blob_oid: oid('3'), sha256: subject().sha256(launcherBytes) },
+    writer: { path: 'scripts/ci3/ci3-terminal-anchor-writer.swift', blob_oid: oid('4'), sha256: subject().sha256(writerBytes) },
+  };
+  const tools = {
+    node: { path_sha256: digest('1'), binary_sha256: subject().sha256(nodeBytes), version_sha256: digest('2') },
+    ssh: {
+      path_sha256: subject().sha256(Buffer.from('/usr/bin/ssh')),
+      binary_sha256: digest('3'), version_sha256: digest('4'),
+    },
+    swiftc: { path_sha256: digest('5'), binary_sha256: digest('6'), version_sha256: digest('7') },
+    xcodebuild: { path_sha256: digest('8'), binary_sha256: digest('9'), version_sha256: digest('a') },
+  };
+  const launchAttestation = {
+    schema_version: 1,
+    purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2',
+    authority_sha: oid('a'),
+    authority_parent: EXECUTOR_AUTHORITY_PARENT,
+    authority_tree: oid('b'),
+    authority_subject_sha256: EXECUTOR_AUTHORITY_SUBJECT_SHA256,
+    authority_manifest_sha256: subject().sha256(authorityManifestBytes),
+    components: successorComponents,
+    tools,
+    raw_values: false,
+  };
+  const remote = {
+    receipt_path: '/synthetic/successor/bridge.receipt.json',
+    config_path: '/synthetic/successor/mobile-staging-config.json',
+    credential_path: '/synthetic/successor/synthetic-credential.json',
+  };
+  const context = {
+    authority: {
+      commit: launchAttestation.authority_sha,
+      parent: launchAttestation.authority_parent,
+      tree: launchAttestation.authority_tree,
+      subject: EXECUTOR_AUTHORITY_SUBJECT,
+      manifest_sha256: launchAttestation.authority_manifest_sha256,
+      components: successorComponents,
+    },
+    generations: {
+      remote: generation('remote', 'd'), controller: generation('controller', 'e'),
+      simulator: generation('simulator', 'f'), terminal: generation('terminal', '1'),
+    },
+    remote: {
+      bundle_path_sha256: subject().sha256(Buffer.from(path.dirname(remote.config_path))),
+      receipt_path_sha256: subject().sha256(Buffer.from(remote.receipt_path)), receipt_sha256: digest('1'),
+      config_path_sha256: subject().sha256(Buffer.from(remote.config_path)), config_sha256: digest('2'),
+      credential_path_sha256: subject().sha256(Buffer.from(remote.credential_path)), credential_sha256: digest('3'),
+    },
+  };
+  const scans = scanSurfaceAuthority();
+  for (const descriptor of Object.values(scans)) descriptor.tool_sha256 = successorComponents.controller.sha256;
+  const authorityRecord = {
+    schema_version: 1,
+    purpose: 'CI3_MAC_OPERATION_AUTHORITY_V1',
+    context,
+    worktree: {
+      branch: 'codex/ci3-today-staging-v1',
+      changed_paths: [...subject().PRESERVED_CI3_PATHS],
+      continuation_allowlist_sha256: subject().CONTINUATION_ALLOWLIST_SHA256,
+      diff_sha256: digest('4'),
+      head: '277873755bf29771a10b5f362b522c2e6a6c21d6',
+      status_sha256: digest('5'),
+    },
+    simulator: {
+      app_installation_sha256: digest('1'), container_identity_sha256: digest('2'),
+      container_path_sha256: digest('3'), device_selection_sha256: digest('4'),
+      device_udid: 'synthetic-device', probe_ack_sha256: digest('5'),
+      probe_config_path: '/synthetic/successor/probe-config', probe_config_sha256: digest('6'),
+      probe_credential_path: '/synthetic/successor/probe-credential', probe_credential_sha256: digest('7'),
+      runtime_sha256: digest('8'),
+    },
+    ssh: {
+      alias: 'ci3-successor-fixture', code_signature_sha256: digest('1'),
+      config_path: '/synthetic/successor/ssh/config', config_sha256: subject().sha256(sshBytes['ssh-config']),
+      destination_sha256: digest('2'), effective_config_sha256: digest('3'),
+      executable_path_sha256: subject().sha256(Buffer.from('/usr/bin/ssh')),
+      executable_sha256: tools.ssh.binary_sha256, host_key_ed25519_sha256: digest('4'),
+      identity_path: '/synthetic/successor/ssh/id', identity_public_key_fingerprint_sha256: digest('5'),
+      identity_public_key_path: '/synthetic/successor/ssh/id.pub',
+      identity_public_key_sha256: subject().sha256(sshBytes['ssh-public-key']),
+      identity_sha256: subject().sha256(sshBytes['ssh-private-key']),
+      known_hosts_path: '/synthetic/successor/ssh/known-hosts',
+      known_hosts_sha256: subject().sha256(sshBytes['ssh-known-hosts']), port: 22,
+      trust_descriptor_path: '/synthetic/successor/ssh/trust.json',
+      trust_descriptor_sha256: subject().sha256(sshBytes['ssh-trust-descriptor']),
+      version_sha256: tools.ssh.version_sha256,
+    },
+    remote,
+    scans,
+    writer: {
+      authority_path: '/synthetic/successor/writer-authority.json',
+      manifest_path: '/synthetic/successor/writer-manifest.json',
+      phase_target_contracts: subject().CONTROLLER_EVIDENCE_PHASES.map((phase, index) => ({
+        phase,
+        targets: [{
+          role: `synthetic-${index}`, state: 'PRESENT', path_sha256: digest(String((index % 8) + 1)),
+          modes: [0o444], allowed_uids: [0], allowed_gids: [0], immutable: true,
+        }],
+      })),
+    },
+    raw_values: false,
+  };
+  const authorityBytes = subject().canonicalJson(authorityRecord);
+  const launchAttestationBytes = subject().canonicalJson(launchAttestation);
+  const materializedBytes = {
+    'node-runtime': nodeBytes,
+    controller: controllerBytes,
+    'launcher-runtime': launcherBytes,
+    'launch-attestation': launchAttestationBytes,
+    'authority-manifest': authorityManifestBytes,
+    'operation-authority': authorityBytes,
+    ...sshBytes,
+  };
+  for (const [role, bytes] of Object.entries(materializedBytes)) {
+    await writeFile(candidatePath(role), bytes, { flag: 'wx', mode: role === 'node-runtime' ? 0o700 : 0o600 });
+  }
+  const transportEntries = [
+    'node-runtime', 'controller', 'launcher-runtime', 'launch-attestation', 'authority-manifest',
+    'operation-authority', 'ssh-config', 'ssh-known-hosts', 'ssh-private-key',
+    'ssh-public-key', 'ssh-trust-descriptor',
+  ].map((role) => ({
+    role, path_sha256: subject().sha256(Buffer.from(candidatePath(role))),
+    sha256: subject().sha256(materializedBytes[role]),
+  }));
+  const publisherManifest = {
+    schema_version: 1, purpose: 'CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2',
+    authority_sha: context.authority.commit, remote_generation_id: context.generations.remote,
+    controller_generation_id: context.generations.controller,
+    collector_contracts_sha256: subject().sha256(subject().canonicalJson(scans)),
+    entries: transportEntries,
+    transfer_payload_sha256: subject().sha256(subject().canonicalJson(transportEntries)),
+    raw_values: false,
+  };
+  const publisherManifestBytes = subject().canonicalJson(publisherManifest);
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const publicKeyBytes = Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url');
+  const issuer = {
+    schema_version: 1, purpose: 'CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1',
+    authority_sha: context.authority.commit, issuer_generation_id: `issuer-${digest('6')}`,
+    issuer_identity_sha256: digest('7'), public_key_algorithm: 'Ed25519',
+    public_key_raw_base64: publicKeyBytes.toString('base64'),
+    public_key_sha256: subject().sha256(publicKeyBytes),
+    allowed_pass_purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    normal_executor_authorized: false, raw_values: false,
+  };
+  const issuerBytes = subject().canonicalJson(issuer);
+  const unsignedPass = {
+    schema_version: 1, purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    authority_sha: context.authority.commit, authority_parent: launchAttestation.authority_parent,
+    authority_tree: context.authority.tree, authority_subject_sha256: launchAttestation.authority_subject_sha256,
+    authority_manifest_sha256: context.authority.manifest_sha256,
+    operation_authority_sha256: subject().sha256(authorityBytes),
+    node_candidate_sha256: subject().sha256(nodeBytes),
+    collector_contracts_sha256: publisherManifest.collector_contracts_sha256,
+    publisher_input_manifest_sha256: subject().sha256(publisherManifestBytes),
+    remote_generation_id: context.generations.remote,
+    controller_generation_id: context.generations.controller,
+    source_generation_id: `src-${digest('8')}`,
+    transfer_payload_sha256: publisherManifest.transfer_payload_sha256,
+    issuer_authority_sha256: subject().sha256(issuerBytes),
+    issuer_key_sha256: issuer.public_key_sha256,
+    attempt: 1, retry: false, raw_values: false,
+  };
+  const pass = subject().signVpsOperationAuthorityPass({ unsigned: unsignedPass, issuer, privateKey });
+  const passBytes = subject().canonicalJson(pass);
+  const authorityProjectionSha256 = subject().sha256(subject().canonicalJson({
+    authority_sha: pass.authority_sha,
+    authority_parent: pass.authority_parent,
+    authority_tree: pass.authority_tree,
+    authority_subject_sha256: pass.authority_subject_sha256,
+    authority_manifest_sha256: pass.authority_manifest_sha256,
+    operation_authority_sha256: pass.operation_authority_sha256,
+    node_candidate_sha256: pass.node_candidate_sha256,
+    collector_contracts_sha256: pass.collector_contracts_sha256,
+    remote_generation_id: pass.remote_generation_id,
+    controller_generation_id: pass.controller_generation_id,
+  }));
+  const human = {
+    schema_version: 2, purpose: 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V2',
+    authority_sha: context.authority.commit,
+    approved_action: 'PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY',
+    authority_manifest_sha256: context.authority.manifest_sha256,
+    authority_projection_sha256: authorityProjectionSha256,
+    operation_authority_sha256: subject().sha256(authorityBytes),
+    publisher_input_manifest_sha256: subject().sha256(publisherManifestBytes),
+    vps_operation_authority_pass_sha256: subject().sha256(passBytes),
+    issuer_authority_sha256: subject().sha256(issuerBytes),
+    node_binary_sha256: subject().sha256(nodeBytes),
+    authorization_request_path_sha256: digest('1'), authorization_request_sha256: digest('2'),
+    authorization_request_identity_sha256: digest('3'), authorization_request_uid: 501,
+    authorization_request_gid: 20, authorization_request_mode: 0o600, authorization_request_nlink: 1,
+    receiver_root_path_sha256: digest('4'), receiver_root_identity_sha256: digest('5'),
+    receiver_leaves_sha256: digest('6'),
+    publisher_installer_git_path: 'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+    publisher_installer_git_blob_oid: oid('7'), publisher_installer_source_sha256: digest('8'),
+    publisher_installer_provenance_sha256: digest('9'),
+    publisher_installer_compile_authority_sha256: digest('a'),
+    publisher_installer_expected_binary_sha256: digest('b'),
+    prompt_sha256: digest('c'), prompt_budget: 1, authorized_uid: 501, authorized_gid: 20,
+    confirmation_sha256: digest('d'), attempt: 1, retry: false, raw_values: false,
+  };
+  const humanBytes = subject().canonicalJson(human);
+  const otherCandidates = {
+    'human-authorization': humanBytes,
+    'publisher-input-manifest': publisherManifestBytes,
+    'vps-pass': passBytes,
+    'vps-issuer-authority': issuerBytes,
+  };
+  for (const [role, bytes] of Object.entries(otherCandidates)) {
+    await writeFile(candidatePath(role), bytes, { flag: 'wx', mode: 0o600 });
+  }
+  const request = {
+    schema_version: 1, purpose: 'CI3_OPERATION_AUTHORITY_PUBLISHER_REQUEST_V1',
+    authority_sha: context.authority.commit,
+    authority_candidate_path: candidatePath('operation-authority'),
+    authority_candidate_sha256: subject().sha256(authorityBytes),
+    authority_manifest_candidate_path: candidatePath('authority-manifest'),
+    authority_manifest_candidate_sha256: subject().sha256(authorityManifestBytes),
+    controller_candidate_path: candidatePath('controller'), controller_candidate_sha256: subject().sha256(controllerBytes),
+    human_authorization_receipt_path: candidatePath('human-authorization'),
+    human_authorization_receipt_sha256: subject().sha256(humanBytes),
+    launch_attestation_candidate_path: candidatePath('launch-attestation'),
+    launch_attestation_candidate_sha256: subject().sha256(launchAttestationBytes),
+    launcher_candidate_path: candidatePath('launcher-runtime'), launcher_candidate_sha256: subject().sha256(launcherBytes),
+    node_candidate_path: candidatePath('node-runtime'), node_candidate_sha256: subject().sha256(nodeBytes),
+    publisher_input_manifest_path: candidatePath('publisher-input-manifest'),
+    publisher_input_manifest_sha256: subject().sha256(publisherManifestBytes),
+    ssh_config_candidate_path: candidatePath('ssh-config'), ssh_config_candidate_sha256: subject().sha256(sshBytes['ssh-config']),
+    ssh_known_hosts_candidate_path: candidatePath('ssh-known-hosts'), ssh_known_hosts_candidate_sha256: subject().sha256(sshBytes['ssh-known-hosts']),
+    ssh_private_key_candidate_path: candidatePath('ssh-private-key'), ssh_private_key_candidate_sha256: subject().sha256(sshBytes['ssh-private-key']),
+    ssh_public_key_candidate_path: candidatePath('ssh-public-key'), ssh_public_key_candidate_sha256: subject().sha256(sshBytes['ssh-public-key']),
+    ssh_trust_descriptor_candidate_path: candidatePath('ssh-trust-descriptor'), ssh_trust_descriptor_candidate_sha256: subject().sha256(sshBytes['ssh-trust-descriptor']),
+    vps_operation_authority_pass_path: candidatePath('vps-pass'),
+    vps_operation_authority_pass_sha256: subject().sha256(passBytes),
+    vps_issuer_authority_path: candidatePath('vps-issuer-authority'),
+    vps_issuer_authority_sha256: subject().sha256(issuerBytes),
+    attempt: 1, retry: false, raw_values: false,
+  };
+  await writeFile(
+    path.join(requestRoot, 'operation-authority.publisher-request.json'),
+    subject().canonicalJson(request), { flag: 'wx', mode: 0o600 },
+  );
+  const receiverRoot = path.join(
+    requestRoot, 'receiver', context.generations.remote, context.generations.controller,
+    request.publisher_input_manifest_sha256,
+  );
+  await mkdir(receiverRoot, { recursive: true, mode: 0o700 });
+  const launcherBootstrapAuthority = subject().buildExternalLauncherAuthority({
+    authoritySha: context.authority.commit,
+    controllerGenerationId: context.generations.controller,
+    nodeSha256: request.node_candidate_sha256,
+    controllerSha256: request.controller_candidate_sha256,
+    launcherSha256: request.launcher_candidate_sha256,
+    launchAttestationSha256: request.launch_attestation_candidate_sha256,
+    authorityManifestSha256: request.authority_manifest_candidate_sha256,
+    allowedModes: subject().EXTERNAL_OPERATIONAL_LAUNCHER_MODES,
+  });
+  const bytesByRole = {
+    'node-runtime': nodeBytes,
+    controller: controllerBytes,
+    'launcher-runtime': launcherBytes,
+    'launcher-bootstrap-authority': launcherBootstrapAuthority,
+    'launch-attestation': launchAttestationBytes,
+    'authority-manifest': authorityManifestBytes,
+    'operation-authority': authorityBytes,
+    'human-authorization': humanBytes,
+    'vps-pass': passBytes,
+    'vps-issuer-authority': issuerBytes,
+    'publisher-input-manifest': publisherManifestBytes,
+    ...sshBytes,
+  };
+  const externalChain = await import(new URL('./ci3-external-publisher-chain.mjs', import.meta.url));
+  const previousSyntheticTest = process.env.CI3_SYNTHETIC_TEST;
+  const previousSyntheticRoot = process.env.CI3_SYNTHETIC_TEST_ROOT;
+  try {
+    process.env.CI3_SYNTHETIC_TEST = '1';
+    process.env.CI3_SYNTHETIC_TEST_ROOT = homeDirectory;
+    const publisherChainContext = {
+      ...context,
+      authority: { ...context.authority, subject_sha256: launchAttestation.authority_subject_sha256 },
+      collector_contracts_sha256: publisherManifest.collector_contracts_sha256,
+      node_candidate_sha256: request.node_candidate_sha256,
+      operation_authority_sha256: request.authority_candidate_sha256,
+    };
+    await externalChain.preMaterializeFrozenControllerTransaction({
+      context: publisherChainContext, receiverRoot, receiverManifestSha256: request.publisher_input_manifest_sha256,
+      requestPath: path.join(requestRoot, 'publisher1-transaction.request.json'), bytesByRole,
+    });
+  } finally {
+    if (previousSyntheticTest === undefined) delete process.env.CI3_SYNTHETIC_TEST;
+    else process.env.CI3_SYNTHETIC_TEST = previousSyntheticTest;
+    if (previousSyntheticRoot === undefined) delete process.env.CI3_SYNTHETIC_TEST_ROOT;
+    else process.env.CI3_SYNTHETIC_TEST_ROOT = previousSyntheticRoot;
+  }
+  return {
+    homeDirectory, launchAttestation, context, issuerBytes, request,
+  };
+}
+
+test('round-12 real operation consumer authenticates inputs, settles sixteen targets, and reaches later writer authority', async () => {
+  const fixture = await realOperationPublisherFixture();
+  let adminInvocations = 0;
+  let persisted = null;
+  let settled = null;
+  try {
+    const io = {
+      homeDirectory: fixture.homeDirectory,
+      readRootImmutableFile: async (filePath, expectedSha256, expectedMode, code) => {
+        assert.equal(filePath, fixture.request.vps_issuer_authority_path);
+        assert.equal(expectedSha256, fixture.request.vps_issuer_authority_sha256);
+        assert.equal(expectedMode, 0o444);
+        assert.equal(code, 'STOP_PRE_AUTHORITY');
+        return { bytes: fixture.issuerBytes, metadata: metadata({ uid: 0, gid: 0, mode: 0o100444 }), immutable: true };
+      },
+      readPublisher1MaterializerAuthority: async (context, binding) => {
+        assert.deepEqual(context, fixture.context);
+        assert.equal(binding.receiverLeaves.length, 16);
+        const requestMetadata = binding.requestObservation.metadata;
+        const requestIdentitySha256 = subject().sha256(Buffer.from([
+          `uid=${requestMetadata.uid}`, `gid=${requestMetadata.gid}`, `mode=${requestMetadata.mode}`,
+          `nlink=${requestMetadata.nlink}`, `size=${requestMetadata.size}`,
+          `mtime=${requestMetadata.mtime_ns}`, `dev=${requestMetadata.dev}`, `ino=${requestMetadata.ino}`,
+        ].join(';')));
+        const binaryPath = path.join(
+          '/Library/Application Support/Agentempp/ci3-publisher1-bootstrap',
+          context.authority.commit, `bootstrap-${context.authority.manifest_sha256}`,
+          'runtime', 'ci3-terminal-anchor-writer',
+        );
+        return {
+          authority: {
+            schema_version: 2, purpose: 'CI3_PUBLISHER1_MATERIALIZER_AUTHORITY_V2',
+            authority_sha: context.authority.commit, controller_generation_id: context.generations.controller,
+            issuer_authority_sha256: fixture.request.vps_issuer_authority_sha256,
+            materializer_path: binaryPath, materializer_path_sha256: subject().sha256(Buffer.from(binaryPath)),
+            materializer_sha256: digest('1'), writer_source_sha256: context.authority.components.writer.sha256,
+            request_path_sha256: subject().sha256(Buffer.from(binding.publisher1RequestPath)),
+            request_sha256: subject().sha256(binding.publisher1RequestBytes),
+            request_identity_sha256: requestIdentitySha256,
+            request_uid: binding.requestObservation.metadata.uid, request_gid: binding.requestObservation.metadata.gid,
+            request_mode: 0o600, request_nlink: 1,
+            receiver_root_path_sha256: subject().sha256(Buffer.from(binding.receiverRoot)),
+            receiver_root_identity_sha256: binding.receiverRootIdentitySha256,
+            receiver_leaves: binding.receiverLeaves,
+            allowed_environment: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+            normal_executor_authorized: false, raw_values: false,
+          },
+          binaryPath,
+          binary: { bytes: Buffer.from('synthetic-fixed-materializer'), metadata: metadata({ uid: 0, gid: 0, mode: 0o100555 }), immutable: true },
+        };
+      },
+      observePublisher1: async ({ expected, expectedShaByRole, bytesByRole, installation, publisher1Request }) => {
+        assert.equal(Object.keys(expectedShaByRole).length, 16);
+        assert.deepEqual(Object.keys(expectedShaByRole), Object.keys(installation.targets));
+        assert.equal(publisher1Request.entries.length, 16);
+        await subject().verifyInstalledPublisherTargets({
+          expectedSha256ByRole: expectedShaByRole,
+          readTarget: async (role) => ({
+            bytes: bytesByRole[role],
+            metadata: metadata({ uid: 0, gid: 0, mode: 0o100000 | installation.targets[role].mode }),
+            immutable: true,
+          }),
+        });
+        return settled ?? { state: 'ABSENT' };
+      },
+      invokeAdmin: async ({ expected, expectedShaByRole }) => {
+        adminInvocations += 1;
+        assert.equal(Object.keys(expectedShaByRole).length, 16);
+        settled = {
+          state: 'SETTLED', ...expected, claim_sha256: digest('2'), result_sha256: digest('3'),
+          tree_verified: true, raw_values: false,
+        };
+      },
+      persistReceipt: async ({ settled: observation, expectedShaByRole, installation }) => {
+        assert.equal(Object.keys(expectedShaByRole).length, 16);
+        assert.equal(Object.keys(installation.targets).length, 16);
+        persisted = structuredClone(observation);
+      },
+    };
+    const adapters = await subject().createOperationAuthorityPublisher({
+      launchAttestation: fixture.launchAttestation, io,
+    });
+    const result = await adapters.publishOperationAuthority();
+    assert.deepEqual(result, { status: 'CREATED', raw_values: false });
+    assert.equal(adminInvocations, 1);
+    assert.deepEqual(persisted, settled);
+
+    const privilegedClaim = subject().buildPrivilegedPublisherClaim({
+      authoritySha: fixture.context.authority.commit,
+      terminalGenerationId: fixture.context.generations.terminal,
+      terminalManifestSha256: digest('4'), writerSourceSha256: fixture.context.authority.components.writer.sha256,
+      writerBinarySha256: digest('5'), anchorPathSha256: digest('6'),
+    });
+    const privilegedReceipt = subject().buildPrivilegedPublisherReceipt({
+      authoritySha: fixture.context.authority.commit,
+      terminalGenerationId: fixture.context.generations.terminal,
+      terminalManifestSha256: digest('4'), writerSourceSha256: fixture.context.authority.components.writer.sha256,
+      writerBinarySha256: digest('5'), writerSignatureSha256: digest('7'),
+      privilegedClaimSha256: subject().sha256(subject().canonicalJson(privilegedClaim)),
+      authorityPathSha256: digest('8'), anchorPathSha256: digest('6'),
+      terminalManifestPathSha256: digest('9'),
+      writerExecutablePathSha256: subject().sha256(Buffer.from(subject().privilegedWriterExecutablePath(
+        fixture.context.authority.commit, fixture.context.generations.terminal,
+      ))),
+      writerExecutableIdentitySha256: digest('a'),
+    });
+    assert.equal(subject().validatePrivilegedWriterAuthorityReceipt(privilegedReceipt, {
+      authoritySha: fixture.context.authority.commit,
+      terminalGenerationId: fixture.context.generations.terminal,
+      terminalManifestSha256: digest('4'), writerSourceSha256: fixture.context.authority.components.writer.sha256,
+      writerBinarySha256: digest('5'), writerSignatureSha256: digest('7'),
+      privilegedClaimSha256: subject().sha256(subject().canonicalJson(privilegedClaim)),
+      authorityPathSha256: digest('8'), anchorPathSha256: digest('6'),
+      terminalManifestPathSha256: digest('9'),
+      writerExecutablePathSha256: privilegedReceipt.writer_executable_path_sha256,
+      writerExecutableIdentitySha256: digest('a'),
+    }), true);
+  } finally {
+    await rm(fixture.homeDirectory, { recursive: true, force: true });
+  }
 });
 
 test('round-10 terminalization seals COMPLETE once before one privileged writer and performs no normal write afterwards', async () => {

@@ -145,14 +145,45 @@ private func jsonBytes(_ value: [String: Any]) throws -> Data {
     return data
 }
 
+private func portableCanonicalJSONFragment(_ value: Any) throws -> Data {
+    if let object = value as? [String: Any] {
+        var data = Data([0x7b])
+        let keys = object.keys.sorted { left, right in
+            left.utf8.lexicographicallyPrecedes(right.utf8)
+        }
+        for (index, key) in keys.enumerated() {
+            if index > 0 { data.append(0x2c) }
+            data += try JSONSerialization.data(
+                withJSONObject: key, options: [.fragmentsAllowed, .withoutEscapingSlashes]
+            )
+            data.append(0x3a)
+            data += try portableCanonicalJSONFragment(object[key]!)
+        }
+        data.append(0x7d)
+        return data
+    }
+    if let array = value as? [Any] {
+        var data = Data([0x5b])
+        for (index, member) in array.enumerated() {
+            if index > 0 { data.append(0x2c) }
+            data += try portableCanonicalJSONFragment(member)
+        }
+        data.append(0x5d)
+        return data
+    }
+    return try JSONSerialization.data(
+        withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes]
+    )
+}
+
 private func compactJSONBytes(_ value: [String: Any]) throws -> Data {
-    var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
+    var data = try portableCanonicalJSONFragment(value)
     data.append(0x0a)
     return data
 }
 
 private func compactJSONArrayBytes(_ value: [[String: Any]]) throws -> Data {
-    var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
+    var data = try portableCanonicalJSONFragment(value)
     data.append(0x0a)
     return data
 }
@@ -2416,6 +2447,81 @@ private func readDescriptorBytes(_ descriptor: Int32, _ code: String) throws -> 
     return bytes
 }
 
+private typealias Publisher1ValidatedSource = (
+    entry: [String: Any], descriptor: Int32, bytes: Data, physical: Physical
+)
+
+private func validatePublisher1Entry(
+    _ raw: Any, index: Int, receiverRoot: String, controllerGeneration: String, code: String
+) throws -> [String: Any] {
+    let entry = try dictionary(raw, code)
+    try exactKeys(entry, [
+        "destination_relative_path", "mode", "role", "source_dev", "source_gid",
+        "source_identity_sha256", "source_ino", "source_mode", "source_mtime_ns",
+        "source_nlink", "source_path", "source_path_sha256", "source_sha256",
+        "source_size", "source_uid",
+    ], code)
+    guard publisher1Targets.indices.contains(index) else { try fail(code) }
+    let expected = publisher1Targets[index]
+    let expectedRelative = expected.1.replacingOccurrences(of: "{controller}", with: controllerGeneration)
+    let role = try string(entry["role"], code)
+    let sourcePath = (receiverRoot as NSString).appendingPathComponent("\(role).payload")
+    guard role == expected.0, try string(entry["destination_relative_path"], code) == expectedRelative,
+          try integer(entry["mode"], code) == expected.2,
+          try string(entry["source_path"], code) == sourcePath,
+          try string(entry["source_path_sha256"], code) == sha256(Data(sourcePath.utf8)),
+          isHex(try string(entry["source_sha256"], code), count: 64),
+          isHex(try string(entry["source_identity_sha256"], code), count: 64),
+          try integer(entry["source_uid"], code) > 0,
+          try integer(entry["source_gid"], code) > 0,
+          try integer(entry["source_mode"], code) == 0o600,
+          try integer(entry["source_nlink"], code) == 1,
+          try integer(entry["source_size"], code) >= 0,
+          Int(try string(entry["source_mtime_ns"], code)) != nil,
+          UInt64(try string(entry["source_dev"], code)) != nil,
+          UInt64(try string(entry["source_ino"], code)) != nil else {
+        try fail("PUBLISHER1_SOURCE_AUTHORITY")
+    }
+    return entry
+}
+
+private func openValidatedPublisher1Sources(
+    entries: [[String: Any]], receiverFD: Int32, code: String
+) throws -> [Publisher1ValidatedSource] {
+    var sources: [Publisher1ValidatedSource] = []
+    do {
+        for entry in entries {
+            let role = try string(entry["role"], code)
+            let leaf = "\(role).payload"
+            let descriptor = leaf.withCString { Darwin.openat(receiverFD, $0, O_RDONLY | O_NOFOLLOW) }
+            guard descriptor >= 0 else { try fail(code) }
+            let before = try fstatValue(descriptor, code)
+            let bytes = try readDescriptorBytes(descriptor, code)
+            let after = try fstatValue(descriptor, code)
+            let observed = physical(after)
+            guard physical(before) == observed, (after.st_mode & S_IFMT) == S_IFREG,
+                  observed.uid == UInt32(try integer(entry["source_uid"], code)),
+                  observed.gid == UInt32(try integer(entry["source_gid"], code)),
+                  observed.mode == UInt16(try integer(entry["source_mode"], code)),
+                  observed.nlink == UInt16(try integer(entry["source_nlink"], code)),
+                  observed.size == Int64(try integer(entry["source_size"], code)),
+                  observed.mtimeNS == (try string(entry["source_mtime_ns"], code)),
+                  observed.dev == (try string(entry["source_dev"], code)),
+                  observed.ino == (try string(entry["source_ino"], code)),
+                  try physicalIdentityHash(observed) == string(entry["source_identity_sha256"], code),
+                  try sha256(bytes) == string(entry["source_sha256"], code) else {
+                Darwin.close(descriptor)
+                try fail("PUBLISHER1_SOURCE_AUTHORITY")
+            }
+            sources.append((entry, descriptor, bytes, observed))
+        }
+        return sources
+    } catch {
+        for source in sources { Darwin.close(source.descriptor) }
+        throw error
+    }
+}
+
 private func writeExclusiveAt(
     _ parentFD: Int32, _ name: String, bytes: Data, mode: mode_t,
     makeImmutable: Bool = true, code: String
@@ -2700,11 +2806,15 @@ private func publisher1PromotionProbe(_ transactionRoot: String) throws {
 #if !CI3_SYNTHETIC_TEST
 private func validatePublisher1Bootstrap(authority: String, controllerGeneration: String) throws -> (Data, [String: Any]) {
     let code = "STOP_PRE_AUTHORITY"
-    let root = "/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/\(authority)/\(controllerGeneration)"
+    let binaryPath = URL(fileURLWithPath: CommandLine.arguments[0]).standardized.path
+    let runtimeRoot = (binaryPath as NSString).deletingLastPathComponent
+    let root = (runtimeRoot as NSString).deletingLastPathComponent
+    let expectedPrefix = "/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/\(authority)/bootstrap-"
+    let bootstrapDigest = String(root.dropFirst(expectedPrefix.count))
+    guard root.hasPrefix(expectedPrefix), isHex(bootstrapDigest, count: 64) else { try fail(code) }
     let authorityPath = "\(root)/publisher1-materializer.authority.json"
     let issuerPath = "\(root)/vps-issuer-authority.receipt.json"
-    let binaryPath = "\(root)/runtime/ci3-terminal-anchor-writer"
-    guard URL(fileURLWithPath: CommandLine.arguments[0]).standardized.path == binaryPath else { try fail(code) }
+    guard binaryPath == "\(root)/runtime/ci3-terminal-anchor-writer" else { try fail(code) }
     let (authorityBytes, authorityPhysical) = try readBoundFile(authorityPath, mode: 0o444, code: code)
     let (issuerBytes, issuerPhysical) = try readBoundFile(issuerPath, mode: 0o444, code: code)
     let (binaryBytes, binaryPhysical) = try readBoundFile(binaryPath, mode: 0o555, code: code)
@@ -2782,22 +2892,39 @@ private func validatePublisher1SemanticSources(
           isGeneration(try string(issuer["issuer_generation_id"], code), prefix: "issuer"),
           try string(issuer["public_key_algorithm"], code) == "Ed25519",
           try string(issuer["public_key_sha256"], code) == sha256(issuerKey),
+          try string(issuer["issuer_identity_sha256"], code) == sha256(
+            Data((try string(issuer["authority_sha"], code)).utf8)
+              + Data((try string(issuer["issuer_generation_id"], code)).utf8) + issuerKey
+          ),
           try string(issuer["allowed_pass_purpose"], code) == "CI3_VPS_OPERATION_AUTHORITY_PASS_V1",
           try bool(issuer["normal_executor_authorized"], code) == false,
           try bool(issuer["raw_values"], code) == false else { try fail(code) }
 
     let pass = try object("vps-pass")
+    try exactKeys(pass, [
+        "attempt", "authority_manifest_sha256", "authority_parent", "authority_sha", "authority_subject_sha256",
+        "authority_tree", "collector_contracts_sha256", "controller_generation_id", "issuer_authority_sha256",
+        "issuer_key_sha256", "node_candidate_sha256", "operation_authority_sha256",
+        "publisher_input_manifest_sha256", "purpose", "raw_values", "remote_generation_id", "retry",
+        "schema_version", "signature_base64", "signed_payload_sha256", "source_generation_id", "transfer_payload_sha256",
+    ], code)
     var signedPayload = pass
     let signatureText = try string(signedPayload.removeValue(forKey: "signature_base64"), code)
     let signedPayloadHash = try string(signedPayload.removeValue(forKey: "signed_payload_sha256"), code)
     let signedPayloadBytes = try compactJSONBytes(signedPayload)
     guard let signature = Data(base64Encoded: signatureText), signature.count == 64,
+          try integer(pass["schema_version"], code) == 1,
           try string(pass["purpose"], code) == "CI3_VPS_OPERATION_AUTHORITY_PASS_V1",
           try string(pass["authority_sha"], code) == authority,
+          isHex(try string(pass["authority_parent"], code), count: 40),
+          isHex(try string(pass["authority_tree"], code), count: 40),
+          isHex(try string(pass["authority_subject_sha256"], code), count: 64),
+          try string(pass["authority_manifest_sha256"], code) == sha256(bytes("authority-manifest")),
           try string(pass["remote_generation_id"], code) == remoteGeneration,
           try string(pass["controller_generation_id"], code) == controllerGeneration,
           try string(pass["issuer_authority_sha256"], code) == sha256(issuerBytes),
           try string(pass["issuer_key_sha256"], code) == sha256(issuerKey),
+          try string(pass["source_generation_id"], code) == "src-\(sha256(issuerBytes))",
           signedPayloadHash == (try sha256(signedPayloadBytes)),
           try Curve25519.Signing.PublicKey(rawRepresentation: issuerKey).isValidSignature(signature, for: signedPayloadBytes),
           try integer(pass["attempt"], code) == 1, try bool(pass["retry"], code) == false,
@@ -2805,17 +2932,126 @@ private func validatePublisher1SemanticSources(
 
     let operationBytes = try bytes("operation-authority")
     let operation = try object("operation-authority")
+    try exactKeys(operation, [
+        "context", "purpose", "raw_values", "remote", "scans", "schema_version",
+        "simulator", "ssh", "worktree", "writer",
+    ], code)
     let operationContext = try dictionary(operation["context"], code)
+    try exactKeys(operationContext, ["authority", "generations", "remote"], code)
     let operationAuthority = try dictionary(operationContext["authority"], code)
+    try exactKeys(operationAuthority, ["commit", "components", "manifest_sha256", "parent", "subject", "tree"], code)
     let generations = try dictionary(operationContext["generations"], code)
+    try exactKeys(generations, ["controller", "remote", "simulator", "terminal"], code)
     let components = try dictionary(operationAuthority["components"], code)
+    try exactKeys(components, ["controller", "generator", "launcher", "writer"], code)
+    for componentName in ["controller", "generator", "launcher", "writer"] {
+        let component = try dictionary(components[componentName], code)
+        try exactKeys(component, ["blob_oid", "path", "sha256"], code)
+        guard isHex(try string(component["blob_oid"], code), count: 40),
+              isHex(try string(component["sha256"], code), count: 64) else { try fail(code) }
+    }
+    let operationRemoteContext = try dictionary(operationContext["remote"], code)
+    try exactKeys(operationRemoteContext, [
+        "bundle_path_sha256", "config_path_sha256", "config_sha256", "credential_path_sha256",
+        "credential_sha256", "receipt_path_sha256", "receipt_sha256",
+    ], code)
+    for field in operationRemoteContext.keys {
+        guard isHex(try string(operationRemoteContext[field], code), count: 64) else { try fail(code) }
+    }
+    let worktree = try dictionary(operation["worktree"], code)
+    try exactKeys(worktree, [
+        "branch", "changed_paths", "continuation_allowlist_sha256", "diff_sha256", "head", "status_sha256",
+    ], code)
+    guard !(try string(worktree["branch"], code)).isEmpty,
+          isHex(try string(worktree["continuation_allowlist_sha256"], code), count: 64),
+          isHex(try string(worktree["diff_sha256"], code), count: 64),
+          isHex(try string(worktree["head"], code), count: 40),
+          isHex(try string(worktree["status_sha256"], code), count: 64),
+          !(try array(worktree["changed_paths"], code)).isEmpty else { try fail(code) }
+    let simulator = try dictionary(operation["simulator"], code)
+    try exactKeys(simulator, [
+        "app_installation_sha256", "container_identity_sha256", "container_path_sha256", "device_selection_sha256",
+        "device_udid", "probe_ack_sha256", "probe_config_path", "probe_config_sha256",
+        "probe_credential_path", "probe_credential_sha256", "runtime_sha256",
+    ], code)
+    for field in [
+        "app_installation_sha256", "container_identity_sha256", "container_path_sha256", "device_selection_sha256",
+        "probe_ack_sha256", "probe_config_sha256", "probe_credential_sha256", "runtime_sha256",
+    ] { guard isHex(try string(simulator[field], code), count: 64) else { try fail(code) } }
+    guard !(try string(simulator["device_udid"], code)).isEmpty,
+          (try string(simulator["probe_config_path"], code)).hasPrefix("/"),
+          (try string(simulator["probe_credential_path"], code)).hasPrefix("/") else { try fail(code) }
     let ssh = try dictionary(operation["ssh"], code)
-    guard try string(operation["purpose"], code) == "CI3_MAC_OPERATION_AUTHORITY_V1",
+    try exactKeys(ssh, [
+        "alias", "code_signature_sha256", "config_path", "config_sha256", "destination_sha256",
+        "effective_config_sha256", "executable_path_sha256", "executable_sha256", "host_key_ed25519_sha256",
+        "identity_path", "identity_public_key_fingerprint_sha256", "identity_public_key_path",
+        "identity_public_key_sha256", "identity_sha256", "known_hosts_path", "known_hosts_sha256", "port",
+        "trust_descriptor_path", "trust_descriptor_sha256", "version_sha256",
+    ], code)
+    for field in [
+        "code_signature_sha256", "config_sha256", "destination_sha256", "effective_config_sha256",
+        "executable_path_sha256", "executable_sha256", "host_key_ed25519_sha256",
+        "identity_public_key_fingerprint_sha256", "identity_public_key_sha256", "identity_sha256",
+        "known_hosts_sha256", "trust_descriptor_sha256", "version_sha256",
+    ] { guard isHex(try string(ssh[field], code), count: 64) else { try fail(code) } }
+    guard (try string(ssh["config_path"], code)).hasPrefix("/"),
+          (try string(ssh["identity_path"], code)).hasPrefix("/"),
+          (try string(ssh["identity_public_key_path"], code)).hasPrefix("/"),
+          (try string(ssh["known_hosts_path"], code)).hasPrefix("/"),
+          (try string(ssh["trust_descriptor_path"], code)).hasPrefix("/"),
+          try integer(ssh["port"], code) > 0 else { try fail(code) }
+    let operationRemote = try dictionary(operation["remote"], code)
+    try exactKeys(operationRemote, ["config_path", "credential_path", "receipt_path"], code)
+    for field in ["config_path", "credential_path", "receipt_path"] {
+        guard (try string(operationRemote[field], code)).hasPrefix("/") else { try fail(code) }
+    }
+    let scans = try dictionary(operation["scans"], code)
+    try exactKeys(scans, scanIDs, code)
+    for scanID in scanIDs {
+        let scan = try dictionary(scans[scanID], code)
+        try exactKeys(scan, ["collector_version", "contract_sha256", "format", "id", "source_role", "tool_sha256"], code)
+        guard try string(scan["id"], code) == scanID,
+              !(try string(scan["collector_version"], code)).isEmpty,
+              !(try string(scan["format"], code)).isEmpty,
+              !(try string(scan["source_role"], code)).isEmpty,
+              isHex(try string(scan["contract_sha256"], code), count: 64),
+              isHex(try string(scan["tool_sha256"], code), count: 64) else { try fail(code) }
+    }
+    let writer = try dictionary(operation["writer"], code)
+    try exactKeys(writer, ["authority_path", "manifest_path", "phase_target_contracts"], code)
+    guard (try string(writer["authority_path"], code)).hasPrefix("/"),
+          (try string(writer["manifest_path"], code)).hasPrefix("/") else { try fail(code) }
+    let phaseContracts = try array(writer["phase_target_contracts"], code).map { try dictionary($0, code) }
+    guard phaseContracts.count == controllerEvidencePhases.count else { try fail(code) }
+    for index in phaseContracts.indices {
+        let contract = phaseContracts[index]
+        try exactKeys(contract, ["phase", "targets"], code)
+        guard try string(contract["phase"], code) == controllerEvidencePhases[index] else { try fail(code) }
+        let targets = try array(contract["targets"], code).map { try dictionary($0, code) }
+        guard !targets.isEmpty else { try fail(code) }
+        for target in targets {
+            try exactKeys(target, ["allowed_gids", "allowed_uids", "immutable", "modes", "path_sha256", "role", "state"], code)
+            guard !(try string(target["role"], code)).isEmpty,
+                  ["PRESENT", "ABSENT"].contains(try string(target["state"], code)),
+                  isHex(try string(target["path_sha256"], code), count: 64),
+                  (target["immutable"] as? Bool) != nil else { try fail(code) }
+            _ = try array(target["allowed_gids"], code); _ = try array(target["allowed_uids"], code)
+            _ = try array(target["modes"], code)
+        }
+    }
+    guard try integer(operation["schema_version"], code) == 1,
+          try string(operation["purpose"], code) == "CI3_MAC_OPERATION_AUTHORITY_V1",
           try string(operationAuthority["commit"], code) == authority,
           try string(generations["remote"], code) == remoteGeneration,
           try string(generations["controller"], code) == controllerGeneration,
+          isGeneration(try string(generations["simulator"], code), prefix: "simulator"),
+          isGeneration(try string(generations["terminal"], code), prefix: "terminal"),
           try string(pass["operation_authority_sha256"], code) == sha256(operationBytes),
           try string(pass["node_candidate_sha256"], code) == sha256(bytes("node-runtime")),
+          try string(pass["authority_parent"], code) == string(operationAuthority["parent"], code),
+          try string(pass["authority_tree"], code) == string(operationAuthority["tree"], code),
+          try string(pass["authority_subject_sha256"], code) == sha256(Data(string(operationAuthority["subject"], code).utf8)),
           try string(operationAuthority["manifest_sha256"], code) == sha256(bytes("authority-manifest")),
           try string(dictionary(components["controller"], code)["sha256"], code) == sha256(bytes("controller")),
           try string(dictionary(components["launcher"], code)["sha256"], code) == sha256(bytes("launcher-runtime")),
@@ -2823,20 +3059,43 @@ private func validatePublisher1SemanticSources(
           try string(ssh["known_hosts_sha256"], code) == sha256(bytes("ssh-known-hosts")),
           try string(ssh["identity_sha256"], code) == sha256(bytes("ssh-private-key")),
           try string(ssh["identity_public_key_sha256"], code) == sha256(bytes("ssh-public-key")),
-          try string(ssh["trust_descriptor_sha256"], code) == sha256(bytes("ssh-trust-descriptor")) else { try fail(code) }
+          try string(ssh["trust_descriptor_sha256"], code) == sha256(bytes("ssh-trust-descriptor")),
+          try bool(operation["raw_values"], code) == false else { try fail(code) }
+
+    let authorityProjection: [String: Any] = [
+        "authority_sha": try string(pass["authority_sha"], code),
+        "authority_parent": try string(pass["authority_parent"], code),
+        "authority_tree": try string(pass["authority_tree"], code),
+        "authority_subject_sha256": try string(pass["authority_subject_sha256"], code),
+        "authority_manifest_sha256": try string(pass["authority_manifest_sha256"], code),
+        "operation_authority_sha256": try string(pass["operation_authority_sha256"], code),
+        "node_candidate_sha256": try string(pass["node_candidate_sha256"], code),
+        "collector_contracts_sha256": try string(pass["collector_contracts_sha256"], code),
+        "remote_generation_id": try string(pass["remote_generation_id"], code),
+        "controller_generation_id": try string(pass["controller_generation_id"], code),
+    ]
+    let authorityProjectionHash = try sha256(compactJSONBytes(authorityProjection))
 
     let publisherBytes = try bytes("publisher-input-manifest")
     let publisher = try object("publisher-input-manifest")
+    try exactKeys(publisher, [
+        "authority_sha", "collector_contracts_sha256", "controller_generation_id", "entries", "purpose",
+        "raw_values", "remote_generation_id", "schema_version", "transfer_payload_sha256",
+    ], code)
     let publisherEntries = try array(publisher["entries"], code).map { try dictionary($0, code) }
     let transportRoles = Array(publisher1Targets.map(\.0).prefix(3)) + [
         "launch-attestation", "authority-manifest", "operation-authority", "ssh-config",
         "ssh-known-hosts", "ssh-private-key", "ssh-public-key", "ssh-trust-descriptor",
     ]
+    for entry in publisherEntries { try exactKeys(entry, ["path_sha256", "role", "sha256"], code) }
     guard receiverManifestHash == (try sha256(publisherBytes)),
+          try integer(publisher["schema_version"], code) == 1,
           try string(publisher["purpose"], code) == "CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2",
           try string(publisher["authority_sha"], code) == authority,
           try string(publisher["remote_generation_id"], code) == remoteGeneration,
           try string(publisher["controller_generation_id"], code) == controllerGeneration,
+          try string(publisher["collector_contracts_sha256"], code) == sha256(compactJSONBytes(scans)),
+          try string(pass["collector_contracts_sha256"], code) == sha256(compactJSONBytes(scans)),
           publisherEntries.count == transportRoles.count,
           try string(publisher["transfer_payload_sha256"], code) == sha256(compactJSONArrayBytes(publisherEntries)),
           try string(pass["publisher_input_manifest_sha256"], code) == sha256(publisherBytes),
@@ -2850,23 +3109,82 @@ private func validatePublisher1SemanticSources(
 
     let attestationBytes = try bytes("launch-attestation")
     let attestation = try object("launch-attestation")
+    try exactKeys(attestation, [
+        "authority_manifest_sha256", "authority_parent", "authority_sha", "authority_subject_sha256",
+        "authority_tree", "components", "purpose", "raw_values", "schema_version", "tools",
+    ], code)
     let attestationComponents = try dictionary(attestation["components"], code)
+    try exactKeys(attestationComponents, ["controller", "generator", "launcher", "writer"], code)
+    for componentName in ["controller", "generator", "launcher", "writer"] {
+        let component = try dictionary(attestationComponents[componentName], code)
+        try exactKeys(component, ["blob_oid", "path", "sha256"], code)
+        guard try compactJSONBytes(component) == compactJSONBytes(dictionary(components[componentName], code)) else { try fail(code) }
+    }
     let tools = try dictionary(attestation["tools"], code)
-    guard try string(attestation["authority_sha"], code) == authority,
-          try string(attestation["controller_generation_id"], code) == controllerGeneration,
+    try exactKeys(tools, ["node", "ssh", "swiftc", "xcodebuild"], code)
+    for toolName in ["node", "ssh", "swiftc", "xcodebuild"] {
+        let tool = try dictionary(tools[toolName], code)
+        try exactKeys(tool, ["binary_sha256", "path_sha256", "version_sha256"], code)
+        for field in ["binary_sha256", "path_sha256", "version_sha256"] {
+            guard isHex(try string(tool[field], code), count: 64) else { try fail(code) }
+        }
+    }
+    guard try integer(attestation["schema_version"], code) == 1,
+          try string(attestation["purpose"], code) == "CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2",
+          try string(attestation["authority_sha"], code) == authority,
+          try string(attestation["authority_parent"], code) == string(operationAuthority["parent"], code),
+          try string(attestation["authority_tree"], code) == string(operationAuthority["tree"], code),
+          try string(attestation["authority_subject_sha256"], code) == sha256(Data(string(operationAuthority["subject"], code).utf8)),
           try string(attestation["authority_manifest_sha256"], code) == sha256(bytes("authority-manifest")),
           try string(dictionary(attestationComponents["controller"], code)["sha256"], code) == sha256(bytes("controller")),
           try string(dictionary(attestationComponents["launcher"], code)["sha256"], code) == sha256(bytes("launcher-runtime")),
-          try string(dictionary(tools["node"], code)["binary_sha256"], code) == sha256(bytes("node-runtime")) else { try fail(code) }
+          try string(dictionary(tools["node"], code)["binary_sha256"], code) == sha256(bytes("node-runtime")),
+          try string(dictionary(tools["ssh"], code)["binary_sha256"], code) == string(ssh["executable_sha256"], code),
+          try bool(attestation["raw_values"], code) == false else { try fail(code) }
 
     let human = try object("human-authorization")
-    guard try string(human["purpose"], code) == "CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V1",
+    let humanKeys = [
+        "approved_action", "attempt", "authority_manifest_sha256", "authority_sha",
+        "authorization_request_gid", "authorization_request_identity_sha256", "authorization_request_mode",
+        "authorization_request_nlink", "authorization_request_path_sha256", "authorization_request_sha256",
+        "authorization_request_uid", "authorized_gid", "authorized_uid", "confirmation_sha256",
+        "issuer_authority_sha256", "node_binary_sha256", "operation_authority_sha256", "authority_projection_sha256",
+        "prompt_budget", "prompt_sha256", "publisher_input_manifest_sha256",
+        "publisher_installer_compile_authority_sha256", "publisher_installer_expected_binary_sha256",
+        "publisher_installer_git_blob_oid", "publisher_installer_git_path",
+        "publisher_installer_provenance_sha256", "publisher_installer_source_sha256",
+        "purpose", "raw_values", "receiver_leaves_sha256", "receiver_root_identity_sha256",
+        "receiver_root_path_sha256", "retry", "schema_version", "vps_operation_authority_pass_sha256",
+    ]
+    try exactKeys(human, humanKeys, code)
+    guard try integer(human["schema_version"], code) == 2,
+          try string(human["purpose"], code) == "CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V2",
           try string(human["approved_action"], code) == "PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY",
           try string(human["authority_sha"], code) == authority,
+          try string(human["authority_manifest_sha256"], code) == sha256(bytes("authority-manifest")),
           try string(human["operation_authority_sha256"], code) == sha256(operationBytes),
+          try string(human["authority_projection_sha256"], code) == authorityProjectionHash,
           try string(human["publisher_input_manifest_sha256"], code) == sha256(publisherBytes),
           try string(human["vps_operation_authority_pass_sha256"], code) == sha256(bytes("vps-pass")),
+          try string(human["issuer_authority_sha256"], code) == sha256(issuerBytes),
           try string(human["node_binary_sha256"], code) == sha256(bytes("node-runtime")),
+          try integer(human["authorization_request_uid"], code) > 0,
+          try integer(human["authorization_request_gid"], code) > 0,
+          try integer(human["authorization_request_mode"], code) == 0o600,
+          try integer(human["authorization_request_nlink"], code) == 1,
+          try integer(human["authorized_uid"], code) > 0,
+          try integer(human["authorized_gid"], code) > 0,
+          try integer(human["prompt_budget"], code) == 1,
+          try string(human["publisher_installer_git_path"], code) == "scripts/ci3/ci3-publisher1-bootstrap-installer.swift",
+          isHex(try string(human["publisher_installer_git_blob_oid"], code), count: 40),
+          ["authority_projection_sha256", "authorization_request_identity_sha256", "authorization_request_path_sha256",
+           "authorization_request_sha256", "confirmation_sha256", "prompt_sha256",
+           "publisher_installer_compile_authority_sha256", "publisher_installer_expected_binary_sha256",
+           "publisher_installer_provenance_sha256", "publisher_installer_source_sha256",
+           "receiver_leaves_sha256", "receiver_root_identity_sha256", "receiver_root_path_sha256"].allSatisfy({
+              guard let value = human[$0] as? String else { return false }
+              return isHex(value, count: 64)
+          }),
           try integer(human["attempt"], code) == 1, try bool(human["retry"], code) == false,
           try bool(human["raw_values"], code) == false else { try fail(code) }
 
@@ -2879,12 +3197,413 @@ private func validatePublisher1SemanticSources(
         "controller_generation_id \(controllerGeneration)", "node_sha256 \(nodeHash)",
         "controller_sha256 \(controllerHash)", "launcher_sha256 \(launcherHash)",
         "launch_attestation_sha256 \(try sha256(attestationBytes))", "authority_manifest_sha256 \(authorityManifestHash)",
-        "allowed_modes plan,verify-simulator,verify-ssh,fetch,install-simulator,scan,write-terminal-anchor,resume,status,publish-privileged-writer-authority",
+        "allowed_modes --self-test,plan,verify-simulator,verify-ssh,fetch,install-simulator,scan,write-terminal-anchor,resume,publish-operation-authority,publish-privileged-writer-authority,status",
         "raw_values false", "",
     ].joined(separator: "\n").utf8)
     let installedLauncherAuthority = try bytes("launcher-bootstrap-authority")
     guard launcherAuthority == installedLauncherAuthority else { try fail(code) }
 }
+
+#if CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_V1
+private func publisher1SemanticPreflight(arguments: [String]) throws {
+    let inputCode = "PUBLISHER1_PREFLIGHT_INPUT"
+    let authorityCode = "STOP_PRE_AUTHORITY"
+    guard arguments.count == 2, arguments[0].hasPrefix("/"), !arguments[0].contains("/../"),
+          URL(fileURLWithPath: arguments[0]).standardized.path == arguments[0],
+          isHex(arguments[1], count: 64) else { try fail(inputCode) }
+    let (preflightBytes, preflightPhysical) = try readBoundFile(arguments[0], mode: 0o600, code: inputCode)
+    guard try sha256(preflightBytes) == arguments[1], preflightPhysical.uid == geteuid(),
+          preflightPhysical.gid == getegid(), preflightPhysical.nlink == 1 else { try fail(inputCode) }
+    let preflight = try jsonObject(preflightBytes, inputCode)
+    guard try compactJSONBytes(preflight) == preflightBytes else { try fail(inputCode) }
+    try exactKeys(preflight, [
+        "attempt", "authority_sha", "bootstrap_request_gid", "bootstrap_request_identity_sha256",
+        "bootstrap_request_path", "bootstrap_request_path_sha256", "bootstrap_request_sha256",
+        "bootstrap_request_uid", "controller_generation_id", "descriptor_request_gid",
+        "descriptor_request_identity_sha256", "descriptor_request_path", "descriptor_request_path_sha256",
+        "descriptor_request_sha256", "descriptor_request_uid", "purpose", "raw_values",
+        "receiver_root_identity_sha256", "receiver_root_path_sha256", "remote_generation_id", "retry",
+        "schema_version", "validation_binary_sha256",
+    ], inputCode)
+    let authority = try string(preflight["authority_sha"], inputCode)
+    let remoteGeneration = try string(preflight["remote_generation_id"], inputCode)
+    let controllerGeneration = try string(preflight["controller_generation_id"], inputCode)
+    let bootstrapPath = try string(preflight["bootstrap_request_path"], inputCode)
+    let descriptorPath = try string(preflight["descriptor_request_path"], inputCode)
+    guard try integer(preflight["schema_version"], inputCode) == 1,
+          try string(preflight["purpose"], inputCode) == "CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_REQUEST_V1",
+          isHex(authority, count: 40), isGeneration(remoteGeneration, prefix: "remote"),
+          isGeneration(controllerGeneration, prefix: "controller"),
+          try integer(preflight["attempt"], inputCode) == 1,
+          try bool(preflight["retry"], inputCode) == false,
+          try bool(preflight["raw_values"], inputCode) == false,
+          bootstrapPath.hasPrefix("/"), descriptorPath.hasPrefix("/"),
+          !bootstrapPath.contains("/../"), !descriptorPath.contains("/../"),
+          URL(fileURLWithPath: bootstrapPath).standardized.path == bootstrapPath,
+          URL(fileURLWithPath: descriptorPath).standardized.path == descriptorPath,
+          try string(preflight["bootstrap_request_path_sha256"], inputCode) == sha256(Data(bootstrapPath.utf8)),
+          try string(preflight["descriptor_request_path_sha256"], inputCode) == sha256(Data(descriptorPath.utf8)) else {
+        try fail(inputCode)
+    }
+
+    let binaryStat = try lstatValue(CommandLine.arguments[0], authorityCode)
+    let (binaryBytes, binaryPhysical) = try readBoundFile(
+        CommandLine.arguments[0], mode: UInt16(binaryStat.st_mode & 0o777), code: authorityCode
+    )
+    guard try string(preflight["validation_binary_sha256"], authorityCode) == sha256(binaryBytes),
+          binaryPhysical.nlink == 1 else { try fail(authorityCode) }
+
+    let (bootstrapBytes, bootstrapPhysical) = try readBoundFile(bootstrapPath, mode: 0o600, code: authorityCode)
+    let (descriptorBytes, descriptorPhysical) = try readBoundFile(descriptorPath, mode: 0o600, code: authorityCode)
+    guard bootstrapPhysical.uid == geteuid(), bootstrapPhysical.gid == getegid(),
+          descriptorPhysical.uid == geteuid(), descriptorPhysical.gid == getegid(),
+          try string(preflight["bootstrap_request_sha256"], authorityCode) == sha256(bootstrapBytes),
+          try string(preflight["bootstrap_request_identity_sha256"], authorityCode) == physicalIdentityHash(bootstrapPhysical),
+          try integer(preflight["bootstrap_request_uid"], authorityCode) == Int(bootstrapPhysical.uid),
+          try integer(preflight["bootstrap_request_gid"], authorityCode) == Int(bootstrapPhysical.gid),
+          try string(preflight["descriptor_request_sha256"], authorityCode) == sha256(descriptorBytes),
+          try string(preflight["descriptor_request_identity_sha256"], authorityCode) == physicalIdentityHash(descriptorPhysical),
+          try integer(preflight["descriptor_request_uid"], authorityCode) == Int(descriptorPhysical.uid),
+          try integer(preflight["descriptor_request_gid"], authorityCode) == Int(descriptorPhysical.gid) else {
+        try fail(authorityCode)
+    }
+
+    let bootstrap = try jsonObject(bootstrapBytes, authorityCode)
+    guard try compactJSONBytes(bootstrap) == bootstrapBytes else { try fail(authorityCode) }
+    try exactKeys(bootstrap, [
+        "attempt", "authority_sha", "controller_generation_id", "destination_root", "entries", "handoff",
+        "purpose", "raw_values", "retry", "schema_version", "state_root",
+    ], authorityCode)
+    guard try integer(bootstrap["schema_version"], authorityCode) == 2,
+          try string(bootstrap["purpose"], authorityCode) == "CI3_PUBLISHER1_BOOTSTRAP_INSTALL_REQUEST_V2",
+          try string(bootstrap["authority_sha"], authorityCode) == authority,
+          try string(bootstrap["controller_generation_id"], authorityCode) == controllerGeneration,
+          try string(bootstrap["state_root"], authorityCode) ==
+            "/Library/Application Support/Agentempp/ci3-publisher1-state/\(authority)/\(controllerGeneration)",
+          try integer(bootstrap["attempt"], authorityCode) == 1,
+          try bool(bootstrap["retry"], authorityCode) == false,
+          try bool(bootstrap["raw_values"], authorityCode) == false else { try fail(authorityCode) }
+    let handoff = try dictionary(bootstrap["handoff"], authorityCode)
+    try exactKeys(handoff, [
+        "attempt", "authority_projection", "authority_sha", "controller_generation_id", "gate0_receipt",
+        "human_authorization", "human_authorization_request", "human_authorization_request_observation",
+        "installer_provenance", "issuer", "materializer_authority", "pass", "prompt_sha256", "purpose", "raw_values",
+        "receiver_leaves", "receiver_root_identity_sha256", "receiver_root_path_sha256",
+        "remote_generation_id", "retry", "schema_version", "transport_manifest",
+    ], authorityCode)
+    guard try integer(handoff["schema_version"], authorityCode) == 2,
+          try string(handoff["purpose"], authorityCode) == "CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2",
+          try string(handoff["authority_sha"], authorityCode) == authority,
+          try string(handoff["remote_generation_id"], authorityCode) == remoteGeneration,
+          try string(handoff["controller_generation_id"], authorityCode) == controllerGeneration,
+          try integer(handoff["attempt"], authorityCode) == 1,
+          try bool(handoff["retry"], authorityCode) == false,
+          try bool(handoff["raw_values"], authorityCode) == false else { try fail(authorityCode) }
+    let projection = try dictionary(handoff["authority_projection"], authorityCode)
+    try exactKeys(projection, [
+        "authority_manifest_sha256", "authority_parent", "authority_sha", "authority_subject_sha256",
+        "authority_tree", "collector_contracts_sha256", "controller_generation_id", "node_candidate_sha256",
+        "operation_authority_sha256", "remote_generation_id",
+    ], authorityCode)
+    guard try string(projection["authority_sha"], authorityCode) == authority,
+          try string(projection["remote_generation_id"], authorityCode) == remoteGeneration,
+          try string(projection["controller_generation_id"], authorityCode) == controllerGeneration,
+          isHex(try string(projection["authority_parent"], authorityCode), count: 40),
+          isHex(try string(projection["authority_tree"], authorityCode), count: 40),
+          isHex(try string(projection["authority_subject_sha256"], authorityCode), count: 64),
+          isHex(try string(projection["authority_manifest_sha256"], authorityCode), count: 64),
+          isHex(try string(projection["operation_authority_sha256"], authorityCode), count: 64),
+          isHex(try string(projection["node_candidate_sha256"], authorityCode), count: 64),
+          isHex(try string(projection["collector_contracts_sha256"], authorityCode), count: 64) else {
+        try fail(authorityCode)
+    }
+    guard try string(bootstrap["destination_root"], authorityCode) ==
+            "/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/\(authority)/bootstrap-\(try string(projection["authority_manifest_sha256"], authorityCode))" else {
+        try fail(authorityCode)
+    }
+    let bootstrapEntryContracts: [(role: String, destination: String, sourceMode: Int, mode: Int)] = [
+        ("materializer-authority", "publisher1-materializer.authority.json", 0o600, 0o444),
+        ("issuer-receipt", "vps-issuer-authority.receipt.json", 0o600, 0o444),
+        ("writer-binary", "runtime/ci3-terminal-anchor-writer", 0o500, 0o555),
+        ("node-runtime", "runtime/node", 0o600, 0o555),
+        ("controller", "runtime/ci3-bridge-controller.mjs", 0o600, 0o555),
+        ("launcher-runtime", "runtime/ci3-bridge-launcher.zsh", 0o600, 0o555),
+        ("launcher-bootstrap-authority", "runtime/launcher-bootstrap.authority.v1", 0o600, 0o444),
+        ("launch-attestation", "runtime/launch-attestation.json", 0o600, 0o444),
+        ("authority-manifest", "runtime/authority-manifest.v1", 0o600, 0o444),
+    ]
+    let rawBootstrapEntries = try array(bootstrap["entries"], authorityCode)
+    guard rawBootstrapEntries.count == bootstrapEntryContracts.count else { try fail(authorityCode) }
+    var bootstrapSources: [(entry: [String: Any], bytes: Data, physical: Physical)] = []
+    for (index, contract) in bootstrapEntryContracts.enumerated() {
+        let entry = try dictionary(rawBootstrapEntries[index], authorityCode)
+        try exactKeys(entry, [
+            "destination_relative_path", "mode", "role", "source_dev", "source_gid",
+            "source_identity_sha256", "source_ino", "source_mode", "source_mtime_ns",
+            "source_nlink", "source_path", "source_path_sha256", "source_sha256",
+            "source_size", "source_uid",
+        ], authorityCode)
+        let sourcePath = try string(entry["source_path"], authorityCode)
+        guard sourcePath.hasPrefix("/"), !sourcePath.contains("/../"), !sourcePath.contains("\n"), !sourcePath.contains("\r"),
+              URL(fileURLWithPath: sourcePath).standardized.path == sourcePath,
+              try string(entry["role"], authorityCode) == contract.role,
+              try string(entry["destination_relative_path"], authorityCode) == contract.destination,
+              try string(entry["source_path_sha256"], authorityCode) == sha256(Data(sourcePath.utf8)),
+              isHex(try string(entry["source_sha256"], authorityCode), count: 64),
+              isHex(try string(entry["source_identity_sha256"], authorityCode), count: 64),
+              try integer(entry["source_mode"], authorityCode) == contract.sourceMode,
+              try integer(entry["source_nlink"], authorityCode) == 1,
+              try integer(entry["source_size"], authorityCode) >= 0,
+              try integer(entry["mode"], authorityCode) == contract.mode else { try fail(authorityCode) }
+        let (sourceBytes, sourcePhysical) = try readBoundFile(sourcePath, mode: UInt16(contract.sourceMode), code: authorityCode)
+        guard sourcePhysical.uid == geteuid(), sourcePhysical.gid == getegid(), sourcePhysical.nlink == 1,
+              try string(entry["source_sha256"], authorityCode) == sha256(sourceBytes),
+              try integer(entry["source_uid"], authorityCode) == Int(sourcePhysical.uid),
+              try integer(entry["source_gid"], authorityCode) == Int(sourcePhysical.gid),
+              try integer(entry["source_size"], authorityCode) == Int(sourcePhysical.size),
+              try string(entry["source_mtime_ns"], authorityCode) == sourcePhysical.mtimeNS,
+              try string(entry["source_dev"], authorityCode) == String(sourcePhysical.dev),
+              try string(entry["source_ino"], authorityCode) == String(sourcePhysical.ino),
+              try string(entry["source_identity_sha256"], authorityCode) == physicalIdentityHash(sourcePhysical) else {
+            try fail(authorityCode)
+        }
+        bootstrapSources.append((entry, sourceBytes, sourcePhysical))
+    }
+    let gate0 = try dictionary(handoff["gate0_receipt"], authorityCode)
+    try exactKeys(gate0, [
+        "authority_manifest_sha256", "authority_sha", "exit_code", "launcher_sha256", "purpose",
+        "raw_values", "schema_version", "status", "stderr_bytes", "stdout_bytes",
+    ], authorityCode)
+    guard try integer(gate0["schema_version"], authorityCode) == 2,
+          try string(gate0["purpose"], authorityCode) == "CI3_SEMANTIC_SAFE_MAC_GATE0_V2",
+          try string(gate0["authority_sha"], authorityCode) == authority,
+          try string(gate0["authority_manifest_sha256"], authorityCode) == string(projection["authority_manifest_sha256"], authorityCode),
+          isHex(try string(gate0["launcher_sha256"], authorityCode), count: 64),
+          try integer(gate0["exit_code"], authorityCode) == 0,
+          try integer(gate0["stdout_bytes"], authorityCode) == 0,
+          try integer(gate0["stderr_bytes"], authorityCode) == 0,
+          try string(gate0["status"], authorityCode) == "PASS",
+          try bool(gate0["raw_values"], authorityCode) == false else { try fail(authorityCode) }
+
+    let request = try jsonObject(descriptorBytes, "PUBLISHER1_TRANSACTION")
+    guard try compactJSONBytes(request) == descriptorBytes else { try fail("PUBLISHER1_TRANSACTION") }
+    try exactKeys(request, [
+        "attempt", "authority_sha", "controller_generation_id", "destination_parent", "entries", "purpose",
+        "raw_values", "receiver_manifest_sha256", "receiver_root", "remote_generation_id", "retry",
+        "schema_version", "state_root",
+    ], "PUBLISHER1_TRANSACTION")
+    let receiverRoot = try string(request["receiver_root"], "PUBLISHER1_TRANSACTION")
+    let receiverManifestHash = try string(request["receiver_manifest_sha256"], "PUBLISHER1_TRANSACTION")
+    guard try integer(request["schema_version"], "PUBLISHER1_TRANSACTION") == 1,
+          try string(request["purpose"], "PUBLISHER1_TRANSACTION") == "CI3_PUBLISHER1_DESCRIPTOR_TRANSACTION_V1",
+          try string(request["authority_sha"], "PUBLISHER1_TRANSACTION") == authority,
+          try string(request["remote_generation_id"], "PUBLISHER1_TRANSACTION") == remoteGeneration,
+          try string(request["controller_generation_id"], "PUBLISHER1_TRANSACTION") == controllerGeneration,
+          receiverRoot.hasPrefix("/"), !receiverRoot.contains("/../"),
+          isHex(receiverManifestHash, count: 64),
+          try integer(request["attempt"], "PUBLISHER1_TRANSACTION") == 1,
+          try bool(request["retry"], "PUBLISHER1_TRANSACTION") == false,
+          try bool(request["raw_values"], "PUBLISHER1_TRANSACTION") == false else {
+        try fail("PUBLISHER1_TRANSACTION")
+    }
+    let rawEntries = try array(request["entries"], "PUBLISHER1_TRANSACTION")
+    guard rawEntries.count == publisher1Targets.count else { try fail("PUBLISHER1_TRANSACTION") }
+    let entries = try rawEntries.enumerated().map {
+        try validatePublisher1Entry(
+            $0.element, index: $0.offset, receiverRoot: receiverRoot,
+            controllerGeneration: controllerGeneration, code: "PUBLISHER1_TRANSACTION"
+        )
+    }
+
+    let materializer = try dictionary(handoff["materializer_authority"], authorityCode)
+    try exactKeys(materializer, [
+        "allowed_environment", "authority_sha", "controller_generation_id", "issuer_authority_sha256",
+        "materializer_path", "materializer_path_sha256", "materializer_sha256", "normal_executor_authorized",
+        "purpose", "raw_values", "receiver_leaves", "receiver_root_identity_sha256",
+        "receiver_root_path_sha256", "request_gid", "request_identity_sha256", "request_mode",
+        "request_nlink", "request_path_sha256", "request_sha256", "request_uid", "schema_version",
+        "writer_source_sha256",
+    ], authorityCode)
+    guard try integer(materializer["schema_version"], authorityCode) == 2,
+          try string(materializer["purpose"], authorityCode) == "CI3_PUBLISHER1_MATERIALIZER_AUTHORITY_V2",
+          try string(materializer["authority_sha"], authorityCode) == authority,
+          try string(materializer["controller_generation_id"], authorityCode) == controllerGeneration,
+          try string(materializer["request_path_sha256"], authorityCode) == sha256(Data(descriptorPath.utf8)),
+          try string(materializer["request_sha256"], authorityCode) == sha256(descriptorBytes),
+          try string(materializer["request_identity_sha256"], authorityCode) == physicalIdentityHash(descriptorPhysical),
+          try integer(materializer["request_uid"], authorityCode) == Int(descriptorPhysical.uid),
+          try integer(materializer["request_gid"], authorityCode) == Int(descriptorPhysical.gid),
+          try integer(materializer["request_mode"], authorityCode) == Int(descriptorPhysical.mode),
+          try integer(materializer["request_nlink"], authorityCode) == Int(descriptorPhysical.nlink),
+          try string(materializer["receiver_root_path_sha256"], authorityCode) == sha256(Data(receiverRoot.utf8)),
+          try bool(materializer["normal_executor_authorized"], authorityCode) == false,
+          try bool(materializer["raw_values"], authorityCode) == false else { try fail(authorityCode) }
+
+    func bootstrapSource(_ role: String) throws -> (entry: [String: Any], bytes: Data, physical: Physical) {
+        guard let source = bootstrapSources.first(where: { (try? string($0.entry["role"], authorityCode)) == role }) else {
+            try fail(authorityCode)
+        }
+        return source
+    }
+    let materializerSource = try bootstrapSource("materializer-authority")
+    let issuerSource = try bootstrapSource("issuer-receipt")
+    let writerSource = try bootstrapSource("writer-binary")
+    guard try materializerSource.bytes == compactJSONBytes(materializer),
+          try issuerSource.bytes == compactJSONBytes(dictionary(handoff["issuer"], authorityCode)),
+          try string(materializer["issuer_authority_sha256"], authorityCode) == sha256(issuerSource.bytes),
+          try string(materializer["materializer_sha256"], authorityCode) == sha256(writerSource.bytes),
+          try string(materializer["materializer_path"], authorityCode) ==
+            "\(try string(bootstrap["destination_root"], authorityCode))/runtime/ci3-terminal-anchor-writer" else {
+        try fail(authorityCode)
+    }
+    let sourceBindingFields = [
+        "role", "source_path", "source_path_sha256", "source_sha256", "source_uid", "source_gid",
+        "source_mode", "source_nlink", "source_size", "source_mtime_ns", "source_dev", "source_ino",
+        "source_identity_sha256",
+    ]
+    for role in [
+        "node-runtime", "controller", "launcher-runtime", "launcher-bootstrap-authority",
+        "launch-attestation", "authority-manifest",
+    ] {
+        guard let descriptorEntry = entries.first(where: { (try? string($0["role"], authorityCode)) == role }) else {
+            try fail(authorityCode)
+        }
+        let bootstrapEntry = try bootstrapSource(role).entry
+        let bootstrapBinding = Dictionary(uniqueKeysWithValues: sourceBindingFields.map { ($0, bootstrapEntry[$0]!) })
+        let descriptorBinding = Dictionary(uniqueKeysWithValues: sourceBindingFields.map { ($0, descriptorEntry[$0]!) })
+        guard try compactJSONBytes(bootstrapBinding) == compactJSONBytes(descriptorBinding) else { try fail(authorityCode) }
+    }
+
+    let receiverChain = try openAbsoluteDirectoryChain(receiverRoot, code: authorityCode)
+    defer { for descriptor in receiverChain.reversed() { Darwin.close(descriptor) } }
+    let receiverFD = receiverChain.last!
+    let receiverPhysical = physical(try fstatValue(receiverFD, authorityCode))
+    let receiverIdentityHash = try physicalIdentityHash(receiverPhysical)
+    guard try string(preflight["receiver_root_path_sha256"], authorityCode) == sha256(Data(receiverRoot.utf8)),
+          try string(preflight["receiver_root_identity_sha256"], authorityCode) == receiverIdentityHash,
+          try string(materializer["receiver_root_identity_sha256"], authorityCode) == receiverIdentityHash,
+          try string(handoff["receiver_root_path_sha256"], authorityCode) == sha256(Data(receiverRoot.utf8)),
+          try string(handoff["receiver_root_identity_sha256"], authorityCode) == receiverIdentityHash else {
+        try fail(authorityCode)
+    }
+    let materializerLeaves = try array(materializer["receiver_leaves"], authorityCode)
+    let handoffLeaves = try array(handoff["receiver_leaves"], authorityCode)
+    guard materializerLeaves.count == entries.count, handoffLeaves.count == entries.count else { try fail(authorityCode) }
+    for index in entries.indices {
+        let leaf = try dictionary(materializerLeaves[index], authorityCode)
+        let handoffLeaf = try dictionary(handoffLeaves[index], authorityCode)
+        try exactKeys(leaf, [
+            "dev", "gid", "identity_sha256", "ino", "mode", "mtime_ns", "nlink", "path_sha256",
+            "role", "sha256", "size", "uid",
+        ], authorityCode)
+        guard try compactJSONBytes(leaf) == compactJSONBytes(handoffLeaf),
+              try string(leaf["role"], authorityCode) == string(entries[index]["role"], authorityCode),
+              try string(leaf["path_sha256"], authorityCode) == string(entries[index]["source_path_sha256"], authorityCode),
+              try string(leaf["sha256"], authorityCode) == string(entries[index]["source_sha256"], authorityCode),
+              try string(leaf["identity_sha256"], authorityCode) == string(entries[index]["source_identity_sha256"], authorityCode) else {
+            try fail(authorityCode)
+        }
+    }
+
+    let sources = try openValidatedPublisher1Sources(
+        entries: entries, receiverFD: receiverFD, code: "PUBLISHER1_TRANSACTION"
+    )
+    defer { for source in sources { Darwin.close(source.descriptor) } }
+    let issuerBytes = try compactJSONBytes(dictionary(handoff["issuer"], authorityCode))
+    guard try string(materializer["issuer_authority_sha256"], authorityCode) == sha256(issuerBytes) else {
+        try fail(authorityCode)
+    }
+    try validatePublisher1SemanticSources(
+        sources, authority: authority, remoteGeneration: remoteGeneration,
+        controllerGeneration: controllerGeneration, receiverManifestHash: receiverManifestHash,
+        trustedIssuerBytes: issuerBytes
+    )
+    let byRole = Dictionary(uniqueKeysWithValues: try sources.map {
+        (try string($0.entry["role"], authorityCode), $0.bytes)
+    })
+    for (handoffKey, role) in [
+        ("issuer", "vps-issuer-authority"), ("pass", "vps-pass"),
+        ("transport_manifest", "publisher-input-manifest"), ("human_authorization", "human-authorization"),
+    ] {
+        guard let sourceBytes = byRole[role],
+              try compactJSONBytes(dictionary(handoff[handoffKey], authorityCode)) == sourceBytes else {
+            try fail(authorityCode)
+        }
+    }
+
+#if CI3_PUBLISHER1_PREFLIGHT_TEST_HOOKS
+    let syntheticEnvironment = ProcessInfo.processInfo.environment
+    if syntheticEnvironment["CI3_SYNTHETIC_PREFLIGHT_SWAP_REQUEST"] == "1" {
+        let displaced = descriptorPath + ".preflight-original"
+        try FileManager.default.moveItem(atPath: descriptorPath, toPath: displaced)
+        guard FileManager.default.createFile(atPath: descriptorPath, contents: descriptorBytes),
+              chmod(descriptorPath, 0o600) == 0 else { try fail("PUBLISHER1_SOURCE_DRIFT") }
+    }
+    if syntheticEnvironment["CI3_SYNTHETIC_PREFLIGHT_SWAP_RECEIVER"] == "1" {
+        let displaced = receiverRoot + ".preflight-original"
+        try FileManager.default.moveItem(atPath: receiverRoot, toPath: displaced)
+        guard mkdir(receiverRoot, 0o700) == 0 else { try fail("PUBLISHER1_SOURCE_DRIFT") }
+    }
+    if let role = syntheticEnvironment["CI3_SYNTHETIC_PREFLIGHT_SWAP_SOURCE_ROLE"],
+       sources.contains(where: { (try? string($0.entry["role"], authorityCode)) == role }) {
+        let sourcePath = receiverRoot + "/\(role).payload"
+        let displaced = sourcePath + ".preflight-original"
+        let sourceBytes = sources.first(where: { (try? string($0.entry["role"], authorityCode)) == role })!.bytes
+        try FileManager.default.moveItem(atPath: sourcePath, toPath: displaced)
+        guard FileManager.default.createFile(atPath: sourcePath, contents: sourceBytes),
+              chmod(sourcePath, 0o600) == 0 else { try fail("PUBLISHER1_SOURCE_DRIFT") }
+    }
+#endif
+
+    guard physical(try lstatValue(arguments[0], inputCode)) == preflightPhysical,
+          physical(try lstatValue(bootstrapPath, authorityCode)) == bootstrapPhysical,
+          physical(try lstatValue(descriptorPath, authorityCode)) == descriptorPhysical,
+          physical(try lstatValue(receiverRoot, authorityCode)) == receiverPhysical,
+          physical(try fstatValue(receiverFD, authorityCode)) == receiverPhysical else { try fail("PUBLISHER1_SOURCE_DRIFT") }
+    for source in sources {
+        let role = try string(source.entry["role"], authorityCode)
+        var relative = stat()
+        guard physical(try fstatValue(source.descriptor, authorityCode)) == source.physical,
+              "\(role).payload".withCString({ Darwin.fstatat(receiverFD, $0, &relative, AT_SYMLINK_NOFOLLOW) }) == 0,
+              physical(relative) == source.physical else { try fail("PUBLISHER1_SOURCE_DRIFT") }
+    }
+    let semanticRoots = try sources.map { source -> [String: Any] in [
+        "role": try string(source.entry["role"], authorityCode),
+        "sha256": try sha256(source.bytes),
+        "identity_sha256": try physicalIdentityHash(source.physical),
+    ] }
+    let installerBindingCode = "PUBLISHER1_INSTALLER_BINDING"
+    let human = try dictionary(handoff["human_authorization"], installerBindingCode)
+    let installerCompileAuthorityHash = try string(
+        human["publisher_installer_compile_authority_sha256"], installerBindingCode
+    )
+    let installerExpectedBinaryHash = try string(
+        human["publisher_installer_expected_binary_sha256"], installerBindingCode
+    )
+    guard isHex(installerCompileAuthorityHash, count: 64),
+          isHex(installerExpectedBinaryHash, count: 64) else { try fail(installerBindingCode) }
+    let receipt: [String: Any] = [
+        "schema_version": 1,
+        "purpose": "CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_RECEIPT_V1",
+        "authority_sha": authority,
+        "remote_generation_id": remoteGeneration,
+        "controller_generation_id": controllerGeneration,
+        "bootstrap_request_sha256": try sha256(bootstrapBytes),
+        "descriptor_request_sha256": try sha256(descriptorBytes),
+        "descriptor_request_identity_sha256": try physicalIdentityHash(descriptorPhysical),
+        "receiver_root_path_sha256": try sha256(Data(receiverRoot.utf8)),
+        "receiver_root_identity_sha256": receiverIdentityHash,
+        "validation_binary_sha256": try sha256(binaryBytes),
+        "semantic_sources_sha256": try sha256(compactJSONArrayBytes(semanticRoots)),
+        "publisher_installer_compile_authority_sha256": installerCompileAuthorityHash,
+        "publisher_installer_expected_binary_sha256": installerExpectedBinaryHash,
+        "status": "PASS", "writes_performed": 0, "effect_executions": 0,
+        "network_calls": 0, "privilege_prompts": 0,
+        "attempt": 1, "retry": false, "raw_values": false,
+    ]
+    FileHandle.standardOutput.write(try compactJSONBytes(receipt))
+}
+#endif
 #endif
 
 private func publisher1Transaction(arguments: [String] = []) throws {
@@ -2934,33 +3653,10 @@ private func publisher1Transaction(arguments: [String] = []) throws {
     guard rawEntries.count == publisher1Targets.count else { try fail(code) }
     var entries: [[String: Any]] = []
     for (index, raw) in rawEntries.enumerated() {
-        let entry = try dictionary(raw, code)
-        try exactKeys(entry, [
-            "destination_relative_path", "mode", "role", "source_dev", "source_gid",
-            "source_identity_sha256", "source_ino", "source_mode", "source_mtime_ns",
-            "source_nlink", "source_path", "source_path_sha256", "source_sha256",
-            "source_size", "source_uid",
-        ], code)
-        let expected = publisher1Targets[index]
-        let expectedRelative = expected.1.replacingOccurrences(of: "{controller}", with: controllerGeneration)
-        let role = try string(entry["role"], code)
-        let sourcePath = (receiverRoot as NSString).appendingPathComponent("\(role).payload")
-        guard role == expected.0, try string(entry["destination_relative_path"], code) == expectedRelative,
-              try integer(entry["mode"], code) == expected.2,
-              try string(entry["source_path"], code) == sourcePath,
-              try string(entry["source_path_sha256"], code) == sha256(Data(sourcePath.utf8)),
-              isHex(try string(entry["source_sha256"], code), count: 64),
-              isHex(try string(entry["source_identity_sha256"], code), count: 64) else { try fail(code) }
-        guard
-              try integer(entry["source_uid"], code) > 0,
-              try integer(entry["source_gid"], code) > 0,
-              try integer(entry["source_mode"], code) == 0o600,
-              try integer(entry["source_nlink"], code) == 1,
-              try integer(entry["source_size"], code) >= 0,
-              Int(try string(entry["source_mtime_ns"], code)) != nil,
-              UInt64(try string(entry["source_dev"], code)) != nil,
-              UInt64(try string(entry["source_ino"], code)) != nil else { try fail("PUBLISHER1_SOURCE_AUTHORITY") }
-        entries.append(entry)
+        entries.append(try validatePublisher1Entry(
+            raw, index: index, receiverRoot: receiverRoot,
+            controllerGeneration: controllerGeneration, code: code
+        ))
     }
 #if !CI3_SYNTHETIC_TEST
     let authorityLeaves = try array(materializerAuthority["receiver_leaves"], code)
@@ -3089,32 +3785,9 @@ private func publisher1Transaction(arguments: [String] = []) throws {
         print("PUBLISHER1_TRANSACTION PASS status=\(status) effect_executions=0")
         return
     }
-    var sources: [(entry: [String: Any], descriptor: Int32, bytes: Data, physical: Physical)] = []
+    var sources: [Publisher1ValidatedSource] = []
     defer { for source in sources { Darwin.close(source.descriptor) } }
-    for entry in entries {
-        let role = try string(entry["role"], code)
-        let leaf = "\(role).payload"
-        let descriptor = leaf.withCString { Darwin.openat(receiverFD, $0, O_RDONLY | O_NOFOLLOW) }
-        guard descriptor >= 0 else { try fail(code) }
-        let before = try fstatValue(descriptor, code)
-        let bytes = try readDescriptorBytes(descriptor, code)
-        let after = try fstatValue(descriptor, code)
-        let observed = physical(after)
-        guard physical(before) == observed, (after.st_mode & S_IFMT) == S_IFREG,
-              observed.uid == UInt32(try integer(entry["source_uid"], code)),
-              observed.gid == UInt32(try integer(entry["source_gid"], code)),
-              observed.mode == UInt16(try integer(entry["source_mode"], code)),
-              observed.nlink == UInt16(try integer(entry["source_nlink"], code)),
-              observed.size == Int64(try integer(entry["source_size"], code)),
-              observed.mtimeNS == (try string(entry["source_mtime_ns"], code)),
-              observed.dev == (try string(entry["source_dev"], code)),
-              observed.ino == (try string(entry["source_ino"], code)),
-              try physicalIdentityHash(observed) == string(entry["source_identity_sha256"], code),
-              try sha256(bytes) == string(entry["source_sha256"], code) else {
-            Darwin.close(descriptor); try fail("PUBLISHER1_SOURCE_AUTHORITY")
-        }
-        sources.append((entry, descriptor, bytes, observed))
-    }
+    sources = try openValidatedPublisher1Sources(entries: entries, receiverFD: receiverFD, code: code)
 #if !CI3_SYNTHETIC_TEST
     try validatePublisher1SemanticSources(
         sources, authority: authority, remoteGeneration: remoteGeneration,
@@ -3482,6 +4155,20 @@ private func executeWrite(arguments: [String]) throws {
 
 private func run() throws {
     let arguments = Array(CommandLine.arguments.dropFirst())
+#if CI3_PUBLISHER1_CANONICAL_JSON_TEST_V1
+    if arguments == ["--publisher1-canonical-json-test"] {
+        let input = FileHandle.standardInput.readDataToEndOfFile()
+        FileHandle.standardOutput.write(try compactJSONBytes(jsonObject(input, "CANONICAL_JSON_TEST")))
+        return
+    }
+    try fail("MODE_INVALID")
+#elseif CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_V1
+    if arguments.first == "--publisher1-semantic-preflight" {
+        try publisher1SemanticPreflight(arguments: Array(arguments.dropFirst()))
+        return
+    }
+    try fail("MODE_INVALID")
+#else
     if arguments == ["--self-test"] {
         let environment = ProcessInfo.processInfo.environment
         let scenario = environment["CI3_SYNTHETIC_E2E_SCENARIO"]
@@ -3539,6 +4226,7 @@ private func run() throws {
         return
     }
     try executeWrite(arguments: arguments)
+#endif
 }
 
 // A single root invocation remains alive as a transient supervisor while a

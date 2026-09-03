@@ -2,7 +2,7 @@
 
 **Data de consolidação:** 20 de agosto de 2026
 
-**Versão do dossiê:** 1.7.14
+**Versão do dossiê:** 1.7.18
 
 **Objetivo:** preservar em um único arquivo o contexto conhecido, o que já foi
 feito, o estado técnico exato, as decisões tomadas, os bloqueios, o trabalho
@@ -5468,7 +5468,7 @@ materializado no-clobber e produz receipt sanitizado com zero rede. O dispatcher
 Linux/root e seus três modos permanecem inalterados. Esta authoring task não
 executou fetch, Gate 0, SSH, simulator, remote read, privilégio ou CI-3.
 
-## Atualização operacional 1.7.15 — provenance Git completa antes do Gate 0
+## Registro complementar — provenance Git completa antes do Gate 0
 
 A grammar genérica de `git --version` voltou ao acceptance set exato do
 predecessor. O sufixo Apple só é aceito depois que a policy Darwin explícita
@@ -5524,3 +5524,359 @@ para esta mesma authority do executor Mac. A retomada deve consumir o Gate 0
 novo preservado, executar simulator antes de `ssh -G`, manter exatamente três
 reads sem retry/refetch e publicar a terminal anchor antes de qualquer mutação
 da CI-3.
+
+## Atualização operacional 1.7.15 — cadeia externa Publisher 0/Publisher 1 da CI-3
+
+Esta atualização autoriza somente a autoria local e sintética da cadeia externa.
+O modelo tem três authorities separadas: o executor Mac já publicado, o issuer/
+pass do Publisher 0 e o materializador/bootstrap do Publisher 1. A ligação é
+feita por lineage, geração, manifests canônicos, identidades físicas e receipts
+sanitizados; `raw_values=false` é obrigatório em toda projeção.
+
+O Gate 0 preservado continua sendo a única attestation de launcher utilizável.
+As roots externas Publisher 0, issuer/pass, transporte, autorização humana e
+Publisher 1/controller permanecem ausentes e, portanto, o estado operacional
+continua `STOP_PRE_AUTHORITY`. Nenhum valor congelado, byte de configuração,
+credencial, host ou chave foi exposto nesta atualização.
+
+Evidência local corrente: 223/223 testes da cadeia externa, 143/143 do
+instalador Publisher 1 e 161/161 do writer congelado, todos sem falhas, skips
+ou todos. O registro publicado anterior de 1460/1460 e o Gate 0 preservado não
+foram reexecutados nem reinterpretados. O bundle remoto permanece inalterado.
+Não houve rede, VPS, SSH operacional, prompt administrativo, simulador,
+escrita root, CI-3 subsequente ou produção.
+
+A continuação ordenada exige uma autorização humana nova e explícita no estágio
+próprio, Publisher 0 externo com tentativa única, transporte allowlisted,
+Publisher 1 imutável e readback do controller, antes de qualquer simulador ou
+SSH operacional. Os budgets de prompt e operação são fechados, sem retry. O
+deadline de cleanup previamente preservado continua aplicável; nenhum cleanup
+foi executado nesta authoring task.
+
+## Atualização operacional 1.7.16 — successor semantic-safe local
+
+O `STOP_PRE_AUTHORITY` do predecessor permanece válido. Esta autoria local não
+publicou uma nova authority operacional e não reutiliza o Gate 0 histórico. O
+successor exige um Gate 0 novo, posterior à materialização e verificação dos
+blobs exatos, antes de qualquer Publisher ou gate operacional.
+
+A remediação cobre as causas originais: os semantic guards antes ausentes na
+integração agora pertencem ao mesmo validator Swift usado pelo writer; a
+validation binary e a operational binary têm capabilities disjuntas; nenhum
+candidato mutável do usuário pode ser o executor privilegiado; Publisher 0
+produz issuer, pass e transporte antes de qualquer consumo; e request-byte
+swap e receiver-leaf swap são negativos independentes. As contagens antigas
+de 223, 143, 161 e 1460 são somente evidência histórica, não resultado atual.
+
+A ordem local comprovada é: authority sucessora sintética, blobs exatos, Gate
+0 novo, Publisher 0, issuer/pass, transporte, captura owner-only, receiver,
+request, autorização humana, identidades físicas finais, semantic preflight,
+Phase A do installer imutável, Phase B/Publisher 1, readback, operation
+authority, controller de dezesseis targets, settlement e somente depois gates
+de simulador. A Phase A instala apenas o próprio installer; somente o self
+imutável e readbackado pode executar a Phase B com claim-before-effect.
+
+A seleção do installer também deixou de ser uma autorização autoemitida: uma
+compile authority independente fixa source, driver, compiler selecionado,
+argumentos/proveniência e o digest binário esperado. A autorização humana
+vincula essa authority e esse digest, o preflight Swift os repete e a Phase A
+aceita somente bytes iguais ao digest esperado. A canonicalização successor
+usa ordenação UTF-8 explícita e tem prova JS/Swift byte a byte inclusive para o
+caso adversarial dígito/underscore. O contrato aceita somente o schema exato;
+chaves adicionais são recusadas, não tratadas como extensão compatível.
+
+A prova focada da remediação 1.7.16 passou 56 testes de ordem, 54 do seam
+semântico, 10 do installer imutável, 3 de wiring real sem preseed, 7 negativos
+preservados e 5 de controller/downstream, além de 1 negativo independente de
+seleção do installer. As execuções completas 282/282 da cadeia externa,
+153/153 do installer, 215/215 do writer e 1501/1501 do gate Mac de quatro
+arquivos são o checkpoint histórico pré-review da 1.7.16, não o resultado da
+remediação 1.7.17. O modo de
+operation authority é alcançável após Publisher 1; o privileged writer exige
+os seis scans e o terminal anchor continua inacessível antes deles.
+
+Generator remoto, schema, derivação de paths e input contract permanecem
+inalterados e read-only. Não houve rede, SSH, simulador, prompt administrativo,
+escrita root, produção, CI-3, retry ou cleanup. O deadline de cleanup já
+registrado continua vigente.
+
+## Atualização operacional 1.7.17 — successor review remediation local
+
+A lineage sucessora agora exige parent e subject exatos no launcher e no
+controller e recusa a authority predecessora. Publisher 0 inicia sem outputs
+futuros: seus artefatos são produzidos pelo subprocesso fixo, capturados por
+transporte autenticado e somente então recebidos. A autorização humana V2 é
+criada independentemente depois do request e vincula authority, request,
+receiver, dezesseis leaves, proveniência do installer e o budget único do
+prompt não administrativo.
+
+O primeiro boundary privilegiado é um driver macOS fixo, posterior ao
+preflight e à reobservação do request, receiver e dezesseis leaves. Ele executa
+os bytes exatos do supervisor Swift vinculados ao path e blob OID do Git; não
+há verify-path/execute-path, seleção por candidato ou confiança em `argv[0]`.
+Somente depois esse supervisor instala e readbacka o immutable self da Phase A;
+a Phase B aceita apenas esse self. Recovery em crash antes ou depois do freeze
+é determinístico e falha fechado, sem cleanup, refetch, retry ou nova tentativa.
+
+O receipt canônico V2 é exact-schema e versionado de ponta a ponta. O validator
+Swift compartilhado valida todas as chaves e relações; a mutation parity JS/
+Swift cobre 103 alterações (97 remoções e 6 adições), todas recusadas. O
+consumer real autentica request, issuer/pass, autorização humana e operation
+authority, readbacka exatamente dezesseis targets, publica settlement e torna
+a authority do later writer alcançável somente na ordem autorizada. Essa prova
+usa seams apenas no boundary de privilégio; não fabrica authority nem substitui
+o consumer de produção.
+
+O focused gate consolidado da 1.7.17 passou 150/150: 1 launcher-lineage, 10
+controller, 70 cadeia externa, 13 installer e 56 writer, sem falha,
+cancelamento, skip ou todo. O fechamento serial passou cadeia externa 293/293,
+installer 156/156, controller 740/740, launcher 115/115, writer 217/217 e
+generator 434/434. O primeiro gate agregado expôs uma regressão estrutural do
+launcher (1505/1506); após restaurar o skeleton predecessor sem alterar o
+generator nem enfraquecer assertions, o rerun agregado passou 1506/1506, com
+zero fail/cancel/skip/todo. Generator remoto, schema,
+derivação de paths e input contract seguem read-only; não houve rede, SSH,
+simulador, prompt administrativo, privilégio real, escrita root, produção,
+CI-3, stage, commit, push, retry ou cleanup. O estado segue
+`STOP_PRE_AUTHORITY`.
+
+## Atualização operacional 1.7.18 — successor round-2 local
+
+Esta seção substitui qualquer alegação arquitetural 1.7.17 incompatível com a
+remediação round-2. O dispatcher macOS atravessa o mesmo subprocess boundary
+limitado usado pelo restante da cadeia, com argumentos sem LF/NUL, delimiter
+`swift - --privileged-supervisor`, um único prompt e seleção atômica pelo
+supervisor fixo. Nenhum prompt ou privilégio real foi exercido.
+
+Publisher 0 materializa o helper remoto a partir dos blobs Git exatos no único
+transporte SSH autorizado pelo contrato; receive é builtin e verify aponta ao
+launcher instalado no modo de produção. A prova local usa fake spawn somente
+no boundary de execução e o writer Swift compilado real para materializar e
+reobservar claim, result e os dezesseis targets. Executável ausente falha antes
+do primeiro attempt. A projeção de authority vem do pass assinado e dos
+artefatos current-user disponíveis, sem depender de root congelado prévio.
+
+A Phase B instala e readbacka nove objetos canônicos do bootstrap antes de
+produzir o request de operation authority. Recovery cobre promoção/freeze da
+Phase A e, no ledger externo, só aceita o settlement específico da operação:
+verify não pode reutilizar settlement de Phase B. Claim, result, árvore de
+dezesseis targets e receipt do controller precisam coincidir; estado ausente,
+parcial ou divergente termina em `STOP_PRE_AUTHORITY`, sem respawn, retry,
+refetch, prompt ou cleanup.
+
+O schema V2 compartilhado permanece fechado e a matriz literal contém 103
+mutações independentes, 97 por remoção e 6 por adição, com paridade JS/Swift.
+Os testes completos atuais passam external 304/304, installer 158/158,
+controller 743/743, launcher 115/115, writer 227/227 e generator read-only
+434/434; o agregado atual passa 1981/1981, com zero fail/cancel/skip/todo.
+Generator, schema, paths e input contract remotos permanecem read-only. Não
+houve rede, SSH, simulador, privilégio real, escrita root, produção, CI-3,
+stage, commit, push, retry ou cleanup. O estado continua
+`STOP_PRE_AUTHORITY`.
+
+## Atualização operacional 1.7.19 — successor round-3 local
+
+Esta seção substitui qualquer alegação arquitetural 1.7.18 incompatível com a
+remediação round-3. O único transporte Publisher 0 agora parte, no modelo de
+produção local, sem object root, issuer, request, pass, payload ou helper
+remoto preexistente. A sessão começa no shell fixo e recebe pelo stdin os bytes
+Git exatos, manifesto, proveniência e os onze inputs de authority. Dentro dessa
+mesma sessão ela materializa, readbacka e congela controller e tool antes de
+executar o controller; só então cria a transação versionada claim-first, a
+chave Ed25519 restrita ao proprietário, o issuer público, request sem assinatura
+e payloads, publicando pass assinado, manifesto e receipt de transporte por
+último. A prova usa um fake remote vazio e não executa SSH real.
+
+O stdout autenticado da sessão é gravado em journal local exclusivo, owner-only
+e sincronizado antes de o efeito remoto poder ser considerado settled. Assim,
+um crash depois do settlement remoto e antes da promoção do capture local é
+recuperado do mesmo journal, sem uma segunda sessão. No Mac, um único
+supervisor permanece responsável pelas Phases A e B sob o prompt original:
+reentrada após Phase A exata aguarda a continuação original, sem segundo prompt
+ou segunda Phase A; Phase B parcial/divergente termina fechada.
+
+A integração no-effect executa de fato o launcher instalado pelo zsh e atravessa
+o controller Node instalado. O controller deriva o request causal da própria
+árvore versionada instalada, sem descriptor ambiente, readbacka dezesseis
+targets, publica settlement, executa as seis funções reais de scan e demonstra
+reachability do later writer. O modo terminal permanece recusado nesse ponto.
+O launcher voltou ao skeleton estrutural predecessor, preservando o generator
+read-only.
+
+Os testes completos atuais passam external 311/311, installer 158/158,
+controller 743/743, launcher 115/115, writer 227/227 e generator read-only
+434/434. O agregado serial passa 1988/1988 em 711,07 segundos, com zero
+fail/cancel/skip/todo e sem timeout. Generator, schema, paths e input contract
+remotos permanecem read-only. Não houve rede, SSH, simulador, privilégio real,
+escrita root, produção, CI-3, stage, commit, push, retry ou cleanup. O estado
+continua `STOP_PRE_AUTHORITY`.
+
+## Atualização operacional 1.7.20 — successor round-4 local
+
+Esta seção substitui os claims 1.7.19 incompatíveis. O bootstrap Publisher 0
+agora materializa cada arquivo por criação exclusiva/no-follow, sincroniza
+arquivos e diretórios, congela e readbacka flags e a identidade física completa
+(owner, group, nlink, device, inode, size, mtime, mode e conteúdo), valida a
+árvore exata e executa controller/runtime pelos descritores fixados. Trocas de
+arquivo, diretório, modo e folha extra terminam antes do controller. Uma
+transação nova exige root ausente e publica o claim como primeira folha; root
+preexistente sem claim original exato, com extra, key, issuer ou payload
+preseedado para sem mutação.
+
+O transporte distribuído permanece uma única sessão. O remoto publica apenas
+PREPARED até o journal local autenticado e seu ACK estarem sincronizados; os
+receipts causais locais são escritos em staging owner-only, sincronizados,
+promovidos atomicamente e sincronizados no parent. O ACK precede o commit
+remoto e um receipt QUIESCED, gravado por último pelo broker, impede retorno com
+filesystem writes pendentes. As três janelas de morte — antes do primeiro
+chunk, antes do último e depois do ACK — recuperam a decisão original sem nova
+sessão ou efeito.
+
+No Publisher 1, o supervisor cria dentro do protocolo administrativo original
+uma continuação root-owned e version-addressed, ligada ao immutable self, claim
+e definição persistente. A seam sintética mata o supervisor e a continuação
+retoma Phase B sem segundo prompt nem segunda Phase A. Uma barreira autenticada
+imediatamente antes de Phase B torna parcial/divergente determinístico e faz
+tanto reentrada quanto supervisor original pararem. O E2E no-effect executa o
+launcher instalado de verdade, atravessa zsh para o controller Node, usa as
+superfícies serializadas produzidas nos seis scanners, readbacka dezesseis
+targets, assenta a operação e alcança o dispatcher real do later writer; o
+terminal continua negado.
+
+Os testes completos atuais passam external 322/322, installer 159/159,
+controller 743/743, launcher 115/115, writer 227/227 e generator read-only
+434/434. O agregado serial passa 2000/2000 em 811,70 segundos, com zero
+fail/cancel/skip/todo. A matriz literal compartilhada continua 103 = 97 campos
+ausentes + 6 extras. Generator, schema, paths e input contract remotos
+permanecem read-only. Não houve rede, SSH, simulador, prompt/privilégio real,
+escrita root, produção, CI-3, stage, commit, push, retry ou cleanup. O estado
+continua `STOP_PRE_AUTHORITY`, pendente de duas novas reviews independentes.
+
+## Atualização operacional 1.7.21 — successor round-5 local
+
+Esta seção substitui os claims 1.7.20 incompatíveis. Antes de qualquer processo
+Node/controller, o bootstrap Publisher 0 usa o materializador fixo para criar
+root e folhas com primitivas exclusive/no-follow, manter descritores fixados,
+autenticar bytes e identidade física pelo mesmo descritor, sincronizar,
+congelar/readbackar e validar a árvore exata. Os testes locais cobrem root
+preexistente sem claim, troca de pathname entre open/hash e hash/exec, troca de
+diretório e folha extra; nenhuma árvore não reclamada é normalizada por
+chmod/chflags.
+
+O protocolo local production-shaped separa PREPARED de COMMIT: o resultado
+remoto terminal permanece ausente até journal e ACK locais duráveis. A
+continuação version-addressed detém a única sessão na fixture e os testes matam
+o broker e o outer nas três janelas preparadas, recuperando a decisão local sem
+segunda sessão ou efeito. Receipts locais usam staging owner-only, fsync e
+publicação no-clobber por link exclusivo, com race divergente recusada; não há
+rename substitutivo do destino.
+
+No Publisher 1, claim, definição, invocation, registration e markers precisam
+ser exatos e imutáveis. A definição launchd é one-shot, sem KeepAlive, e a
+matriz sintética cobre morte em CLAIM, DEFINITION, BOOTSTRAP e REGISTRATION,
+além de provar uma única invocation após falha. O E2E no-effect executa o
+launcher instalado da fixture, atravessa zsh e o controller Node, coleta e
+serializa as seis superfícies produzidas pela execução, lê dezesseis targets e
+chama a implementação real `publishPrivilegedWriterAuthority`; somente o
+boundary de efeito abaixo do consumidor é substituído.
+
+O escopo dessas provas é deliberadamente local: fake remote sem SSH/restart de
+host real, seam de serviço sem launchd/reboot/prompt root real e launcher
+instalado em fixture sem Terminal/Xcode/simulador. Os testes completos passam
+external 337/337, installer 172/172, controller 743/743, launcher 115/115,
+writer 227/227 e generator read-only 434/434. O agregado serial passa
+2028/2028 em 953,86 segundos, com zero fail/cancel/skip/todo. Generator,
+schema, paths e input contract remotos permanecem read-only. Não houve rede,
+SSH, simulador, prompt/privilégio real, escrita root, produção, CI-3, stage,
+commit, push, retry ou cleanup. O estado permanece `STOP_PRE_AUTHORITY`,
+pendente de duas novas reviews independentes.
+
+## Atualização operacional 1.7.22 — successor round-7 local
+
+Esta seção substitui os claims one-shot e de ownership incompatíveis da
+1.7.21. No Publisher 0, a árvore PREPARED da fixture é sincronizada,
+mode-frozen, relida e validada antes do ACK local. Um session supervisor local
+version-addressed mantém a única sessão fake-SSH enquanto workers de journal
+podem morrer e ser reiniciados nas três janelas autenticadas. Depois do ACK, o
+COMMIT remoto terminal é somente o hard-link no-replace final; PREPARED
+permanece como evidência no mesmo inode, com `nlink=2`.
+
+No Publisher 1, o registrar sintético é uma state machine supervisionada e
+retoma o mesmo Phase A após morte real do processo registrar em CLAIM,
+DEFINITION, INVOCATION, PRE_BOOTSTRAP, POST_BOOTSTRAP e PRE_REGISTRATION. O job
+worker não contém `RunAtLoad` nem `KeepAlive`: registro ocorre antes de um
+único kickstart explícito. Run-claim e effect-entry são arquivos exclusivos;
+`completed` ou `failed` bloqueiam uma nova entrada e produzem settlement. Os
+testes reinvocam de verdade o mesmo binário Swift instalado duas vezes após
+sucesso e duas vezes após falha, sem novo claim, entry ou efeito.
+
+As provas são locais e processuais: o session supervisor permanece vivo, não
+há prova de restart do host ou reattach de SSH; launchd, bootout, reboot,
+prompt/root, Terminal, Xcode, simulador e writer privilegiado reais não foram
+executados. Os focused passam external 12/12 e installer 1/1. As suites
+completas passam external 347/347, installer 173/173, controller 743/743,
+launcher 115/115, writer 227/227 e generator read-only 434/434. O agregado
+serial passa 2039/2039 em aproximadamente 594 segundos, com zero
+fail/cancel/skip/todo. Generator, schema, paths e input contract remotos
+permanecem read-only. Não houve rede, SSH, simulador, privilégio/root, produção,
+CI-3, stage, commit, push, retry externo ou cleanup. O estado permanece
+`STOP_PRE_AUTHORITY`, pendente de duas novas reviews independentes.
+
+## Atualização operacional 1.7.24 — successor round-9 local
+
+Esta seção substitui a inferência incompatível de ativação do Publisher 1 da
+1.7.23. O registrar agora cria e verifica identidade, claim, lock e handshake
+duráveis de um activation owner version-addressed antes de publicar o sinal de
+ativação. O activation owner, não o registrar, possui o único kickstart físico
+e a recuperação do worker. Um registrar reiniciado antes do sinal ou depois da
+aceitação do start e antes do receipt se junta ao mesmo owner; ausência do
+worker-launch receipt não é tratada como prova de que o kickstart não ocorreu.
+O worker continua sem `RunAtLoad` e sem `KeepAlive`.
+
+Os novos testes primeiro falharam 0/2 por ausência desses boundaries e depois
+passaram 2/2. Eles matam o PID real do registrar em `PRE_SIGNAL` e em
+`POST_ACCEPT_PRE_RECEIPT`, preservam o PID do owner e observam exatamente um
+kickstart executável, um worker launch e no máximo uma effect entry, com
+settlement terminal determinístico. As provas predecessoras Round 8 passam
+11/11; regressões impactadas passam 4/4, 4/4 e 6/6; installer completo passa
+173/173. Typechecks Swift e sintaxe Node passam. As suites completas passam
+external 360/360, installer 173/173, controller 743/743, launcher 115/115,
+writer 227/227 e generator read-only 434/434. O agregado serial passa
+2052/2052 em aproximadamente 1156,5 segundos, com zero fail/cancel/skip/todo.
+
+O modelo de falha permanece local e não prova morte do activation owner,
+reboot/reattach do host, launchd/root/prompt reais, Terminal, Xcode, simulador
+ou publicação privilegiada. Generator, schema, paths e input contract remotos
+permanecem read-only. Não houve rede, SSH real, admin/root, produção, CI-3,
+stage, commit, push ou efeito externo. O estado permanece
+`STOP_PRE_AUTHORITY`.
+
+## Atualização operacional 1.7.23 — successor round-8 local
+
+Esta seção substitui os limites processuais incompatíveis da 1.7.22. No
+Publisher 0, um transport owner separado mantém o único child/session da
+fixture enquanto o session supervisor pode morrer e ser reiniciado nas três
+janelas de journal/ACK e nas três fronteiras do COMMIT remoto. A decisão local
+`COMMIT_DECIDED` é durável antes do ACK. O remoto então cria o único hard-link
+no-replace, sincroniza o diretório que o contém e emite por último uma decisão
+terminal autenticada e ligada aos hashes do output e request. Não há segundo
+transport, refetch ou efeito.
+
+No Publisher 1, `KICKSTART_DECIDED`, run-claim, effect-entry e estado terminal
+são persistentes e version-addressed. O registrar reiniciado após kickstart
+se junta ao worker original por um lock exclusivo sobre identidade imutável e
+não emite outro kickstart. Morte do worker em run-claim ou antes de
+effect-entry relança a mesma continuação; morte após effect-entry ou antes do
+terminal produz `STOP_PARTIAL` e nunca repete o efeito. Os testes contam
+kickstarts, launches e effect entries físicos.
+
+O modelo continua estritamente local: ele não prova morte/restart do processo
+SSH real, reboot do host, reattach externo, launchd/root/prompt real, Terminal,
+Xcode, simulador ou publicação privilegiada. O focused Round 8 passa 11/11 e
+as regressões predecessoras passam external 27/27 e installer 14/14. As suites
+completas passam external 358/358, installer 173/173, controller 743/743,
+launcher 115/115, writer 227/227 e generator read-only 434/434, sem
+fail/cancel/skip/todo. Generator, schema, paths e input contract remotos
+permanecem read-only. Não houve rede, SSH real, admin/root, produção, CI-3,
+stage, commit, push, retry externo ou cleanup. O estado permanece
+`STOP_PRE_AUTHORITY`, pendente de duas novas reviews independentes.

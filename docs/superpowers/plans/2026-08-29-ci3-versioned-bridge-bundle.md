@@ -1588,3 +1588,339 @@ to simulator or SSH until that external authority is verified. A local
 tool-output discipline deviation involving non-secret commit metadata and
 identifiers is recorded without reproducing any value; no config, credential
 or token was fetched.
+
+## External Publisher-chain continuation plan
+
+- [ ] **PARCIAL** — author the Node-only external chain authority with six
+      fixed modes, closed environment, bounded adapters and zero retry; the
+      actual fixture-backed dispatch and local immutable Publisher 1 recovery
+      are covered, while external authority provisioning remains stopped.
+- [x] Bind the preserved Gate 0, frozen executor lineage and unchanged remote
+      bundle before any Publisher 0, transport, Publisher 1 or controller step.
+- [x] Define the Publisher 0 signed issuer/pass and allowlisted transport
+      contracts without serializing an issuer private key or raw values.
+- [ ] **PARCIAL** — define the Publisher 1 materializer V2 authority with
+      exactly sixteen receiver leaves, fixed writer binding and
+      controller-readable schema. The frozen binding harness accepts the
+      pre-materialized transaction; production publication remains stopped.
+- [ ] **PARCIAL** — implement the isolated bootstrap installer with
+      claim-before-effect, no-clobber, exact-existing verification and
+      receipt-last publication. Complete closed-tree, immutable-metadata and
+      deterministic parent/final-name race verification are covered locally;
+      external publication remains stopped.
+- [ ] **PARCIAL** — verify the synthetic authority suites. The current local
+      evidence is 223/223 external-chain, 143/143 bootstrap-installer and
+      161/161 unchanged frozen-writer tests, all with zero fail/skip/todo; no
+      result licenses provision, transport, root installation or CI-3
+      continuation.
+- [ ] Obtain a separate explicit human authorization receipt in the authorized
+      execution environment.
+- [ ] Provision and independently verify external Publisher 0, then transport
+      only public allowlisted roles.
+- [ ] Provision Publisher 1 and perform controller readback before any
+      simulator, SSH operational read, CI-3 continuation or cleanup.
+
+## Semantic-safe successor remediation checkpoint
+
+- [x] Preserve the predecessor `STOP_PRE_AUTHORITY` as valid historical
+      evidence without treating its Gate 0 as successor authority.
+- [x] Require a fresh Gate 0 after exact successor blobs and green suites.
+- [x] Compile validation and operational binaries from one exact Swift source;
+      use the shared validators and keep their capabilities disjoint.
+- [x] Execute the Swift validation binary over the real owner-only artifacts;
+      persist/read back only its sanitized stdout receipt before Phase A.
+- [x] Remove all downstream preseed: Publisher 0 now produces issuer/pass/
+      manifest, then transport produces the receiver artifacts, before any
+      request, human receipt, identities or preflight consumer runs.
+- [x] Split the installer into Phase A immutable-self installation and Phase B
+      fixed-self execution with revalidation, claim-before-effect and
+      receipt-last publication; retain fail-closed crash/exact-existing rules.
+- [x] Bind installer selection to an independent compile authority covering
+      reviewed source, fixed driver, selected compiler, compile arguments,
+      toolchain provenance and expected digest; carry it through human receipt,
+      Swift preflight and Phase A.
+- [x] Prove byte-identical JS/Swift canonicalization with explicit UTF-8 key
+      ordering, including digit/underscore adversarial keys; reject every key
+      outside the exact successor schema.
+- [x] Keep the controller manifest at exactly sixteen targets and the generator
+      as separately validated predecessor lineage.
+- [x] Make operation authority reachable after Publisher 1 and privileged
+      writer reachable after six scans while denying terminal anchor earlier.
+- [x] Preserve the remote generator, schema, path derivation and input contract
+      unchanged/read-only; perform no regeneration or second-session authority.
+- [x] Record historical 1.7.16 focused proof: 56/56 order, 54/54 seam, 10/10 installer,
+      3/3 real wiring, 7/7 negatives, 5/5 downstream and 1/1 independent
+      installer-selection negative, plus complete pre-review runs of 282/282
+      external, 153/153 installer, 215/215 writer and 1501/1501
+      four-file Mac authority, all with zero fail/cancel/skip/todo. These
+      figures are review inputs, not the 1.7.17 remediation result.
+- [x] Re-run the broader gates with concurrency one and no timeout/assertion
+      weakening; the historical three writer timeouts and interrupted broad
+      run remain recorded as prior pressure fragility, not hidden failures.
+- [ ] Obtain two independent reviews before any operational publication.
+- [ ] Publish successor authority and run the fresh Gate 0 in the separately
+      authorized execution task; this local checkpoint remains
+      `STOP_PRE_AUTHORITY`.
+
+The predecessor totals 223, 143, 161 and 1460 are historical labels only.
+There has been no network, SSH, simulator, administrative prompt, root write,
+production, CI-3, retry or cleanup, and the previously recorded cleanup
+deadline remains applicable.
+
+## Successor review remediation checkpoint — 1.7.17
+
+- [x] Require exact successor parent/subject at launcher and controller and
+      reject predecessor authority.
+- [x] Begin Publisher 0 with zero future output candidates; use a fixed producer
+      and authenticated transport capture before receiver consumption.
+- [x] Create human V2 authorization independently after the request and bind
+      authority, request, receiver, sixteen leaves, installer Git provenance
+      and the single non-administrative prompt budget.
+- [x] Bind installer selection independently to Git path, blob OID and authority
+      manifest rather than a self-asserted digest or mutable sidecar.
+- [x] Use one fixed macOS system-driver boundary after semantic preflight and
+      fresh request/receiver/leaf observation; remove mutable candidate,
+      verify-path/execute-path and `argv[0]` trust.
+- [x] Install/read back the immutable Phase A self before Phase B and make crash
+      recovery deterministic before/after freeze without cleanup, refetch,
+      retry or a new attempt.
+- [x] Enforce the complete shared canonical V2 exact schema and every relation
+      in Swift; reject 103 parity mutations (97 missing, 6 extra) in both JS
+      and Swift.
+- [x] Exercise the real operation publisher through authenticated inputs,
+      human receipt, operation authority, sixteen target readbacks, settlement
+      and later-writer authority; keep its seam restricted to privileged/root
+      I/O.
+- [x] Pass the consolidated focused proof 150/150: 1 launcher-lineage, 10
+      controller, 70 external, 13 installer and 56 writer, with zero
+      fail/cancel/skip/todo.
+- [x] Re-run every complete suite serially: external 293/293, installer
+      156/156, controller 740/740, launcher 115/115, writer 217/217, generator
+      434/434 and final four-file aggregate 1506/1506, all with zero
+      fail/cancel/skip/todo. The initial aggregate 1505/1506 exposed and closed
+      a launcher structural-skeleton regression without changing the generator
+      or weakening assertions; static, integrity, scope, staging and
+      preservation gates are recorded in the owner-only task report.
+- [ ] Obtain two independent successor reviews before any publication or fresh
+      operational Gate 0; current status remains `STOP_PRE_AUTHORITY`.
+
+Generator, bundle schema, remote path derivation and input contract remain
+read-only. No network, SSH, simulator, administrative prompt, real privilege,
+root write, production, CI-3, stage, commit, push, retry or cleanup belongs to
+this local remediation.
+
+## Successor round-2 remediation checkpoint — 1.7.18
+
+- [x] Route the fixed macOS supervisor through the real bounded subprocess
+      boundary with LF/NUL-free argv, exact `swift - --privileged-supervisor`
+      dispatch, one prompt and atomic loaded-image selection.
+- [x] Bootstrap the P0 helper from exact Git-bound blobs; keep receive builtin,
+      production verify on the installed launcher, and missing-executable
+      failures before the first attempt.
+- [x] Derive preflight authority projection from authenticated signed/current-
+      user material with no frozen root prerequisite.
+- [x] Install/read back the nine-entry immutable bootstrap before causally
+      producing the operation-publisher request.
+- [x] Recover the exact Phase A promotion/freeze boundary without cleanup,
+      refetch, retry or a new attempt.
+- [x] Make outer-ledger recovery operation-specific: verify requires its own
+      claim, canonical result, sixteen-target tree and controller settlement;
+      Phase B-only, partial and divergent states stop.
+- [x] Fix the shared exact-schema mutation matrix at a literal 103 cases: 97
+      missing-key and 6 extra-key variants with JS/Swift parity.
+- [x] Pass current complete serial suites: external 304/304, installer 158/158,
+      controller 743/743, launcher 115/115, writer 227/227 and read-only
+      generator 434/434; pass aggregate 1981/1981, all with zero
+      fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+Generator, bundle schema, remote path derivation and input contract remain
+read-only. No network, SSH, simulator, administrative prompt, real privilege,
+root write, production, CI-3, stage, commit, push, retry or cleanup occurred.
+
+## Successor round-3 remediation checkpoint — 1.7.19
+
+- [x] Start the sole production-shaped Publisher 0 transport with all remote
+      successor roots absent and only the fixed system shell available.
+- [x] Carry exact Git bytes, manifest, provenance and eleven authority inputs
+      in stdin; materialize/readback/freeze controller and tool inside that
+      session before controller execution.
+- [x] Create the versioned Publisher 0 transaction claim first, generate its
+      owner-restricted Ed25519 key, and publish issuer/request/payload before
+      signed pass, manifest and authenticated transport receipt.
+- [x] Persist authenticated stdout in an exclusive owner-only synchronized
+      journal before settlement; recover outer capture loss from that journal
+      without a second SSH session.
+- [x] Keep one privileged supervisor alive across Phase A and Phase B under
+      the original prompt; join exact in-flight continuation on reentry and
+      reject partial/divergent Phase B without a second prompt or Phase A.
+- [x] Execute the installed zsh launcher and installed Node controller in the
+      no-effect integration, deriving its causal request from the installed
+      version root with no ambient descriptor; read back sixteen targets,
+      settle, run six scans, reach the later writer and deny terminal mode.
+- [x] Preserve the launcher predecessor skeleton and keep the generator,
+      bundle schema, path derivation and input contract read-only.
+- [x] Pass current complete serial suites: external 311/311, installer 158/158,
+      controller 743/743, launcher 115/115, writer 227/227 and read-only
+      generator 434/434; pass the serial aggregate 1988/1988 in 711.07
+      seconds, all with zero fail/cancel/skip/todo and no timeout.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+No network, SSH, simulator, administrative prompt, real privilege, root write,
+production, CI-3, stage, commit, push, retry or cleanup occurred.
+
+## Successor round-4 remediation checkpoint — 1.7.20
+
+- [x] Materialize Publisher 0 bootstrap files exclusively/no-follow; fsync,
+      freeze/readback complete physical identities and the exact tree; execute
+      controller/runtime from pinned descriptors; reject file, directory,
+      mode and extra-leaf races.
+- [x] Require absent-to-created transaction root plus claim-first creation;
+      validate an original exact claim before any read/write on an existing
+      root and reject unclaimed/extra/key/issuer/payload preseed without
+      mutation.
+- [x] Execute the installed launcher and its actual zsh-to-Node/controller
+      route; make all six scanners consume serialized produced surfaces,
+      readback sixteen targets, settle, traverse real later-writer dispatch and
+      keep terminal publication denied.
+- [x] Place an authenticated deterministic barrier immediately before Phase B
+      and prove partial/divergent state stops both the original supervisor and
+      reentry in repeated serial runs.
+- [x] Keep one Publisher 0 session PREPARED until authenticated local journal
+      and ACK are durable; atomically publish/fsync causal local receipts,
+      publish QUIESCED last and recover all three kill windows without another
+      transport or effect.
+- [x] Register a root-owned, version-addressed persistent Phase B continuation
+      inside the original prompt protocol; kill the supervisor and prove
+      continuation without another prompt, Phase A, cleanup or refetch.
+- [x] Preserve literal JS/Swift mutation parity at 103 = 97 + 6 and keep the
+      generator, bundle schema, remote paths and inputs read-only.
+- [x] Pass complete serial suites external 322/322, installer 159/159,
+      controller 743/743, launcher 115/115, writer 227/227 and generator
+      434/434; pass the six-file aggregate 2000/2000 in 811.70 seconds, with
+      zero fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+No network, SSH, simulator, administrative prompt, real privilege, root write,
+production, CI-3, stage, commit, push, retry or cleanup occurred.
+
+## Successor round-5 remediation checkpoint — 1.7.21
+
+- [x] Move Publisher 0's fixed exclusive/no-follow materializer ahead of every
+      Node/controller process and bind hash, physical identity, fsync,
+      freeze/readback and execution to pinned descriptors and an exact tree.
+- [x] Reject unclaimed roots, open-to-hash and hash-to-exec pathname swaps,
+      directory swaps and extra leaves without chmod/chflags normalization.
+- [x] Keep remote terminal publication absent at PREPARED until local journal
+      and ACK durability; kill broker plus outer in all three windows and
+      recover the version-addressed decision without another transport/effect.
+- [x] Publish causal receipts owner-only through an exclusive-link no-clobber
+      primitive with file/parent synchronization; reject a divergent race.
+- [x] Require exact immutable Publisher 1 control objects, remove KeepAlive,
+      and prove one-shot recovery at CLAIM, DEFINITION, BOOTSTRAP and
+      REGISTRATION with at most one invocation after failure.
+- [x] Execute the fixture-installed launcher through zsh and Node/controller;
+      collect six serialized execution-produced surfaces, observe sixteen
+      targets and invoke real `publishPrivilegedWriterAuthority` with only its
+      lower effect boundary replaced.
+- [x] Pass complete serial suites external 337/337, installer 172/172,
+      controller 743/743, launcher 115/115, writer 227/227 and generator
+      434/434; pass the six-file aggregate 2028/2028 in 953.86 seconds, with
+      zero fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+Proof limits: fake remote, broker/outer and service continuation are local
+synthetic seams; no real SSH/host restart, launchd/reboot/root prompt,
+Terminal/Xcode/simulator or privileged writer effect was exercised. Generator,
+bundle schema, remote paths and inputs remain read-only. No network, SSH,
+simulator, administrative prompt, real privilege, root write, production,
+CI-3, stage, commit, push, retry or cleanup occurred.
+
+## Successor round-7 remediation checkpoint — 1.7.22
+
+- [x] Synchronize, mode-freeze, read back and validate the complete local
+      Publisher 0 PREPARED tree before ACK; preserve PREPARED as same-inode
+      evidence and make terminal COMMIT one final no-replace hard link.
+- [x] Keep the sole fixture transport under a version-addressed local session
+      supervisor while actual journal workers die and restart at all three
+      authenticated boundaries without another transport/effect.
+- [x] Supervise the Publisher 1 registrar and join the original Phase A after
+      actual registrar death at CLAIM, DEFINITION, INVOCATION, PRE_BOOTSTRAP,
+      POST_BOOTSTRAP and PRE_REGISTRATION.
+- [x] Remove `RunAtLoad` and `KeepAlive` from the Phase B worker; bootstrap and
+      register before one explicit kickstart, then guard it with exclusive
+      run-claim/effect-entry and terminal completed/failed settlement.
+- [x] Really reinvoke the same installed Swift worker twice after success and
+      twice after failure and prove zero new entry/effect.
+- [x] Pass focused external 12/12 and installer 1/1, complete serial external
+      347/347, installer 173/173, controller 743/743, launcher 115/115, writer
+      227/227, generator 434/434, and aggregate 2039/2039 in approximately 594
+      seconds with zero fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+Proof limits: the session supervisor stays alive; there is no real SSH/host
+restart/reattachment, launchd/bootout/reboot/root prompt, Terminal, Xcode,
+simulator or privileged writer effect. Generator, bundle schema, remote paths
+and inputs remain read-only. No network, SSH, privilege/root write, production,
+CI-3, stage, commit, push, external retry or cleanup occurred.
+
+## Successor round-8 remediation checkpoint — 1.7.23
+
+- [x] Separate the persistent Publisher 0 transport owner from the killable
+      session supervisor and prove the original sole fixture child/session
+      survives all three journal/ACK and all three remote terminal boundaries.
+- [x] Persist local `COMMIT_DECIDED` before ACK, then require one no-replace
+      remote hard link, containing-directory fsync and an authenticated
+      output/request-bound terminal decision last.
+- [x] Persist Publisher 1 `KICKSTART_DECIDED`, run-claim, effect-entry and
+      terminal state; join the original worker after registrar death without a
+      second kickstart.
+- [x] Recover worker death before effect-entry through the same continuation;
+      after effect-entry, never replay and stop deterministically at
+      `STOP_PARTIAL` when no authenticated terminal evidence exists.
+- [x] Bind worker ownership to an immutable version-addressed file lock rather
+      than a raw process identifier and count kickstarts, launches and effect
+      entries physically.
+- [x] Pass focused Round 8 11/11, predecessor external 27/27 and installer
+      14/14; pass complete external 358/358, installer 173/173, controller
+      743/743, launcher 115/115, writer 227/227 and generator 434/434 with zero
+      fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+Proof limits: actual SSH-process death, host reboot/reattachment, real
+launchd/root prompt, Terminal, Xcode, simulator and privileged effects are not
+proved. Generator, bundle schema, remote paths and inputs remain read-only. No
+network, real SSH, admin/root, production, CI-3, stage, commit, push, external
+retry or cleanup occurred.
+
+## Successor round-9 remediation checkpoint — 1.7.24
+
+- [x] Establish a separate version-addressed Publisher 1 activation owner with
+      durable identity, claim, exclusive lock and ready handshake before the
+      activation signal.
+- [x] Move the physical kickstart and worker recovery loop from the killable
+      registrar to that owner; registrar recovery only rejoins/signals it.
+- [x] Kill the actual registrar PID at `PRE_SIGNAL` and immediately after
+      accepted start but before worker-launch receipt; count exactly one
+      executable kickstart, one worker launch and at most one effect entry.
+- [x] Preserve the worker plist without `RunAtLoad` or `KeepAlive`, Round 8
+      focused 11/11, impacted regressions 4/4, 4/4 and 6/6, and installer
+      173/173.
+- [x] Pass complete external 360/360, installer 173/173, controller 743/743,
+      launcher 115/115, writer 227/227, read-only generator 434/434 and serial
+      aggregate 2052/2052 in approximately 1156.5 seconds, with zero
+      fail/cancel/skip/todo.
+- [ ] Obtain two fresh independent reviews before publication or a fresh Gate
+      0. Current state remains `STOP_PRE_AUTHORITY`.
+
+Proof limits: activation-owner death, actual host reboot/reattachment, real
+launchd/root prompt, Terminal, Xcode, simulator and privileged effects are not
+proved. Generator, bundle schema, remote paths and inputs remain read-only. No
+network, real SSH, admin/root, production, CI-3, stage, commit, push or
+external effect occurred.

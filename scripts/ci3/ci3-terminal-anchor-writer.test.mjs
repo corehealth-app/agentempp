@@ -6,6 +6,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import nodeTest from 'node:test';
 
+import * as controllerContract from './ci3-bridge-controller.mjs';
+import * as publisherChainContract from './ci3-external-publisher-chain.mjs';
+
 const FIXTURE_HELPER_MODE = process.argv[2] === '--materialize-synthetic-fixture';
 const VPS_SOURCE_CONTRACT_MODE = process.platform !== 'darwin' && !FIXTURE_HELPER_MODE;
 const test = FIXTURE_HELPER_MODE || VPS_SOURCE_CONTRACT_MODE
@@ -87,6 +90,8 @@ async function physicalIdentitySha256(filePath) {
 
 let buildRoot;
 let binaryPath;
+let semanticPreflightBinaryPath;
+let canonicalJsonBinaryPath;
 let binarySha256;
 let sourceSha256;
 let setupError;
@@ -110,6 +115,27 @@ try {
     });
     if (compilation.status !== 0) throw new Error(`SWIFTC_FAILED:${compilation.stderr}`);
     binarySha256 = sha(await readFile(binaryPath));
+    semanticPreflightBinaryPath = path.join(buildRoot, 'ci3-publisher1-semantic-preflight-test');
+    const semanticCompilation = spawnSync('/usr/bin/xcrun', [
+      'swiftc', '-parse-as-library', '-D', 'CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_V1',
+      '-D', 'CI3_PUBLISHER1_PREFLIGHT_TEST_HOOKS', SOURCE_PATH,
+      '-o', semanticPreflightBinaryPath,
+    ], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin' },
+      timeout: 120000,
+    });
+    if (semanticCompilation.status !== 0) throw new Error(`SEMANTIC_SWIFTC_FAILED:${semanticCompilation.stderr}`);
+    canonicalJsonBinaryPath = path.join(buildRoot, 'ci3-publisher1-canonical-json-test');
+    const canonicalCompilation = spawnSync('/usr/bin/xcrun', [
+      'swiftc', '-parse-as-library', '-D', 'CI3_PUBLISHER1_CANONICAL_JSON_TEST_V1', SOURCE_PATH,
+      '-o', canonicalJsonBinaryPath,
+    ], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin' },
+      timeout: 120000,
+    });
+    if (canonicalCompilation.status !== 0) throw new Error(`CANONICAL_SWIFTC_FAILED:${canonicalCompilation.stderr}`);
   }
 } catch (error) {
   setupError = error;
@@ -2057,6 +2083,865 @@ async function publisher1Fixture() {
   return { root, receiverRoot, destinationParent, stateRoot, entries, request };
 }
 
+async function semanticPreflightFixture(label = 'valid') {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), `ci3-semantic-preflight-${label}-`)));
+  const receiverRoot = path.join(root, 'receiver');
+  const destinationParent = path.join(root, 'must-remain-absent-destination');
+  const stateRoot = path.join(root, 'must-remain-absent-state');
+  await mkdir(receiverRoot, { mode: 0o700 });
+
+  const nodeBytes = Buffer.from('semantic-node-runtime\n');
+  const controllerBytes = Buffer.from('semantic-controller\n');
+  const launcherBytes = Buffer.from('semantic-launcher\n');
+  const successorParent = 'd4f7d37bbac98b5b0e37b459528a8d5c6adb3622';
+  const successorSubject = controllerContract.AUTHORITY_SUBJECT;
+  const components = {
+    generator: { path: 'scripts/ci3/create-ios-staging-bridge-config.mjs', blob_oid: '1'.repeat(40), sha256: '1'.repeat(64) },
+    controller: { path: 'scripts/ci3/ci3-bridge-controller.mjs', blob_oid: '2'.repeat(40), sha256: sha(controllerBytes) },
+    launcher: { path: 'scripts/ci3/ci3-bridge-launcher.zsh', blob_oid: '3'.repeat(40), sha256: sha(launcherBytes) },
+    writer: { path: 'scripts/ci3/ci3-terminal-anchor-writer.swift', blob_oid: '4'.repeat(40), sha256: sourceSha256 },
+  };
+  const authorityManifestBytes = compactJsonBytes({
+    schema_version: 2, purpose: 'CI3_SEMANTIC_SAFE_PUBLISHER_CHAIN_V2', authority_sha: AUTHORITY,
+    path_count: 16, raw_values: false,
+  });
+  const toolIdentities = {
+    node: { path_sha256: '1'.repeat(64), binary_sha256: sha(nodeBytes), version_sha256: '2'.repeat(64) },
+    ssh: { path_sha256: sha(Buffer.from('/usr/bin/ssh')), binary_sha256: '3'.repeat(64), version_sha256: '4'.repeat(64) },
+    swiftc: { path_sha256: '5'.repeat(64), binary_sha256: '6'.repeat(64), version_sha256: '7'.repeat(64) },
+    xcodebuild: { path_sha256: '8'.repeat(64), binary_sha256: '9'.repeat(64), version_sha256: 'a'.repeat(64) },
+  };
+  const launchAttestationBytes = compactJsonBytes({
+    schema_version: 1, purpose: 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2', authority_sha: AUTHORITY,
+    authority_parent: successorParent, authority_tree: '2'.repeat(40),
+    authority_subject_sha256: sha(Buffer.from(successorSubject)),
+    authority_manifest_sha256: sha(authorityManifestBytes), components, tools: toolIdentities, raw_values: false,
+  });
+  const sshBytes = {
+    'ssh-config': Buffer.from('Host semantic-only\n'),
+    'ssh-known-hosts': Buffer.from('semantic.invalid ssh-ed25519 synthetic\n'),
+    'ssh-private-key': Buffer.from('synthetic-private-key-material\n'),
+    'ssh-public-key': Buffer.from('ssh-ed25519 synthetic semantic\n'),
+    'ssh-trust-descriptor': compactJsonBytes({ purpose: 'CI3_SEMANTIC_TRUST_V1', raw_values: false }),
+  };
+  const scans = Object.fromEntries(controllerContract.TERMINAL_SCAN_IDS.map((id) => [id, {
+    id, collector_version: controllerContract.SCAN_SURFACE_CONTRACTS[id].collector_version,
+    format: controllerContract.SCAN_SURFACE_CONTRACTS[id].format,
+    source_role: controllerContract.SCAN_SURFACE_CONTRACTS[id].source_role,
+    contract_sha256: controllerContract.scannerSchemaSha256(id), tool_sha256: sha(controllerBytes),
+  }]));
+  const remoteRecord = {
+    receipt_path: '/synthetic/semantic/bridge.receipt.json',
+    config_path: '/synthetic/semantic/bundle/mobile-staging-config.json',
+    credential_path: '/synthetic/semantic/bundle/synthetic-credential.json',
+  };
+  const operationAuthorityBytes = compactJsonBytes({
+    schema_version: 1, purpose: 'CI3_MAC_OPERATION_AUTHORITY_V1',
+    context: {
+      authority: {
+        commit: AUTHORITY, parent: successorParent, tree: '2'.repeat(40), subject: successorSubject,
+        manifest_sha256: sha(authorityManifestBytes), components,
+      },
+      generations: { ...GENERATIONS },
+      remote: {
+        bundle_path_sha256: sha(Buffer.from(path.dirname(remoteRecord.config_path))),
+        receipt_path_sha256: sha(Buffer.from(remoteRecord.receipt_path)), receipt_sha256: '1'.repeat(64),
+        config_path_sha256: sha(Buffer.from(remoteRecord.config_path)), config_sha256: '2'.repeat(64),
+        credential_path_sha256: sha(Buffer.from(remoteRecord.credential_path)), credential_sha256: '3'.repeat(64),
+      },
+    },
+    worktree: {
+      branch: 'codex/ci3-today-staging-v1', changed_paths: [...controllerContract.PRESERVED_CI3_PATHS],
+      continuation_allowlist_sha256: controllerContract.CONTINUATION_ALLOWLIST_SHA256,
+      diff_sha256: '4'.repeat(64), head: '277873755bf29771a10b5f362b522c2e6a6c21d6', status_sha256: '5'.repeat(64),
+    },
+    simulator: {
+      app_installation_sha256: '1'.repeat(64), container_identity_sha256: '2'.repeat(64),
+      container_path_sha256: '3'.repeat(64), device_selection_sha256: '4'.repeat(64), device_udid: 'synthetic-device',
+      probe_ack_sha256: '5'.repeat(64), probe_config_path: '/synthetic/probe-config', probe_config_sha256: '6'.repeat(64),
+      probe_credential_path: '/synthetic/probe-credential', probe_credential_sha256: '7'.repeat(64), runtime_sha256: '8'.repeat(64),
+    },
+    ssh: {
+      alias: 'ci3-semantic', code_signature_sha256: '1'.repeat(64), config_path: '/synthetic/ssh/config',
+      config_sha256: sha(sshBytes['ssh-config']), destination_sha256: '2'.repeat(64), effective_config_sha256: '3'.repeat(64),
+      executable_path_sha256: sha(Buffer.from('/usr/bin/ssh')), executable_sha256: toolIdentities.ssh.binary_sha256,
+      host_key_ed25519_sha256: '4'.repeat(64), identity_path: '/synthetic/ssh/id',
+      identity_public_key_fingerprint_sha256: '5'.repeat(64), identity_public_key_path: '/synthetic/ssh/id.pub',
+      identity_public_key_sha256: sha(sshBytes['ssh-public-key']), identity_sha256: sha(sshBytes['ssh-private-key']),
+      known_hosts_path: '/synthetic/ssh/known-hosts', known_hosts_sha256: sha(sshBytes['ssh-known-hosts']), port: 22,
+      trust_descriptor_path: '/synthetic/ssh/trust.json', trust_descriptor_sha256: sha(sshBytes['ssh-trust-descriptor']),
+      version_sha256: toolIdentities.ssh.version_sha256,
+    },
+    remote: remoteRecord, scans,
+    writer: {
+      authority_path: '/synthetic/writer-authority', manifest_path: '/synthetic/writer-manifest',
+      phase_target_contracts: controllerContract.CONTROLLER_EVIDENCE_PHASES.map((phase, index) => ({
+        phase, targets: [{ role: `semantic-${index}`, state: 'PRESENT', path_sha256: String((index % 8) + 1).repeat(64),
+          modes: [0o444], allowed_uids: [0], allowed_gids: [0], immutable: true }],
+      })),
+    }, raw_values: false,
+  });
+  const transportRoleBytes = {
+    'node-runtime': nodeBytes,
+    controller: controllerBytes,
+    'launcher-runtime': launcherBytes,
+    'launch-attestation': launchAttestationBytes,
+    'authority-manifest': authorityManifestBytes,
+    'operation-authority': operationAuthorityBytes,
+    ...sshBytes,
+  };
+  const transportEntries = [
+    'node-runtime', 'controller', 'launcher-runtime', 'launch-attestation', 'authority-manifest',
+    'operation-authority', 'ssh-config', 'ssh-known-hosts', 'ssh-private-key', 'ssh-public-key',
+    'ssh-trust-descriptor',
+  ].map((role, index) => ({ role, path_sha256: String((index % 8) + 1).repeat(64), sha256: sha(transportRoleBytes[role]) }));
+  const publisherManifestBytes = compactJsonBytes({
+    schema_version: 1,
+    purpose: 'CI3_VPS_PUBLISHER_INPUT_MANIFEST_V2',
+    authority_sha: AUTHORITY,
+    remote_generation_id: GENERATIONS.remote,
+    controller_generation_id: GENERATIONS.controller,
+    collector_contracts_sha256: sha(compactJsonBytes(scans)),
+    entries: transportEntries,
+    transfer_payload_sha256: sha(compactJsonBytes(transportEntries)),
+    raw_values: false,
+  });
+  const issuerKey = VPS_ISSUER_PUBLIC_KEY_BYTES;
+  const issuerGenerationId = `issuer-${'9'.repeat(64)}`;
+  const issuerBytes = compactJsonBytes({
+    schema_version: 1,
+    purpose: 'CI3_VPS_EXTERNAL_ISSUER_AUTHORITY_V1',
+    authority_sha: AUTHORITY,
+    issuer_generation_id: issuerGenerationId,
+    public_key_algorithm: 'Ed25519',
+    public_key_raw_base64: issuerKey.toString('base64'),
+    public_key_sha256: sha(issuerKey),
+    issuer_identity_sha256: sha(Buffer.concat([Buffer.from(AUTHORITY), Buffer.from(issuerGenerationId), issuerKey])),
+    allowed_pass_purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    normal_executor_authorized: false,
+    raw_values: false,
+  });
+  const unsignedPass = {
+    schema_version: 1,
+    purpose: 'CI3_VPS_OPERATION_AUTHORITY_PASS_V1',
+    authority_sha: AUTHORITY,
+    authority_parent: successorParent, authority_tree: '2'.repeat(40),
+    authority_subject_sha256: sha(Buffer.from(successorSubject)), authority_manifest_sha256: sha(authorityManifestBytes),
+    remote_generation_id: GENERATIONS.remote,
+    controller_generation_id: GENERATIONS.controller,
+    issuer_authority_sha256: sha(issuerBytes),
+    issuer_key_sha256: sha(issuerKey),
+    operation_authority_sha256: sha(operationAuthorityBytes),
+    node_candidate_sha256: sha(nodeBytes),
+    collector_contracts_sha256: sha(compactJsonBytes(scans)),
+    publisher_input_manifest_sha256: sha(publisherManifestBytes),
+    transfer_payload_sha256: sha(compactJsonBytes(transportEntries)),
+    source_generation_id: `src-${sha(issuerBytes)}`,
+    attempt: 1,
+    retry: false,
+    raw_values: false,
+  };
+  const unsignedPassBytes = compactJsonBytes(unsignedPass);
+  const passBytes = compactJsonBytes({
+    ...unsignedPass,
+    signed_payload_sha256: sha(unsignedPassBytes),
+    signature_base64: ed25519Sign(null, unsignedPassBytes, VPS_ISSUER_KEYPAIR.privateKey).toString('base64'),
+  });
+  const launcherAuthorityBytes = Buffer.from([
+    'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1', `authority_sha ${AUTHORITY}`,
+    `controller_generation_id ${GENERATIONS.controller}`, `node_sha256 ${sha(nodeBytes)}`,
+    `controller_sha256 ${sha(controllerBytes)}`, `launcher_sha256 ${sha(launcherBytes)}`,
+    `launch_attestation_sha256 ${sha(launchAttestationBytes)}`,
+    `authority_manifest_sha256 ${sha(authorityManifestBytes)}`,
+    'allowed_modes --self-test,plan,verify-simulator,verify-ssh,fetch,install-simulator,scan,write-terminal-anchor,resume,publish-operation-authority,publish-privileged-writer-authority,status',
+    'raw_values false', '',
+  ].join('\n'));
+  const bytesByRole = {
+    ...transportRoleBytes,
+    'launcher-bootstrap-authority': launcherAuthorityBytes,
+    'vps-pass': passBytes,
+    'vps-issuer-authority': issuerBytes,
+    'publisher-input-manifest': publisherManifestBytes,
+  };
+  const entriesByRole = new Map();
+  const leavesByRole = new Map();
+  const materializeRole = async (role, bytes) => {
+    const [relativePath, mode] = PUBLISHER1_TARGETS[role];
+    const sourcePath = path.join(receiverRoot, `${role}.payload`);
+    await writeFile(sourcePath, bytes, { flag: 'wx', mode: 0o600 });
+    const metadata = await physicalMetadata(sourcePath);
+    const identitySha256 = await physicalIdentitySha256(sourcePath);
+    entriesByRole.set(role, {
+      role, source_path: sourcePath, source_sha256: sha(bytes), source_path_sha256: sha(Buffer.from(sourcePath)),
+      source_uid: metadata.uid, source_gid: metadata.gid, source_mode: metadata.mode, source_nlink: metadata.nlink,
+      source_size: metadata.size, source_mtime_ns: metadata.mtime_ns, source_dev: metadata.dev, source_ino: metadata.ino,
+      source_identity_sha256: identitySha256, destination_relative_path: relativePath, mode,
+    });
+    leavesByRole.set(role, {
+      role, path_sha256: sha(Buffer.from(sourcePath)), sha256: sha(bytes), uid: metadata.uid, gid: metadata.gid,
+      mode: metadata.mode, nlink: metadata.nlink, size: metadata.size, mtime_ns: metadata.mtime_ns,
+      dev: metadata.dev, ino: metadata.ino, identity_sha256: identitySha256,
+    });
+  };
+  for (const role of Object.keys(PUBLISHER1_TARGETS).filter((value) => value !== 'human-authorization')) {
+    await materializeRole(role, bytesByRole[role]);
+  }
+  const receiverLeavesBeforeHuman = Object.keys(PUBLISHER1_TARGETS)
+    .filter((role) => role !== 'human-authorization').map((role) => leavesByRole.get(role));
+  const receiverLeavesForHuman = receiverLeavesBeforeHuman.map((leaf) => ({
+    ...leaf, path: entriesByRole.get(leaf.role).source_path,
+  }));
+  const receiverRootIdentitySha256 = await physicalIdentitySha256(receiverRoot);
+  const promptSha256 = '7'.repeat(64);
+  const authorityProjection = {
+    authority_sha: AUTHORITY, authority_parent: successorParent, authority_tree: '2'.repeat(40),
+    authority_subject_sha256: sha(Buffer.from(successorSubject)), authority_manifest_sha256: sha(authorityManifestBytes),
+    operation_authority_sha256: sha(operationAuthorityBytes), node_candidate_sha256: sha(nodeBytes),
+    collector_contracts_sha256: sha(compactJsonBytes(scans)), remote_generation_id: GENERATIONS.remote,
+    controller_generation_id: GENERATIONS.controller,
+  };
+  const installerProvenance = {
+    git_path: 'scripts/ci3/ci3-publisher1-bootstrap-installer.swift', git_blob_oid: '7'.repeat(40),
+    source_sha256: '7'.repeat(64), authority_manifest_sha256: sha(authorityManifestBytes),
+    compile_authority_sha256: '8'.repeat(64), expected_binary_sha256: '9'.repeat(64),
+  };
+  const humanAuthorizationRequest = {
+    schema_version: 2, purpose: 'CI3_HUMAN_AUTHORIZATION_REQUEST_V2', authority_sha: AUTHORITY,
+    authority_manifest_sha256: sha(authorityManifestBytes), operation_authority_sha256: sha(operationAuthorityBytes),
+    authority_projection_sha256: sha(compactJsonBytes(authorityProjection)),
+    publisher_input_manifest_sha256: sha(publisherManifestBytes), vps_operation_authority_pass_sha256: sha(passBytes),
+    issuer_authority_sha256: sha(issuerBytes), receiver_root_path_sha256: sha(Buffer.from(receiverRoot)),
+    receiver_root_identity_sha256: receiverRootIdentitySha256,
+    receiver_leaves_sha256: sha(compactJsonBytes(receiverLeavesForHuman)), installer_provenance: installerProvenance,
+    prompt_sha256: promptSha256, prompt_budget: 1, attempt: 1, retry: false, raw_values: false,
+  };
+  const humanAuthorizationRequestBytes = compactJsonBytes(humanAuthorizationRequest);
+  const humanAuthorizationRequestPath = path.join(root, 'human-authorization.request.json');
+  await writeFile(humanAuthorizationRequestPath, humanAuthorizationRequestBytes, { flag: 'wx', mode: 0o600 });
+  const humanRequestMetadata = await physicalMetadata(humanAuthorizationRequestPath);
+  const humanAuthorizationRequestObservation = {
+    role: 'human-authorization-request', path: humanAuthorizationRequestPath,
+    path_sha256: sha(Buffer.from(humanAuthorizationRequestPath)), sha256: sha(humanAuthorizationRequestBytes),
+    ...humanRequestMetadata, identity_sha256: await physicalIdentitySha256(humanAuthorizationRequestPath),
+  };
+  const humanBytes = compactJsonBytes({
+    schema_version: 2, purpose: 'CI3_OPERATION_AUTHORITY_HUMAN_AUTHORIZATION_V2',
+    approved_action: 'PUBLISH_ROOT_IMMUTABLE_OPERATION_AUTHORITY', authority_sha: AUTHORITY,
+    authority_manifest_sha256: sha(authorityManifestBytes), operation_authority_sha256: sha(operationAuthorityBytes),
+    authority_projection_sha256: sha(compactJsonBytes(authorityProjection)),
+    publisher_input_manifest_sha256: sha(publisherManifestBytes), vps_operation_authority_pass_sha256: sha(passBytes),
+    issuer_authority_sha256: sha(issuerBytes), node_binary_sha256: sha(nodeBytes),
+    authorization_request_path_sha256: humanAuthorizationRequestObservation.path_sha256,
+    authorization_request_sha256: humanAuthorizationRequestObservation.sha256,
+    authorization_request_identity_sha256: humanAuthorizationRequestObservation.identity_sha256,
+    authorization_request_uid: humanRequestMetadata.uid, authorization_request_gid: humanRequestMetadata.gid,
+    authorization_request_mode: humanRequestMetadata.mode, authorization_request_nlink: humanRequestMetadata.nlink,
+    receiver_root_path_sha256: sha(Buffer.from(receiverRoot)), receiver_root_identity_sha256: receiverRootIdentitySha256,
+    receiver_leaves_sha256: sha(compactJsonBytes(receiverLeavesForHuman)),
+    publisher_installer_git_path: installerProvenance.git_path,
+    publisher_installer_git_blob_oid: installerProvenance.git_blob_oid,
+    publisher_installer_source_sha256: installerProvenance.source_sha256,
+    publisher_installer_provenance_sha256: sha(compactJsonBytes(installerProvenance)),
+    publisher_installer_compile_authority_sha256: installerProvenance.compile_authority_sha256,
+    publisher_installer_expected_binary_sha256: installerProvenance.expected_binary_sha256,
+    prompt_sha256: promptSha256, prompt_budget: 1, authorized_uid: process.getuid(), authorized_gid: process.getgid(),
+    confirmation_sha256: '6'.repeat(64), attempt: 1, retry: false, raw_values: false,
+  });
+  bytesByRole['human-authorization'] = humanBytes;
+  await materializeRole('human-authorization', humanBytes);
+  assert.deepEqual(Object.keys(bytesByRole).sort(), Object.keys(PUBLISHER1_TARGETS).sort());
+  const entries = Object.keys(PUBLISHER1_TARGETS).map((role) => entriesByRole.get(role));
+  const receiverLeaves = Object.keys(PUBLISHER1_TARGETS).map((role) => leavesByRole.get(role));
+  const descriptorRequest = {
+    schema_version: 1, purpose: 'CI3_PUBLISHER1_DESCRIPTOR_TRANSACTION_V1',
+    authority_sha: AUTHORITY, remote_generation_id: GENERATIONS.remote,
+    controller_generation_id: GENERATIONS.controller, receiver_root: receiverRoot,
+    receiver_manifest_sha256: sha(publisherManifestBytes), destination_parent: destinationParent,
+    state_root: stateRoot, entries, attempt: 1, retry: false, raw_values: false,
+  };
+  const descriptorRequestBytes = compactJsonBytes(descriptorRequest);
+  const descriptorRequestPath = path.join(root, 'publisher1-transaction.request.json');
+  await writeFile(descriptorRequestPath, descriptorRequestBytes, { flag: 'wx', mode: 0o600 });
+  const descriptorMetadata = await physicalMetadata(descriptorRequestPath);
+  const receiverMetadata = await physicalMetadata(receiverRoot);
+  const installedBootstrapRoot = `/Library/Application Support/Agentempp/ci3-publisher1-bootstrap/${AUTHORITY}/bootstrap-${sha(authorityManifestBytes)}`;
+  const writerBinaryBytes = await readFile(semanticPreflightBinaryPath);
+  const materializerAuthority = {
+    schema_version: 2, purpose: 'CI3_PUBLISHER1_MATERIALIZER_AUTHORITY_V2',
+    authority_sha: AUTHORITY, controller_generation_id: GENERATIONS.controller,
+    issuer_authority_sha256: sha(issuerBytes), materializer_path: `${installedBootstrapRoot}/runtime/ci3-terminal-anchor-writer`,
+    materializer_path_sha256: sha(Buffer.from(`${installedBootstrapRoot}/runtime/ci3-terminal-anchor-writer`)),
+    materializer_sha256: sha(writerBinaryBytes), writer_source_sha256: sourceSha256,
+    request_path_sha256: sha(Buffer.from(descriptorRequestPath)), request_sha256: sha(descriptorRequestBytes),
+    request_identity_sha256: await physicalIdentitySha256(descriptorRequestPath), request_uid: descriptorMetadata.uid,
+    request_gid: descriptorMetadata.gid, request_mode: descriptorMetadata.mode, request_nlink: descriptorMetadata.nlink,
+    receiver_root_path_sha256: sha(Buffer.from(receiverRoot)), receiver_root_identity_sha256: await physicalIdentitySha256(receiverRoot),
+    receiver_leaves: receiverLeaves,
+    allowed_environment: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+    normal_executor_authorized: false, raw_values: false,
+  };
+  const handoff = {
+    schema_version: 2, purpose: 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2', authority_sha: AUTHORITY,
+    remote_generation_id: GENERATIONS.remote, controller_generation_id: GENERATIONS.controller,
+    authority_projection: authorityProjection,
+    gate0_receipt: {
+      schema_version: 2, purpose: 'CI3_SEMANTIC_SAFE_MAC_GATE0_V2', authority_sha: AUTHORITY,
+      authority_manifest_sha256: sha(authorityManifestBytes), launcher_sha256: sha(launcherBytes),
+      exit_code: 0, stdout_bytes: 0, stderr_bytes: 0, status: 'PASS', raw_values: false,
+    },
+    issuer: JSON.parse(issuerBytes), pass: JSON.parse(passBytes),
+    transport_manifest: JSON.parse(publisherManifestBytes),
+    human_authorization_request: humanAuthorizationRequest,
+    human_authorization_request_observation: humanAuthorizationRequestObservation,
+    human_authorization: JSON.parse(humanBytes), installer_provenance: installerProvenance,
+    prompt_sha256: promptSha256,
+    materializer_authority: materializerAuthority,
+    receiver_root_path_sha256: sha(Buffer.from(receiverRoot)),
+    receiver_root_identity_sha256: await physicalIdentitySha256(receiverRoot), receiver_leaves: receiverLeaves,
+    attempt: 1, retry: false, raw_values: false,
+  };
+  const bootstrapSourceRoot = path.join(root, 'bootstrap-sources');
+  await mkdir(bootstrapSourceRoot, { mode: 0o700 });
+  const makeBootstrapSource = async (role, bytes, sourceMode, destinationRelativePath, mode) => {
+    const sourcePath = path.join(bootstrapSourceRoot, `${role}.payload`);
+    await writeFile(sourcePath, bytes, { flag: 'wx', mode: sourceMode });
+    await chmod(sourcePath, sourceMode);
+    const metadata = await physicalMetadata(sourcePath);
+    return {
+      role, source_path: sourcePath, source_path_sha256: sha(Buffer.from(sourcePath)), source_sha256: sha(bytes),
+      source_uid: metadata.uid, source_gid: metadata.gid, source_mode: metadata.mode, source_nlink: metadata.nlink,
+      source_size: metadata.size, source_mtime_ns: metadata.mtime_ns, source_dev: metadata.dev, source_ino: metadata.ino,
+      source_identity_sha256: await physicalIdentitySha256(sourcePath), destination_relative_path: destinationRelativePath, mode,
+    };
+  };
+  const bootstrapEntries = [
+    await makeBootstrapSource('materializer-authority', compactJsonBytes(materializerAuthority), 0o600,
+      'publisher1-materializer.authority.json', 0o444),
+    await makeBootstrapSource('issuer-receipt', issuerBytes, 0o600, 'vps-issuer-authority.receipt.json', 0o444),
+    await makeBootstrapSource('writer-binary', writerBinaryBytes, 0o500, 'runtime/ci3-terminal-anchor-writer', 0o555),
+  ];
+  for (const [role, destinationRelativePath, mode] of [
+    ['node-runtime', 'runtime/node', 0o555],
+    ['controller', 'runtime/ci3-bridge-controller.mjs', 0o555],
+    ['launcher-runtime', 'runtime/ci3-bridge-launcher.zsh', 0o555],
+    ['launcher-bootstrap-authority', 'runtime/launcher-bootstrap.authority.v1', 0o444],
+    ['launch-attestation', 'runtime/launch-attestation.json', 0o444],
+    ['authority-manifest', 'runtime/authority-manifest.v1', 0o444],
+  ]) {
+    bootstrapEntries.push({ ...entriesByRole.get(role), destination_relative_path: destinationRelativePath, mode });
+  }
+  const bootstrapRequest = {
+    schema_version: 2, purpose: 'CI3_PUBLISHER1_BOOTSTRAP_INSTALL_REQUEST_V2', authority_sha: AUTHORITY,
+    controller_generation_id: GENERATIONS.controller,
+    destination_root: installedBootstrapRoot,
+    state_root: `/Library/Application Support/Agentempp/ci3-publisher1-state/${AUTHORITY}/${GENERATIONS.controller}`,
+    handoff, entries: bootstrapEntries, attempt: 1, retry: false, raw_values: false,
+  };
+  const bootstrapRequestBytes = compactJsonBytes(bootstrapRequest);
+  const bootstrapRequestPath = path.join(root, 'publisher1-bootstrap.request.json');
+  await writeFile(bootstrapRequestPath, bootstrapRequestBytes, { flag: 'wx', mode: 0o600 });
+  const bootstrapMetadata = await physicalMetadata(bootstrapRequestPath);
+  const preflightRequest = {
+    schema_version: 1, purpose: 'CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_REQUEST_V1', authority_sha: AUTHORITY,
+    remote_generation_id: GENERATIONS.remote, controller_generation_id: GENERATIONS.controller,
+    bootstrap_request_path: bootstrapRequestPath, bootstrap_request_path_sha256: sha(Buffer.from(bootstrapRequestPath)),
+    bootstrap_request_sha256: sha(bootstrapRequestBytes), bootstrap_request_identity_sha256: await physicalIdentitySha256(bootstrapRequestPath),
+    bootstrap_request_uid: bootstrapMetadata.uid, bootstrap_request_gid: bootstrapMetadata.gid,
+    descriptor_request_path: descriptorRequestPath, descriptor_request_path_sha256: sha(Buffer.from(descriptorRequestPath)),
+    descriptor_request_sha256: sha(descriptorRequestBytes), descriptor_request_identity_sha256: await physicalIdentitySha256(descriptorRequestPath),
+    descriptor_request_uid: descriptorMetadata.uid, descriptor_request_gid: descriptorMetadata.gid,
+    receiver_root_path_sha256: sha(Buffer.from(receiverRoot)), receiver_root_identity_sha256: await physicalIdentitySha256(receiverRoot),
+    validation_binary_sha256: sha(await readFile(semanticPreflightBinaryPath)), attempt: 1, retry: false, raw_values: false,
+  };
+  const preflightRequestBytes = compactJsonBytes(preflightRequest);
+  const preflightRequestPath = path.join(root, 'semantic-preflight.request.json');
+  await writeFile(preflightRequestPath, preflightRequestBytes, { flag: 'wx', mode: 0o600 });
+  return {
+    root, receiverRoot, destinationParent, stateRoot, descriptorRequestPath, descriptorRequestBytes,
+    bootstrapRequestPath, bootstrapRequestBytes, preflightRequestPath, preflightRequestBytes,
+    descriptorRequest, bootstrapRequest, preflightRequest,
+    semanticContext: {
+      authority: {
+        commit: AUTHORITY, parent: successorParent, tree: '2'.repeat(40),
+        subject_sha256: sha(Buffer.from(successorSubject)), manifest_sha256: sha(authorityManifestBytes), components,
+      },
+      generations: { ...GENERATIONS }, collector_contracts_sha256: sha(compactJsonBytes(scans)),
+      node_candidate_sha256: sha(nodeBytes), operation_authority_sha256: sha(operationAuthorityBytes),
+    },
+    semanticRecords: {
+      issuer: JSON.parse(issuerBytes), pass: JSON.parse(passBytes), operation: JSON.parse(operationAuthorityBytes),
+      publisher: JSON.parse(publisherManifestBytes), attestation: JSON.parse(launchAttestationBytes),
+      human: JSON.parse(humanBytes), humanAuthorizationRequest, humanAuthorizationRequestObservation,
+      receiverLeavesForHuman, installerProvenance, promptSha256,
+    },
+  };
+}
+
+function invokeSemanticPreflight(fixture, extraEnvironment = {}) {
+  return spawnSync(semanticPreflightBinaryPath, [
+    '--publisher1-semantic-preflight', fixture.preflightRequestPath, sha(fixture.preflightRequestBytes),
+  ], {
+    encoding: 'utf8', timeout: WRITER_INVOCATION_TIMEOUT_MS,
+    env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin', ...extraEnvironment },
+  });
+}
+
+async function rewriteOwnerOnly(file, bytes) {
+  await rm(file);
+  await writeFile(file, bytes, { flag: 'wx', mode: 0o600 });
+}
+
+async function refreshSemanticBootstrapBinding(fixture) {
+  fixture.bootstrapRequestBytes = compactJsonBytes(fixture.bootstrapRequest);
+  await rewriteOwnerOnly(fixture.bootstrapRequestPath, fixture.bootstrapRequestBytes);
+  const bootstrapMetadata = await physicalMetadata(fixture.bootstrapRequestPath);
+  fixture.preflightRequest.bootstrap_request_sha256 = sha(fixture.bootstrapRequestBytes);
+  fixture.preflightRequest.bootstrap_request_identity_sha256 = await physicalIdentitySha256(fixture.bootstrapRequestPath);
+  fixture.preflightRequest.bootstrap_request_uid = bootstrapMetadata.uid;
+  fixture.preflightRequest.bootstrap_request_gid = bootstrapMetadata.gid;
+  fixture.preflightRequestBytes = compactJsonBytes(fixture.preflightRequest);
+  await rewriteOwnerOnly(fixture.preflightRequestPath, fixture.preflightRequestBytes);
+}
+
+async function refreshSemanticPreflightBindings(fixture) {
+  fixture.descriptorRequestBytes = compactJsonBytes(fixture.descriptorRequest);
+  await rewriteOwnerOnly(fixture.descriptorRequestPath, fixture.descriptorRequestBytes);
+  const descriptorMetadata = await physicalMetadata(fixture.descriptorRequestPath);
+  const descriptorIdentity = await physicalIdentitySha256(fixture.descriptorRequestPath);
+  const receiverIdentity = await physicalIdentitySha256(fixture.receiverRoot);
+  const materializer = fixture.bootstrapRequest.handoff.materializer_authority;
+  materializer.request_path_sha256 = sha(Buffer.from(fixture.descriptorRequestPath));
+  materializer.request_sha256 = sha(fixture.descriptorRequestBytes);
+  materializer.request_identity_sha256 = descriptorIdentity;
+  materializer.request_uid = descriptorMetadata.uid;
+  materializer.request_gid = descriptorMetadata.gid;
+  materializer.request_mode = descriptorMetadata.mode;
+  materializer.request_nlink = descriptorMetadata.nlink;
+  materializer.receiver_root_identity_sha256 = receiverIdentity;
+  fixture.bootstrapRequest.handoff.receiver_root_identity_sha256 = receiverIdentity;
+
+  const bootstrapEntry = (role) => fixture.bootstrapRequest.entries.find((entry) => entry.role === role);
+  const rebindBootstrapSource = async (entry, bytes = null, mode = null) => {
+    if (!entry) return;
+    if (bytes !== null) {
+      await rm(entry.source_path);
+      await writeFile(entry.source_path, bytes, { flag: 'wx', mode });
+      await chmod(entry.source_path, mode);
+    }
+    const observedBytes = await readFile(entry.source_path);
+    const metadata = await physicalMetadata(entry.source_path);
+    Object.assign(entry, {
+      source_path_sha256: sha(Buffer.from(entry.source_path)), source_sha256: sha(observedBytes),
+      source_uid: metadata.uid, source_gid: metadata.gid, source_mode: metadata.mode,
+      source_nlink: metadata.nlink, source_size: metadata.size, source_mtime_ns: metadata.mtime_ns,
+      source_dev: metadata.dev, source_ino: metadata.ino,
+      source_identity_sha256: await physicalIdentitySha256(entry.source_path),
+    });
+  };
+  await rebindBootstrapSource(bootstrapEntry('materializer-authority'), compactJsonBytes(materializer), 0o600);
+  await rebindBootstrapSource(
+    bootstrapEntry('issuer-receipt'), compactJsonBytes(fixture.bootstrapRequest.handoff.issuer), 0o600,
+  );
+  await rebindBootstrapSource(bootstrapEntry('writer-binary'));
+  for (const role of [
+    'node-runtime', 'controller', 'launcher-runtime', 'launcher-bootstrap-authority',
+    'launch-attestation', 'authority-manifest',
+  ]) {
+    const target = bootstrapEntry(role);
+    const source = fixture.descriptorRequest.entries.find((entry) => entry.role === role);
+    if (target && source) {
+      for (const field of [
+        'source_path', 'source_path_sha256', 'source_sha256', 'source_uid', 'source_gid', 'source_mode',
+        'source_nlink', 'source_size', 'source_mtime_ns', 'source_dev', 'source_ino', 'source_identity_sha256',
+      ]) target[field] = source[field];
+    }
+  }
+
+  fixture.preflightRequest.descriptor_request_sha256 = sha(fixture.descriptorRequestBytes);
+  fixture.preflightRequest.descriptor_request_identity_sha256 = descriptorIdentity;
+  fixture.preflightRequest.descriptor_request_uid = descriptorMetadata.uid;
+  fixture.preflightRequest.descriptor_request_gid = descriptorMetadata.gid;
+  fixture.preflightRequest.receiver_root_identity_sha256 = receiverIdentity;
+  await refreshSemanticBootstrapBinding(fixture);
+}
+
+async function replaceSemanticRole(fixture, role, mutateBytes) {
+  const entry = fixture.descriptorRequest.entries.find((candidate) => candidate.role === role);
+  assert.ok(entry, role);
+  const currentBytes = await readFile(entry.source_path);
+  const replacementBytes = mutateBytes(currentBytes);
+  await rewriteOwnerOnly(entry.source_path, replacementBytes);
+  const metadata = await physicalMetadata(entry.source_path);
+  entry.source_sha256 = sha(replacementBytes);
+  entry.source_uid = metadata.uid;
+  entry.source_gid = metadata.gid;
+  entry.source_mode = metadata.mode;
+  entry.source_nlink = metadata.nlink;
+  entry.source_size = metadata.size;
+  entry.source_mtime_ns = metadata.mtime_ns;
+  entry.source_dev = metadata.dev;
+  entry.source_ino = metadata.ino;
+  entry.source_identity_sha256 = await physicalIdentitySha256(entry.source_path);
+  const leaf = {
+    role, path_sha256: entry.source_path_sha256, sha256: entry.source_sha256,
+    uid: entry.source_uid, gid: entry.source_gid, mode: entry.source_mode, nlink: entry.source_nlink,
+    size: entry.source_size, mtime_ns: entry.source_mtime_ns, dev: entry.source_dev,
+    ino: entry.source_ino, identity_sha256: entry.source_identity_sha256,
+  };
+  const handoff = fixture.bootstrapRequest.handoff;
+  const leafIndex = fixture.descriptorRequest.entries.findIndex((candidate) => candidate.role === role);
+  handoff.materializer_authority.receiver_leaves[leafIndex] = leaf;
+  handoff.receiver_leaves[leafIndex] = structuredClone(leaf);
+  if (role === 'vps-issuer-authority') {
+    handoff.issuer = JSON.parse(replacementBytes);
+    handoff.materializer_authority.issuer_authority_sha256 = sha(replacementBytes);
+  } else if (role === 'vps-pass') {
+    handoff.pass = JSON.parse(replacementBytes);
+  } else if (role === 'publisher-input-manifest') {
+    handoff.transport_manifest = JSON.parse(replacementBytes);
+  } else if (role === 'human-authorization') {
+    handoff.human_authorization = JSON.parse(replacementBytes);
+  }
+  await refreshSemanticPreflightBindings(fixture);
+}
+
+test('successor canonical JSON is byte-identical across JS and Swift while the exact schema rejects digit-underscore extras', async () => {
+  const serializationProbe = {
+    schema_version: 1,
+    purpose: 'CI3_PUBLISHER1_CANONICAL_JSON_PROBE_V1',
+    publisher_installer_compile_authority_sha256: '8'.repeat(64),
+    publisher_installer_expected_binary_sha256: '9'.repeat(64),
+    publisher1_adversarial_probe: false,
+    publisher_adversarial_probe: false,
+    raw_values: false,
+  };
+  const swift = spawnSync(canonicalJsonBinaryPath, ['--publisher1-canonical-json-test'], {
+    input: compactJsonBytes(serializationProbe), encoding: null, timeout: WRITER_INVOCATION_TIMEOUT_MS,
+    env: { HOME: '/var/empty', LANG: 'C', LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+  });
+  assert.equal(swift.status, 0, swift.stderr?.toString('utf8'));
+  assert.deepEqual(swift.stdout, compactJsonBytes(serializationProbe));
+
+  const fixture = await semanticPreflightFixture('canonical-extra-key');
+  try {
+    await replaceSemanticRole(fixture, 'human-authorization', (bytes) => compactJsonBytes({
+      ...JSON.parse(bytes), publisher1_installer_compile_authority_sha256: '7'.repeat(64),
+    }));
+    const rejected = invokeSemanticPreflight(fixture);
+    assert.equal(rejected.status, 1);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /^ERROR (STOP_PRE_AUTHORITY|PUBLISHER1_SEMANTICS)\n$/);
+  } finally {
+    await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+test('round3 shared Swift semantic validator rejects an empty bootstrap installation schema', async () => {
+  const fixture = await semanticPreflightFixture('empty-bootstrap-entries');
+  try {
+    fixture.bootstrapRequest.entries = [];
+    await refreshSemanticPreflightBindings(fixture);
+    assert.deepEqual(fixture.bootstrapRequest.entries, []);
+    const result = invokeSemanticPreflight(fixture);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+  } finally {
+    await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+for (const [label, mutate] of [
+  ['missing source identity member', (request) => { delete request.entries[0].source_ino; }],
+  ['extra entry member', (request) => { request.entries[0].publisher1_extra = false; }],
+  ['role order drift', (request) => { request.entries[0].role = 'issuer-receipt'; }],
+  ['destination drift', (request) => { request.entries[0].destination_relative_path = 'runtime/wrong'; }],
+  ['source path hash drift', (request) => { request.entries[0].source_path_sha256 = '0'.repeat(64); }],
+  ['source content hash drift', (request) => { request.entries[0].source_sha256 = '0'.repeat(64); }],
+  ['source mode drift', (request) => { request.entries[0].source_mode = 0o400; }],
+  ['published mode drift', (request) => { request.entries[0].mode = 0o400; }],
+  ['receiver relation drift', (request) => {
+    const node = request.entries.find((entry) => entry.role === 'node-runtime');
+    const controller = request.entries.find((entry) => entry.role === 'controller');
+    for (const field of [
+      'source_path', 'source_path_sha256', 'source_sha256', 'source_uid', 'source_gid', 'source_mode',
+      'source_nlink', 'source_size', 'source_mtime_ns', 'source_dev', 'source_ino', 'source_identity_sha256',
+    ]) node[field] = controller[field];
+  }],
+]) {
+  test(`round3 shared Swift exact bootstrap schema rejects ${label}`, async () => {
+    const fixture = await semanticPreflightFixture(`bootstrap-entry-${label.replaceAll(' ', '-')}`);
+    try {
+      mutate(fixture.bootstrapRequest);
+      await refreshSemanticBootstrapBinding(fixture);
+      const result = invokeSemanticPreflight(fixture);
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+    } finally {
+      await cleanupPublisher1Fixture(fixture.root);
+    }
+  });
+}
+
+test('successor semantic preflight validates the real receiver without claim, target, privilege or arbitrary output', async () => {
+  const fixture = await semanticPreflightFixture();
+  try {
+    const records = fixture.semanticRecords;
+    assert.equal(controllerContract.validateLaunchAttestation(records.attestation), true);
+    assert.equal(controllerContract.validateOperationAuthority(records.operation, records.attestation), records.operation);
+    assert.equal(publisherChainContract.validateVpsIssuerAuthority(records.issuer), true);
+    assert.equal(publisherChainContract.verifyVpsPass(records.pass, records.issuer, fixture.semanticContext), true);
+    assert.equal(publisherChainContract.validatePublisherInputManifest(records.publisher, fixture.semanticContext), true);
+    assert.equal(publisherChainContract.validateHumanAuthorizationReceipt(
+      records.human, fixture.semanticContext, records.publisher, records.pass, {
+        authorizationRequest: records.humanAuthorizationRequest,
+        authorizationRequestObservation: records.humanAuthorizationRequestObservation,
+        receiverRoot: fixture.receiverRoot,
+        receiverRootIdentitySha256: records.humanAuthorizationRequest.receiver_root_identity_sha256,
+        receiverLeaves: records.receiverLeavesForHuman,
+        installerProvenance: records.installerProvenance,
+        promptSha256: records.promptSha256,
+      },
+    ), true);
+    const before = (await readdir(fixture.root)).sort();
+    const result = invokeSemanticPreflight(fixture);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    const receipt = JSON.parse(result.stdout);
+    assert.deepEqual(Object.keys(receipt).sort(), [
+      'attempt', 'authority_sha', 'bootstrap_request_sha256', 'controller_generation_id',
+      'descriptor_request_identity_sha256', 'descriptor_request_sha256', 'effect_executions',
+      'network_calls', 'privilege_prompts', 'publisher_installer_compile_authority_sha256',
+      'publisher_installer_expected_binary_sha256', 'purpose', 'raw_values', 'receiver_root_identity_sha256',
+      'receiver_root_path_sha256', 'remote_generation_id', 'retry', 'schema_version',
+      'semantic_sources_sha256', 'status', 'validation_binary_sha256', 'writes_performed',
+    ]);
+    assert.equal(receipt.purpose, 'CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_RECEIPT_V1');
+    assert.equal(receipt.status, 'PASS');
+    assert.equal(receipt.writes_performed, 0);
+    assert.equal(receipt.effect_executions, 0);
+    assert.equal(receipt.network_calls, 0);
+    assert.equal(receipt.privilege_prompts, 0);
+    assert.equal(receipt.publisher_installer_compile_authority_sha256, '8'.repeat(64));
+    assert.equal(receipt.publisher_installer_expected_binary_sha256, '9'.repeat(64));
+    assert.equal(receipt.raw_values, false);
+    assert.deepEqual((await readdir(fixture.root)).sort(), before);
+    await assert.rejects(lstat(fixture.destinationParent), { code: 'ENOENT' });
+    await assert.rejects(lstat(fixture.stateRoot), { code: 'ENOENT' });
+    assert.doesNotMatch(result.stdout, new RegExp(fixture.root.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  } finally {
+    await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+test('successor shared Swift validator exact-schema rejects a re-signed extra VPS pass field after all dependent hashes are rebound', async () => {
+  const fixture = await semanticPreflightFixture('resigned-pass-extra');
+  try {
+    await replaceSemanticRole(fixture, 'vps-pass', (bytes) => {
+      const pass = JSON.parse(bytes);
+      delete pass.signed_payload_sha256;
+      delete pass.signature_base64;
+      pass.publisher1_extra_field = false;
+      const signedPayload = compactJsonBytes(pass);
+      return compactJsonBytes({
+        ...pass, signed_payload_sha256: sha(signedPayload),
+        signature_base64: ed25519Sign(null, signedPayload, VPS_ISSUER_KEYPAIR.privateKey).toString('base64'),
+      });
+    });
+    const reboundPassBytes = await readFile(
+      fixture.descriptorRequest.entries.find(({ role }) => role === 'vps-pass').source_path,
+    );
+    await replaceSemanticRole(fixture, 'human-authorization', (bytes) => compactJsonBytes({
+      ...JSON.parse(bytes), vps_operation_authority_pass_sha256: sha(reboundPassBytes),
+    }));
+    const result = invokeSemanticPreflight(fixture);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^ERROR PUBLISHER1_SEMANTICS\n$/);
+  } finally {
+    await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+test('successor JS and shared Swift exact-schema mutation parity rejects every missing field and every artifact extra field', async () => {
+  const fixture = await semanticPreflightFixture('exact-schema-mutation-parity');
+  const records = fixture.semanticRecords;
+  const humanExpected = {
+    authorizationRequest: records.humanAuthorizationRequest,
+    authorizationRequestObservation: records.humanAuthorizationRequestObservation,
+    receiverRoot: fixture.receiverRoot,
+    receiverRootIdentitySha256: records.humanAuthorizationRequest.receiver_root_identity_sha256,
+    receiverLeaves: records.receiverLeavesForHuman,
+    installerProvenance: records.installerProvenance,
+    promptSha256: records.promptSha256,
+  };
+  const cases = [
+    ['vps-issuer-authority', 'issuer', (value) => publisherChainContract.validateVpsIssuerAuthority(value)],
+    ['vps-pass', 'pass', (value) => publisherChainContract.verifyVpsPass(value, records.issuer, fixture.semanticContext)],
+    ['operation-authority', 'operation', (value) => controllerContract.validateOperationAuthority(value, records.attestation)],
+    ['publisher-input-manifest', 'publisher', (value) => publisherChainContract.validatePublisherInputManifest(value, fixture.semanticContext)],
+    ['launch-attestation', 'attestation', (value) => controllerContract.validateLaunchAttestation(value)],
+    ['human-authorization', 'human', (value) => publisherChainContract.validateHumanAuthorizationReceipt(
+      value, fixture.semanticContext, records.publisher, records.pass, humanExpected,
+    )],
+  ];
+  try {
+    let mutations = 0;
+    for (const [role, recordName, validateJs] of cases) {
+      const original = compactJsonBytes(records[recordName]);
+      for (const field of Object.keys(records[recordName])) {
+        const missing = structuredClone(records[recordName]);
+        delete missing[field];
+        assert.throws(() => validateJs(missing), undefined, `${recordName}.${field}:js`);
+        await replaceSemanticRole(fixture, role, () => compactJsonBytes(missing));
+        const swift = invokeSemanticPreflight(fixture);
+        assert.notEqual(swift.status, 0, `${recordName}.${field}:swift`);
+        assert.equal(swift.stdout, '');
+        await replaceSemanticRole(fixture, role, () => original);
+        mutations += 1;
+      }
+      const extra = { ...records[recordName], publisher1_adversarial_extra: false };
+      assert.throws(() => validateJs(extra), undefined, `${recordName}.extra:js`);
+      await replaceSemanticRole(fixture, role, () => compactJsonBytes(extra));
+      const swift = invokeSemanticPreflight(fixture);
+      assert.notEqual(swift.status, 0, `${recordName}.extra:swift`);
+      assert.equal(swift.stdout, '');
+      await replaceSemanticRole(fixture, role, () => original);
+      mutations += 1;
+    }
+    assert.equal(mutations, cases.reduce((total, [, recordName]) => total + Object.keys(records[recordName]).length + 1, 0));
+    assert.equal(mutations, 103);
+    const restored = invokeSemanticPreflight(fixture);
+    assert.equal(restored.status, 0, restored.stderr);
+  } finally {
+    await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+for (const [label, environment] of [
+  ['descriptor request byte stream', { CI3_SYNTHETIC_PREFLIGHT_SWAP_REQUEST: '1' }],
+  ['receiver directory identity', { CI3_SYNTHETIC_PREFLIGHT_SWAP_RECEIVER: '1' }],
+  ['receiver leaf pathname', { CI3_SYNTHETIC_PREFLIGHT_SWAP_SOURCE_ROLE: 'controller' }],
+]) {
+  test(`successor semantic preflight rejects a post-validation swap of ${label} before receipt`, async () => {
+    const fixture = await semanticPreflightFixture(`swap-${label.replaceAll(' ', '-')}`);
+    try {
+      const result = invokeSemanticPreflight(fixture, environment);
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /^ERROR PUBLISHER1_SOURCE_DRIFT\n$/);
+      await assert.rejects(lstat(fixture.destinationParent), { code: 'ENOENT' });
+      await assert.rejects(lstat(fixture.stateRoot), { code: 'ENOENT' });
+    } finally {
+      await cleanupPublisher1Fixture(fixture.root);
+    }
+  });
+}
+
+const SEMANTIC_ROLE_MUTATORS = Object.freeze({
+  'node-runtime': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  controller: (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'launcher-runtime': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'launcher-bootstrap-authority': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'launch-attestation': (bytes) => compactJsonBytes({ ...JSON.parse(bytes), authority_sha: '0'.repeat(40) }),
+  'authority-manifest': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'operation-authority': (bytes) => {
+    const value = JSON.parse(bytes);
+    value.context.authority.commit = '0'.repeat(40);
+    return compactJsonBytes(value);
+  },
+  'human-authorization': (bytes) => compactJsonBytes({ ...JSON.parse(bytes), operation_authority_sha256: '0'.repeat(64) }),
+  'vps-pass': (bytes) => compactJsonBytes({ ...JSON.parse(bytes), operation_authority_sha256: '0'.repeat(64) }),
+  'vps-issuer-authority': (bytes) => compactJsonBytes({ ...JSON.parse(bytes), public_key_sha256: '0'.repeat(64) }),
+  'publisher-input-manifest': (bytes) => {
+    const value = JSON.parse(bytes);
+    value.entries[0].sha256 = '0'.repeat(64);
+    return compactJsonBytes(value);
+  },
+  'ssh-config': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'ssh-known-hosts': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'ssh-private-key': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'ssh-public-key': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+  'ssh-trust-descriptor': (bytes) => Buffer.concat([bytes, Buffer.from('mutated\n')]),
+});
+
+for (const [role, mutateBytes] of Object.entries(SEMANTIC_ROLE_MUTATORS)) {
+  test(`successor shared semantic validator rejects a fully rebound mutation of ${role}`, async () => {
+    const fixture = await semanticPreflightFixture(`semantic-${role}`);
+    try {
+      await replaceSemanticRole(fixture, role, mutateBytes);
+      const result = invokeSemanticPreflight(fixture);
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /^ERROR (?:PUBLISHER1_SEMANTICS|STOP_PRE_AUTHORITY)\n$/);
+      await assert.rejects(lstat(fixture.destinationParent), { code: 'ENOENT' });
+      await assert.rejects(lstat(fixture.stateRoot), { code: 'ENOENT' });
+    } finally {
+      await cleanupPublisher1Fixture(fixture.root);
+    }
+  });
+}
+
+const PREFLIGHT_FIELD_MUTATIONS = Object.freeze([
+  'schema_version', 'purpose', 'authority_sha', 'remote_generation_id', 'controller_generation_id',
+  'bootstrap_request_path', 'bootstrap_request_path_sha256', 'bootstrap_request_sha256',
+  'bootstrap_request_identity_sha256', 'bootstrap_request_uid', 'bootstrap_request_gid',
+  'descriptor_request_path', 'descriptor_request_path_sha256', 'descriptor_request_sha256',
+  'descriptor_request_identity_sha256', 'descriptor_request_uid', 'descriptor_request_gid',
+  'receiver_root_path_sha256', 'receiver_root_identity_sha256', 'validation_binary_sha256',
+  'attempt', 'retry', 'raw_values',
+]);
+
+for (const field of PREFLIGHT_FIELD_MUTATIONS) {
+  test(`successor semantic preflight rejects mutation of bound request field ${field}`, async () => {
+    const fixture = await semanticPreflightFixture(`preflight-${field}`);
+    try {
+      const value = fixture.preflightRequest[field];
+      fixture.preflightRequest[field] = typeof value === 'boolean' ? !value
+        : typeof value === 'number' ? value + 1
+          : field.endsWith('_path') ? `${value}-arbitrary`
+            : field.includes('generation_id') ? `wrong-${'0'.repeat(64)}`
+              : field === 'purpose' ? 'WRONG_PURPOSE'
+                : field === 'authority_sha' ? '0'.repeat(40) : '0'.repeat(64);
+      fixture.preflightRequestBytes = compactJsonBytes(fixture.preflightRequest);
+      await rewriteOwnerOnly(fixture.preflightRequestPath, fixture.preflightRequestBytes);
+      const result = invokeSemanticPreflight(fixture);
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+      await assert.rejects(lstat(fixture.destinationParent), { code: 'ENOENT' });
+      await assert.rejects(lstat(fixture.stateRoot), { code: 'ENOENT' });
+    } finally {
+      await cleanupPublisher1Fixture(fixture.root);
+    }
+  });
+}
+
+for (const [field, replacement] of [
+  ['schema_version', 3],
+  ['purpose', 'WRONG_BOOTSTRAP_PURPOSE'],
+  ['authority_sha', '0'.repeat(40)],
+  ['controller_generation_id', `wrong-${'0'.repeat(64)}`],
+  ['destination_root', '/tmp/arbitrary-output'],
+  ['state_root', '/tmp/arbitrary-state'],
+  ['attempt', 2],
+  ['retry', true],
+  ['raw_values', true],
+]) {
+  test(`successor semantic preflight rejects mutation of bootstrap field ${field}`, async () => {
+    const fixture = await semanticPreflightFixture(`bootstrap-${field}`);
+    try {
+      fixture.bootstrapRequest[field] = replacement;
+      await refreshSemanticPreflightBindings(fixture);
+      const result = invokeSemanticPreflight(fixture);
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, '');
+      await assert.rejects(lstat(fixture.destinationParent), { code: 'ENOENT' });
+      await assert.rejects(lstat(fixture.stateRoot), { code: 'ENOENT' });
+    } finally {
+      await cleanupPublisher1Fixture(fixture.root);
+    }
+  });
+}
+
 async function cleanupPublisher1Fixture(root) {
   const makeWritable = async (directory) => {
     let entries = [];
@@ -2282,6 +3167,56 @@ test('round-11 Publisher 1 rejects a hardlinked receiver leaf before claim', asy
     await assert.rejects(readFile(path.join(fixture.stateRoot, 'publisher1.claim.json')), { code: 'ENOENT' });
   } finally {
     await cleanupPublisher1Fixture(fixture.root);
+  }
+});
+
+test('successor writer operational and semantic-preflight binaries expose disjoint capabilities', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-semantic-preflight-capabilities-'));
+  const operationalBinary = path.join(root, 'ci3-writer-operational');
+  const validationBinary = path.join(root, 'ci3-writer-semantic-preflight');
+  try {
+    for (const [output, flags] of [
+      [operationalBinary, []],
+      [validationBinary, ['-D', 'CI3_PUBLISHER1_SEMANTIC_PREFLIGHT_V1']],
+    ]) {
+      const compilation = spawnSync('/usr/bin/xcrun', [
+        'swiftc', '-parse-as-library', ...flags, SOURCE_PATH, '-o', output,
+      ], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 120000 });
+      assert.equal(compilation.status, 0, compilation.stderr);
+    }
+
+    const operationalPreflight = spawnSync(operationalBinary, ['--publisher1-semantic-preflight'], {
+      encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: WRITER_INVOCATION_TIMEOUT_MS,
+    });
+    assert.notEqual(operationalPreflight.status, 0);
+    assert.equal(operationalPreflight.stdout, '');
+    assert.match(operationalPreflight.stderr, /^ERROR MODE_INVALID\n$/);
+
+    const validationPreflight = spawnSync(validationBinary, ['--publisher1-semantic-preflight'], {
+      encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: WRITER_INVOCATION_TIMEOUT_MS,
+    });
+    assert.notEqual(validationPreflight.status, 0);
+    assert.equal(validationPreflight.stdout, '');
+    assert.match(validationPreflight.stderr, /^ERROR PUBLISHER1_PREFLIGHT_INPUT\n$/);
+
+    for (const args of [
+      ['--self-test'],
+      ['--publisher1-transaction'],
+      ['--validate-manifest'],
+      ['--write'],
+      ['--promote-directory', '/tmp/source', '/tmp/destination'],
+      ['--descriptor-transaction'],
+      ['--publisher1-promotion-probe', '/tmp/transaction'],
+    ]) {
+      const denied = spawnSync(validationBinary, args, {
+        input: '{}\n', encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: WRITER_INVOCATION_TIMEOUT_MS,
+      });
+      assert.notEqual(denied.status, 0, args.join(' '));
+      assert.equal(denied.stdout, '', args.join(' '));
+      assert.match(denied.stderr, /^ERROR MODE_INVALID\n$/, args.join(' '));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

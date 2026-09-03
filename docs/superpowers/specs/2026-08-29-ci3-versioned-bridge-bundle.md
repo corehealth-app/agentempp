@@ -1018,6 +1018,43 @@ inputs, signs Ed25519, creates the PASS no-clobber, fsyncs, freezes and reopens
 it. No real key is embedded; missing external provisioning is
 `STOP_PRE_AUTHORITY`.
 
+### Publisher chain V2 successor round-4 contract — 1.7.20
+
+Publisher 0 bootstrap materialization MUST use exclusive/no-follow file
+creation, synchronize files and directories, freeze and reobserve immutable
+flags and the complete physical identity tuple, verify the exact tree, and
+execute controller/runtime from pinned descriptors rather than mutable names.
+A new transaction MUST atomically require an absent root and publish its claim
+first. An existing root MUST validate the original exact claim before any other
+read or write; unclaimed, extra, key, issuer or payload preseed MUST stop
+without mutation.
+
+The one distributed Publisher 0 session MUST remain PREPARED until the complete
+authenticated local journal and local ACK are durable. Causal local receipts
+MUST be staged owner-only, file-synced, atomically promoted and parent-synced.
+Remote commit MUST follow the local ACK, and the broker MUST publish a final
+QUIESCED receipt before the outer entrypoint returns. Recovery at every
+prepared-to-ACK kill window MUST use the original durable decision and MUST NOT
+start a second session or effect.
+
+The original privileged Publisher 1 protocol MUST register a root-owned,
+version-addressed persistent continuation bound to immutable self, claim and
+service definition. That continuation MUST survive supervisor death and resume
+Phase B without another prompt or Phase A. An authenticated barrier immediately
+before Phase B MUST make partial/divergent state stop both the original
+supervisor and reentry. The installed-launcher E2E MUST execute the installed
+zsh and Node/controller chain, scan actual serialized produced surfaces with
+all six scanners, read back sixteen targets, settle, reach real later-writer
+dispatch and deny terminal publication.
+
+Current conformance passes external 322/322, installer 159/159, controller
+743/743, launcher 115/115, writer 227/227, read-only generator 434/434 and the
+serial aggregate 2000/2000 in 811.70 seconds, all with zero
+fail/cancel/skip/todo. The literal shared mutation contract remains 103 = 97 +
+6. Remote generator, schema, path derivation and input contract remain
+read-only; operational state remains `STOP_PRE_AUTHORITY` pending two fresh
+independent reviews.
+
 Synthetic crash coverage now invokes the actual Swift test writer as the
 `INVOKE_WRITER` phase effect, and `VERIFY_ANCHOR` reopens the artifacts from
 that same causal run. A crash after a durable claim but before any physical
@@ -1757,3 +1794,305 @@ new exact `/bin/zsh -n` receipt is mandatory after the successor blobs are
 published/materialized and before simulator, ssh configuration, SSH, claims,
 three reads or any operational network. No retry or predecessor execution is
 permitted after a Gate 0 failure.
+
+## External Publisher chain authority V1
+
+The successor boundary has three independent authorities: the published Mac
+executor, a root-only external Publisher 0 issuer/pass, and a root-only
+Publisher 1 materializer authority. Each binds the same frozen executor lineage
+and relevant remote/controller generations without copying a private issuer
+key, raw configuration, credential, host value or production data.
+
+Publisher 0 has one non-interactive, fixed-command SSH attempt only after the
+separate human authorization input exists. It publishes a signed pass, public
+issuer receipt, Publisher input manifest and transport receipt. The transport
+accepts only its allowlisted public roles through owner-only, no-follow,
+no-clobber descriptor reads. Publisher 1 consumes the exact sixteen receiver
+leaves, a fixed closed environment and the frozen terminal-anchor writer; its
+receipt is last and exact-existing is accepted only with the original claim.
+
+Before any external effect, the Node authority verifies the preserved Gate 0,
+the published executor authority and the unchanged remote bundle. Missing
+external roots are `STOP_PRE_AUTHORITY`; they do not authorize fallback to a
+worktree, simulator, remote bundle recreation, arbitrary path, retry or normal
+executor privilege. All evidence projections require `raw_values=false`.
+
+## Semantic-safe Publisher chain V2
+
+The V1 `STOP_PRE_AUTHORITY` remains valid predecessor evidence. V2 requires a
+fresh Gate 0 after exact successor materialization and green suites; a V1 Gate
+0 receipt is never reusable as successor authority.
+
+The exact reviewed writer source defines one shared semantic validator seam.
+A validation build may expose only semantic preflight and must reject every
+operational/output mode. An operational build must not expose semantic
+preflight. The controller executes the validation build over the real
+owner-only request/receiver after Publisher 0 transport and human authorization
+and may persist only the sanitized receipt bytes produced by that executable.
+No JavaScript projection may manufacture or substitute that receipt.
+
+The immutable installer protocol is two-phase. Phase A authenticates the fixed
+bindings and installs only its own exact binary into a version-addressed,
+root-owned, mode-0555, fsynced, immutable and fully read-back location. Phase A
+has no Publisher/controller/SSH/terminal target capability. Phase B is callable
+only by the fixed immutable self, revalidates all inputs, claims before the
+first target effect, and publishes receipt last. Recovery never refetches,
+retries, cleans or accepts divergent/unclaimed exact-existing state.
+
+Installer compilation is independently authorized. The compile authority binds
+the reviewed source, fixed driver, selected compiler, compile arguments,
+toolchain provenance and expected binary digest; human authorization and the
+Swift preflight receipt carry the authority/digest into Phase A. A mutable
+source plus a rewritten sidecar cannot select an alternate privileged binary.
+Successor canonical JSON uses explicit UTF-8 key ordering and must serialize
+byte-identically in JS and Swift even for digit/underscore adversarial keys.
+The consumer contract is exact-schema: any additional key is rejected.
+
+The required order is authority, exact blobs, fresh Gate 0, Publisher 0,
+issuer/pass, manifest/transport, owner-only capture, receiver, independent
+request, human receipt, final identities, semantic preflight, immutable Phase
+A, Publisher 1 Phase B, readback, operation authority, sixteen-target
+controller/readback, settlement, then simulator/later gates. Publisher 0
+outputs must not exist before its fixed producer runs.
+
+Operation authority must be reachable after Publisher 1. Privileged-writer
+authority must be reachable only after all six scans, and terminal anchoring
+must remain unreachable before them. The generator is predecessor lineage, not
+a seventeenth controller target. Remote generator, schema, path derivation and
+input contract remain unchanged and read-only.
+
+The 1.7.16 focused checkpoint passed 56/56 order, 54/54 shared seam, 10/10
+immutable installer, 3/3 real wiring, 7/7 preserved negatives and 5/5
+downstream tests, plus 1/1 independent installer-selection negative. Its
+complete pre-review runs were 282/282 external-chain, 153/153 installer,
+215/215 writer and 1501/1501 four-file Mac authority tests with no failure,
+cancellation, skip or todo. Those totals are historical review inputs rather
+than the 1.7.17 result. Unit concurrency is the reliable command
+for the two long gates and requires no timeout/assertion weakening. The prior
+223, 143, 161 and 1460 totals are historical only. No real
+network, SSH, simulator, administrative, root, production, CI-3, retry or
+cleanup effect is authorized by this specification; the recorded cleanup
+deadline remains in force.
+
+### Publisher chain V2 successor review contract — 1.7.17
+
+Both launcher and controller MUST require the successor's exact parent and
+subject and MUST reject predecessor authority. Publisher 0 MUST begin without
+future output candidates. A fixed producer MUST emit its public artifacts into
+authenticated transport capture before the receiver consumes them. Human V2
+authorization MUST be independently created after the request and MUST bind
+authority, request, receiver, all sixteen leaves, installer Git provenance and
+the single non-administrative prompt budget.
+
+There is exactly one initial privileged macOS boundary. It MUST occur after
+semantic preflight and after fresh observation of the request, receiver and all
+sixteen leaves. The fixed system driver MUST interpret the exact supervisor
+Swift bytes bound by Git path, blob OID and independent authority manifest.
+Candidate-path selection, verify-path/execute-path splitting and `argv[0]`
+trust are forbidden. Phase A MAY then install and read back only its immutable
+self; Phase B MUST accept only that fixed self. Recovery before or after the
+freeze MUST be deterministic and MUST NOT clean, refetch, retry or create a
+new attempt.
+
+The canonical receipt V2 schema is versioned, shared and exact end to end. The
+Swift validator MUST enforce every exact key and cross-field relation. The JS
+and Swift implementations MUST agree on acceptance and rejection for every
+supported mutation; the current matrix contains 97 missing-field and 6
+extra-field variants. The real operation publisher MUST consume authenticated
+request, issuer/pass, human receipt and operation authority, read back exactly
+sixteen targets, persist settlement and reach later-writer authority only in
+that order. A test seam MAY replace the privilege/root I/O boundary only; it
+MUST NOT manufacture semantic receipts or operation authority.
+
+Focused 1.7.17 conformance passes 150/150: 1 launcher-lineage, 10 controller,
+70 external chain, 13 installer and 56 writer tests, with zero failure,
+cancellation, skip or todo. Final serial conformance passes external 293/293,
+installer 156/156, controller 740/740, launcher 115/115, writer 217/217,
+generator 434/434 and the final aggregate 1506/1506, with zero
+fail/cancel/skip/todo. The initial aggregate 1505/1506 exposed a launcher
+structural-skeleton regression that was closed while preserving predecessor
+structure and assertions and leaving the generator read-only. The remote
+generator, schema, path derivation and input
+contract remain read-only, and operational state remains
+`STOP_PRE_AUTHORITY`.
+
+### Publisher chain V2 successor round-2 contract — 1.7.18
+
+The first macOS privileged invocation MUST traverse the bounded fixed
+subprocess boundary with LF/NUL-free argv, exact `swift -
+--privileged-supervisor` dispatch, one prompt and atomic loaded-image
+selection. A missing executable MUST consume no attempt. P0 MUST materialize
+its remote helper from exact Git-bound blobs within its sole SSH transaction;
+receive MUST be an authority builtin and production verify MUST select the
+launcher installed by the immutable bootstrap.
+
+Preflight MUST NOT require a frozen root projection. Its authority projection
+MUST derive from authenticated published Git/current-user material and the
+signed pass before any root write. Phase B MUST install and read back all nine
+launcher/runtime authority entries before producing the operation-publisher
+request. That request MUST be causal and non-preseeded.
+
+Outer-ledger recovery MUST be read-only and operation-specific before it
+publishes a missing generic result. Verify MUST authenticate its own claim,
+canonical result, full sixteen-target tree and controller settlement; Phase B
+settlement is not verify settlement. Missing, partial, divergent or unclaimed
+state MUST stop without respawn, retry, refetch, prompt or cleanup. The Phase A
+post-promotion/pre-freeze boundary MUST recover only its exact generation.
+
+The exact shared V2 contract contains a literal 103-mutation parity matrix: 97
+missing-key and 6 extra-key mutations. Current conformance passes external
+304/304, installer 158/158, controller 743/743, launcher 115/115, writer
+227/227, read-only generator 434/434 and aggregate 1981/1981, with zero
+fail/cancel/skip/todo. Remote generator, schema, path derivation and input
+contract remain read-only; operational state remains `STOP_PRE_AUTHORITY`.
+
+### Publisher chain V2 successor round-3 contract — 1.7.19
+
+The sole Publisher 0 SSH transaction MUST begin with the remote successor
+object root, issuer, request, pass, payload and helper absent. It MUST execute
+only a fixed system shell and MUST carry the exact Git bytes, manifest,
+provenance and eleven authority inputs over stdin. Within that same session it
+MUST materialize, reopen and freeze controller and tool before controller
+execution. It MUST then create a versioned claim-first transaction, generate
+an owner-restricted Ed25519 key, publish the public issuer, unsigned request and
+payload inputs, and publish the signed pass, manifest and authenticated
+transport receipt last. No ambient or preseeded successor artifact is an
+authority input.
+
+The local side MUST durably journal authenticated stdout with exclusive,
+no-follow, owner-only creation and synchronization before the remote effect is
+reported settled. Outer recovery after remote settlement and before capture
+promotion MUST consume only that original journal and MUST NOT start a second
+SSH session. The one privileged supervisor MUST remain responsible for Phase A
+and Phase B under the original prompt. Reentry after exact Phase A MAY join the
+original in-flight continuation, but MUST NOT prompt or invoke Phase A again;
+partial or divergent Phase B MUST stop closed.
+
+The installed launcher integration MUST execute the real zsh launcher and
+installed Node controller. The controller MUST derive its causal request from
+the fixed installed version root rather than an ambient descriptor, read back
+exactly sixteen targets, publish settlement, execute all six scan functions and
+prove later-writer reachability while refusing the terminal mode. The launcher
+MUST preserve the generator-validated predecessor structural skeleton.
+
+Current conformance passes external 311/311, installer 158/158, controller
+743/743, launcher 115/115, writer 227/227, read-only generator 434/434 and the
+serial aggregate 1988/1988 in 711.07 seconds, with zero
+fail/cancel/skip/todo and no timeout. Remote generator, schema, path derivation
+and input contract remain read-only; operational state remains
+`STOP_PRE_AUTHORITY`.
+
+### Publisher chain V2 successor round-5 contract — 1.7.21
+
+Before any Node/controller process, Publisher 0 MUST use its fixed primitive to
+create roots and leaves exclusively/no-follow and MUST bind hashing, fstat,
+fsync, freeze/readback and execution to the same pinned descriptors. It MUST
+verify the exact tree and MUST reject unclaimed roots, pathname/directory swaps
+and extra leaves without normalizing their metadata.
+
+Remote PREPARED MUST be nonterminal. The authenticated local journal and ACK
+MUST be durable before terminal remote publication. A version-addressed
+continuation MUST preserve the sole in-flight decision across broker and outer
+death without a second transport/effect. Local causal receipts MUST publish
+owner-only with a no-clobber primitive; a concurrent destination MUST be
+validated as exact-existing or rejected and MUST NOT be replaced.
+
+Publisher 1 durable claim, definition, invocation, registration and marker
+objects MUST be exact and immutable. Its launchd definition MUST be one-shot
+and MUST NOT use KeepAlive retry semantics. Recovery MUST cover supervisor
+death at CLAIM, DEFINITION, BOOTSTRAP and REGISTRATION without a second prompt
+or Phase A and MUST record no more than one worker invocation after failure.
+
+The installed-launcher no-effect integration MUST execute the installed zsh
+launcher and Node/controller, serialize the six surfaces actually produced by
+that execution, observe exactly sixteen targets and invoke the real
+`publishPrivilegedWriterAuthority` consumer. A test seam MAY replace only the
+effect below that consumer; terminal publication MUST remain denied.
+
+The current proofs are local: fake remote without SSH or real host restart,
+synthetic service seam without launchd/reboot/root prompt, and installed
+fixture without Terminal/Xcode/simulator. Current conformance passes external
+337/337, installer 172/172, controller 743/743, launcher 115/115, writer
+227/227, read-only generator 434/434 and aggregate 2028/2028 in 953.86 seconds,
+with zero fail/cancel/skip/todo. Remote generator, schema, path derivation and
+input contract remain read-only; operational state remains
+`STOP_PRE_AUTHORITY` pending two fresh independent reviews.
+
+### Publisher chain V2 successor round-7 contract — 1.7.22
+
+Publisher 0 PREPARED MUST be fully synchronized, mode-frozen, read back and
+validated before local ACK. A version-addressed session supervisor MUST retain
+the sole in-flight transport while restartable journal workers materialize the
+durable local decision. After ACK, terminal COMMIT MUST be one final
+no-replace hard-link operation; PREPARED MAY remain as same-inode evidence.
+This local contract does not claim host-reboot or SSH-reattachment durability.
+
+Publisher 1 registration MUST be a supervised persistent state machine across
+CLAIM, DEFINITION, INVOCATION, PRE_BOOTSTRAP, POST_BOOTSTRAP and
+PRE_REGISTRATION. The Phase B worker definition MUST contain neither
+`RunAtLoad` nor `KeepAlive`; bootstrap/registration MUST precede one explicit
+kickstart. An exclusive run claim and effect-entry claim MUST guard Phase B,
+and exact terminal `completed` or `failed` state MUST prevent a reloaded or
+reinvoked worker from entering the effect again and MUST settle the service.
+
+Current local conformance passes focused external 12/12 and installer 1/1;
+complete serial external 347/347, installer 173/173, controller 743/743,
+launcher 115/115, writer 227/227, read-only generator 434/434 and aggregate
+2039/2039 in approximately 594 seconds, with zero fail/cancel/skip/todo. These
+are fake-remote and synthetic-service proofs, not real SSH/host restart,
+launchd/bootout/reboot/root prompt, Terminal/Xcode/simulator or privileged
+effect evidence. Remote generator, schema, paths and inputs remain read-only;
+operational state remains `STOP_PRE_AUTHORITY` pending two fresh reviews.
+
+### Publisher chain V2 successor round-8 contract — 1.7.23
+
+Publisher 0 MUST keep the sole transport child/session under a persistent
+version-addressed owner separate from the killable session supervisor. A
+restarted supervisor MUST join the same original transport decision at each
+journal/ACK and remote terminal boundary without a second transport, refetch
+or effect. Local `COMMIT_DECIDED` MUST be durable before ACK. Remote terminal
+commit MUST perform one no-replace hard link, synchronize the containing
+directory and emit an authenticated output/request-bound decision last.
+
+Publisher 1 MUST persist `KICKSTART_DECIDED`, run-claim, effect-entry and
+terminal state. A registrar restarted after kickstart MUST join the original
+worker and MUST NOT kickstart twice. Worker death before effect-entry MAY
+relaunch the same continuation. Once effect-entry exists, recovery MUST NOT
+replay the effect and MUST settle from authenticated durable evidence or stop
+at `STOP_PARTIAL`. Worker ownership MUST bind an immutable version-addressed
+identity rather than trusting a raw process identifier.
+
+Current local conformance passes focused Round 8 11/11 and predecessor
+external 27/27 plus installer 14/14. Complete serial suites pass external
+358/358, installer 173/173, controller 743/743, launcher 115/115, writer
+227/227 and read-only generator 434/434 with zero fail/cancel/skip/todo. This
+does not prove actual SSH-process death, host reboot/reattachment, real
+launchd/root prompt, Terminal/Xcode/simulator or privileged effects. Remote
+generator, schema, paths and inputs remain read-only; operational state remains
+`STOP_PRE_AUTHORITY` pending two fresh reviews.
+
+### Publisher chain V2 successor round-9 contract — 1.7.24
+
+Publisher 1 MUST establish a separate version-addressed activation owner and
+persistently bind its identity, claim, exclusive lock and ready handshake
+before activation is authorized. The owner, not the registrar, MUST own the
+single physical kickstart and the worker recovery loop. Registrar recovery
+before signal and after accepted start but before worker-launch receipt MUST
+rejoin and signal that same owner; missing post-start receipt MUST NOT be used
+as evidence that activation did not occur. Physical executable kickstarts,
+owner launches, worker launches and effect entries MUST be counted separately.
+The Phase B worker definition MUST continue to contain neither `RunAtLoad` nor
+`KeepAlive`.
+
+Current local conformance progressed from RED 0/2 to GREEN 2/2 at
+`PRE_SIGNAL` and `POST_ACCEPT_PRE_RECEIPT`, passes Round 8 predecessor proofs
+11/11, impacted regressions 4/4, 4/4 and 6/6, and complete installer 173/173.
+Swift typechecks and Node syntax pass. Complete suites pass external 360/360,
+installer 173/173, controller 743/743, launcher 115/115, writer 227/227 and
+read-only generator 434/434; the serial aggregate passes 2052/2052 in
+approximately 1156.5 seconds with zero fail/cancel/skip/todo. This contract
+does not claim exact-once recovery from
+activation-owner death, host reboot/reattachment, real launchd/root prompt,
+Terminal/Xcode/simulator or privileged effects. Remote generator, schema,
+paths and inputs remain read-only; operational state remains
+`STOP_PRE_AUTHORITY`.

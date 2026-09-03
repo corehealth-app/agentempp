@@ -8,20 +8,21 @@ import nodeTest from 'node:test';
 import { launcherStructuralSkeleton } from './create-ios-staging-bridge-config.mjs';
 
 const SOURCE_ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
-const EXECUTOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
-const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
+const EXECUTOR_AUTHORITY_PARENT = 'd4f7d37bbac98b5b0e37b459528a8d5c6adb3622';
+const EXECUTOR_AUTHORITY_SUBJECT = 'build(ops): authorize semantic-safe Publisher chain for CI-3';
+const PREDECESSOR_AUTHORITY_PARENT = '65a06d3e7426117ea80679933f6a7bb611be5988';
+const PREDECESSOR_AUTHORITY_SUBJECT = 'build(ops): authorize mac-compatible CI-3 bridge executor';
 const AUTHORITY_PATHS = Object.freeze([
   'docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md',
-  'docs/superpowers/evidence/2026-08-29-ci3-bridge-v3-review-stop.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-bridge-git-blob-reader-stop-and-authority.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-deployment-receipt-reconciliation-authority.md',
-  'docs/superpowers/evidence/2026-08-31-ci3-env-receipt-reconciliation-authority.md',
+  'docs/superpowers/evidence/2026-09-01-ci3-external-publisher-chain-authority.md',
   'docs/superpowers/evidence/2026-09-01-ci3-mac-executor-compatibility-authority.md',
   'docs/superpowers/specs/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-29-ci3-versioned-bridge-bundle.md',
   'docs/superpowers/plans/2026-08-20-naming-neutral-core-integration.md',
-  'scripts/ci3/create-ios-staging-bridge-config.mjs',
-  'scripts/ci3/create-ios-staging-bridge-config.test.mjs',
+  'scripts/ci3/ci3-external-publisher-chain.mjs',
+  'scripts/ci3/ci3-external-publisher-chain.test.mjs',
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.swift',
+  'scripts/ci3/ci3-publisher1-bootstrap-installer.test.mjs',
   'scripts/ci3/ci3-bridge-controller.mjs',
   'scripts/ci3/ci3-bridge-controller.test.mjs',
   'scripts/ci3/ci3-bridge-launcher.zsh',
@@ -35,8 +36,9 @@ let writerBuildRoot;
 let writerTestBinary;
 let setupError;
 const VPS_SOURCE_CONTRACT_MODE = process.platform !== 'darwin';
+const currentLauncherSource = await readFile(new URL('./ci3-bridge-launcher.zsh', import.meta.url), 'utf8');
 const launcherSourceContract = VPS_SOURCE_CONTRACT_MODE
-  ? await readFile(new URL('./ci3-bridge-launcher.zsh', import.meta.url), 'utf8')
+  ? currentLauncherSource
   : null;
 const test = VPS_SOURCE_CONTRACT_MODE
   ? Object.assign(() => undefined, { after: () => undefined })
@@ -51,15 +53,13 @@ function git(root, args) {
 
 async function createRepository(mutate, commitAuthority = true) {
   const root = await mkdtemp(path.join(tmpdir(), 'ci3-launcher-repo-'));
-  assert.equal(git(root, ['init', '-q']).status, 0);
+  const clone = spawnSync('/usr/bin/git', [
+    'clone', '-q', '--shared', '--no-checkout', SOURCE_ROOT, root,
+  ], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+  assert.equal(clone.status, 0, clone.stderr);
   assert.equal(git(root, ['config', 'user.name', 'Synthetic CI3']).status, 0);
   assert.equal(git(root, ['config', 'user.email', 'synthetic@example.invalid']).status, 0);
-  await writeFile(path.join(root, '.authority-base'), 'synthetic immutable parent\n');
-  assert.equal(git(root, ['add', '.authority-base']).status, 0);
-  assert.equal(git(root, ['commit', '-q', '-m', 'synthetic authority parent']).status, 0);
-  await writeFile(path.join(root, '.pre-authority-head'), 'synthetic pre-authority head\n');
-  assert.equal(git(root, ['add', '.pre-authority-head']).status, 0);
-  assert.equal(git(root, ['commit', '-q', '-m', 'synthetic pre-authority head']).status, 0);
+  assert.equal(git(root, ['checkout', '-q', '--detach', EXECUTOR_AUTHORITY_PARENT]).status, 0);
   for (const relativePath of AUTHORITY_PATHS) {
     await mkdir(path.dirname(path.join(root, relativePath)), { recursive: true, mode: 0o700 });
     await cp(path.join(SOURCE_ROOT, relativePath), path.join(root, relativePath));
@@ -71,6 +71,12 @@ async function createRepository(mutate, commitAuthority = true) {
   if (commitAuthority) {
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
     assert.equal(git(root, ['commit', '-q', '-m', EXECUTOR_AUTHORITY_SUBJECT]).status, 0);
+  } else {
+    const history = git(root, ['rev-list', '--reverse', EXECUTOR_AUTHORITY_PARENT]);
+    assert.equal(history.status, 0, history.stderr);
+    const preAuthorityHead = history.stdout.trim().split('\n')[1];
+    assert.match(preAuthorityHead, /^[0-9a-f]{40}$/);
+    assert.equal(git(root, ['update-ref', 'HEAD', preAuthorityHead]).status, 0);
   }
   return root;
 }
@@ -106,6 +112,13 @@ function launch(root = requireRoot(), args = ['--self-test'], extraEnv = {}) {
 test.after(async () => {
   if (baseRoot) await rm(baseRoot, { recursive: true, force: true });
   if (writerBuildRoot) await rm(writerBuildRoot, { recursive: true, force: true });
+});
+
+nodeTest('launcher freezes only the semantic-safe successor lineage literals', () => {
+  assert.match(currentLauncherSource, new RegExp(EXECUTOR_AUTHORITY_PARENT));
+  assert.match(currentLauncherSource, /build\(ops\): authorize semantic-safe Publisher chain for CI-3/);
+  assert.doesNotMatch(currentLauncherSource, new RegExp(`AUTHORITY_PARENT" == '${PREDECESSOR_AUTHORITY_PARENT}'`));
+  assert.doesNotMatch(currentLauncherSource, new RegExp(PREDECESSOR_AUTHORITY_SUBJECT));
 });
 
 if (VPS_SOURCE_CONTRACT_MODE) {
@@ -170,14 +183,18 @@ if (VPS_SOURCE_CONTRACT_MODE) {
     });
   }
   nodeTest('[VPS source-contract] authority contains exactly seventeen ordered paths', () => {
-    assert.equal(AUTHORITY_PATHS.length, 17);
-    assert.equal(new Set(AUTHORITY_PATHS).size, 17);
+    assert.equal(AUTHORITY_PATHS.length, 16);
+    assert.equal(new Set(AUTHORITY_PATHS).size, 16);
   });
-  nodeTest('[VPS source-contract] launcher freezes the deployment receipt authority parent', () => {
-    assert.match(launcherSourceContract, /65a06d3e7426117ea80679933f6a7bb611be5988/);
+  nodeTest('[VPS source-contract] launcher freezes the semantic-safe successor authority parent', () => {
+    assert.match(launcherSourceContract, new RegExp(EXECUTOR_AUTHORITY_PARENT));
   });
-  nodeTest('[VPS source-contract] launcher freezes the receipt-reconciliation subject', () => {
-    assert.match(launcherSourceContract, /build\(ops\): authorize mac-compatible CI-3 bridge executor/);
+  nodeTest('[VPS source-contract] launcher freezes the semantic-safe successor subject', () => {
+    assert.match(launcherSourceContract, /build\(ops\): authorize semantic-safe Publisher chain for CI-3/);
+  });
+  nodeTest('[VPS source-contract] launcher rejects predecessor lineage as current authority', () => {
+    assert.doesNotMatch(launcherSourceContract, new RegExp(`AUTHORITY_PARENT" == '${PREDECESSOR_AUTHORITY_PARENT}'`));
+    assert.doesNotMatch(launcherSourceContract, new RegExp(PREDECESSOR_AUTHORITY_SUBJECT));
   });
   nodeTest('[VPS source-contract] launcher carries the new evidence path', () => {
     assert.match(launcherSourceContract, /2026-08-31-ci3-deployment-receipt-reconciliation-authority\.md/);
@@ -360,6 +377,7 @@ test('pre-commit launcher fails COMPONENT_MISSING and the same exact command pas
     assert.notEqual(before.status, 0);
     assert.equal(before.stdout, '');
     assert.match(before.stderr, /^ERROR COMPONENT_MISSING\n$/);
+    assert.equal(git(root, ['update-ref', 'HEAD', EXECUTOR_AUTHORITY_PARENT]).status, 0);
     assert.equal(git(root, ['add', ...AUTHORITY_PATHS]).status, 0);
     assert.equal(git(root, ['commit', '-q', '-m', EXECUTOR_AUTHORITY_SUBJECT]).status, 0);
     const after = launch(root);

@@ -16,13 +16,14 @@ import { fileURLToPath } from 'node:url';
 import {
   AUTHORITY_PATHS,
   buildPublisher1TransactionRequest,
+  validateLaunchAttestation,
   validatePublisher1MaterializerAuthorityBinding,
 } from './ci3-bridge-controller.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SWIFT_PREPARE_HELPER = path.join(path.dirname(SCRIPT_PATH), 'ci3-publisher1-bootstrap-installer.swift');
 const PRODUCTION_OWNER_ROOT = path.join(homedir(), '.config', 'agentempp', 'ci3', 'external-publisher-chain-v1');
-const PRODUCTION_BINDINGS_PATH = '/Users/eduardohenrique/Library/Caches/codex-sdd/ci3-external-publisher-chain-current/authorities.json';
+const PRODUCTION_BINDINGS_PATH = path.join(homedir(), '.config', 'agentempp', 'ci3', 'frozen-input-constructor-v1', 'authorities.json');
 const MODES = Object.freeze([
   '--self-test', '--prepare', '--provision-vps-publisher0', '--receive-vps-pass',
   '--provision-mac-publisher1', '--verify-chain',
@@ -158,6 +159,11 @@ export const PUBLISHER1_RECEIVER_ROLES = Object.freeze(
 // authority is a causal output of a later stage and is therefore forbidden
 // from the preparation set.
 export const PREPARE_CANDIDATE_ROLES = Object.freeze(['ssh-config']);
+export const PRODUCTION_FROZEN_INPUT_ORDER = Object.freeze([
+  'AUTHORITY_PUBLISHED', 'GATE0_PASS', 'FRESH_OOB_RECEIPT',
+  'AUTHENTICATED_SSH_RECEIPT', 'MAC_NODE_CAPSULE', 'MATERIALIZED_53_OF_53',
+  'FROZEN_CORPUS', 'PUBLISHER0', 'PUBLISHER1', 'CONTROLLER_AUTHORITY',
+]);
 const MAX_SUBPROCESS_BYTES = 16 * 1024;
 const MAX_AUTHENTICATED_CAPTURE_BYTES = 256 * 1024 * 1024;
 const MAX_SUBPROCESS_INPUT_BYTES = 16 * 1024 * 1024;
@@ -173,6 +179,98 @@ export class ExternalPublisherError extends Error {
 
 function fail(code) {
   throw new ExternalPublisherError(code);
+}
+
+// This is the common production boundary consumed by all five executable
+// surfaces.  It contains digests only: late-bound SSH and Node observations
+// stay in their independently authenticated receipts.
+export function validateProductionFrozenInputConsumerBinding(binding, code = 'STOP_PRE_AUTHORITY') {
+  exactKeys(binding, [
+    'authenticated_ssh_receipt_sha256', 'authorized_producer_matrix_sha256',
+    'causal_order_sha256', 'constructor_claim_sha256', 'corpus_sha256',
+    'mac_node_capsule_receipt_sha256', 'mac_runtime_role',
+    'materialized_input_matrix_sha256', 'oob_receipt_sha256', 'purpose',
+    'raw_values', 'requirements_total', 'requirements_verified', 'schema_version',
+    'vps_node_reference_sha256', 'vps_runtime_role',
+  ], code);
+  if (binding.schema_version !== 1
+      || binding.purpose !== 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1'
+      || binding.raw_values !== false || binding.requirements_total !== 53
+      || binding.requirements_verified !== 53
+      || binding.vps_runtime_role !== 'VPS_BOOTSTRAP_NODE_RUNTIME'
+      || binding.mac_runtime_role !== 'MAC_EXECUTOR_NODE_RUNTIME'
+      || binding.causal_order_sha256 !== sha256(canonicalJson(PRODUCTION_FROZEN_INPUT_ORDER))) fail(code);
+  for (const field of [
+    'authenticated_ssh_receipt_sha256', 'authorized_producer_matrix_sha256',
+    'constructor_claim_sha256', 'corpus_sha256', 'mac_node_capsule_receipt_sha256',
+    'materialized_input_matrix_sha256', 'oob_receipt_sha256', 'vps_node_reference_sha256',
+  ]) requireHex(binding[field], code);
+  return binding;
+}
+
+export function validateMacCapsuleInstallTopology(entries, context, code = 'STOP_PRE_AUTHORITY') {
+  if (!Array.isArray(entries) || !isPlainObject(context?.authority)) fail(code);
+  const binding = validateProductionFrozenInputConsumerBinding(context.production_frozen_inputs, code);
+  const manifestEntry = entries.at(-2);
+  const receiptEntry = entries.at(-1);
+  if (manifestEntry?.role !== 'node-capsule-manifest'
+      || manifestEntry.destination_relative_path !== 'runtime/node-capsule/capsule-manifest.json'
+      || receiptEntry?.role !== 'node-capsule-receipt'
+      || receiptEntry.destination_relative_path !== 'runtime/node-capsule/mac-relocatable-node-capsule.receipt.json'
+      || !Buffer.isBuffer(manifestEntry.bytes) || !Buffer.isBuffer(receiptEntry.bytes)) fail(code);
+  let manifest;
+  let receipt;
+  try {
+    manifest = JSON.parse(manifestEntry.bytes.toString('utf8'));
+    receipt = JSON.parse(receiptEntry.bytes.toString('utf8'));
+  } catch { fail(code); }
+  const lineageFields = [
+    'predecessor_authority', 'predecessor_generation', 'predecessor_status', 'predecessor_attempts',
+    'predecessor_retry', 'predecessor_cleanup', 'predecessor_adoption',
+  ];
+  if (!canonicalJson(manifest).equals(manifestEntry.bytes)
+      || !canonicalJson(receipt).equals(receiptEntry.bytes)
+      || manifest.schema_version !== 2 || manifest.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V2'
+      || manifest.authority !== context.authority.commit || manifest.generation !== 'capsule-v2'
+      || manifest.role !== 'MAC_EXECUTOR_NODE_RUNTIME' || !isPlainObject(manifest.capsule)
+      || receipt.schema_version !== 2 || receipt.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V2'
+      || receipt.authority !== context.authority.commit || receipt.generation !== 'capsule-v2'
+      || receipt.manifest_sha256 !== sha256(manifestEntry.bytes)
+      || receipt.attempts !== 1 || receipt.retry !== false || receipt.raw_path !== false
+      || binding.mac_node_capsule_receipt_sha256 !== sha256(receiptEntry.bytes)
+      || manifestEntry.source_sha256 !== sha256(manifestEntry.bytes)
+      || receiptEntry.source_sha256 !== sha256(receiptEntry.bytes)) fail(code);
+  if (!isHex(manifest.predecessor_authority, [40])
+      || typeof manifest.predecessor_generation !== 'string'
+      || !/^[a-z0-9][a-z0-9-]{2,63}$/.test(manifest.predecessor_generation)
+      || manifest.predecessor_status !== 'FAILED_PARTIAL_PRESERVED'
+      || manifest.predecessor_attempts !== '1/1_CONSUMED'
+      || manifest.predecessor_retry !== false || manifest.predecessor_cleanup !== false
+      || manifest.predecessor_adoption !== false || !isHex(receipt.source_authority, [40])
+      || lineageFields.some((field) => receipt[field] !== manifest[field])) fail(code);
+  requireHex(manifest.capsule.executable_sha256, code);
+  if (!Array.isArray(manifest.capsule.images)
+      || receipt.capsule_executable_sha256 !== manifest.capsule.executable_sha256
+      || receipt.capsule_images_sha256 !== sha256(canonicalJson(manifest.capsule.images))) fail(code);
+  const node = entries[0];
+  if (node?.role !== 'node-runtime'
+      || node.destination_relative_path !== 'runtime/node-capsule/capsule/bin/node'
+      || node.source_sha256 !== manifest.capsule.executable_sha256) fail(code);
+  const images = entries.slice(1, -2);
+  if (images.length !== manifest.capsule.images.length) fail(code);
+  const seen = new Set();
+  for (const [index, image] of manifest.capsule.images.entries()) {
+    exactKeys(image, ['destination', 'sha256'], code);
+    requireHex(image.sha256, code);
+    if (typeof image.destination !== 'string' || !/^lib\/[a-f0-9]{16}-[^/\0]+$/.test(image.destination)
+        || seen.has(image.destination)) fail(code);
+    seen.add(image.destination);
+    const entry = images[index];
+    if (entry?.role !== `node-capsule-image-${String(index + 1).padStart(3, '0')}`
+        || entry.destination_relative_path !== `runtime/node-capsule/capsule/${image.destination}`
+        || entry.source_sha256 !== image.sha256) fail(code);
+  }
+  return true;
 }
 
 function validateSemanticSafePublisherChainState(state) {
@@ -1009,6 +1107,9 @@ function contextFields(context, code) {
   requireGeneration(context.generations.remote, code);
   requireGeneration(context.generations.controller, code);
   for (const field of ['collector_contracts_sha256', 'node_candidate_sha256', 'operation_authority_sha256']) requireHex(context[field], code);
+  if (context.production_frozen_inputs !== undefined) {
+    validateProductionFrozenInputConsumerBinding(context.production_frozen_inputs, code);
+  }
   return authority;
 }
 
@@ -1222,8 +1323,17 @@ export function buildPublisher1LauncherBootstrapAuthority({ context, payloads } 
       || sha256(payloads.controller) !== authority.components.controller.sha256
       || sha256(payloads['launcher-runtime']) !== authority.components.launcher.sha256
       || sha256(payloads['authority-manifest']) !== authority.manifest_sha256) fail(code);
+  const successor = context.production_frozen_inputs !== undefined;
+  let launchAttestation;
+  if (successor) {
+    try { launchAttestation = JSON.parse(payloads['launch-attestation']); } catch { fail(code); }
+    validateLaunchAttestation(launchAttestation);
+    if (launchAttestation.purpose !== 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3'
+        || !canonicalJson(launchAttestation.production_frozen_inputs)
+          .equals(canonicalJson(context.production_frozen_inputs))) fail(code);
+  }
   return Buffer.from([
-    'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1',
+    successor ? 'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V2' : 'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1',
     `authority_sha ${authority.commit}`,
     `controller_generation_id ${context.generations.controller}`,
     `node_sha256 ${sha256(payloads['node-runtime'])}`,
@@ -1231,6 +1341,11 @@ export function buildPublisher1LauncherBootstrapAuthority({ context, payloads } 
     `launcher_sha256 ${sha256(payloads['launcher-runtime'])}`,
     `launch_attestation_sha256 ${sha256(payloads['launch-attestation'])}`,
     `authority_manifest_sha256 ${sha256(payloads['authority-manifest'])}`,
+    ...(successor ? [
+      `node_capsule_manifest_sha256 ${launchAttestation.tools.node.capsule_manifest_sha256}`,
+      `node_capsule_receipt_sha256 ${launchAttestation.tools.node.capsule_receipt_sha256}`,
+      `production_frozen_inputs_sha256 ${sha256(canonicalJson(context.production_frozen_inputs))}`,
+    ] : []),
     `allowed_modes ${PUBLISHER1_OPERATIONAL_MODES.join(',')}`,
     'raw_values false',
     '',
@@ -1798,7 +1913,8 @@ export function buildPublisher1BootstrapHandoff({
   if (materializerAuthority.issuer_authority_sha256 !== sha256(canonicalJson(issuer))) fail(code);
   const handoff = {
     schema_version: 2,
-    purpose: 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2',
+    purpose: context.production_frozen_inputs === undefined
+      ? 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2' : 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3',
     authority_sha: authority.commit,
     authority_projection: projection,
     remote_generation_id: context.generations.remote,
@@ -1819,6 +1935,8 @@ export function buildPublisher1BootstrapHandoff({
     attempt: 1,
     retry: false,
     raw_values: false,
+    ...(context.production_frozen_inputs === undefined
+      ? {} : { production_frozen_inputs: structuredClone(context.production_frozen_inputs) }),
   };
   validatePublisher1BootstrapHandoff(handoff, { bindings, context, receiverRoot, receiverRootIdentitySha256, receiverLeaves });
   return handoff;
@@ -1829,21 +1947,29 @@ export function validatePublisher1BootstrapHandoff(handoff, expected) {
   exactKeys(expected, ['bindings', 'context', 'receiverRoot', 'receiverRootIdentitySha256', 'receiverLeaves'], code);
   const authority = contextFields(expected.context, code);
   validateFrozenBindings(expected.bindings);
+  const successor = handoff?.purpose === 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3';
   exactKeys(handoff, [
     'schema_version', 'purpose', 'authority_sha', 'remote_generation_id', 'controller_generation_id',
     'authority_projection', 'gate0_receipt', 'issuer', 'pass', 'transport_manifest',
     'human_authorization_request', 'human_authorization_request_observation', 'human_authorization',
     'installer_provenance', 'prompt_sha256', 'materializer_authority',
     'receiver_root_path_sha256', 'receiver_root_identity_sha256', 'receiver_leaves', 'attempt', 'retry', 'raw_values',
+    ...(successor ? ['production_frozen_inputs'] : []),
   ], code);
   const projection = authorityProjection(expected.bindings, expected.context, code);
-  if (handoff.schema_version !== 2 || handoff.purpose !== 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2'
+  if (handoff.schema_version !== 2
+      || !['CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2', 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3'].includes(handoff.purpose)
       || handoff.authority_sha !== authority.commit || handoff.remote_generation_id !== expected.context.generations.remote
       || handoff.controller_generation_id !== expected.context.generations.controller
       || !canonicalJson(handoff.authority_projection).equals(canonicalJson(projection))
       || handoff.receiver_root_path_sha256 !== sha256(Buffer.from(expected.receiverRoot))
       || handoff.receiver_root_identity_sha256 !== expected.receiverRootIdentitySha256
       || handoff.attempt !== 1 || handoff.retry !== false || handoff.raw_values !== false) fail(code);
+  if (successor) {
+    validateProductionFrozenInputConsumerBinding(handoff.production_frozen_inputs, code);
+    if (!canonicalJson(handoff.production_frozen_inputs)
+      .equals(canonicalJson(expected.context.production_frozen_inputs))) fail(code);
+  }
   validateGate0Receipt(handoff.gate0_receipt, expected.bindings, expected.context);
   validateVpsIssuerAuthority(handoff.issuer);
   verifyVpsPass(handoff.pass, handoff.issuer, expected.context);
@@ -3637,10 +3763,12 @@ const PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT = Object.freeze([
   Object.freeze({ role: 'authority-manifest', destination: 'runtime/authority-manifest.v1', source_mode: 0o600, mode: 0o444 }),
 ]);
 
-async function validatePublisher1BootstrapEntries(entries, code = 'STOP_PRE_AUTHORITY') {
-  if (!Array.isArray(entries) || entries.length !== PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.length) fail(code);
-  for (const [index, contract] of PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.entries()) {
-    const entry = entries[index];
+async function validatePublisher1BootstrapEntries(entries, context, code = 'STOP_PRE_AUTHORITY') {
+  const successor = context?.production_frozen_inputs !== undefined;
+  if (!Array.isArray(entries) || (!successor && entries.length !== PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.length)
+      || (successor && entries.length < PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.length + 2)) fail(code);
+  const loaded = [];
+  const validateEntry = async (entry, contract) => {
     exactKeys(entry, [
       'role', 'source_path', 'source_path_sha256', 'source_sha256', 'source_uid', 'source_gid',
       'source_mode', 'source_nlink', 'source_size', 'source_mtime_ns', 'source_dev', 'source_ino',
@@ -3660,14 +3788,35 @@ async function validatePublisher1BootstrapEntries(entries, code = 'STOP_PRE_AUTH
         || entry.source_gid !== expected.gid || entry.source_size !== expected.size
         || entry.source_mtime_ns !== expected.mtime_ns || entry.source_dev !== expected.dev
         || entry.source_ino !== expected.ino || entry.source_identity_sha256 !== physicalIdentitySha256(expected)) fail(code);
+    return { ...entry, bytes: source.bytes };
+  };
+  for (const [index, original] of PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.entries()) {
+    const contract = successor && original.role === 'node-runtime'
+      ? { ...original, destination: 'runtime/node-capsule/capsule/bin/node' } : original;
+    loaded.push(await validateEntry(entries[index], contract));
+  }
+  if (successor) {
+    for (const entry of entries.slice(PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.length)) {
+      let contract;
+      if (/^node-capsule-image-\d{3}$/.test(entry?.role)) {
+        contract = { role: entry.role, destination: entry.destination_relative_path, source_mode: 0o400, mode: 0o444 };
+      } else if (entry?.role === 'node-capsule-manifest') {
+        contract = { role: entry.role, destination: 'runtime/node-capsule/capsule-manifest.json', source_mode: 0o600, mode: 0o444 };
+      } else if (entry?.role === 'node-capsule-receipt') {
+        contract = { role: entry.role, destination: 'runtime/node-capsule/mac-relocatable-node-capsule.receipt.json', source_mode: 0o600, mode: 0o444 };
+      } else fail(code);
+      loaded.push(await validateEntry(entry, contract));
+    }
+    validateMacCapsuleInstallTopology([loaded[3], ...loaded.slice(PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.length)], context, code);
   }
   return true;
 }
 
-async function sourceEntry(role, sourcePath, destinationRelativePath, mode, code) {
-  const observed = await readPinnedOwnerOnlyFile(sourcePath, { mode: role === 'writer-binary' ? 0o500 : 0o600, code });
+async function sourceEntry(role, sourcePath, destinationRelativePath, mode, code, sourceMode = null) {
+  const expectedSourceMode = sourceMode ?? (role === 'writer-binary' ? 0o500 : 0o600);
+  const observed = await readPinnedOwnerOnlyFile(sourcePath, { mode: expectedSourceMode, code });
   const metadata = observed.metadata;
-  if ((role === 'writer-binary' && metadata.mode !== 0o500) || (role !== 'writer-binary' && metadata.mode !== 0o600)) fail(code);
+  if (metadata.mode !== expectedSourceMode) fail(code);
   return Object.freeze({
     role, source_path: sourcePath, source_path_sha256: sha256(Buffer.from(sourcePath)), source_sha256: sha256(observed.bytes),
     source_uid: metadata.uid, source_gid: metadata.gid, source_mode: metadata.mode, source_nlink: metadata.nlink,
@@ -3675,6 +3824,39 @@ async function sourceEntry(role, sourcePath, destinationRelativePath, mode, code
     source_identity_sha256: physicalIdentitySha256(metadata), destination_relative_path: destinationRelativePath, mode,
     bytes: observed.bytes,
   });
+}
+
+export function macCapsuleSourceRoot(context, homeRoot = homedir()) {
+  if (!isPlainObject(context?.authority) || !/^[a-f0-9]{40}$/.test(context.authority.commit)
+      || typeof homeRoot !== 'string' || !path.isAbsolute(homeRoot)) fail('STOP_PRE_AUTHORITY');
+  return path.join(homeRoot, '.config', 'agentempp', 'ci3', 'mac-node-capsule-v2', context.authority.commit, 'capsule-v2');
+}
+
+async function buildMacCapsuleBootstrapEntries({ context, capsuleRoot, nodeEntry, code }) {
+  requireAbsoluteSafePath(capsuleRoot, code);
+  if (process.env.CI3_SYNTHETIC_TEST !== '1' && capsuleRoot !== macCapsuleSourceRoot(context)) fail(code);
+  const manifestPath = path.join(capsuleRoot, 'capsule-manifest.json');
+  const receiptPath = path.join(capsuleRoot, 'mac-relocatable-node-capsule.receipt.json');
+  const manifestRecord = await readPinnedOwnerOnlyFile(manifestPath, { mode: 0o600, code });
+  let manifest;
+  try { manifest = JSON.parse(manifestRecord.bytes.toString('utf8')); } catch { fail(code); }
+  if (!canonicalJson(manifest).equals(manifestRecord.bytes) || !Array.isArray(manifest?.capsule?.images)) fail(code);
+  const imageEntries = [];
+  for (const [index, image] of manifest.capsule.images.entries()) {
+    if (!isPlainObject(image) || typeof image.destination !== 'string') fail(code);
+    imageEntries.push(await sourceEntry(
+      `node-capsule-image-${String(index + 1).padStart(3, '0')}`,
+      path.join(capsuleRoot, 'capsule', image.destination),
+      `runtime/node-capsule/capsule/${image.destination}`, 0o444, code, 0o400,
+    ));
+  }
+  const manifestEntry = await sourceEntry('node-capsule-manifest', manifestPath,
+    'runtime/node-capsule/capsule-manifest.json', 0o444, code, 0o600);
+  const receiptEntry = await sourceEntry('node-capsule-receipt', receiptPath,
+    'runtime/node-capsule/mac-relocatable-node-capsule.receipt.json', 0o444, code, 0o600);
+  const topology = [nodeEntry, ...imageEntries, manifestEntry, receiptEntry];
+  validateMacCapsuleInstallTopology(topology, context, code);
+  return topology;
 }
 
 async function requireAbsentPath(file, code) {
@@ -4001,7 +4183,7 @@ async function compilePinnedPublisher1WriterBinaries({ roots, sourceRoot, artifa
 export async function produceCanonicalPublisher1BootstrapRequest({
   bindings, context, gate0Receipt, issuer, pass, transportManifest, humanAuthorization,
   humanAuthorizationRequest, humanAuthorizationRequestObservation, installerProvenance, promptSha256,
-  observed, artifactRoot, writerSourcePath,
+  observed, artifactRoot, writerSourcePath, capsuleRoot = null,
 } = {}) {
   const code = 'STOP_PRE_AUTHORITY';
   validateFrozenBindings(bindings);
@@ -4044,13 +4226,18 @@ export async function produceCanonicalPublisher1BootstrapRequest({
   if (!materializerEntry.bytes.equals(materializerBytes) || !issuerEntry.bytes.equals(issuerBytes)) fail(code);
   const receiverByRole = Object.fromEntries(observed.receiverLeaves.map((leaf) => [leaf.role, leaf]));
   const launcherEntries = [];
-  for (const contract of PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.slice(3)) {
+  const successor = context.production_frozen_inputs !== undefined;
+  for (const original of PUBLISHER1_BOOTSTRAP_ENTRY_CONTRACT.slice(3)) {
+    const contract = successor && original.role === 'node-runtime'
+      ? { ...original, destination: 'runtime/node-capsule/capsule/bin/node' } : original;
     const leaf = receiverByRole[contract.role];
     if (!isPlainObject(leaf) || leaf.path !== path.join(observed.receiverRoot, `${contract.role}.payload`)) fail(code);
     const entry = await sourceEntry(contract.role, leaf.path, contract.destination, contract.mode, code);
     if (entry.source_sha256 !== leaf.sha256 || entry.source_identity_sha256 !== leaf.identity_sha256) fail(code);
     launcherEntries.push(entry);
   }
+  const capsuleEntries = successor
+    ? await buildMacCapsuleBootstrapEntries({ context, capsuleRoot, nodeEntry: launcherEntries[0], code }) : [];
   const handoff = buildPublisher1BootstrapHandoff({
     bindings, context, gate0Receipt, issuer, pass, transportManifest, humanAuthorization,
     humanAuthorizationRequest, humanAuthorizationRequestObservation, installerProvenance, promptSha256,
@@ -4066,6 +4253,7 @@ export async function produceCanonicalPublisher1BootstrapRequest({
       (({ bytes: _bytes, ...entry }) => entry)(issuerEntry),
       (({ bytes: _bytes, ...entry }) => entry)(writer),
       ...launcherEntries.map(({ bytes: _bytes, ...entry }) => entry),
+      ...capsuleEntries.slice(1).map(({ bytes: _bytes, ...entry }) => entry),
     ], attempt: 1, retry: false, raw_values: false,
   };
   const requestBytes = canonicalJson(request);
@@ -4089,7 +4277,7 @@ export async function validateCanonicalPublisher1BootstrapRequest({ requestPath,
   if (request.schema_version !== 2 || request.purpose !== 'CI3_PUBLISHER1_BOOTSTRAP_INSTALL_REQUEST_V2'
       || request.authority_sha !== context.authority.commit || request.controller_generation_id !== context.generations.controller
       || request.attempt !== 1 || request.retry !== false || request.raw_values !== false) fail(code);
-  await validatePublisher1BootstrapEntries(request.entries, code);
+  await validatePublisher1BootstrapEntries(request.entries, context, code);
   validatePublisher1BootstrapHandoff(request.handoff, {
     bindings, context, receiverRoot: observed.receiverRoot, receiverRootIdentitySha256: observed.receiverRootIdentitySha256,
     receiverLeaves: observed.receiverLeaves,
@@ -5123,12 +5311,32 @@ async function fixedInvocationForMode({
 export async function buildAuthorityDerivedHandlers() {
   const code = 'STOP_PRE_AUTHORITY';
   const roots = fixedMainRoots();
-  const bindings = await loadFrozenBindings(roots.bindingsPath);
+  let bindings;
+  try {
+    bindings = await loadFrozenBindings(roots.bindingsPath);
+  } catch {
+    fail(code);
+  }
   const layout = deriveAuthorityLayout(bindings, roots.ownerRoot);
   const sourceRoot = path.join(layout.authority_root, 'frozen');
   const contextRecord = await readPinnedOwnerOnlyJson(path.join(sourceRoot, 'context.json'), code);
   const gate0Record = await readPinnedOwnerOnlyJson(path.join(sourceRoot, 'gate0.json'), code);
-  const context = contextRecord.value;
+  let context = contextRecord.value;
+  if (context.production_frozen_inputs !== undefined) {
+    let frozenValidation;
+    try {
+      const constructor = await import('./ci3-production-frozen-input-constructor.mjs');
+      frozenValidation = await constructor.validatePublishedFrozenCorpus(
+        layout.authority_root, bindings.MAC_EXECUTOR_AUTHORITY_SHA,
+      );
+    } catch {
+      fail(code);
+    }
+    if (!isPlainObject(frozenValidation) || !isPlainObject(frozenValidation.context)) fail(code);
+    if (!canonicalJson(frozenValidation.context).equals(canonicalJson(context))) fail(code);
+    context = frozenValidation.context;
+    validateProductionFrozenInputConsumerBinding(context.production_frozen_inputs, code);
+  }
   contextFields(context, code);
   validateGate0Receipt(gate0Record.value, bindings, context);
   authorityProjection(bindings, context, code);
@@ -5381,6 +5589,8 @@ export async function buildAuthorityDerivedHandlers() {
       humanAuthorizationRequest, humanAuthorizationRequestObservation,
       installerProvenance: installerSelection.installerProvenance, promptSha256, observed,
       artifactRoot: producedRoot, writerSourcePath: writerBinaries.operational_path,
+      ...(context.production_frozen_inputs === undefined
+        ? {} : { capsuleRoot: macCapsuleSourceRoot(context, roots.syntheticRoot ?? homedir()) }),
     });
     await writeOrVerifyOwnerOnlyFile(
       path.join(producedRoot, 'receiver-manifest.sha256'), Buffer.from(`${receiverManifestSha256}\n`), code,

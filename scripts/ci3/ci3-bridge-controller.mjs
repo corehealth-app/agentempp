@@ -70,6 +70,11 @@ export const PRESERVED_CI3_PATHS = Object.freeze([
   'apps/ios/BodyFlow/BodyFlowTests/CI3StagingLaunchConfigurationTests.swift',
   'apps/ios/BodyFlow/BodyFlowTests/MobileStagingConfigurationTests.swift',
 ]);
+export const PRODUCTION_FROZEN_INPUT_ORDER = Object.freeze([
+  'AUTHORITY_PUBLISHED', 'GATE0_PASS', 'FRESH_OOB_RECEIPT',
+  'AUTHENTICATED_SSH_RECEIPT', 'MAC_NODE_CAPSULE', 'MATERIALIZED_53_OF_53',
+  'FROZEN_CORPUS', 'PUBLISHER0', 'PUBLISHER1', 'CONTROLLER_AUTHORITY',
+]);
 
 export const CONTINUATION_ALLOWLIST_PATHS = Object.freeze([
   'apps/ios/BodyFlow/BodyFlow/BodyFlowApp.swift',
@@ -243,6 +248,30 @@ export function canonicalJson(value) {
   return Buffer.from(`${JSON.stringify(normalize(value))}\n`);
 }
 
+export function validateProductionFrozenInputConsumerBinding(binding, code = 'OPERATION_AUTHORITY') {
+  exactKeys(binding, [
+    'authenticated_ssh_receipt_sha256', 'authorized_producer_matrix_sha256',
+    'causal_order_sha256', 'constructor_claim_sha256', 'corpus_sha256',
+    'mac_node_capsule_receipt_sha256', 'mac_runtime_role',
+    'materialized_input_matrix_sha256', 'oob_receipt_sha256', 'purpose',
+    'raw_values', 'requirements_total', 'requirements_verified', 'schema_version',
+    'vps_node_reference_sha256', 'vps_runtime_role',
+  ], code);
+  if (binding.schema_version !== 1
+      || binding.purpose !== 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1'
+      || binding.raw_values !== false || binding.requirements_total !== 53
+      || binding.requirements_verified !== 53
+      || binding.vps_runtime_role !== 'VPS_BOOTSTRAP_NODE_RUNTIME'
+      || binding.mac_runtime_role !== 'MAC_EXECUTOR_NODE_RUNTIME'
+      || binding.causal_order_sha256 !== sha256(canonicalJson(PRODUCTION_FROZEN_INPUT_ORDER))) fail(code);
+  for (const field of [
+    'authenticated_ssh_receipt_sha256', 'authorized_producer_matrix_sha256',
+    'constructor_claim_sha256', 'corpus_sha256', 'mac_node_capsule_receipt_sha256',
+    'materialized_input_matrix_sha256', 'oob_receipt_sha256', 'vps_node_reference_sha256',
+  ]) requireSha(binding[field], code);
+  return binding;
+}
+
 export function parseControllerMode(argv) {
   const allowed = new Set([
     '--self-test', '--terminalize-tail', 'plan', 'verify-simulator', 'verify-ssh', 'fetch',
@@ -263,13 +292,15 @@ export function validatePreservedCi3Paths(paths) {
 
 export function validateLaunchAttestation(attestation) {
   const code = 'LAUNCHER_REQUIRED';
+  const successor = attestation?.purpose === 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3';
   exactKeys(attestation, [
     'authority_manifest_sha256', 'authority_parent', 'authority_sha',
     'authority_subject_sha256', 'authority_tree', 'components', 'purpose',
+    ...(successor ? ['production_frozen_inputs'] : []),
     'raw_values', 'schema_version', 'tools',
   ], code);
   if (attestation.schema_version !== 1
-      || attestation.purpose !== 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2'
+      || !['CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2', 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3'].includes(attestation.purpose)
       || attestation.raw_values !== false) fail(code);
   requireSha(attestation.authority_sha, code, [40]);
   requireSha(attestation.authority_parent, code, [40]);
@@ -280,11 +311,22 @@ export function validateLaunchAttestation(attestation) {
       || attestation.authority_subject_sha256 !== sha256(Buffer.from(AUTHORITY_SUBJECT))) fail(code);
   validateComponents(attestation.components, code);
   exactKeys(attestation.tools, ['node', 'ssh', 'swiftc', 'xcodebuild'], code);
-  for (const identity of Object.values(attestation.tools)) {
-    exactKeys(identity, ['binary_sha256', 'path_sha256', 'version_sha256'], code);
+  for (const [tool, identity] of Object.entries(attestation.tools)) {
+    exactKeys(identity, successor && tool === 'node' ? [
+      'binary_sha256', 'capsule_manifest_sha256', 'capsule_receipt_sha256',
+      'executable_relative_path', 'path_sha256', 'runtime_role', 'version_sha256',
+    ] : ['binary_sha256', 'path_sha256', 'version_sha256'], code);
     requireSha(identity.binary_sha256, code);
     requireSha(identity.path_sha256, code);
     requireSha(identity.version_sha256, code);
+  }
+  if (successor) {
+    const binding = validateProductionFrozenInputConsumerBinding(attestation.production_frozen_inputs, code);
+    if (binding.mac_node_capsule_receipt_sha256 !== attestation.tools.node.capsule_receipt_sha256) fail(code);
+    requireSha(attestation.tools.node.capsule_manifest_sha256, code);
+    requireSha(attestation.tools.node.capsule_receipt_sha256, code);
+    if (attestation.tools.node.runtime_role !== 'MAC_EXECUTOR_NODE_RUNTIME'
+        || attestation.tools.node.executable_relative_path !== 'capsule/bin/node') fail(code);
   }
   return true;
 }
@@ -2542,6 +2584,8 @@ export function validateScanReceipt(receipt, expectedId) {
 
 export function buildTerminalManifest(input) {
   const code = 'TERMINAL_MANIFEST';
+  const successor = input.productionFrozenInputs !== undefined;
+  if (successor) validateProductionFrozenInputConsumerBinding(input.productionFrozenInputs, code);
   requireSha(input.authoritySha, code, [40]);
   requireSha(input.authorityTree, code, [40]);
   requireSha(input.authorityManifestSha256, code);
@@ -2588,7 +2632,7 @@ export function buildTerminalManifest(input) {
       || !canonicalJson(input.terminalSettlementContracts).equals(canonicalJson(expectedSettlementContracts))) fail(code);
   return {
     schema_version: 1,
-    purpose: 'CI3_TERMINAL_ANCHOR_MANIFEST_V1',
+    purpose: successor ? 'CI3_TERMINAL_ANCHOR_MANIFEST_V2' : 'CI3_TERMINAL_ANCHOR_MANIFEST_V1',
     authority_sha: input.authoritySha,
     authority_tree: input.authorityTree,
     authority_manifest_sha256: input.authorityManifestSha256,
@@ -2615,6 +2659,7 @@ export function buildTerminalManifest(input) {
     raw_values: false,
     secret_read: false,
     privilege_mode: 'MACOS_ROOT_SINGLE_ADMIN_PROMPT',
+    ...(successor ? { production_frozen_inputs: structuredClone(input.productionFrozenInputs) } : {}),
   };
 }
 
@@ -4868,6 +4913,8 @@ export const EXTERNAL_OPERATIONAL_LAUNCHER_MODES = Object.freeze([
 export function buildExternalLauncherAuthority({
   authoritySha, controllerGenerationId, nodeSha256, controllerSha256, launcherSha256,
   launchAttestationSha256, authorityManifestSha256, allowedModes,
+  nodeCapsuleManifestSha256 = null, nodeCapsuleReceiptSha256 = null,
+  productionFrozenInputsSha256 = null,
 } = {}) {
   requireSha(authoritySha, 'EXTERNAL_LAUNCHER_AUTHORITY', [40]);
   validateGenerationId(controllerGenerationId);
@@ -4881,8 +4928,15 @@ export function buildExternalLauncherAuthority({
         'scan', 'write-terminal-anchor', 'resume', 'status', 'publish-vps-operation-authority-pass',
         'publish-operation-authority', 'publish-privileged-writer-authority',
       ].includes(mode))) fail('EXTERNAL_LAUNCHER_AUTHORITY');
+  const capsuleBound = nodeCapsuleManifestSha256 !== null
+    || nodeCapsuleReceiptSha256 !== null || productionFrozenInputsSha256 !== null;
+  if (capsuleBound) {
+    for (const value of [nodeCapsuleManifestSha256, nodeCapsuleReceiptSha256, productionFrozenInputsSha256]) {
+      requireSha(value, 'EXTERNAL_LAUNCHER_AUTHORITY');
+    }
+  }
   return Buffer.from([
-    'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1',
+    capsuleBound ? 'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V2' : 'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V1',
     `authority_sha ${authoritySha}`,
     `controller_generation_id ${controllerGenerationId}`,
     `node_sha256 ${nodeSha256}`,
@@ -4890,6 +4944,11 @@ export function buildExternalLauncherAuthority({
     `launcher_sha256 ${launcherSha256}`,
     `launch_attestation_sha256 ${launchAttestationSha256}`,
     `authority_manifest_sha256 ${authorityManifestSha256}`,
+    ...(capsuleBound ? [
+      `node_capsule_manifest_sha256 ${nodeCapsuleManifestSha256}`,
+      `node_capsule_receipt_sha256 ${nodeCapsuleReceiptSha256}`,
+      `production_frozen_inputs_sha256 ${productionFrozenInputsSha256}`,
+    ] : []),
     `allowed_modes ${allowedModes.join(',')}`,
     'raw_values false',
     '',
@@ -6189,20 +6248,23 @@ async function runSyntheticIntegratedE2E({ scenarioId, scenarioSha256, outcome }
 }
 export function validateOperationAuthority(record, launchAttestation) {
   const code = 'OPERATION_AUTHORITY';
+  const successor = launchAttestation?.purpose === 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3';
   exactKeys(record, [
     'context', 'purpose', 'raw_values', 'remote', 'scans', 'schema_version',
     'simulator', 'ssh', 'worktree', 'writer',
   ], code);
   if (record.schema_version !== 1
-      || record.purpose !== 'CI3_MAC_OPERATION_AUTHORITY_V1'
+      || record.purpose !== (successor ? 'CI3_MAC_OPERATION_AUTHORITY_V2' : 'CI3_MAC_OPERATION_AUTHORITY_V1')
       || record.raw_values !== false) fail(code);
   const context = record.context;
-  exactKeys(context, ['authority', 'generations', 'remote'], code);
+  exactKeys(context, ['authority', 'generations', ...(successor ? ['production_frozen_inputs'] : []), 'remote'], code);
   if (context.authority?.commit !== launchAttestation.authority_sha
       || context.authority?.parent !== launchAttestation.authority_parent
       || context.authority?.tree !== launchAttestation.authority_tree
       || context.authority?.manifest_sha256 !== launchAttestation.authority_manifest_sha256
       || !canonicalJson(context.authority?.components).equals(canonicalJson(launchAttestation.components))) fail(code);
+  if (successor && (!canonicalJson(context.production_frozen_inputs)
+    .equals(canonicalJson(launchAttestation.production_frozen_inputs)))) fail(code);
   for (const generation of Object.values(context.generations ?? {})) validateGenerationId(generation);
   exactKeys(record.worktree, ['branch', 'changed_paths', 'continuation_allowlist_sha256', 'diff_sha256', 'head', 'status_sha256'], code);
   if (record.worktree.branch !== 'codex/ci3-today-staging-v1'
@@ -7057,6 +7119,8 @@ export async function createOperationalRuntime({
       runScansResultSha256,
       terminalSettlementContracts,
       createdAtUtc: terminalReceipt.finished_at,
+      ...(context.production_frozen_inputs === undefined
+        ? {} : { productionFrozenInputs: context.production_frozen_inputs }),
     });
     const manifestParent = path.dirname(authority.writer.manifest_path);
     await ensurePrivateDirectoryChain(homedir(), manifestParent);

@@ -1524,9 +1524,46 @@ private func expectedAnchorRelativePath(authority: String, terminalGeneration: S
     "\(authority)/\(terminalGeneration)/pre-anchor.json"
 }
 
+private let productionFrozenInputOrder: [String] = [
+    "AUTHORITY_PUBLISHED", "GATE0_PASS", "FRESH_OOB_RECEIPT",
+    "AUTHENTICATED_SSH_RECEIPT", "MAC_NODE_CAPSULE", "MATERIALIZED_53_OF_53",
+    "FROZEN_CORPUS", "PUBLISHER0", "PUBLISHER1", "CONTROLLER_AUTHORITY",
+]
+
+private func validateProductionFrozenInputs(_ value: Any?, _ code: String) throws -> [String: Any] {
+    let binding = try dictionary(value, code)
+    try exactKeys(binding, [
+        "authenticated_ssh_receipt_sha256", "authorized_producer_matrix_sha256",
+        "causal_order_sha256", "constructor_claim_sha256", "corpus_sha256",
+        "mac_node_capsule_receipt_sha256", "mac_runtime_role",
+        "materialized_input_matrix_sha256", "oob_receipt_sha256", "purpose",
+        "raw_values", "requirements_total", "requirements_verified", "schema_version",
+        "vps_node_reference_sha256", "vps_runtime_role",
+    ], code)
+    var orderBytes = try portableCanonicalJSONFragment(productionFrozenInputOrder)
+    orderBytes.append(0x0a)
+    guard try integer(binding["schema_version"], code) == 1,
+          try string(binding["purpose"], code) == "CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1",
+          try integer(binding["requirements_total"], code) == 53,
+          try integer(binding["requirements_verified"], code) == 53,
+          try string(binding["vps_runtime_role"], code) == "VPS_BOOTSTRAP_NODE_RUNTIME",
+          try string(binding["mac_runtime_role"], code) == "MAC_EXECUTOR_NODE_RUNTIME",
+          try string(binding["causal_order_sha256"], code) == sha256(orderBytes),
+          try bool(binding["raw_values"], code) == false else { try fail(code) }
+    for field in [
+        "authenticated_ssh_receipt_sha256", "authorized_producer_matrix_sha256",
+        "constructor_claim_sha256", "corpus_sha256", "mac_node_capsule_receipt_sha256",
+        "materialized_input_matrix_sha256", "oob_receipt_sha256", "vps_node_reference_sha256",
+    ] {
+        guard isHex(try string(binding[field], code), count: 64) else { try fail(code) }
+    }
+    return binding
+}
+
 private func validateManifest(_ manifest: [String: Any], authority: String, generations arguments: [String], binaryHash: String, signatureHash: String) throws -> ([String: Any], [[String: Any]], [[String: Any]], Data) {
     let code = "TERMINAL_MANIFEST"
-    try exactKeys(manifest, [
+    let successor = (try? string(manifest["purpose"], code)) == "CI3_TERMINAL_ANCHOR_MANIFEST_V2"
+    var manifestKeys = [
         "anchor_relative_path", "authority_manifest_sha256", "authority_sha", "authority_tree",
         "bootstrap_claim_sha256", "claim_result_chain_sha256", "components", "created_at_utc",
         "evidence", "generations", "important_finding_ids", "local_bundle_sha256",
@@ -1534,9 +1571,11 @@ private func validateManifest(_ manifest: [String: Any], authority: String, gene
         "secret_read", "simulator_gate_sha256", "simulator_install_sha256",
         "ssh_provenance_sha256", "terminal_settlement_contracts", "terminal_state", "remote_bundle_sha256",
         "writer_authority_path_sha256", "writer_binary_sha256", "writer_signature_sha256", "writer_source_sha256",
-    ], code)
+    ]
+    if successor { manifestKeys.append("production_frozen_inputs") }
+    try exactKeys(manifest, manifestKeys, code)
     guard try integer(manifest["schema_version"], code) == 1,
-          try string(manifest["purpose"], code) == "CI3_TERMINAL_ANCHOR_MANIFEST_V1",
+          ["CI3_TERMINAL_ANCHOR_MANIFEST_V1", "CI3_TERMINAL_ANCHOR_MANIFEST_V2"].contains(try string(manifest["purpose"], code)),
           try string(manifest["authority_sha"], code) == authority,
           isHex(authority, count: 40),
           isHex(try string(manifest["authority_tree"], code), count: 40),
@@ -1559,6 +1598,7 @@ private func validateManifest(_ manifest: [String: Any], authority: String, gene
           try bool(manifest["raw_values"], code) == false,
           try bool(manifest["secret_read"], code) == false,
           isUTCTimestamp(try string(manifest["created_at_utc"], code)) else { try fail(code) }
+    if successor { _ = try validateProductionFrozenInputs(manifest["production_frozen_inputs"], code) }
     let components = try dictionary(manifest["components"], code)
     try exactKeys(components, componentNames, code)
     for name in componentNames { try validateComponent(try dictionary(components[name], code), name: name, code) }

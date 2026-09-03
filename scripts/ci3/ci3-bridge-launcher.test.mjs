@@ -440,8 +440,8 @@ const UNKNOWN_ARGS = Object.freeze([
   'unknown', '--create', '--help', '-h', 'ssh', 'simctl', '/tmp/controller', '../controller', 'current', 'latest',
 ]);
 
-for (const argument of UNKNOWN_ARGS) {
-  test(`launcher rejects unknown or arbitrary mode ${argument}`, () => {
+for (const [caseIndex, argument] of UNKNOWN_ARGS.entries()) {
+  test(`launcher rejects unknown or arbitrary mode case ${caseIndex + 1}`, () => {
     const result = launch(requireRoot(), [argument]);
     assert.notEqual(result.status, 0);
     assert.equal(result.stdout, '');
@@ -455,8 +455,8 @@ const EXTRA_ARG_CASES = Object.freeze([
   ['scan', 'extra'], ['write-terminal-anchor', 'output'], ['resume', 'generation'], ['status', 'raw'],
 ]);
 
-for (const args of EXTRA_ARG_CASES) {
-  test(`launcher rejects extra argv ${JSON.stringify(args)}`, () => {
+for (const [caseIndex, args] of EXTRA_ARG_CASES.entries()) {
+  test(`launcher rejects extra argv case ${caseIndex + 1}`, () => {
     const result = launch(requireRoot(), args);
     assert.notEqual(result.status, 0);
     assert.equal(result.stdout, '');
@@ -688,6 +688,72 @@ test('round-8 external launcher validates its immutable line authority before it
     });
     assert.notEqual(drift.status, 0);
     assert.match(drift.stderr, /^ERROR NODE_IDENTITY\n$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('[PRODUCTION-CONSUMER-4-RED/GREEN] external launcher executes only the bound Mac capsule node after V3 corpus attestation', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ci3-capsule-launcher-'));
+  try {
+    const runtime = path.join(root, 'runtime');
+    const capsuleRoot = path.join(runtime, 'node-capsule');
+    const nodePath = path.join(capsuleRoot, 'capsule', 'bin', 'node');
+    await mkdir(path.dirname(nodePath), { recursive: true, mode: 0o700 });
+    const launcherPath = path.join(runtime, 'ci3-bridge-launcher.zsh');
+    const controllerPath = path.join(runtime, 'ci3-bridge-controller.mjs');
+    const attestationPath = path.join(runtime, 'launch-attestation.json');
+    const manifestPath = path.join(runtime, 'authority-manifest.v1');
+    const capsuleManifestPath = path.join(capsuleRoot, 'capsule-manifest.json');
+    const capsuleReceiptPath = path.join(capsuleRoot, 'mac-relocatable-node-capsule.receipt.json');
+    const authorityPath = path.join(runtime, 'launcher-bootstrap.authority.v1');
+    await cp(path.join(SOURCE_ROOT, 'scripts/ci3/ci3-bridge-launcher.zsh'), launcherPath);
+    await writeFile(nodePath, [
+      '#!/bin/zsh',
+      'if [[ "$1" == "--version" ]]; then print -r -- v99.0.0; exit 0; fi',
+      'print -r -- "CONTROLLER_SELF_TEST PASS checks=1 network_calls=0 privilege_prompts=0"',
+      '',
+    ].join('\n'));
+    await writeFile(controllerPath, 'synthetic capsule controller\n');
+    await writeFile(attestationPath, '{"purpose":"CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3","production_frozen_inputs":{}}\n');
+    await writeFile(manifestPath, 'synthetic authority manifest\n');
+    await writeFile(capsuleManifestPath, '{"purpose":"MAC_RELOCATABLE_NODE_CAPSULE_V2"}\n');
+    await writeFile(capsuleReceiptPath, '{"move_probes":"2/2_PASS","loader_probes":"2/2_PASS"}\n');
+    for (const filePath of [launcherPath, nodePath, controllerPath]) await chmod(filePath, 0o500);
+    for (const filePath of [attestationPath, manifestPath, capsuleManifestPath, capsuleReceiptPath]) await chmod(filePath, 0o400);
+    const digestFile = async (filePath) => createHash('sha256').update(await readFile(filePath)).digest('hex');
+    await writeFile(authorityPath, [
+      'CI3_EXTERNAL_LAUNCHER_AUTHORITY_V2',
+      `authority_sha ${'a'.repeat(40)}`,
+      `controller_generation_id controller-${'b'.repeat(64)}`,
+      `node_sha256 ${await digestFile(nodePath)}`,
+      `controller_sha256 ${await digestFile(controllerPath)}`,
+      `launcher_sha256 ${await digestFile(launcherPath)}`,
+      `launch_attestation_sha256 ${await digestFile(attestationPath)}`,
+      `authority_manifest_sha256 ${await digestFile(manifestPath)}`,
+      `node_capsule_manifest_sha256 ${await digestFile(capsuleManifestPath)}`,
+      `node_capsule_receipt_sha256 ${await digestFile(capsuleReceiptPath)}`,
+      `production_frozen_inputs_sha256 ${'c'.repeat(64)}`,
+      'allowed_modes --self-test',
+      'raw_values false',
+      '',
+    ].join('\n'), { mode: 0o400 });
+    const environment = {
+      CI3_SYNTHETIC_EXTERNAL_LAUNCHER_ROOT: await realpath(root),
+      CI3_SYNTHETIC_EXTERNAL_AUTHORITY_SHA: 'a'.repeat(40),
+    };
+    const pass = spawnSync('/bin/zsh', [launcherPath, '--self-test'], {
+      encoding: 'utf8', env: { PATH: process.env.PATH, ...environment }, timeout: 15000,
+    });
+    assert.equal(pass.status, 0, pass.stderr);
+    assert.match(pass.stdout, /^LAUNCHER_EXTERNAL_SELF_TEST PASS/);
+    await chmod(attestationPath, 0o600);
+    await writeFile(attestationPath, '{"purpose":"CI3_GIT_BOUND_LAUNCH_ATTESTATION_V2"}\n');
+    await chmod(attestationPath, 0o400);
+    const rejected = spawnSync('/bin/zsh', [launcherPath, '--self-test'], {
+      encoding: 'utf8', env: { PATH: process.env.PATH, ...environment }, timeout: 15000,
+    });
+    assert.notEqual(rejected.status, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

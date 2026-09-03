@@ -159,7 +159,7 @@ async function createFixture(label) {
   const entries = [];
   for (const [role, destination, mode, bytes] of sourceSpecs) {
     const source = path.join(sourceRoot, `${role}.payload`);
-    if (!launcherLeaves[role]) await writeFile(source, bytes, { flag: 'wx', mode: 0o600 });
+    if (!launcherLeaves[role]) await writeFile(source, bytes, { flag: 'wx', mode: role === 'writer-binary' ? 0o500 : 0o600 });
     const observed = identity(await lstat(source, { bigint: true }));
     entries.push({
       role, source_path: source, source_path_sha256: SHA(Buffer.from(source)), source_sha256: SHA(bytes),
@@ -305,6 +305,139 @@ before(async () => {
 });
 
 after(async () => { if (buildRoot) await cleanup(buildRoot); });
+
+function productionFrozenInputs() {
+  const order = [
+    'AUTHORITY_PUBLISHED', 'GATE0_PASS', 'FRESH_OOB_RECEIPT',
+    'AUTHENTICATED_SSH_RECEIPT', 'MAC_NODE_CAPSULE', 'MATERIALIZED_53_OF_53',
+    'FROZEN_CORPUS', 'PUBLISHER0', 'PUBLISHER1', 'CONTROLLER_AUTHORITY',
+  ];
+  return {
+    schema_version: 1, purpose: 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1',
+    constructor_claim_sha256: '1'.repeat(64), corpus_sha256: '2'.repeat(64),
+    authorized_producer_matrix_sha256: '3'.repeat(64), materialized_input_matrix_sha256: '4'.repeat(64),
+    oob_receipt_sha256: '5'.repeat(64), authenticated_ssh_receipt_sha256: '6'.repeat(64),
+    vps_node_reference_sha256: '7'.repeat(64), mac_node_capsule_receipt_sha256: '8'.repeat(64),
+    requirements_total: 53, requirements_verified: 53,
+    vps_runtime_role: 'VPS_BOOTSTRAP_NODE_RUNTIME', mac_runtime_role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    causal_order_sha256: SHA(Buffer.from(`${JSON.stringify(order)}\n`)), raw_values: false,
+  };
+}
+
+async function addCapsuleTopology(fixture, request) {
+  request.handoff.purpose = 'CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3';
+  request.entries[3].destination_relative_path = 'runtime/node-capsule/capsule/bin/node';
+  const imageBytes = Buffer.from('synthetic-capsule-image\n');
+  const image = { destination: 'lib/0123456789abcdef-libx.dylib', sha256: SHA(imageBytes) };
+  const manifest = {
+    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority: AUTHORITY,
+    generation: 'capsule-v2', role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    predecessor_authority: 'd'.repeat(40), predecessor_generation: 'generation-v1',
+    predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
+    predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
+    plan: { fixed: true }, source_hash: 'c'.repeat(64),
+    capsule: { executable_sha256: request.entries[3].source_sha256, images: [image] },
+  };
+  const manifestBytes = canonical(manifest);
+  const receipt = {
+    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority: AUTHORITY,
+    generation: 'capsule-v2', role: 'MAC_EXECUTOR_NODE_RUNTIME', platform: 'darwin', architecture: 'arm64',
+    version: 'v22.1.0', source_identity_hash: '1'.repeat(64), closure_hash: '2'.repeat(64),
+    relocation_plan_hash: '3'.repeat(64), move_probes: '2/2_PASS', loader_probes: '2/2_PASS',
+    copied_non_system_images_consumed: true, source_authority: 'b'.repeat(40),
+    predecessor_authority: 'd'.repeat(40), predecessor_generation: 'generation-v1',
+    predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
+    predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
+    manifest_sha256: SHA(manifestBytes),
+    capsule_executable_sha256: manifest.capsule.executable_sha256,
+    capsule_images_sha256: SHA(canonical(manifest.capsule.images)),
+    attempts: 1, retry: false, raw_path: false,
+  };
+  const receiptBytes = canonical(receipt);
+  request.handoff.production_frozen_inputs = {
+    ...productionFrozenInputs(), mac_node_capsule_receipt_sha256: SHA(receiptBytes),
+  };
+  const append = async (role, destination, bytes, sourceMode, mode) => {
+    const source = path.join(fixture.sourceRoot, `${role}.payload`);
+    try { await writeFile(source, bytes, { flag: 'wx', mode: sourceMode }); }
+    catch (error) {
+      if (error?.code !== 'EEXIST' || !(await readFile(source)).equals(bytes)) throw error;
+    }
+    const observed = identity(await lstat(source, { bigint: true }));
+    request.entries.push({
+      role, source_path: source, source_path_sha256: SHA(Buffer.from(source)), source_sha256: SHA(bytes),
+      source_uid: Number(observed.uid), source_gid: Number(observed.gid), source_mode: Number(observed.mode),
+      source_nlink: Number(observed.nlink), source_size: Number(observed.size), source_mtime_ns: observed.mtime_ns,
+      source_dev: observed.dev, source_ino: observed.ino, source_identity_sha256: observed.identity_sha256,
+      destination_relative_path: destination, mode,
+    });
+  };
+  await append('node-capsule-image-001', `runtime/node-capsule/capsule/${image.destination}`, imageBytes, 0o400, 0o444);
+  await append('node-capsule-manifest', 'runtime/node-capsule/capsule-manifest.json', manifestBytes, 0o600, 0o444);
+  await append('node-capsule-receipt', 'runtime/node-capsule/mac-relocatable-node-capsule.receipt.json', receiptBytes, 0o600, 0o444);
+  return { manifest, receipt };
+}
+
+async function replaceEntrySource(fixture, entry, leaf, bytes, mode) {
+  const source = path.join(fixture.sourceRoot, leaf);
+  await writeFile(source, bytes, { flag: 'wx', mode });
+  const observed = identity(await lstat(source, { bigint: true }));
+  Object.assign(entry, {
+    source_path: source, source_path_sha256: SHA(Buffer.from(source)), source_sha256: SHA(bytes),
+    source_uid: Number(observed.uid), source_gid: Number(observed.gid), source_mode: Number(observed.mode),
+    source_nlink: Number(observed.nlink), source_size: Number(observed.size), source_mtime_ns: observed.mtime_ns,
+    source_dev: observed.dev, source_ino: observed.ino, source_identity_sha256: observed.identity_sha256,
+  });
+}
+
+test('[PRODUCTION-CONSUMER-2-RED/GREEN] installer validates the 53/53 corpus and authenticated SSH binding before target publication', async () => {
+  const fixture = await createFixture('production-binding');
+  try {
+    const request = structuredClone(fixture.request);
+    await addCapsuleTopology(fixture, request);
+    const pass = invoke(fixture, {}, request);
+    assert.equal(pass.status, 0, pass.stderr);
+
+    const rejectedRequest = structuredClone(fixture.request);
+    await addCapsuleTopology(fixture, rejectedRequest);
+    rejectedRequest.handoff.production_frozen_inputs.requirements_verified = 52;
+    const rejected = invoke(fixture, {}, rejectedRequest);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /^ERROR PUBLISHER1_BOOTSTRAP\n$/);
+  } finally {
+    await cleanup(fixture.root);
+  }
+});
+
+test('successor installer rejects an incomplete capsule closure before target publication', async () => {
+  const fixture = await createFixture('capsule-incomplete');
+  try {
+    const request = structuredClone(fixture.request);
+    await addCapsuleTopology(fixture, request);
+    request.entries.splice(-3, 1);
+    const rejected = invoke(fixture, {}, request);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /^ERROR PUBLISHER1_BOOTSTRAP\n$/);
+  } finally { await cleanup(fixture.root); }
+});
+
+test('successor installer rejects rebound receipt bytes with divergent predecessor lineage', async () => {
+  const fixture = await createFixture('capsule-lineage-drift');
+  try {
+    const request = structuredClone(fixture.request);
+    const { receipt } = await addCapsuleTopology(fixture, request);
+    const changed = { ...receipt, predecessor_status: 'PASS' };
+    const changedBytes = canonical(changed);
+    await replaceEntrySource(fixture, request.entries.at(-1), 'node-capsule-receipt-drift.payload', changedBytes, 0o600);
+    request.handoff.production_frozen_inputs.mac_node_capsule_receipt_sha256 = SHA(changedBytes);
+    const rejected = invoke(fixture, {}, request);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /^ERROR PUBLISHER1_BOOTSTRAP\n$/);
+  } finally { await cleanup(fixture.root); }
+});
 
 test('round5 durable Phase B production service is version-addressed and launchd-persistent inside the original supervisor protocol', async () => {
   const source = await readFile(SOURCE, 'utf8');

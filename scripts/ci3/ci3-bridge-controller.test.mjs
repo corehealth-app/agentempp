@@ -234,6 +234,32 @@ function launchAttestation() {
   };
 }
 
+function productionBinding() {
+  return {
+    schema_version: 1, purpose: 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1',
+    constructor_claim_sha256: digest('1'), corpus_sha256: digest('2'),
+    authorized_producer_matrix_sha256: digest('3'), materialized_input_matrix_sha256: digest('4'),
+    oob_receipt_sha256: digest('5'), authenticated_ssh_receipt_sha256: digest('6'),
+    vps_node_reference_sha256: digest('7'), mac_node_capsule_receipt_sha256: digest('8'),
+    requirements_total: 53, requirements_verified: 53,
+    vps_runtime_role: 'VPS_BOOTSTRAP_NODE_RUNTIME', mac_runtime_role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    causal_order_sha256: subject().sha256(subject().canonicalJson(subject().PRODUCTION_FROZEN_INPUT_ORDER)),
+    raw_values: false,
+  };
+}
+
+function successorLaunchAttestation() {
+  const attestation = launchAttestation();
+  attestation.purpose = 'CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3';
+  attestation.production_frozen_inputs = productionBinding();
+  attestation.tools.node = {
+    ...attestation.tools.node,
+    capsule_manifest_sha256: digest('9'), capsule_receipt_sha256: digest('8'),
+    executable_relative_path: 'capsule/bin/node', runtime_role: 'MAC_EXECUTOR_NODE_RUNTIME',
+  };
+  return attestation;
+}
+
 function metadata(overrides = {}) {
   return {
     uid: process.getuid?.() ?? 0,
@@ -261,14 +287,28 @@ for (const mode of PUBLIC_MODES) {
   });
 }
 
-for (const argv of [[], ['unknown'], ['plan', 'extra'], ['fetch', '/tmp/path'], ['--self-test', 'value']]) {
-  test(`rejects arbitrary controller argv ${JSON.stringify(argv)}`, () => {
+for (const [caseIndex, argv] of [[], ['unknown'], ['plan', 'extra'], ['fetch', '/tmp/path'], ['--self-test', 'value']].entries()) {
+  test(`rejects arbitrary controller argv case ${caseIndex + 1}`, () => {
     expectCode('MODE_INVALID', () => subject().parseControllerMode(argv));
   });
 }
 
 test('launcher attestation v2 closes commit tree manifest components and tools', () => {
   assert.equal(subject().validateLaunchAttestation(launchAttestation()), true);
+});
+
+test('[PRODUCTION-CONSUMER-3-RED/GREEN] controller launch boundary binds 53/53 corpus, authenticated SSH, and Mac capsule before effects', () => {
+  assert.equal(subject().validateLaunchAttestation(successorLaunchAttestation()), true);
+  for (const mutate of [
+    (value) => { value.production_frozen_inputs.requirements_verified = 52; },
+    (value) => { value.production_frozen_inputs.authenticated_ssh_receipt_sha256 = 'bad'; },
+    (value) => { value.tools.node.executable_relative_path = 'runtime/node'; },
+    (value) => { value.tools.node.capsule_receipt_sha256 = digest('0'); },
+  ]) {
+    const changed = structuredClone(successorLaunchAttestation());
+    mutate(changed);
+    expectCode('LAUNCHER_REQUIRED', () => subject().validateLaunchAttestation(changed));
+  }
 });
 
 test('controller freezes the single exact authority commit subject', () => {

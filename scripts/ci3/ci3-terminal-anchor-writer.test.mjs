@@ -1173,6 +1173,46 @@ async function rewriteEvidenceObject(evidence, role, transform) {
   return { entry, object, bytes };
 }
 
+function productionFrozenInputs() {
+  const order = [
+    'AUTHORITY_PUBLISHED', 'GATE0_PASS', 'FRESH_OOB_RECEIPT',
+    'AUTHENTICATED_SSH_RECEIPT', 'MAC_NODE_CAPSULE', 'MATERIALIZED_53_OF_53',
+    'FROZEN_CORPUS', 'PUBLISHER0', 'PUBLISHER1', 'CONTROLLER_AUTHORITY',
+  ];
+  return {
+    schema_version: 1, purpose: 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1',
+    constructor_claim_sha256: '1'.repeat(64), corpus_sha256: '2'.repeat(64),
+    authorized_producer_matrix_sha256: '3'.repeat(64), materialized_input_matrix_sha256: '4'.repeat(64),
+    oob_receipt_sha256: '5'.repeat(64), authenticated_ssh_receipt_sha256: '6'.repeat(64),
+    vps_node_reference_sha256: '7'.repeat(64), mac_node_capsule_receipt_sha256: '8'.repeat(64),
+    requirements_total: 53, requirements_verified: 53,
+    vps_runtime_role: 'VPS_BOOTSTRAP_NODE_RUNTIME', mac_runtime_role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    causal_order_sha256: sha(Buffer.from(`${JSON.stringify(order)}\n`)), raw_values: false,
+  };
+}
+
+test('[PRODUCTION-CONSUMER-5-RED/GREEN] privileged writer validates the frozen corpus binding before any anchor write', async () => {
+  const fixture = await createFixture({
+    mutateManifest: async (manifest) => {
+      manifest.purpose = 'CI3_TERMINAL_ANCHOR_MANIFEST_V2';
+      manifest.production_frozen_inputs = productionFrozenInputs();
+    },
+  });
+  try {
+    const pass = validateFixture(fixture);
+    assert.equal(pass.status, 0, pass.stderr);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+  await expectFixtureFailure({
+    mutateManifest: async (manifest) => {
+      manifest.purpose = 'CI3_TERMINAL_ANCHOR_MANIFEST_V2';
+      manifest.production_frozen_inputs = productionFrozenInputs();
+      manifest.production_frozen_inputs.requirements_verified = 52;
+    },
+  });
+});
+
 test('round-3 writer rejects a hash-valid read chain whose capture does not equal the original expected bytes', async () => {
   await expectFixtureFailure({
     mutateEvidence: async ({ evidence }) => {

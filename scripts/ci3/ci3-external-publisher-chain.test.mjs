@@ -20,6 +20,105 @@ const H64 = 'b'.repeat(64);
 const CONTROLLER_GENERATION = `controller-${'c'.repeat(64)}`;
 const REMOTE_GENERATION = `remote-${'d'.repeat(64)}`;
 
+function productionFrozenInputBinding() {
+  return {
+    schema_version: 1,
+    purpose: 'CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1',
+    constructor_claim_sha256: '1'.repeat(64),
+    corpus_sha256: '2'.repeat(64),
+    authorized_producer_matrix_sha256: '3'.repeat(64),
+    materialized_input_matrix_sha256: '4'.repeat(64),
+    oob_receipt_sha256: '5'.repeat(64),
+    authenticated_ssh_receipt_sha256: '6'.repeat(64),
+    vps_node_reference_sha256: '7'.repeat(64),
+    mac_node_capsule_receipt_sha256: '8'.repeat(64),
+    requirements_total: 53,
+    requirements_verified: 53,
+    vps_runtime_role: 'VPS_BOOTSTRAP_NODE_RUNTIME',
+    mac_runtime_role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    causal_order_sha256: subject.sha256(subject.canonicalJson(subject.PRODUCTION_FROZEN_INPUT_ORDER)),
+    raw_values: false,
+  };
+}
+
+test('[PRODUCTION-CONSUMER-1-RED/GREEN] external Publisher boundary accepts the exact 53/53 corpus binding and rejects topology/order drift', () => {
+  const valid = productionFrozenInputBinding();
+  assert.equal(subject.validateProductionFrozenInputConsumerBinding(valid), valid);
+  for (const mutate of [
+    (value) => { value.requirements_verified = 52; },
+    (value) => { value.mac_runtime_role = 'VPS_BOOTSTRAP_NODE_RUNTIME'; },
+    (value) => { value.vps_runtime_role = 'MAC_EXECUTOR_NODE_RUNTIME'; },
+    (value) => { value.causal_order_sha256 = 'f'.repeat(64); },
+  ]) {
+    const changed = structuredClone(valid);
+    mutate(changed);
+    assert.throws(
+      () => subject.validateProductionFrozenInputConsumerBinding(changed),
+      (error) => error?.code === 'STOP_PRE_AUTHORITY',
+    );
+  }
+});
+
+function capsuleInstallTopology() {
+  const authority = H40;
+  const image = { destination: 'lib/0123456789abcdef-libx.dylib', sha256: '9'.repeat(64) };
+  const manifest = {
+    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority,
+    generation: 'capsule-v2', role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    predecessor_authority: 'd'.repeat(40), predecessor_generation: 'generation-v1',
+    predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
+    predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
+    capsule: { executable_sha256: 'a'.repeat(64), images: [image] },
+  };
+  const manifestBytes = subject.canonicalJson(manifest);
+  const receipt = {
+    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority,
+    generation: 'capsule-v2', manifest_sha256: subject.sha256(manifestBytes),
+    source_authority: 'e'.repeat(40),
+    predecessor_authority: manifest.predecessor_authority, predecessor_generation: manifest.predecessor_generation,
+    predecessor_status: manifest.predecessor_status, predecessor_attempts: manifest.predecessor_attempts,
+    predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
+    capsule_executable_sha256: manifest.capsule.executable_sha256,
+    capsule_images_sha256: subject.sha256(subject.canonicalJson(manifest.capsule.images)),
+    attempts: 1, retry: false, raw_path: false,
+  };
+  const receiptBytes = subject.canonicalJson(receipt);
+  const context = { authority: { commit: authority }, production_frozen_inputs: {
+    ...productionFrozenInputBinding(), mac_node_capsule_receipt_sha256: subject.sha256(receiptBytes),
+  } };
+  const entry = (role, destination_relative_path, source_sha256, bytes) => ({
+    role, destination_relative_path, source_sha256, bytes,
+  });
+  return { context, entries: [
+    entry('node-runtime', 'runtime/node-capsule/capsule/bin/node', manifest.capsule.executable_sha256, Buffer.from('node')),
+    entry('node-capsule-image-001', `runtime/node-capsule/capsule/${image.destination}`, image.sha256, Buffer.from('image')),
+    entry('node-capsule-manifest', 'runtime/node-capsule/capsule-manifest.json', subject.sha256(manifestBytes), manifestBytes),
+    entry('node-capsule-receipt', 'runtime/node-capsule/mac-relocatable-node-capsule.receipt.json', subject.sha256(receiptBytes), receiptBytes),
+  ] };
+}
+
+test('[PRODUCTION-CONSUMER-2-CAPSULE-TOPOLOGY-RED/GREEN] Publisher1 installs the complete bound capsule closure', () => {
+  const valid = capsuleInstallTopology();
+  assert.equal(subject.validateMacCapsuleInstallTopology(valid.entries, valid.context), true);
+  for (const mutate of [
+    (value) => { value.entries.splice(1, 1); },
+    (value) => { value.entries[0].destination_relative_path = 'runtime/node'; },
+    (value) => { value.entries[1].source_sha256 = 'f'.repeat(64); },
+    (value) => {
+      const receipt = JSON.parse(value.entries.at(-1).bytes);
+      receipt.predecessor_status = 'PASS';
+      value.entries.at(-1).bytes = subject.canonicalJson(receipt);
+      value.entries.at(-1).source_sha256 = subject.sha256(value.entries.at(-1).bytes);
+      value.context.production_frozen_inputs.mac_node_capsule_receipt_sha256 = value.entries.at(-1).source_sha256;
+    },
+    (value) => { value.entries.at(-1).bytes = subject.canonicalJson({ purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V1' }); },
+  ]) {
+    const changed = capsuleInstallTopology(); mutate(changed);
+    assert.throws(() => subject.validateMacCapsuleInstallTopology(changed.entries, changed.context),
+      (error) => error?.code === 'STOP_PRE_AUTHORITY');
+  }
+});
+
 function syntheticBindings() {
   return {
     MAC_EXECUTOR_AUTHORITY_SHA: '1'.repeat(40),
@@ -1731,8 +1830,8 @@ test('derived layout contains only authority-derived fixed roots', () => {
   assert.equal(layout.raw_values, false);
 });
 
-for (const unsafeRoot of ['', 'relative', '/tmp/../escape', '/tmp/root\0bad', '/tmp/root\nbad']) {
-  test(`derived layout rejects unsafe root ${JSON.stringify(unsafeRoot)}`, () => {
+for (const [caseIndex, unsafeRoot] of ['', 'relative', '/tmp/../escape', '/tmp/root\0bad', '/tmp/root\nbad'].entries()) {
+  test(`derived layout rejects unsafe root case ${caseIndex + 1}`, () => {
     assert.throws(() => subject.deriveAuthorityLayout(syntheticBindings(), unsafeRoot), (error) => error?.code === 'PATH_AUTHORITY');
   });
 }

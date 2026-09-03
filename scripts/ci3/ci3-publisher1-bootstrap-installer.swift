@@ -316,25 +316,142 @@ private struct Entry {
     let physical: Physical
 }
 
-private let expectedRoles = [
-    "materializer-authority", "issuer-receipt", "writer-binary",
-    "node-runtime", "controller", "launcher-runtime", "launcher-bootstrap-authority",
-    "launch-attestation", "authority-manifest",
-]
-private let expectedDestinations = [
-    "publisher1-materializer.authority.json",
-    "vps-issuer-authority.receipt.json",
-    "runtime/ci3-terminal-anchor-writer",
-    "runtime/node",
-    "runtime/ci3-bridge-controller.mjs",
-    "runtime/ci3-bridge-launcher.zsh",
-    "runtime/launcher-bootstrap.authority.v1",
-    "runtime/launch-attestation.json",
-    "runtime/authority-manifest.v1",
-]
-private let expectedModes: [mode_t] = [0o444, 0o444, 0o555, 0o555, 0o555, 0o555, 0o444, 0o444, 0o444]
+private struct EntryContract {
+    let role: String
+    let destination: String
+    let sourceMode: mode_t
+    let mode: mode_t
+}
 
-private func validateEntry(_ record: [String: Any], index: Int) throws -> Entry {
+private let baseEntryContracts = [
+    EntryContract(role: "materializer-authority", destination: "publisher1-materializer.authority.json", sourceMode: 0o600, mode: 0o444),
+    EntryContract(role: "issuer-receipt", destination: "vps-issuer-authority.receipt.json", sourceMode: 0o600, mode: 0o444),
+    EntryContract(role: "writer-binary", destination: "runtime/ci3-terminal-anchor-writer", sourceMode: 0o500, mode: 0o555),
+    EntryContract(role: "node-runtime", destination: "runtime/node", sourceMode: 0o600, mode: 0o555),
+    EntryContract(role: "controller", destination: "runtime/ci3-bridge-controller.mjs", sourceMode: 0o600, mode: 0o555),
+    EntryContract(role: "launcher-runtime", destination: "runtime/ci3-bridge-launcher.zsh", sourceMode: 0o600, mode: 0o555),
+    EntryContract(role: "launcher-bootstrap-authority", destination: "runtime/launcher-bootstrap.authority.v1", sourceMode: 0o600, mode: 0o444),
+    EntryContract(role: "launch-attestation", destination: "runtime/launch-attestation.json", sourceMode: 0o600, mode: 0o444),
+    EntryContract(role: "authority-manifest", destination: "runtime/authority-manifest.v1", sourceMode: 0o600, mode: 0o444),
+]
+
+private let productionFrozenInputOrder = [
+    "AUTHORITY_PUBLISHED", "GATE0_PASS", "FRESH_OOB_RECEIPT",
+    "AUTHENTICATED_SSH_RECEIPT", "MAC_NODE_CAPSULE", "MATERIALIZED_53_OF_53",
+    "FROZEN_CORPUS", "PUBLISHER0", "PUBLISHER1", "CONTROLLER_AUTHORITY",
+]
+
+private func validateProductionFrozenInputs(_ value: Any?) throws {
+    let binding = try object(value)
+    try exactKeys(binding, [
+        "authenticated_ssh_receipt_sha256", "authorized_producer_matrix_sha256",
+        "causal_order_sha256", "constructor_claim_sha256", "corpus_sha256",
+        "mac_node_capsule_receipt_sha256", "mac_runtime_role",
+        "materialized_input_matrix_sha256", "oob_receipt_sha256", "purpose",
+        "raw_values", "requirements_total", "requirements_verified", "schema_version",
+        "vps_node_reference_sha256", "vps_runtime_role",
+    ])
+    guard try integer(binding["schema_version"]) == 1,
+          try string(binding["purpose"]) == "CI3_PRODUCTION_FROZEN_INPUT_CONSUMER_BINDING_V1",
+          try integer(binding["requirements_total"]) == 53,
+          try integer(binding["requirements_verified"]) == 53,
+          try string(binding["vps_runtime_role"]) == "VPS_BOOTSTRAP_NODE_RUNTIME",
+          try string(binding["mac_runtime_role"]) == "MAC_EXECUTOR_NODE_RUNTIME",
+          try string(binding["causal_order_sha256"]) == sha256(try canonicalJSON(productionFrozenInputOrder)),
+          try boolean(binding["raw_values"]) == false else { try reject() }
+    for field in [
+        "authenticated_ssh_receipt_sha256", "authorized_producer_matrix_sha256",
+        "constructor_claim_sha256", "corpus_sha256", "mac_node_capsule_receipt_sha256",
+        "materialized_input_matrix_sha256", "oob_receipt_sha256", "vps_node_reference_sha256",
+    ] {
+        guard isHex(try string(binding[field])) else { try reject() }
+    }
+}
+
+private func validateMacCapsuleInstallTopology(_ entries: [Entry], handoff: [String: Any]) throws {
+    guard entries.count >= baseEntryContracts.count + 2 else { try reject() }
+    let binding = try object(handoff["production_frozen_inputs"])
+    let manifestEntry = entries[entries.count - 2]
+    let receiptEntry = entries[entries.count - 1]
+    guard manifestEntry.role == "node-capsule-manifest",
+          manifestEntry.relative == "runtime/node-capsule/capsule-manifest.json",
+          receiptEntry.role == "node-capsule-receipt",
+          receiptEntry.relative == "runtime/node-capsule/mac-relocatable-node-capsule.receipt.json",
+          let manifest = try JSONSerialization.jsonObject(with: manifestEntry.bytes) as? [String: Any],
+          let receipt = try JSONSerialization.jsonObject(with: receiptEntry.bytes) as? [String: Any],
+          try canonicalJSON(manifest) == manifestEntry.bytes,
+          try canonicalJSON(receipt) == receiptEntry.bytes else { try reject() }
+    try exactKeys(manifest, [
+        "schema_version", "purpose", "authority", "role", "generation", "predecessor_authority",
+        "predecessor_generation", "predecessor_status", "predecessor_attempts", "predecessor_retry",
+        "predecessor_cleanup", "predecessor_adoption", "plan", "source_hash", "capsule",
+    ])
+    let capsule = try object(manifest["capsule"])
+    try exactKeys(capsule, ["executable_sha256", "images"])
+    let images = try array(capsule["images"])
+    let node = entries[3]
+    guard try integer(manifest["schema_version"]) == 2,
+          try string(manifest["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V2",
+          try string(manifest["authority"]) == string(handoff["authority_sha"]),
+          try string(manifest["generation"]) == "capsule-v2",
+          try string(manifest["role"]) == "MAC_EXECUTOR_NODE_RUNTIME",
+          try string(manifest["predecessor_status"]) == "FAILED_PARTIAL_PRESERVED",
+          try string(manifest["predecessor_attempts"]) == "1/1_CONSUMED",
+          try boolean(manifest["predecessor_retry"]) == false,
+          try boolean(manifest["predecessor_cleanup"]) == false,
+          try boolean(manifest["predecessor_adoption"]) == false,
+          node.role == "node-runtime", node.relative == "runtime/node-capsule/capsule/bin/node",
+          node.sourceSHA == (try string(capsule["executable_sha256"])) else { try reject() }
+    let imageEntries = Array(entries[(baseEntryContracts.count)..<(entries.count - 2)])
+    guard imageEntries.count == images.count else { try reject() }
+    var destinations = Set<String>()
+    for (index, rawImage) in images.enumerated() {
+        let image = try object(rawImage)
+        try exactKeys(image, ["destination", "sha256"])
+        let destination = try string(image["destination"])
+        let imageHash = try string(image["sha256"])
+        let leaf = String(destination.dropFirst(4))
+        let entry = imageEntries[index]
+        guard destination.hasPrefix("lib/"), !leaf.isEmpty, !leaf.contains("/"), !leaf.contains(".."),
+              String(leaf.prefix(16)).allSatisfy({ $0.isHexDigit }), isHex(imageHash),
+              destinations.insert(destination).inserted,
+              entry.role == String(format: "node-capsule-image-%03d", index + 1),
+              entry.relative == "runtime/node-capsule/capsule/\(destination)", entry.sourceSHA == imageHash,
+              entry.physical.mode == 0o400, entry.mode == 0o444 else { try reject() }
+    }
+    try exactKeys(receipt, [
+        "schema_version", "purpose", "authority", "role", "platform", "architecture", "version",
+        "source_identity_hash", "closure_hash", "relocation_plan_hash", "move_probes", "loader_probes",
+        "copied_non_system_images_consumed", "attempts", "retry", "raw_path", "generation", "source_authority",
+        "predecessor_authority", "predecessor_generation", "predecessor_status", "predecessor_attempts",
+        "predecessor_retry", "predecessor_cleanup", "predecessor_adoption", "manifest_sha256",
+        "capsule_executable_sha256", "capsule_images_sha256",
+    ])
+    guard try integer(receipt["schema_version"]) == 2,
+          try string(receipt["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V2",
+          try string(receipt["authority"]) == string(handoff["authority_sha"]),
+          try string(receipt["generation"]) == "capsule-v2",
+          try string(receipt["role"]) == "MAC_EXECUTOR_NODE_RUNTIME",
+          isHex(try string(receipt["source_authority"]), 40),
+          isHex(try string(manifest["predecessor_authority"]), 40),
+          try string(receipt["predecessor_authority"]) == string(manifest["predecessor_authority"]),
+          try string(receipt["predecessor_generation"]) == string(manifest["predecessor_generation"]),
+          try string(receipt["predecessor_status"]) == string(manifest["predecessor_status"]),
+          try string(receipt["predecessor_attempts"]) == string(manifest["predecessor_attempts"]),
+          try boolean(receipt["predecessor_retry"]) == boolean(manifest["predecessor_retry"]),
+          try boolean(receipt["predecessor_cleanup"]) == boolean(manifest["predecessor_cleanup"]),
+          try boolean(receipt["predecessor_adoption"]) == boolean(manifest["predecessor_adoption"]),
+          try string(receipt["manifest_sha256"]) == sha256(manifestEntry.bytes),
+          try string(receipt["capsule_executable_sha256"]) == string(capsule["executable_sha256"]),
+          try string(receipt["capsule_images_sha256"]) == sha256(try canonicalJSON(images)),
+          try string(receipt["move_probes"]) == "2/2_PASS", try string(receipt["loader_probes"]) == "2/2_PASS",
+          try boolean(receipt["copied_non_system_images_consumed"]) == true,
+          try integer(receipt["attempts"]) == 1, try boolean(receipt["retry"]) == false,
+          try boolean(receipt["raw_path"]) == false,
+          try string(binding["mac_node_capsule_receipt_sha256"]) == sha256(receiptEntry.bytes) else { try reject() }
+}
+
+private func validateEntry(_ record: [String: Any], contract: EntryContract) throws -> Entry {
     try exactKeys(record, [
         "role", "source_path", "source_path_sha256", "source_sha256", "source_uid", "source_gid",
         "source_mode", "source_nlink", "source_size", "source_mtime_ns", "source_dev", "source_ino",
@@ -350,9 +467,9 @@ private func validateEntry(_ record: [String: Any], index: Int) throws -> Entry 
     let sourceIdentity = try string(record["source_identity_sha256"])
     let relative = try string(record["destination_relative_path"])
     let destinationMode = try integer(record["mode"])
-    guard role == expectedRoles[index], safeAbsolutePath(source), sourcePathSHA == sha256(Data(source.utf8)),
+    guard role == contract.role, safeAbsolutePath(source), sourcePathSHA == sha256(Data(source.utf8)),
           isHex(sourceSHA), isHex(sourceIdentity), !sourceMtime.isEmpty, !sourceDev.isEmpty, !sourceIno.isEmpty,
-          relative == expectedDestinations[index], destinationMode == Int(expectedModes[index]), !relative.hasPrefix("/"),
+          relative == contract.destination, destinationMode == Int(contract.mode), !relative.hasPrefix("/"),
           !relative.contains("..") else { try reject() }
     let pinned = try openPinnedFile(source)
     defer { Darwin.close(pinned.descriptor); Darwin.close(pinned.parent) }
@@ -363,7 +480,7 @@ private func validateEntry(_ record: [String: Any], index: Int) throws -> Entry 
     let sourceNlink = try integer(record["source_nlink"])
     let sourceSize = try integer(record["source_size"])
     guard sourceMetadata.uid == sourceUID, sourceMetadata.gid == sourceGID,
-          sourceMetadata.mode == sourceMode, sourceMetadata.nlink == sourceNlink,
+          sourceMetadata.mode == sourceMode, sourceMode == Int(contract.sourceMode), sourceMetadata.nlink == sourceNlink,
           sourceMetadata.size == sourceSize, sourceMetadata.mtimeNS == sourceMtime,
           sourceMetadata.dev == sourceDev, sourceMetadata.ino == sourceIno, sourceMetadata.identity() == sourceIdentity else { try reject() }
     let bytes = try readDescriptor(pinned.descriptor)
@@ -372,17 +489,20 @@ private func validateEntry(_ record: [String: Any], index: Int) throws -> Entry 
     guard sourceSHA == sha256(bytes), after.identity() == sourceMetadata.identity(),
           pinned.leaf.withCString({ Darwin.fstatat(pinned.parent, $0, &relativeStat, AT_SYMLINK_NOFOLLOW) }) == 0,
           (try physical(relativeStat)).identity() == sourceMetadata.identity() else { try reject() }
-    return Entry(role: role, sourcePath: source, sourceSHA: sourceSHA, relative: relative, mode: expectedModes[index], bytes: bytes, physical: sourceMetadata)
+    return Entry(role: role, sourcePath: source, sourceSHA: sourceSHA, relative: relative, mode: contract.mode, bytes: bytes, physical: sourceMetadata)
 }
 
 private func validateHandoff(_ handoff: [String: Any], authority: String, generation: String, entries: [Entry]) throws {
-    try exactKeys(handoff, [
+    let successor = (try? string(handoff["purpose"])) == "CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3"
+    var handoffKeys = [
         "schema_version", "purpose", "authority_sha", "remote_generation_id", "controller_generation_id",
         "authority_projection", "gate0_receipt", "issuer", "pass", "transport_manifest",
         "human_authorization_request", "human_authorization_request_observation", "human_authorization",
         "installer_provenance", "prompt_sha256", "materializer_authority",
         "receiver_root_path_sha256", "receiver_root_identity_sha256", "receiver_leaves", "attempt", "retry", "raw_values",
-    ])
+    ]
+    if successor { handoffKeys.append("production_frozen_inputs") }
+    try exactKeys(handoff, handoffKeys)
     let remote = try string(handoff["remote_generation_id"])
     let issuer = try object(handoff["issuer"])
     let projection = try object(handoff["authority_projection"])
@@ -396,12 +516,13 @@ private func validateHandoff(_ handoff: [String: Any], authority: String, genera
     let gate0 = try object(handoff["gate0_receipt"])
     let leaves = try array(handoff["receiver_leaves"])
     guard try integer(handoff["schema_version"]) == 2,
-          try string(handoff["purpose"]) == "CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2",
+          ["CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V2", "CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3"].contains(try string(handoff["purpose"])),
           try string(handoff["authority_sha"]) == authority, isGeneration(remote),
           try string(handoff["controller_generation_id"]) == generation,
           isHex(try string(handoff["receiver_root_path_sha256"])), isHex(try string(handoff["receiver_root_identity_sha256"])),
           try integer(handoff["attempt"]) == 1, try boolean(handoff["retry"]) == false, try boolean(handoff["raw_values"]) == false,
           leaves.count == receiverRoles.count else { try reject() }
+    if successor { try validateProductionFrozenInputs(handoff["production_frozen_inputs"]) }
     try exactKeys(projection, [
         "authority_sha", "authority_parent", "authority_tree", "authority_subject_sha256", "authority_manifest_sha256",
         "operation_authority_sha256", "node_candidate_sha256", "collector_contracts_sha256",
@@ -619,7 +740,7 @@ private func validateHandoff(_ handoff: [String: Any], authority: String, genera
               try canonicalDecimal(ino, maximum: UInt64.max) <= UInt64.max,
               Physical(uid: uid, gid: gid, mode: mode, nlink: nlink, size: size, mtimeNS: mtime, dev: dev, ino: ino).identity() == identity else { try reject() }
     }
-    for (offset, entry) in entries.dropFirst(3).enumerated() {
+    for (offset, entry) in entries.dropFirst(3).prefix(baseEntryContracts.count - 3).enumerated() {
         let leaf = leaves[offset]
         let leafRole = try string(leaf["role"])
         let leafSHA = try string(leaf["sha256"])
@@ -645,8 +766,11 @@ private func validateHandoff(_ handoff: [String: Any], authority: String, genera
     let issuerBytes = try canonicalJSON(issuer)
     let materializerHash = try string(materializer["materializer_sha256"])
     let writerHash = try string(materializer["writer_source_sha256"])
-    guard entries.count == expectedRoles.count, entries[0].bytes == materializerBytes, entries[1].bytes == issuerBytes,
+    guard (!successor && entries.count == baseEntryContracts.count)
+            || (successor && entries.count >= baseEntryContracts.count + 2),
+          entries[0].bytes == materializerBytes, entries[1].bytes == issuerBytes,
           entries[2].sourceSHA == materializerHash, isHex(writerHash) else { try reject() }
+    if successor { try validateMacCapsuleInstallTopology(entries, handoff: handoff) }
 }
 
 private struct Request {
@@ -742,8 +866,25 @@ private func parseRequest(_ arguments: [String]) throws -> Request {
     let state = requestedState
 #endif
     let records = try array(raw["entries"])
-    guard records.count == expectedRoles.count else { try reject() }
-    let entries = try records.enumerated().map { try validateEntry($0.element, index: $0.offset) }
+    let successor = (try? string(handoff["purpose"])) == "CI3_PUBLISHER1_BOOTSTRAP_HANDOFF_V3"
+    guard (!successor && records.count == baseEntryContracts.count)
+            || (successor && records.count >= baseEntryContracts.count + 2) else { try reject() }
+    var contracts = baseEntryContracts
+    if successor {
+        contracts[3] = EntryContract(role: "node-runtime", destination: "runtime/node-capsule/capsule/bin/node", sourceMode: 0o600, mode: 0o555)
+        for rawRecord in records.dropFirst(baseEntryContracts.count) {
+            let role = try string(rawRecord["role"])
+            let destination = try string(rawRecord["destination_relative_path"])
+            if role.range(of: #"^node-capsule-image-[0-9]{3}$"#, options: .regularExpression) != nil {
+                contracts.append(EntryContract(role: role, destination: destination, sourceMode: 0o400, mode: 0o444))
+            } else if role == "node-capsule-manifest" {
+                contracts.append(EntryContract(role: role, destination: "runtime/node-capsule/capsule-manifest.json", sourceMode: 0o600, mode: 0o444))
+            } else if role == "node-capsule-receipt" {
+                contracts.append(EntryContract(role: role, destination: "runtime/node-capsule/mac-relocatable-node-capsule.receipt.json", sourceMode: 0o600, mode: 0o444))
+            } else { try reject() }
+        }
+    }
+    let entries = try records.enumerated().map { try validateEntry($0.element, contract: contracts[$0.offset]) }
     try validateHandoff(handoff, authority: authority, generation: generation, entries: entries)
     return Request(authority: authority, generation: generation, destination: destination, state: state,
                    handoff: handoff, entries: entries, hash: sha256(bytes))
@@ -2962,14 +3103,28 @@ private func resultBytes(_ request: Request, _ claim: Data, _ observations: [[St
 }
 
 private func verifyPublishedTree(_ destinationParent: Int32, _ finalName: String, _ request: Request) throws -> [[String: Any]] {
+    func expectedChildren(_ directory: [String]) throws -> [String] {
+        var children = Set<String>()
+        for entry in request.entries {
+            let parts = entry.relative.split(separator: "/").map(String.init)
+            guard parts.count > directory.count, Array(parts.prefix(directory.count)) == directory else {
+                if Array(parts.prefix(directory.count)) == directory { try reject() }
+                continue
+            }
+            children.insert(parts[directory.count])
+        }
+        guard !children.isEmpty else { try reject() }
+        return children.sorted()
+    }
     let root = try openDirectoryAt(destinationParent, finalName, create: false)
     defer { Darwin.close(root) }
-    try requireExactDirectoryChildren(root, ["publisher1-materializer.authority.json", "vps-issuer-authority.receipt.json", "runtime"])
+    let rootChildren = try expectedChildren([])
+    try requireExactDirectoryChildren(root, rootChildren)
     let rootPhysical = try physical(fstatValue(root))
     if productionMetadataRequired() {
         let rootStat = try fstatValue(root)
         guard rootPhysical.uid == Int(expectedPublishedUID()), rootPhysical.gid == Int(expectedPublishedGID()), rootPhysical.mode == 0o555,
-              rootPhysical.nlink == 5,
+              rootPhysical.nlink == rootChildren.count + 2,
               (rootStat.st_flags & UInt32(UF_IMMUTABLE)) != 0 else { try reject() }
     }
     var observations: [[String: Any]] = []
@@ -2977,21 +3132,19 @@ private func verifyPublishedTree(_ destinationParent: Int32, _ finalName: String
         let parts = entry.relative.split(separator: "/").map(String.init)
         guard !parts.isEmpty else { try reject() }
         var current = root
+        var currentParts: [String] = []
         var opened: [Int32] = []
         defer { for descriptor in opened.reversed() { Darwin.close(descriptor) } }
         for component in parts.dropLast() {
             let next = try openDirectoryAt(current, component, create: false)
-            if component == "runtime" {
-                try requireExactDirectoryChildren(next, [
-                    "ci3-terminal-anchor-writer", "node", "ci3-bridge-controller.mjs", "ci3-bridge-launcher.zsh",
-                    "launcher-bootstrap.authority.v1", "launch-attestation.json", "authority-manifest.v1",
-                ])
-            }
+            currentParts.append(component)
+            let children = try expectedChildren(currentParts)
+            try requireExactDirectoryChildren(next, children)
             let directoryPhysical = try physical(fstatValue(next))
             if productionMetadataRequired() {
                 let directoryStat = try fstatValue(next)
                 guard directoryPhysical.uid == Int(expectedPublishedUID()), directoryPhysical.gid == Int(expectedPublishedGID()), directoryPhysical.mode == 0o555,
-                      directoryPhysical.nlink == 9,
+                      directoryPhysical.nlink == children.count + 2,
                       (directoryStat.st_flags & UInt32(UF_IMMUTABLE)) != 0 else { Darwin.close(next); try reject() }
             }
             opened.append(next)

@@ -330,9 +330,9 @@ async function addCapsuleTopology(fixture, request) {
   const imageBytes = Buffer.from('synthetic-capsule-image\n');
   const image = { destination: 'lib/0123456789abcdef-libx.dylib', sha256: SHA(imageBytes) };
   const manifest = {
-    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority: AUTHORITY,
-    generation: 'capsule-v2', role: 'MAC_EXECUTOR_NODE_RUNTIME',
-    predecessor_authority: 'd'.repeat(40), predecessor_generation: 'generation-v1',
+    schema_version: 3, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V3', authority: AUTHORITY,
+    generation: 'capsule-v3', role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    predecessor_authority: 'c1c83a63b9f258546310eccba30b889958ccabe5', predecessor_generation: 'capsule-v2',
     predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
     predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
     plan: { fixed: true }, source_hash: 'c'.repeat(64),
@@ -340,12 +340,12 @@ async function addCapsuleTopology(fixture, request) {
   };
   const manifestBytes = canonical(manifest);
   const receipt = {
-    schema_version: 2, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V2', authority: AUTHORITY,
-    generation: 'capsule-v2', role: 'MAC_EXECUTOR_NODE_RUNTIME', platform: 'darwin', architecture: 'arm64',
+    schema_version: 3, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V3', authority: AUTHORITY,
+    generation: 'capsule-v3', role: 'MAC_EXECUTOR_NODE_RUNTIME', platform: 'darwin', architecture: 'arm64',
     version: 'v22.1.0', source_identity_hash: '1'.repeat(64), closure_hash: '2'.repeat(64),
     relocation_plan_hash: '3'.repeat(64), move_probes: '2/2_PASS', loader_probes: '2/2_PASS',
     copied_non_system_images_consumed: true, source_authority: 'b'.repeat(40),
-    predecessor_authority: 'd'.repeat(40), predecessor_generation: 'generation-v1',
+    predecessor_authority: 'c1c83a63b9f258546310eccba30b889958ccabe5', predecessor_generation: 'capsule-v2',
     predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
     predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
     manifest_sha256: SHA(manifestBytes),
@@ -432,6 +432,26 @@ test('successor installer rejects rebound receipt bytes with divergent predecess
     const changedBytes = canonical(changed);
     await replaceEntrySource(fixture, request.entries.at(-1), 'node-capsule-receipt-drift.payload', changedBytes, 0o600);
     request.handoff.production_frozen_inputs.mac_node_capsule_receipt_sha256 = SHA(changedBytes);
+    const rejected = invoke(fixture, {}, request);
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /^ERROR PUBLISHER1_BOOTSTRAP\n$/);
+  } finally { await cleanup(fixture.root); }
+});
+
+test('successor installer rejects self-consistent capsule lineage not rooted at consumed V2', async () => {
+  const fixture = await createFixture('capsule-exact-lineage');
+  try {
+    const request = structuredClone(fixture.request);
+    const { manifest, receipt } = await addCapsuleTopology(fixture, request);
+    const changedManifest = { ...manifest, predecessor_authority: 'd'.repeat(40), predecessor_generation: 'other-v2' };
+    const manifestBytes = canonical(changedManifest);
+    await replaceEntrySource(fixture, request.entries.at(-2), 'node-capsule-manifest-lineage.payload', manifestBytes, 0o600);
+    const changedReceipt = { ...receipt, predecessor_authority: changedManifest.predecessor_authority,
+      predecessor_generation: changedManifest.predecessor_generation, manifest_sha256: SHA(manifestBytes) };
+    const receiptBytes = canonical(changedReceipt);
+    await replaceEntrySource(fixture, request.entries.at(-1), 'node-capsule-receipt-lineage.payload', receiptBytes, 0o600);
+    request.handoff.production_frozen_inputs.mac_node_capsule_receipt_sha256 = SHA(receiptBytes);
     const rejected = invoke(fixture, {}, request);
     assert.notEqual(rejected.status, 0);
     assert.equal(rejected.stdout, '');

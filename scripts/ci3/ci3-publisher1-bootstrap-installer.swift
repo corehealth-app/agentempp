@@ -390,11 +390,13 @@ private func validateMacCapsuleInstallTopology(_ entries: [Entry], handoff: [Str
     try exactKeys(capsule, ["executable_sha256", "images"])
     let images = try array(capsule["images"])
     let node = entries[3]
-    guard try integer(manifest["schema_version"]) == 2,
-          try string(manifest["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V2",
+    guard try integer(manifest["schema_version"]) == 3,
+          try string(manifest["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V3",
           try string(manifest["authority"]) == string(handoff["authority_sha"]),
-          try string(manifest["generation"]) == "capsule-v2",
+          try string(manifest["generation"]) == "capsule-v3",
           try string(manifest["role"]) == "MAC_EXECUTOR_NODE_RUNTIME",
+          try string(manifest["predecessor_authority"]) == "c1c83a63b9f258546310eccba30b889958ccabe5",
+          try string(manifest["predecessor_generation"]) == "capsule-v2",
           try string(manifest["predecessor_status"]) == "FAILED_PARTIAL_PRESERVED",
           try string(manifest["predecessor_attempts"]) == "1/1_CONSUMED",
           try boolean(manifest["predecessor_retry"]) == false,
@@ -427,10 +429,10 @@ private func validateMacCapsuleInstallTopology(_ entries: [Entry], handoff: [Str
         "predecessor_retry", "predecessor_cleanup", "predecessor_adoption", "manifest_sha256",
         "capsule_executable_sha256", "capsule_images_sha256",
     ])
-    guard try integer(receipt["schema_version"]) == 2,
-          try string(receipt["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V2",
+    guard try integer(receipt["schema_version"]) == 3,
+          try string(receipt["purpose"]) == "MAC_RELOCATABLE_NODE_CAPSULE_V3",
           try string(receipt["authority"]) == string(handoff["authority_sha"]),
-          try string(receipt["generation"]) == "capsule-v2",
+          try string(receipt["generation"]) == "capsule-v3",
           try string(receipt["role"]) == "MAC_EXECUTOR_NODE_RUNTIME",
           isHex(try string(receipt["source_authority"]), 40),
           isHex(try string(manifest["predecessor_authority"]), 40),

@@ -717,7 +717,7 @@ test('[PRODUCTION-CONSUMER-4-RED/GREEN] external launcher executes only the boun
     await writeFile(controllerPath, 'synthetic capsule controller\n');
     await writeFile(attestationPath, '{"purpose":"CI3_GIT_BOUND_LAUNCH_ATTESTATION_V3","production_frozen_inputs":{}}\n');
     await writeFile(manifestPath, 'synthetic authority manifest\n');
-    await writeFile(capsuleManifestPath, '{"purpose":"MAC_RELOCATABLE_NODE_CAPSULE_V2"}\n');
+    await writeFile(capsuleManifestPath, '{"purpose":"MAC_RELOCATABLE_NODE_CAPSULE_V3"}\n');
     await writeFile(capsuleReceiptPath, '{"move_probes":"2/2_PASS","loader_probes":"2/2_PASS"}\n');
     for (const filePath of [launcherPath, nodePath, controllerPath]) await chmod(filePath, 0o500);
     for (const filePath of [attestationPath, manifestPath, capsuleManifestPath, capsuleReceiptPath]) await chmod(filePath, 0o400);

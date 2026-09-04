@@ -230,18 +230,22 @@ export function validateMacCapsuleInstallTopology(entries, context, code = 'STOP
   ];
   if (!canonicalJson(manifest).equals(manifestEntry.bytes)
       || !canonicalJson(receipt).equals(receiptEntry.bytes)
-      || manifest.schema_version !== 3 || manifest.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V3'
-      || manifest.authority !== context.authority.commit || manifest.generation !== 'capsule-v3'
+      || manifest.schema_version !== 4 || manifest.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V4'
+      || manifest.authority !== context.authority.commit || manifest.generation !== 'capsule-v4'
       || manifest.role !== 'MAC_EXECUTOR_NODE_RUNTIME' || !isPlainObject(manifest.capsule)
-      || receipt.schema_version !== 3 || receipt.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V3'
-      || receipt.authority !== context.authority.commit || receipt.generation !== 'capsule-v3'
+      || receipt.schema_version !== 4 || receipt.purpose !== 'MAC_RELOCATABLE_NODE_CAPSULE_V4'
+      || receipt.authority !== context.authority.commit || receipt.generation !== 'capsule-v4'
       || receipt.manifest_sha256 !== sha256(manifestEntry.bytes)
       || receipt.attempts !== 1 || receipt.retry !== false || receipt.raw_path !== false
+      || receipt.ready_handshakes !== '2/2_PASS' || receipt.stable_observations !== '4/4_PASS'
+      || receipt.independent_source_observations !== '2/2_PASS'
+      || receipt.mandatory_load_set_complete !== true || receipt.weak_lazy_policy !== 'PASS'
+      || receipt.copied_but_unused !== 0
       || binding.mac_node_capsule_receipt_sha256 !== sha256(receiptEntry.bytes)
       || manifestEntry.source_sha256 !== sha256(manifestEntry.bytes)
       || receiptEntry.source_sha256 !== sha256(receiptEntry.bytes)) fail(code);
-  if (manifest.predecessor_authority !== 'c1c83a63b9f258546310eccba30b889958ccabe5'
-      || manifest.predecessor_generation !== 'capsule-v2'
+  if (manifest.predecessor_authority !== '85a9ebba88722915df56583d29defc253016a5f9'
+      || manifest.predecessor_generation !== 'capsule-v3'
       || manifest.predecessor_status !== 'FAILED_PARTIAL_PRESERVED'
       || manifest.predecessor_attempts !== '1/1_CONSUMED'
       || manifest.predecessor_retry !== false || manifest.predecessor_cleanup !== false
@@ -3828,7 +3832,7 @@ async function sourceEntry(role, sourcePath, destinationRelativePath, mode, code
 export function macCapsuleSourceRoot(context, homeRoot = homedir()) {
   if (!isPlainObject(context?.authority) || !/^[a-f0-9]{40}$/.test(context.authority.commit)
       || typeof homeRoot !== 'string' || !path.isAbsolute(homeRoot)) fail('STOP_PRE_AUTHORITY');
-  return path.join(homeRoot, '.config', 'agentempp', 'ci3', 'mac-node-capsule-v3', context.authority.commit, 'capsule-v3');
+  return path.join(homeRoot, '.config', 'agentempp', 'ci3', 'mac-node-capsule-v4', context.authority.commit, 'capsule-v4');
 }
 
 async function buildMacCapsuleBootstrapEntries({ context, capsuleRoot, nodeEntry, code }) {

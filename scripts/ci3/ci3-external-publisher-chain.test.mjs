@@ -63,24 +63,27 @@ function capsuleInstallTopology() {
   const authority = H40;
   const image = { destination: 'lib/0123456789abcdef-libx.dylib', sha256: '9'.repeat(64) };
   const manifest = {
-    schema_version: 3, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V3', authority,
-    generation: 'capsule-v3', role: 'MAC_EXECUTOR_NODE_RUNTIME',
-    predecessor_authority: 'c1c83a63b9f258546310eccba30b889958ccabe5', predecessor_generation: 'capsule-v2',
+    schema_version: 4, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V4', authority,
+    generation: 'capsule-v4', role: 'MAC_EXECUTOR_NODE_RUNTIME',
+    predecessor_authority: '85a9ebba88722915df56583d29defc253016a5f9', predecessor_generation: 'capsule-v3',
     predecessor_status: 'FAILED_PARTIAL_PRESERVED', predecessor_attempts: '1/1_CONSUMED',
     predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
     capsule: { executable_sha256: 'a'.repeat(64), images: [image] },
   };
   const manifestBytes = subject.canonicalJson(manifest);
   const receipt = {
-    schema_version: 3, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V3', authority,
-    generation: 'capsule-v3', manifest_sha256: subject.sha256(manifestBytes),
+    schema_version: 4, purpose: 'MAC_RELOCATABLE_NODE_CAPSULE_V4', authority,
+    generation: 'capsule-v4', manifest_sha256: subject.sha256(manifestBytes),
     source_authority: 'e'.repeat(40),
     predecessor_authority: manifest.predecessor_authority, predecessor_generation: manifest.predecessor_generation,
     predecessor_status: manifest.predecessor_status, predecessor_attempts: manifest.predecessor_attempts,
     predecessor_retry: false, predecessor_cleanup: false, predecessor_adoption: false,
     capsule_executable_sha256: manifest.capsule.executable_sha256,
     capsule_images_sha256: subject.sha256(subject.canonicalJson(manifest.capsule.images)),
-    attempts: 1, retry: false, raw_path: false,
+    move_probes: '2/2_PASS', loader_probes: '2/2_PASS', ready_handshakes: '2/2_PASS',
+    stable_observations: '4/4_PASS', independent_source_observations: '2/2_PASS',
+    mandatory_load_set_complete: true, weak_lazy_policy: 'PASS', copied_non_system_images_consumed: true,
+    copied_but_unused: 0, attempts: 1, retry: false, raw_path: false,
   };
   const receiptBytes = subject.canonicalJson(receipt);
   const context = { authority: { commit: authority }, production_frozen_inputs: {
@@ -97,9 +100,9 @@ function capsuleInstallTopology() {
   ] };
 }
 
-test('[PRODUCTION-CONSUMER-1-V3] capsule source root uses the independent V3 namespace',()=>{
+test('[PRODUCTION-CONSUMER-1-V4] capsule source root uses the independent V4 namespace',()=>{
   const authority='a'.repeat(40),root=subject.macCapsuleSourceRoot({authority:{commit:authority}},'/Users/test');
-  assert.equal(root,path.join('/Users/test','.config','agentempp','ci3','mac-node-capsule-v3',authority,'capsule-v3'));
+  assert.equal(root,path.join('/Users/test','.config','agentempp','ci3','mac-node-capsule-v4',authority,'capsule-v4'));
 });
 
 test('[PRODUCTION-CONSUMER-2-CAPSULE-TOPOLOGY-RED/GREEN] Publisher1 installs the complete bound capsule closure', () => {
@@ -130,7 +133,7 @@ test('[PRODUCTION-CONSUMER-2-CAPSULE-TOPOLOGY-RED/GREEN] Publisher1 installs the
     },
     (value) => {
       const manifest = JSON.parse(value.entries.at(-2).bytes);
-      manifest.predecessor_generation = 'other-v2';
+      manifest.predecessor_generation = 'other-v3';
       value.entries.at(-2).bytes = subject.canonicalJson(manifest);
       value.entries.at(-2).source_sha256 = subject.sha256(value.entries.at(-2).bytes);
       const receipt = JSON.parse(value.entries.at(-1).bytes);

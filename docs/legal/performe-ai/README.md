@@ -42,3 +42,11 @@ The detailed gates are in `legal-activation-checklist.md`. This package does not
 - `[PENDENTE — DATA DE VIGÊNCIA]` / `[PENDING — EFFECTIVE DATE]`
 
 Historical references to CoreHealth and PIPER AUTOMAÇÕES E INTEGRAÇÕES LTDA / PIPER HUB do not establish which entity is the controller, contracting supplier, App Store seller, brand/domain owner, support contact, privacy contact, or incident-response owner. Those decisions remain open.
+
+## Future legal entity decision
+
+The intended future responsible entity will be a third company that has not yet been incorporated. Its internal-only representation is `[FUTURE LEGAL ENTITY — NOT YET INCORPORATED]`; it has no legal name, CNPJ, or incorporation date today. The placeholder is not a legal person and must never appear in a user-facing or published document.
+
+PIPER AUTOMAÇÕES E INTEGRAÇÕES LTDA. / PiperHub and CoreHealth are not approved as controller, App Store seller, user contracting entity, or legal owner for Performe AI. PIPER/PiperHub may remain a historical provider/developer description where supported by evidence, without assigning a broader role.
+
+Consequently, `REAL USER LEGAL ACTIVATION: BLOCKED`. This block remains until incorporation, role decisions, legal review, approval, and all activation gates are complete. It does not prevent local or strictly isolated synthetic QA testing under a separate authorization. The preparation for such a future test is documented in `synthetic-staging-e2e-readiness.md`; no E2E or remote operation is performed by this package update.

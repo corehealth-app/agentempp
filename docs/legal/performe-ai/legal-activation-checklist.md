@@ -8,6 +8,10 @@ PRODUCTION ACTIVE: NO
 
 This checklist separates preparation from legal approval and operational activation. `MINUTA TÉCNICA CRIADA: SIM` means only that this draft package exists; it does not pass any gate below.
 
+`REAL USER LEGAL ACTIVATION: BLOCKED`
+
+The intended future responsible entity is a third company that has not yet been incorporated. It currently has no legal name, CNPJ, incorporation date, or approved legal role. Gate A therefore remains `NOT PASSED`, and no later real-user activation gate can pass by substituting PIPER/PiperHub, CoreHealth, or the internal placeholder `[FUTURE LEGAL ENTITY — NOT YET INCORPORATED]`.
+
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | A — Legal identity | Contracting entity, controller/operator roles, CNPJ, address, seller, brand/domain ownership, support/privacy contacts | NOT PASSED |
@@ -27,6 +31,24 @@ This checklist separates preparation from legal approval and operational activat
 | O — Release staging E2E | Real login → requirements → explicit actions → persisted server completion → relaunch/reconsent boundaries | NOT PASSED |
 | P — UAT | Product/legal copy, accessibility, links, revocation/deletion paths, and user comprehension accepted | NOT PASSED |
 | Q — Separate production authorization | Explicit production scope, target IDs, rollback, approvals, and deployment authorization | NOT PASSED |
+
+## Synthetic staging QA exception — not a legal activation
+
+The legal block does not prevent a separately authorized, isolated staging E2E that uses only synthetic accounts, synthetic health-like data, and unmistakably synthetic QA notices. Such a run does not pass Gates A–J, does not activate a real legal document, and does not authorize production.
+
+Before any future synthetic insertion or E2E:
+
+- independently verify the exact Supabase target as the authorized staging project and the BFF deployment as a non-production Preview;
+- fail closed if either target, environment, project identity, or production exclusion cannot be proven;
+- use only `qa_*` document keys accepted by the current schema, never real legal keys, the legal draft version `1.0.0`, the legal draft text, or historical `dev_*` fixtures;
+- ensure every body visibly declares that it is a synthetic QA document and not legal text;
+- calculate hashes only from the exact synthetic staging bodies at execution time and never label them legal/final hashes;
+- ensure QA documents and requirement sets cannot be selected, copied, seeded, migrated, or promoted to production;
+- use two new synthetic users with no real name, personal email, existing patient, pre-existing message, or real health data;
+- preserve the separately authorized provider budget and revoke its task-specific key during closeout;
+- record and verify cleanup or retained immutable staging evidence without fabricating deletion capability.
+
+The detailed preparation is in `synthetic-staging-e2e-readiness.md`. No synthetic document, account, key, migration, deployment, or E2E is created by this documentation task.
 
 ## Runtime compatibility findings
 

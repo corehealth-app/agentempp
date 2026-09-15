@@ -69,7 +69,13 @@ DECLARE
   v_other_user_id constant uuid := '00000000-0000-4000-8000-000000000952';
   v_legacy_user_id constant uuid := '00000000-0000-4000-8000-000000000953';
   v_terms_id uuid;
+  v_obsolete_terms_id uuid;
   v_privacy_id uuid;
+  v_future_consent_id uuid;
+  v_requirement_set_id uuid;
+  v_partial_requirement_set_id uuid;
+  v_revised_terms_id uuid;
+  v_revised_requirement_set_id uuid;
   v_terms_hash text := encode(extensions.digest('Synthetic terms for tests only', 'sha256'), 'hex');
   v_privacy_hash text := repeat('b', 64);
   v_valid_submission jsonb;
@@ -90,22 +96,6 @@ BEGIN
   INSERT INTO public.user_profiles (user_id, onboarding_completed, onboarding_step)
   VALUES (v_legacy_user_id, true, 6);
 
-  INSERT INTO public.onboarding_legal_requirement_sets (
-    version,
-    locale,
-    document_keys,
-    effective_at,
-    publication_status,
-    published_at
-  ) VALUES (
-    '2026-09-15.1',
-    'pt-BR',
-    ARRAY['terms_of_service', 'privacy_policy'],
-    clock_timestamp() - interval '1 day',
-    'published',
-    clock_timestamp() - interval '1 day'
-  );
-
   INSERT INTO public.onboarding_legal_documents (
     document_key,
     version,
@@ -115,9 +105,7 @@ BEGIN
     purpose,
     action_type,
     required,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     'terms_of_service',
     '2026-09-01.1',
@@ -127,10 +115,8 @@ BEGIN
     'synthetic_terms_test',
     'acceptance',
     true,
-    clock_timestamp() - interval '2 days',
-    'published',
     clock_timestamp() - interval '2 days'
-  );
+  ) RETURNING id INTO v_obsolete_terms_id;
 
   INSERT INTO public.onboarding_legal_documents (
     document_key,
@@ -141,9 +127,7 @@ BEGIN
     purpose,
     action_type,
     required,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     'terms_of_service',
     '2026-09-15.1',
@@ -153,8 +137,6 @@ BEGIN
     'synthetic_terms_test',
     'acceptance',
     true,
-    clock_timestamp() - interval '1 day',
-    'published',
     clock_timestamp() - interval '1 day'
   ) RETURNING id INTO v_terms_id;
 
@@ -167,9 +149,7 @@ BEGIN
     purpose,
     action_type,
     required,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     'privacy_policy',
     '2026-09-15.1',
@@ -179,8 +159,6 @@ BEGIN
     'synthetic_privacy_test',
     'acknowledgement',
     true,
-    clock_timestamp() - interval '1 day',
-    'published',
     clock_timestamp() - interval '1 day'
   ) RETURNING id INTO v_privacy_id;
 
@@ -193,9 +171,7 @@ BEGIN
     purpose,
     action_type,
     required,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     'future_specific_consent',
     '2026-10-01.1',
@@ -205,10 +181,26 @@ BEGIN
     'synthetic_future_test',
     'consent',
     true,
-    clock_timestamp() + interval '30 days',
-    'published',
-    clock_timestamp()
-  );
+    clock_timestamp() + interval '30 days'
+  ) RETURNING id INTO v_future_consent_id;
+
+  PERFORM public.publish_onboarding_legal_document(v_obsolete_terms_id);
+  PERFORM public.publish_onboarding_legal_document(v_terms_id);
+  PERFORM public.publish_onboarding_legal_document(v_privacy_id);
+  PERFORM public.publish_onboarding_legal_document(v_future_consent_id);
+
+  INSERT INTO public.onboarding_legal_requirement_sets (
+    version,
+    locale,
+    document_keys,
+    effective_at
+  ) VALUES (
+    '2026-09-15.1',
+    'pt-BR',
+    ARRAY['terms_of_service', 'privacy_policy'],
+    clock_timestamp() - interval '1 day'
+  ) RETURNING id INTO v_requirement_set_id;
+  PERFORM public.publish_onboarding_legal_requirement_set(v_requirement_set_id);
 
   v_valid_submission := jsonb_build_object(
     'name', 'Completed A',
@@ -257,28 +249,34 @@ BEGIN
     RAISE EXCEPTION 'legacy user could not establish current explicit consent';
   END IF;
 
-  -- A requirement manifest is authoritative: a partially published catalog is unavailable.
+  -- An invalid requirement manifest cannot replace the current published catalog.
   BEGIN
     INSERT INTO public.onboarding_legal_requirement_sets (
       version,
       locale,
       document_keys,
-      effective_at,
-      publication_status,
-      published_at
+      effective_at
     ) VALUES (
       '2026-09-15.partial',
       'pt-BR',
       ARRAY['terms_of_service', 'privacy_policy', 'missing_required_document'],
-      clock_timestamp(),
-      'published',
       clock_timestamp()
-    );
-    PERFORM public.complete_mobile_onboarding_atomic(v_user_id, v_valid_submission);
-    RAISE EXCEPTION 'partial legal catalog completed onboarding';
+    ) RETURNING id INTO v_partial_requirement_set_id;
+    PERFORM public.publish_onboarding_legal_requirement_set(v_partial_requirement_set_id);
+    RAISE EXCEPTION 'partial legal catalog was published';
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  IF (SELECT publication_status FROM public.onboarding_legal_requirement_sets WHERE id = v_requirement_set_id) <> 'published'
+    OR EXISTS (
+      SELECT 1
+      FROM public.onboarding_legal_requirement_sets
+      WHERE version = '2026-09-15.partial'
+        AND publication_status = 'published'
+    ) THEN
+    RAISE EXCEPTION 'failed catalog replacement changed the current requirement set';
+  END IF;
 
   -- A required action mismatch must roll the whole submission back.
   v_before_name := (SELECT name FROM public.users WHERE id = v_user_id);
@@ -440,9 +438,7 @@ BEGIN
     purpose,
     action_type,
     required,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     'terms_of_service',
     '2026-09-15.2',
@@ -452,26 +448,22 @@ BEGIN
     'synthetic_terms_test',
     'acceptance',
     true,
-    clock_timestamp(),
-    'published',
     clock_timestamp()
-  );
+  ) RETURNING id INTO v_revised_terms_id;
+  PERFORM public.publish_onboarding_legal_document(v_revised_terms_id);
 
   INSERT INTO public.onboarding_legal_requirement_sets (
     version,
     locale,
     document_keys,
-    effective_at,
-    publication_status,
-    published_at
+    effective_at
   ) VALUES (
     '2026-09-15.2',
     'pt-BR',
     ARRAY['terms_of_service', 'privacy_policy'],
-    clock_timestamp(),
-    'published',
     clock_timestamp()
-  );
+  ) RETURNING id INTO v_revised_requirement_set_id;
+  PERFORM public.publish_onboarding_legal_requirement_set(v_revised_requirement_set_id);
 
   v_reconsent_submission := jsonb_set(
     jsonb_set(v_valid_submission, '{document_actions,0,version}', '"2026-09-15.2"'::jsonb),

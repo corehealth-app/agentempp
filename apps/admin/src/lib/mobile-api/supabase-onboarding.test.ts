@@ -134,6 +134,9 @@ describe('Supabase onboarding adapter', () => {
     expect(documents.eq).toHaveBeenCalledWith('locale', 'pt-BR')
     expect(documents.eq).toHaveBeenCalledWith('publication_status', 'published')
     expect(documents.lte).toHaveBeenCalledWith('effective_at', '2026-09-15T15:00:00.000Z')
+    expect(requirements.eq).toHaveBeenCalledWith('locale', 'pt-BR')
+    expect(requirements.eq).toHaveBeenCalledWith('publication_status', 'published')
+    expect(requirements.lte).toHaveBeenCalledWith('effective_at', '2026-09-15T15:00:00.000Z')
     expect(result.documents).toHaveLength(1)
   })
 

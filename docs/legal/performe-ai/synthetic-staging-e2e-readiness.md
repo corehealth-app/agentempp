@@ -6,6 +6,9 @@ PUBLISHED: NO
 STAGING ACTIVE: NO
 PRODUCTION ACTIVE: NO
 E2E EXECUTED: NO
+LIFECYCLE LOCAL: VERIFIED
+STAGING LIFECYCLE: NOT APPLIED
+SYNTHETIC E2E: NOT EXECUTED
 
 ## Objective and boundary
 
@@ -38,7 +41,13 @@ Every en-US body must begin with:
 
 Any additional text must remain synthetic, non-normative, and limited to identifying the action under test. Each body must stay under 12,000 UTF-8 bytes; the verified-document collection must stay under 48,000 serialized UTF-8 bytes; and the complete public onboarding state must stay under 60,000 serialized UTF-8 bytes.
 
-The schema requires `publication_status = 'published'` for a selectable row. In this QA context, that value would mean only **technically available inside the exact authorized staging environment**. It must never be represented as legal publication, approval, effectiveness, or production eligibility.
+The local lifecycle migration now requires new rows to begin as `inactive` and
+allows only controlled `inactive -> published -> archived` transitions. GET and
+completion continue to select only effective `published` rows. This migration
+has **not** been applied to staging. In the future QA context, `published` means
+only **technically available inside the exact authorized staging environment**.
+It must never be represented as legal publication, approval, effectiveness, or
+production eligibility.
 
 ## Mandatory fail-closed environment gate
 
@@ -53,7 +62,12 @@ Before any future write, the execution mandate must identify and independently v
 
 If target identity, environment classification, production exclusion, migration state, or rollback/closeout evidence is missing, stop before the first write. Repository names, branch names, aliases, browser visibility, or a successful HTTP response are not sufficient proof.
 
-Because onboarding documents and requirement sets are immutable in the current schema, the future plan must decide before insertion whether staging QA rows remain as explicitly owned synthetic evidence or require a separately reviewed cleanup mechanism. Do not claim deletion where the current immutable triggers prevent it, and do not alter those triggers merely to simplify QA.
+The locally verified closeout path is: archive the published QA requirement set,
+verify that no predecessor becomes current, then archive its synthetic
+documents. Content, composition, identity and historical acceptances remain
+immutable, and DELETE remains forbidden. A future staging operation must first
+apply and verify the lifecycle migration on the exact authorized staging target;
+until then, this closeout path is not available remotely.
 
 ## Synthetic users and test data
 
@@ -104,13 +118,14 @@ The intended future entity is only a candidate to become the owner/seller after 
 ## Readiness and authorization gates
 
 - Documentary synthetic dataset: PREPARED.
-- Contract compatibility: PREPARED against the current local schema and API contract.
+- Contract compatibility: VERIFIED locally against the unchanged public API contract.
+- Publication lifecycle: VERIFIED locally; NOT APPLIED to staging.
 - Exact staging identities: MUST BE REVERIFIED in the future execution mandate.
 - Synthetic account/mailbox provisioning: NOT EXECUTED.
 - Staging migration/document/requirement-set activation: NOT EXECUTED.
 - BFF Preview deployment: NOT EXECUTED by this task.
 - OpenRouter key and calls: NOT CREATED / NOT EXECUTED.
-- E2E: NOT EXECUTED.
+- Synthetic E2E: NOT EXECUTED.
 - Production: BLOCKED and OUT OF SCOPE.
 
 The next operation must authorize the exact staging targets, synthetic setup, bounded provider key, E2E execution, evidence collection, and closeout. It must stop after the synthetic run and must not infer legal or production readiness from technical success.

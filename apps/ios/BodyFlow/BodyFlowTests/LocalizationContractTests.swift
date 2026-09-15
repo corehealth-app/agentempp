@@ -52,11 +52,11 @@ struct LocalizationContractTests {
             #expect(try AppLocalization.string(
                 "brand.logo.accessibility-label",
                 for: language
-            ) == "Logo da Better Ahead")
+            ) == "Logo da Performe AI")
             #expect(try AppLocalization.string(
                 "brand.logo.fallback.accessibility-label",
                 for: language
-            ) == "Better Ahead")
+            ) == "Performe AI")
 
         case .englishUnitedStates:
             #expect(try AppLocalization.string(
@@ -74,11 +74,11 @@ struct LocalizationContractTests {
             #expect(try AppLocalization.string(
                 "brand.logo.accessibility-label",
                 for: language
-            ) == "Better Ahead logo")
+            ) == "Performe AI logo")
             #expect(try AppLocalization.string(
                 "brand.logo.fallback.accessibility-label",
                 for: language
-            ) == "Better Ahead")
+            ) == "Performe AI")
         }
     }
 
@@ -93,8 +93,8 @@ struct LocalizationContractTests {
             for: language
         )
 
-        #expect(label.contains("Better Ahead"))
-        #expect(fallbackLabel.contains("Better Ahead"))
+        #expect(label.contains("Performe AI"))
+        #expect(fallbackLabel.contains("Performe AI"))
         #expect(!label.contains("BodyFlow"))
         #expect(!fallbackLabel.contains("BodyFlow"))
     }

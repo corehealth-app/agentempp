@@ -7,7 +7,7 @@ import Testing
 struct BrandIdentityTests {
     @Test(arguments: SupportedAppLanguage.allCases)
     func properNamesNeverChange(_ language: SupportedAppLanguage) {
-        #expect(BrandIdentity.productName == "Better Ahead")
+        #expect(BrandIdentity.productName == "Performe AI")
         #expect(BrandIdentity.agentName == "Flow")
     }
 
@@ -33,11 +33,11 @@ struct BrandIdentityTests {
     func publicBundleNamesUseApprovedBrand() {
         #expect(
             Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String
-                == "Better Ahead"
+                == "Performe AI"
         )
         #expect(
             Bundle.main.infoDictionary?["CFBundleName"] as? String
-                == "Better Ahead"
+                == "Performe AI"
         )
     }
 }

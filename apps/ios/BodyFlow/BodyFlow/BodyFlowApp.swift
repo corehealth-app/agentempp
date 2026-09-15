@@ -16,7 +16,18 @@ struct BodyFlowApp: App {
 
     init() {
         let configuration = AppLaunchConfiguration.current()
-        let dependencies = AppDependencies.make(configuration: configuration)
+        let runtime = PerformeRuntimeConfiguration.load(
+            from: Bundle.main.infoDictionary
+        )
+        let dependencies = AppDependencies.make(
+            configuration: configuration,
+            mobileAPIConfigurationProvider: runtime.map {
+                StaticMobileAPIConfigurationProvider(
+                    configuration: $0.mobileAPI
+                )
+            },
+            supabaseAuthConfiguration: runtime?.supabase
+        )
         self.configuration = configuration
         self.dependencies = dependencies
         _model = State(initialValue: AppFlowModel(

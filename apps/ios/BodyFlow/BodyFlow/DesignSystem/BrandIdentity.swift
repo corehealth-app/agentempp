@@ -7,7 +7,7 @@ struct BrandCopy: Equatable, Sendable {
 }
 
 enum BrandIdentity {
-    static let productName = "Better Ahead"
+    static let productName = "Performe AI"
     static let agentName = "Flow"
 
     static func copy(

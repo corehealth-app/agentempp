@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Better Ahead</string>
+	<string>Performe AI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Better Ahead</string>
+	<string>Performe AI</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,6 +22,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>PERFORME_MOBILE_API_ORIGIN</key>
+	<string>$(PERFORME_MOBILE_API_ORIGIN)</string>
+	<key>PERFORME_SUPABASE_PUBLISHABLE_KEY</key>
+	<string>$(PERFORME_SUPABASE_PUBLISHABLE_KEY)</string>
+	<key>PERFORME_SUPABASE_URL</key>
+	<string>$(PERFORME_SUPABASE_URL)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

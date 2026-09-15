@@ -80,6 +80,120 @@
           }
         }
       }
+    },
+    "flow.cancel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel sending" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar envio" } }
+      }
+    },
+    "flow.composer" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Write a message" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escreva uma mensagem" } }
+      }
+    },
+    "flow.empty.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your progress, metrics, and protocol." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seu progresso, métricas e protocolo." } }
+      }
+    },
+    "flow.empty.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat with Flow" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Converse com o Flow" } }
+      }
+    },
+    "flow.error.forbidden" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This conversation is not available for this account." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta conversa não está disponível para esta conta." } }
+      }
+    },
+    "flow.error.cancelled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending cancelled." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Envio cancelado." } }
+      }
+    },
+    "flow.error.generic" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow is unavailable right now. Try again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível falar com o Flow. Tente novamente." } }
+      }
+    },
+    "flow.error.offline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You are offline. Check your connection and try again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem conexão. Verifique a internet e tente novamente." } }
+      }
+    },
+    "flow.error.rate-limited" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Too many messages. Wait a moment and try again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Muitas mensagens em pouco tempo. Aguarde e tente novamente." } }
+      }
+    },
+    "flow.error.session" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Your session expired. Sign in again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sua sessão expirou. Entre novamente." } }
+      }
+    },
+    "flow.guidance" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow can guide you using your data, but does not replace medical advice." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Flow orienta com base nos seus dados, mas não substitui avaliação médica." } }
+      }
+    },
+    "flow.loading" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading conversation…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando conversa…" } }
+      }
+    },
+    "flow.message.failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not sent" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não enviada" } }
+      }
+    },
+    "flow.message.processing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviando…" } }
+      }
+    },
+    "flow.open" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat with Flow" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Falar com o Flow" } }
+      }
+    },
+    "flow.responding" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow is responding…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow está respondendo…" } }
+      }
+    },
+    "flow.retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try again" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tentar novamente" } }
+      }
+    },
+    "flow.send" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Send message" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviar mensagem" } }
+      }
+    },
+    "flow.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
+      }
     }
   },
   "version" : "1.0"

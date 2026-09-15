@@ -38,6 +38,50 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testFlowChatIsReachableAndReturnsExplicitLocalSimulation() {
+        let app = launchApp(arguments: ["--ui-testing"])
+        let openFlow = app.buttons["today.flow-chat"]
+        XCTAssertTrue(openFlow.waitForExistence(timeout: 5))
+        openFlow.tap()
+
+        XCTAssertTrue(
+            element("screen.flow-chat", in: app).waitForExistence(timeout: 3)
+        )
+        let composer = app.textFields["flow.composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 3))
+        composer.tap()
+        composer.typeText("Como esta meu progresso?")
+        app.buttons["flow.send"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(
+                    format: "label CONTAINS %@",
+                    "Esta resposta é uma simulação local do Flow"
+                )
+            ).firstMatch.waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
+    func testFlowEntryAndComposerRemainReachableAtAccessibilityDynamicType() {
+        let app = launchApp(arguments: [
+            "--ui-testing",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL",
+        ])
+        let openFlow = app.buttons["today.flow-chat"]
+        XCTAssertTrue(openFlow.waitForExistence(timeout: 5))
+        XCTAssertTrue(openFlow.isHittable)
+        openFlow.tap()
+
+        let composer = app.textFields["flow.composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 3))
+        XCTAssertTrue(composer.isHittable)
+        assertMinimumTapTarget(app.buttons["flow.send"])
+    }
+
+    @MainActor
     func testBrandIdentityIsVisibleOnProfilePersonaEditor() {
         let app = launchApp(arguments: ["--ui-testing"])
         XCTAssertTrue(

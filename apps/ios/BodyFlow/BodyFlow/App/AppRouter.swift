@@ -11,6 +11,7 @@ enum AppRoute: Hashable, Sendable {
     case progress(ProgressRoute)
     case content(ContentRoute)
     case mascot(MascotRoute)
+    case flowChat
 
     var tab: AppTab {
         switch self {
@@ -24,13 +25,16 @@ enum AppRoute: Hashable, Sendable {
             .plan
         case .progress:
             .progress
-        case .content, .mascot:
+        case .content, .mascot, .flowChat:
             .today
         }
     }
 
     var accessibilityIdentifier: String {
-        switch tab {
+        if case .flowChat = self {
+            return "screen.flow-chat"
+        }
+        return switch tab {
         case .today: "route.hoje.detalhe"
         case .register: "route.registrar.detalhe"
         case .plan: "route.plano.detalhe"

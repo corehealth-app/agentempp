@@ -108,7 +108,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/reso
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
 import { zodToJsonSchema } from './tool-schema.js'
-import type { AgentInput, AgentOutput } from './types.js'
+import type { AgentInput, AgentOutput, AuthenticatedAgentInput } from './types.js'
 
 export interface PipelineDeps {
   supabase: ServiceClient
@@ -117,6 +117,42 @@ export interface PipelineDeps {
   maxToolIterations?: number
   /** Embeddings p/ RAG do método (sub-projeto D). Opcional: sem ele, sem retrieval. */
   embeddings?: OpenRouterEmbeddings
+}
+
+export const MOBILE_FLOW_READ_ONLY_TOOLS = [
+  'consulta_progresso',
+  'consulta_metricas',
+  'consulta_resumo_periodo',
+  'consulta_reavaliacao_protocolo',
+] as const
+
+export const MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT = false
+
+export const mobileFlowSystemPolicy = `
+## Canal autenticado Performe AI
+Você é Flow, o agente da Performe AI. Seja claro, acolhedor e objetivo.
+Uma mensagem enviada no chat não autoriza alteração de dados de saúde.
+Este canal só pode consultar dados oficiais. Para qualquer mutação sensível,
+explique que é necessária confirmação explícita no fluxo estruturado do app.
+Não diagnostique, não prometa cura, não substitua profissional e não afirme
+que uma ação foi concluída sem confirmação determinística do servidor.`
+
+export function selectPipelineTools(
+  configuredToolNames: string[] | null | undefined,
+  channelToolNames?: readonly string[],
+): ToolDefinition[] {
+  const configured = configuredToolNames?.length ? new Set(configuredToolNames) : null
+  const channel = channelToolNames ? new Set(channelToolNames) : null
+  return ALL_TOOLS.filter(
+    (tool) => (!configured || configured.has(tool.name)) && (!channel || channel.has(tool.name)),
+  )
+}
+
+interface ResolvedPipelineOptions {
+  historyProvider?: string
+  toolNames?: readonly string[]
+  systemPolicy?: string
+  includeSensitiveTelemetry?: boolean
 }
 
 /**
@@ -238,11 +274,43 @@ export async function processMessage(
   deps: PipelineDeps,
   input: AgentInput,
 ): Promise<AgentOutput> {
+  const userId = await ensureUser(deps.supabase, input.from)
+  return processResolvedMessage(deps, input, userId)
+}
+
+export function processAuthenticatedMessage(
+  deps: PipelineDeps,
+  input: AuthenticatedAgentInput,
+): Promise<AgentOutput> {
+  return processResolvedMessage(
+    deps,
+    {
+      from: '',
+      providerMessageId: input.providerMessageId,
+      text: input.text,
+      patientText: input.text,
+      contentType: 'text',
+      provider: 'mobile_flow',
+      timestamp: input.timestamp,
+    },
+    input.userId,
+    {
+      historyProvider: 'mobile_flow',
+      toolNames: MOBILE_FLOW_READ_ONLY_TOOLS,
+      systemPolicy: mobileFlowSystemPolicy,
+      includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
+    },
+  )
+}
+
+async function processResolvedMessage(
+  deps: PipelineDeps,
+  input: AgentInput,
+  userId: string,
+  options: ResolvedPipelineOptions = {},
+): Promise<AgentOutput> {
   const start = Date.now()
   const semanticPatientText = input.patientText ?? input.text ?? ''
-
-  // 1. ensure user
-  const userId = await ensureUser(deps.supabase, input.from)
 
   // 2. verifica subscription (gate de acesso)
   const subscriptionStatus = await checkSubscription(deps.supabase, userId)
@@ -257,6 +325,7 @@ export async function processMessage(
     input.providerMessageIds ?? input.providerMessageId,
     input.text,
     input.timestamp,
+    options.historyProvider,
   )
 
   // 4. resolve stage
@@ -324,7 +393,9 @@ export async function processMessage(
       to: routed.model,
       reason: routed.reason,
       stage,
-      text_preview: (input.text ?? '').slice(0, 80),
+      ...(options.includeSensitiveTelemetry === false
+        ? {}
+        : { text_preview: (input.text ?? '').slice(0, 80) }),
     })
     ;(promptRow as { model: string }).model = routed.model
   }
@@ -332,10 +403,7 @@ export async function processMessage(
   // 5. call agent (with tool loop)
   // Filtra tools pelo allowed_tools do config (se NULL = todas)
   const allowedTools = (promptRow as { allowed_tools?: string[] | null }).allowed_tools
-  const filteredTools =
-    allowedTools && allowedTools.length > 0
-      ? ALL_TOOLS.filter((t) => allowedTools.includes(t.name))
-      : ALL_TOOLS
+  const filteredTools = selectPipelineTools(allowedTools, options.toolNames)
   const tools = buildToolSchemas(filteredTools)
 
   // Detector de repetição: pega últimas 2 OUTs e marca pro LLM evitar
@@ -365,7 +433,7 @@ export async function processMessage(
   // Anthropic Opus 4.7 estava custando $0.77/turno (153k tokens médio).
   // Com cache (90% redução nas leituras), cai pra ~$0.10/turno em conversas seguidas.
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
-  const stableSystem = promptRow.system_prompt
+  const stableSystem = promptRow.system_prompt + (options.systemPolicy ?? '')
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
   const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp)}${repetitionGuard}`
@@ -471,7 +539,9 @@ export async function processMessage(
             stage,
             kind: fake.kind,
             model: result.model,
-            content_preview: content.slice(0, 120),
+            ...(options.includeSensitiveTelemetry === false
+              ? {}
+              : { content_preview: content.slice(0, 120) }),
             inferred_meal_type: fake.inferredMealType ?? null,
           },
         })
@@ -502,7 +572,12 @@ export async function processMessage(
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.premature_block_completion',
-          properties: { stage, content_preview: content.slice(0, 140) },
+          properties: {
+            stage,
+            ...(options.includeSensitiveTelemetry === false
+              ? {}
+              : { content_preview: content.slice(0, 140) }),
+          },
         })
         messages.push({ role: 'assistant', content })
         messages.push({
@@ -527,8 +602,12 @@ export async function processMessage(
           event: 'llm.false_duplication_caught',
           properties: {
             stage,
-            patient_text: (input.text ?? '').slice(0, 200),
-            agent_text: content.slice(0, 200),
+            ...(options.includeSensitiveTelemetry === false
+              ? {}
+              : {
+                  patient_text: (input.text ?? '').slice(0, 200),
+                  agent_text: content.slice(0, 200),
+                }),
           },
         })
         messages.push({ role: 'assistant', content })
@@ -1130,7 +1209,9 @@ export async function processMessage(
               totals: proposalTotals,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
-              source_text: semanticPatientText || null,
+              ...(options.includeSensitiveTelemetry === false
+                ? {}
+                : { source_text: semanticPatientText || null }),
               ...(editedPending?.id ? { edited_from_pending_id: editedPending.id } : {}),
               ...(quantityEditAdjustments.length > 0
                 ? { quantity_edit_adjustments: quantityEditAdjustmentPayload }
@@ -1241,7 +1322,9 @@ export async function processMessage(
               kcalEst: wArgs.estimated_kcal_from_image ?? null,
               sourceContentType: ctx.lastInboundContentType,
               source_provider_message_id: input.providerMessageId ?? null,
-              source_text: semanticPatientText || null,
+              ...(options.includeSensitiveTelemetry === false
+                ? {}
+                : { source_text: semanticPatientText || null }),
               express_eligible: false,
               express_reason: exprRes.reason,
               // guarda os args completos pro handler chamar registraTreino depois
@@ -1435,14 +1518,16 @@ export async function processMessage(
         const out = await tool.execute(validated, toolCtx)
         toolCallsSummary.push({ name: tc.name, arguments: validated, result: out })
         messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(out) })
-        await deps.supabase.from('tools_audit').insert({
-          user_id: userId,
-          tool_name: tc.name,
-          arguments: jsonify(validated),
-          result: jsonify(out),
-          duration_ms: Date.now() - toolStart,
-          success: true,
-        })
+        if (options.includeSensitiveTelemetry !== false) {
+          await deps.supabase.from('tools_audit').insert({
+            user_id: userId,
+            tool_name: tc.name,
+            arguments: jsonify(validated),
+            result: jsonify(out),
+            duration_ms: Date.now() - toolStart,
+            success: true,
+          })
+        }
       } catch (e) {
         const err =
           e instanceof Error
@@ -1456,15 +1541,17 @@ export async function processMessage(
           tool_call_id: tc.id,
           content: JSON.stringify({ error: err }),
         })
-        await deps.supabase.from('tools_audit').insert({
-          user_id: userId,
-          tool_name: tc.name,
-          arguments: jsonify(parsed ?? {}),
-          result: null,
-          duration_ms: 0,
-          success: false,
-          error: err,
-        })
+        if (options.includeSensitiveTelemetry !== false) {
+          await deps.supabase.from('tools_audit').insert({
+            user_id: userId,
+            tool_name: tc.name,
+            arguments: jsonify(parsed ?? {}),
+            result: null,
+            duration_ms: 0,
+            success: false,
+            error: err,
+          })
+        }
       }
     }
 
@@ -1758,11 +1845,13 @@ export async function processMessage(
         const proseFix = reconcileBalanceProse(finalText, eb)
         if (proseFix.replacements > 0) {
           finalText = proseFix.text
-          await deps.supabase.from('product_events').insert({
-            user_id: userId,
-            event: 'llm.balance_prose_reconciled',
-            properties: { stage, replacements: proseFix.replacements, eating_balance: eb },
-          })
+          if (options.includeSensitiveTelemetry !== false) {
+            await deps.supabase.from('product_events').insert({
+              user_id: userId,
+              event: 'llm.balance_prose_reconciled',
+              properties: { stage, replacements: proseFix.replacements, eating_balance: eb },
+            })
+          }
         }
 
         // Detector do erro de "déficit real" (Roberto 2026-05-21): o LLM faz
@@ -1777,7 +1866,7 @@ export async function processMessage(
           designDeficit,
           dailyBalance: netBalance,
         })
-        if (drMismatch) {
+        if (drMismatch && options.includeSensitiveTelemetry !== false) {
           await deps.supabase.from('product_events').insert({
             user_id: userId,
             event: 'llm.deficit_real_mismatch',
@@ -1842,7 +1931,9 @@ export async function processMessage(
           stage,
           kind: fakeFinal.kind,
           model: lastResult.model,
-          content_preview: finalText.slice(0, 120),
+          ...(options.includeSensitiveTelemetry === false
+            ? {}
+            : { content_preview: finalText.slice(0, 120) }),
           inferred_meal_type: fakeFinal.inferredMealType ?? null,
         },
       })
@@ -1857,7 +1948,13 @@ export async function processMessage(
       await deps.supabase.from('product_events').insert({
         user_id: userId,
         event: 'llm.correction_intent_no_write',
-        properties: { stage, keyword: correctionWord, content_preview: finalText.slice(0, 120) },
+        properties: {
+          stage,
+          keyword: correctionWord,
+          ...(options.includeSensitiveTelemetry === false
+            ? {}
+            : { content_preview: finalText.slice(0, 120) }),
+        },
       })
     }
   }
@@ -1865,24 +1962,26 @@ export async function processMessage(
   // Audit anti-alucinação: parseia números na resposta e compara com contexto.
   // Não bloqueia — só loga em product_events pra investigação posterior.
   const m = computeMetrics(ctx.profile, input.timestamp, calcConfig)
-  await auditNumericClaims(
-    deps.supabase,
-    userId,
-    finalText,
-    {
-      calories_target: ctx.dailyTargets.calories_target,
-      protein_target: ctx.dailyTargets.protein_target,
-      imc: m.imc,
-      bmr: m.bmr,
-      tdee: m.bmr != null && m.activityFactor != null ? m.bmr * m.activityFactor : null,
-      age: m.age,
-      current_streak: ctx.userProgress?.current_streak ?? null,
-      level: ctx.userProgress?.level ?? null,
-      calories_consumed_today: freshConsumed,
-      deficit_block: ctx.userProgress?.deficit_block ?? null,
-    },
-    { stage, model: lastResult.model },
-  )
+  if (options.includeSensitiveTelemetry !== false) {
+    await auditNumericClaims(
+      deps.supabase,
+      userId,
+      finalText,
+      {
+        calories_target: ctx.dailyTargets.calories_target,
+        protein_target: ctx.dailyTargets.protein_target,
+        imc: m.imc,
+        bmr: m.bmr,
+        tdee: m.bmr != null && m.activityFactor != null ? m.bmr * m.activityFactor : null,
+        age: m.age,
+        current_streak: ctx.userProgress?.current_streak ?? null,
+        level: ctx.userProgress?.level ?? null,
+        calories_consumed_today: freshConsumed,
+        deficit_block: ctx.userProgress?.deficit_block ?? null,
+      },
+      { stage, model: lastResult.model },
+    )
+  }
 
   // FIX B (Roberto 2026-05-18): sanity semântico — texto diz "déficit" mas
   // balance é positivo (ou vice-versa). Loga 'llm.sentiment_mismatch'. Não
@@ -1897,7 +1996,7 @@ export async function processMessage(
       : null
   if (eatingBalanceForSentiment != null) {
     const sentimentMismatch = detectSentimentMismatch(finalText, eatingBalanceForSentiment)
-    if (sentimentMismatch) {
+    if (sentimentMismatch && options.includeSensitiveTelemetry !== false) {
       await deps.supabase.from('product_events').insert({
         user_id: userId,
         event: 'llm.sentiment_mismatch',
@@ -2097,6 +2196,7 @@ export async function loadContext(
   currentProviderMessageIds?: string | string[] | null,
   currentText?: string | null,
   referenceTimestamp: Date = new Date(),
+  historyProvider?: string,
 ): Promise<UserContext> {
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
@@ -2126,12 +2226,18 @@ export async function loadContext(
   throwIfQueryFailed(profileError, 'user profile lookup failed')
   if (!profile) throw new Error('user profile missing')
 
-  const { data: msgs, error: messagesError } = await supabase
+  const messagesQuery = supabase
     .from('messages')
     .select('direction, content, content_type, created_at, provider_message_id')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(RECENT_MESSAGES_LIMIT)
+  const { data: msgs, error: messagesError } = historyProvider
+    ? await messagesQuery
+        .eq('provider', historyProvider)
+        .order('created_at', { ascending: false })
+        .limit(RECENT_MESSAGES_LIMIT)
+    : await messagesQuery
+        .order('created_at', { ascending: false })
+        .limit(RECENT_MESSAGES_LIMIT)
   throwIfQueryFailed(messagesError, 'recent messages lookup failed')
 
   // .slice() ANTES do .reverse() — reverse() muta in-place. Sem o slice, a
@@ -2482,7 +2588,7 @@ export async function hasOpenPending(
 async function logModelRouted(
   supabase: ServiceClient,
   userId: string,
-  payload: { from: string; to: string; reason: string; stage: string; text_preview: string },
+  payload: { from: string; to: string; reason: string; stage: string; text_preview?: string },
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16

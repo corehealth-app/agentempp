@@ -12,6 +12,7 @@ struct AppShellView: View {
     @State private var historyCoordinator: HistoryFeatureCoordinator
     @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
     @State private var todayMascotViewModel: MascotExperienceViewModel
+    @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     let userID: String
     let dependencies: AppDependencies
@@ -54,6 +55,13 @@ struct AppShellView: View {
         _todayMascotViewModel = State(
             initialValue: MascotExperienceViewModel(
                 provider: sessionOwner.coachExperience
+            )
+        )
+        _flowChatModel = State(
+            initialValue: FlowChatModel(
+                userID: userID,
+                provider: dependencies.flowChat,
+                keyProvider: dependencies.idempotencyKeyProvider
             )
         )
         _contentCoverEnvironment = State(
@@ -104,6 +112,7 @@ struct AppShellView: View {
                 .environment(router)
         }
         .onDisappear {
+            flowChatModel.invalidate()
             sessionOwner.invalidateSynchronously()
         }
     }
@@ -228,6 +237,8 @@ struct AppShellView: View {
                 provider: sessionOwner.coachExperience,
                 invalidationCenter: invalidationCenter
             )
+        case .flowChat:
+            FlowChatView(model: flowChatModel)
         }
     }
 }

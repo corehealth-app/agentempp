@@ -5,6 +5,16 @@ import Testing
 
 @Suite("App Dependencies", .serialized)
 struct AppDependenciesTests {
+    @Test("Debug demo installs a local idempotency source for explicit simulated sends")
+    func debugDemoInstallsLocalIdempotencySource() throws {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: ["--ui-testing"], buildFlavor: .debug)
+        )
+
+        #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
+        #expect(dependencies.flowChat is DemoFlowChatRepository)
+    }
+
     @Test("Valid origin and session seam install the real mobile transport")
     func validOriginAndSessionInstallTransport() throws {
         let configuration = try MobileAPIConfiguration(
@@ -19,6 +29,8 @@ struct AppDependenciesTests {
         )
 
         #expect(dependencies.apiClient is MobileAPITransport)
+        #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
+        #expect(dependencies.flowChat is MobileFlowChatRepository)
     }
 
     @Test("Missing mobile origin keeps the API client unavailable")

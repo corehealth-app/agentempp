@@ -23,6 +23,10 @@ export const idempotencyKeySchema = z
   .max(128)
   .regex(/^[A-Za-z0-9._:-]+$/)
 
+export const flowChatInputSchema = z.object({ text: z.string().trim().min(1).max(4000) }).strict()
+
+export const flowChatLimitSchema = z.coerce.number().int().min(1).max(50)
+
 export const patchMeInputSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),

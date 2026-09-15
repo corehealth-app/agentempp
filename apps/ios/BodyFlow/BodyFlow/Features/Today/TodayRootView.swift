@@ -222,27 +222,23 @@ struct TodayRootView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             let navigation = TodayRootNavigationPresentation(state: model.state)
-            HStack {
-                Spacer(minLength: 0)
-                NavigationLink(value: navigation.toolbarRoutes[0]) {
-                    HStack(spacing: BodyFlowSpacing.xs) {
-                        Image(systemName: "books.vertical")
-                        Text("Biblioteca")
-                    }
-                    .font(BodyFlowTypography.headline)
-                    .foregroundStyle(BodyFlowColor.accent)
-                    .padding(.horizontal, BodyFlowSpacing.sm)
-                    .padding(.vertical, BodyFlowSpacing.sm)
-                    .background(
-                        BodyFlowColor.surface,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: BodyFlowSpacing.sm) {
+                    flowNavigationLink
+                    Spacer(minLength: 0)
+                    libraryNavigationLink(
+                        route: navigation.toolbarRoutes[0],
+                        showsTitle: true
                     )
-                    .accessibilityRepresentation {
-                        EmptyView()
-                    }
                 }
-                .accessibilityLabel("Biblioteca")
-                .accessibilityIdentifier("today.library")
+                HStack(spacing: BodyFlowSpacing.sm) {
+                    flowNavigationLink
+                    Spacer(minLength: 0)
+                    libraryNavigationLink(
+                        route: navigation.toolbarRoutes[0],
+                        showsTitle: false
+                    )
+                }
             }
             .padding(.horizontal, BodyFlowSpacing.md)
             .padding(.vertical, BodyFlowSpacing.xs)
@@ -293,6 +289,47 @@ struct TodayRootView: View {
                 }
             }
         }
+    }
+
+    private var flowNavigationLink: some View {
+        NavigationLink(value: AppRoute.flowChat) {
+            Label("flow.open", systemImage: "bubble.left.and.text.bubble.right")
+                .font(BodyFlowTypography.headline)
+                .foregroundStyle(BodyFlowColor.accent)
+                .padding(.horizontal, BodyFlowSpacing.sm)
+                .padding(.vertical, BodyFlowSpacing.sm)
+                .background(
+                    BodyFlowColor.surface,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .accessibilityRepresentation { EmptyView() }
+        }
+        .accessibilityLabel("flow.open")
+        .accessibilityIdentifier("today.flow-chat")
+    }
+
+    private func libraryNavigationLink(
+        route: AppRoute,
+        showsTitle: Bool
+    ) -> some View {
+        NavigationLink(value: route) {
+            HStack(spacing: BodyFlowSpacing.xs) {
+                Image(systemName: "books.vertical")
+                if showsTitle { Text("Biblioteca") }
+            }
+            .font(BodyFlowTypography.headline)
+            .foregroundStyle(BodyFlowColor.accent)
+            .frame(minWidth: BodyFlowSpacing.minimumTapTarget)
+            .padding(.horizontal, showsTitle ? BodyFlowSpacing.sm : 0)
+            .padding(.vertical, BodyFlowSpacing.sm)
+            .background(
+                BodyFlowColor.surface,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .accessibilityRepresentation { EmptyView() }
+        }
+        .accessibilityLabel("Biblioteca")
+        .accessibilityIdentifier("today.library")
     }
 
     @ViewBuilder

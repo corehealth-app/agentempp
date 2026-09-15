@@ -23,6 +23,7 @@ struct AppDependencies: Sendable {
     let timeProvider: any TimeProviding
     let idempotencyKeyProvider: any IdempotencyKeyProviding
     let patientTimeZone: PatientTimeZoneContext
+    let flowChat: any FlowChatProviding
 
     static func scaffold() -> AppDependencies {
         make(configuration: AppLaunchConfiguration(
@@ -258,7 +259,9 @@ struct AppDependencies: Sendable {
             )
         } else {
             timeProvider = SystemTimeProvider()
-            idempotencyKeyProvider = UnavailableIdempotencyKeyProvider()
+            idempotencyKeyProvider = configuration.mode == .demo || apiClient is MobileAPITransport
+                ? RandomIdempotencyKeyProvider()
+                : UnavailableIdempotencyKeyProvider()
             patientTimeZone = PatientTimeZoneContext(
                 documentedIANAIdentifier: nil
             )
@@ -275,7 +278,9 @@ struct AppDependencies: Sendable {
         #else
         let timeProvider: any TimeProviding = SystemTimeProvider()
         let idempotencyKeyProvider: any IdempotencyKeyProviding =
-            UnavailableIdempotencyKeyProvider()
+            apiClient is MobileAPITransport
+                ? RandomIdempotencyKeyProvider()
+                : UnavailableIdempotencyKeyProvider()
         let patientTimeZone = PatientTimeZoneContext(
             documentedIANAIdentifier: nil
         )
@@ -318,6 +323,23 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        let flowChat: any FlowChatProviding
+        #if DEBUG
+        if configuration.mode == .demo {
+            flowChat = DemoFlowChatRepository()
+        } else if let transport = apiClient as? MobileAPITransport {
+            flowChat = MobileFlowChatRepository(transport: transport)
+        } else {
+            flowChat = UnavailableFlowChatRepository()
+        }
+        #else
+        if let transport = apiClient as? MobileAPITransport {
+            flowChat = MobileFlowChatRepository(transport: transport)
+        } else {
+            flowChat = UnavailableFlowChatRepository()
+        }
+        #endif
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: authentication,
@@ -343,7 +365,8 @@ struct AppDependencies: Sendable {
             contentCoverSessions: contentCoverSessions,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
-            patientTimeZone: patientTimeZone
+            patientTimeZone: patientTimeZone,
+            flowChat: flowChat
         )
     }
 }

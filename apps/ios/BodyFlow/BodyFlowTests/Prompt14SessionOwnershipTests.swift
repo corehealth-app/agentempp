@@ -685,7 +685,8 @@ private struct Prompt14SessionFixture {
             contentCoverSessions: Prompt14CoverFactory(recorder: factories),
             timeProvider: base.timeProvider,
             idempotencyKeyProvider: base.idempotencyKeyProvider,
-            patientTimeZone: base.patientTimeZone
+            patientTimeZone: base.patientTimeZone,
+            flowChat: base.flowChat
         )
     }
 

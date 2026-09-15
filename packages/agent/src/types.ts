@@ -48,6 +48,14 @@ export interface AgentInput {
   timestamps?: Date[]
 }
 
+/** Entrada do BFF mobile após bearer, e-mail e ownership terem sido validados. */
+export interface AuthenticatedAgentInput {
+  userId: string
+  providerMessageId: string
+  text: string
+  timestamp: Date
+}
+
 /**
  * Resposta do agente após processar.
  */

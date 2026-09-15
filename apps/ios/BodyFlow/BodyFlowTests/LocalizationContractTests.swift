@@ -99,6 +99,27 @@ struct LocalizationContractTests {
         #expect(!fallbackLabel.contains("BodyFlow"))
     }
 
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func flowChatCatalogIsComplete(_ language: SupportedAppLanguage) throws {
+        let keys = [
+            "flow.open", "flow.title", "flow.empty.title", "flow.empty.detail",
+            "flow.composer", "flow.send", "flow.cancel", "flow.retry",
+            "flow.guidance", "flow.loading", "flow.responding",
+            "flow.message.processing", "flow.message.failed",
+            "flow.error.cancelled",
+            "flow.error.offline", "flow.error.rate-limited",
+            "flow.error.session", "flow.error.forbidden", "flow.error.generic",
+        ]
+
+        for key in keys {
+            let value = try AppLocalization.string(
+                String.LocalizationValue(key),
+                for: language
+            )
+            #expect(value != key)
+        }
+    }
+
     @Test
     func requestedLanguageOverridesTheOppositeProcessLanguage() throws {
         let fixture = try LocalizationFixture()

@@ -27,6 +27,12 @@ protocol IdempotencyKeyProviding: Sendable {
     func nextKey() throws -> IdempotencyKey
 }
 
+struct RandomIdempotencyKeyProvider: IdempotencyKeyProviding {
+    func nextKey() throws -> IdempotencyKey {
+        try IdempotencyKey(validating: UUID().uuidString.lowercased())
+    }
+}
+
 struct UnavailableIdempotencyKeyProvider: IdempotencyKeyProviding {
     func nextKey() throws -> IdempotencyKey {
         throw BodyFlowCapabilityError.operationUnavailable

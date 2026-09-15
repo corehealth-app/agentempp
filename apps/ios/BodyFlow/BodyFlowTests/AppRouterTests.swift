@@ -54,6 +54,15 @@ struct AppRouterTests {
         #expect(routes.allSatisfy { $0.tab == .today })
     }
 
+    @Test("Flow chat is a typed Today destination, never a sixth tab")
+    func flowChatStaysOutsideTabIdentity() {
+        #expect(AppTab.allCases == [
+            .today, .register, .plan, .progress, .profile,
+        ])
+        #expect(AppRoute.flowChat.tab == .today)
+        #expect(AppRoute.flowChat.accessibilityIdentifier == "screen.flow-chat")
+    }
+
     @Test("content detail carries exactly publication identity and origin")
     func contentDetailCarriesNoMutableSnapshot() throws {
         let route = ContentRoute.detail(

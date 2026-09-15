@@ -14,6 +14,7 @@ import {
   mediaUploadInputSchema,
   mobileDeviceInputSchema,
   notificationPreferencesPatchSchema,
+  onboardingCompletionInputSchema,
   onboardingInputSchema,
   patchMeInputSchema,
   patchReminderInputSchema,
@@ -154,17 +155,91 @@ describe('mobile API v1 contracts', () => {
     expect(() => historyQuerySchema.parse({ limit: '101' })).toThrow()
   })
 
-  it('validates onboarding measurements at the public boundary', () => {
-    expect(
-      onboardingInputSchema.parse({
-        height_cm: 180,
-        weight_kg: 82,
-        training_frequency: 0,
+  it('accepts one complete onboarding submission with exact document actions', () => {
+    const input = {
+      name: 'Paciente Teste',
+      locale: 'pt-BR',
+      country: 'BR',
+      timezone: 'America/Sao_Paulo',
+      sex: 'feminino',
+      birth_date: '1990-06-15',
+      height_cm: 168,
+      weight_kg: 64,
+      body_fat_percent: 24,
+      objective: 'recomposicao',
+      activity_level: 'moderado',
+      training_frequency: 0,
+      water_intake: 'moderado',
+      hunger_level: 'moderada',
+      wake_time: '07:30',
+      bedtime: '23:00',
+      food_organization: 'sim',
+      persona: 'focus',
+      document_actions: [
+        {
+          document_key: 'terms_of_service',
+          version: '2026-09-15.1',
+          locale: 'pt-BR',
+          content_hash: 'a'.repeat(64),
+          action: 'acceptance',
+        },
+        {
+          document_key: 'privacy_policy',
+          version: '2026-09-15.1',
+          locale: 'pt-BR',
+          content_hash: 'b'.repeat(64),
+          action: 'acknowledgement',
+        },
+      ],
+    } as const
+
+    expect(onboardingCompletionInputSchema.parse(input)).toEqual(input)
+  })
+
+  it('rejects partial onboarding, stale-shaped identity, and client-owned completion fields', () => {
+    expect(() => onboardingCompletionInputSchema.parse({ height_cm: 180 })).toThrow()
+    expect(() =>
+      onboardingCompletionInputSchema.parse({
+        name: 'Paciente Teste',
+        locale: 'pt-BR',
+        country: 'BR',
+        timezone: 'America/Sao_Paulo',
+        sex: 'feminino',
+        birth_date: '1990-06-15',
+        height_cm: 168,
+        weight_kg: 64,
+        objective: 'recomposicao',
+        activity_level: 'moderado',
+        training_frequency: 3,
+        water_intake: 'moderado',
+        hunger_level: 'moderada',
         wake_time: '07:30',
+        bedtime: '23:00',
+        food_organization: 'sim',
+        persona: 'focus',
+        document_actions: [
+          {
+            document_key: 'dev_terms_v1',
+            version: '1',
+            locale: 'pt-BR',
+            content_hash: 'a'.repeat(64),
+            action: 'acceptance',
+          },
+        ],
+        user_id: '00000000-0000-0000-0000-000000000001',
+        onboarding_completed: true,
+        accepted_at: '2026-09-15T12:00:00.000Z',
       }),
-    ).toMatchObject({ training_frequency: 0 })
-    expect(() => onboardingInputSchema.parse({ height_cm: 70 })).toThrow()
-    expect(() => onboardingInputSchema.parse({ wake_time: '27:00' })).toThrow()
+    ).toThrow()
+  })
+
+  it('preserves safe legacy partial onboarding updates without caller-owned completion', () => {
+    expect(onboardingInputSchema.parse({ height_cm: 180, onboarding_step: 2 })).toEqual({
+      height_cm: 180,
+      onboarding_step: 2,
+    })
+    expect(() => onboardingInputSchema.parse({ onboarding_completed: true })).toThrow()
+    expect(() => onboardingInputSchema.parse({ document_actions: [] })).toThrow()
   })
 
   it('accepts bounded patient media uploads with optional photo context', () => {

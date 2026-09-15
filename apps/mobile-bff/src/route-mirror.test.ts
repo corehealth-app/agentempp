@@ -99,7 +99,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('b8ed43a4af34bf6ebfd2402f81d1510b5fe2dfb625444dc58700b467c9f280b2')
+    expect(hash).toBe('41eef017849c30cda6ee211fe0b71ce3003a2dd1872ecbc0593f6f9340c9ece1')
   })
 
   test('declares Flow route runtime limits locally for Next static analysis', () => {

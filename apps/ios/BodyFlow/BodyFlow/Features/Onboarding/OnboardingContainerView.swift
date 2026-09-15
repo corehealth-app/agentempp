@@ -61,7 +61,7 @@ struct OnboardingContainerView: View {
         case .step(.completion):
             OnboardingCompletionView(model: model, onComplete: submitCompletion)
         case .developmentConsentUnavailable:
-            DevelopmentConsentUnavailableView()
+            OnboardingDocumentsUnavailableView()
         }
     }
 
@@ -175,19 +175,19 @@ extension OnboardingValidationIssue {
         case .bedtimeRequired: "Informe um horário válido para dormir."
         case .foodOrganizationRequired: "Confirme como você organiza as refeições."
         case .personaRequired: "Selecione uma persona de coach."
-        case .consentRequired: "Confirme os documentos de desenvolvimento."
-        case .developmentConsentUnavailable: "Esta etapa não está disponível nesta versão."
+        case .consentRequired: "Confirme as ações exigidas para todos os documentos atuais."
+        case .developmentConsentUnavailable: "Os documentos necessários não estão disponíveis."
         }
     }
 }
 
 @MainActor
-private struct DevelopmentConsentUnavailableView: View {
+private struct OnboardingDocumentsUnavailableView: View {
     var body: some View {
         ContentUnavailableView {
-            Label("Etapa indisponível", systemImage: "lock.fill")
+            Label("Documentos indisponíveis", systemImage: "lock.fill")
         } description: {
-            Text("Esta etapa ainda não está disponível nesta versão.")
+            Text("Não é possível concluir o onboarding sem os documentos oficiais atuais.")
         }
         .accessibilityIdentifier("screen.onboarding.consent-unavailable")
     }

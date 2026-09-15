@@ -39,6 +39,7 @@ final class AppFlowModel {
     private(set) var presentationError: AppPresentationError?
     private(set) var authOperationState: AuthOperationState = .idle
     private(set) var restoredOnboardingDraft: OnboardingDraft?
+    private(set) var restoredOnboardingRequirements: OnboardingRequirements = .unavailable
     private(set) var onboardingRestoreGeneration = 0
 
     init(
@@ -97,7 +98,6 @@ final class AppFlowModel {
     func retryOnboardingRestore() async {
         guard let session = currentSession,
               session.isEmailConfirmed,
-              !session.isOnboardingCompleted,
               case .onboarding(let userID, _) = state,
               userID == session.userID else {
             return
@@ -146,6 +146,7 @@ final class AppFlowModel {
         )
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
+        restoredOnboardingRequirements = .unavailable
         state = .authenticated(userID: userID)
     }
 
@@ -272,6 +273,7 @@ final class AppFlowModel {
             guard !isCancellationRequested else { return }
             invalidateOnboardingRestore()
             restoredOnboardingDraft = nil
+            restoredOnboardingRequirements = .unavailable
             currentSession = session
             guard !isCancellationRequested else {
                 currentSession = nil
@@ -282,33 +284,41 @@ final class AppFlowModel {
             return
         }
 
-        guard !session.isOnboardingCompleted else {
-            guard !isCancellationRequested else { return }
-            invalidateOnboardingRestore()
-            restoredOnboardingDraft = nil
-            currentSession = session
-            guard !isCancellationRequested else {
-                currentSession = nil
-                return
-            }
-            state = .authenticated(userID: session.userID)
-            return
-        }
-
         await restoreOnboarding(session)
     }
 
     private func restoreOnboarding(_ session: AuthSession) async {
         let restoreID = beginOnboardingRestore()
         do {
-            let loadedDraft = try await onboarding.loadDraft(for: session.userID)
+            let serverState = try await onboarding.loadState(for: session.userID)
             guard canPublishOnboardingRestore(restoreID) else {
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
             }
 
-            let draft = loadedDraft ?? .currentDeviceWelcome
-            publishOnboardingRestore(session: session, draft: draft)
+            if serverState.completion.completed {
+                publishCompletedOnboardingRestore(session: session)
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
+
+            var draft: OnboardingDraft
+            if serverState.completion.completedAt != nil {
+                guard let authoritativeDraft = serverState.draft else {
+                    throw OnboardingRepositoryError.serviceUnavailable
+                }
+                draft = authoritativeDraft
+                draft.currentStep = .consent
+                draft.documentActions = nil
+            } else {
+                draft = serverState.draft ?? .currentDeviceWelcome
+            }
+            draft.localeIdentifier = serverState.locale
+            publishOnboardingRestore(
+                session: session,
+                draft: draft,
+                requirements: serverState.requirements
+            )
             finishOnboardingRestoreIfCurrent(restoreID)
             let step = draft.currentStep
             await telemetry.record(.onboardingStepViewed(step.telemetryValue))
@@ -349,15 +359,22 @@ final class AppFlowModel {
     private func publishOnboardingRestore(
         session: AuthSession,
         draft: OnboardingDraft?,
+        requirements: OnboardingRequirements = .unavailable,
         error: AppPresentationError? = nil
     ) {
-        currentSession = session
+        currentSession = AuthSession(
+            userID: session.userID,
+            email: session.email,
+            isEmailConfirmed: session.isEmailConfirmed,
+            isOnboardingCompleted: false
+        )
         guard !isCancellationRequested else {
             currentSession = nil
             return
         }
 
         restoredOnboardingDraft = draft
+        restoredOnboardingRequirements = requirements
         presentationError = error
         onboardingRestoreGeneration += 1
         state = .onboarding(
@@ -366,10 +383,24 @@ final class AppFlowModel {
         )
     }
 
+    private func publishCompletedOnboardingRestore(session: AuthSession) {
+        currentSession = AuthSession(
+            userID: session.userID,
+            email: session.email,
+            isEmailConfirmed: session.isEmailConfirmed,
+            isOnboardingCompleted: true
+        )
+        restoredOnboardingDraft = nil
+        restoredOnboardingRequirements = .unavailable
+        presentationError = nil
+        state = .authenticated(userID: session.userID)
+    }
+
     private func transitionToSignedOut(error: AppPresentationError? = nil) {
         guard !isCancellationRequested else { return }
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
+        restoredOnboardingRequirements = .unavailable
         currentSession = nil
         state = .signedOut(.signIn)
         if let error {
@@ -389,6 +420,7 @@ final class AppFlowModel {
         }
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
+        restoredOnboardingRequirements = .unavailable
         currentSession = nil
         state = .signedOut(destination)
         presentationError = nil
@@ -449,7 +481,10 @@ final class AppFlowModel {
         case AuthenticationError.confirmationRequired:
             .confirmationRequired
         case AuthenticationError.operationUnavailable,
-             OnboardingRepositoryError.developmentConsentForbidden:
+             OnboardingRepositoryError.developmentConsentForbidden,
+             OnboardingRepositoryError.documentsUnavailable,
+             OnboardingRepositoryError.requirementsChanged,
+             OnboardingRepositoryError.alreadyCompleted:
             .operationUnavailable
         case AuthenticationError.serviceUnavailable,
              OnboardingRepositoryError.serviceUnavailable,

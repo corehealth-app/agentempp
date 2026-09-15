@@ -31,12 +31,12 @@ struct OnboardingCompletionTests {
         _ missingDocument: DevelopmentConsentDocumentID
     ) async {
         var draft = completeDraft()
-        draft.consent = DevelopmentConsentAcceptance(
-            documentIDs: DevelopmentConsentDocumentID.allCases.filter {
-                $0 != missingDocument
-            },
-            acceptedAt: fixtureDate
-        )
+        let missingDocumentKey = missingDocument == .terms
+            ? "terms_of_service"
+            : "privacy_notice"
+        draft.documentActions = completeDocumentActions.filter {
+            $0.documentKey != missingDocumentKey
+        }
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
         let model = makeModel(
@@ -76,7 +76,7 @@ struct OnboardingCompletionTests {
         #expect(callbackCount == 0)
     }
 
-    @Test("persona is persisted before onboarding completion and root callback")
+    @Test("the server-owned completion precedes the root callback without a separate persona write")
     func persistsInApprovedOrder() async {
         let events = CompletionEventRecorder()
         let onboarding = CompletionOnboardingRepository(events: events)
@@ -93,7 +93,8 @@ struct OnboardingCompletionTests {
 
         await model.complete()
 
-        #expect(events.values == ["persona", "complete", "callback"])
+        #expect(events.values == ["complete", "callback"])
+        #expect(await persona.writes.isEmpty)
         #expect(callbackCount == 1)
         #expect(model.operationState == .idle)
     }
@@ -125,6 +126,7 @@ struct OnboardingCompletionTests {
             onboarding: onboarding,
             persona: persona,
             developmentConsentAvailability: .unavailable,
+            requirements: .unavailable,
             onCompleted: { callbackCount += 1 }
         )
 
@@ -137,8 +139,201 @@ struct OnboardingCompletionTests {
         #expect(callbackCount == 0)
     }
 
-    @Test("persona failure keeps completion visible and never calls complete")
-    func personaFailureStopsCompletion() async {
+    @Test("official completion requires the exact current document action")
+    func officialActionIsRequired() async {
+        var draft = completeDraft()
+        draft.consent = nil
+        draft.documentActions = nil
+        let onboarding = CompletionOnboardingRepository()
+        let model = makeModel(
+            draft: draft,
+            onboarding: onboarding,
+            developmentConsentAvailability: .unavailable,
+            requirements: officialRequirements
+        )
+
+        await model.complete()
+
+        #expect(model.validationIssues.contains(.consentRequired))
+        #expect(await onboarding.completedDrafts.isEmpty)
+    }
+
+    @Test("changed legal requirements return to consent and clear stale actions")
+    func requirementsConflictReloadsAndClearsActions() async {
+        let changedDocument = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.2",
+            locale: "pt-BR",
+            body: "Updated synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "b", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T16:00:00.000Z"
+        )
+        let onboarding = RequirementsChangingOnboardingRepository(
+            changedRequirements: OnboardingRequirements(
+                available: true,
+                blockingReason: nil,
+                documents: [changedDocument]
+            )
+        )
+        var draft = completeDraft()
+        draft.consent = nil
+        draft.documentActions = completeDocumentActions
+        var changedSteps: [OnboardingStep] = []
+        var completionCount = 0
+        let model = makeModel(
+            draft: draft,
+            onboarding: onboarding,
+            developmentConsentAvailability: .unavailable,
+            requirements: officialRequirements,
+            onStepChanged: { changedSteps.append($0) },
+            onCompleted: { completionCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(model.step == .consent)
+        #expect(model.draft.documentActions == nil)
+        #expect(model.requirements.documents == [changedDocument])
+        #expect(model.operationState == .failed(.operationUnavailable))
+        #expect(changedSteps == [.consent])
+
+        model.updateDocumentAction(changedDocument.explicitAction, selected: true)
+        await model.continueFromCurrentStep()
+        await model.complete()
+
+        #expect(Set(await onboarding.completionKeys).count == 2)
+        #expect(completionCount == 1)
+        #expect(model.operationState == .idle)
+    }
+
+    @Test("requirements reload honors a completion established by another device")
+    func requirementsReloadHonorsConcurrentCompletion() async {
+        let onboarding = ConcurrentlyCompletedOnboardingRepository()
+        var completionCount = 0
+        let model = makeModel(
+            onboarding: onboarding,
+            onCompleted: { completionCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(completionCount == 1)
+        #expect(model.operationState == .idle)
+        #expect(model.step == .completion)
+    }
+
+    @Test("already-completed conflict reconciles a completion established by another device")
+    func alreadyCompletedConflictReconcilesConcurrentCompletion() async {
+        let onboarding = ConcurrentlyCompletedOnboardingRepository(
+            completionError: .alreadyCompleted
+        )
+        var completionCount = 0
+        let model = makeModel(
+            onboarding: onboarding,
+            onCompleted: { completionCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(completionCount == 1)
+        #expect(model.operationState == .idle)
+        #expect(model.step == .completion)
+    }
+
+    @Test("historical completion conflict restores the authoritative draft for reconsent")
+    func historicalCompletionConflictRestoresAuthoritativeDraft() async {
+        let changedDocument = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.2",
+            locale: "pt-BR",
+            body: "Updated synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "b", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T16:00:00.000Z"
+        )
+        let changedRequirements = OnboardingRequirements(
+            available: true,
+            blockingReason: nil,
+            documents: [changedDocument]
+        )
+        var authoritativeDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .consent)
+        authoritativeDraft.displayName = "Authoritative Synthetic User"
+        authoritativeDraft.objective = .maintenance
+        authoritativeDraft.persona = .zen
+        authoritativeDraft.documentActions = nil
+        let onboarding = HistoricalReconsentOnboardingRepository(
+            authoritativeDraft: authoritativeDraft,
+            changedRequirements: changedRequirements
+        )
+        var localDraft = completeDraft()
+        localDraft.displayName = "Stale Local User"
+        localDraft.objective = .muscleGain
+        localDraft.persona = .impulse
+        var completionCount = 0
+        let model = makeModel(
+            draft: localDraft,
+            onboarding: onboarding,
+            onCompleted: { completionCount += 1 }
+        )
+
+        await model.complete()
+
+        #expect(model.step == .consent)
+        #expect(model.draft == authoritativeDraft)
+        #expect(model.draft.documentActions == nil)
+        #expect(model.requirements == changedRequirements)
+        #expect(model.operationState == .failed(.operationUnavailable))
+        #expect(completionCount == 0)
+    }
+
+    @Test("a transient requirements reload failure preserves a safe retry path")
+    func transientRequirementsReloadCanRetry() async {
+        let changedDocument = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.2",
+            locale: "pt-BR",
+            body: "Updated synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "b", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T16:00:00.000Z"
+        )
+        let onboarding = TransientReloadFailureOnboardingRepository(
+            changedRequirements: OnboardingRequirements(
+                available: true,
+                blockingReason: nil,
+                documents: [changedDocument]
+            )
+        )
+        let model = makeModel(onboarding: onboarding)
+
+        await model.complete()
+
+        #expect(model.step == .completion)
+        #expect(model.draft.documentActions == completeDocumentActions)
+        #expect(model.requirements == officialRequirements)
+        #expect(model.operationState == .failed(.serviceUnavailable))
+
+        await model.complete()
+
+        #expect(model.step == .consent)
+        #expect(model.draft.documentActions == nil)
+        #expect(model.requirements.documents == [changedDocument])
+        #expect(await onboarding.completionKeys.count == 2)
+        #expect(Set(await onboarding.completionKeys).count == 1)
+    }
+
+    @Test("a legacy persona repository cannot intercept server-owned completion")
+    func personaRepositoryCannotInterceptCompletion() async {
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository(
             results: [.failure(.serviceUnavailable)]
@@ -155,13 +350,13 @@ struct OnboardingCompletionTests {
         #expect(model.step == .completion)
         #expect(model.draft.currentStep == .completion)
         #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
-        #expect(model.operationState == .failed(.serviceUnavailable))
-        #expect(await persona.writes == [.focus])
-        #expect(await onboarding.completedDrafts.isEmpty)
-        #expect(callbackCount == 0)
+        #expect(model.operationState == .idle)
+        #expect(await persona.writes.isEmpty)
+        #expect(await onboarding.completedDrafts.count == 1)
+        #expect(callbackCount == 1)
     }
 
-    @Test("complete failure preserves consent and retry repeats safe writes")
+    @Test("completion retry preserves the draft and reuses one idempotency key")
     func retriesPartialCompletion() async {
         let onboarding = CompletionOnboardingRepository(
             results: [.failure(.serviceUnavailable), .success(())]
@@ -178,27 +373,20 @@ struct OnboardingCompletionTests {
 
         await model.complete()
 
-        #expect(model.step == .consent)
-        #expect(model.draft.currentStep == .consent)
-        #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
-        #expect(model.operationState == .failed(.serviceUnavailable))
-        #expect(await persona.writes == [.focus])
-        #expect(await onboarding.completedDrafts.count == 1)
-        #expect(changedSteps == [.consent])
-        #expect(callbackCount == 0)
-
-        await model.continueFromCurrentStep()
-
         #expect(model.step == .completion)
         #expect(model.draft.currentStep == .completion)
         #expect(model.draft.consent?.documentIDs == [.terms, .privacy])
-        #expect(await onboarding.savedDrafts.map(\.currentStep) == [.completion])
-        #expect(changedSteps == [.consent, .completion])
+        #expect(model.operationState == .failed(.serviceUnavailable))
+        #expect(await persona.writes.isEmpty)
+        #expect(await onboarding.completedDrafts.count == 1)
+        #expect(changedSteps.isEmpty)
+        #expect(callbackCount == 0)
 
         await model.complete()
 
-        #expect(await persona.writes == [.focus, .focus])
+        #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.count == 2)
+        #expect(Set(await onboarding.completionKeys).count == 1)
         #expect(callbackCount == 1)
         #expect(model.operationState == .idle)
     }
@@ -218,7 +406,7 @@ struct OnboardingCompletionTests {
 
         await model.complete()
 
-        #expect(await persona.writes == [.focus])
+        #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completeCount == 1)
         #expect(model.operationState == .saving)
 
@@ -242,7 +430,7 @@ struct OnboardingCompletionTests {
         await model.complete()
         await model.complete()
 
-        #expect(await persona.writes == [.focus])
+        #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.count == 1)
         #expect(callbackCount == 1)
     }
@@ -387,7 +575,8 @@ struct OnboardingCompletionTests {
         draft: OnboardingDraft? = nil,
         onboarding: any OnboardingRepository = CompletionOnboardingRepository(),
         persona: any CoachPersonaRepository = CompletionPersonaRepository(),
-        developmentConsentAvailability: DevelopmentConsentAvailability = .syntheticDevelopment,
+        developmentConsentAvailability: DevelopmentConsentAvailability = .unavailable,
+        requirements: OnboardingRequirements? = nil,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in },
         onCompleted: @escaping @MainActor () -> Void = {}
     ) -> OnboardingFlowModel {
@@ -397,6 +586,7 @@ struct OnboardingCompletionTests {
             repository: onboarding,
             personaRepository: persona,
             developmentConsentAvailability: developmentConsentAvailability,
+            requirements: requirements ?? officialRequirements,
             onStepChanged: onStepChanged,
             onCompleted: onCompleted,
             now: { fixtureDate }
@@ -420,7 +610,50 @@ struct OnboardingCompletionTests {
             documentIDs: [.terms, .privacy],
             acceptedAt: fixtureDate
         )
+        draft.documentActions = completeDocumentActions
         return draft
+    }
+
+    private var officialDocument: OnboardingLegalDocument {
+        OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.1",
+            locale: "pt-BR",
+            body: "Synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "a", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T15:00:00.000Z"
+        )
+    }
+
+    private var officialRequirements: OnboardingRequirements {
+        OnboardingRequirements(
+            available: true,
+            blockingReason: nil,
+            documents: [officialDocument, officialPrivacyDocument]
+        )
+    }
+
+    private var officialPrivacyDocument: OnboardingLegalDocument {
+        OnboardingLegalDocument(
+            documentKey: "privacy_notice",
+            version: "2026-09-15.1",
+            locale: "pt-BR",
+            body: "Synthetic privacy notice for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "c", count: 64),
+            purpose: "synthetic_privacy_test",
+            action: .acknowledgement,
+            required: true,
+            effectiveAt: "2026-09-15T15:00:00.000Z"
+        )
+    }
+
+    private var completeDocumentActions: [OnboardingDocumentAction] {
+        [officialDocument.explicitAction, officialPrivacyDocument.explicitAction]
     }
 
     private func incompleteSession() -> AuthSession {
@@ -435,6 +668,185 @@ struct OnboardingCompletionTests {
     private var fixtureDate: Date {
         Date(timeIntervalSince1970: 946_684_800)
     }
+}
+
+private actor RequirementsChangingOnboardingRepository: OnboardingRepository {
+    let changedRequirements: OnboardingRequirements
+    private var hasRejected = false
+    private(set) var completionKeys: [IdempotencyKey] = []
+
+    init(changedRequirements: OnboardingRequirements) {
+        self.changedRequirements = changedRequirements
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            completion: OnboardingCompletionState(completed: false, completedAt: nil),
+            requirements: changedRequirements,
+            acceptedActions: []
+        )
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.requirementsChanged
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft,
+        for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        completionKeys.append(idempotencyKey)
+        if !hasRejected {
+            hasRejected = true
+            throw OnboardingRepositoryError.requirementsChanged
+        }
+        guard let objective = draft.objective, let persona = draft.persona else {
+            throw OnboardingRepositoryError.invalidDraft
+        }
+        return OnboardingCompletionAcknowledgement(
+            onboardingCompleted: true,
+            completedAt: "2026-09-15T16:00:00.000Z",
+            objective: objective,
+            persona: persona,
+            documentActions: (draft.documentActions ?? []).map { action in
+                OnboardingAcceptedAction(
+                    documentKey: action.documentKey,
+                    version: action.version,
+                    locale: action.locale,
+                    contentHash: action.contentHash,
+                    purpose: "synthetic_changed_requirement_test",
+                    action: action.action,
+                    actedAt: "2026-09-15T16:00:00.000Z"
+                )
+            }
+        )
+    }
+
+    func clear(for userID: String) async throws {}
+}
+
+private actor ConcurrentlyCompletedOnboardingRepository: OnboardingRepository {
+    let completionError: OnboardingRepositoryError
+
+    init(completionError: OnboardingRepositoryError = .requirementsChanged) {
+        self.completionError = completionError
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            completion: OnboardingCompletionState(
+                completed: true,
+                completedAt: "2026-09-15T16:00:00.000Z"
+            ),
+            requirements: .unavailable,
+            acceptedActions: []
+        )
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.requirementsChanged
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft,
+        for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        throw completionError
+    }
+
+    func clear(for userID: String) async throws {}
+}
+
+private actor HistoricalReconsentOnboardingRepository: OnboardingRepository {
+    let authoritativeDraft: OnboardingDraft
+    let changedRequirements: OnboardingRequirements
+
+    init(
+        authoritativeDraft: OnboardingDraft,
+        changedRequirements: OnboardingRequirements
+    ) {
+        self.authoritativeDraft = authoritativeDraft
+        self.changedRequirements = changedRequirements
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            completion: OnboardingCompletionState(
+                completed: false,
+                completedAt: "2026-09-15T15:00:00.000Z"
+            ),
+            requirements: changedRequirements,
+            acceptedActions: [],
+            draft: authoritativeDraft
+        )
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.alreadyCompleted
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft,
+        for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        throw OnboardingRepositoryError.alreadyCompleted
+    }
+
+    func clear(for userID: String) async throws {}
+}
+
+private actor TransientReloadFailureOnboardingRepository: OnboardingRepository {
+    let changedRequirements: OnboardingRequirements
+    private var loadCount = 0
+    private(set) var completionKeys: [IdempotencyKey] = []
+
+    init(changedRequirements: OnboardingRequirements) {
+        self.changedRequirements = changedRequirements
+    }
+
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        loadCount += 1
+        if loadCount == 1 {
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+        return OnboardingServerState(
+            completion: OnboardingCompletionState(completed: false, completedAt: nil),
+            requirements: changedRequirements,
+            acceptedActions: []
+        )
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.requirementsChanged
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft,
+        for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        completionKeys.append(idempotencyKey)
+        throw OnboardingRepositoryError.requirementsChanged
+    }
+
+    func clear(for userID: String) async throws {}
 }
 
 private final class CompletionEventRecorder: @unchecked Sendable {
@@ -460,6 +872,7 @@ private actor CompletionOnboardingRepository: OnboardingRepository {
     private var results: [Result<Void, OnboardingRepositoryError>]
     private(set) var savedDrafts: [OnboardingDraft] = []
     private(set) var completedDrafts: [OnboardingDraft] = []
+    private(set) var completionKeys: [IdempotencyKey] = []
 
     init(
         loadedDraft: OnboardingDraft? = nil,
@@ -484,6 +897,35 @@ private actor CompletionOnboardingRepository: OnboardingRepository {
         events?.record("complete")
         guard !results.isEmpty else { return }
         try results.removeFirst().get()
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft,
+        for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        completionKeys.append(idempotencyKey)
+        try await complete(draft, for: userID)
+        guard let objective = draft.objective, let persona = draft.persona else {
+            throw OnboardingRepositoryError.invalidDraft
+        }
+        return OnboardingCompletionAcknowledgement(
+            onboardingCompleted: true,
+            completedAt: "2026-09-15T15:00:00.000Z",
+            objective: objective,
+            persona: persona,
+            documentActions: (draft.documentActions ?? []).map { action in
+                OnboardingAcceptedAction(
+                    documentKey: action.documentKey,
+                    version: action.version,
+                    locale: action.locale,
+                    contentHash: action.contentHash,
+                    purpose: "synthetic_completion_test",
+                    action: action.action,
+                    actedAt: "2026-09-15T15:00:00.000Z"
+                )
+            }
+        )
     }
 
     func clear(for userID: String) async throws {}

@@ -1,0 +1,229 @@
+import type { OnboardingCompletionInput } from './contracts'
+import { MobileApiError } from './http'
+
+export type OnboardingActionType = 'acceptance' | 'acknowledgement' | 'consent'
+
+const MAX_PUBLIC_ONBOARDING_STATE_BYTES = 60_000
+
+export interface OnboardingDocumentRecord {
+  documentKey: string
+  version: string
+  locale: string
+  body: string | null
+  contentUrl: string | null
+  contentHash: string
+  purpose: string
+  action: OnboardingActionType
+  required: boolean
+  effectiveAt: string
+}
+
+export interface OnboardingAcceptedActionRecord {
+  documentKey: string
+  version: string
+  locale: string
+  contentHash: string
+  purpose: string
+  action: OnboardingActionType
+  actedAt: string
+}
+
+export interface OnboardingDraftRecord {
+  name: string
+  locale: OnboardingCompletionInput['locale']
+  country: string
+  timezone: string
+  sex: OnboardingCompletionInput['sex']
+  birthDate: string
+  heightCm: number
+  weightKg: number
+  bodyFatPercent: number | null
+  objective: OnboardingCompletionInput['objective']
+  activityLevel: OnboardingCompletionInput['activity_level']
+  trainingFrequency: number
+  waterIntake: OnboardingCompletionInput['water_intake']
+  hungerLevel: OnboardingCompletionInput['hunger_level']
+  wakeTime: string
+  bedtime: string
+  foodOrganization: OnboardingCompletionInput['food_organization']
+  persona: OnboardingCompletionInput['persona']
+}
+
+export interface OnboardingLoadRecord {
+  locale: OnboardingCompletionInput['locale']
+  completed: boolean
+  completedAt: string | null
+  documents: OnboardingDocumentRecord[]
+  acceptedActions: OnboardingAcceptedActionRecord[]
+  draft: OnboardingDraftRecord | null
+}
+
+export interface OnboardingCompletionRecord {
+  userId: string
+  completed: true
+  completedAt: string
+  objective: OnboardingCompletionInput['objective']
+  persona: OnboardingCompletionInput['persona']
+  documentActions: OnboardingAcceptedActionRecord[]
+}
+
+export type OnboardingRepositoryErrorCode =
+  | 'documents_unavailable'
+  | 'requirements_changed'
+  | 'already_completed'
+  | 'invalid_submission'
+  | 'user_not_found'
+  | 'internal'
+
+export class OnboardingRepositoryError extends Error {
+  constructor(readonly code: OnboardingRepositoryErrorCode) {
+    super(code)
+    this.name = 'OnboardingRepositoryError'
+  }
+}
+
+export interface OnboardingRepository {
+  load(userId: string, locale: string): Promise<OnboardingLoadRecord>
+  complete(userId: string, input: OnboardingCompletionInput): Promise<OnboardingCompletionRecord>
+}
+
+function acceptedActionDto(action: OnboardingAcceptedActionRecord) {
+  return {
+    document_key: action.documentKey,
+    version: action.version,
+    locale: action.locale,
+    content_hash: action.contentHash,
+    purpose: action.purpose,
+    action: action.action,
+    acted_at: action.actedAt,
+  }
+}
+
+function mapRepositoryError(error: unknown): never {
+  if (!(error instanceof OnboardingRepositoryError)) throw error
+
+  if (error.code === 'documents_unavailable') {
+    throw new MobileApiError(
+      503,
+      'onboarding_documents_unavailable',
+      'Onboarding documents are not available',
+    )
+  }
+  if (error.code === 'requirements_changed') {
+    throw new MobileApiError(
+      409,
+      'onboarding_requirements_changed',
+      'Onboarding requirements changed; reload before trying again',
+    )
+  }
+  if (error.code === 'already_completed') {
+    throw new MobileApiError(
+      409,
+      'onboarding_already_completed',
+      'Onboarding was already completed with different data',
+    )
+  }
+  if (error.code === 'invalid_submission') {
+    throw new MobileApiError(422, 'onboarding_rejected', 'Onboarding data was rejected')
+  }
+  if (error.code === 'user_not_found') {
+    throw new MobileApiError(404, 'patient_not_found', 'Patient profile not found')
+  }
+  throw new MobileApiError(500, 'onboarding_persistence_failed', 'Onboarding could not be saved')
+}
+
+export async function getOnboardingState(
+  repository: OnboardingRepository,
+  userId: string,
+  locale: string,
+) {
+  let state: OnboardingLoadRecord
+  try {
+    state = await repository.load(userId, locale)
+  } catch (error) {
+    mapRepositoryError(error)
+  }
+
+  const documents = state.documents.map((document) => ({
+    document_key: document.documentKey,
+    version: document.version,
+    locale: document.locale,
+    body: document.body,
+    content_url: document.contentUrl,
+    content_hash: document.contentHash,
+    purpose: document.purpose,
+    action: document.action,
+    required: document.required,
+    effective_at: document.effectiveAt,
+  }))
+  const requirementsAvailable =
+    documents.length > 0 && documents.every((document) => document.required)
+
+  const result = {
+    locale: state.locale,
+    completion: {
+      completed: state.completed,
+      completed_at: state.completedAt,
+    },
+    requirements: {
+      available: requirementsAvailable,
+      blocking_reason: requirementsAvailable ? null : ('documents_unavailable' as const),
+      documents,
+    },
+    accepted_actions: state.acceptedActions.map(acceptedActionDto),
+    draft: state.draft
+      ? {
+          name: state.draft.name,
+          locale: state.draft.locale,
+          country: state.draft.country,
+          timezone: state.draft.timezone,
+          sex: state.draft.sex,
+          birth_date: state.draft.birthDate,
+          height_cm: state.draft.heightCm,
+          weight_kg: state.draft.weightKg,
+          body_fat_percent: state.draft.bodyFatPercent,
+          objective: state.draft.objective,
+          activity_level: state.draft.activityLevel,
+          training_frequency: state.draft.trainingFrequency,
+          water_intake: state.draft.waterIntake,
+          hunger_level: state.draft.hungerLevel,
+          wake_time: state.draft.wakeTime,
+          bedtime: state.draft.bedtime,
+          food_organization: state.draft.foodOrganization,
+          persona: state.draft.persona,
+          current_step: 'consent' as const,
+        }
+      : null,
+  }
+  if (
+    new TextEncoder().encode(JSON.stringify(result)).byteLength > MAX_PUBLIC_ONBOARDING_STATE_BYTES
+  ) {
+    throw new MobileApiError(
+      503,
+      'onboarding_documents_unavailable',
+      'Onboarding documents are not available',
+    )
+  }
+  return result
+}
+
+export async function completeOnboarding(
+  repository: OnboardingRepository,
+  userId: string,
+  input: OnboardingCompletionInput,
+) {
+  let completion: OnboardingCompletionRecord
+  try {
+    completion = await repository.complete(userId, input)
+  } catch (error) {
+    mapRepositoryError(error)
+  }
+
+  return {
+    onboarding_completed: completion.completed,
+    completed_at: completion.completedAt,
+    objective: completion.objective,
+    persona: completion.persona,
+    document_actions: completion.documentActions.map(acceptedActionDto),
+  }
+}

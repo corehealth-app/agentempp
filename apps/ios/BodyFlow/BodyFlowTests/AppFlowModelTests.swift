@@ -301,7 +301,7 @@ struct AppFlowModelTests {
         )
         let model = AppFlowModel(
             authentication: AuthenticationServiceSpy(restoredSession: session),
-            onboarding: OnboardingRepositorySpy(),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
             telemetry: InMemoryTelemetryClient()
         )
@@ -310,6 +310,125 @@ struct AppFlowModelTests {
 
         #expect(model.state == .authenticated(userID: "fixture-user"))
         #expect(model.currentSession == session)
+    }
+
+    @Test("server completion overrides a stale incomplete authentication snapshot")
+    func serverCompletionIsAuthoritative() async {
+        let session = incompleteSession()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+
+        #expect(model.state == .authenticated(userID: session.userID))
+        #expect(model.currentSession?.isOnboardingCompleted == true)
+    }
+
+    @Test("server incomplete state overrides a stale completed authentication snapshot")
+    func staleLocalCompletionCannotBypassServer() async {
+        let session = AuthSession.completedFixture
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: OnboardingRepositorySpy(serverCompleted: false),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+        #expect(model.currentSession?.isOnboardingCompleted == false)
+    }
+
+    @Test("server requirements and authoritative locale replace the device locale")
+    func serverRequirementsAreRestored() async {
+        let session = incompleteSession()
+        let document = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.1",
+            locale: "en-US",
+            body: "Synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "a", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T15:00:00.000Z"
+        )
+        let requirements = OnboardingRequirements(
+            available: true,
+            blockingReason: nil,
+            documents: [document]
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: OnboardingRepositorySpy(
+                locale: "en-US",
+                requirements: requirements
+            ),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+
+        #expect(model.restoredOnboardingRequirements == requirements)
+        #expect(model.restoredOnboardingDraft?.localeIdentifier == "en-US")
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+    }
+
+    @Test("a previously completed profile resumes directly at current legal consent")
+    func staleLegalCompletionResumesAtConsent() async {
+        let session = AuthSession.completedFixture
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [
+            OnboardingDocumentAction(
+                documentKey: "old_terms",
+                version: "1",
+                locale: "pt-BR",
+                contentHash: String(repeating: "b", count: 64),
+                action: .acceptance
+            ),
+        ]
+        let requirements = OnboardingRequirements(
+            available: true,
+            blockingReason: nil,
+            documents: [OnboardingLegalDocument(
+                documentKey: "terms_of_service",
+                version: "2026-09-15.2",
+                locale: "pt-BR",
+                body: "Updated synthetic terms for tests only",
+                contentURL: nil,
+                contentHash: String(repeating: "a", count: 64),
+                purpose: "synthetic_reconsent_test",
+                action: .acceptance,
+                required: true,
+                effectiveAt: "2026-09-15T16:00:00.000Z"
+            )]
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: OnboardingRepositorySpy(
+                loadedDraft: draft,
+                serverCompleted: false,
+                completedAt: "2026-09-15T15:00:00.000Z",
+                requirements: requirements
+            ),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient()
+        )
+
+        await model.start()
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .consent))
+        #expect(model.restoredOnboardingDraft?.currentStep == .consent)
+        #expect(model.restoredOnboardingDraft?.documentActions == nil)
+        #expect(model.restoredOnboardingDraft?.displayName == "Fixture User")
+        #expect(model.currentSession?.isOnboardingCompleted == false)
     }
 
     @Test("unconfirmed session awaits email confirmation")
@@ -363,7 +482,7 @@ struct AppFlowModelTests {
         let telemetry = InMemoryTelemetryClient()
         let model = AppFlowModel(
             authentication: AuthenticationServiceSpy(restoredSession: session),
-            onboarding: OnboardingRepositorySpy(),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
             telemetry: telemetry
         )
@@ -388,7 +507,7 @@ struct AppFlowModelTests {
                 restoredSession: session,
                 signOutError: .serviceUnavailable
             ),
-            onboarding: OnboardingRepositorySpy(),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
             telemetry: InMemoryTelemetryClient()
         )
@@ -551,7 +670,7 @@ struct AppFlowModelTests {
                 restoredSession: nil,
                 signedInSession: session
             ),
-            onboarding: OnboardingRepositorySpy(),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
             telemetry: InMemoryTelemetryClient()
         )
@@ -658,7 +777,7 @@ struct AppFlowModelTests {
         let authentication = SuspendedAuthenticationService()
         let model = AppFlowModel(
             authentication: authentication,
-            onboarding: OnboardingRepositorySpy(),
+            onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
             telemetry: InMemoryTelemetryClient()
         )
@@ -857,13 +976,40 @@ private extension AuthSession {
 
 private struct OnboardingRepositorySpy: OnboardingRepository {
     let loadedDraft: OnboardingDraft?
+    let locale: String
+    let serverCompleted: Bool
+    let completedAt: String?
+    let requirements: OnboardingRequirements
 
-    init(loadedDraft: OnboardingDraft? = nil) {
+    init(
+        loadedDraft: OnboardingDraft? = nil,
+        locale: String = "pt-BR",
+        serverCompleted: Bool = false,
+        completedAt: String? = nil,
+        requirements: OnboardingRequirements = .unavailable
+    ) {
         self.loadedDraft = loadedDraft
+        self.locale = locale
+        self.serverCompleted = serverCompleted
+        self.completedAt = completedAt ?? (serverCompleted ? "2026-09-15T15:00:00.000Z" : nil)
+        self.requirements = requirements
     }
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? {
         loadedDraft
+    }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            locale: locale,
+            completion: OnboardingCompletionState(
+                completed: serverCompleted,
+                completedAt: completedAt
+            ),
+            requirements: requirements,
+            acceptedActions: [],
+            draft: loadedDraft
+        )
     }
 
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}

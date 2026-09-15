@@ -164,9 +164,11 @@ struct AppRootView: View {
         onboardingCoordinator.synchronize(
             activeUserID: activeUserID,
             restoredDraft: model.restoredOnboardingDraft,
+            requirements: model.restoredOnboardingRequirements,
             onboarding: dependencies.onboarding,
             persona: dependencies.coachPersona,
             developmentConsentAvailability: configuration.developmentConsentAvailability,
+            idempotencyKeyProvider: dependencies.idempotencyKeyProvider,
             telemetry: dependencies.telemetry,
             onStepChanged: { step in
                 guard onboardingUserID == activeUserID else { return }
@@ -232,9 +234,11 @@ struct OnboardingRootCoordinator {
     mutating func synchronize(
         activeUserID: String?,
         restoredDraft: OnboardingDraft?,
+        requirements: OnboardingRequirements = .unavailable,
         onboarding: any OnboardingRepository,
         persona: any CoachPersonaRepository,
         developmentConsentAvailability: DevelopmentConsentAvailability,
+        idempotencyKeyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
         telemetry: any TelemetryClient,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
         onCompleted: @escaping @MainActor () -> Void
@@ -259,6 +263,8 @@ struct OnboardingRootCoordinator {
             repository: onboarding,
             personaRepository: persona,
             developmentConsentAvailability: developmentConsentAvailability,
+            requirements: requirements,
+            idempotencyKeyProvider: idempotencyKeyProvider,
             telemetry: telemetry,
             onStepChanged: onStepChanged,
             onCompleted: onCompleted

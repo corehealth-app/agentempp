@@ -15,18 +15,16 @@ struct OnboardingPresentationTests {
         #expect(configuration.developmentConsentAvailability == .unavailable)
     }
 
-    @MainActor
-    @Test("development consent exposes its legacy group and child identifiers")
+    @Test("development and official consent identifiers remain stable")
     func developmentConsentAccessibilityIdentifiers() {
-        var visitedObjects: Set<ObjectIdentifier> = []
-        let presentationStrings = reflectedStrings(
-            in: ConsentStepView(model: .preview(step: .consent)).body,
-            visitedObjects: &visitedObjects
+        #expect(OnboardingConsentAccessibilityID.developmentGroup == "onboarding.development-consent")
+        #expect(OnboardingConsentAccessibilityID.developmentTerms == "consent.terms")
+        #expect(OnboardingConsentAccessibilityID.developmentPrivacy == "consent.privacy")
+        #expect(OnboardingConsentAccessibilityID.officialGroup == "onboarding.legal-documents")
+        #expect(
+            OnboardingConsentAccessibilityID.officialAction("terms_of_service")
+                == "onboarding.legal-action.terms_of_service"
         )
-
-        #expect(presentationStrings.contains("onboarding.development-consent"))
-        #expect(presentationStrings.contains("consent.terms"))
-        #expect(presentationStrings.contains("consent.privacy"))
     }
 
     @Test("the root renders a flow model only for the active onboarding user")
@@ -103,9 +101,15 @@ struct OnboardingPresentationTests {
     @MainActor
     @Test("onboarding validation exposes the matching hint and announcement")
     func onboardingValidationAccessibilityText() {
-        let model = OnboardingFlowModel.preview(
-            step: .welcome,
-            validationIssues: [.displayNameRequired, .countryInvalid]
+        let model = OnboardingFlowModel(
+            userID: "fixture-user",
+            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome),
+            repository: PresentationOnboardingRepository(),
+            personaRepository: PresentationPersonaRepository(),
+            developmentConsentAvailability: .unavailable,
+            onStepChanged: { _ in },
+            onCompleted: {},
+            initialValidationIssues: [.displayNameRequired, .countryInvalid]
         )
 
         #expect(
@@ -120,30 +124,16 @@ struct OnboardingPresentationTests {
         )
     }
 
-    private func reflectedStrings(
-        in value: Any,
-        depth: Int = 0,
-        visitedObjects: inout Set<ObjectIdentifier>
-    ) -> Set<String> {
-        guard depth < 24 else { return [] }
-        if let string = value as? String {
-            return [string]
-        }
+}
 
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .class {
-            let identifier = ObjectIdentifier(value as AnyObject)
-            guard visitedObjects.insert(identifier).inserted else {
-                return []
-            }
-        }
+private actor PresentationOnboardingRepository: OnboardingRepository {
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func clear(for userID: String) async throws {}
+}
 
-        return mirror.children.reduce(into: Set<String>()) { strings, child in
-            strings.formUnion(reflectedStrings(
-                in: child.value,
-                depth: depth + 1,
-                visitedObjects: &visitedObjects
-            ))
-        }
-    }
+private actor PresentationPersonaRepository: CoachPersonaRepository {
+    func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
+    func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
 }

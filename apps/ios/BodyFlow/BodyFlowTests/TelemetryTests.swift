@@ -514,12 +514,31 @@ struct TelemetryTests {
         let order = TelemetryOrderRecorder()
         let telemetry = OrderedTelemetryClient(order: order)
         let repository = OrderedTelemetryOnboardingRepository(order: order)
+        let document = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.1",
+            locale: "pt-BR",
+            body: "Synthetic terms for telemetry tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "a", count: 64),
+            purpose: "synthetic_telemetry_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T15:00:00.000Z"
+        )
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [document.explicitAction]
         let model = OnboardingFlowModel(
             userID: "fixture-user",
-            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .completion),
+            initialDraft: draft,
             repository: repository,
             personaRepository: OrderedTelemetryPersonaRepository(order: order),
-            developmentConsentAvailability: .syntheticDevelopment,
+            developmentConsentAvailability: .unavailable,
+            requirements: OnboardingRequirements(
+                available: true,
+                blockingReason: nil,
+                documents: [document]
+            ),
             telemetry: telemetry,
             onStepChanged: { _ in },
             onCompleted: {
@@ -530,10 +549,9 @@ struct TelemetryTests {
         await model.complete()
 
         #expect(order.values == [
-            "persona-persisted-focus",
-            "event-coach_persona_selected-focus",
             "onboarding-persisted",
             "callback-completed",
+            "event-coach_persona_selected-focus",
             "event-onboarding_step_completed-completion",
             "event-onboarding_completed",
         ])
@@ -564,12 +582,9 @@ struct TelemetryTests {
 
         await model.complete()
 
-        #expect(model.step == .consent)
+        #expect(model.step == .completion)
         #expect(order.values == [
-            "persona-persisted-focus",
-            "event-coach_persona_selected-focus",
             "onboarding-persisted",
-            "callback-consent",
         ])
     }
 
@@ -673,6 +688,16 @@ private struct RestoringTelemetryAuthenticationService: AuthenticationService {
 
 private struct TelemetryOnboardingRepository: OnboardingRepository {
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            completion: OnboardingCompletionState(
+                completed: true,
+                completedAt: "2026-09-15T15:00:00.000Z"
+            ),
+            requirements: .unavailable,
+            acceptedActions: []
+        )
+    }
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
     func clear(for userID: String) async throws {}

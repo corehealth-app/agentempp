@@ -37,6 +37,7 @@ struct BodyDataStepView: View {
                     )
                     .labelsHidden()
                     .datePickerStyle(.compact)
+                    .environment(\.timeZone, birthDateTimeZone)
                     .accessibilityLabel("Data de nascimento")
                     .accessibilityHint(
                         model.accessibilityHint(
@@ -45,7 +46,12 @@ struct BodyDataStepView: View {
                     )
                 } else {
                     Button {
-                        model.updateBirthDate(Date(timeIntervalSince1970: 946_684_800))
+                        model.updateBirthDate(
+                            OnboardingCivilDate.date(
+                                from: "2000-01-01",
+                                timeZoneIdentifier: model.draft.timeZoneIdentifier
+                            )
+                        )
                     } label: {
                         Text("Selecionar data")
                             .frame(
@@ -98,6 +104,10 @@ struct BodyDataStepView: View {
             get: { model.draft.birthDate ?? Date(timeIntervalSince1970: 946_684_800) },
             set: { model.updateBirthDate($0) }
         )
+    }
+
+    private var birthDateTimeZone: TimeZone {
+        OnboardingCivilDate.timeZone(for: model.draft.timeZoneIdentifier) ?? .gmt
     }
 
     private var height: Binding<Double?> {

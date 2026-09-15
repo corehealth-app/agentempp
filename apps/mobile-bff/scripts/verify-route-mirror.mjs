@@ -4,7 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const expectedCount = 41
-const expectedHash = 'b8ed43a4af34bf6ebfd2402f81d1510b5fe2dfb625444dc58700b467c9f280b2'
+const expectedHash = '41eef017849c30cda6ee211fe0b71ce3003a2dd1872ecbc0593f6f9340c9ece1'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const appRoot = resolve(scriptDirectory, '..')
 const sourceRoot = resolve(appRoot, '../admin/src/app/api/mobile/v1')

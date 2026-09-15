@@ -53,6 +53,26 @@ struct OnboardingFlowModelTests {
         #expect(model.step == .bodyData)
     }
 
+    @Test("changing timezone preserves the selected civil birth date")
+    func changingTimeZonePreservesCivilBirthDate() throws {
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)
+        draft.timeZoneIdentifier = "Pacific/Kiritimati"
+        draft.birthDate = try #require(OnboardingCivilDate.date(
+            from: "1990-01-01",
+            timeZoneIdentifier: draft.timeZoneIdentifier
+        ))
+        let model = makeModel(draft: draft)
+
+        model.updateTimeZoneIdentifier("Etc/GMT+12")
+
+        let rebasedBirthDate = try #require(model.draft.birthDate)
+        #expect(model.draft.timeZoneIdentifier == "Etc/GMT+12")
+        #expect(OnboardingCivilDate.string(
+            from: rebasedBirthDate,
+            timeZoneIdentifier: model.draft.timeZoneIdentifier
+        ) == "1990-01-01")
+    }
+
     @Test("body data reports every missing required field")
     func validatesRequiredBodyData() async {
         let repository = RecordingOnboardingRepository()
@@ -246,7 +266,10 @@ struct OnboardingFlowModelTests {
         var consentDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .consent)
         consentDraft.consent = nil
         consentDraft.persona = nil
-        let consentModel = makeModel(draft: consentDraft)
+        let consentModel = makeModel(
+            draft: consentDraft,
+            requirements: officialRequirements
+        )
 
         await consentModel.continueFromCurrentStep()
 
@@ -282,6 +305,7 @@ struct OnboardingFlowModelTests {
         #expect(model.stepPresentation == .developmentConsentUnavailable)
     }
 
+    #if DEBUG
     @Test("synthetic development consent retains the debug journey")
     func syntheticDevelopmentConsentAdvances() async {
         let repository = RecordingOnboardingRepository()
@@ -299,6 +323,7 @@ struct OnboardingFlowModelTests {
         #expect(model.step == .completion)
         #expect(await repository.savedDrafts.map(\.currentStep) == [.completion])
     }
+    #endif
 
     @Test("continue saves the advanced draft before publishing the step")
     func savesBeforeAdvance() async {
@@ -445,6 +470,7 @@ struct OnboardingFlowModelTests {
         draft: OnboardingDraft = .fixture(step: .welcome),
         repository: any OnboardingRepository = RecordingOnboardingRepository(),
         developmentConsentAvailability: DevelopmentConsentAvailability = .syntheticDevelopment,
+        requirements: OnboardingRequirements = .unavailable,
         now: Date = Date(timeIntervalSince1970: 2_000_000_000),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in }
     ) -> OnboardingFlowModel {
@@ -454,9 +480,30 @@ struct OnboardingFlowModelTests {
             repository: repository,
             personaRepository: OnboardingPersonaRepository(),
             developmentConsentAvailability: developmentConsentAvailability,
+            requirements: requirements,
             onStepChanged: onStepChanged,
             onCompleted: {},
             now: { now }
+        )
+    }
+
+    private var officialRequirements: OnboardingRequirements {
+        let document = OnboardingLegalDocument(
+            documentKey: "terms_of_service",
+            version: "2026-09-15.1",
+            locale: "pt-BR",
+            body: "Synthetic terms for tests only",
+            contentURL: nil,
+            contentHash: String(repeating: "a", count: 64),
+            purpose: "synthetic_terms_test",
+            action: .acceptance,
+            required: true,
+            effectiveAt: "2026-09-15T15:00:00.000Z"
+        )
+        return OnboardingRequirements(
+            available: true,
+            blockingReason: nil,
+            documents: [document]
         )
     }
 }

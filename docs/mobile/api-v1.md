@@ -66,8 +66,10 @@ de rotina é uma exceção explícita: `DELETE /supplements/:id` e
 A chave aceita 8 a 128 caracteres em
 `A-Z a-z 0-9 . _ : -`.
 
-O escopo é `(patient, key)`. Repetir método, rota e payload reproduz a resposta
-original com `Idempotency-Replayed: true`; reutilizar a chave para outra operação
+O escopo é `(patient, key)`. Repetir método, rota e payload normalmente reproduz a resposta
+original com `Idempotency-Replayed: true`; a conclusão de onboarding é a exceção
+fail-closed e revalida os requisitos legais atuais antes de responder ao replay.
+Reutilizar a chave para outra operação
 retorna `409 idempotency_key_conflict`. Uma operação simultânea retorna
 `409 idempotency_request_in_progress`. O ledger expira em 24 horas e é acessível
 somente ao backend.
@@ -80,7 +82,8 @@ somente ao backend.
 | `PATCH` | `/me` | altera `name`, `locale`, `timezone` e/ou país ISO alpha-2 |
 | `GET` | `/today` | estado diário oficial, determinístico e versionado |
 | `GET` | `/profile` | perfil corporal, rotina, objetivo e onboarding |
-| `POST` | `/onboarding` | salva dados validados e retorna perfil + metas disponíveis |
+| `GET` | `/onboarding` | retorna conclusão server-owned, documentos oficiais atuais e ações auditadas |
+| `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
 | `GET` | `/progress` | nível, streak, bloco 7700, peso, BF e reavaliação |
 | `GET` | `/history` | histórico próprio; aceita `before` ISO e `limit` 1..100 |
@@ -128,6 +131,63 @@ somente ao backend.
 | `POST` | `/routine/medications/:id/taken` | wrapper legado; registra somente quando há uma ocorrência elegível única |
 
 Todos os caminhos acima têm o prefixo `/api/mobile/v1`.
+
+### Contrato de onboarding server-owned
+
+`GET /onboarding` retorna o `locale` autoritativo do perfil, a conclusão
+reconciliada, o catálogo vigente e somente as ações do ciclo vigente, limitadas
+a 16 registros. `completion.completed`
+só é `true` quando há `completed_at` oficial e ações exatas para todas as versões
+do conjunto de requisitos vigente. Um booleano legado isolado não autentica o
+paciente. Ausência do conjunto versionado, catálogo parcial, mais de 16 documentos
+ou resposta documental serializada acima de 48.000 bytes falham fechados. O estado
+público completo também é limitado a 60.000 bytes, abaixo do limite de 64 KiB do
+transporte iOS.
+
+```json
+{
+  "data": {
+    "locale": "pt-BR",
+    "completion": { "completed": false, "completed_at": null },
+    "requirements": {
+      "available": true,
+      "blocking_reason": null,
+      "documents": []
+    },
+    "accepted_actions": [],
+    "draft": null
+  },
+  "meta": { "request_id": "...", "api_version": "v1" }
+}
+```
+
+O novo formato de `POST /onboarding` é identificado pela presença de
+`document_actions`. Ele exige o perfil completo, `objective`, `persona`, locale
+autoritativo e uma ação explícita para cada documento vigente. O payload não aceita
+`user_id`, `onboarding_completed`, horário oficial ou estado de publicação. A
+resposta contém `onboarding_completed`, `completed_at`, objetivo, persona e as
+ações confirmadas; o UUID interno de domínio não integra o contrato público. Uma
+nova versão obrigatória devolvida pelo GET exige nova ação explícita e pode ser
+reconsentida atomicamente sem reescrever o timestamp da primeira conclusão. Quando
+há uma conclusão histórica que precisa de uma versão legal nova, `draft` contém o
+perfil e a persona autoritativos já persistidos, sem identificador de usuário; o
+iOS abre diretamente a etapa de consentimento, limpa seleções antigas e reenvia os
+mesmos dados apenas para a validação atômica de imutabilidade.
+
+Para compatibilidade, o mesmo POST ainda aceita o formato parcial legado e mantém
+a resposta `profile + targets`. Esse caminho só salva campos legados seguros:
+`onboarding_completed: true` é deliberadamente rejeitado, pois conclusão passou a
+ser autoridade exclusiva do backend. Requests novos e legados continuam exigindo
+`Idempotency-Key`; uma chave reutilizada com payload diferente retorna
+`409 idempotency_key_conflict`. No contrato completo, o retry exato reexecuta a
+validação/RPC: pode retornar `409 onboarding_requirements_changed` se o catálogo
+vigente mudou depois da primeira resposta.
+
+Erros específicos: `409 onboarding_requirements_changed` solicita novo GET;
+`409 onboarding_already_completed` protege perfil já concluído contra reescrita;
+`409 onboarding_locale_unsupported`; `422 onboarding_rejected`; e
+`503 onboarding_documents_unavailable`. Respostas não incluem detalhes internos do
+banco e usam `Cache-Control: no-store` e `Vary: Authorization`.
 
 O campo `country_confirmed` de `/me` indica se o país operacional já foi
 confirmado. Propostas de refeição retornam `409 country_confirmation_required`

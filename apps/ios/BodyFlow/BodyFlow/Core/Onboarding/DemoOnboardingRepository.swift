@@ -72,6 +72,9 @@ actor DemoOnboardingRepository: OnboardingRepository {
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {
         try await apply(behavior)
         try validate(draft)
+        guard let selectedPersona = draft.persona else {
+            throw OnboardingRepositoryError.invalidDraft
+        }
 
         let existingSession: AuthSession
         do {
@@ -87,6 +90,7 @@ actor DemoOnboardingRepository: OnboardingRepository {
 
         try Task.checkCancellation()
         do {
+            try await stateStore.saveCoachPersona(selectedPersona, for: userID)
             try await stateStore.saveOnboardingDraft(draft)
         } catch {
             throw OnboardingRepositoryError.storageUnavailable

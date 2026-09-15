@@ -42,6 +42,68 @@ export const patchMeInputSchema = z
 
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
 const minuteTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+const onboardingLocaleSchema = z.enum(['pt-BR', 'en-US'])
+
+const onboardingDocumentKeySchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-z][a-z0-9_]*$/)
+  .refine((value) => !value.startsWith('dev_'), 'Development documents are not accepted')
+
+const onboardingDocumentActionSchema = z.enum(['acceptance', 'acknowledgement', 'consent'])
+
+export const onboardingDocumentActionInputSchema = z
+  .object({
+    document_key: onboardingDocumentKeySchema,
+    version: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9._-]+$/),
+    locale: onboardingLocaleSchema,
+    content_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    action: onboardingDocumentActionSchema,
+  })
+  .strict()
+
+export const onboardingCompletionInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    locale: onboardingLocaleSchema,
+    country: z.string().regex(/^[A-Z]{2}$/),
+    timezone: timezoneSchema,
+    sex: z.enum(['masculino', 'feminino']),
+    birth_date: z.string().date(),
+    height_cm: z.number().min(100).max(250),
+    weight_kg: z.number().min(30).max(300),
+    body_fat_percent: z.number().min(3).max(60).optional(),
+    objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
+    activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']),
+    training_frequency: z.number().int().min(0).max(7),
+    water_intake: z.enum(['pouco', 'moderado', 'bastante']),
+    hunger_level: z.enum(['pouca', 'moderada', 'muita']),
+    wake_time: timeSchema,
+    bedtime: timeSchema,
+    food_organization: z.enum(['sim', 'nao']),
+    persona: selectableCoachPersonalitySchema,
+    document_actions: z.array(onboardingDocumentActionInputSchema).min(1).max(16),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const identities = new Set<string>()
+    for (const [index, document] of value.document_actions.entries()) {
+      const identity = `${document.document_key}:${document.version}:${document.locale}`
+      if (identities.has(identity)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['document_actions', index],
+          message: 'Document actions must be unique',
+        })
+      }
+      identities.add(identity)
+    }
+  })
 
 export const onboardingInputSchema = z
   .object({
@@ -59,7 +121,7 @@ export const onboardingInputSchema = z
     bedtime: timeSchema.optional(),
     food_organization: z.enum(['sim', 'nao']).optional(),
     onboarding_step: z.number().int().min(0).max(11).optional(),
-    onboarding_completed: z.boolean().optional(),
+    onboarding_completed: z.literal(false).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
@@ -263,6 +325,8 @@ export const markRoutineTakenInputSchema = z
 
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>
+export type OnboardingCompletionInput = z.infer<typeof onboardingCompletionInputSchema>
+export type OnboardingDocumentActionInput = z.infer<typeof onboardingDocumentActionInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
 export type HistoryQuery = z.infer<typeof historyQuerySchema>
 export type MediaUploadInput = z.infer<typeof mediaUploadInputSchema>

@@ -29,7 +29,7 @@ struct WelcomeStepView: View {
                 Text("Idioma do app").font(BodyFlowTypography.headline)
                 Text(model.draft.localeIdentifier == "pt-BR" ? "Português (Brasil)" : "English (US)")
                     .foregroundStyle(BodyFlowColor.secondaryText)
-                Text("Sugerido a partir do idioma compatível do aparelho.")
+                Text("Idioma definido pelo serviço para esta conta.")
                     .font(BodyFlowTypography.caption)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                 OnboardingFieldIssue(model: model, candidates: [.localeUnsupported])

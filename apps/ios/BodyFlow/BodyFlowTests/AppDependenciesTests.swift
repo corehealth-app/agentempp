@@ -13,6 +13,7 @@ struct AppDependenciesTests {
 
         #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
         #expect(dependencies.flowChat is DemoFlowChatRepository)
+        #expect(dependencies.onboarding is DemoOnboardingRepository)
     }
 
     @Test("Valid origin and session seam install the real mobile transport")
@@ -31,6 +32,7 @@ struct AppDependenciesTests {
         #expect(dependencies.apiClient is MobileAPITransport)
         #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
         #expect(dependencies.flowChat is MobileFlowChatRepository)
+        #expect(dependencies.onboarding is MobileOnboardingRepository)
     }
 
     @Test("Missing mobile origin keeps the API client unavailable")
@@ -42,6 +44,7 @@ struct AppDependenciesTests {
         )
 
         #expect(dependencies.apiClient is UnavailableAPIClient)
+        #expect(dependencies.onboarding is UnavailableOnboardingRepository)
     }
 
     @Test("Missing mobile session keeps the API client unavailable")
@@ -58,6 +61,7 @@ struct AppDependenciesTests {
         )
 
         #expect(dependencies.apiClient is UnavailableAPIClient)
+        #expect(dependencies.onboarding is UnavailableOnboardingRepository)
     }
 
     @Test("Release ignores an explicitly injected synthetic success client")

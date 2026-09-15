@@ -340,14 +340,31 @@ struct AppDependencies: Sendable {
         }
         #endif
 
-        return AppDependencies(
-            apiClient: apiClient,
-            authentication: authentication,
-            onboarding: DemoOnboardingRepository(
+        let onboarding: any OnboardingRepository
+        #if DEBUG
+        if configuration.mode == .demo {
+            onboarding = DemoOnboardingRepository(
                 stateStore: stateStore,
                 buildFlavor: buildFlavor,
                 preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues
-            ),
+            )
+        } else if let transport = apiClient as? MobileAPITransport {
+            onboarding = MobileOnboardingRepository(transport: transport)
+        } else {
+            onboarding = UnavailableOnboardingRepository()
+        }
+        #else
+        if let transport = apiClient as? MobileAPITransport {
+            onboarding = MobileOnboardingRepository(transport: transport)
+        } else {
+            onboarding = UnavailableOnboardingRepository()
+        }
+        #endif
+
+        return AppDependencies(
+            apiClient: apiClient,
+            authentication: authentication,
+            onboarding: onboarding,
             coachPersona: coachPersona,
             secureStore: secureStore,
             telemetry: InMemoryTelemetryClient(),

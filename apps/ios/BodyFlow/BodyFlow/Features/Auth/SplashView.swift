@@ -4,7 +4,7 @@ import SwiftUI
 struct SplashView: View {
     var body: some View {
         VStack(spacing: BodyFlowSpacing.lg) {
-            Text("BodyFlow")
+            Text("Performe AI")
                 .font(BodyFlowTypography.largeTitle)
                 .fontWeight(.bold)
                 .foregroundStyle(BodyFlowColor.primaryText)

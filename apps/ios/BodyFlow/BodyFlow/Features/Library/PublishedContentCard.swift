@@ -24,7 +24,7 @@ extension ContentCategory {
         case .sleep:
             "Sono"
         case .usingBodyFlow:
-            "Uso do BodyFlow"
+            "Uso do Performe AI"
         }
     }
 }

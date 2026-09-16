@@ -34,7 +34,7 @@ struct MascotAccessibilityModelTests {
             #expect(card.personaText == "Personalidade: \(expectedName)")
             #expect(card.stateText == "Ativo")
             #expect(card.accessibilityAnnouncement ==
-                "Mascote BodyFlow, personalidade \(expectedName), estado Ativo")
+                "Mascote do Performe AI, personalidade \(expectedName), estado Ativo")
             #expect(detail.personaText == card.personaText)
             #expect(detail.stateText == card.stateText)
             #expect(detail.accessibilityAnnouncement == card.accessibilityAnnouncement)
@@ -56,7 +56,7 @@ struct MascotAccessibilityModelTests {
 
             #expect(descriptor.stateText == "Estado do mascote em atualização")
             #expect(descriptor.accessibilityAnnouncement ==
-                "Mascote BodyFlow, personalidade Nome remoto Focus, estado Estado do mascote em atualização")
+                "Mascote do Performe AI, personalidade Nome remoto Focus, estado Estado do mascote em atualização")
             #expect(descriptor.artwork.semanticState == .unsupported)
         }
     }
@@ -99,7 +99,7 @@ struct MascotAccessibilityModelTests {
             )
 
             #expect(!descriptor.showsTemporaryArtwork)
-            #expect(descriptor.title == "Mascote BodyFlow")
+            #expect(descriptor.title == "Mascote do Performe AI")
             #expect(descriptor.personaText == "Personalidade: Nome remoto Zen")
             #expect(descriptor.stateText == "Em repouso")
             #expect(!descriptor.primaryActionTitle.isEmpty)

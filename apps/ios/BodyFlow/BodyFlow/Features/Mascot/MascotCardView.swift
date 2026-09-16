@@ -33,13 +33,13 @@ struct MascotViewCompositionDescriptor: Equatable, Sendable {
     ) {
         let personaName = Self.personaName(from: presentation)
         self.surface = surface
-        title = "Mascote BodyFlow"
+        title = "Mascote do Performe AI"
         self.personaName = personaName
         personaText = "Personalidade: \(personaName)"
         stateText = presentation.mascotState.title
         changedAtText = presentation.changedAtText
         accessibilityAnnouncement =
-            "Mascote BodyFlow, personalidade \(personaName), estado \(presentation.mascotState.title)"
+            "Mascote do Performe AI, personalidade \(personaName), estado \(presentation.mascotState.title)"
         artworkAccessibilityHidden = true
         showsTemporaryArtwork = temporaryArtworkAvailable
         usesRepeatingMotion = temporaryArtworkAvailable && !reduceMotion
@@ -138,7 +138,7 @@ struct MascotCardView: View {
     private func compactState(_ state: ScreenState) -> some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text("Mascote BodyFlow")
+                Text("Mascote do Performe AI")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 

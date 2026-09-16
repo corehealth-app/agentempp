@@ -726,16 +726,16 @@ final class BodyFlowUITests: XCTestCase {
         }
         XCTAssertTrue(
             brand.waitForExistence(timeout: 3),
-            "BodyFlow deve permanecer visível nesta superfície",
+            "Performe AI deve permanecer visível nesta superfície",
             file: file,
             line: line
         )
-        XCTAssertEqual(brand.label, "BodyFlow", file: file, line: line)
+        XCTAssertEqual(brand.label, "Performe AI", file: file, line: line)
 
         let visibleFrame = brand.frame.intersection(app.windows.firstMatch.frame)
         XCTAssertFalse(
             visibleFrame.isNull || visibleFrame.isEmpty,
-            "BodyFlow deve ocupar geometria visível dentro da janela",
+            "Performe AI deve ocupar geometria visível dentro da janela",
             file: file,
             line: line
         )

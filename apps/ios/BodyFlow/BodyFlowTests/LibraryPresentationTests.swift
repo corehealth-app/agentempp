@@ -37,7 +37,7 @@ struct LibraryPresentationTests {
             "Hidratação",
             "Suplementação",
             "Sono",
-            "Uso do BodyFlow",
+            "Uso do Performe AI",
         ])
     }
 

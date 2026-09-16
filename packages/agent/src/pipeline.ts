@@ -128,6 +128,8 @@ export const MOBILE_FLOW_READ_ONLY_TOOLS = [
 
 export const MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT = false
 
+const LEGACY_PERSONA_NAME_PATTERN = /\bDr\.?\s+Robert(?:o)?(?:\s+Menescal)?\b/gi
+
 export const mobileFlowSystemPolicy = `
 ## Canal autenticado Performe AI
 Você é Flow, o agente da Performe AI. Seja claro, acolhedor e objetivo.
@@ -433,10 +435,14 @@ async function processResolvedMessage(
   // Anthropic Opus 4.7 estava custando $0.77/turno (153k tokens médio).
   // Com cache (90% redução nas leituras), cai pra ~$0.10/turno em conversas seguidas.
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
-  const stableSystem = promptRow.system_prompt + (options.systemPolicy ?? '')
+  const channelSystemPrompt =
+    options.historyProvider === 'mobile_flow'
+      ? promptRow.system_prompt.replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow')
+      : promptRow.system_prompt
+  const stableSystem = channelSystemPrompt + (options.systemPolicy ?? '')
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
-  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp)}${repetitionGuard}`
+  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
   // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
   // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda
@@ -2603,6 +2609,7 @@ function formatUserContext(
   ctx: UserContext,
   calcConfig?: import('@mpp/core').CalcConfig,
   referenceTimestamp: Date = ctx.referenceTimestamp,
+  historyProvider?: string,
 ): string {
   const m = computeMetrics(ctx.profile, referenceTimestamp, calcConfig)
   const sections: string[] = []
@@ -2655,9 +2662,11 @@ function formatUserContext(
   // País — instrução explícita pro LLM saber se já tem confirmação
   const country = ctx.country ?? 'BR'
   const personaName =
-    country === 'US' || country === 'GB' || country === 'CA' || country === 'AU'
-      ? 'Dr. Robert Menescal'
-      : 'Dr. Roberto Menescal'
+    historyProvider === 'mobile_flow'
+      ? 'Flow'
+      : country === 'US' || country === 'GB' || country === 'CA' || country === 'AU'
+        ? 'Dr. Robert Menescal'
+        : 'Dr. Roberto Menescal'
   const countryToLanguage: Record<string, string> = {
     BR: 'pt-BR',
     PT: 'pt-PT',

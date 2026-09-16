@@ -21,7 +21,7 @@ struct MascotDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             stateContent
         }
-        .navigationTitle("Mascote BodyFlow")
+        .navigationTitle("Mascote do Performe AI")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("screen.mascot.detail")
         .task(id: invalidationCenter.revision(for: .coachExperience)) {
@@ -89,7 +89,7 @@ struct MascotDetailView: View {
                         Text("Atualizado em \(descriptor.changedAtText)")
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
-                        Text("O estado e a personalidade vêm do seu coach BodyFlow.")
+                        Text("O estado e a personalidade vêm do Flow.")
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }

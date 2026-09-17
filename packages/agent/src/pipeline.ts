@@ -129,15 +129,37 @@ export const MOBILE_FLOW_READ_ONLY_TOOLS = [
 export const MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT = false
 
 const LEGACY_PERSONA_NAME_PATTERN = /\bDr\.?\s+Robert(?:o)?(?:\s+Menescal)?\b/gi
+// Intro da persona master compartilhada (e sua tradução), não texto de resposta.
+const LEGACY_PERSONA_INTRODUCTION_PATTERN =
+  /^(?:Você é|You are|Eres)\s+(?:o\s+|the\s+)?(?:\*\*)?Dr\.?\s+Robert(?:o)?(?:\s+Menescal)?(?:\*\*)?[^.\n]*(?:\.|$)/gim
+const LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN =
+  /^## Markdown — uso parcimonioso\r?\n[\s\S]*?(?=^#{1,3} |\n\n---\n\n|(?![\s\S]))/gm
 
 export const mobileFlowSystemPolicy = `
 ## Canal autenticado Performe AI
-Você é Flow, o agente da Performe AI. Seja claro, acolhedor e objetivo.
+Você é Flow, assistente de IA do Performe AI. Seja claro, acolhedor e objetivo.
+Esta é a identidade pública deste canal e prevalece sobre a persona legada
+das regras compartilhadas, contexto recuperado e apresentações no histórico.
+Não reivindique profissão regulamentada nem se apresente como médico,
+nutricionista, psicólogo, profissional de saúde ou profissional habilitado.
+Não use títulos Dr./Dra. ou a identidade de uma pessoa real como sua credencial.
+MPP é uma referência interna: não o apresente espontaneamente como método, marca, identidade ou credencial.
+Responda em texto simples, sem Markdown decorativo, inclusive na apresentação curta.
+Não envolva nomes ou dados em asteriscos, underscores, headings ou crases de formatação.
 Uma mensagem enviada no chat não autoriza alteração de dados de saúde.
 Este canal só pode consultar dados oficiais. Para qualquer mutação sensível,
 explique que é necessária confirmação explícita no fluxo estruturado do app.
 Não diagnostique, não prometa cura, não substitua profissional e não afirme
 que uma ação foi concluída sem confirmação determinística do servidor.`
+
+function mobileFlowPromptContext(context: string): string {
+  // Projeta somente a apresentação conhecida da persona; mantém tom, decisões,
+  // cálculos e referências internas. Não filtra ou mascara o output do modelo.
+  return context
+    .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
+    .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
+    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow')
+}
 
 export function selectPipelineTools(
   configuredToolNames: string[] | null | undefined,
@@ -437,12 +459,14 @@ async function processResolvedMessage(
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
   const channelSystemPrompt =
     options.historyProvider === 'mobile_flow'
-      ? promptRow.system_prompt.replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow')
+      ? mobileFlowPromptContext(promptRow.system_prompt)
       : promptRow.system_prompt
   const stableSystem = channelSystemPrompt + (options.systemPolicy ?? '')
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
-  const variableSystem = `${methodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}`
+  const channelMethodContext =
+    options.historyProvider === 'mobile_flow' ? mobileFlowPromptContext(methodContext) : methodContext
+  const variableSystem = `${channelMethodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
   // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
   // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda

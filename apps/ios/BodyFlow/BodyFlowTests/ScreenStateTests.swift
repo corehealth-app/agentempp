@@ -6,6 +6,27 @@ import UIKit
 @MainActor
 @Suite("Screen states and design tokens")
 struct ScreenStateTests {
+    @Test func englishDescriptorsPreserveStateIdentityAndRetrySemantics() {
+        let cases: [(ScreenState, String, String, Bool)] = [
+            (.loading, "Loading", "Preparing your information.", false),
+            (.empty, "Nothing here yet", "There is no content to show yet.", false),
+            (.recoverableError, "Unable to load", "A temporary problem occurred. Try again.", true),
+            (.offline, "You are offline", "Check your connection and try again.", true),
+            (.unavailable, "Unavailable in this version", "", false),
+        ]
+        for (state, title, message, retry) in cases {
+            let localized = state.descriptor(for: .englishUnitedStates)
+            #expect(localized.title == title)
+            #expect(localized.message == message)
+            #expect(localized.showsRetry == retry)
+            #expect(localized.systemImage == state.descriptor.systemImage)
+        }
+        #expect(ScreenState.unavailable.accessibilityIdentifier == "state.unavailable")
+        #expect(ScreenState.empty.accessibilityIdentifier == "state.empty")
+        #expect(!ScreenState.loading.descriptor.showsRetry)
+        #expect(!ScreenState.unavailable.descriptor.showsRetry)
+    }
+
     @Test(arguments: [
         (ScreenContentState.loading, ScreenState.loading),
         (ScreenContentState.empty, ScreenState.empty),
@@ -92,7 +113,8 @@ struct ScreenStateTests {
 
     @Test("typography uses only system Dynamic Type text styles")
     func dynamicTypeStyles() {
-        #expect(BodyFlowTypography.largeTitle == Font.largeTitle)
+        // The approved premium role explicitly adds bold; all legacy aliases remain.
+        #expect(BodyFlowTypography.largeTitle == Font.largeTitle.bold())
         #expect(BodyFlowTypography.title == Font.title2)
         #expect(BodyFlowTypography.headline == Font.headline)
         #expect(BodyFlowTypography.body == Font.body)

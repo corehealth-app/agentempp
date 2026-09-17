@@ -189,6 +189,72 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviar mensagem" } }
       }
     },
+    "state.loading.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando" } }
+      }
+    },
+    "state.loading.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing your information." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando suas informações." } }
+      }
+    },
+    "state.empty.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing here yet" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nada por aqui" } }
+      }
+    },
+    "state.empty.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "There is no content to show yet." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda não há conteúdo para mostrar." } }
+      }
+    },
+    "state.error.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to load" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível carregar" } }
+      }
+    },
+    "state.error.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "A temporary problem occurred. Try again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocorreu um problema temporário. Tente novamente." } }
+      }
+    },
+    "state.offline.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You are offline" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você está offline" } }
+      }
+    },
+    "state.offline.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check your connection and try again." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confira sua conexão e tente novamente." } }
+      }
+    },
+    "state.unavailable.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable in this version" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível nesta versão" } }
+      }
+    },
+    "state.retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try again" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tentar novamente" } }
+      }
+    },
+    "state.stale.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This information may be out of date." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As informações podem estar desatualizadas." } }
+      }
+    },
     "flow.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },

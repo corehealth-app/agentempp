@@ -8,4 +8,8 @@ enum BodyFlowSpacing {
     static let lg: CGFloat = 24
     static let xl: CGFloat = 32
     static let minimumTapTarget: CGFloat = 44
+
+    static func screenGutter(usableWidth: CGFloat) -> CGFloat {
+        usableWidth < 390 ? md : lg
+    }
 }

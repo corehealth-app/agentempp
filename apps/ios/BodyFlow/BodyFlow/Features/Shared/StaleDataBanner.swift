@@ -21,8 +21,8 @@ struct StaleDataBanner: View {
         .padding(BodyFlowSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            BodyFlowColor.warning.opacity(0.14),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            BodyFlowColor.color(.backgroundSecondary),
+            in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
         )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("state.stale-banner")
@@ -30,13 +30,13 @@ struct StaleDataBanner: View {
 
     private var icon: some View {
         Image(systemName: "exclamationmark.triangle")
-            .foregroundStyle(BodyFlowColor.warning)
+            .foregroundStyle(BodyFlowColor.color(.feedbackWarning))
             .accessibilityHidden(true)
     }
 
     private var message: some View {
-        Text("As informações podem estar desatualizadas.")
-            .font(BodyFlowTypography.callout)
-            .foregroundStyle(BodyFlowColor.primaryText)
+        Text("state.stale.detail")
+            .font(BodyFlowTypography.supporting)
+            .foregroundStyle(BodyFlowColor.color(.feedbackWarning))
     }
 }

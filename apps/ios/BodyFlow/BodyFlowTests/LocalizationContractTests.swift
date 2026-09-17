@@ -5,6 +5,26 @@ import Testing
 
 @Suite
 struct LocalizationContractTests {
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func sharedStateCatalogIsCompleteAndReviewed(_ language: SupportedAppLanguage) throws {
+        let keys = [
+            "state.loading.title", "state.loading.detail",
+            "state.empty.title", "state.empty.detail",
+            "state.error.title", "state.error.detail",
+            "state.offline.title", "state.offline.detail",
+            "state.unavailable.title", "state.retry", "state.stale.detail",
+        ]
+        for key in keys {
+            #expect(try AppLocalization.string(String.LocalizationValue(key), for: language) != key)
+        }
+        #expect(try AppLocalization.string("state.retry", for: language) ==
+            (language == .portugueseBrazil ? "Tentar novamente" : "Try again"))
+        #expect(try AppLocalization.string("state.stale.detail", for: language) ==
+            (language == .portugueseBrazil
+                ? "As informações podem estar desatualizadas."
+                : "This information may be out of date."))
+    }
+
     @Test
     func supportedLocaleSetsStayAligned() {
         let languageIdentifiers = Set(

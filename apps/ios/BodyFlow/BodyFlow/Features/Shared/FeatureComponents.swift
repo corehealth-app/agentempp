@@ -25,26 +25,51 @@ struct FeatureStateContentStack<Content: View>: View {
     }
 }
 
+enum BodyFlowSurfaceRole: Sendable {
+    case legacy, card, hero, elevated
+}
+
 @MainActor
 struct BodyFlowCard<Content: View>: View {
+    let surface: BodyFlowSurfaceRole
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(surface: BodyFlowSurfaceRole = .legacy, @ViewBuilder content: () -> Content) {
+        self.surface = surface
         self.content = content()
     }
 
     var body: some View {
-        content
+        styledContent
             .padding(BodyFlowSpacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                BodyFlowColor.surface,
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                backgroundColor,
+                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(BodyFlowColor.accent.opacity(0.10), lineWidth: 1)
+                if surface == .legacy {
+                    RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
+                        .stroke(BodyFlowColor.accent.opacity(0.10), lineWidth: 1)
+                }
             }
+    }
+
+    @ViewBuilder private var styledContent: some View {
+        if surface == .legacy {
+            content
+        } else {
+            content.foregroundStyle(BodyFlowColor.color(surface == .hero ? .onHero : .textPrimary))
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch surface {
+        case .legacy: BodyFlowColor.surface
+        case .card: BodyFlowColor.color(.backgroundSecondary)
+        case .hero: BodyFlowColor.color(.heroBackground)
+        case .elevated: BodyFlowColor.color(.surfaceElevated)
+        }
     }
 }
 

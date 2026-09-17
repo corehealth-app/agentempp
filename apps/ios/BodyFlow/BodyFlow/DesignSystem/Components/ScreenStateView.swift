@@ -73,6 +73,26 @@ enum ScreenState: Equatable, Sendable {
     }
 
     var descriptor: Descriptor {
+        descriptor(for: .portugueseBrazil)
+    }
+
+    func descriptor(for language: SupportedAppLanguage) -> Descriptor {
+        let fallback = fallbackDescriptor
+        let titleKey = String.LocalizationValue(accessibilityIdentifier + ".title")
+        let detailKey = String.LocalizationValue(accessibilityIdentifier + ".detail")
+        return Descriptor(
+            title: (try? AppLocalization.string(titleKey, for: language)) ?? fallback.title,
+            message: stateHasDetail
+                ? ((try? AppLocalization.string(detailKey, for: language)) ?? fallback.message)
+                : "",
+            systemImage: fallback.systemImage,
+            showsRetry: fallback.showsRetry
+        )
+    }
+
+    private var stateHasDetail: Bool { self != .unavailable }
+
+    private var fallbackDescriptor: Descriptor {
         switch self {
         case .loading:
             Descriptor(
@@ -129,10 +149,20 @@ enum ScreenState: Equatable, Sendable {
 }
 
 struct ScreenStateView: View {
+    @Environment(\.locale) private var locale
     let state: ScreenState
     private let retryAction: @MainActor () -> Void
     private let identifier: String
     private let titleIdentifier: String?
+
+    private var descriptor: ScreenState.Descriptor {
+        state.descriptor(for: BodyFlowPresentationLanguage.resolve(locale))
+    }
+
+    private var retryTitle: String {
+        (try? AppLocalization.string("state.retry", for: BodyFlowPresentationLanguage.resolve(locale)))
+            ?? "Tentar novamente"
+    }
 
     init(
         state: ScreenState,
@@ -153,33 +183,27 @@ struct ScreenStateView: View {
                     stateGraphic
 
                     if let titleIdentifier {
-                        Text(state.descriptor.title)
-                            .font(BodyFlowTypography.title)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(BodyFlowColor.primaryText)
+                        Text(descriptor.title)
+                            .font(BodyFlowTypography.screenTitle)
+                            .foregroundStyle(BodyFlowColor.color(.textPrimary))
                             .accessibilityIdentifier(titleIdentifier)
                     } else {
-                        Text(state.descriptor.title)
-                            .font(BodyFlowTypography.title)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(BodyFlowColor.primaryText)
+                        Text(descriptor.title)
+                            .font(BodyFlowTypography.screenTitle)
+                            .foregroundStyle(BodyFlowColor.color(.textPrimary))
                     }
 
-                    if !state.descriptor.message.isEmpty {
-                        Text(state.descriptor.message)
+                    if !descriptor.message.isEmpty {
+                        Text(descriptor.message)
                             .font(BodyFlowTypography.body)
-                            .foregroundStyle(BodyFlowColor.secondaryText)
+                            .foregroundStyle(BodyFlowColor.color(.textSecondary))
                     }
 
-                    if state.descriptor.showsRetry {
+                    if descriptor.showsRetry {
                         Button(action: triggerRetry) {
-                            Text("Tentar novamente")
-                                .font(BodyFlowTypography.headline)
-                                .frame(
-                                    minHeight: BodyFlowSpacing.minimumTapTarget
-                                )
-                                .contentShape(Rectangle())
+                            Text(retryTitle)
                         }
+                        .buttonStyle(BodyFlowButtonStyle(role: .primary))
                         .accessibilityIdentifier("state.retry")
                     }
                 }
@@ -194,7 +218,7 @@ struct ScreenStateView: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BodyFlowColor.background)
+        .background(BodyFlowColor.color(.backgroundPrimary))
         .accessibilityIdentifier(identifier)
     }
 
@@ -208,10 +232,10 @@ struct ScreenStateView: View {
         if state == .loading {
             ProgressView()
                 .controlSize(.large)
-                .tint(BodyFlowColor.accent)
+                .tint(BodyFlowColor.color(.brandPrimary))
                 .accessibilityHidden(true)
         } else {
-            Image(systemName: state.descriptor.systemImage)
+            Image(systemName: descriptor.systemImage)
                 .font(BodyFlowTypography.largeTitle)
                 .foregroundStyle(graphicColor)
                 .accessibilityHidden(true)
@@ -219,7 +243,7 @@ struct ScreenStateView: View {
     }
 
     private var graphicColor: Color {
-        state == .recoverableError ? BodyFlowColor.warning : BodyFlowColor.accent
+        BodyFlowColor.color(state == .recoverableError ? .feedbackDestructive : .brandPrimary)
     }
 }
 

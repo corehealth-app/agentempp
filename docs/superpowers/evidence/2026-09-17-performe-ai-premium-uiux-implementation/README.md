@@ -360,3 +360,125 @@ README appendix. Authorized subject:
 The actual commit SHA/final worktree/index are verified after commit in the
 execution report; no self-referential SHA is invented here. Only one Batch 2
 infrastructure commit is intended, no Flow/Auth commit, amend, push, PR or merge.
+
+## Subsequent approval — Debug server-owned onboarding fixture
+
+The later strict fixture approval resolves the earlier prerequisite only after
+the gates below. It does not amend the brand infrastructure commit or authorize
+remote activity. Starting branch/worktree is unchanged; starting HEAD was
+`cb223cff500b3960b37e397d6f8697618a54bdfb`, clean worktree and empty index.
+Host: MacBook-Air-de-Eduardo.local, Darwin arm64, local Xcode development; no
+claim that this filesystem is a deployed runtime. Existing linked worktree and
+locked local package cache reused. Resource gate: PASS, 69 GiB free disk and
+no material pressure observed before native builds.
+
+### Proven fixture/injection paths and root cause
+
+Paths located before editing, relative to `apps/ios/BodyFlow/`:
+
+- `BodyFlow/Core/Onboarding/DemoOnboardingRepository.swift`: existing draft seed,
+  storage and legacy finish, **read-only/unchanged**. No server-state override.
+- `BodyFlow/Core/Onboarding/OnboardingRepository.swift` and
+  `OnboardingModels.swift`: existing native protocol/DTOs, **unchanged**.
+- `BodyFlow/Features/Onboarding/OnboardingFlowModel.swift`: existing real
+  validator, explicit action and acknowledged finish gates, **unchanged**.
+- `BodyFlow/Features/PreviewSupport/OnboardingPreviewSupport.swift`: new
+  whole-file DEBUG local repository, QA bodies and private receipt cache.
+- `BodyFlow/App/AppDependencies.swift`: only existing DEBUG `.demo` onboarding
+  selection changed; real/unavailable selection and the Release branch unchanged.
+- `BodyFlowTests/OnboardingPreviewSupportTests.swift`: new whole-file DEBUG
+  behavioral suite; `BodyFlowTests/AppDependenciesTests.swift`: direct injection
+  expectation now verifies actual state instead of the legacy concrete type.
+- This Batch 2 evidence README: only documentation write in this checkpoint.
+
+Old dependency inherited unavailable requirements and incomplete server state;
+the actual model correctly rejected it. Authentication's completed fixture flag
+is not authority and was not changed or used to synthesize completion.
+
+### Contract, explicit finish and local lifecycle
+
+The fixture reuses real `OnboardingLegalDocument`, `OnboardingDocumentAction`,
+`OnboardingRequirements`, `OnboardingServerState`, completion/accepted-action
+DTOs and `OnboardingCompletionAcknowledgement.matches`. It calls the unchanged
+real step/completion validator with development consent unavailable. Legacy
+`complete` remains unavailable; only a valid explicit official finish yields ACK.
+Three deterministic clearly synthetic QA documents exercise acceptance,
+acknowledgement and consent. Bodies exceed 1,000 UTF-8 bytes; SHA-256 is computed
+from those exact bytes. Initial accepted actions are empty, completion false.
+No legal draft is presented as a publication. No URL/network/storage-provider
+client is used by the helper. Current real publication availability requires
+all documents required; an available optional server document is not currently
+supported. No optional contract/flag or server rule is invented to satisfy QA.
+Existing client validation and optional field semantics remain unchanged.
+
+Acknowledged snapshot/key/real ACK are cached only locally in DEBUG. A shared
+actor arbitrates conflicting finishes without suspension; exact replay returns
+the same ACK. Keychain-backed Debug launch uses a QA-only UserDefaults namespace
+derived from the existing demo service. The helper does not write auth sessions
+or credentials; it delegates draft load/save/clear to the unchanged existing
+draft storage. No Keychain implementation/configuration is modified. Fresh and
+preserve use the same existing keychain boundary.
+Fresh reset removes only the exact user's QA receipt, once before operations;
+the reset task is recorded before awaiting. Ordinary draft cleanup retains an
+acknowledged finish and remains usable after logout. Memory-backed configurations
+stay isolated. Unit services are unique test-owned namespaces to avoid parallel
+suite interference; resolved launch/reset/storage semantics are unchanged.
+
+### TDD and verification artifacts
+
+Private native artifacts are in
+`/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/run.0zGejW`.
+They are not committed; no credentials were read or captured.
+
+- `onboarding-fixture-red.xcresult`: accidental Swift Testing macro compilation
+  problem, **not a behavioral RED**.
+- `onboarding-fixture-red-behavior.xcresult`, exit 65: **3 executed / 3 failed**,
+  no skips; missing current requirements/actions and actual model's legacy
+  unavailable consent gate observed before implementation.
+- `onboarding-fixture-green.xcresult`: first implementation passed new behavior
+  but an existing relaunch test exposed signed-out cleanup regression. Fixed
+  only in the DEBUG helper, not by weakening that test.
+- `onboarding-fixture-review-red.xcresult`: provider recreation and signed-out
+  cleanup failures characterized before receipt/cleanup repair.
+- `onboarding-fixture-green-final.xcresult`: accidental actor-isolation compile
+  issue in new test, **not GREEN/RED behavioral evidence**; repaired with await.
+- `onboarding-fixture-reset-red.xcresult`: individual selector executed zero
+  tests, **discarded as verification evidence**.
+- `onboarding-fixture-reset-red-executed.xcresult`, exit 65: **8 executed,
+  7 passed / 1 failed**, no skips. Actual fresh-to-preserve lost the acknowledged
+  finish (three assertion issues). All tests finished before Xcode's automatic
+  Simulator diagnostic collector stalled; only its confirmed task-owned child
+  collector was terminated, preserving the completed failed result bundle.
+- `onboarding-fixture-green-regression.xcresult`, exit 0: **146 logical tests /
+  172 executions**, zero failures/skips/expected failures/runtime warnings.
+  Native build-results succeeded, zero compiler errors/warnings in this action.
+  Includes all nine new fixture behaviors and existing onboarding models,
+  presentation, completion, real mobile repository, dependencies, Prompt 14
+  preview/support/Release boundary and authenticated ownership regression.
+- `onboarding-fixture-prompt13-regression.xcresult`, exit 0: **7 tests / 7
+  executions**, zero failures/skips/expected failures/runtime warnings; preserves
+  exact Prompt 13 launch selection, deterministic contexts and Release exclusion.
+- `onboarding-fixture-release.xcresult`: normal signed Release Simulator build,
+  exit 0, build-results succeeded, zero errors and seven inherited warnings.
+  `codesign --verify --deep --strict` on the resulting Release app: PASS, exit 0.
+  No signing/configuration override, source package/lockfile update or Release
+  dependency modification. Compiled entire app scan for all new QA document
+  identifiers/body markers/helper/cache types: zero matches (`rg` exit 1).
+  Release-visible `AppDependencies.swift` source after selecting its five existing
+  `#if DEBUG`/`#else` blocks is byte-identical to parent; SHA-256
+  `2b69a3aeba03a20211e708dd25611900962537cdbc387940f2213e91359fc4e1`.
+- Final FIXTURE CONTRACT REVIEW: **PASS**, Critical 0 / Important 0 / Minor 0.
+  Reviewer independently read staged scope/evidence, GREEN/regression/extra
+  Prompt 13 results, signed Release/strict codesign, compiled marker absence and
+  parent equality of Release-visible source. Changed-source secret scan and
+  whitespace check: zero findings. Exact isolated local commit is now eligible.
+
+Only the five fixture/injection/test/evidence files above may be committed,
+subject `test(onboarding): align debug fixture with server-owned consent`,
+parent `cb223cff500b3960b37e397d6f8697618a54bdfb`. No self-referential SHA is
+invented in this pre-commit evidence; execution report verifies the actual SHA.
+No view/Core/model/auth/session/Keychain/backend/provider/Release branch edit.
+No push, PR, merge, deploy or remote mutation. Real completions: 0.
+No paid infrastructure created; cost/environment closeout NOT APPLICABLE.
+After all gates and a clean local commit, resume Slice 8 then Slice 2 under
+the prior approved Batch 2 plan, without repeating Slice 1 infrastructure.

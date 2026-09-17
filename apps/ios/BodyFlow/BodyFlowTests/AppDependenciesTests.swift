@@ -6,14 +6,18 @@ import Testing
 @Suite("App Dependencies", .serialized)
 struct AppDependenciesTests {
     @Test("Debug demo installs a local idempotency source for explicit simulated sends")
-    func debugDemoInstallsLocalIdempotencySource() throws {
+    func debugDemoInstallsLocalIdempotencySource() async throws {
         let dependencies = AppDependencies.make(
             configuration: .resolve(arguments: ["--ui-testing"], buildFlavor: .debug)
         )
 
         #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
         #expect(dependencies.flowChat is DemoFlowChatRepository)
-        #expect(dependencies.onboarding is DemoOnboardingRepository)
+        let session = try #require(await dependencies.authentication.restoreSession())
+        let state = try await dependencies.onboarding.loadState(for: session.userID)
+        #expect(state.requirements.available)
+        #expect(!state.completion.completed)
+        #expect(state.acceptedActions.isEmpty)
     }
 
     @Test("Valid origin and session seam install the real mobile transport")

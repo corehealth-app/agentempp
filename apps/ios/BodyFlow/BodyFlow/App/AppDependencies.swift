@@ -343,10 +343,14 @@ struct AppDependencies: Sendable {
         let onboarding: any OnboardingRepository
         #if DEBUG
         if configuration.mode == .demo {
-            onboarding = DemoOnboardingRepository(
+            onboarding = OnboardingPreviewRepository(
                 stateStore: stateStore,
                 buildFlavor: buildFlavor,
-                preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues
+                preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues,
+                receiptNamespace: configuration.demoStorageBoundary == .keychain
+                    ? configuration.demoKeychainService : UUID().uuidString,
+                persistsReceipts: configuration.demoStorageBoundary == .keychain,
+                resetsReceipts: configuration.shouldResetDemoState
             )
         } else if let transport = apiClient as? MobileAPITransport {
             onboarding = MobileOnboardingRepository(transport: transport)

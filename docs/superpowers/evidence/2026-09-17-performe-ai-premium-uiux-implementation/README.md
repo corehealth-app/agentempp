@@ -227,3 +227,136 @@ persisted technical identifier, or telemetry migration.
 Production: NOT DEPLOYED. Rebrand: PARTIAL. Final logo bytes: PENDING.
 No remote resources changed; no paid temporary infrastructure created.
 Do not begin Batch 2/Slice 1 or priority Slice 8 automatically.
+
+## Batch 2 — explicitly authorized local execution, partial checkpoint
+
+Authority: `EXECUTE_PERFORME_AI_UIUX_BATCH2_BRAND_FLOW_AUTH_V1`, separately
+authorized after the Slice 0 checkpoint above. Same serial worktree; no new
+branch/worktree, remote access, code-generation asset operation or provider call.
+
+### Fresh baseline and host
+
+- Host: MacBook-Air-de-Eduardo.local, Darwin 25.6 arm64, user eduardohenrique;
+  LOCAL_DEVELOPMENT based on local source/Xcode workflow, not an assertion about
+  any deployed filesystem. Xcode 27.0 (27A266a).
+- Starting branch `codex/performe-ai-client-beta-flow-v1`; HEAD
+  `5111b06edb5392f19d0e0c0f1de038b29b19a4c4`, parent
+  `7e1973940ed9edee7812abf955f91bf4873b89b3`, tree
+  `24f8e46c5545838a2015c6e84fb604f85b6604a2`; worktree/index clean,
+  no concurrent source writer found.
+- Local iPhone 17 Pro, iOS 26.5 simulator
+  `27291590-659D-4A29-8F45-CA5CA2D154F9`; initially shutdown.
+- Resource preflight: 16 GiB RAM, approximately 70 GiB free disk, 35% free
+  memory-pressure reading; existing swap usage recorded, no material local
+  build blocker. No production service/container operation.
+- Private local artifacts/cache: `/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/run.0zGejW`
+  (created with umask 077). Reused copies of locked local Swift package caches;
+  no package version, lockfile or runtime change.
+- `batch2-baseline.xcresult`: **PASS**, 1,160 logical tests / 1,360 executions,
+  zero failed/skipped/expected failures. Build-results succeeded, zero errors,
+  ten inherited warnings matching the Slice 0 list above. The console's
+  `SwiftCompile ... exit code 0 ... no further output` diagnostic was investigated
+  before edits: final xcresult has no build error or test failure. No source
+  workaround or baseline retry was used.
+
+### Brand infrastructure — S1.1 / documentary S1.2
+
+- RED `slice1-red.xcresult`, exit 65: missing `PerformeAIBrandAsset` is the
+  task-specific expected compilation failure; baseline had already passed.
+- GREEN `slice1-green.xcresult`, exit 0: **12 logical tests / 50 executions**,
+  zero failed/skipped/expected failures across PerformeAIBrandAssetTests,
+  BodyFlowBrandAssetTests and BrandIdentityTests.
+- Exact seven optional resource names resolve through `UIImage(named:in:compatibleWith:)`.
+  Absence is explicitly tested as unavailable, not a failed asset import.
+  Existing public text remains “Performe AI”; historical enum/catalog untouched.
+- `assets/brand/performe-ai-public-v1/manifest.json`: family exact,
+  `approvalStatus: pending`, empty `approvedFiles`/`publicCallsites`.
+  `review.md` lists the exact plan §5 pending files/dimensions/rights and gates.
+  No fake hash, author, license, date or approval. No imageset, PNG, PDF, SVG,
+  AppIcon, splash image or historical byte change.
+- BRAND_ASSET_APPROVAL_GATE: **PENDING_EXTERNAL_ASSETS**. Direction approved,
+  final bytes pending; Slice 1 remains PARTIAL. This is not the Flow/Auth blocker.
+- `slice1-release.xcresult`, normal Release Simulator build, exit 0: succeeded,
+  zero build errors, seven inherited production warnings. Same non-fatal
+  exit-code-0 console diagnostic as the fresh baseline; no xcresult error.
+  No signing override, DevelopmentTeam/entitlement/bundle change or private
+  staging configuration. `codesign --verify --deep --strict` on the resulting
+  `DerivedData-Release/Build/Products/Release-iphonesimulator/BodyFlow.app`:
+  **PASS**, exit 0.
+- `batch2-partial-final-unit.xcresult`, exit 0: **1,163 logical tests / 1,375
+  executions**, zero failed/skipped/expected failures; build-results succeeded
+  with zero errors/warnings on this incremental action. Includes the unchanged
+  server-authority/model/repository regression tests, not server-owned UI proof.
+- `batch2-partial-analyze.xcresult`, exit 0: succeeded, zero analyzer findings,
+  zero build errors/warnings on the incremental analyze. This does not correct
+  the seven inherited Release compiler warnings recorded above.
+- Explicit five-file source/documentation security scan: zero API-key/JWT/
+  private-key/signed-URL/email/credential-assignment findings; manual diff
+  review separately checks unintended scope. `git diff` against `7ab3e657`
+  for historical brand/catalog/enum files is empty. No new artwork bytes.
+- Independent Brand Infrastructure/evidence review: Critical 0 / Important 0 /
+  Minor 0, **PASS** after final staged-diff/artifact readback. Reviewer independently
+  confirmed GREEN/full regression, normal Release/strict codesign, analyze,
+  whitespace check, scope and the remaining prerequisite incompatibility.
+- UI tests/captures: NOT APPLICABLE to this infrastructure-only checkpoint:
+  no view, catalog copy, image selection or public callsite changed.
+
+### STOP_DOCUMENTED — required server-owned local UI fixture absent
+
+This is an inspected plan/current-code incompatibility, **not** a failed brand
+approval gate or a request to weaken UI assertions.
+
+1. Approved S8.1 requires reaching the shell through the actual completed Debug
+   journey with the current server-owned mock. S2.3 requires long authoritative
+   QA document bodies, explicit required/optional actions and server completion;
+   it expressly prohibits substituting the legacy consent fixture.
+2. `App/AppDependencies.swift` Debug `.demo` onboarding branch currently selects
+   `DemoOnboardingRepository` for the existing launch configurations.
+3. `Core/Onboarding/DemoOnboardingRepository.swift` has no `loadState` or
+   `completeOfficial` implementation. Inherited `OnboardingRepository.loadState`
+   returns `completion.completed = false` and `requirements = .unavailable`.
+   `AppFlowModel.restoreOnboarding` correctly treats that server state as
+   authoritative over the authentication session's completed flag.
+4. The existing synthetic-development consent path can potentially finish the
+   local demo once. This is **not** a claim that the shell is universally
+   unreachable. It does not supply server-owned long QA legal bodies/actions
+   and re-restores as incomplete. Unit-private server mocks are not injected
+   into the executable UI; no applicable launchable fixture was found.
+5. Supplying the missing fixture needs a reviewed Debug/test-only onboarding
+   repository/injection repair. Current strict allowlist permits AppDependencies
+   changes **only** for Flow Debug selection and keeps onboarding repository/
+   model/contracts unchanged. There is no in-scope substitute.
+
+Independent read-only review confirmed this dataflow and the absence of an
+in-scope existing alternative. No root completion bypass, legacy replacement,
+model/repository edit, new legal QA set, remote access or optimistic gate was used.
+Flow and Auth/onboarding implementation were **NOT STARTED**; their planned RED,
+GREEN, UI, accessibility, captures and signed slice builds are **NOT VERIFIED**.
+Slice 0 remains the previously verified contract, unchanged.
+
+Next required authorization: a narrowly scoped reviewed Debug/test-only
+server-owned onboarding fixture and its Debug injection/test allowlist, preserving
+the Release injection, existing Core contracts, seven steps, explicit legal
+actions and authoritative finish. Resume Batch 2 only after that prerequisite is
+approved and verified. Batch 3 is not yet the next execution gate.
+
+### Scope / closeout
+
+Only S1.1 enum/test, new pending manifest/review and this evidence appendix are
+eligible for the infrastructure commit. No Flow/Auth source changes, Slice 0
+repair, dependency update or production deployment. Remote resources altered:
+NONE. Real completions: 0. No paid temporary infrastructure created.
+Rebrand PARTIAL; logo DIRECTION APPROVED / FINAL BYTES PENDING; Production NOT
+DEPLOYED. Do not report the full Batch 2 success status.
+Local closeout verified: `simctl list devices booted --json` has no booted
+simulator; no remaining xcodebuild/swift-frontend/xctest processes were found.
+No unrelated simulator/process was terminated; private artifacts/cache preserved.
+COST / ENVIRONMENT CLOSEOUT: NOT APPLICABLE (no remote paid resource created).
+
+Local commit scope is exactly these five files: PerformeAIBrandAsset.swift,
+PerformeAIBrandAssetTests.swift, the new family's manifest.json/review.md and this
+README appendix. Authorized subject:
+`refactor(brand): prepare Performe AI asset infrastructure`.
+The actual commit SHA/final worktree/index are verified after commit in the
+execution report; no self-referential SHA is invented here. Only one Batch 2
+infrastructure commit is intended, no Flow/Auth commit, amend, push, PR or merge.

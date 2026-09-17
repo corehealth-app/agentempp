@@ -83,8 +83,8 @@
     },
     "flow.cancel" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel sending" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar envio" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel waiting" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar espera" } }
       }
     },
     "flow.composer" : {
@@ -113,8 +113,8 @@
     },
     "flow.error.cancelled" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending cancelled." } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Envio cancelado." } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting stopped. The remote operation may continue." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Espera interrompida. A operação remota pode continuar." } }
       }
     },
     "flow.error.generic" : {
@@ -161,8 +161,8 @@
     },
     "flow.message.processing" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending…" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviando…" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processing" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em processamento" } }
       }
     },
     "flow.open" : {
@@ -173,8 +173,44 @@
     },
     "flow.responding" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow is responding…" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow está respondendo…" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending and waiting for Flow…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviando e aguardando o Flow…" } }
+      }
+    },
+    "flow.role.user" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você" } }
+      }
+    },
+    "flow.role.assistant" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
+      }
+    },
+    "flow.role-line" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Performe AI’s AI assistant" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Assistente de IA do Performe AI" } }
+      }
+    },
+    "flow.limit.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use up to 4,000 characters per message." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Use até 4.000 caracteres por mensagem." } }
+      }
+    },
+    "flow.latest-message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Latest message" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Última mensagem" } }
+      }
+    },
+    "flow.response.received" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New Flow response received." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nova resposta do Flow recebida." } }
       }
     },
     "flow.retry" : {

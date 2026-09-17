@@ -326,7 +326,11 @@ struct AppDependencies: Sendable {
         let flowChat: any FlowChatProviding
         #if DEBUG
         if configuration.mode == .demo {
-            flowChat = DemoFlowChatRepository()
+            if let scenario = FlowPreviewScenario.resolve(arguments: ProcessInfo.processInfo.arguments) {
+                flowChat = FlowPreviewRepository(scenario: scenario)
+            } else {
+                flowChat = DemoFlowChatRepository()
+            }
         } else if let transport = apiClient as? MobileAPITransport {
             flowChat = MobileFlowChatRepository(transport: transport)
         } else {

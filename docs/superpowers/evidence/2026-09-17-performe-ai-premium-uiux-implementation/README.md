@@ -482,3 +482,244 @@ No push, PR, merge, deploy or remote mutation. Real completions: 0.
 No paid infrastructure created; cost/environment closeout NOT APPLICABLE.
 After all gates and a clean local commit, resume Slice 8 then Slice 2 under
 the prior approved Batch 2 plan, without repeating Slice 1 infrastructure.
+
+## Batch 2 — Slice 8 local execution diagnostics
+
+Fixture checkpoint committed as `1cc0a2d09957f19f044c27d6de044b903f9320fc`,
+parent `cb223cff500b3960b37e397d6f8697618a54bdfb`; worktree/index verified clean
+before automatically resuming Flow. Brand infrastructure is not repeated.
+This section preserves failed/partial attempts; it is not final Slice 8 acceptance.
+
+### Flow scope and preserved contracts
+
+Only `Features/FlowChat/FlowChatView.swift`, the new pure
+`FlowChatPresentation.swift`, the whole-DEBUG
+`Features/PreviewSupport/FlowChatPreviewSupport.swift`, existing DEBUG Flow
+selection in `AppDependencies.swift`, scoped `flow.*` catalog entries,
+`FlowChatPresentationTests.swift`, `FlowChatPreviewSupportTests.swift`,
+`FlowChatUITests.swift` and this evidence are touched. The model, Core DTOs,
+real repository/API, session, storage, cancellation, idempotency, history limit,
+retry, launch configuration, shared design system and authenticated shell are
+unchanged. Auth/onboarding presentation has not started at this checkpoint.
+
+Exactly eight local scenarios: empty, loading, processing, response, error,
+offline, longHistory and retryOnce. They use the existing native protocol/DTOs.
+The approved finite two-second mock observation delay is DEBUG-only, not an SLA
+or provider-latency optimization. No additional event gate/delay/scenario,
+real request, completion, streaming renderer, Markdown parser or progress timer.
+Explicit local retry retains the original model's same idempotency key;
+mock exact replay is rechecked after actor suspension. Response content is
+native selectable plain Text, including literal Markdown characters.
+
+Public presentation uses Flow / Performe AI and distinguishes user/assistant.
+Pending copy is truthful combined sending-and-waiting; cancellation explicitly
+does not promise that a remote operation was canceled. Submission preserves
+the existing trimmed 4,000-character rule. Reader policy follows the end or
+own send, not a reader in older history. Latest navigation is explicit/local.
+Reduce Motion consumes the existing root environment plus system preference.
+Reply announcements are brief, completed-only, once per new message, suppressed
+for a historical reader; no forced accessibility focus.
+
+### Behavioral RED and rejected evidence
+
+All bundles remain under the same private `run.0zGejW` root above.
+
+- `s8-copy-red.xcresult`: behavioral RED, one logical/two parameterized failed
+  executions on old pending/cancel/processing copy.
+- `s8-composer-ui-red.xcresult`: behavioral RED, one failed native journey after
+  all seven actual onboarding steps/explicit official QA finish; old Send was
+  enabled for 4,001 characters. Keyboard screenshot retained privately.
+- `s8-policies-and-mocks-red.xcresult`: behavioral RED, eight logical/ten
+  executions; three policy/localization tests failed while all four mock
+  behaviors passed. Old unconditional follow/animation and missing role copy
+  were characterized. No compile/setup error is used as RED.
+- `s8-reader-ui-red.xcresult`: failed off-screen seed setup, not accepted as a
+  reader-policy behavioral RED.
+- `s8-unit-green-1.xcresult`: accidental test lookup signature compile failure,
+  not GREEN; corrected to existing `AppLocalization.string(_:for:)` API.
+- `s8-unit-green-2.xcresult`: intermediate unit PASS, 55 logical/57 executions,
+  no failures/skips/runtime warnings. Includes dependencies, four actual
+  FlowChatModel tests, presentation policies and four DEBUG mock behaviors.
+- `s8-native-ui-green-1.xcresult`: rejected as final gate, six native tests,
+  two passed/four failed. Manual historical reading/Latest and explicit retry/
+  local response/reopen passed. Composer failed in old onboarding setup;
+  cancellation reused a Send coordinate after control replacement; the loading
+  assertion polled after the finite delay. These are harness failures, not
+  silently treated as production fixes. Incoming response during a native
+  three-second drag/hold did steal history and hide Latest: valid reader RED.
+
+The reader defect came from observing only a Boolean end-of-scroll result.
+After keyboard resize it was already false, so a subsequent false-to-false
+manual offset movement did not update reader intent. The view now observes the
+full viewport (offset/content/container/inset); tests retain the true two-second
+mock and a real native gesture, without a parallel provider event API.
+
+### Native capture findings that require a fresh gate
+
+Official xcresult attachment export: `s8-ui-1-attachments/manifest.json` maps
+native PNG/hierarchy UUIDs to each test/capture. Root and read-only reviewer
+actually inspected regular/AX keyboard and historical before/after samples.
+The nominal dark capture was visibly light; `simctl ui <owned-id> appearance`
+confirmed light. `-AppleInterfaceStyle Dark` alone is not theme proof on this
+runtime. Light/Dark matrices are split into separate host-controlled runs and
+assert the existing DEBUG Today accessibility value before entering Flow.
+No launch configuration/helper/root theme override is added to fake evidence.
+
+The old AX icon-plus-text Send Label overflowed its measured frame and keyboard.
+The Flow consumer now uses plain action Text at accessibility sizes; the shared
+button style is immutable. A native raster readback is still required rather
+than trusting `exists` or a 44-point frame. The AX empty capture was visually
+blank despite existing accessibility content; a new initial-readable-content
+assertion characterizes that defect before repair.
+
+The onboarding setup scroll container retains its offset between steps.
+The native helper now scrolls toward the control's actual frame, both directions,
+instead of repeatedly searching only below the current position. It still
+requires real selected traits, all three initially unchecked required actions,
+explicit current completion and acknowledged Today transition; no bypass.
+
+Historical latency baseline stays 7,334 ms pipeline / 8.657 s input-to-output
+persistence interval. Neither is tap-to-visible latency, an SLA, or a new
+measurement in these mock UI tests. No backend/LLM optimization is performed.
+VoiceOver manual narration remains NOT VERIFIED pending actual execution.
+Real completions: 0. No provider access, remote mutation, paid environment,
+push, PR, merge or deploy. Final acceptance/commit awaits fresh gates below.
+
+### Subsequent native diagnostics — not final acceptance
+
+- `s8-native-ui-green-2.xcresult`: 84 logical/91 executions, three native
+  failures. All 77 unit logical/84 executions passed. Native composer limit,
+  cancel/reopen, manual history/Latest and explicit retry passed. Reduce Motion
+  failed onboarding setup with a one-direction helper. The incoming-reader
+  pixel-distance equality was invalid: keyboard reflow/native physics and a
+  changing footer do not equal finger distance. Geometry remains diagnostic;
+  the exact QA35 reader identity, actionable Latest, hidden new reply and
+  explicit Latest-to-reply transition remain required assertions. No larger
+  tolerance/delay/provider event gate was substituted.
+- Its giant response/AX failure hierarchy had a 32,556-point content extent
+  but no accessible body at the lower viewport, supporting the lazy-culling
+  diagnosis rather than proving paint from hierarchy alone. The Flow renderer
+  now uses eager VStack for received
+  history, preserving whole native Text/selection/roles/IDs. The model requests
+  50 messages and the mobile repository limits the request; the model does NOT
+  universally clamp any array returned by a provider. No fake VM hard cap is
+  claimed. The bounded QA fixture has 40 messages. Memory/rendering tradeoff is
+  local presentation correctness, not backend latency optimization.
+- `s8-empty-ax-red.xcresult`: valid one-test behavioral RED, initial readable
+  role-line was not hittable after a real seven-step finish/ACK. Kept native
+  PNG/hierarchy were exported with **all** attachments to
+  `s8-empty-ax-red-all-attachments`; only-failures export did not include those
+  keepAlways captures and is not used as visual proof. Empty history now has
+  conditional initial top anchoring; nonempty history retains end anchoring.
+- `s8-native-light-green-3.xcresult`: 86 logical/93 executions, 83/90 passed,
+  three failures, no skips/expected failures/runtime warnings. Empty AX,
+  composer limit, cancel/reopen, reader/Latest, incoming-reader policy and
+  retry/reopen passed. The new quantitative AX test exposed genuine keyboard
+  compression: actual Send height 68 points versus its multiline label. The
+  footer now reserves intrinsic vertical size/priority; no font reduction,
+  shared DS change or new UI padding. `s8-release-5.xcresult` built this source:
+  exit 0, zero build errors/seven inherited warnings, strict codesign exit 0.
+  Release-visible dependency selection equals Flow parent, normalized SHA-256
+  `ef46534ea32b691c4ef59f4511f20159df5ff3e10567bce07d327a316958e592`.
+- A separate false metric failure was less than one logical point: UIKit
+  paragraph bounds with external leading/whole-point rounding are not SwiftUI
+  layout equality. `s8-ax-footer-green-1.xcresult` rejected that obsolete oracle
+  despite the new intrinsic footer height 149.333; it is NOT accepted GREEN.
+  The reviewed guard now measures a **minimum glyph-painting footprint** with
+  native semantic preferred headline/semibold, real inner width, device glyph
+  bounds and physical-pixel rounding. Existing 1-point tolerance/24-point DS
+  padding are not increased. Metrics retain typographic/leading/reconstructed
+  font comparison, weight/name/style/point size, glyph minY/maxY and scale;
+  the identical formula must quantitatively reject the preserved 68-point RED.
+  This guard alone is not raster proof: entire-field/button containment above
+  the actual keyboard/native navigation and fresh screenshots are also required.
+- Reduce Motion's old role39-at-tail oracle was spatially invalid for a bubble
+  taller than its AX viewport. `s8-reduce-motion-live-diagnostic.png` actually
+  showed the final body painted, with the role above the viewport. The reviewed
+  native test now proves the exact role reachable bidirectionally, navigates
+  older history, then Latest yields the exact complete body39 label hittable/
+  intersecting the real history viewport and Latest absent; keepAlways raster
+  evidence remains required. No `exists`-only replacement or shorter QA text.
+- Flow setup reuses only a finish acknowledged by the current serial XCTest
+  process. Its first launch still performs all seven steps/unchecked required
+  actions/explicit finish and Today ACK. A missing preserved receipt fails;
+  higher-priority reset arguments force that actual fresh journey again.
+  No automatic completion/fallback/Root or launch-configuration change.
+
+Fresh full Light/Dark, final source/raster review and commit remain pending.
+
+### Slice 8 final local gates
+
+The final native gate corrected two test-oracle defects without weakening the
+product contract. A fixed `QA35` pre-gesture assumption was invalid across
+native scroll settling; XCTest activity timing also proved that even a nominal
+short drag takes longer than the exact two-second fixture response. The final
+reader test starts with Cancel visible, holds one real native gesture across the
+unchanged response, and then requires exact `QA35` visibility, an actionable
+Latest control, the new reply off-screen, and explicit Latest navigation to the
+reply. `s8-reader-green-1789671969.xcresult`: one passed, zero failures/skips or
+runtime warnings. Raster captures show QA35 in the historical viewport before
+Latest and the exact local reply only after Latest.
+
+Dark appearance now uses the same native `XCUIDevice.shared.appearance` seam as
+the existing accessibility tests, while retaining the in-app `colorScheme`
+readback. Launch arguments alone are not accepted as proof.
+`s8-dark-green-1789672049.xcresult` and
+`s8-light-green-1789672293.xcresult`: each complete matrix passed, zero
+failures/skips/runtime warnings. Their kept captures were exported to
+`s8-dark-final-attachments` and `s8-light-final-attachments`; actual PNGs for
+empty, keyboard, processing, long raw response, error/offline and long history
+were inspected, not inferred from hierarchy.
+
+That visual review found one real untested defect: at AccessibilityXXXL an
+error/offline card existed but its recovery content started outside the
+readable viewport because all message-empty conversations initially anchored at
+the top. `s8-recovery-red-1789672607.xcresult` is the valid behavioral RED:
+`The real error copy must start inside the readable viewport`. The production
+fix is limited to initial anchoring: a healthy empty conversation remains top;
+error/offline starts at the end. No model/repository/retry/network behavior
+changed. `s8-recovery-green-1789672835.xcresult`: both error and offline at
+AccessibilityXXXL passed in one test, zero failures/skips/runtime warnings;
+real error copy and 44-point-plus retry were visible/reachable. Kept PNG and AX
+hierarchy were exported to `s8-recovery-green-attachments` and inspected.
+
+Aggregate current Flow evidence is 77 passing logical tests across the seven
+required unit/contract suites plus every native UI behavior in the now
+12-test Flow class: the nine unaffected UI tests passed in the full prior gate;
+reader, true dark appearance, current light matrix and the newly added
+error/offline recovery gate passed focused after diagnosis. No test deletion,
+skip, broader tolerance, provider-event hook, fixture-delay change or runtime
+fallback was used. The only Xcode messages are inherited debugger snapshot
+lookup diagnostics; result summaries have zero runtime warnings.
+
+The global Performe AI shell title consumes substantial space at AXXXXL; Shell
+composition belongs to the explicitly deferred Slice 3 and is not edited here.
+Within S8, conversation content remains natively scrollable, whole action
+labels are painted, composer controls stay above the actual keyboard, errors and
+retry are reachable, and history is not stolen. Full manual VoiceOver narration
+remains **NOT VERIFIED**; native AX hierarchy/order/targets and Dynamic Type
+XXXL are locally verified. Real completions: 0. Remote resources altered: none.
+
+Final signed simulator Release from the recovery-anchor source:
+`s8-release-6.xcresult` status **succeeded**, error count 0, warning count 7
+(the same inherited auth/register concurrency warnings outside the Flow diff),
+analyzer warnings 0. `codesign --verify --deep --strict` exited 0 for
+`BodyFlow.app` (`com.bodyflow.app`, simulator ad-hoc signature). Compiled bundle
+scan found zero `QA_REPLY_VISIBLE`, `qa-seed-`, `ui-testing-flow-`, synthetic
+onboarding-copy or QA legal-key markers. `git diff --check` passed; tracked and
+new-source scans found no secret, credential, signed URL, provider URL, PII or
+new network client. DEBUG scenario selection is confined to the existing
+`#if DEBUG` dependency branch and the entire fixture file is DEBUG-wrapped;
+Release dependency boundary tests are included in the 77-test pass.
+
+The final source was re-run after the anchoring fix in
+`s8-unit-final-1789673258.xcresult`: 77 logical / 84 executed tests passed
+across all seven required suites, zero failures/skips/expected failures/runtime
+warnings. Final independent **Flow UI/behavior review: PASS**, Critical 0 /
+Important 0 / Minor 0. The reviewer confirmed the exact nine-path allowlist,
+unchanged real model/Core/auth/session/persistence/idempotency/retry/cancel
+contracts, whole-file DEBUG fixture boundary, localized public Flow identity,
+security scan, conditional healthy-empty versus recovery anchoring, and honest
+VoiceOver limitation. The final Release 6 success above closes the reviewer's
+only operational condition. Slice 8 is eligible for its exact local commit;
+there is no push, PR, merge, deploy or remote access.

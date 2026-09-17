@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BodyFlow
@@ -115,6 +116,40 @@ struct AuthFormStateTests {
         #expect(FormAccessibilityText.hint(for: nil).isEmpty)
         #expect(
             FormAccessibilityText.validationAnnouncement(messages: []) == nil
+        )
+    }
+
+    @Test("premium auth copy is complete in Portuguese and English")
+    func premiumAuthCopyIsBilingual() throws {
+        #expect(
+            try AppLocalization.string(
+                "auth.sign-in.title",
+                for: .portugueseBrazil
+            ) == "Entrar"
+        )
+        #expect(
+            try AppLocalization.string(
+                "auth.sign-in.title",
+                for: .englishUnitedStates
+            ) == "Sign in"
+        )
+        #expect(
+            try AppLocalization.string(
+                "auth.recovery.confirmation",
+                for: .englishUnitedStates
+            ) == "If an account exists for this email, we will send recovery instructions."
+        )
+        #expect(
+            try AppLocalization.string(
+                "auth.error.invalid-credentials",
+                for: .englishUnitedStates
+            ) == "Invalid email or password."
+        )
+        #expect(
+            try AppLocalization.string(
+                "auth.accessibility.errors-format",
+                for: .portugueseBrazil
+            ) == "Erros no formulário: %@"
         )
     }
 }

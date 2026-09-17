@@ -4,12 +4,15 @@ import SwiftUI
 struct OnboardingCompletionView: View {
     let model: OnboardingFlowModel
     let onComplete: @MainActor () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Revise suas escolhas",
-                message: "Confira suas escolhas antes de concluir seu onboarding."
+                titleKey: "onboarding.completion.title",
+                titleFallback: "Revise suas escolhas",
+                messageKey: "onboarding.completion.message",
+                messageFallback: "Confira suas escolhas antes de concluir seu onboarding."
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -39,10 +42,16 @@ struct OnboardingCompletionView: View {
                 }
             }
             .padding(BodyFlowSpacing.md)
-            .background(BodyFlowColor.surface, in: RoundedRectangle(cornerRadius: 16))
+            .background(
+                BodyFlowColor.surface,
+                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
+            )
 
             Label(
-                "Seu perfil só será concluído depois que todas as escolhas forem salvas com sucesso.",
+                copy(
+                    "onboarding.completion.notice",
+                    fallback: "Seu perfil só será concluído depois que todas as escolhas forem salvas com sucesso."
+                ),
                 systemImage: "lock.shield"
             )
             .font(BodyFlowTypography.callout)
@@ -57,12 +66,14 @@ struct OnboardingCompletionView: View {
                             .tint(.white)
                             .accessibilityHidden(true)
                     }
-                    Text(model.operationState.isFailure ? "Tentar novamente" : "Ir para Hoje")
+                    Text(model.operationState.isFailure
+                         ? copy("onboarding.retry", fallback: "Tentar novamente")
+                         : copy("onboarding.completion.finish", fallback: "Ir para Hoje"))
                     Spacer()
                 }
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BodyFlowButtonStyle(role: .primary))
             .disabled(model.operationState == .saving)
             .accessibilityIdentifier("onboarding.go-to-today")
         }
@@ -75,6 +86,10 @@ struct OnboardingCompletionView: View {
             Text(label).font(BodyFlowTypography.caption).foregroundStyle(BodyFlowColor.secondaryText)
             Text(value).font(BodyFlowTypography.body).fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

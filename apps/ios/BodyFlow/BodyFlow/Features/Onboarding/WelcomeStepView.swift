@@ -7,8 +7,10 @@ struct WelcomeStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Boas-vindas",
-                message: "Confirme como quer ser chamado e o contexto do seu dia local."
+                titleKey: "onboarding.welcome.title",
+                titleFallback: "Boas-vindas",
+                messageKey: "onboarding.welcome.message",
+                messageFallback: "Confirme como quer ser chamado e o contexto do seu dia local."
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -96,7 +98,10 @@ struct WelcomeStepView: View {
         }
         .padding(BodyFlowSpacing.md)
         .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
-        .background(BodyFlowColor.surface, in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            BodyFlowColor.surface,
+            in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
+        )
     }
 }
 

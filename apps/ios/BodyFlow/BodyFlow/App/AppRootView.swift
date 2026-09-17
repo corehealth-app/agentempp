@@ -11,6 +11,7 @@ struct AppRootView: View {
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
     @State private var onboardingRetryTask: Task<Void, Never>?
+    @Environment(\.locale) private var locale
 
     init(
         model: AppFlowModel,
@@ -94,10 +95,10 @@ struct AppRootView: View {
                           onboardingCoordinator.loadFailed {
                     onboardingLoadError
                 } else {
-                    ProgressView("Carregando onboarding")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(BodyFlowColor.background)
-                        .accessibilityLabel("Carregando onboarding")
+                    rootLoading(
+                        "app.onboarding.loading",
+                        fallback: "Carregando onboarding"
+                    )
                 }
             case .authenticated(let userID):
                 if let owner = authenticatedShellCoordinator.renderableOwner(
@@ -117,10 +118,7 @@ struct AppRootView: View {
     }
 
     private var authenticatedSessionLoading: some View {
-        ProgressView("Carregando sessão")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(BodyFlowColor.background)
-            .accessibilityLabel("Carregando sessão")
+        rootLoading("app.session.loading", fallback: "Carregando sessão")
     }
 
     private var requestedAuthenticatedUserID: String? {
@@ -142,21 +140,48 @@ struct AppRootView: View {
 
     private var onboardingLoadError: some View {
         ContentUnavailableView {
-            Label("Não foi possível carregar", systemImage: "exclamationmark.triangle")
+            Label(
+                rootCopy("app.onboarding.error.title", fallback: "Não foi possível carregar"),
+                systemImage: "exclamationmark.triangle"
+            )
         } description: {
-            Text("Tente novamente para continuar seu onboarding.")
+            Text(rootCopy(
+                "app.onboarding.error.message",
+                fallback: "Tente novamente para continuar seu onboarding."
+            ))
         } actions: {
-            Button("Tentar novamente") {
+            Button(rootCopy("app.retry", fallback: "Tentar novamente")) {
                 onboardingCoordinator.prepareForRetry()
                 onboardingRetryTask?.cancel()
                 onboardingRetryTask = Task {
                     await model.retryOnboardingRestore()
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BodyFlowButtonStyle(role: .primary))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
+    }
+
+    private func rootLoading(
+        _ key: String.LocalizationValue,
+        fallback: String
+    ) -> some View {
+        VStack(spacing: BodyFlowSpacing.lg) {
+            BodyFlowBrandIdentityView()
+            ProgressView(rootCopy(key, fallback: fallback))
+                .tint(BodyFlowColor.color(.brandPrimary))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BodyFlowColor.background)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func rootCopy(
+        _ key: String.LocalizationValue,
+        fallback: String
+    ) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 
     private func synchronizeOnboardingModel() async {

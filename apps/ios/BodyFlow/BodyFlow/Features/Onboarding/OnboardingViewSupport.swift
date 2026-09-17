@@ -3,19 +3,32 @@ import SwiftUI
 
 @MainActor
 struct OnboardingStepHeader: View {
-    let title: String
-    let message: String
+    let titleKey: String.LocalizationValue
+    let titleFallback: String
+    let messageKey: String.LocalizationValue
+    let messageFallback: String
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text(title)
+            Text(PremiumPresentationCopy.string(
+                titleKey,
+                locale: locale,
+                fallback: titleFallback
+            ))
                 .font(BodyFlowTypography.largeTitle)
                 .fontWeight(.bold)
                 .foregroundStyle(BodyFlowColor.primaryText)
-            Text(message)
+            Text(PremiumPresentationCopy.string(
+                messageKey,
+                locale: locale,
+                fallback: messageFallback
+            ))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.secondaryText)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("onboarding.step-header")
     }
 }
 
@@ -23,12 +36,18 @@ struct OnboardingStepHeader: View {
 struct OnboardingFieldIssue: View {
     let model: OnboardingFlowModel
     let candidates: [OnboardingValidationIssue]
+    @Environment(\.locale) private var locale
 
     var body: some View {
         if let issue = candidates.first(where: model.validationIssues.contains) {
-            Label(issue.message, systemImage: "exclamationmark.circle.fill")
+            Label(
+                issue.message(
+                    for: BodyFlowPresentationLanguage.resolve(locale)
+                ),
+                systemImage: "exclamationmark.circle.fill"
+            )
                 .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.warning)
+                .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
         }
@@ -39,8 +58,12 @@ extension OnboardingFlowModel {
     func accessibilityHint(
         for candidates: [OnboardingValidationIssue]
     ) -> String {
-        FormAccessibilityText.hint(
-            for: candidates.first(where: validationIssues.contains)?.message
+        let language = BodyFlowPresentationLanguage.resolve(.current)
+        return FormAccessibilityText.hint(
+            for: candidates.first(where: validationIssues.contains)?.message(
+                for: language
+            ),
+            language: language
         )
     }
 }

@@ -8,11 +8,14 @@ struct PasswordRecoveryView: View {
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
     @FocusState private var emailIsFocused: Bool
+    @Environment(\.locale) private var locale
 
     var body: some View {
         AuthScreenLayout(
-            title: "Recuperar senha",
-            message: "Informe seu e-mail para receber as orientações disponíveis."
+            titleKey: "auth.recovery.title",
+            titleFallback: "Recuperar senha",
+            messageKey: "auth.recovery.message",
+            messageFallback: "Informe seu e-mail para receber as orientações disponíveis."
         ) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 AuthOperationMessage(state: model.authOperationState)
@@ -20,7 +23,7 @@ struct PasswordRecoveryView: View {
 
                 if model.authOperationState == .recoveryConfirmation {
                     Label(
-                        "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação.",
+                        copy("auth.recovery.confirmation", fallback: "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."),
                         systemImage: "checkmark.circle.fill"
                     )
                     .font(BodyFlowTypography.body)
@@ -29,13 +32,13 @@ struct PasswordRecoveryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         BodyFlowColor.accent.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
                     )
                     .accessibilityIdentifier("auth.recovery.confirmation")
                 } else {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                        Text("E-mail").font(BodyFlowTypography.headline)
-                        TextField("nome@exemplo.com", text: $email)
+                        Text(copy("auth.common.email", fallback: "E-mail")).font(BodyFlowTypography.headline)
+                        TextField(copy("auth.common.email-placeholder", fallback: "nome@exemplo.com"), text: $email)
                             .textContentType(.emailAddress)
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
@@ -43,8 +46,8 @@ struct PasswordRecoveryView: View {
                             .submitLabel(.send)
                             .focused($emailIsFocused)
                             .onSubmit(submit)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("E-mail")
+                            .bodyFlowField()
+                            .accessibilityLabel(copy("auth.common.email", fallback: "E-mail"))
                             .accessibilityHint(accessibilityHint)
                             .accessibilityIdentifier("auth.email")
 
@@ -61,12 +64,15 @@ struct PasswordRecoveryView: View {
                                     .tint(.white)
                                     .accessibilityHidden(true)
                             }
-                            Text(isSubmitting ? "Enviando" : "Enviar instruções")
+                            Text(copy(
+                                isSubmitting ? "auth.recovery.submitting" : "auth.recovery.submit",
+                                fallback: isSubmitting ? "Enviando" : "Enviar instruções"
+                            ))
                             Spacer()
                         }
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("auth.recovery.submit")
                 }
@@ -74,13 +80,14 @@ struct PasswordRecoveryView: View {
                 Button {
                     Task { await model.showSignIn() }
                 } label: {
-                    Text("Voltar para entrar")
+                    Text(copy("auth.common.back-to-sign-in", fallback: "Voltar para entrar"))
                         .frame(
                             maxWidth: .infinity,
                             minHeight: BodyFlowSpacing.minimumTapTarget
                         )
                         .contentShape(Rectangle())
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityIdentifier("auth.back-to-sign-in")
             }
         }
@@ -94,7 +101,10 @@ struct PasswordRecoveryView: View {
     }
 
     private var accessibilityHint: String {
-        FormAccessibilityText.hint(for: validationIssues.first?.message)
+        FormAccessibilityText.hint(
+            for: validationIssues.first?.message(for: language),
+            language: language
+        )
     }
 
     private func submit() {
@@ -115,7 +125,8 @@ struct PasswordRecoveryView: View {
 
     private func announceValidationIssues() {
         guard let message = FormAccessibilityText.validationAnnouncement(
-            messages: validationIssues.map(\.message)
+            messages: validationIssues.map { $0.message(for: language) },
+            language: language
         ) else { return }
         UIAccessibility.post(notification: .announcement, argument: message)
     }
@@ -124,9 +135,9 @@ struct PasswordRecoveryView: View {
         let message: String
         switch model.authOperationState {
         case .recoveryConfirmation:
-            message = "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."
+            message = copy("auth.recovery.confirmation", fallback: "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação.")
         case .failed(let error):
-            message = error.authMessage
+            message = error.authMessage(for: language)
         case .idle, .submitting:
             return
         }
@@ -136,6 +147,14 @@ struct PasswordRecoveryView: View {
     private func cancelSubmission() {
         submissionTask?.cancel()
         submissionTask = nil
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

@@ -18,20 +18,25 @@ enum OnboardingConsentAccessibilityID {
 @MainActor
 struct ConsentStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             if model.requirements.available {
                 OnboardingStepHeader(
-                    title: "Documentos e confirmações",
-                    message: "Leia cada documento e registre a ação indicada para continuar."
+                    titleKey: "onboarding.consent.title",
+                    titleFallback: "Documentos e confirmações",
+                    messageKey: "onboarding.consent.message",
+                    messageFallback: "Leia cada documento e registre a ação indicada para continuar."
                 )
                 officialDocuments
             } else {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                     OnboardingStepHeader(
-                        title: "Consentimento de desenvolvimento",
-                        message: "Ambiente de validação. Estes documentos são sintéticos e não representam um aceite jurídico real."
+                        titleKey: "onboarding.consent.development.title",
+                        titleFallback: "Consentimento de desenvolvimento",
+                        messageKey: "onboarding.consent.development.message",
+                        messageFallback: "Ambiente de validação. Estes documentos são sintéticos e não representam um aceite jurídico real."
                     )
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                         consentButton(
@@ -58,23 +63,40 @@ struct ConsentStepView: View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             ForEach(model.requirements.documents, id: \.documentKey) { document in
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                    Text(document.documentKey)
-                        .font(BodyFlowTypography.headline)
-                    Text(
-                        "Versão \(document.version) · \(document.purpose) · "
-                            + (document.required ? "Obrigatório" : "Opcional")
-                    )
+                    HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                        Text(document.documentKey)
+                            .font(BodyFlowTypography.headline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Text(document.required
+                             ? copy("onboarding.consent.required", fallback: "Obrigatório")
+                             : copy("onboarding.consent.optional", fallback: "Opcional"))
+                            .font(BodyFlowTypography.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BodyFlowColor.color(.brandPrimary))
+                    }
+                    Text(document.purpose)
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(document.body ?? "")
                         .font(BodyFlowTypography.body)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(PremiumPresentationCopy.format(
+                        "onboarding.consent.version-format",
+                        locale: locale,
+                        fallback: "Versão %@",
+                        document.version
+                    ))
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
                     officialActionButton(for: document)
                 }
                 .padding(BodyFlowSpacing.md)
                 .background(
                     BodyFlowColor.surface,
-                    in: RoundedRectangle(cornerRadius: 12)
+                    in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
                 )
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(
@@ -109,6 +131,12 @@ struct ConsentStepView: View {
             )
         }
         .buttonStyle(.plain)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: BodyFlowSpacing.minimumTapTarget,
+            alignment: .leading
+        )
+        .contentShape(Rectangle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(
             OnboardingConsentAccessibilityID.officialAction(document.documentKey)
@@ -117,10 +145,14 @@ struct ConsentStepView: View {
 
     private func actionLabel(_ action: OnboardingLegalAction) -> String {
         switch action {
-        case .acceptance: "Aceitar"
-        case .acknowledgement: "Confirmar ciência"
-        case .consent: "Consentir"
+        case .acceptance: copy("onboarding.consent.accept", fallback: "Aceitar")
+        case .acknowledgement: copy("onboarding.consent.acknowledge", fallback: "Confirmar ciência")
+        case .consent: copy("onboarding.consent.consent", fallback: "Consentir")
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 
     private func consentButton(
@@ -162,7 +194,7 @@ struct ConsentStepView: View {
             .padding(BodyFlowSpacing.sm)
             .background(
                 BodyFlowColor.surface,
-                in: RoundedRectangle(cornerRadius: 12)
+                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
             )
         }
         .buttonStyle(.plain)

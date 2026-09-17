@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import Testing
 
@@ -121,6 +122,46 @@ struct OnboardingPresentationTests {
                 messages: model.validationIssues.map(\.message)
             )
                 == "Erros no formulário: Informe como você quer ser chamado. Confirme um país válido."
+        )
+    }
+
+    @Test("premium onboarding copy is complete in Portuguese and English")
+    func premiumOnboardingCopyIsBilingual() throws {
+        #expect(
+            try AppLocalization.string(
+                "onboarding.persona.title",
+                for: .portugueseBrazil
+            ) == "Estilo do Flow"
+        )
+        #expect(
+            try AppLocalization.string(
+                "onboarding.persona.title",
+                for: .englishUnitedStates
+            ) == "Flow’s style"
+        )
+        #expect(
+            try AppLocalization.string(
+                "onboarding.progress.format",
+                for: .englishUnitedStates
+            ) == "Step %lld of %lld"
+        )
+        #expect(
+            try AppLocalization.string(
+                "onboarding.consent.development.message",
+                for: .englishUnitedStates
+            ) == "QA validation environment. These documents are synthetic and do not represent real legal acceptance."
+        )
+        #expect(
+            try AppLocalization.string(
+                "onboarding.validation.display-name-required",
+                for: .englishUnitedStates
+            ) == "Enter what you would like to be called."
+        )
+        #expect(
+            try AppLocalization.string(
+                "onboarding.validation.consent-required",
+                for: .portugueseBrazil
+            ) == "Confirme as ações exigidas para todos os documentos atuais."
         )
     }
 

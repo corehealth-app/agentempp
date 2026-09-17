@@ -1,6 +1,1264 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+"app.onboarding.error.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Try again to continue onboarding."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Tente novamente para continuar seu onboarding."
+      }
+    }
+  }
+},
+"app.onboarding.error.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Could not load"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Não foi possível carregar"
+      }
+    }
+  }
+},
+"app.onboarding.loading" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Loading onboarding"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Carregando onboarding"
+      }
+    }
+  }
+},
+"app.retry" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Try again"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Tentar novamente"
+      }
+    }
+  }
+},
+"app.session.loading" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Loading session"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Carregando sessão"
+      }
+    }
+  }
+},
+"auth.accessibility.error-format" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Error: %@"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Erro: %@"
+      }
+    }
+  }
+},
+"auth.accessibility.errors-format" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Form errors: %@"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Erros no formulário: %@"
+      }
+    }
+  }
+},
+"auth.error.confirmation-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Confirm your email before continuing." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme seu e-mail antes de continuar." } }
+  }
+},
+"auth.error.invalid-credentials" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Invalid email or password." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "E-mail ou senha inválidos." } }
+  }
+},
+"auth.error.invalid-input" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Review the information entered." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Revise os dados informados." } }
+  }
+},
+"auth.error.operation-unavailable" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "This operation is not available right now." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta operação não está disponível agora." } }
+  }
+},
+"auth.error.service-unavailable" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "The service is temporarily unavailable. Try again." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "O serviço está temporariamente indisponível. Tente novamente." } }
+  }
+},
+"auth.error.storage-unavailable" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Local data could not be accessed. Try again." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível acessar os dados locais. Tente novamente." } }
+  }
+},
+"auth.common.back-to-sign-in" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Back to sign in"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Voltar para entrar"
+      }
+    }
+  }
+},
+"auth.common.email" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Email"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "E-mail"
+      }
+    }
+  }
+},
+"auth.common.email-placeholder" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "name@example.com"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "nome@exemplo.com"
+      }
+    }
+  }
+},
+"auth.common.password" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Password"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Senha"
+      }
+    }
+  }
+},
+"auth.common.password-confirmation" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirm password"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirmar senha"
+      }
+    }
+  }
+},
+"auth.confirmation.development" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Continue in the test environment"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Continuar no ambiente de teste"
+      }
+    }
+  }
+},
+"auth.confirmation.message-format" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "We sent confirmation instructions to %@. Confirm your email before creating your profile."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enviamos as orientações de confirmação para %@. Confirme o e-mail antes de criar seu perfil."
+      }
+    }
+  }
+},
+"auth.confirmation.submitting" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirming"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirmando"
+      }
+    }
+  }
+},
+"auth.confirmation.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirm your email"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirme seu e-mail"
+      }
+    }
+  }
+},
+"auth.recovery.confirmation" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "If an account exists for this email, we will send recovery instructions."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."
+      }
+    }
+  }
+},
+"auth.recovery.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enter your email to receive the available instructions."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Informe seu e-mail para receber as orientações disponíveis."
+      }
+    }
+  }
+},
+"auth.recovery.submit" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Send instructions"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enviar instruções"
+      }
+    }
+  }
+},
+"auth.recovery.submitting" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Sending"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enviando"
+      }
+    }
+  }
+},
+"auth.recovery.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Recover password"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Recuperar senha"
+      }
+    }
+  }
+},
+"auth.sign-in.create-account" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Create account"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Criar conta"
+      }
+    }
+  }
+},
+"auth.sign-in.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Use your email and password to continue."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Use seu e-mail e sua senha para continuar."
+      }
+    }
+  }
+},
+"auth.sign-in.recovery" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "I forgot my password"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Esqueci minha senha"
+      }
+    }
+  }
+},
+"auth.sign-in.submit" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Sign in"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Entrar"
+      }
+    }
+  }
+},
+"auth.sign-in.submitting" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Signing in"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Entrando"
+      }
+    }
+  }
+},
+"auth.sign-in.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Sign in"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Entrar"
+      }
+    }
+  }
+},
+"auth.sign-up.existing-account" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "I already have an account"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Já tenho uma conta"
+      }
+    }
+  }
+},
+"auth.sign-up.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enter an email and password to get started."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Cadastre um e-mail e uma senha para começar."
+      }
+    }
+  }
+},
+"auth.sign-up.submit" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Create account"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Criar conta"
+      }
+    }
+  }
+},
+"auth.sign-up.submitting" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Creating account"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Criando conta"
+      }
+    }
+  }
+},
+"auth.sign-up.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Create account"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Criar conta"
+      }
+    }
+  }
+},
+"auth.validation.confirmation-required" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirm your password."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirme sua senha."
+      }
+    }
+  }
+},
+"auth.validation.email-malformed" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enter a valid email."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Informe um e-mail válido."
+      }
+    }
+  }
+},
+"auth.validation.email-required" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enter your email."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Informe seu e-mail."
+      }
+    }
+  }
+},
+"auth.validation.password-required" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Enter your password."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Informe sua senha."
+      }
+    }
+  }
+},
+"auth.validation.passwords-mismatch" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Passwords do not match."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "As senhas não coincidem."
+      }
+    }
+  }
+},
+"auth.validation.review" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Review the highlighted fields."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Revise os campos indicados."
+      }
+    }
+  }
+},
+"onboarding.back" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Back"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Voltar"
+      }
+    }
+  }
+},
+"onboarding.body-data.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "This data helps personalize your experience."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Esses dados ajudam a personalizar sua experiência."
+      }
+    }
+  }
+},
+"onboarding.body-data.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Body data"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Dados corporais"
+      }
+    }
+  }
+},
+"onboarding.completion.finish" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Go to Today"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Ir para Hoje"
+      }
+    }
+  }
+},
+"onboarding.completion.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Review your choices before completing onboarding."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confira suas escolhas antes de concluir seu onboarding."
+      }
+    }
+  }
+},
+"onboarding.completion.notice" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Your profile will be completed only after every choice is saved successfully."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Seu perfil só será concluído depois que todas as escolhas forem salvas com sucesso."
+      }
+    }
+  }
+},
+"onboarding.completion.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Review your choices"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Revise suas escolhas"
+      }
+    }
+  }
+},
+"onboarding.consent.accept" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Accept"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Aceitar"
+      }
+    }
+  }
+},
+"onboarding.consent.acknowledge" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Acknowledge"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirmar ciência"
+      }
+    }
+  }
+},
+"onboarding.consent.consent" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Consent"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Consentir"
+      }
+    }
+  }
+},
+"onboarding.consent.development.message" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "QA validation environment. These documents are synthetic and do not represent real legal acceptance." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Ambiente de validação de QA. Estes documentos são sintéticos e não representam um aceite jurídico real." } }
+  }
+},
+"onboarding.consent.development.title" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Development consent" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Consentimento de desenvolvimento" } }
+  }
+},
+"onboarding.consent.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Read each document and complete the indicated action to continue."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Leia cada documento e registre a ação indicada para continuar."
+      }
+    }
+  }
+},
+"onboarding.consent.optional" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Optional"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Opcional"
+      }
+    }
+  }
+},
+"onboarding.consent.required" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Required"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Obrigatório"
+      }
+    }
+  }
+},
+"onboarding.consent.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Documents and confirmations"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Documentos e confirmações"
+      }
+    }
+  }
+},
+"onboarding.consent.version-format" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Version %@"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Versão %@"
+      }
+    }
+  }
+},
+"onboarding.continue" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Continue"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Continuar"
+      }
+    }
+  }
+},
+"onboarding.objective.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Choose an option to guide your experience."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Escolha uma opção para orientar a organização da experiência."
+      }
+    }
+  }
+},
+"onboarding.objective.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Your goal"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Seu objetivo"
+      }
+    }
+  }
+},
+"onboarding.persona.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Choose how Flow talks with you. This does not change calculations or guidance."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Escolha como o Flow conversa com você. Isso não altera cálculos nem orientações."
+      }
+    }
+  }
+},
+"onboarding.persona.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Flow’s style"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Estilo do Flow"
+      }
+    }
+  }
+},
+"onboarding.progress.format" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Step %lld of %lld"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Etapa %lld de %lld"
+      }
+    }
+  }
+},
+"onboarding.retry" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Try again"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Tentar novamente"
+      }
+    }
+  }
+},
+"onboarding.routine.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Tell us about your habits in a typical week."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Conte como são seus hábitos em uma semana comum."
+      }
+    }
+  }
+},
+"onboarding.routine.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Your routine"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Sua rotina"
+      }
+    }
+  }
+},
+"onboarding.saving" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Saving"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Salvando"
+      }
+    }
+  }
+},
+"onboarding.validation.review" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Review the highlighted fields."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Revise os campos indicados."
+      }
+    }
+  }
+},
+"onboarding.documents-unavailable.message" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Onboarding cannot be completed without the current official documents." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Não é possível concluir o onboarding sem os documentos oficiais atuais." } }
+  }
+},
+"onboarding.documents-unavailable.title" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Documents unavailable" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Documentos indisponíveis" } }
+  }
+},
+"onboarding.validation.activity-level-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select your activity level." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione seu nível de atividade." } }
+  }
+},
+"onboarding.validation.bedtime-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter a valid bedtime." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe um horário válido para dormir." } }
+  }
+},
+"onboarding.validation.biological-sex-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select your biological sex." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione o sexo biológico." } }
+  }
+},
+"onboarding.validation.birth-date-in-future" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Date of birth cannot be in the future." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "A data de nascimento não pode estar no futuro." } }
+  }
+},
+"onboarding.validation.birth-date-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter your date of birth." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe a data de nascimento." } }
+  }
+},
+"onboarding.validation.body-fat-out-of-range" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter body fat between 3% and 60%, or leave it blank." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe gordura corporal entre 3% e 60%, ou deixe em branco." } }
+  }
+},
+"onboarding.validation.consent-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Complete the required actions for all current documents." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme as ações exigidas para todos os documentos atuais." } }
+  }
+},
+"onboarding.validation.country-invalid" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Confirm a valid country." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme um país válido." } }
+  }
+},
+"onboarding.validation.development-consent-unavailable" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "The required documents are unavailable." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Os documentos necessários não estão disponíveis." } }
+  }
+},
+"onboarding.validation.display-name-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter what you would like to be called." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe como você quer ser chamado." } }
+  }
+},
+"onboarding.validation.food-organization-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Confirm how you organize your meals." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme como você organiza as refeições." } }
+  }
+},
+"onboarding.validation.height-out-of-range" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter a height between 100 and 250 cm." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe uma altura entre 100 e 250 cm." } }
+  }
+},
+"onboarding.validation.hunger-level-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select your hunger level." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione seu nível de fome." } }
+  }
+},
+"onboarding.validation.locale-unsupported" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Confirm a supported language." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme um idioma compatível." } }
+  }
+},
+"onboarding.validation.objective-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select an objective." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione um objetivo." } }
+  }
+},
+"onboarding.validation.persona-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select a Flow style." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione um estilo do Flow." } }
+  }
+},
+"onboarding.validation.time-zone-invalid" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Confirm a valid time zone." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme um fuso horário válido." } }
+  }
+},
+"onboarding.validation.training-frequency-out-of-range" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter between 0 and 7 workouts per week." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe de 0 a 7 treinos por semana." } }
+  }
+},
+"onboarding.validation.wake-time-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter a valid wake-up time." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe um horário válido para acordar." } }
+  }
+},
+"onboarding.validation.water-intake-required" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Select your water intake." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Selecione seu consumo de água." } }
+  }
+},
+"onboarding.validation.weight-out-of-range" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Enter a weight between 30 and 300 kg." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe um peso entre 30 e 300 kg." } }
+  }
+},
+"onboarding.welcome.message" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirm what you would like to be called and your local context."
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Confirme como quer ser chamado e o contexto do seu dia local."
+      }
+    }
+  }
+},
+"onboarding.welcome.title" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Welcome"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Boas-vindas"
+      }
+    }
+  }
+},
+"splash.loading" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Loading"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Carregando"
+      }
+    }
+  }
+},
     "brand.descriptor" : {
       "localizations" : {
         "en" : {

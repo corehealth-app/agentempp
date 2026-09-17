@@ -7,8 +7,10 @@ struct BodyDataStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Dados corporais",
-                message: "Esses dados ajudam a personalizar sua experiência."
+                titleKey: "onboarding.body-data.title",
+                titleFallback: "Dados corporais",
+                messageKey: "onboarding.body-data.message",
+                messageFallback: "Esses dados ajudam a personalizar sua experiência."
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {

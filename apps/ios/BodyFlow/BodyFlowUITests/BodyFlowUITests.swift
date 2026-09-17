@@ -390,16 +390,19 @@ final class BodyFlowUITests: XCTestCase {
             element("screen.onboarding.consent", in: app)
                 .waitForExistence(timeout: 3)
         )
-        let termsConsent = app.buttons["consent.terms"]
-        termsConsent.tap()
-        XCTAssertTrue(termsConsent.isSelected)
-        XCTAssertTrue(termsConsent.label.contains("Selecionado"))
-        let privacyConsent = app.buttons["consent.privacy"]
-        privacyConsent.tap()
-        XCTAssertTrue(privacyConsent.isSelected)
-        XCTAssertTrue(privacyConsent.label.contains("Selecionado"))
-        assertMinimumTapTarget(termsConsent)
-        assertMinimumTapTarget(privacyConsent)
+        let documentKeys = [
+            "qa_onboarding_required",
+            "qa_onboarding_notice",
+            "qa_onboarding_consent",
+        ]
+        for key in documentKeys {
+            let action = app.buttons["onboarding.legal-action.\(key)"]
+            for _ in 0..<16 where !action.isHittable { app.swipeUp() }
+            XCTAssertTrue(action.isHittable, "A ação explícita \(key) deve ser alcançável")
+            action.tap()
+            XCTAssertTrue(action.isSelected)
+            assertMinimumTapTarget(action)
+        }
         continueButton.tap()
 
         XCTAssertTrue(
@@ -609,6 +612,16 @@ final class BodyFlowUITests: XCTestCase {
         UIPasteboard.general.string = text
         defer { UIPasteboard.general.string = nil }
         field.typeKey("v", modifierFlags: .command)
+        if !waitForSecureEntry(field, characterCount: text.count, timeout: 1) {
+            // Simulator paste can be rejected after the system strong-password
+            // sheet is dismissed. Fall back to exact single-character input;
+            // bulk typeText is intentionally avoided because iOS 26.5 drops it.
+            field.typeKey("a", modifierFlags: .command)
+            field.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+            for character in text {
+                field.typeText(String(character))
+            }
+        }
         XCTAssertTrue(waitForSecureEntry(field, characterCount: text.count))
     }
 

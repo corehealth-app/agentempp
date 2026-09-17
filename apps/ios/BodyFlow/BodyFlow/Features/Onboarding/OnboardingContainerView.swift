@@ -5,6 +5,7 @@ import UIKit
 struct OnboardingContainerView: View {
     let model: OnboardingFlowModel
     @State private var submissionTask: Task<Void, Never>?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         NavigationStack {
@@ -33,7 +34,13 @@ struct OnboardingContainerView: View {
     private var progress: some View {
         let position = (OnboardingStep.allCases.firstIndex(of: model.step) ?? 0) + 1
         return VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text("Etapa \(position) de \(OnboardingStep.allCases.count)")
+            Text(PremiumPresentationCopy.format(
+                "onboarding.progress.format",
+                locale: locale,
+                fallback: "Etapa %lld de %lld",
+                position,
+                OnboardingStep.allCases.count
+            ))
                 .font(BodyFlowTypography.callout)
                 .fontWeight(.semibold)
             ProgressView(value: Double(position), total: Double(OnboardingStep.allCases.count))
@@ -80,7 +87,7 @@ struct OnboardingContainerView: View {
                         }
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
                     .disabled(
                         model.operationState == .saving
                             || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
@@ -92,13 +99,14 @@ struct OnboardingContainerView: View {
                     Button {
                         Task { await model.back() }
                     } label: {
-                        Text("Voltar")
+                        Text(copy("onboarding.back", fallback: "Voltar"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                         .disabled(model.operationState == .saving)
                         .accessibilityIdentifier("onboarding.back")
                 }
@@ -108,9 +116,9 @@ struct OnboardingContainerView: View {
 
     private var continueTitle: String {
         switch model.operationState {
-        case .idle: "Continuar"
-        case .saving: "Salvando"
-        case .failed: "Tentar novamente"
+        case .idle: copy("onboarding.continue", fallback: "Continuar")
+        case .saving: copy("onboarding.saving", fallback: "Salvando")
+        case .failed: copy("onboarding.retry", fallback: "Tentar novamente")
         }
     }
 
@@ -134,12 +142,14 @@ struct OnboardingContainerView: View {
 
     private func announceOperationResultIfNeeded() {
         let message: String
+        let language = BodyFlowPresentationLanguage.resolve(locale)
         if let validationMessage = FormAccessibilityText.validationAnnouncement(
-            messages: model.validationIssues.map(\.message)
+            messages: model.validationIssues.map { $0.message(for: language) },
+            language: language
         ) {
             message = validationMessage
         } else if case .failed(let error) = model.operationState {
-            message = error.authMessage
+            message = error.authMessage(for: language)
         } else {
             return
         }
@@ -150,6 +160,10 @@ struct OnboardingContainerView: View {
         submissionTask?.cancel()
         submissionTask = nil
         model.cancelActiveSubmission()
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 
@@ -179,32 +193,80 @@ extension OnboardingValidationIssue {
         case .developmentConsentUnavailable: "Os documentos necessários não estão disponíveis."
         }
     }
+
+    func message(for language: SupportedAppLanguage) -> String {
+        let key: String.LocalizationValue = switch self {
+        case .displayNameRequired: "onboarding.validation.display-name-required"
+        case .localeUnsupported: "onboarding.validation.locale-unsupported"
+        case .countryInvalid: "onboarding.validation.country-invalid"
+        case .timeZoneInvalid: "onboarding.validation.time-zone-invalid"
+        case .biologicalSexRequired: "onboarding.validation.biological-sex-required"
+        case .birthDateRequired: "onboarding.validation.birth-date-required"
+        case .birthDateInFuture: "onboarding.validation.birth-date-in-future"
+        case .heightOutOfRange: "onboarding.validation.height-out-of-range"
+        case .weightOutOfRange: "onboarding.validation.weight-out-of-range"
+        case .bodyFatOutOfRange: "onboarding.validation.body-fat-out-of-range"
+        case .objectiveRequired: "onboarding.validation.objective-required"
+        case .activityLevelRequired: "onboarding.validation.activity-level-required"
+        case .trainingFrequencyOutOfRange: "onboarding.validation.training-frequency-out-of-range"
+        case .waterIntakeRequired: "onboarding.validation.water-intake-required"
+        case .hungerLevelRequired: "onboarding.validation.hunger-level-required"
+        case .wakeTimeRequired: "onboarding.validation.wake-time-required"
+        case .bedtimeRequired: "onboarding.validation.bedtime-required"
+        case .foodOrganizationRequired: "onboarding.validation.food-organization-required"
+        case .personaRequired: "onboarding.validation.persona-required"
+        case .consentRequired: "onboarding.validation.consent-required"
+        case .developmentConsentUnavailable: "onboarding.validation.development-consent-unavailable"
+        }
+        return (try? AppLocalization.string(key, for: language)) ?? message
+    }
 }
 
 @MainActor
 private struct OnboardingDocumentsUnavailableView: View {
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ContentUnavailableView {
-            Label("Documentos indisponíveis", systemImage: "lock.fill")
+            Label(copy(
+                "onboarding.documents-unavailable.title",
+                fallback: "Documentos indisponíveis"
+            ), systemImage: "lock.fill")
         } description: {
-            Text("Não é possível concluir o onboarding sem os documentos oficiais atuais.")
+            Text(copy(
+                "onboarding.documents-unavailable.message",
+                fallback: "Não é possível concluir o onboarding sem os documentos oficiais atuais."
+            ))
         }
         .accessibilityIdentifier("screen.onboarding.consent-unavailable")
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 
 @MainActor
 private struct OnboardingOperationMessage: View {
     let state: OnboardingOperationState
+    @Environment(\.locale) private var locale
 
     var body: some View {
         if case .failed(let error) = state {
-            Label(error.authMessage, systemImage: "exclamationmark.circle.fill")
+            Label(
+                error.authMessage(
+                    for: BodyFlowPresentationLanguage.resolve(locale)
+                ),
+                systemImage: "exclamationmark.circle.fill"
+            )
                 .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.warning)
+                .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
                 .padding(BodyFlowSpacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(BodyFlowColor.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+                .background(
+                    BodyFlowColor.color(.feedbackDestructive).opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: BodyFlowRadius.field)
+                )
                 .accessibilityIdentifier("onboarding.error")
         }
     }
@@ -213,19 +275,31 @@ private struct OnboardingOperationMessage: View {
 @MainActor
 private struct OnboardingValidationSummary: View {
     let issues: [OnboardingValidationIssue]
+    @Environment(\.locale) private var locale
 
     var body: some View {
         if !issues.isEmpty {
+            let language = BodyFlowPresentationLanguage.resolve(locale)
+            let messages = issues.map { $0.message(for: language) }
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Revise os campos indicados.").fontWeight(.semibold)
-                ForEach(Array(issues.enumerated()), id: \.offset) { _, issue in
-                    Text("• \(issue.message)")
+                Text(PremiumPresentationCopy.string(
+                    "onboarding.validation.review",
+                    locale: locale,
+                    fallback: "Revise os campos indicados."
+                )).fontWeight(.semibold)
+                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                    Text("• \(message)")
                 }
             }
             .font(BodyFlowTypography.callout)
-            .foregroundStyle(BodyFlowColor.warning)
+            .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Erros no formulário: " + issues.map(\.message).joined(separator: " "))
+            .accessibilityLabel(
+                FormAccessibilityText.validationAnnouncement(
+                    messages: messages,
+                    language: language
+                ) ?? ""
+            )
         }
     }
 }

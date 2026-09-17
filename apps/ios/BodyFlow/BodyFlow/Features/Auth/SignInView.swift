@@ -14,20 +14,23 @@ struct SignInView: View {
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
     @FocusState private var focusedField: Field?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         AuthScreenLayout(
-            title: "Entrar",
-            message: "Use seu e-mail e sua senha para continuar."
+            titleKey: "auth.sign-in.title",
+            titleFallback: "Entrar",
+            messageKey: "auth.sign-in.message",
+            messageFallback: "Use seu e-mail e sua senha para continuar."
         ) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 AuthOperationMessage(state: model.authOperationState)
                 AuthValidationSummary(issues: validationIssues)
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("E-mail")
+                    Text(copy("auth.common.email", fallback: "E-mail"))
                         .font(BodyFlowTypography.headline)
-                    TextField("nome@exemplo.com", text: $email)
+                    TextField(copy("auth.common.email-placeholder", fallback: "nome@exemplo.com"), text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -35,8 +38,8 @@ struct SignInView: View {
                         .submitLabel(.next)
                         .focused($focusedField, equals: .email)
                         .onSubmit { focusedField = .password }
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("E-mail")
+                        .bodyFlowField()
+                        .accessibilityLabel(copy("auth.common.email", fallback: "E-mail"))
                         .accessibilityHint(
                             accessibilityHint(
                                 for: [.emailRequired, .emailMalformed]
@@ -47,15 +50,15 @@ struct SignInView: View {
                 }
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("Senha")
+                    Text(copy("auth.common.password", fallback: "Senha"))
                         .font(BodyFlowTypography.headline)
-                    SecureField("Senha", text: $password)
+                    SecureField(copy("auth.common.password", fallback: "Senha"), text: $password)
                         .textContentType(.password)
                         .submitLabel(.go)
                         .focused($focusedField, equals: .password)
                         .onSubmit(submit)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Senha")
+                        .bodyFlowField()
+                        .accessibilityLabel(copy("auth.common.password", fallback: "Senha"))
                         .accessibilityHint(
                             accessibilityHint(for: [.passwordRequired])
                         )
@@ -71,12 +74,15 @@ struct SignInView: View {
                                 .tint(.white)
                                 .accessibilityHidden(true)
                         }
-                        Text(isSubmitting ? "Entrando" : "Entrar")
+                        Text(copy(
+                            isSubmitting ? "auth.sign-in.submitting" : "auth.sign-in.submit",
+                            fallback: isSubmitting ? "Entrando" : "Entrar"
+                        ))
                         Spacer()
                     }
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BodyFlowButtonStyle(role: .primary))
                 .disabled(isSubmitting)
                 .accessibilityIdentifier("auth.sign-in.submit")
 
@@ -84,25 +90,27 @@ struct SignInView: View {
                     Button {
                         Task { await model.showSignUp() }
                     } label: {
-                        Text("Criar conta")
+                        Text(copy("auth.sign-in.create-account", fallback: "Criar conta"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("auth.open-sign-up")
 
                     Button {
                         Task { await model.showPasswordRecovery() }
                     } label: {
-                        Text("Esqueci minha senha")
+                        Text(copy("auth.sign-in.recovery", fallback: "Esqueci minha senha"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .tertiary))
                     .accessibilityIdentifier("auth.open-recovery")
                 }
                 .frame(maxWidth: .infinity)
@@ -130,7 +138,8 @@ struct SignInView: View {
         for candidates: [AuthValidationIssue]
     ) -> String {
         FormAccessibilityText.hint(
-            for: candidates.first(where: validationIssues.contains)?.message
+            for: candidates.first(where: validationIssues.contains)?.message(for: language),
+            language: language
         )
     }
 
@@ -155,7 +164,8 @@ struct SignInView: View {
 
     private func announceValidationIssues() {
         guard let message = FormAccessibilityText.validationAnnouncement(
-            messages: validationIssues.map(\.message)
+            messages: validationIssues.map { $0.message(for: language) },
+            language: language
         ) else { return }
         UIAccessibility.post(notification: .announcement, argument: message)
     }
@@ -164,13 +174,21 @@ struct SignInView: View {
         guard case .failed(let error) = model.authOperationState else { return }
         UIAccessibility.post(
             notification: .announcement,
-            argument: error.authMessage
+            argument: error.authMessage(for: language)
         )
     }
 
     private func cancelSubmission() {
         submissionTask?.cancel()
         submissionTask = nil
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

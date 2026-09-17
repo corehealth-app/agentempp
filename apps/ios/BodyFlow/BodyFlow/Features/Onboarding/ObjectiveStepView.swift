@@ -7,8 +7,10 @@ struct ObjectiveStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Seu objetivo",
-                message: "Escolha uma opção para orientar a organização da experiência."
+                titleKey: "onboarding.objective.title",
+                titleFallback: "Seu objetivo",
+                messageKey: "onboarding.objective.message",
+                messageFallback: "Escolha uma opção para orientar a organização da experiência."
             )
 
             VStack(spacing: BodyFlowSpacing.sm) {
@@ -45,7 +47,7 @@ struct ObjectiveStepView: View {
                         .padding(BodyFlowSpacing.sm)
                         .background(
                             BodyFlowColor.surface,
-                            in: RoundedRectangle(cornerRadius: 12)
+                            in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
                         )
                     }
                     .buttonStyle(.plain)

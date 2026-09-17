@@ -7,8 +7,10 @@ struct PersonaStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Escolha seu coach",
-                message: "A persona muda o estilo da conversa, não os cálculos ou orientações."
+                titleKey: "onboarding.persona.title",
+                titleFallback: "Estilo do Flow",
+                messageKey: "onboarding.persona.message",
+                messageFallback: "Escolha como o Flow conversa com você. Isso não altera cálculos nem orientações."
             )
 
             VStack(spacing: BodyFlowSpacing.sm) {
@@ -37,7 +39,10 @@ struct PersonaStepView: View {
                         .contentShape(Rectangle())
                         .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
                         .padding(BodyFlowSpacing.sm)
-                        .background(BodyFlowColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                        .background(
+                            BodyFlowColor.surface,
+                            in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(model.draft.persona == value ? .isSelected : [])

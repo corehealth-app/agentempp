@@ -7,11 +7,15 @@ struct EmailConfirmationView: View {
     let allowsDevelopmentConfirmation: Bool
     let model: AppFlowModel
     @State private var submissionTask: Task<Void, Never>?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         AuthScreenLayout(
-            title: "Confirme seu e-mail",
-            message: "Enviamos as orientações de confirmação para \(email). Confirme o e-mail antes de criar seu perfil."
+            titleKey: "auth.confirmation.title",
+            titleFallback: "Confirme seu e-mail",
+            messageKey: "auth.confirmation.message-format",
+            messageFallback: confirmationMessage,
+            messageOverride: confirmationMessage
         ) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 AuthOperationMessage(state: model.authOperationState)
@@ -27,14 +31,14 @@ struct EmailConfirmationView: View {
                             }
                             Text(
                                 isSubmitting
-                                    ? "Confirmando"
-                                    : "Continuar no ambiente de teste"
+                                    ? copy("auth.confirmation.submitting", fallback: "Confirmando")
+                                    : copy("auth.confirmation.development", fallback: "Continuar no ambiente de teste")
                             )
                             Spacer()
                         }
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("auth.confirm-development")
                 }
@@ -42,13 +46,14 @@ struct EmailConfirmationView: View {
                 Button {
                     Task { await model.showSignIn() }
                 } label: {
-                    Text("Voltar para entrar")
+                    Text(copy("auth.common.back-to-sign-in", fallback: "Voltar para entrar"))
                         .frame(
                             maxWidth: .infinity,
                             minHeight: BodyFlowSpacing.minimumTapTarget
                         )
                         .contentShape(Rectangle())
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityIdentifier("auth.back-to-sign-in")
             }
         }
@@ -68,7 +73,7 @@ struct EmailConfirmationView: View {
             if case .failed(let error) = model.authOperationState {
                 UIAccessibility.post(
                     notification: .announcement,
-                    argument: error.authMessage
+                    argument: error.authMessage(for: language)
                 )
             }
             submissionTask = nil
@@ -78,6 +83,23 @@ struct EmailConfirmationView: View {
     private func cancelSubmission() {
         submissionTask?.cancel()
         submissionTask = nil
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private var confirmationMessage: String {
+        PremiumPresentationCopy.format(
+            "auth.confirmation.message-format",
+            locale: locale,
+            fallback: "Enviamos as orientações de confirmação para %@. Confirme o e-mail antes de criar seu perfil.",
+            email
+        )
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

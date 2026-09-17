@@ -723,3 +723,76 @@ security scan, conditional healthy-empty versus recovery anchoring, and honest
 VoiceOver limitation. The final Release 6 success above closes the reviewer's
 only operational condition. Slice 8 is eligible for its exact local commit;
 there is no push, PR, merge, deploy or remote access.
+
+## Batch 2 — Slice 2 Auth and Onboarding final local gates
+
+Slice 2 started from clean HEAD
+`d6d101b62802ca4fa898177301a1e15eeeed41f7`, after the local Flow commit.
+The scope is presentation-only: the existing authentication/session services,
+seven-step onboarding model, server-owned requirements, exact document bodies,
+version/hash/action semantics, authoritative acknowledgement and Release
+dependency selection remain unchanged. No iOS target, bundle, entitlement,
+provider, backend, persisted technical identifier or navigation contract changed.
+
+Auth now uses the approved premium hierarchy, semantic fields/messages and
+localized pt-BR/en-US copy for sign-in, sign-up, confirmation and neutral account
+recovery. Secure-entry/focus/autofill semantics remain native. A compact header
+while editing keeps the original submit control reachable without overlaying or
+duplicating it. Splash remains text-based on deep teal; no pending final logo is
+fabricated. Onboarding retains exactly seven steps and real progress, adds the
+approved Flow public styling, natural wrapping and 44-point legal actions, and
+keeps every legal body and explicit server action authoritative. The synthetic
+DEBUG consent surface uses separate development localization keys and is never
+presented as an official publication.
+
+### TDD, localization and native UI evidence
+
+- `s2-copy-red-1789673539.xcresult` / `s2-copy-red2-1789673609.xcresult`:
+  task-specific RED on missing premium/localized presentation contracts.
+- `s2-copy-green2-1789674096.xcresult`: focused Auth/Onboarding presentation
+  GREEN, 18 tests passed after the implementation.
+- `s2-review-red3-1789678146.xcresult`: two real missing-catalog assertions
+  failed before the final localization repair; no setup failure used as RED.
+- `s2-review-green-1789678329.xcresult`: the same 18 focused tests passed,
+  including all validation/error/announcement/development-consent catalog keys.
+- `batch2-full-unit-final-1789678556.xcresult`: full unit gate **PASS**,
+  1,182 logical tests / 1,396 parameterized executions, zero failures/skips/
+  expected failures/runtime warnings.
+- `s2-ui-final-green.xcresult`: final native matrix **PASS**, 9/9 tests,
+  zero failures/skips/runtime warnings. It covers the six neighboring auth/
+  onboarding journeys plus three premium gates: pt-BR light Accessibility XXXL
+  hierarchy, en-US dark validation/recovery, and the full server-owned consent
+  action/completion journey at Accessibility XXXL.
+
+The simulator's privacy alert rejected automated paste into secure fields after
+the system strong-password sheet. The test helper now detects that exact failure,
+falls back to single-character native entry and still requires the exact secure
+character count. `s2-ui-helper-fix.xcresult` first proved the complete signup and
+seven-step journey; the final 9-test matrix then passed. No assertion, password
+rule, fixture delay or product behavior was weakened. Manual VoiceOver narration
+remains **NOT VERIFIED**; native accessibility order/targets and Dynamic Type are
+locally verified, not a claim of whole-app accessibility certification.
+
+### Build, review and boundaries
+
+- `s2-release-final.xcresult`: normal signed Release Simulator build **PASS**,
+  exit 0; seven inherited production concurrency warnings outside this slice.
+  `codesign --verify --deep --strict` on the Release `BodyFlow.app`: **PASS**.
+- `s2-analyze-final.xcresult`: native analyze **PASS**, exit 0.
+- `Localizable.xcstrings` parses as JSON; `git diff --check` and scoped
+  secret/credential scans pass before commit. No real user/provider data exists
+  in the diff or private local result bundles.
+- Final independent Auth/Onboarding review: **PASS**, Critical 0 / Important 0.
+  Findings about synthetic consent labeling and partially hard-coded localized
+  errors/accessibility strings were corrected and re-reviewed.
+- Real LLM completions: 0. Remote resources altered: NONE. No push, PR, merge,
+  deployment, staging, Production, OpenRouter, Supabase, Vercel or CI-3 access.
+  No paid environment was created; cost/environment closeout NOT APPLICABLE.
+
+The exact local integration subject is
+`refactor(ui): refine authentication and onboarding`, with parent
+`d6d101b62802ca4fa898177301a1e15eeeed41f7`. Its resulting SHA and final clean
+worktree/index are reported after commit; this evidence is intentionally not
+self-amended. Slice 2 is locally verified. Slice 1 remains partial because final
+brand bytes are pending external approval. Batch 3 is the next workstream and is
+not started here.

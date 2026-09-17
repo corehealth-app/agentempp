@@ -66,19 +66,23 @@ struct SignUpView: View {
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
     @FocusState private var focusedField: SignUpField?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         AuthScreenLayout(
-            title: "Criar conta",
-            message: "Cadastre um e-mail e uma senha para começar."
+            titleKey: "auth.sign-up.title",
+            titleFallback: "Criar conta",
+            messageKey: "auth.sign-up.message",
+            messageFallback: "Cadastre um e-mail e uma senha para começar.",
+            compact: focusedField != nil
         ) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 AuthOperationMessage(state: model.authOperationState)
                 AuthValidationSummary(issues: validationIssues)
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("E-mail").font(BodyFlowTypography.headline)
-                    TextField("nome@exemplo.com", text: $email)
+                    Text(copy("auth.common.email", fallback: "E-mail")).font(BodyFlowTypography.headline)
+                    TextField(copy("auth.common.email-placeholder", fallback: "nome@exemplo.com"), text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -89,8 +93,8 @@ struct SignUpView: View {
                         )
                         .focused($focusedField, equals: .email)
                         .onSubmit { handleSubmit(from: .email) }
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("E-mail")
+                        .bodyFlowField()
+                        .accessibilityLabel(copy("auth.common.email", fallback: "E-mail"))
                         .accessibilityHint(
                             accessibilityHint(
                                 for: [.emailRequired, .emailMalformed]
@@ -101,8 +105,8 @@ struct SignUpView: View {
                 }
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("Senha").font(BodyFlowTypography.headline)
-                    SecureField("Senha", text: $password)
+                    Text(copy("auth.common.password", fallback: "Senha")).font(BodyFlowTypography.headline)
+                    SecureField(copy("auth.common.password", fallback: "Senha"), text: $password)
                         .textContentType(.newPassword)
                         .submitLabel(
                             SignUpKeyboardPolicy.presentation(for: .password)
@@ -110,8 +114,8 @@ struct SignUpView: View {
                         )
                         .focused($focusedField, equals: .password)
                         .onSubmit { handleSubmit(from: .password) }
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Senha")
+                        .bodyFlowField()
+                        .accessibilityLabel(copy("auth.common.password", fallback: "Senha"))
                         .accessibilityHint(
                             accessibilityHint(for: [.passwordRequired])
                         )
@@ -120,8 +124,8 @@ struct SignUpView: View {
                 }
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("Confirmar senha").font(BodyFlowTypography.headline)
-                    SecureField("Confirmar senha", text: $confirmation)
+                    Text(copy("auth.common.password-confirmation", fallback: "Confirmar senha")).font(BodyFlowTypography.headline)
+                    SecureField(copy("auth.common.password-confirmation", fallback: "Confirmar senha"), text: $confirmation)
                         .textContentType(.newPassword)
                         .submitLabel(
                             SignUpKeyboardPolicy.presentation(for: .confirmation)
@@ -129,8 +133,8 @@ struct SignUpView: View {
                         )
                         .focused($focusedField, equals: .confirmation)
                         .onSubmit { handleSubmit(from: .confirmation) }
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Confirmar senha")
+                        .bodyFlowField()
+                        .accessibilityLabel(copy("auth.common.password-confirmation", fallback: "Confirmar senha"))
                         .accessibilityHint(
                             accessibilityHint(
                                 for: [
@@ -154,25 +158,29 @@ struct SignUpView: View {
                                 .tint(.white)
                                 .accessibilityHidden(true)
                         }
-                        Text(isSubmitting ? "Criando conta" : "Criar conta")
+                        Text(copy(
+                            isSubmitting ? "auth.sign-up.submitting" : "auth.sign-up.submit",
+                            fallback: isSubmitting ? "Criando conta" : "Criar conta"
+                        ))
                         Spacer()
                     }
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BodyFlowButtonStyle(role: .primary))
                 .disabled(isSubmitting)
                 .accessibilityIdentifier("auth.sign-up.submit")
 
                 Button {
                     Task { await model.showSignIn() }
                 } label: {
-                    Text("Já tenho uma conta")
+                    Text(copy("auth.sign-up.existing-account", fallback: "Já tenho uma conta"))
                         .frame(
                             maxWidth: .infinity,
                             minHeight: BodyFlowSpacing.minimumTapTarget
                         )
                         .contentShape(Rectangle())
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
             }
         }
         .accessibilityElement(children: .contain)
@@ -197,7 +205,8 @@ struct SignUpView: View {
         for candidates: [AuthValidationIssue]
     ) -> String {
         FormAccessibilityText.hint(
-            for: candidates.first(where: validationIssues.contains)?.message
+            for: candidates.first(where: validationIssues.contains)?.message(for: language),
+            language: language
         )
     }
 
@@ -232,7 +241,8 @@ struct SignUpView: View {
 
     private func announceValidationIssues() {
         guard let message = FormAccessibilityText.validationAnnouncement(
-            messages: validationIssues.map(\.message)
+            messages: validationIssues.map { $0.message(for: language) },
+            language: language
         ) else { return }
         UIAccessibility.post(notification: .announcement, argument: message)
     }
@@ -241,13 +251,21 @@ struct SignUpView: View {
         guard case .failed(let error) = model.authOperationState else { return }
         UIAccessibility.post(
             notification: .announcement,
-            argument: error.authMessage
+            argument: error.authMessage(for: language)
         )
     }
 
     private func cancelSubmission() {
         submissionTask?.cancel()
         submissionTask = nil
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

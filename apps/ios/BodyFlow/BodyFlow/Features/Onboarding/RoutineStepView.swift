@@ -7,8 +7,10 @@ struct RoutineStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             OnboardingStepHeader(
-                title: "Sua rotina",
-                message: "Conte como são seus hábitos em uma semana comum."
+                titleKey: "onboarding.routine.title",
+                titleFallback: "Sua rotina",
+                messageKey: "onboarding.routine.message",
+                messageFallback: "Conte como são seus hábitos em uma semana comum."
             )
 
             pickerField(

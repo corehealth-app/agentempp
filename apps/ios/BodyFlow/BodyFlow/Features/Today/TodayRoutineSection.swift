@@ -55,11 +55,12 @@ struct TodayRoutineDescriptor: Equatable, Sendable, Identifiable {
 @MainActor
 struct TodayRoutineSectionView: View {
     let collections: [TodayRoutineCollectionDescriptor]
+    @Environment(\.locale) private var locale
 
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label("Rotina", systemImage: "checklist")
+                Label(copy("today.routine.title"), systemImage: "checklist")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
@@ -77,7 +78,7 @@ struct TodayRoutineSectionView: View {
         _ collection: TodayRoutineCollectionDescriptor
     ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(collection.kind.title)
+            Text(collectionTitle(collection.kind))
                 .font(BodyFlowTypography.body)
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.primaryText)
@@ -86,7 +87,7 @@ struct TodayRoutineSectionView: View {
                 kind: collection.kind.routineKind,
                 destination: .list
             ))) {
-                Label("Ver lista", systemImage: "list.bullet")
+                Label(copy("today.routine.view-list"), systemImage: "list.bullet")
                     .font(BodyFlowTypography.callout)
             }
             .buttonStyle(.bordered)
@@ -95,11 +96,11 @@ struct TodayRoutineSectionView: View {
 
             switch collection.state {
             case .unavailable:
-                Label("Indisponível", systemImage: "nosign")
+                Label(copy("common.not-available"), systemImage: "nosign")
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             case .empty:
-                Label(collection.kind.emptyMessage, systemImage: "tray")
+                Label(emptyMessage(collection.kind), systemImage: "tray")
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             case .populated:
@@ -107,6 +108,32 @@ struct TodayRoutineSectionView: View {
                     routineContent(routine)
                 }
             }
+        }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
+    }
+
+    private func collectionTitle(
+        _ kind: TodayRoutineCollectionDescriptor.Kind
+    ) -> String {
+        switch kind {
+        case .supplement: copy("today.routine.supplements")
+        case .medication: copy("today.routine.medications")
+        }
+    }
+
+    private func emptyMessage(
+        _ kind: TodayRoutineCollectionDescriptor.Kind
+    ) -> String {
+        switch kind {
+        case .supplement: copy("today.routine.supplements.empty")
+        case .medication: copy("today.routine.medications.empty")
         }
     }
 

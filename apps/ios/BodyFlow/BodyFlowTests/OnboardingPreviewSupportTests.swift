@@ -8,9 +8,29 @@ import Testing
 @MainActor
 @Suite("Server-owned Debug onboarding fixture", .serialized)
 struct OnboardingPreviewSupportTests {
+    @Test("A completed Debug fixture exposes an acknowledged server-shaped state")
+    func completedFixtureExposesAcknowledgedState() async throws {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+            buildFlavor: .debug
+        )
+        let dependencies = AppDependencies.make(configuration: configuration)
+        let session = try #require(await dependencies.authentication.restoreSession())
+        let state = try await dependencies.onboarding.loadState(for: session.userID)
+
+        #expect(configuration.startsWithCompletedFixture)
+        #expect(state.completion.completed)
+        #expect(state.completion.completedAt != nil)
+        #expect(state.draft?.currentStep == .completion)
+        #expect(state.acceptedActions.count == state.requirements.documents.count)
+        #expect(Set(state.acceptedActions.map(\.action)) == [
+            .acceptance, .acknowledgement, .consent,
+        ])
+    }
+
     @Test("Debug injection supplies current QA documents, not legacy consent IDs")
     func debugInjectionSuppliesCurrentDocuments() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
 
@@ -41,7 +61,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Real model requires explicit current actions before acknowledging completion")
     func realModelRejectsUncheckedConsentAndCompletesExplicitly() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .consent)
@@ -88,7 +108,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Saved local draft resumes unchanged without inventing acceptance or completion")
     func draftResumesWithoutInventingCompletion() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
         draft.consent = nil
@@ -105,10 +125,17 @@ struct OnboardingPreviewSupportTests {
         #expect(try await dependencies.authentication.restoreSession() == session)
     }
 
-    private func debugDependencies() -> AppDependencies {
-        AppDependencies.make(configuration: fixtureConfiguration(
-            arguments: ["--ui-testing"], service: "qa-fixture-\(UUID().uuidString)"
+    private func debugDependencies() async throws -> AppDependencies {
+        let dependencies = AppDependencies.make(configuration: fixtureConfiguration(
+            arguments: ["--ui-testing-fresh-auth"],
+            service: "qa-fixture-\(UUID().uuidString)"
         ))
+        _ = try await dependencies.authentication.restoreSession()
+        _ = try await dependencies.authentication.signIn(
+            email: "qa-onboarding@example.com",
+            password: UUID().uuidString
+        )
+        return dependencies
     }
 
     private func fixtureConfiguration(arguments: [String], service: String) -> AppLaunchConfiguration {
@@ -128,7 +155,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Rebuilding the local provider retains only an explicitly acknowledged finish")
     func explicitCompletionSurvivesProviderRebuild() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
@@ -158,8 +185,13 @@ struct OnboardingPreviewSupportTests {
     func launchResetDoesNotResurrectAnOldFinish() async throws {
         let service = "qa-fixture-reset-\(UUID().uuidString)"
         let fresh = AppDependencies.make(configuration: fixtureConfiguration(
-            arguments: ["--ui-testing"], service: service
+            arguments: ["--ui-testing-fresh-auth"], service: service
         ))
+        _ = try await fresh.authentication.restoreSession()
+        _ = try await fresh.authentication.signIn(
+            email: "qa-onboarding@example.com",
+            password: UUID().uuidString
+        )
         let session = try #require(await fresh.authentication.restoreSession())
         let state = try await fresh.onboarding.loadState(for: session.userID)
         var finished = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
@@ -179,8 +211,13 @@ struct OnboardingPreviewSupportTests {
         #expect(completed.draft == finished)
 
         let reset = AppDependencies.make(configuration: fixtureConfiguration(
-            arguments: ["--ui-testing"], service: service
+            arguments: ["--ui-testing-fresh-auth"], service: service
         ))
+        _ = try await reset.authentication.restoreSession()
+        _ = try await reset.authentication.signIn(
+            email: "qa-onboarding@example.com",
+            password: UUID().uuidString
+        )
         _ = try #require(await reset.authentication.restoreSession())
         let resetState = try await reset.onboarding.loadState(for: session.userID)
         #expect(!resetState.completion.completed)
@@ -201,7 +238,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Synthetic cleanup remains usable after local sign out")
     func cleanupAfterSignOutRemainsUsable() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         try await dependencies.authentication.signOut()
         try await dependencies.onboarding.clear(for: session.userID)
@@ -209,7 +246,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Concurrent conflicting finishes acknowledge exactly one snapshot; replay is exact")
     func concurrentFinishesAndReplayRemainAtomic() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
@@ -259,7 +296,7 @@ struct OnboardingPreviewSupportTests {
 
     @Test("Unknown action identity cannot create an acknowledged completion")
     func forgedActionsCannotComplete() async throws {
-        let dependencies = debugDependencies()
+        let dependencies = try await debugDependencies()
         let session = try #require(await dependencies.authentication.restoreSession())
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
         draft.documentActions = [OnboardingDocumentAction(

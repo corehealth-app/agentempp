@@ -1549,6 +1549,342 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As informações podem estar desatualizadas." } }
       }
     },
+    "common.not-available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not available" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não disponível" } }
+      }
+    },
+    "metric.consumed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Consumed" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consumido" } }
+      }
+    },
+    "metric.current" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atual" } }
+      }
+    },
+    "metric.remaining" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remaining" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Restante" } }
+      }
+    },
+    "metric.reported-percentage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported percentage" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual informado" } }
+      }
+    },
+    "metric.reported-progress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported progress" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso informado" } }
+      }
+    },
+    "metric.status" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Status" } }
+      }
+    },
+    "metric.target" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Target" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Meta" } }
+      }
+    },
+    "number.minus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "minus" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "menos" } }
+      }
+    },
+    "today.attention.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No pending actions" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhuma ação pendente" } }
+      }
+    },
+    "today.attention.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs your attention" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Precisa da sua atenção" } }
+      }
+    },
+    "today.block.completed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed blocks" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Blocos concluídos" } }
+      }
+    },
+    "today.block.credited" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total credited" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Total creditado" } }
+      }
+    },
+    "today.block.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 Block" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloco 7.700" } }
+      }
+    },
+    "today.completion.insufficient-data" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insufficient data to close the day" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados insuficientes para fechar o dia" } }
+      }
+    },
+    "today.energy.balance-status" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Balance status" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Status do balanço" } }
+      }
+    },
+    "today.energy.exercise" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício" } }
+      }
+    },
+    "today.energy.food-excess" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Food excess" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Excesso alimentar" } }
+      }
+    },
+    "today.energy.food-remaining" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remaining for food" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Restam para comida" } }
+      }
+    },
+    "today.energy.food-remaining.accessibility" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ kilocalories; exercise excluded" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ quilocalorias; exercício excluído" } }
+      }
+    },
+    "today.energy.food-remaining.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise excluded" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício excluído" } }
+      }
+    },
+    "today.energy.net-balance" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Net deficit" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit líquido" } }
+      }
+    },
+    "today.energy.net-balance.accessibility" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ kilocalories; exercise included" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ quilocalorias; exercício incluído" } }
+      }
+    },
+    "today.energy.net-balance.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise included" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício incluído" } }
+      }
+    },
+    "today.energy.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Energy" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia" } }
+      }
+    },
+    "today.eyebrow" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "TODAY" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "HOJE" } }
+      }
+    },
+    "today.pending.confirmation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending confirmation" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmação pendente" } }
+      }
+    },
+    "today.pending.meal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal proposal" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de refeição" } }
+      }
+    },
+    "today.pending.workout" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout proposal" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de treino" } }
+      }
+    },
+    "today.header.local-date" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local date" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Data local" } }
+      }
+    },
+    "today.header.protocol" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Protocol" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Protocolo" } }
+      }
+    },
+    "today.header.updated" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizado" } }
+      }
+    },
+    "today.history.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirmed meals and workouts" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeições e treinos confirmados" } }
+      }
+    },
+    "today.history.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Histórico" } }
+      }
+    },
+    "today.hydration.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hydration" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hidratação" } }
+      }
+    },
+    "today.library" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca" } }
+      }
+    },
+    "today.protein.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína" } }
+      }
+    },
+    "today.records.meals" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirmed meals" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeições confirmadas" } }
+      }
+    },
+    "today.records.meals.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No confirmed records." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum registro confirmado." } }
+      }
+    },
+    "today.records.workouts" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirmed workouts" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treinos confirmados" } }
+      }
+    },
+    "today.records.workouts.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No confirmed workouts." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum treino confirmado." } }
+      }
+    },
+    "today.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar" } }
+      }
+    },
+    "today.routine.medications" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Medications" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Medicamentos" } }
+      }
+    },
+    "today.routine.medications.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No medications registered." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum medicamento registrado." } }
+      }
+    },
+    "today.routine.supplements" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Supplements" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Suplementos" } }
+      }
+    },
+    "today.routine.supplements.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No supplements registered." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum suplemento registrado." } }
+      }
+    },
+    "today.routine.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Routine" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Rotina" } }
+      }
+    },
+    "today.routine.view-list" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View list" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver lista" } }
+      }
+    },
+    "today.summary.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View received details" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consultar detalhes recebidos" } }
+      }
+    },
+    "today.summary.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily summary" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resumo do dia" } }
+      }
+    },
+    "today.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Your day, clearly." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seu dia, com clareza." } }
+      }
+    },
+    "tab.today" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hoje" } }
+      }
+    },
+    "tab.register" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+      }
+    },
+    "tab.plan" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano" } }
+      }
+    },
+    "tab.progress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+      }
+    },
+    "tab.profile" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
+      }
+    },
     "flow.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },

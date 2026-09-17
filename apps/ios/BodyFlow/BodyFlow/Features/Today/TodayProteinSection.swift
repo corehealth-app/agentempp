@@ -11,40 +11,58 @@ struct TodayProteinDescriptor: Equatable, Sendable {
 @MainActor
 struct TodayProteinSection: View {
     let descriptor: TodayProteinDescriptor
+    @Environment(\.locale) private var locale
 
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label("Proteína", systemImage: "leaf")
+                Label(copy("today.protein.title"), systemImage: "leaf")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
                 FixtureMetricRow(
-                    title: "Consumido",
+                    title: copy("metric.consumed"),
                     value: TodayValueFormatter.grams(descriptor.consumedG)
                 )
                 Divider()
                 FixtureMetricRow(
-                    title: "Meta",
-                    value: TodayValueFormatter.optionalGrams(descriptor.targetG)
+                    title: copy("metric.target"),
+                    value: TodayValueFormatter.optionalGrams(
+                        descriptor.targetG,
+                        language: language
+                    )
                 )
                 Divider()
                 FixtureMetricRow(
-                    title: "Restante",
-                    value: TodayValueFormatter.optionalGrams(descriptor.remainingG)
+                    title: copy("metric.remaining"),
+                    value: TodayValueFormatter.optionalGrams(
+                        descriptor.remainingG,
+                        language: language
+                    )
                 )
                 if let percentage = descriptor.percentage {
                     Divider()
                     FixtureMetricRow(
-                        title: "Progresso informado",
+                        title: copy("metric.reported-progress"),
                         value: "\(percentage)%"
                     )
                 }
                 Divider()
-                FixtureMetricRow(title: "Status", value: descriptor.status)
+                FixtureMetricRow(
+                    title: copy("metric.status"),
+                    value: descriptor.status
+                )
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("today.protein")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }

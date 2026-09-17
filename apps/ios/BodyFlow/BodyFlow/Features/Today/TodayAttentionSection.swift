@@ -15,8 +15,30 @@ enum TodaySectionKind: Equatable, Sendable {
 
 struct TodayPendingDescriptor: Equatable, Sendable, Identifiable {
     let id: String
-    let title: String
-    let detail: String
+    let kind: String
+    let mealType: String?
+
+    var title: String {
+        title(for: .portugueseBrazil)
+    }
+
+    var detail: String {
+        detail(for: .portugueseBrazil)
+    }
+
+    func title(for language: SupportedAppLanguage) -> String {
+        TodayCopy.string(
+            kind == "meal" ? "today.pending.meal" : "today.pending.workout",
+            language: language
+        )
+    }
+
+    func detail(for language: SupportedAppLanguage) -> String {
+        mealType ?? TodayCopy.string(
+            "today.pending.confirmation",
+            language: language
+        )
+    }
 }
 
 struct TodayRoutineAttentionID: Hashable, Sendable {
@@ -53,11 +75,12 @@ struct TodayAttentionDescriptor: Equatable, Sendable {
 @MainActor
 struct TodayAttentionSection: View {
     let descriptor: TodayAttentionDescriptor
+    @Environment(\.locale) private var locale
 
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label("Precisa da sua atenção", systemImage: "bell.badge")
+                Label(copy("today.attention.title"), systemImage: "bell.badge")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
@@ -82,7 +105,7 @@ struct TodayAttentionSection: View {
 
                 if descriptor.pending.isEmpty,
                    descriptor.routineActions.isEmpty {
-                    Label("Nenhuma ação pendente", systemImage: "checkmark.circle")
+                    Label(copy("today.attention.empty"), systemImage: "checkmark.circle")
                         .font(BodyFlowTypography.body)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                 }
@@ -92,14 +115,22 @@ struct TodayAttentionSection: View {
         .accessibilityIdentifier("today.attention")
     }
 
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
+    }
+
     @ViewBuilder
     private var pendingContent: some View {
         ForEach(descriptor.pending) { pending in
             Label {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                    Text(pending.title)
+                    Text(pending.title(for: language))
                         .font(BodyFlowTypography.body)
-                    Text(pending.detail)
+                    Text(pending.detail(for: language))
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                 }

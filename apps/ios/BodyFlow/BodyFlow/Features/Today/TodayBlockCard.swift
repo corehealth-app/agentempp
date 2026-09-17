@@ -22,40 +22,60 @@ struct TodayBlockDescriptor: Equatable, Sendable {
 @MainActor
 struct TodayBlockCard: View {
     let descriptor: TodayBlockDescriptor
+    @Environment(\.locale) private var locale
 
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label("Bloco 7.700", systemImage: "circle.hexagongrid")
+                Label(copy("today.block.title"), systemImage: "circle.hexagongrid")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
-                FixtureMetricRow(title: "Meta", value: descriptor.targetText)
+                FixtureMetricRow(
+                    title: copy("metric.target"),
+                    value: TodayValueFormatter.optionalKcal(
+                        descriptor.targetKcal,
+                        language: language
+                    )
+                )
                 Divider()
-                FixtureMetricRow(title: "Atual", value: descriptor.currentText)
+                FixtureMetricRow(
+                    title: copy("metric.current"),
+                    value: TodayValueFormatter.optionalKcal(
+                        descriptor.currentKcal,
+                        language: language
+                    )
+                )
                 if let percentage = descriptor.percentage {
                     Divider()
                     FixtureMetricRow(
-                        title: "Percentual informado",
+                        title: copy("metric.reported-percentage"),
                         value: "\(percentage)%"
                     )
                 }
                 if let completedBlocks = descriptor.completedBlocks {
                     Divider()
                     FixtureMetricRow(
-                        title: "Blocos concluídos",
-                        value: TodayValueFormatter.integer(completedBlocks)
+                        title: copy("today.block.completed"),
+                        value: TodayValueFormatter.integer(
+                            completedBlocks,
+                            language: language
+                        )
                     )
                 }
                 if let totalCreditedKcal = descriptor.totalCreditedKcal {
                     Divider()
                     FixtureMetricRow(
-                        title: "Total creditado",
-                        value: TodayValueFormatter.kcal(totalCreditedKcal)
+                        title: copy("today.block.credited"),
+                        value: TodayValueFormatter.kcal(
+                            totalCreditedKcal,
+                            language: language
+                        )
                     )
                 }
                 Label(
-                    descriptor.availability ?? "Indisponível",
+                    descriptor.availability
+                        ?? copy("common.not-available"),
                     systemImage: descriptor.enabled == true
                         ? "checkmark.circle"
                         : "info.circle"
@@ -66,8 +86,16 @@ struct TodayBlockCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityValue(
-            "Meta \(descriptor.targetText); atual \(descriptor.currentText)"
+            "\(copy("metric.target")) \(TodayValueFormatter.optionalKcal(descriptor.targetKcal, language: language)); \(copy("metric.current").lowercased()) \(TodayValueFormatter.optionalKcal(descriptor.currentKcal, language: language))"
         )
         .accessibilityIdentifier("today.block")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }

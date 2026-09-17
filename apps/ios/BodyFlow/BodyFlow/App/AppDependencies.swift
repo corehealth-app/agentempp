@@ -351,6 +351,7 @@ struct AppDependencies: Sendable {
                 stateStore: stateStore,
                 buildFlavor: buildFlavor,
                 preloadsSyntheticOnboardingValues: configuration.preloadsSyntheticOnboardingValues,
+                preloadsCompletedFixture: configuration.startsWithCompletedFixture,
                 receiptNamespace: configuration.demoStorageBoundary == .keychain
                     ? configuration.demoKeychainService : UUID().uuidString,
                 persistsReceipts: configuration.demoStorageBoundary == .keychain,

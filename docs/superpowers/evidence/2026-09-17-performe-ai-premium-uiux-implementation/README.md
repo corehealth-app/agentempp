@@ -796,3 +796,88 @@ worktree/index are reported after commit; this evidence is intentionally not
 self-amended. Slice 2 is locally verified. Slice 1 remains partial because final
 brand bytes are pending external approval. Batch 3 is the next workstream and is
 not started here.
+
+## Batch 3 — Slice 3 Shell and Today local gates
+
+Slice 3 started from clean HEAD
+`b8621f1c2adb1a9038ae77654be4a414b4b1ee7d`, tree
+`004843b391150a214c9c8ef70894d84183d05582`, on the existing
+`codex/performe-ai-client-beta-flow-v1` worktree. Host
+`MacBook-Air-de-Eduardo.local` is local development. The private artifact root is
+`/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/batch3.3TV7zC`.
+No provider, remote environment, paid resource or real completion was used.
+
+### TDD and implementation
+
+- Initial S3 RED proved the additive English tab-title contract was absent and,
+  after compilation, `TodayPresentationTests` failed the required real-metric
+  ordering. Raw values/order stayed asserted. `s3-red.xcresult` and the corrected
+  focused RED were retained locally.
+- Five existing tab cases/raw values/technical IDs and five independent
+  `NavigationStack` paths remain unchanged. `AppTab.title(for:)` uses the existing
+  presentation-language/localization adapters for pt-BR/en-US. The single root
+  textual anchor uses `BrandIdentity.productName`; no asset or AppIcon changed.
+- Today now presents authoritative context/freshness, food remaining and daily
+  balance as separate descriptors, then protein/hydration before pending data.
+  Nil values render localized unavailability; no score, step count, habit metric,
+  user greeting, total or protocol calculation was added. Flow and Library entry
+  remain independent of a successful Today payload.
+- The first signed UI attempt reached onboarding because the existing Debug
+  `startsWithCompletedFixture` authentication state had no corresponding
+  server-shaped onboarding receipt. A behavioral RED was added. The repair is
+  wholly `#if DEBUG`: only explicitly completed synthetic launches preload one
+  deterministic receipt built from the existing DTOs and current synthetic QA
+  documents. Fresh-auth tests still sign in as incomplete; Release selection,
+  real auth/session services and contracts remain unchanged.
+- `s3-fixture-green-v2.xcresult`: **PASS**, 10/10 tests, zero failures/skips.
+- `s3-focused-unit-final.xcresult`: **PASS**, 107 logical tests / 119 executions
+  including parameters, zero failures/skips. Covered all required Shell/Today/
+  recommendations/invalidation/session-ownership suites plus the Debug boundary.
+- The first 23-test signed UI matrix found one real precision edge: the 44-point
+  refresh target surfaced as 43.999999999999986 points. The visual target became
+  45 points without changing its callback/ID. The isolated signed regression
+  passed in `s3-refresh-hit-target-green.xcresult`.
+- `s3-focused-ui-final-v2.xcresult`: **PASS**, 23/23 tests, zero failures/skips.
+  It covers `Prompt13TodayUITests`, `Prompt14TodayMascotUITests` and
+  `PremiumCoreSurfacesUITests`, including loaded/incomplete/error/offline/stale/
+  unavailable, Flow access, recommendations/Library, pt-BR/en-US, light/dark and
+  Accessibility XXXL. No pre-existing assertion was weakened.
+
+### Visual, Release and security evidence
+
+The final UI bundle exported 20 retained screenshot/hierarchy attachments to
+`<artifact-root>/s3-ui-attachments`. Root inspected the Shell/Flow en-US light
+Accessibility XXXL capture, Today pt-BR light Accessibility XXXL capture and
+unavailable-to-Flow capture. The five tabs remain visible/localized, one root
+brand anchor is present, core controls remain reachable, long text wraps and no
+clipping/truncation was observed in the inspected frames. XCTest additionally
+asserts >=44-point relevant controls and metric-before-pending hierarchy. This is
+native UI evidence, not full manual VoiceOver narration; **VOICEOVER MANUAL
+STATUS: NOT FULLY VERIFIED**.
+
+Normal signed Release Simulator build under `<artifact-root>/s3-release-derived`
+passed with exit 0. `codesign --verify --deep --strict` passed for
+`Release-iphonesimulator/BodyFlow.app`; identifier remains `com.bodyflow.app`,
+signature is local ad hoc. Seven inherited production concurrency warnings match
+the documented Slice 0 baseline and occur outside new S3 lines. `git diff --check`
+and catalog JSON parsing pass. Scoped security review found no provider key,
+private key, signed URL, real credential, real user data, asset change, backend
+change or remote access. A pre-existing test constructs a synthetic JWT with the
+literal role name `service_role`; it is not a credential and is outside this diff.
+
+Independent review initially found one Important client-copy gap: pending titles,
+the incomplete-day message and energy accessibility values stayed in Portuguese
+under en-US. `s3-review-localization-red.xcresult` captured the focused compile
+RED before those language-aware APIs existed. The implementation now retains raw
+server kind/status/value fields and localizes only client-owned presentation.
+`s3-review-localization-green.xcresult` passed the focused presentation suite,
+including exact pt-BR/en-US semantics. The signed native en-US Accessibility XXXL
+journey then passed in `s3-review-localization-ui.xcresult`, asserting the two
+proposal labels, confirmation fallback and both energy accessibility values.
+Focused re-review: **PASS**, Critical 0 / Important 0; no new regression and no
+server-owned value was rewritten.
+
+The exact local integration subject is `refactor(ui): refine Today experience`.
+Its resulting SHA and post-commit clean worktree/index are reported after commit;
+this evidence is intentionally not self-amended. Slice 4 has not started at this
+checkpoint.

@@ -44,6 +44,7 @@ struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {
 struct TodayRecordsSection: View {
     let meals: [TodayMealDescriptor]
     let workouts: [TodayWorkoutDescriptor]
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -54,13 +55,13 @@ struct TodayRecordsSection: View {
 
     private var mealsSection: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label("Refeições confirmadas", systemImage: "fork.knife")
+            Label(copy("today.records.meals"), systemImage: "fork.knife")
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
             if meals.isEmpty {
-                Text("Nenhum registro confirmado.")
+                Text(copy("today.records.meals.empty"))
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             } else {
@@ -73,7 +74,7 @@ struct TodayRecordsSection: View {
                             Text(meal.mealType)
                                 .font(BodyFlowTypography.callout)
                                 .foregroundStyle(BodyFlowColor.secondaryText)
-                            Text(TodayValueFormatter.kcal(meal.kcal))
+                            Text(TodayValueFormatter.kcal(meal.kcal, language: language))
                                 .font(BodyFlowTypography.body)
                             Label(meal.provenance, systemImage: "info.circle")
                                 .font(BodyFlowTypography.caption)
@@ -91,13 +92,13 @@ struct TodayRecordsSection: View {
 
     private var workoutsSection: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label("Treinos confirmados", systemImage: "figure.run")
+            Label(copy("today.records.workouts"), systemImage: "figure.run")
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
             if workouts.isEmpty {
-                Text("Nenhum treino confirmado.")
+                Text(copy("today.records.workouts.empty"))
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             } else {
@@ -110,7 +111,7 @@ struct TodayRecordsSection: View {
                             Text("\(workout.durationMin) min · \(workout.intensity)")
                                 .font(BodyFlowTypography.callout)
                                 .foregroundStyle(BodyFlowColor.secondaryText)
-                            Text(TodayValueFormatter.kcal(workout.estimatedKcal))
+                            Text(TodayValueFormatter.kcal(workout.estimatedKcal, language: language))
                                 .font(BodyFlowTypography.body)
                         }
                     }
@@ -121,5 +122,13 @@ struct TodayRecordsSection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("today.workouts")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }

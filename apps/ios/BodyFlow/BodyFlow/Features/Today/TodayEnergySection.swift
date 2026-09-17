@@ -34,17 +34,48 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 
     var remainingFoodAccessibilityValue: String {
-        "\(TodayValueFormatter.integer(remainingFoodKcal)) quilocalorias; exercício excluído"
+        remainingFoodAccessibilityValue(for: .portugueseBrazil)
     }
 
     var netBalanceAccessibilityValue: String {
-        let formatted = TodayValueFormatter.integer(dailyBalanceKcal)
+        netBalanceAccessibilityValue(for: .portugueseBrazil)
+    }
+
+    func remainingFoodAccessibilityValue(
+        for language: SupportedAppLanguage
+    ) -> String {
+        let format = TodayCopy.string(
+            "today.energy.food-remaining.accessibility",
+            language: language
+        )
+        return String(
+            format: format,
+            locale: language.formattingLocale,
+            TodayValueFormatter.integer(remainingFoodKcal, language: language)
+        )
+    }
+
+    func netBalanceAccessibilityValue(
+        for language: SupportedAppLanguage
+    ) -> String {
+        let formatted = TodayValueFormatter.integer(
+            dailyBalanceKcal,
+            language: language
+        )
         let signedValue = if formatted.hasPrefix("-") {
-            "menos \(formatted.dropFirst())"
+            "\(TodayCopy.string("number.minus", language: language)) \(formatted.dropFirst())"
         } else {
             formatted
         }
-        return "\(signedValue) quilocalorias; exercício incluído"
+        let format = TodayCopy.string(
+            "today.energy.net-balance.accessibility",
+            language: language
+        )
+        return String(
+            format: format,
+            locale: language.formattingLocale,
+            signedValue
+        )
     }
 }
 
@@ -52,10 +83,11 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
 struct TodayEnergySection: View {
     let descriptor: TodayEnergyDescriptor
     let completionMessage: String?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Label("Energia", systemImage: "bolt.heart")
+            Label(copy("today.energy.title"), systemImage: "bolt.heart")
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.primaryText)
@@ -73,29 +105,55 @@ struct TodayEnergySection: View {
                     .accessibilityIdentifier("today.completion.insufficient-data")
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                    remainingFoodCard
-                    netBalanceCard
-                }
-                VStack(spacing: BodyFlowSpacing.sm) {
-                    remainingFoodCard
-                    netBalanceCard
-                }
-            }
-
             BodyFlowCard {
-                VStack(spacing: BodyFlowSpacing.sm) {
-                    FixtureMetricRow(title: "Meta", value: descriptor.targetText)
-                    Divider()
-                    FixtureMetricRow(title: "Consumido", value: descriptor.consumedText)
-                    Divider()
-                    FixtureMetricRow(title: "Excesso alimentar", value: descriptor.foodExcessText)
-                    Divider()
-                    FixtureMetricRow(title: "Exercício", value: descriptor.exerciseText)
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.lg) {
+                            remainingFoodMetric
+                            Divider()
+                            netBalanceMetric
+                        }
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                            remainingFoodMetric
+                            Divider()
+                            netBalanceMetric
+                        }
+                    }
                     Divider()
                     FixtureMetricRow(
-                        title: "Status do balanço",
+                        title: copy("metric.target"),
+                        value: TodayValueFormatter.optionalKcal(
+                            descriptor.targetKcal,
+                            language: language
+                        )
+                    )
+                    Divider()
+                    FixtureMetricRow(
+                        title: copy("metric.consumed"),
+                        value: TodayValueFormatter.kcal(
+                            descriptor.consumedKcal,
+                            language: language
+                        )
+                    )
+                    Divider()
+                    FixtureMetricRow(
+                        title: copy("today.energy.food-excess"),
+                        value: TodayValueFormatter.kcal(
+                            descriptor.foodExcessKcal,
+                            language: language
+                        )
+                    )
+                    Divider()
+                    FixtureMetricRow(
+                        title: copy("today.energy.exercise"),
+                        value: TodayValueFormatter.kcal(
+                            descriptor.exerciseKcal,
+                            language: language
+                        )
+                    )
+                    Divider()
+                    FixtureMetricRow(
+                        title: copy("today.energy.balance-status"),
                         value: descriptor.dailyBalanceStatus
                     )
                 }
@@ -103,31 +161,49 @@ struct TodayEnergySection: View {
         }
     }
 
-    private var remainingFoodCard: some View {
-        TodayEnergyMetricCard(
-            title: "Restam para comida",
-            value: descriptor.remainingFoodText,
-            explanation: "Exercício excluído",
+    private var remainingFoodMetric: some View {
+        TodayEnergyMetric(
+            title: copy("today.energy.food-remaining"),
+            value: TodayValueFormatter.kcal(
+                descriptor.remainingFoodKcal,
+                language: language
+            ),
+            explanation: copy("today.energy.food-remaining.detail"),
             systemImage: "fork.knife",
-            accessibilityValue: descriptor.remainingFoodAccessibilityValue
+            accessibilityValue: descriptor.remainingFoodAccessibilityValue(
+                for: language
+            )
         )
         .accessibilityIdentifier("today.energy.remaining-food")
     }
 
-    private var netBalanceCard: some View {
-        TodayEnergyMetricCard(
-            title: "Déficit líquido",
-            value: descriptor.netBalanceText,
-            explanation: "Exercício incluído",
+    private var netBalanceMetric: some View {
+        TodayEnergyMetric(
+            title: copy("today.energy.net-balance"),
+            value: TodayValueFormatter.kcal(
+                descriptor.dailyBalanceKcal,
+                language: language
+            ),
+            explanation: copy("today.energy.net-balance.detail"),
             systemImage: "plusminus",
-            accessibilityValue: descriptor.netBalanceAccessibilityValue
+            accessibilityValue: descriptor.netBalanceAccessibilityValue(
+                for: language
+            )
         )
         .accessibilityIdentifier("today.energy.net-balance")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }
 
 @MainActor
-private struct TodayEnergyMetricCard: View {
+private struct TodayEnergyMetric: View {
     let title: String
     let value: String
     let explanation: String
@@ -135,20 +211,18 @@ private struct TodayEnergyMetricCard: View {
     let accessibilityValue: String
 
     var body: some View {
-        BodyFlowCard {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Label(title, systemImage: systemImage)
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
-                Text(value)
-                    .font(BodyFlowTypography.title)
-                    .fontWeight(.bold)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                Text(explanation)
-                    .font(BodyFlowTypography.caption)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
-            }
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+            Label(title, systemImage: systemImage)
+                .font(BodyFlowTypography.supporting)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+            Text(value)
+                .font(BodyFlowTypography.metricSmall)
+                .foregroundStyle(BodyFlowColor.primaryText)
+            Text(explanation)
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)
     }

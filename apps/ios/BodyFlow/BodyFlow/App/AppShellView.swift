@@ -14,6 +14,7 @@ struct AppShellView: View {
     @State private var todayMascotViewModel: MascotExperienceViewModel
     @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
+    @Environment(\.locale) private var locale
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
@@ -74,15 +75,32 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(AppTab.allCases) { tab in
-                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
-                    navigationStack(for: tab)
-                }
-                .accessibilityIdentifier(tab.accessibilityIdentifier)
+        VStack(spacing: 0) {
+            if router.path(for: selectedTab).isEmpty {
+                BodyFlowBrandIdentityView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BodyFlowSpacing.md)
+                    .padding(.vertical, BodyFlowSpacing.xs)
+                    .background(BodyFlowColor.color(.backgroundPrimary))
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                    }
             }
+
+            TabView(selection: $selectedTab) {
+                ForEach(AppTab.allCases) { tab in
+                    Tab(
+                        tab.title(for: presentationLanguage),
+                        systemImage: tab.systemImage,
+                        value: tab
+                    ) {
+                        navigationStack(for: tab)
+                    }
+                    .accessibilityIdentifier(tab.accessibilityIdentifier)
+                }
+            }
+            .tint(BodyFlowColor.accent)
         }
-        .tint(BodyFlowColor.accent)
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -132,8 +150,11 @@ struct AppShellView: View {
                     destination(for: route)
                 }
         }
-        .bodyFlowBrandIdentity()
         .accessibilityHidden(selectedTab != tab)
+    }
+
+    private var presentationLanguage: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
     }
 
     @ViewBuilder

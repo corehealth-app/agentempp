@@ -6,7 +6,7 @@ final class Prompt13TodayUITests: XCTestCase {
     }
 
     @MainActor
-    func testTodayShowsSnapshotHeaderAndAttentionBeforeEnergy() {
+    func testTodayShowsSnapshotHeaderAndCoreMetricsBeforeAttention() {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
         let screen = element("screen.hoje", in: app)
@@ -22,7 +22,7 @@ final class Prompt13TodayUITests: XCTestCase {
         for item in [localDate, protocolName, updatedAt, attention, pending, energy] {
             XCTAssertTrue(item.waitForExistence(timeout: 3))
         }
-        XCTAssertLessThanOrEqual(attention.frame.minY, energy.frame.minY)
+        XCTAssertLessThanOrEqual(energy.frame.minY, attention.frame.minY)
         XCTAssertTrue(app.staticTexts["Data local: 2026-07-20"].exists)
         XCTAssertTrue(app.staticTexts["Protocolo: recomposicao"].exists)
         support.captureEvidence(named: "01-today.png", of: app)

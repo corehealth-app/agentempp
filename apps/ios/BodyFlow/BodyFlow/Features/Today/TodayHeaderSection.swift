@@ -8,18 +8,38 @@ struct TodayHeaderDescriptor: Equatable, Sendable {
 }
 
 enum TodayValueFormatter {
-    private static let locale = Locale(identifier: "pt_BR")
-
     static func integer(_ value: Int) -> String {
-        value.formatted(.number.locale(locale))
+        integer(value, language: .portugueseBrazil)
+    }
+
+    static func integer(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
+        value.formatted(.number.locale(language.formattingLocale))
     }
 
     static func kcal(_ value: Int) -> String {
-        "\(integer(value)) kcal"
+        kcal(value, language: .portugueseBrazil)
+    }
+
+    static func kcal(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
+        "\(integer(value, language: language)) kcal"
     }
 
     static func optionalKcal(_ value: Int?) -> String {
         value.map(kcal) ?? "Indisponível"
+    }
+
+    static func optionalKcal(
+        _ value: Int?,
+        language: SupportedAppLanguage
+    ) -> String {
+        value.map { kcal($0, language: language) }
+            ?? TodayCopy.string("common.not-available", language: language)
     }
 
     static func grams(_ value: Decimal) -> String {
@@ -30,16 +50,48 @@ enum TodayValueFormatter {
         value.map(grams) ?? "Indisponível"
     }
 
+    static func optionalGrams(
+        _ value: Decimal?,
+        language: SupportedAppLanguage
+    ) -> String {
+        value.map(grams)
+            ?? TodayCopy.string("common.not-available", language: language)
+    }
+
     static func milliliters(_ value: Int) -> String {
-        "\(integer(value)) ml"
+        milliliters(value, language: .portugueseBrazil)
+    }
+
+    static func milliliters(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
+        "\(integer(value, language: language)) ml"
     }
 
     static func optionalMilliliters(_ value: Int?) -> String {
         value.map(milliliters) ?? "Indisponível"
     }
 
+    static func optionalMilliliters(
+        _ value: Int?,
+        language: SupportedAppLanguage
+    ) -> String {
+        value.map { milliliters($0, language: language) }
+            ?? TodayCopy.string("common.not-available", language: language)
+    }
+
     static func timestamp(_ value: APITimestamp?) -> String {
-        guard let value else { return "Indisponível" }
+        timestamp(value, language: .portugueseBrazil)
+    }
+
+    static func timestamp(
+        _ value: APITimestamp?,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard let value else {
+            return TodayCopy.string("common.not-available", language: language)
+        }
         return value.value.formatted(
             .dateTime
                 .day(.twoDigits)
@@ -47,38 +99,51 @@ enum TodayValueFormatter {
                 .year()
                 .hour(.twoDigits(amPM: .omitted))
                 .minute(.twoDigits)
-                .locale(locale)
+                .locale(language.formattingLocale)
         )
+    }
+}
+
+enum TodayCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
     }
 }
 
 @MainActor
 struct TodayHeaderSection: View {
     let descriptor: TodayHeaderDescriptor
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text("HOJE")
+            Text(copy("today.eyebrow"))
                 .font(BodyFlowTypography.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(BodyFlowColor.accent)
 
-            Text("Seu dia, com clareza.")
+            Text(copy("today.title"))
                 .font(BodyFlowTypography.largeTitle)
                 .fontWeight(.bold)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
-            Label("Data local: \(descriptor.localDate)", systemImage: "calendar")
+            Label(
+                "\(copy("today.header.local-date")): \(descriptor.localDate)",
+                systemImage: "calendar"
+            )
                 .accessibilityIdentifier("today.header.local-date")
 
             Label(
-                "Protocolo: \(descriptor.protocolName ?? "Indisponível")",
+                "\(copy("today.header.protocol")): \(descriptor.protocolName ?? unavailable)",
                 systemImage: "doc.text"
             )
             .accessibilityIdentifier("today.header.protocol")
 
             Label(
-                "Atualizado: \(TodayValueFormatter.timestamp(descriptor.updatedAt))",
+                "\(copy("today.header.updated")): \(TodayValueFormatter.timestamp(descriptor.updatedAt, language: language))",
                 systemImage: "clock"
             )
             .accessibilityIdentifier("today.header.updated-at")
@@ -86,5 +151,15 @@ struct TodayHeaderSection: View {
         .font(BodyFlowTypography.callout)
         .foregroundStyle(BodyFlowColor.secondaryText)
         .accessibilityElement(children: .contain)
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private var unavailable: String { copy("common.not-available") }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }

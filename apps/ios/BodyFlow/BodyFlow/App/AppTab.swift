@@ -1,3 +1,5 @@
+import Foundation
+
 enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case today
     case register
@@ -15,6 +17,17 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .progress: "Progresso"
         case .profile: "Perfil"
         }
+    }
+
+    func title(for language: SupportedAppLanguage) -> String {
+        let key: String.LocalizationValue = switch self {
+        case .today: "tab.today"
+        case .register: "tab.register"
+        case .plan: "tab.plan"
+        case .progress: "tab.progress"
+        case .profile: "tab.profile"
+        }
+        return (try? AppLocalization.string(key, for: language)) ?? title
     }
 
     var systemImage: String {

@@ -11,7 +11,7 @@ struct TodayPresentation: Equatable, Sendable {
     let hydration: TodayHydrationDescriptor
     let routineCollections: [TodayRoutineCollectionDescriptor]
     let block: TodayBlockDescriptor
-    let completionMessage: String?
+    let completionStatus: String
     let sectionOrder: [TodaySectionKind]
 
     init(snapshot: TodaySnapshot) {
@@ -24,10 +24,8 @@ struct TodayPresentation: Equatable, Sendable {
             pending: snapshot.pendingActions.registrations.map { registration in
                 TodayPendingDescriptor(
                     id: registration.id,
-                    title: registration.kind == "meal"
-                        ? "Proposta de refeição"
-                        : "Proposta de treino",
-                    detail: registration.mealType ?? "Confirmação pendente"
+                    kind: registration.kind,
+                    mealType: registration.mealType
                 )
             },
             routineActions: Self.routineAttention(
@@ -117,21 +115,33 @@ struct TodayPresentation: Equatable, Sendable {
                 source: nil
             )
         }
-        completionMessage = snapshot.completionStatus.status == "insufficient_data"
-            ? "Dados insuficientes para fechar o dia"
-            : nil
+        completionStatus = snapshot.completionStatus.status
         sectionOrder = [
-            .attention,
-            .pending,
             .energy,
             .protein,
+            .hydration,
+            .attention,
+            .pending,
             .meals,
             .workouts,
-            .hydration,
             .routines,
             .block,
             .history,
         ]
+    }
+
+    var completionMessage: String? {
+        completionMessage(for: .portugueseBrazil)
+    }
+
+    func completionMessage(for language: SupportedAppLanguage) -> String? {
+        guard completionStatus == "insufficient_data" else {
+            return nil
+        }
+        return TodayCopy.string(
+            "today.completion.insufficient-data",
+            language: language
+        )
     }
 
     private static func routineAttention(
@@ -202,6 +212,7 @@ struct TodayRootView: View {
     let mascot: MascotExperienceViewModel?
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.locale) private var locale
 
     init(
         model: TodayViewModel,
@@ -249,7 +260,7 @@ struct TodayRootView: View {
 #if DEBUG
         .accessibilityValue(colorScheme == .dark ? "dark" : "light")
 #endif
-        .navigationTitle("Hoje")
+        .navigationTitle(copy("tab.today"))
         .task(id: invalidationCenter.revision(for: .today)) {
             let revision = invalidationCenter.revision(for: .today)
             await model.load(revision: revision)
@@ -270,10 +281,10 @@ struct TodayRootView: View {
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
-                        Label("Atualizar", systemImage: "arrow.clockwise")
+                        Label(copy("today.refresh"), systemImage: "arrow.clockwise")
                             .frame(
-                                width: BodyFlowSpacing.minimumTapTarget,
-                                height: BodyFlowSpacing.minimumTapTarget
+                                width: BodyFlowSpacing.minimumTapTarget + 1,
+                                height: BodyFlowSpacing.minimumTapTarget + 1
                             )
                             .contentShape(Rectangle())
                     }
@@ -283,7 +294,7 @@ struct TodayRootView: View {
             } else if navigation.toolbarRoutes.contains(.mainHistory) {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: AppRoute.mainHistory) {
-                        Label("Histórico", systemImage: "clock.arrow.circlepath")
+                        Label(copy("today.history.title"), systemImage: "clock.arrow.circlepath")
                     }
                     .accessibilityIdentifier("today.history")
                 }
@@ -293,7 +304,7 @@ struct TodayRootView: View {
 
     private var flowNavigationLink: some View {
         NavigationLink(value: AppRoute.flowChat) {
-            Label("flow.open", systemImage: "bubble.left.and.text.bubble.right")
+            Label(copy("flow.open"), systemImage: "bubble.left.and.text.bubble.right")
                 .font(BodyFlowTypography.headline)
                 .foregroundStyle(BodyFlowColor.accent)
                 .padding(.horizontal, BodyFlowSpacing.sm)
@@ -304,7 +315,7 @@ struct TodayRootView: View {
                 )
                 .accessibilityRepresentation { EmptyView() }
         }
-        .accessibilityLabel("flow.open")
+        .accessibilityLabel(copy("flow.open"))
         .accessibilityIdentifier("today.flow-chat")
     }
 
@@ -315,7 +326,7 @@ struct TodayRootView: View {
         NavigationLink(value: route) {
             HStack(spacing: BodyFlowSpacing.xs) {
                 Image(systemName: "books.vertical")
-                if showsTitle { Text("Biblioteca") }
+                if showsTitle { Text(copy("today.library")) }
             }
             .font(BodyFlowTypography.headline)
             .foregroundStyle(BodyFlowColor.accent)
@@ -328,7 +339,7 @@ struct TodayRootView: View {
             )
             .accessibilityRepresentation { EmptyView() }
         }
-        .accessibilityLabel("Biblioteca")
+        .accessibilityLabel(copy("today.library"))
         .accessibilityIdentifier("today.library")
     }
 
@@ -358,7 +369,7 @@ struct TodayRootView: View {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                         StaleDataBanner()
                         Button(action: retry) {
-                            Text("Tentar novamente")
+                            Text(copy("state.retry"))
                                 .font(BodyFlowTypography.headline)
                                 .frame(
                                     minHeight: BodyFlowSpacing.minimumTapTarget
@@ -370,36 +381,37 @@ struct TodayRootView: View {
                 }
 
                 TodayHeaderSection(descriptor: presentation.header)
-                if let mascot {
-                    MascotCardView(model: mascot)
-                }
-                TodayAttentionSection(descriptor: presentation.attention)
                 TodayEnergySection(
                     descriptor: presentation.energy,
-                    completionMessage: presentation.completionMessage
+                    completionMessage: presentation.completionMessage(for: language)
                 )
                 TodayProteinSection(descriptor: presentation.protein)
-                TodayRecordsSection(
-                    meals: presentation.meals,
-                    workouts: presentation.workouts
-                )
                 TodayHydrationSection(descriptor: presentation.hydration)
-                TodayRoutineSectionView(
-                    collections: presentation.routineCollections
-                )
-                TodayBlockCard(descriptor: presentation.block)
+                TodayAttentionSection(descriptor: presentation.attention)
+
                 if let recommendations {
                     TodayRecommendationsSection(
                         model: recommendations,
                         catalogRevision: invalidationCenter.revision(for: .contentCatalog)
                     )
                 }
+                TodayRoutineSectionView(
+                    collections: presentation.routineCollections
+                )
+                TodayRecordsSection(
+                    meals: presentation.meals,
+                    workouts: presentation.workouts
+                )
+                TodayBlockCard(descriptor: presentation.block)
+                if let mascot {
+                    MascotCardView(model: mascot)
+                }
 
                 NavigationLink(value: AppRoute.mainHistory) {
                     BodyFlowCard {
                         FeatureActionLabel(
-                            title: "Histórico",
-                            detail: "Refeições e treinos confirmados",
+                            title: copy("today.history.title"),
+                            detail: copy("today.history.detail"),
                             systemImage: "clock.arrow.circlepath"
                         )
                     }
@@ -412,8 +424,8 @@ struct TodayRootView: View {
                 ) {
                     BodyFlowCard {
                         FeatureActionLabel(
-                            title: "Resumo do dia",
-                            detail: "Consultar detalhes recebidos",
+                            title: copy("today.summary.title"),
+                            detail: copy("today.summary.detail"),
                             systemImage: "doc.text.magnifyingglass"
                         )
                     }
@@ -435,6 +447,14 @@ struct TodayRootView: View {
         Task {
             await model.retry()
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }
 

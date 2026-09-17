@@ -2,7 +2,7 @@ import SwiftUI
 
 struct BodyFlowBrandIdentityView: View {
     var body: some View {
-        Text("Performe AI")
+        Text(BrandIdentity.productName)
             .font(BodyFlowTypography.headline)
             .fontWeight(.bold)
             .foregroundStyle(BodyFlowColor.accent)

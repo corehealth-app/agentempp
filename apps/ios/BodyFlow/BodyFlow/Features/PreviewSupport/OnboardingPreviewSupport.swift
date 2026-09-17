@@ -6,6 +6,7 @@ import Foundation
 actor OnboardingPreviewRepository: OnboardingRepository {
     private let stateStore: DemoStateStore
     private let drafts: DemoOnboardingRepository
+    private let preloadsCompletedFixture: Bool
     let receiptNamespace: String
     private let persistsReceipts: Bool
     private let resetsReceipts: Bool
@@ -15,11 +16,13 @@ actor OnboardingPreviewRepository: OnboardingRepository {
         stateStore: DemoStateStore,
         buildFlavor: AppBuildFlavor,
         preloadsSyntheticOnboardingValues: Bool,
+        preloadsCompletedFixture: Bool = false,
         receiptNamespace: String = DemoStorageService.development,
         persistsReceipts: Bool = false,
         resetsReceipts: Bool = false
     ) {
         self.stateStore = stateStore
+        self.preloadsCompletedFixture = preloadsCompletedFixture
         self.receiptNamespace = receiptNamespace
         self.persistsReceipts = persistsReceipts
         self.resetsReceipts = resetsReceipts
@@ -149,6 +152,70 @@ actor OnboardingPreviewRepository: OnboardingRepository {
             throw OnboardingRepositoryError.invalidDraft
         }
         try await prepareReceipts(for: userID)
+        try await preloadCompletedReceiptIfNeeded(for: userID)
+    }
+
+    private func preloadCompletedReceiptIfNeeded(for userID: String) async throws {
+        guard preloadsCompletedFixture,
+              try await receipt(for: userID) == nil else { return }
+
+        let locale = "pt-BR"
+        let requirements = Self.requirements(locale: locale)
+        let actions = requirements.documents.map(\.explicitAction)
+        let draft = OnboardingDraft(
+            displayName: "Fixture User",
+            localeIdentifier: locale,
+            countryCode: "BR",
+            timeZoneIdentifier: "America/Sao_Paulo",
+            biologicalSex: .feminine,
+            birthDate: Date(timeIntervalSince1970: 946_684_800),
+            heightCM: 170,
+            weightKG: 65,
+            bodyFatPercent: 25,
+            objective: .bodyRecomposition,
+            activityLevel: .moderate,
+            trainingFrequency: 3,
+            waterIntake: .moderate,
+            hungerLevel: .moderate,
+            wakeTime: LocalTime(hour: 7, minute: 0),
+            bedtime: LocalTime(hour: 23, minute: 0),
+            foodOrganization: .yes,
+            persona: .focus,
+            consent: nil,
+            documentActions: actions,
+            currentStep: .completion
+        )
+        let timestamp = "2026-09-17T00:00:00.000Z"
+        let acknowledgement = OnboardingCompletionAcknowledgement(
+            onboardingCompleted: true,
+            completedAt: timestamp,
+            objective: .bodyRecomposition,
+            persona: .focus,
+            documentActions: requirements.documents.map { document in
+                OnboardingAcceptedAction(
+                    documentKey: document.documentKey,
+                    version: document.version,
+                    locale: document.locale,
+                    contentHash: document.contentHash,
+                    purpose: document.purpose,
+                    action: document.action,
+                    actedAt: timestamp
+                )
+            }
+        )
+        guard acknowledgement.matches(draft) else {
+            throw OnboardingRepositoryError.storageUnavailable
+        }
+        _ = try await OnboardingPreviewReceiptCache.shared.commit(
+            OnboardingPreviewReceipt(
+                key: "qa-completed-fixture-v1",
+                draft: draft,
+                acknowledgement: acknowledgement
+            ),
+            namespace: receiptNamespace,
+            persistent: persistsReceipts,
+            userID: userID
+        )
     }
 
     private func prepareReceipts(for userID: String) async throws {

@@ -33,6 +33,27 @@ struct TodayPresentationTests {
             == "menos 83 quilocalorias; exercício incluído")
     }
 
+    @Test("English client-owned Today copy and energy announcements are localized")
+    func englishClientOwnedCopyIsLocalized() throws {
+        let presentation = TodayPresentation(
+            snapshot: try BodyFlowTestFixtures.decodeInconsistentToday().data
+        )
+
+        #expect(presentation.attention.pending[0].title(for: .englishUnitedStates)
+            == "Meal proposal")
+        #expect(presentation.attention.pending[1].title(for: .englishUnitedStates)
+            == "Workout proposal")
+        #expect(presentation.attention.pending[1].detail(for: .englishUnitedStates)
+            == "Pending confirmation")
+        #expect(presentation.completionMessage(for: .englishUnitedStates) == nil)
+        #expect(presentation.energy.remainingFoodAccessibilityValue(
+            for: .englishUnitedStates
+        ) == "731 kilocalories; exercise excluded")
+        #expect(presentation.energy.netBalanceAccessibilityValue(
+            for: .englishUnitedStates
+        ) == "minus 83 kilocalories; exercise included")
+    }
+
     @Test("header values come from the response without client clock defaults")
     func headerUsesResponse() throws {
         let snapshot = try Self.snapshotWithUpdatedAt().data
@@ -45,16 +66,18 @@ struct TodayPresentationTests {
         ))
     }
 
-    @Test("attention and pending sections precede official energy")
-    func attentionPrecedesEnergy() throws {
+    @Test("core metrics precede pending context while preserving response order")
+    func coreMetricsPrecedePendingContext() throws {
         let presentation = TodayPresentation(
             snapshot: try BodyFlowTestFixtures.decodeInconsistentToday().data
         )
 
-        #expect(presentation.sectionOrder.prefix(3) == [
+        #expect(presentation.sectionOrder.prefix(5) == [
+            .energy,
+            .protein,
+            .hydration,
             .attention,
             .pending,
-            .energy,
         ])
         #expect(presentation.attention.pendingRegistrationIDs
             == ["pending-z", "pending-a"])
@@ -72,6 +95,23 @@ struct TodayPresentationTests {
                 scheduledFor: "2026-07-20T11:00:00Z"
             ),
         ])
+    }
+
+    @Test("core metrics precede pending information without merging meanings")
+    func coreMetricsPrecedeAttention() throws {
+        let presentation = TodayPresentation(
+            snapshot: try BodyFlowTestFixtures.decodeInconsistentToday().data
+        )
+
+        #expect(presentation.sectionOrder.prefix(5) == [
+            .energy,
+            .protein,
+            .hydration,
+            .attention,
+            .pending,
+        ])
+        #expect(presentation.energy.remainingFoodKcal == 731)
+        #expect(presentation.energy.dailyBalanceKcal == -83)
     }
 
     @Test("same routine rule at different times keeps distinct ordered identities")
@@ -229,6 +269,9 @@ struct TodayPresentationTests {
 
         #expect(TodayPresentation(snapshot: snapshot).completionMessage
             == "Dados insuficientes para fechar o dia")
+        #expect(TodayPresentation(snapshot: snapshot).completionMessage(
+            for: .englishUnitedStates
+        ) == "Insufficient data to close the day")
     }
 
     @Test("missing target hydration goal and block are unavailable never zero")

@@ -21,4 +21,16 @@ struct AppTabTests {
             "screen.progresso", "screen.perfil",
         ])
     }
+
+    @Test("English labels preserve tab order and technical identity")
+    func englishLabelsPreserveTechnicalContract() {
+        #expect(AppTab.allCases.map {
+            $0.title(for: .englishUnitedStates)
+        } == [
+            "Today", "Register", "Plan", "Progress", "Profile",
+        ])
+        #expect(AppTab.allCases.map(\.rawValue) == [
+            "today", "register", "plan", "progress", "profile",
+        ])
+    }
 }

@@ -19,26 +19,42 @@ struct TodayHydrationDescriptor: Equatable, Sendable {
 @MainActor
 struct TodayHydrationSection: View {
     let descriptor: TodayHydrationDescriptor
+    @Environment(\.locale) private var locale
 
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label("Hidratação", systemImage: "drop")
+                Label(copy("today.hydration.title"), systemImage: "drop")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
                 FixtureMetricRow(
-                    title: "Consumido",
-                    value: TodayValueFormatter.milliliters(descriptor.consumedML)
+                    title: copy("metric.consumed"),
+                    value: TodayValueFormatter.milliliters(
+                        descriptor.consumedML,
+                        language: language
+                    )
                 )
                 Divider()
-                FixtureMetricRow(title: "Meta", value: descriptor.targetText)
+                FixtureMetricRow(
+                    title: copy("metric.target"),
+                    value: TodayValueFormatter.optionalMilliliters(
+                        descriptor.targetML,
+                        language: language
+                    )
+                )
                 Divider()
-                FixtureMetricRow(title: "Restante", value: descriptor.remainingText)
+                FixtureMetricRow(
+                    title: copy("metric.remaining"),
+                    value: TodayValueFormatter.optionalMilliliters(
+                        descriptor.remainingML,
+                        language: language
+                    )
+                )
                 if let percentage = descriptor.percentage {
                     Divider()
                     FixtureMetricRow(
-                        title: "Progresso informado",
+                        title: copy("metric.reported-progress"),
                         value: "\(percentage)%"
                     )
                 }
@@ -50,8 +66,16 @@ struct TodayHydrationSection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityValue(
-            "\(TodayValueFormatter.milliliters(descriptor.consumedML)); meta \(descriptor.targetText)"
+            "\(TodayValueFormatter.milliliters(descriptor.consumedML, language: language)); \(copy("metric.target").lowercased()) \(TodayValueFormatter.optionalMilliliters(descriptor.targetML, language: language))"
         )
         .accessibilityIdentifier("today.hydration")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }

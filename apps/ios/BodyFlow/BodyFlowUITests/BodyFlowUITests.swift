@@ -180,9 +180,24 @@ final class BodyFlowUITests: XCTestCase {
         XCTAssertTrue(waitForHorizontallySettled(sheet, in: app))
         XCTAssertTrue(waitForVisualStability())
         XCTAssertTrue(
-            app.staticTexts["Demonstração local. Nenhum registro foi salvo."]
-                .waitForExistence(timeout: 3)
+            app.staticTexts[
+                "Demonstração local. Disponibilidade não implica sincronização em Release."
+            ].waitForExistence(timeout: 3)
         )
+        XCTAssertTrue(
+            app.staticTexts[
+                "Demonstração local; sem permissão de mídia ou upload."
+            ].waitForExistence(timeout: 3)
+        )
+
+        let photo = app.buttons["registration.meal.source.photo"]
+        let audio = app.buttons["registration.meal.source.audio"]
+        let text = app.buttons["registration.meal.source.text"]
+        XCTAssertEqual(photo.label, "Foto — amostra local")
+        XCTAssertEqual(audio.label, "Áudio — amostra local")
+        XCTAssertEqual(text.label, "Texto")
+        XCTAssertEqual(app.alerts.count, 0, "A amostra local não solicita permissão de mídia")
+        XCTAssertFalse(app.staticTexts["Registro salvo"].exists)
 
         capture("07-registro-refeicao", app: app)
         let closeButton = app.buttons["sheet.fechar"]

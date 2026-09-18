@@ -83,6 +83,7 @@ struct ProfileRootView: View {
                 )
             } header: {
                 Text(copy("profile.identity.section"))
+                    .foregroundStyle(BodyFlowColor.primaryText)
             }
 
             Section {
@@ -132,6 +133,7 @@ struct ProfileRootView: View {
                 .accessibilityIdentifier("profile.detail")
             } header: {
                 Text(copy("profile.preferences.section"))
+                    .foregroundStyle(BodyFlowColor.primaryText)
             }
         }
         .listStyle(.insetGrouped)

@@ -4,6 +4,13 @@ import SwiftUI
 enum BodyFlowMarkdownLinkPolicy {
     static let accessibilityAnnouncement = "Link externo"
 
+    static func accessibilityAnnouncement(
+        for language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string("markdown.link.external", for: language))
+            ?? accessibilityAnnouncement
+    }
+
     static func validatedHTTPSURL(_ destination: String) -> URL? {
         guard !destination.unicodeScalars.contains(where: {
             $0.properties.isWhitespace
@@ -104,6 +111,7 @@ enum BodyFlowMarkdownListAccessibilityPolicy {
 @MainActor
 struct BodyFlowMarkdownView: View {
     let document: BodyFlowMarkdownDocument
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -182,7 +190,7 @@ struct BodyFlowMarkdownView: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(
-                    ordered ? "Item \(index + 1)" : "Item da lista"
+                    format("markdown.list.item-format", index + 1)
                 )
             }
         }
@@ -198,23 +206,53 @@ struct BodyFlowMarkdownView: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityValue(
-                    "Item \(item.position) de \(item.count)"
+                    format(
+                        "markdown.list.position-format",
+                        item.position,
+                        item.count
+                    )
                 )
             }
-            .accessibilityLabel(ordered ? "Lista ordenada" : "Lista")
+            .accessibilityLabel(copy(
+                ordered ? "markdown.list.ordered" : "markdown.list.unordered"
+            ))
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
+    }
+
+    private func format(
+        _ key: String.LocalizationValue,
+        _ arguments: CVarArg...
+    ) -> String {
+        String(
+            format: copy(key),
+            locale: language.formattingLocale,
+            arguments: arguments
+        )
     }
 }
 
 @MainActor
 private struct MarkdownInlineText: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.locale) private var locale
 
     let children: [BodyFlowMarkdownInline]
 
     @ViewBuilder
     var body: some View {
-        let presentation = BodyFlowMarkdownInlinePresentation.make(children)
+        let language = BodyFlowPresentationLanguage.resolve(locale)
+        let presentation = BodyFlowMarkdownInlinePresentation.make(
+            children,
+            language: language
+        )
         let openURLHandler = BodyFlowMarkdownOpenURLHandler()
 
         if let link = BodyFlowMarkdownStandaloneLink.make(children) {
@@ -224,7 +262,7 @@ private struct MarkdownInlineText: View {
                 .accessibilityLabel(
                     "\(link.label), "
                         + BodyFlowMarkdownLinkPolicy
-                            .accessibilityAnnouncement
+                            .accessibilityAnnouncement(for: language)
                 )
                 .accessibilityIdentifier(link.label)
                 .accessibilityAddTraits(.isLink)
@@ -301,13 +339,16 @@ struct BodyFlowMarkdownInlinePresentation: Equatable, Sendable {
     let accessibilityHint: String
 
     static func make(
-        _ inlines: [BodyFlowMarkdownInline]
+        _ inlines: [BodyFlowMarkdownInline],
+        language: SupportedAppLanguage = .portugueseBrazil
     ) -> Self {
         let fragment = makeFragment(inlines)
         return Self(
             text: fragment.text,
             accessibilityHint: fragment.hasExternalLink
-                ? BodyFlowMarkdownLinkPolicy.accessibilityAnnouncement
+                ? BodyFlowMarkdownLinkPolicy.accessibilityAnnouncement(
+                    for: language
+                )
                 : ""
         )
     }

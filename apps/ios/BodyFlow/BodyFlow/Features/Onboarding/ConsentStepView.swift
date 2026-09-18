@@ -179,7 +179,9 @@ struct ConsentStepView: View {
                 ) {
                     Text(title(for: documentID))
                         .font(BodyFlowTypography.headline)
-                    Text(isAccepted ? "Selecionado" : "Não selecionado")
+                    Text(isAccepted
+                         ? copy("onboarding.selection.selected", fallback: "Selecionado")
+                         : copy("onboarding.selection.not-selected", fallback: "Não selecionado"))
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                 }
@@ -210,9 +212,15 @@ struct ConsentStepView: View {
     ) -> String {
         switch documentID {
         case .terms:
-            "Confirmo os Termos de desenvolvimento (dev.terms.v1)"
+            copy(
+                "onboarding.consent.development.terms",
+                fallback: "Confirmo os Termos de desenvolvimento (dev.terms.v1)"
+            )
         case .privacy:
-            "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)"
+            copy(
+                "onboarding.consent.development.privacy",
+                fallback: "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)"
+            )
         }
     }
 

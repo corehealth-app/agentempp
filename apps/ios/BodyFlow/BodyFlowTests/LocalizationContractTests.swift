@@ -6,6 +6,128 @@ import Testing
 @Suite
 struct LocalizationContractTests {
     @Test(arguments: SupportedAppLanguage.allCases)
+    func testEveryReviewedPublicCatalogKeyHasBothLanguages(
+        _ language: SupportedAppLanguage
+    ) throws {
+        let reviewedKeys = [
+            "onboarding.selection.placeholder",
+            "onboarding.selection.selected",
+            "onboarding.selection.not-selected",
+            "onboarding.welcome.display-name.title",
+            "onboarding.welcome.display-name.placeholder",
+            "onboarding.welcome.app-language.title",
+            "onboarding.welcome.app-language.detail",
+            "onboarding.welcome.country.title",
+            "onboarding.welcome.country-picker.title",
+            "onboarding.welcome.country-picker.search",
+            "onboarding.welcome.time-zone.title",
+            "onboarding.welcome.time-zone-picker.title",
+            "onboarding.welcome.time-zone-picker.search",
+            "onboarding.body-data.biological-sex.title",
+            "onboarding.body-data.birth-date.title",
+            "onboarding.body-data.birth-date.select",
+            "onboarding.body-data.height.title",
+            "onboarding.body-data.weight.title",
+            "onboarding.body-data.body-fat.title",
+            "onboarding.body-data.body-fat.accessibility-label",
+            "onboarding.body-data.optional",
+            "onboarding.body-data.not-provided-format",
+            "onboarding.biological-sex.masculine",
+            "onboarding.biological-sex.feminine",
+            "onboarding.objective.body-recomposition.title",
+            "onboarding.objective.body-recomposition.detail",
+            "onboarding.objective.muscle-gain.title",
+            "onboarding.objective.muscle-gain.detail",
+            "onboarding.objective.maintenance.title",
+            "onboarding.objective.maintenance.detail",
+            "onboarding.routine.activity-level.title",
+            "onboarding.routine.activity-level.sedentary",
+            "onboarding.routine.activity-level.light",
+            "onboarding.routine.activity-level.moderate",
+            "onboarding.routine.activity-level.high",
+            "onboarding.routine.activity-level.athlete",
+            "onboarding.routine.training-frequency.title",
+            "onboarding.routine.training-frequency.set",
+            "onboarding.routine.training-frequency.format",
+            "onboarding.routine.water-intake.title",
+            "onboarding.routine.water-intake.low",
+            "onboarding.routine.water-intake.moderate",
+            "onboarding.routine.water-intake.high",
+            "onboarding.routine.hunger-level.title",
+            "onboarding.routine.hunger-level.low",
+            "onboarding.routine.hunger-level.moderate",
+            "onboarding.routine.hunger-level.high",
+            "onboarding.routine.wake-time.title",
+            "onboarding.routine.bedtime.title",
+            "onboarding.routine.select-time",
+            "onboarding.routine.food-organization.title",
+            "onboarding.routine.food-organization.unconfirmed",
+            "onboarding.routine.food-organization.confirm-no",
+            "onboarding.persona.focus.title",
+            "onboarding.persona.focus.detail",
+            "onboarding.persona.impulse.title",
+            "onboarding.persona.impulse.detail",
+            "onboarding.persona.zen.title",
+            "onboarding.persona.zen.detail",
+            "onboarding.consent.development.terms",
+            "onboarding.consent.development.privacy",
+            "onboarding.completion.name",
+            "onboarding.completion.country",
+            "onboarding.completion.time-zone",
+            "onboarding.completion.objective",
+            "onboarding.completion.training",
+            "onboarding.completion.flow-style",
+            "onboarding.completion.official-documents",
+            "onboarding.completion.development-consent",
+            "onboarding.completion.not-provided",
+            "onboarding.completion.not-selected",
+            "onboarding.completion.pending",
+            "onboarding.completion.confirmed",
+            "onboarding.completion.action-count.one",
+            "onboarding.completion.action-count.other",
+            "onboarding.completion.version-action-format",
+            "onboarding.completion.action.acceptance",
+            "onboarding.completion.action.acknowledgement",
+            "onboarding.completion.action.consent",
+            "today.recommendations.heading",
+            "today.recommendations.library",
+            "today.recommendations.empty",
+            "today.recommendations.offline",
+            "today.recommendations.error",
+            "today.recommendations.unavailable",
+            "today.provenance.confirmed",
+            "today.provenance.estimate",
+            "today.provenance.user-provided",
+            "today.provenance.unknown",
+            "mascot.persona.balanced",
+            "markdown.list.ordered",
+            "markdown.list.unordered",
+            "markdown.list.item-format",
+            "markdown.list.position-format",
+            "markdown.link.external",
+            "content.bounded.not-found",
+            "content.bounded.subscription-required",
+            "content.mutation.updating",
+            "content.mutation.saved",
+            "content.mutation.unsaved",
+            "content.mutation.completed",
+            "content.mutation.reloading",
+            "content.mutation.error",
+            "content.mutation.unavailable",
+            "content.action.back",
+            "content.action.library",
+        ]
+
+        for key in reviewedKeys {
+            let localized = try AppLocalization.string(
+                String.LocalizationValue(key),
+                for: language
+            )
+            #expect(localized != key, "Missing reviewed public copy: \(key) / \(language)")
+        }
+    }
+
+    @Test(arguments: SupportedAppLanguage.allCases)
     func sharedStateCatalogIsCompleteAndReviewed(_ language: SupportedAppLanguage) throws {
         let keys = [
             "state.loading.title", "state.loading.detail",
@@ -33,6 +155,31 @@ struct LocalizationContractTests {
 
         #expect(languageIdentifiers == OnboardingLocalePolicy.supportedIdentifiers)
         #expect(languageIdentifiers == Set(ContentLocale.allCases.map(\.rawValue)))
+    }
+
+    @Test
+    func reviewedConvergenceCopyIsNaturalAndPresentationAware() throws {
+        #expect(TodayRecommendationsPresentation.heading(for: .portugueseBrazil) ==
+            "Conteúdos para hoje")
+        #expect(TodayRecommendationsPresentation.heading(for: .englishUnitedStates) ==
+            "Today's content")
+        #expect(TodayRecommendationsLibraryAction(language: .englishUnitedStates).title ==
+            "View library")
+        #expect(TodayNutritionProvenance.label(
+            for: "canonical_exact",
+            language: .englishUnitedStates
+        ) == "Confirmed reference")
+        #expect(TodayNutritionProvenance.label(
+            for: "user_correction",
+            language: .portugueseBrazil
+        ) == "Informado pelo paciente")
+        #expect(BodyFlowMarkdownLinkPolicy.accessibilityAnnouncement(
+            for: .englishUnitedStates
+        ) == "External link")
+        #expect(BodyFlowMarkdownInlinePresentation.make(
+            [.link(destination: "https://example.com", children: [.text("Guide")])],
+            language: .englishUnitedStates
+        ).accessibilityHint == "External link")
     }
 
     @Test

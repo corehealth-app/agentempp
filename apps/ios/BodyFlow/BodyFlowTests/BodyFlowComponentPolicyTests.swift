@@ -62,9 +62,9 @@ struct BodyFlowComponentPolicyTests {
         }
     }
 
-    @MainActor @Test func defaultCardStillUsesLegacySurface() {
-        let legacy = BodyFlowCard { Text("Received value") }
-        let grouped = BodyFlowCard(surface: .card) { Text("Received value") }
+    @MainActor @Test func reviewedDefaultCardUsesSemanticSurfaceAndKeepsRollbackRole() {
+        let grouped = BodyFlowCard { Text("Received value") }
+        let legacy = BodyFlowCard(surface: .legacy) { Text("Received value") }
         #expect(legacy.surface == .legacy)
         #expect(grouped.surface == .card)
     }

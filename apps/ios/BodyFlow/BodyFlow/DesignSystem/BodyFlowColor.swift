@@ -50,19 +50,20 @@ enum BodyFlowColor {
         })
     }
 
-    // Legacy APIs retain their previous palette and native semantic behavior.
+    // Legacy palette constants remain byte-identical for historical assets and
+    // the explicit rollback surface. Public aliases converge on semantic roles.
     static let tealGreen = brandColor(0x006D67)
     static let warmCream = brandColor(0xF6EFE3)
     static let charcoal = brandColor(0x222528)
     static let mutedCoral = brandColor(0xFF7F6B)
     static let softGold = brandColor(0xD4AF7A)
 
-    static let background = dynamicColor(light: warmCream, dark: charcoal)
-    static let surface = Color(uiColor: .secondarySystemBackground)
-    static let primaryText = dynamicColor(light: charcoal, dark: warmCream)
-    static let secondaryText = Color(uiColor: .secondaryLabel)
-    static let accent = dynamicColor(light: tealGreen, dark: softGold)
-    static let warning = mutedCoral
+    static let background = color(.backgroundPrimary)
+    static let surface = color(.backgroundSecondary)
+    static let primaryText = color(.textPrimary)
+    static let secondaryText = color(.textSecondary)
+    static let accent = color(.brandPrimary)
+    static let warning = color(.feedbackWarning)
     static let achievement = softGold
     static let onAchievement = charcoal
 

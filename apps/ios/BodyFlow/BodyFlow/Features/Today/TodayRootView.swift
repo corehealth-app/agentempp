@@ -14,7 +14,10 @@ struct TodayPresentation: Equatable, Sendable {
     let completionStatus: String
     let sectionOrder: [TodaySectionKind]
 
-    init(snapshot: TodaySnapshot) {
+    init(
+        snapshot: TodaySnapshot,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
         header = TodayHeaderDescriptor(
             localDate: snapshot.localDate,
             protocolName: snapshot.protocolName,
@@ -61,7 +64,8 @@ struct TodayPresentation: Equatable, Sendable {
                 fatG: meal.fatG,
                 consumedAt: meal.consumedAt,
                 provenance: TodayNutritionProvenance.label(
-                    for: meal.nutritionSource
+                    for: meal.nutritionSource,
+                    language: language
                 )
             )
         }
@@ -353,7 +357,7 @@ struct TodayRootView: View {
             )
         } else if let snapshot = presentation.value {
             loadedContent(
-                TodayPresentation(snapshot: snapshot),
+                TodayPresentation(snapshot: snapshot, language: language),
                 showsStaleBanner: presentation.showsStaleBanner
             )
         }

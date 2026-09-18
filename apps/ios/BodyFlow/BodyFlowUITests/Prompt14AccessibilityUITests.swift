@@ -57,7 +57,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             support.element("screen.library", in: app)
                 .waitForExistence(timeout: 5)
         )
-        assertSingleActiveBrand(in: app)
+        assertBrandHiddenOnPushedDestination(in: app)
 
         app.tabBars.buttons["tab.plano"].tap()
         let planDetail = support.element("plan.detail", in: app)
@@ -67,7 +67,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             support.element("screen.plan.detail", in: app)
                 .waitForExistence(timeout: 5)
         )
-        assertSingleActiveBrand(in: app)
+        assertBrandHiddenOnPushedDestination(in: app)
 
         app.tabBars.buttons["tab.registrar"].tap()
         XCTAssertTrue(
@@ -93,13 +93,13 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             support.element("screen.library", in: app)
                 .waitForExistence(timeout: 5)
         )
-        assertSingleActiveBrand(in: app)
+        assertBrandHiddenOnPushedDestination(in: app)
         app.tabBars.buttons["tab.plano"].tap()
         XCTAssertTrue(
             support.element("screen.plan.detail", in: app)
                 .waitForExistence(timeout: 5)
         )
-        assertSingleActiveBrand(in: app)
+        assertBrandHiddenOnPushedDestination(in: app)
         support.captureEvidence(.finalSimulator, of: app)
     }
 
@@ -160,6 +160,8 @@ final class Prompt14AccessibilityUITests: XCTestCase {
     @MainActor
     func testDarkModeEvidence() {
         let support = Prompt14UITestSupport(testCase: self)
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
         let app = support.launch(scenario: .mascotFocusActive)
 
         let today = support.element("screen.hoje", in: app)
@@ -185,34 +187,13 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         support.openLibrary(in: app)
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        let brands = app.staticTexts.matching(
-            identifier: "brand.product-name"
-        )
-        XCTAssertEqual(
-            brands.count,
-            1,
-            "Only the active authenticated tab may expose the BodyFlow brand"
-        )
-        let brand = brands.element(boundBy: 0)
+        assertBrandHiddenOnPushedDestination(in: app)
         let navigationBar = app.navigationBars["Biblioteca"]
         let tabBar = app.tabBars.element(boundBy: 0)
         let scrollView = app.scrollViews["screen.library"]
-        for chrome in [brand, navigationBar, tabBar, scrollView] {
+        for chrome in [navigationBar, tabBar, scrollView] {
             XCTAssertTrue(chrome.waitForExistence(timeout: 5))
         }
-        XCTAssertTrue(
-            brand.isHittable,
-            "The reserved BodyFlow brand must remain visually exposed"
-        )
-        XCTAssertTrue(
-            brand.frame.intersection(navigationBar.frame).isNull,
-            "The brand must reserve real space above the Library navigation bar"
-        )
-        XCTAssertGreaterThanOrEqual(
-            navigationBar.frame.minY,
-            brand.frame.maxY,
-            "The Library navigation bar must start below the brand"
-        )
         let description = app.staticTexts[
             "Explore conteúdos educativos publicados para apoiar sua jornada."
         ]
@@ -244,7 +225,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             category,
             in: scrollView,
             within: window,
-            below: [brand, navigationBar],
+            below: [navigationBar],
             above: tabBar
         )
         let firstCard = support.element(
@@ -256,7 +237,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             [category, firstCard],
             in: scrollView,
             within: window,
-            below: [brand, navigationBar],
+            below: [navigationBar],
             above: tabBar
         )
         let evidenceFrame = category.frame.union(firstCard.frame)
@@ -278,7 +259,6 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
         XCTAssertTrue(category.frame.intersection(tabBar.frame).isNull)
         XCTAssertTrue(firstCard.frame.intersection(tabBar.frame).isNull)
-        XCTAssertTrue(category.frame.intersection(brand.frame).isNull)
         XCTAssertTrue(category.frame.intersection(navigationBar.frame).isNull)
         XCTAssertLessThanOrEqual(
             selectionAll.frame.maxY,
@@ -299,14 +279,13 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             firstCard,
             in: scrollView,
             within: window,
-            below: [brand, navigationBar],
+            below: [navigationBar],
             above: tabBar
         )
         XCTAssertTrue(firstCard.isHittable)
         XCTAssertTrue(viewport.contains(firstCard.frame))
         support.assertAccessibilityOrder(
             [
-                "identifier: 'brand.product-name'",
                 "NavigationBar,",
                 "identifier: 'screen.library'",
                 "identifier: 'library.category'",
@@ -334,20 +313,17 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                     contentSizeCategory,
                 ]
             )
-            support.openLibrary(in: app)
-
             let window = app.windows.element(boundBy: 0)
             let brand = app.staticTexts["brand.product-name"]
-            let navigationBar = app.navigationBars["Biblioteca"]
+            let navigationBar = app.navigationBars["Hoje"]
             let tabBar = app.tabBars.element(boundBy: 0)
-            let scrollView = app.scrollViews["screen.library"]
-            let category = support.element("library.category", in: app)
+            let screen = support.element("screen.hoje", in: app)
             for element in [
                 window,
                 brand,
                 navigationBar,
                 tabBar,
-                category,
+                screen,
             ] {
                 XCTAssertTrue(
                     element.waitForExistence(timeout: 5),
@@ -373,39 +349,12 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                 navigationBar.frame.minY,
                 brand.frame.maxY
             )
-            XCTAssertEqual(
-                category.descendants(matching: .button).count,
-                0
-            )
-            let categoryLabels = category.descendants(matching: .staticText)
-            XCTAssertEqual(categoryLabels.count, 1)
+            support.openLibrary(in: app)
             XCTAssertTrue(
-                category.frame.contains(
-                    categoryLabels.element(boundBy: 0).frame
-                )
+                support.element("screen.library", in: app)
+                    .waitForExistence(timeout: 5)
             )
-            let viewport: CGRect
-            if scrollView.exists {
-                viewport = support.revealFully(
-                    category,
-                    in: scrollView,
-                    within: window,
-                    below: [brand, navigationBar],
-                    above: tabBar
-                )
-            } else {
-                viewport = support.usableViewport(
-                    within: window,
-                    below: [brand, navigationBar],
-                    above: tabBar
-                )
-            }
-            XCTAssertTrue(category.isHittable)
-            XCTAssertTrue(viewport.contains(category.frame))
-            XCTAssertTrue(category.frame.intersection(brand.frame).isNull)
-            XCTAssertTrue(
-                category.frame.intersection(navigationBar.frame).isNull
-            )
+            assertBrandHiddenOnPushedDestination(in: app)
             app.terminate()
         }
     }
@@ -462,6 +411,21 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         XCTAssertEqual(brands.count, 1, file: file, line: line)
         XCTAssertTrue(
             brands.element(boundBy: 0).isHittable,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertBrandHiddenOnPushedDestination(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            app.staticTexts.matching(identifier: "brand.product-name").count,
+            0,
+            "Pushed destinations own the navigation chrome and must not duplicate the shell wordmark",
             file: file,
             line: line
         )

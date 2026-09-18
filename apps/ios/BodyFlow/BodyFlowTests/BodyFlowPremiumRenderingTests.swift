@@ -10,6 +10,73 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5,
     ]
 
+    func testAllTabsAndStateFamiliesAXXXL() throws {
+        let states: [ScreenState] = [
+            .loading, .empty, .recoverableError, .offline, .unavailable,
+        ]
+
+        XCTAssertEqual(
+            BodyFlowCard { EmptyView() }.surface,
+            .card,
+            "Reviewed public cards should use the semantic card surface by default"
+        )
+
+        for language in SupportedAppLanguage.allCases {
+            let locale = language.formattingLocale
+            for dark in [false, true] {
+                for width: CGFloat in [375, 393, 430] {
+                    for size in sizes {
+                        for tab in AppTab.allCases {
+                            let title = tab.title(for: language)
+                            let label = Button(title, action: {})
+                                .buttonStyle(BodyFlowButtonStyle(role: .tertiary))
+                                .accessibilityIdentifier("convergence.tab.\(tab.rawValue)")
+                            let frame = PremiumRenderingTestSupport.fittingSize(
+                                label,
+                                width: width,
+                                dark: dark,
+                                size: size,
+                                locale: locale
+                            )
+                            XCTAssertLessThanOrEqual(frame.width, width + 1)
+                            XCTAssertGreaterThanOrEqual(frame.height, 44)
+                            let probe = PremiumRenderingTestSupport.accessibilityProbe(
+                                label,
+                                width: width,
+                                size: size
+                            )
+                            XCTAssertEqual(
+                                probe.filter { $0.label == title && $0.isButton }.count,
+                                1,
+                                "One accessible tab label: \(tab) / \(language) / \(size)"
+                            )
+                            XCTAssertTrue(probe.contains {
+                                $0.label == title && $0.frame.width >= 44 && $0.frame.height >= 44
+                            })
+                        }
+
+                        for state in states {
+                            let view = ScreenStateView(
+                                state: state,
+                                retryAction: {},
+                                accessibilityIdentifier: "convergence.\(state.accessibilityIdentifier)"
+                            )
+                            let frame = PremiumRenderingTestSupport.fittingSize(
+                                view,
+                                width: width,
+                                dark: dark,
+                                size: size,
+                                locale: locale
+                            )
+                            XCTAssertLessThanOrEqual(frame.width, width + 1)
+                            XCTAssertGreaterThan(frame.height, 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testNativeComponentsAcrossPresentationMatrix() throws {
         for language in SupportedAppLanguage.allCases {
             let locale = language.formattingLocale
@@ -174,12 +241,82 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         }
     }
 
+    func testReviewedPublicCallsitesDoNotKeepHardCodedLanguageDebt() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let reviewedSources: [(path: String, forbidden: [String])] = [
+            (
+                "BodyFlow/Features/Mascot/MascotCardView.swift",
+                ["Button(\"Tentar novamente\")", "?? \"indisponível\"", "\"Equilibrada\""]
+            ),
+            (
+                "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+                [
+                    "Text(\"Tentar novamente\")",
+                    "static let heading = \"Conteúdos para hoje\"",
+                    "static let emptyCopy = \"Nenhum conteúdo selecionado para hoje\"",
+                    "recoverableState(\"Sem conexão para carregar conteúdos.\")",
+                    "\"min de leitura\"",
+                ]
+            ),
+            (
+                "BodyFlow/Features/Today/TodayRecordsSection.swift",
+                ["\"Referência confirmada\"", "\"Origem não informada\""]
+            ),
+            (
+                "BodyFlow/Features/Shared/FeatureDetailView.swift",
+                ["Text(route.tab.title)"]
+            ),
+            (
+                "BodyFlow/Features/Library/BodyFlowMarkdownView.swift",
+                ["\"Lista ordenada\"", "\"Item da lista\""]
+            ),
+            (
+                "BodyFlow/Features/Library/PublishedContentDetailView.swift",
+                [
+                    "Label(presentation.message",
+                    "Text(presentation.message)",
+                    "Button(action == .back ? \"Voltar\" : \"Biblioteca\")",
+                ]
+            ),
+        ]
+
+        for review in reviewedSources {
+            let source = try String(
+                contentsOf: projectRoot.appendingPathComponent(review.path),
+                encoding: .utf8
+            )
+            for literal in review.forbidden {
+                XCTAssertFalse(
+                    source.contains(literal),
+                    "Reviewed public copy must use the bilingual catalog: \(review.path) / \(literal)"
+                )
+            }
+        }
+    }
+
+    func testReviewedMaterialHasOpaqueReduceTransparencyFallback() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: projectRoot.appendingPathComponent(
+                "BodyFlow/Features/Profile/CoachPersonaPickerView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceTransparency)"))
+        XCTAssertTrue(source.contains("BodyFlowColor.color(.surfaceElevated)"))
+    }
+
     private func fixture(label: String, body: String, locale: Locale, width: CGFloat, panel: Int) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             Text("Performe AI · Flow").font(BodyFlowTypography.screenTitle)
             Text("Native component baseline · QA").font(BodyFlowTypography.caption)
             if panel == 0 {
-                BodyFlowCard { Text(body).font(BodyFlowTypography.body) }
+                BodyFlowCard(surface: .legacy) { Text(body).font(BodyFlowTypography.body) }
                 BodyFlowCard(surface: .card) { Text(body).font(BodyFlowTypography.body) }
                 BodyFlowCard(surface: .hero) { Text(label).font(BodyFlowTypography.cardTitle) }
             } else if panel == 1 {

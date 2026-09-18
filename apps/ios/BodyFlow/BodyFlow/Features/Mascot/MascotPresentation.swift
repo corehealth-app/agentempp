@@ -62,7 +62,10 @@ struct MascotExperiencePresentation: Equatable, Sendable {
             snapshot.mascot.state,
             language: language
         )
-        changedAtText = MascotPresentation.changedAt(snapshot.mascot.changedAt)
+        changedAtText = MascotPresentation.changedAt(
+            snapshot.mascot.changedAt,
+            language: language
+        )
     }
 }
 
@@ -151,12 +154,15 @@ enum MascotPresentation {
         }
     }
 
-    static func changedAt(_ timestamp: APITimestamp) -> String {
+    static func changedAt(
+        _ timestamp: APITimestamp,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) -> String {
         timestamp.value.formatted(
             Date.FormatStyle(
                 date: .numeric,
                 time: .shortened,
-                locale: Locale(identifier: "pt_BR"),
+                locale: language.formattingLocale,
                 timeZone: .gmt
             )
         )

@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct ObjectiveStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -30,9 +31,9 @@ struct ObjectiveStepView: View {
                                 alignment: .leading,
                                 spacing: BodyFlowSpacing.xxs
                             ) {
-                                Text(value.onboardingLabel)
+                                Text(value.onboardingLabel(for: language))
                                     .fontWeight(.semibold)
-                                Text(value.onboardingDescription)
+                                Text(value.onboardingDescription(for: language))
                                     .font(BodyFlowTypography.callout)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                             }
@@ -65,6 +66,10 @@ struct ObjectiveStepView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.objective")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
     }
 
     private func identifier(for objective: BodyFlowObjective) -> String {

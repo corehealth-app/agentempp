@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct BodyDataStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -14,11 +15,14 @@ struct BodyDataStepView: View {
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Sexo biológico").font(BodyFlowTypography.headline)
-                Picker("Sexo biológico", selection: biologicalSex) {
-                    Text("Selecione").tag(nil as BiologicalSex?)
+                Text(copy("onboarding.body-data.biological-sex.title"))
+                    .font(BodyFlowTypography.headline)
+                Picker(copy("onboarding.body-data.biological-sex.title"), selection: biologicalSex) {
+                    Text(copy("onboarding.selection.placeholder"))
+                        .tag(nil as BiologicalSex?)
                     ForEach(BiologicalSex.allCases, id: \.self) { value in
-                        Text(value.onboardingLabel).tag(value as BiologicalSex?)
+                        Text(value.onboardingLabel(for: language))
+                            .tag(value as BiologicalSex?)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -29,10 +33,11 @@ struct BodyDataStepView: View {
             }
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Data de nascimento").font(BodyFlowTypography.headline)
+                Text(copy("onboarding.body-data.birth-date.title"))
+                    .font(BodyFlowTypography.headline)
                 if model.draft.birthDate != nil {
                     DatePicker(
-                        "Data de nascimento",
+                        copy("onboarding.body-data.birth-date.title"),
                         selection: birthDate,
                         in: ...Date(),
                         displayedComponents: .date
@@ -40,7 +45,7 @@ struct BodyDataStepView: View {
                     .labelsHidden()
                     .datePickerStyle(.compact)
                     .environment(\.timeZone, birthDateTimeZone)
-                    .accessibilityLabel("Data de nascimento")
+                    .accessibilityLabel(copy("onboarding.body-data.birth-date.title"))
                     .accessibilityHint(
                         model.accessibilityHint(
                             for: [.birthDateRequired, .birthDateInFuture]
@@ -55,7 +60,7 @@ struct BodyDataStepView: View {
                             )
                         )
                     } label: {
-                        Text("Selecionar data")
+                        Text(copy("onboarding.body-data.birth-date.select"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
@@ -75,19 +80,19 @@ struct BodyDataStepView: View {
             }
 
             decimalField(
-                descriptor: .height,
+                descriptor: .height(language: language),
                 value: height,
                 identifier: "onboarding.height",
                 issues: [.heightOutOfRange]
             )
             decimalField(
-                descriptor: .weight,
+                descriptor: .weight(language: language),
                 value: weight,
                 identifier: "onboarding.weight",
                 issues: [.weightOutOfRange]
             )
             decimalField(
-                descriptor: .bodyFat,
+                descriptor: .bodyFat(language: language),
                 value: bodyFat,
                 identifier: "onboarding.body-fat",
                 issues: [.bodyFatOutOfRange]
@@ -99,6 +104,14 @@ struct BodyDataStepView: View {
 
     private var biologicalSex: Binding<BiologicalSex?> {
         Binding(get: { model.draft.biologicalSex }, set: { model.updateBiologicalSex($0) })
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
     }
 
     private var birthDate: Binding<Date> {
@@ -142,7 +155,10 @@ struct BodyDataStepView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(descriptor.accessibilityLabel)
-                    .accessibilityValue(descriptor.accessibilityValue(for: value.wrappedValue))
+                    .accessibilityValue(descriptor.accessibilityValue(
+                        for: value.wrappedValue,
+                        language: language
+                    ))
                     .accessibilityHint(model.accessibilityHint(for: issues))
                     .accessibilityIdentifier(identifier)
                 Text(descriptor.unit)
@@ -160,33 +176,67 @@ struct OnboardingDecimalFieldDescriptor: Equatable {
     let accessibilityLabel: String
     let unit: String
 
-    static let height = OnboardingDecimalFieldDescriptor(
-        title: "Altura",
-        prompt: "0",
-        accessibilityLabel: "Altura",
-        unit: "cm"
-    )
-    static let weight = OnboardingDecimalFieldDescriptor(
-        title: "Peso",
-        prompt: "0",
-        accessibilityLabel: "Peso",
-        unit: "kg"
-    )
-    static let bodyFat = OnboardingDecimalFieldDescriptor(
-        title: "Gordura corporal (opcional)",
-        prompt: "Opcional",
-        accessibilityLabel: "Gordura corporal",
-        unit: "%"
-    )
+    static var height: Self { height(language: .portugueseBrazil) }
+    static var weight: Self { weight(language: .portugueseBrazil) }
+    static var bodyFat: Self { bodyFat(language: .portugueseBrazil) }
 
-    func accessibilityValue(for value: Double?) -> String {
-        guard let value else { return "Não informado, \(unit)" }
+    static func height(language: SupportedAppLanguage) -> Self {
+        Self(
+            title: OnboardingCopy.string("onboarding.body-data.height.title", language: language),
+            prompt: "0",
+            accessibilityLabel: OnboardingCopy.string(
+                "onboarding.body-data.height.title",
+                language: language
+            ),
+            unit: "cm"
+        )
+    }
+
+    static func weight(language: SupportedAppLanguage) -> Self {
+        Self(
+            title: OnboardingCopy.string("onboarding.body-data.weight.title", language: language),
+            prompt: "0",
+            accessibilityLabel: OnboardingCopy.string(
+                "onboarding.body-data.weight.title",
+                language: language
+            ),
+            unit: "kg"
+        )
+    }
+
+    static func bodyFat(language: SupportedAppLanguage) -> Self {
+        Self(
+            title: OnboardingCopy.string("onboarding.body-data.body-fat.title", language: language),
+            prompt: OnboardingCopy.string("onboarding.body-data.optional", language: language),
+            accessibilityLabel: OnboardingCopy.string(
+                "onboarding.body-data.body-fat.accessibility-label",
+                language: language
+            ),
+            unit: "%"
+        )
+    }
+
+    func accessibilityValue(
+        for value: Double?,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard let value else {
+            return OnboardingCopy.format(
+                "onboarding.body-data.not-provided-format",
+                language: language,
+                unit
+            )
+        }
         let formatted = value.formatted(
             .number
-                .locale(Locale(identifier: "pt_BR"))
+                .locale(language.formattingLocale)
                 .precision(.fractionLength(0...2))
         )
         return "\(formatted) \(unit)"
+    }
+
+    func accessibilityValue(for value: Double?) -> String {
+        accessibilityValue(for: value, language: .portugueseBrazil)
     }
 }
 

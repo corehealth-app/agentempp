@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct WelcomeStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -14,12 +15,13 @@ struct WelcomeStepView: View {
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Como você quer ser chamado?").font(BodyFlowTypography.headline)
-                TextField("Seu nome", text: displayName)
+                Text(copy("onboarding.welcome.display-name.title"))
+                    .font(BodyFlowTypography.headline)
+                TextField(copy("onboarding.welcome.display-name.placeholder"), text: displayName)
                     .textContentType(.name)
                     .submitLabel(.done)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Como você quer ser chamado?")
+                    .accessibilityLabel(copy("onboarding.welcome.display-name.title"))
                     .accessibilityHint(
                         model.accessibilityHint(for: [.displayNameRequired])
                     )
@@ -28,19 +30,24 @@ struct WelcomeStepView: View {
             }
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Idioma do app").font(BodyFlowTypography.headline)
+                Text(copy("onboarding.welcome.app-language.title"))
+                    .font(BodyFlowTypography.headline)
                 Text(model.draft.localeIdentifier == "pt-BR" ? "Português (Brasil)" : "English (US)")
                     .foregroundStyle(BodyFlowColor.secondaryText)
-                Text("Idioma definido pelo serviço para esta conta.")
+                Text(copy("onboarding.welcome.app-language.detail"))
                     .font(BodyFlowTypography.caption)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                 OnboardingFieldIssue(model: model, candidates: [.localeUnsupported])
             }
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("País").font(BodyFlowTypography.headline)
+                Text(copy("onboarding.welcome.country.title"))
+                    .font(BodyFlowTypography.headline)
                 NavigationLink {
-                    CountrySelectionView(selectedCode: model.draft.countryCode) {
+                    CountrySelectionView(
+                        selectedCode: model.draft.countryCode,
+                        language: language
+                    ) {
                         model.updateCountryCode($0)
                     }
                 } label: {
@@ -55,9 +62,13 @@ struct WelcomeStepView: View {
             }
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Fuso horário").font(BodyFlowTypography.headline)
+                Text(copy("onboarding.welcome.time-zone.title"))
+                    .font(BodyFlowTypography.headline)
                 NavigationLink {
-                    TimeZoneSelectionView(selectedIdentifier: model.draft.timeZoneIdentifier) {
+                    TimeZoneSelectionView(
+                        selectedIdentifier: model.draft.timeZoneIdentifier,
+                        language: language
+                    ) {
                         model.updateTimeZoneIdentifier($0)
                     }
                 } label: {
@@ -75,6 +86,14 @@ struct WelcomeStepView: View {
         .accessibilityIdentifier("screen.onboarding.welcome")
     }
 
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
+    }
+
     private var displayName: Binding<String> {
         Binding(
             get: { model.draft.displayName ?? "" },
@@ -83,7 +102,7 @@ struct WelcomeStepView: View {
     }
 
     private var countryName: String {
-        Locale.current.localizedString(forRegionCode: model.draft.countryCode)
+        language.formattingLocale.localizedString(forRegionCode: model.draft.countryCode)
             ?? model.draft.countryCode
     }
 
@@ -108,6 +127,7 @@ struct WelcomeStepView: View {
 @MainActor
 private struct CountrySelectionView: View {
     let selectedCode: String
+    let language: SupportedAppLanguage
     let onSelect: (String) -> Void
     @State private var query = ""
     @Environment(\.dismiss) private var dismiss
@@ -123,15 +143,19 @@ private struct CountrySelectionView: View {
                     Spacer()
                     Text(region.identifier).foregroundStyle(.secondary)
                     if region.identifier == selectedCode {
-                        Image(systemName: "checkmark").accessibilityLabel("Selecionado")
+                        Image(systemName: "checkmark")
+                            .accessibilityLabel(copy("onboarding.selection.selected"))
                     }
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
         }
-        .navigationTitle("Selecionar país")
+        .navigationTitle(copy("onboarding.welcome.country-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Buscar país ou código")
+        .searchable(
+            text: $query,
+            prompt: copy("onboarding.welcome.country-picker.search")
+        )
     }
 
     private var filteredRegions: [Locale.Region] {
@@ -145,13 +169,18 @@ private struct CountrySelectionView: View {
     }
 
     private func name(for code: String) -> String {
-        Locale.current.localizedString(forRegionCode: code) ?? code
+        language.formattingLocale.localizedString(forRegionCode: code) ?? code
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
     }
 }
 
 @MainActor
 private struct TimeZoneSelectionView: View {
     let selectedIdentifier: String
+    let language: SupportedAppLanguage
     let onSelect: (String) -> Void
     @State private var query = ""
     @Environment(\.dismiss) private var dismiss
@@ -166,21 +195,29 @@ private struct TimeZoneSelectionView: View {
                     Text(identifier)
                     Spacer()
                     if identifier == selectedIdentifier {
-                        Image(systemName: "checkmark").accessibilityLabel("Selecionado")
+                        Image(systemName: "checkmark")
+                            .accessibilityLabel(copy("onboarding.selection.selected"))
                     }
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
         }
-        .navigationTitle("Selecionar fuso")
+        .navigationTitle(copy("onboarding.welcome.time-zone-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Buscar identificador IANA")
+        .searchable(
+            text: $query,
+            prompt: copy("onboarding.welcome.time-zone-picker.search")
+        )
     }
 
     private var filteredIdentifiers: [String] {
         TimeZone.knownTimeZoneIdentifiers.filter {
             query.isEmpty || $0.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
     }
 }
 

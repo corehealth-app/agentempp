@@ -157,7 +157,10 @@ struct TodayRoutineSectionView: View {
                 Array(routine.occurrenceStatuses.enumerated()),
                 id: \.offset
             ) { _, status in
-                Label(status, systemImage: statusIcon(status))
+                Label(
+                    RoutineCopy.status(status, language: language),
+                    systemImage: statusIcon(status)
+                )
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }

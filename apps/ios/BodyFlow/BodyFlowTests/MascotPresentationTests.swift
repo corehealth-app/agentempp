@@ -115,6 +115,12 @@ struct MascotPresentationTests {
         )
 
         #expect(MascotPresentation.changedAt(timestamp) == "19/07/2026, 23:15")
+        #expect(
+            MascotPresentation.changedAt(
+                timestamp,
+                language: .englishUnitedStates
+            ) == "7/19/2026, 11:15\u{202F}PM"
+        )
     }
 
     @Test("state is orthogonal to effective personality")

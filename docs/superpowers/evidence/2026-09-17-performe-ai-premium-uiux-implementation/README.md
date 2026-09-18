@@ -1277,3 +1277,94 @@ BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS** and overall rebran
 status remains partial. Real completions: 0. Remote resources altered: NONE. No
 push, PR, merge, deployment, staging, Production, Supabase, Vercel, OpenRouter,
 CI-3, TestFlight or App Store operation occurred. Slice 9 is not started.
+
+## Slice 9 — convergence, accessibility and localization
+
+Executed locally on 2026-09-18 from parent
+`0024f5a34c30b74b1d4334cdfbe844d2a6318268`. Evidence artifacts are retained
+under `/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/slice9.glesjr`.
+No remote environment or paid resource was created or accessed.
+
+Audit and implementation:
+
+- Initial direct public-copy constructor audit: 28 findings — 15 existing
+  catalog references, 3 public-localization debts, 1 proper name, 3 debug-only
+  literals and 6 intentional literals. Final direct scan: 25 classified
+  findings and zero unresolved public-localization debt.
+- Expanded raw-copy scan: 404 candidates, including 69 Portuguese-looking
+  candidates, triaged by owner and path. The localization catalog gained 106
+  bounded Portuguese/English entries and remains valid JSON.
+- Design-system convergence corrected eight concrete issues: six semantic
+  color aliases, the default card material and the Reduce Transparency profile
+  overlay fallback. Palette bytes and legacy opt-in rendering were preserved.
+- Public onboarding, Today, Library/Markdown, routine, publication-state,
+  feature-detail and mascot copy were moved to the localization contract.
+  Mascot relative timestamps now use the selected app language locale.
+- Brand-focused scan found seven literals, all historical asset identifiers or
+  fallback names in `BodyFlowBrandAsset.swift`; no new public legacy identity
+  was introduced. The final logo/AppIcon/wordmark asset gate remains pending.
+
+TDD and regression evidence:
+
+- Baseline `s9-baseline.xcresult`: 18 passed.
+- RED bundles: `s9-red.xcresult` (4 failed, 17 passed),
+  `s9-red-expanded-copy-audit.xcresult`, `s9-red-expanded-catalog.xcresult`,
+  `s9-red-material-fallback.xcresult` and `s9-red-mascot-locale.xcresult`.
+- Focused GREEN: `s9-focused-owners.xcresult` (99 passed) and
+  `s9-mascot-locale-green-2.xcresult` (20 distinct tests, 21 executions).
+- Exact contractual suite, split only for the connector time ceiling:
+  `s9-contractual-nonflow-green-final.xcresult` (43 distinct, 49 executions)
+  plus `s9-flowchat-full-green-2.xcresult` (12/12). Total: 55 distinct tests,
+  61 executions, zero failures and zero skips.
+- Expanded premium UI regression `s9-premium-ui-regression-green.xcresult`:
+  17/17 passed. Relevant UI total: 49 distinct tests, zero failures/skips.
+- Final post-change UI bundle `s9-final-mascot-ui-green.xcresult`: 9/9 passed.
+- Final full unit bundle `s9-bodyflowtests-full-green-final.xcresult`: 1,189
+  distinct tests, 1,206 executions, zero failures and zero skips.
+
+Accessibility and adaptive-state evidence:
+
+- `s9-audit-final-green.xcresult` passed the loaded-tab native accessibility
+  audits. `s9-state-audit-terminal-green.xcresult` passed all four stable
+  terminal-state native audits.
+- The deterministic matrix covers Portuguese/English, light/dark, portrait,
+  both landscape orientations and accessibility XXXL; Reduce Motion,
+  Differentiate Without Color, Increase Contrast, keyboard/focus behavior and
+  Reduce Transparency are covered by the local suites.
+- One real issue was fixed: Today local-date contrast. Bounded false positives
+  are documented for the icon-only refresh control, Profile's combined metric
+  child and tab-bar occlusion. Elementless contrast reports are classified as
+  an OS limitation. No accessibility blocker remains in the automated gate.
+- Interactive VoiceOver focus/rotor navigation is **NOT FULLY VERIFIED**:
+  available simulator tooling does not expose an interactive VoiceOver focus
+  driver. Native semantics, labels, order and accessibility audits passed; this
+  limitation is not represented as manual VoiceOver validation.
+
+Build integrity:
+
+- Release Simulator build passed from the authorized project/scheme.
+- `codesign --verify --deep --strict` passed for the Release Simulator app with
+  bundle identifier `com.bodyflow.app`.
+- Final analyze result `s9-analyze-final-2.xcresult`: succeeded, error count 0,
+  warning count 0, analyzer warning count 0.
+- The inherited Release build warning in
+  `SessionLifecycleCoordinator.swift:210` (unnecessary `await`) was not changed
+  because it is outside this slice; the final analyze gate is clean.
+
+Structured self-review — explicitly not independent reviewer claims:
+
+- Review A / design system and semantic contract: **PASS**, Critical 0 /
+  Important 0.
+- Review B / localization and public-copy boundaries: **PASS**, Critical 0 /
+  Important 0.
+- Review C / accessibility, adaptive matrix and state coverage: **PASS**,
+  Critical 0 / Important 0.
+- Review D / regression, security and scope: **PASS**, Critical 0 / Important
+  0. No secrets, credential material, disabled tests, broad suppressions,
+  production identifiers or remote mutations were introduced.
+
+The authorized local commit subject is
+`refactor(ui): converge themes accessibility and localization`. Its SHA and
+tree are reported after commit without rewriting this evidence. No push, PR,
+merge, deployment, staging, Production, Supabase, Vercel, OpenRouter, CI-3,
+TestFlight or App Store operation occurred. Slice 10 was not started.

@@ -16,28 +16,69 @@ struct OnboardingCompletionView: View {
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                reviewRow("Nome", value: model.draft.displayName ?? "Não informado")
-                reviewRow("País", value: model.draft.countryCode)
-                reviewRow("Fuso", value: model.draft.timeZoneIdentifier)
-                reviewRow("Objetivo", value: model.draft.objective?.onboardingLabel ?? "Não selecionado")
-                reviewRow("Treinos", value: "\(model.draft.trainingFrequency ?? 0) por semana")
-                reviewRow("Coach", value: model.draft.persona?.displayName ?? "Não selecionado")
+                reviewRow(
+                    copy("onboarding.completion.name", fallback: "Nome"),
+                    value: model.draft.displayName
+                        ?? copy("onboarding.completion.not-provided", fallback: "Não informado")
+                )
+                reviewRow(
+                    copy("onboarding.completion.country", fallback: "País"),
+                    value: model.draft.countryCode
+                )
+                reviewRow(
+                    copy("onboarding.completion.time-zone", fallback: "Fuso"),
+                    value: model.draft.timeZoneIdentifier
+                )
+                reviewRow(
+                    copy("onboarding.completion.objective", fallback: "Objetivo"),
+                    value: model.draft.objective?.onboardingLabel(for: language)
+                        ?? copy("onboarding.completion.not-selected", fallback: "Não selecionado")
+                )
+                reviewRow(
+                    copy("onboarding.completion.training", fallback: "Treinos"),
+                    value: OnboardingCopy.format(
+                        "onboarding.routine.training-frequency.format",
+                        language: language,
+                        model.draft.trainingFrequency ?? 0
+                    )
+                )
+                reviewRow(
+                    copy("onboarding.completion.flow-style", fallback: "Estilo do Flow"),
+                    value: model.draft.persona.map(personaTitle)
+                        ?? copy("onboarding.completion.not-selected", fallback: "Não selecionado")
+                )
                 if let documentActions = model.draft.documentActions,
                    !documentActions.isEmpty {
                     reviewRow(
-                        "Documentos oficiais",
-                        value: "\(documentActions.count) \(documentActions.count == 1 ? "ação confirmada" : "ações confirmadas")"
+                        copy("onboarding.completion.official-documents", fallback: "Documentos oficiais"),
+                        value: OnboardingCopy.format(
+                            documentActions.count == 1
+                                ? "onboarding.completion.action-count.one"
+                                : "onboarding.completion.action-count.other",
+                            language: language,
+                            documentActions.count
+                        )
                     )
                     ForEach(documentActions, id: \.self) { action in
                         reviewRow(
                             action.documentKey,
-                            value: "Versão \(action.version) · \(action.action.reviewLabel)"
+                            value: OnboardingCopy.format(
+                                "onboarding.completion.version-action-format",
+                                language: language,
+                                action.version,
+                                actionLabel(action.action)
+                            )
                         )
                     }
                 } else {
                     reviewRow(
-                        "Consentimento de desenvolvimento",
-                        value: model.draft.consent == nil ? "Pendente" : "Confirmado"
+                        copy(
+                            "onboarding.completion.development-consent",
+                            fallback: "Consentimento de desenvolvimento"
+                        ),
+                        value: model.draft.consent == nil
+                            ? copy("onboarding.completion.pending", fallback: "Pendente")
+                            : copy("onboarding.completion.confirmed", fallback: "Confirmado")
                     )
                 }
             }
@@ -91,22 +132,38 @@ struct OnboardingCompletionView: View {
     private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
         PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func personaTitle(_ persona: CoachPersona) -> String {
+        switch persona {
+        case .focus:
+            OnboardingCopy.string("onboarding.persona.focus.title", language: language)
+        case .impulse:
+            OnboardingCopy.string("onboarding.persona.impulse.title", language: language)
+        case .zen:
+            OnboardingCopy.string("onboarding.persona.zen.title", language: language)
+        }
+    }
+
+    private func actionLabel(_ action: OnboardingLegalAction) -> String {
+        switch action {
+        case .acceptance:
+            OnboardingCopy.string("onboarding.completion.action.acceptance", language: language)
+        case .acknowledgement:
+            OnboardingCopy.string("onboarding.completion.action.acknowledgement", language: language)
+        case .consent:
+            OnboardingCopy.string("onboarding.completion.action.consent", language: language)
+        }
+    }
 }
 
 private extension OnboardingOperationState {
     var isFailure: Bool {
         if case .failed = self { return true }
         return false
-    }
-}
-
-private extension OnboardingLegalAction {
-    var reviewLabel: String {
-        switch self {
-        case .acceptance: "Aceite"
-        case .acknowledgement: "Ciência"
-        case .consent: "Consentimento"
-        }
     }
 }
 

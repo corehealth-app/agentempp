@@ -871,7 +871,10 @@ struct PublishedContentDetailView: View {
         _ presentation: ContentMutationPresentation
     ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Label(presentation.message, systemImage: presentation.systemImage)
+            Label(
+                localizedMutationMessage(presentation),
+                systemImage: presentation.systemImage
+            )
             if presentation.allowsRetry {
                 Button {
                     Task { await model.retryContentMutation() }
@@ -973,7 +976,7 @@ struct PublishedContentDetailView: View {
                         .foregroundStyle(BodyFlowColor.accent)
                         .accessibilityHidden(true)
 
-                    Text(presentation.message)
+                    Text(localizedBoundedMessage(presentation))
                         .font(BodyFlowTypography.title)
                         .fontWeight(.semibold)
                         .foregroundStyle(BodyFlowColor.primaryText)
@@ -997,7 +1000,9 @@ struct PublishedContentDetailView: View {
     private func boundedAction(
         _ action: ContentDetailBoundedAction
     ) -> some View {
-        Button(action == .back ? "Voltar" : "Biblioteca") {
+        Button(copy(
+            action == .back ? "content.action.back" : "content.action.library"
+        )) {
             switch action {
             case .back:
                 dismiss()
@@ -1012,5 +1017,32 @@ struct PublishedContentDetailView: View {
         .font(BodyFlowTypography.headline)
         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
         .contentShape(Rectangle())
+    }
+
+    private func localizedMutationMessage(
+        _ presentation: ContentMutationPresentation
+    ) -> String {
+        let key: String.LocalizationValue? = switch presentation.systemImage {
+        case "arrow.triangle.2.circlepath": "content.mutation.updating"
+        case "bookmark.fill": "content.mutation.saved"
+        case "bookmark.slash": "content.mutation.unsaved"
+        case "checkmark.circle.fill": "content.mutation.completed"
+        case "arrow.clockwise": "content.mutation.reloading"
+        case "exclamationmark.triangle": "content.mutation.error"
+        case "exclamationmark.circle": "content.mutation.unavailable"
+        default: nil
+        }
+        return key.map(copy) ?? presentation.message
+    }
+
+    private func localizedBoundedMessage(
+        _ presentation: ContentDetailBoundedPresentation
+    ) -> String {
+        let key: String.LocalizationValue? = switch presentation.actions {
+        case [.back, .library]: "content.bounded.not-found"
+        case [.back]: "content.bounded.subscription-required"
+        default: nil
+        }
+        return key.map(copy) ?? presentation.message
     }
 }

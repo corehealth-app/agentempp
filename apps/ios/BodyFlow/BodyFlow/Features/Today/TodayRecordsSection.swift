@@ -2,19 +2,27 @@ import SwiftUI
 
 enum TodayNutritionProvenance {
     static func label(for source: String?) -> String {
-        switch source {
+        label(for: source, language: .portugueseBrazil)
+    }
+
+    static func label(
+        for source: String?,
+        language: SupportedAppLanguage
+    ) -> String {
+        let key: String.LocalizationValue = switch source {
         case "canonical_exact", "product_label":
-            "Referência confirmada"
+            "today.provenance.confirmed"
         case "llm_estimate",
              "category_mismatch",
              "protein_mismatch",
              "composite_rejected":
-            "Estimativa"
+            "today.provenance.estimate"
         case "user_kcal", "user_correction":
-            "Informado pelo paciente"
+            "today.provenance.user-provided"
         default:
-            "Origem não informada"
+            "today.provenance.unknown"
         }
+        return TodayCopy.string(key, language: language)
     }
 }
 

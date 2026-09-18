@@ -230,6 +230,15 @@ final class FlowChatUITests: XCTestCase {
     private func localSceneAndAccessibilityPresentationMatrix(dark: Bool) {
         XCUIDevice.shared.appearance = dark ? .dark : .light
         defer { XCUIDevice.shared.appearance = .light }
+        if !Self.hasAcknowledgedQAOnboarding {
+            let bootstrap = support.launch(
+                arguments: ["--ui-testing-fresh-auth"],
+                language: "pt-BR",
+                dark: dark
+            )
+            finishActualLocalOnboarding(app: bootstrap)
+            bootstrap.terminate()
+        }
         var previous: XCUIApplication?
         var regularComposerHeight: CGFloat?
         var cases: [(String, String, Bool, String)] = []
@@ -245,10 +254,12 @@ final class FlowChatUITests: XCTestCase {
         for (index, entry) in cases.enumerated() {
             previous?.terminate()
             let (scenario, language, dark, category) = entry
-            let args = ["--ui-testing", "--ui-testing-flow-\(scenario)"] +
-                (index == 0 ? [] : ["--ui-testing-preserve-state"])
+            let args = [
+                "--ui-testing",
+                "--ui-testing-flow-\(scenario)",
+                "--ui-testing-preserve-state",
+            ]
             let app = support.launch(arguments: args, language: language, dark: dark, category: category)
-            if index == 0 { finishActualLocalOnboarding(app: app) }
             XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5),
                           "Only the actual acknowledged QA finish may unlock the preserved session")
             XCTAssertEqual(element("screen.hoje", app: app).value as? String, dark ? "dark" : "light",
@@ -311,16 +322,24 @@ final class FlowChatUITests: XCTestCase {
                             dark: Bool = false,
                             category: String = "UICTContentSizeCategoryL",
                             extraArguments: [String] = []) -> XCUIApplication {
-        // Every XCTest process starts fresh. Reuse only a finish acknowledged
-        // by this process; unexpected reset/receipt absence fails, never autofills.
-        // Extra flags may select a higher-priority reset path, so always fresh.
-        let preserve = Self.hasAcknowledgedQAOnboarding && extraArguments.isEmpty
-        if !preserve { Self.hasAcknowledgedQAOnboarding = false }
-        let arguments = ["--ui-testing", "--ui-testing-flow-\(scenario)"] + extraArguments +
-            (preserve ? ["--ui-testing-preserve-state"] : [])
+        // Flow preview scenarios require the generic UI-testing flag. Bootstrap
+        // the actual local auth/onboarding journey once, then combine that flag
+        // with the keychain-preservation flag so the scenario does not bypass it.
+        if !Self.hasAcknowledgedQAOnboarding && extraArguments.isEmpty {
+            let bootstrap = support.launch(
+                arguments: ["--ui-testing-fresh-auth"],
+                language: language,
+                dark: dark,
+                category: category
+            )
+            finishActualLocalOnboarding(app: bootstrap)
+            bootstrap.terminate()
+        }
+        let arguments = ["--ui-testing", "--ui-testing-flow-\(scenario)"]
+            + extraArguments
+            + (extraArguments.isEmpty ? ["--ui-testing-preserve-state"] : [])
         let app = support.launch(arguments: arguments,
                                  language: language, dark: dark, category: category)
-        if !preserve { finishActualLocalOnboarding(app: app) }
         XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5),
                       "Preserved QA state must still have the actual acknowledged finish")
         let entry = app.buttons["today.flow-chat"]
@@ -333,6 +352,28 @@ final class FlowChatUITests: XCTestCase {
     private func finishActualLocalOnboarding(app: XCUIApplication) {
         Self.hasAcknowledgedQAOnboarding = false
         let welcome = element("screen.onboarding.welcome", app: app)
+        if !welcome.waitForExistence(timeout: 1) {
+            XCTAssertTrue(
+                element("screen.auth.sign-in", app: app)
+                    .waitForExistence(timeout: 3)
+            )
+            tapVisible(app.buttons["auth.open-sign-up"], app: app)
+            let email = app.textFields["auth.email"]
+            XCTAssertTrue(email.waitForExistence(timeout: 3))
+            email.tap()
+            email.typeText("flow-slice9@example.invalid")
+            enterSecure("local-pass", in: app.secureTextFields["auth.password"])
+            enterSecure(
+                "local-pass",
+                in: app.secureTextFields["auth.password-confirmation"]
+            )
+            tapVisible(app.buttons["auth.sign-up.submit"], app: app)
+            XCTAssertTrue(
+                element("screen.auth.email-confirmation", app: app)
+                    .waitForExistence(timeout: 3)
+            )
+            tapVisible(app.buttons["auth.confirm-development"], app: app)
+        }
         XCTAssertTrue(welcome.waitForExistence(timeout: 5))
         let name = app.textFields["onboarding.display-name"]
         tapVisible(name, app: app)
@@ -370,6 +411,55 @@ final class FlowChatUITests: XCTestCase {
         let acknowledged = element("screen.hoje", app: app).waitForExistence(timeout: 5)
         XCTAssertTrue(acknowledged)
         if acknowledged { Self.hasAcknowledgedQAOnboarding = true }
+    }
+
+    private func enterSecure(_ text: String, in field: XCUIElement) {
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap()
+        XCTAssertTrue(waitForKeyboardFocus(field))
+        if field.identifier == "auth.password" {
+            field.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+            XCTAssertTrue(waitForKeyboardFocus(field))
+        }
+        UIPasteboard.general.string = text
+        defer { UIPasteboard.general.string = nil }
+        field.typeKey("v", modifierFlags: .command)
+        if !waitForSecureEntry(field, characterCount: text.count, timeout: 1) {
+            field.typeKey("a", modifierFlags: .command)
+            field.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+            for character in text {
+                field.typeText(String(character))
+            }
+        }
+        XCTAssertTrue(waitForSecureEntry(field, characterCount: text.count))
+    }
+
+    private func waitForKeyboardFocus(_ field: XCUIElement) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+    }
+
+    private func waitForSecureEntry(
+        _ field: XCUIElement,
+        characterCount: Int,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                guard
+                    let element = object as? XCUIElement,
+                    let value = element.value as? String
+                else {
+                    return false
+                }
+                return value.count == characterCount
+            },
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     private func tapVisible(_ control: XCUIElement, app: XCUIApplication) {

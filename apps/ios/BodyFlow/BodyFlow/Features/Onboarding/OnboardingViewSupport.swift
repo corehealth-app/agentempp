@@ -1,6 +1,27 @@
 import Foundation
 import SwiftUI
 
+enum OnboardingCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
+    }
+
+    static func format(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage,
+        _ arguments: CVarArg...
+    ) -> String {
+        String(
+            format: string(key, language: language),
+            locale: language.formattingLocale,
+            arguments: arguments
+        )
+    }
+}
+
 @MainActor
 struct OnboardingStepHeader: View {
     let titleKey: String.LocalizationValue
@@ -69,60 +90,79 @@ extension OnboardingFlowModel {
 }
 
 extension BiologicalSex {
-    var onboardingLabel: String {
+    func onboardingLabel(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .masculine: "Masculino"
-        case .feminine: "Feminino"
+        case .masculine:
+            OnboardingCopy.string("onboarding.biological-sex.masculine", language: language)
+        case .feminine:
+            OnboardingCopy.string("onboarding.biological-sex.feminine", language: language)
         }
     }
 }
 
 extension BodyFlowObjective {
-    var onboardingLabel: String {
+    func onboardingLabel(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .bodyRecomposition: "Recomposição corporal"
-        case .muscleGain: "Ganho de massa"
-        case .maintenance: "Manutenção"
+        case .bodyRecomposition:
+            OnboardingCopy.string("onboarding.objective.body-recomposition.title", language: language)
+        case .muscleGain:
+            OnboardingCopy.string("onboarding.objective.muscle-gain.title", language: language)
+        case .maintenance:
+            OnboardingCopy.string("onboarding.objective.maintenance.title", language: language)
         }
     }
 
-    var onboardingDescription: String {
+    func onboardingDescription(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .bodyRecomposition: "Apoiar mudanças graduais na composição corporal."
-        case .muscleGain: "Organizar a rotina com foco em ganho de massa."
-        case .maintenance: "Manter hábitos e medidas com consistência."
+        case .bodyRecomposition:
+            OnboardingCopy.string("onboarding.objective.body-recomposition.detail", language: language)
+        case .muscleGain:
+            OnboardingCopy.string("onboarding.objective.muscle-gain.detail", language: language)
+        case .maintenance:
+            OnboardingCopy.string("onboarding.objective.maintenance.detail", language: language)
         }
     }
 }
 
 extension ActivityLevel {
-    var onboardingLabel: String {
+    func onboardingLabel(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .sedentary: "Sedentário"
-        case .light: "Leve"
-        case .moderate: "Moderado"
-        case .high: "Alto"
-        case .athlete: "Atleta"
+        case .sedentary:
+            OnboardingCopy.string("onboarding.routine.activity-level.sedentary", language: language)
+        case .light:
+            OnboardingCopy.string("onboarding.routine.activity-level.light", language: language)
+        case .moderate:
+            OnboardingCopy.string("onboarding.routine.activity-level.moderate", language: language)
+        case .high:
+            OnboardingCopy.string("onboarding.routine.activity-level.high", language: language)
+        case .athlete:
+            OnboardingCopy.string("onboarding.routine.activity-level.athlete", language: language)
         }
     }
 }
 
 extension WaterIntake {
-    var onboardingLabel: String {
+    func onboardingLabel(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .low: "Pouco"
-        case .moderate: "Moderado"
-        case .high: "Bastante"
+        case .low:
+            OnboardingCopy.string("onboarding.routine.water-intake.low", language: language)
+        case .moderate:
+            OnboardingCopy.string("onboarding.routine.water-intake.moderate", language: language)
+        case .high:
+            OnboardingCopy.string("onboarding.routine.water-intake.high", language: language)
         }
     }
 }
 
 extension HungerLevel {
-    var onboardingLabel: String {
+    func onboardingLabel(for language: SupportedAppLanguage) -> String {
         switch self {
-        case .low: "Pouca"
-        case .moderate: "Moderada"
-        case .high: "Muita"
+        case .low:
+            OnboardingCopy.string("onboarding.routine.hunger-level.low", language: language)
+        case .moderate:
+            OnboardingCopy.string("onboarding.routine.hunger-level.moderate", language: language)
+        case .high:
+            OnboardingCopy.string("onboarding.routine.hunger-level.high", language: language)
         }
     }
 }

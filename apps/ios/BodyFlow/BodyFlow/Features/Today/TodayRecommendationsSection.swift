@@ -5,24 +5,37 @@ enum TodayRecommendationsSectionState: Equatable, Sendable {
 }
 
 struct TodayRecommendationsLibraryAction: Equatable, Sendable {
-    let title = "Ver biblioteca"
+    let title: String
     let route: ContentRoute = .library(initialSelection: .all)
+
+    init(language: SupportedAppLanguage = .portugueseBrazil) {
+        title = TodayCopy.string(
+            "today.recommendations.library",
+            language: language
+        )
+    }
 }
 
 struct TodayRecommendationsPresentation: Equatable, Sendable {
-    static let heading = "Conteúdos para hoje"
-    static let emptyCopy = "Nenhum conteúdo selecionado para hoje"
-    static let unavailableCopy = "Indisponível nesta versão"
+    static var heading: String { heading(for: .portugueseBrazil) }
+    static var emptyCopy: String { emptyCopy(for: .portugueseBrazil) }
+    static var unavailableCopy: String {
+        unavailableCopy(for: .portugueseBrazil)
+    }
     let sectionState: TodayRecommendationsSectionState
     let cards: [PublishedContentSummary]
     let showsStaleDisclosure: Bool
     let showsRetry: Bool
-    let libraryAction = TodayRecommendationsLibraryAction()
+    let libraryAction: TodayRecommendationsLibraryAction
 
-    init(state: FeatureReadState<PublishedContentFeed>) {
+    init(
+        state: FeatureReadState<PublishedContentFeed>,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
         cards = Array(state.presentation.value?.items.prefix(3) ?? [])
         showsStaleDisclosure = cards.isEmpty == false && state.presentation.showsStaleBanner
         showsRetry = showsStaleDisclosure || cards.isEmpty && state != .unavailable
+        libraryAction = TodayRecommendationsLibraryAction(language: language)
         sectionState = switch state {
         case .idle, .loading: .loading
         case .empty: .empty
@@ -32,6 +45,23 @@ struct TodayRecommendationsPresentation: Equatable, Sendable {
         case .failed(previousValue: nil, error: _): .failed
         case .unavailable: .unavailable
         }
+    }
+
+    static func heading(for language: SupportedAppLanguage) -> String {
+        TodayCopy.string("today.recommendations.heading", language: language)
+    }
+
+    static func emptyCopy(for language: SupportedAppLanguage) -> String {
+        TodayCopy.string("today.recommendations.empty", language: language)
+    }
+
+    static func unavailableCopy(
+        for language: SupportedAppLanguage
+    ) -> String {
+        TodayCopy.string(
+            "today.recommendations.unavailable",
+            language: language
+        )
     }
 }
 
@@ -60,11 +90,15 @@ enum TodayRecommendationInteraction {
 struct TodayRecommendationsSection: View {
     let model: TodayRecommendationsViewModel
     let catalogRevision: Int
+    @Environment(\.locale) private var locale
 
     var body: some View {
-        let presentation = TodayRecommendationsPresentation(state: model.state)
+        let presentation = TodayRecommendationsPresentation(
+            state: model.state,
+            language: language
+        )
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text(TodayRecommendationsPresentation.heading)
+            Text(TodayRecommendationsPresentation.heading(for: language))
                 .font(BodyFlowTypography.title)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
@@ -91,7 +125,7 @@ struct TodayRecommendationsSection: View {
                 .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
                 .accessibilityIdentifier("today.recommendations.loading")
         case .empty:
-            Text(TodayRecommendationsPresentation.emptyCopy)
+            Text(TodayRecommendationsPresentation.emptyCopy(for: language))
         case .cards:
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 if presentation.showsStaleDisclosure { StaleDataBanner() }
@@ -99,11 +133,11 @@ struct TodayRecommendationsSection: View {
                 if presentation.showsRetry { retryButton }
             }
         case .offline:
-            recoverableState("Sem conexão para carregar conteúdos.")
+            recoverableState(copy("today.recommendations.offline"))
         case .failed:
-            recoverableState("Não foi possível carregar conteúdos agora.")
+            recoverableState(copy("today.recommendations.error"))
         case .unavailable:
-            Text(TodayRecommendationsPresentation.unavailableCopy)
+            Text(TodayRecommendationsPresentation.unavailableCopy(for: language))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.secondaryText)
                 .accessibilityIdentifier("today.recommendations.unavailable")
@@ -137,12 +171,20 @@ struct TodayRecommendationsSection: View {
         Button {
             Task { await model.retry() }
         } label: {
-            Text("Tentar novamente")
+            Text(copy("state.retry"))
                 .font(BodyFlowTypography.headline)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .contentShape(Rectangle())
         }
         .accessibilityIdentifier("today.recommendations.retry")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
     }
 }
 
@@ -153,6 +195,7 @@ private struct TodayRecommendationCard: View {
     let catalogRevision: Int
 
     @State private var isVisible = false
+    @Environment(\.locale) private var locale
 
     var body: some View {
         NavigationLink(value: AppRoute.content(presentation.route)) {
@@ -185,7 +228,7 @@ private struct TodayRecommendationCard: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     Label(
-                        "\(presentation.summary.readingTimeMinutes) min de leitura",
+                        readingTime(presentation.summary),
                         systemImage: "clock"
                     )
                     .font(BodyFlowTypography.callout)
@@ -214,6 +257,22 @@ private struct TodayRecommendationCard: View {
         TodayRecommendationInteraction.visibilityRequest(
             isVisible: isVisible,
             summary: presentation.summary
+        )
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
+    }
+
+    private func readingTime(_ summary: PublishedContentSummary) -> String {
+        String(
+            format: copy("library.reading-time-format"),
+            locale: language.formattingLocale,
+            summary.readingTimeMinutes
         )
     }
 }

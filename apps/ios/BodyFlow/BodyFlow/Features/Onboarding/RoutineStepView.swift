@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct RoutineStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -14,22 +15,29 @@ struct RoutineStepView: View {
             )
 
             pickerField(
-                "Nível de atividade",
+                copy("onboarding.routine.activity-level.title"),
                 selection: activityLevel,
                 issues: [.activityLevelRequired]
             ) {
-                Text("Selecione").tag(nil as ActivityLevel?)
+                Text(copy("onboarding.selection.placeholder"))
+                    .tag(nil as ActivityLevel?)
                 ForEach(ActivityLevel.allCases, id: \.self) {
-                    Text($0.onboardingLabel).tag($0 as ActivityLevel?)
+                    Text($0.onboardingLabel(for: language))
+                        .tag($0 as ActivityLevel?)
                 }
             }
             OnboardingFieldIssue(model: model, candidates: [.activityLevelRequired])
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("Treinos por semana").font(BodyFlowTypography.headline)
+                Text(copy("onboarding.routine.training-frequency.title"))
+                    .font(BodyFlowTypography.headline)
                 if model.draft.trainingFrequency != nil {
                     Stepper(value: trainingFrequency, in: 0...7) {
-                        Text("\(model.draft.trainingFrequency ?? 0) por semana")
+                        Text(OnboardingCopy.format(
+                            "onboarding.routine.training-frequency.format",
+                            language: language,
+                            model.draft.trainingFrequency ?? 0
+                        ))
                     }
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityHint(
@@ -41,7 +49,7 @@ struct RoutineStepView: View {
                     Button {
                         model.updateTrainingFrequency(0)
                     } label: {
-                        Text("Definir frequência")
+                        Text(copy("onboarding.routine.training-frequency.set"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
@@ -58,31 +66,35 @@ struct RoutineStepView: View {
             }
 
             pickerField(
-                "Consumo de água",
+                copy("onboarding.routine.water-intake.title"),
                 selection: waterIntake,
                 issues: [.waterIntakeRequired]
             ) {
-                Text("Selecione").tag(nil as WaterIntake?)
+                Text(copy("onboarding.selection.placeholder"))
+                    .tag(nil as WaterIntake?)
                 ForEach(WaterIntake.allCases, id: \.self) {
-                    Text($0.onboardingLabel).tag($0 as WaterIntake?)
+                    Text($0.onboardingLabel(for: language))
+                        .tag($0 as WaterIntake?)
                 }
             }
             OnboardingFieldIssue(model: model, candidates: [.waterIntakeRequired])
 
             pickerField(
-                "Fome ao longo do dia",
+                copy("onboarding.routine.hunger-level.title"),
                 selection: hungerLevel,
                 issues: [.hungerLevelRequired]
             ) {
-                Text("Selecione").tag(nil as HungerLevel?)
+                Text(copy("onboarding.selection.placeholder"))
+                    .tag(nil as HungerLevel?)
                 ForEach(HungerLevel.allCases, id: \.self) {
-                    Text($0.onboardingLabel).tag($0 as HungerLevel?)
+                    Text($0.onboardingLabel(for: language))
+                        .tag($0 as HungerLevel?)
                 }
             }
             OnboardingFieldIssue(model: model, candidates: [.hungerLevelRequired])
 
             timeField(
-                title: "Horário de acordar",
+                title: copy("onboarding.routine.wake-time.title"),
                 value: model.draft.wakeTime,
                 selection: wakeDate,
                 defaultValue: LocalTime(hour: 7, minute: 0),
@@ -92,7 +104,7 @@ struct RoutineStepView: View {
             OnboardingFieldIssue(model: model, candidates: [.wakeTimeRequired])
 
             timeField(
-                title: "Horário de dormir",
+                title: copy("onboarding.routine.bedtime.title"),
                 value: model.draft.bedtime,
                 selection: bedtimeDate,
                 defaultValue: LocalTime(hour: 23, minute: 0),
@@ -102,7 +114,10 @@ struct RoutineStepView: View {
             OnboardingFieldIssue(model: model, candidates: [.bedtimeRequired])
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Toggle("Organizo minhas refeições com antecedência", isOn: organizesFood)
+                Toggle(
+                    copy("onboarding.routine.food-organization.title"),
+                    isOn: organizesFood
+                )
                     .font(BodyFlowTypography.headline)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHint(
@@ -111,13 +126,13 @@ struct RoutineStepView: View {
                         )
                     )
                 if model.draft.foodOrganization == nil {
-                    Text("Resposta ainda não confirmada.")
+                    Text(copy("onboarding.routine.food-organization.unconfirmed"))
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                     Button {
                         model.updateFoodOrganization(.no)
                     } label: {
-                        Text("Confirmar resposta: não")
+                        Text(copy("onboarding.routine.food-organization.confirm-no"))
                             .frame(
                                 maxWidth: .infinity,
                                 minHeight: BodyFlowSpacing.minimumTapTarget
@@ -135,6 +150,14 @@ struct RoutineStepView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.routine")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
     }
 
     private var activityLevel: Binding<ActivityLevel?> {
@@ -205,7 +228,7 @@ struct RoutineStepView: View {
                 Button {
                     update(defaultValue)
                 } label: {
-                    Text("Selecionar horário")
+                    Text(copy("onboarding.routine.select-time"))
                         .frame(
                             maxWidth: .infinity,
                             minHeight: BodyFlowSpacing.minimumTapTarget

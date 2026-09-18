@@ -3,6 +3,8 @@ import SwiftUI
 @MainActor
 struct CoachPersonaPickerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceTransparency)
+    private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
 
@@ -144,7 +146,7 @@ struct CoachPersonaPickerView: View {
                 ProgressView(copy("profile.persona.saving"))
                     .padding(BodyFlowSpacing.md)
                     .background(
-                        .regularMaterial,
+                        savingSurface,
                         in: RoundedRectangle(
                             cornerRadius: BodyFlowRadius.field,
                             style: .continuous
@@ -152,6 +154,12 @@ struct CoachPersonaPickerView: View {
                     )
             }
         }
+    }
+
+    private var savingSurface: AnyShapeStyle {
+        reduceTransparency
+            ? AnyShapeStyle(BodyFlowColor.color(.surfaceElevated))
+            : AnyShapeStyle(.regularMaterial)
     }
 
     private func personaRow(

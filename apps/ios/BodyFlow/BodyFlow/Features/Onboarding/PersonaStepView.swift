@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct PersonaStepView: View {
     let model: OnboardingFlowModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -22,14 +23,14 @@ struct PersonaStepView: View {
                             Image(systemName: model.draft.persona == value ? "checkmark.circle.fill" : "circle")
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                                Text(value.displayName).fontWeight(.semibold)
-                                Text(value.summary)
+                                Text(title(for: value)).fontWeight(.semibold)
+                                Text(detail(for: value))
                                     .font(BodyFlowTypography.callout)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                                 Text(
                                     model.draft.persona == value
-                                        ? "Selecionado"
-                                        : "Não selecionado"
+                                        ? copy("onboarding.selection.selected")
+                                        : copy("onboarding.selection.not-selected")
                                 )
                                 .font(BodyFlowTypography.callout)
                                 .foregroundStyle(BodyFlowColor.secondaryText)
@@ -56,6 +57,30 @@ struct PersonaStepView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.persona")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        OnboardingCopy.string(key, language: language)
+    }
+
+    private func title(for persona: CoachPersona) -> String {
+        switch persona {
+        case .focus: copy("onboarding.persona.focus.title")
+        case .impulse: copy("onboarding.persona.impulse.title")
+        case .zen: copy("onboarding.persona.zen.title")
+        }
+    }
+
+    private func detail(for persona: CoachPersona) -> String {
+        switch persona {
+        case .focus: copy("onboarding.persona.focus.detail")
+        case .impulse: copy("onboarding.persona.impulse.detail")
+        case .zen: copy("onboarding.persona.zen.detail")
+        }
     }
 }
 

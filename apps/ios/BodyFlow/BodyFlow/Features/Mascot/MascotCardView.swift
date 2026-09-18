@@ -32,7 +32,10 @@ struct MascotViewCompositionDescriptor: Equatable, Sendable {
         temporaryArtworkAvailable: Bool = Self.defaultArtworkAvailability,
         language: SupportedAppLanguage = .portugueseBrazil
     ) {
-        let personaName = Self.personaName(from: presentation)
+        let personaName = Self.personaName(
+            from: presentation,
+            language: language
+        )
         self.surface = surface
         title = MascotCopy.string("mascot.title", language: language)
         self.personaName = personaName
@@ -75,20 +78,25 @@ struct MascotViewCompositionDescriptor: Equatable, Sendable {
     }
 
     private static func personaName(
-        from presentation: MascotExperiencePresentation
+        from presentation: MascotExperiencePresentation,
+        language: SupportedAppLanguage
     ) -> String {
-        switch presentation.effective {
+        let unavailable = MascotCopy.string(
+            "common.not-available",
+            language: language
+        )
+        return switch presentation.effective {
         case .focus:
             presentation.optionsByCode[.focus]?.name
-                ?? "indisponível"
+                ?? unavailable
         case .impulse:
             presentation.optionsByCode[.impulse]?.name
-                ?? "indisponível"
+                ?? unavailable
         case .zen:
             presentation.optionsByCode[.zen]?.name
-                ?? "indisponível"
+                ?? unavailable
         case .balanced:
-            "Equilibrada"
+            MascotCopy.string("mascot.persona.balanced", language: language)
         }
     }
 
@@ -182,7 +190,7 @@ struct MascotCardView: View {
                         .foregroundStyle(BodyFlowColor.secondaryText)
 
                     if state.descriptor.showsRetry {
-                        Button("Tentar novamente") {
+                        Button(copy("state.retry")) {
                             Task { await model.retry() }
                         }
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)

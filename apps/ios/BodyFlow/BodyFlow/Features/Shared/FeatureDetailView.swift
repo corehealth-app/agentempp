@@ -17,7 +17,7 @@ struct FeatureDetailView: View {
                             .foregroundStyle(BodyFlowColor.accent)
                             .accessibilityHidden(true)
 
-                        Text(route.tab.title)
+                        Text(route.tab.title(for: language))
                             .font(BodyFlowTypography.title)
                             .fontWeight(.semibold)
                             .foregroundStyle(BodyFlowColor.primaryText)

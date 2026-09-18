@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct FeatureStateContentStack<Content: View>: View {
@@ -34,7 +35,7 @@ struct BodyFlowCard<Content: View>: View {
     let surface: BodyFlowSurfaceRole
     private let content: Content
 
-    init(surface: BodyFlowSurfaceRole = .legacy, @ViewBuilder content: () -> Content) {
+    init(surface: BodyFlowSurfaceRole = .card, @ViewBuilder content: () -> Content) {
         self.surface = surface
         self.content = content()
     }
@@ -50,7 +51,7 @@ struct BodyFlowCard<Content: View>: View {
             .overlay {
                 if surface == .legacy {
                     RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
-                        .stroke(BodyFlowColor.accent.opacity(0.10), lineWidth: 1)
+                        .stroke(legacyAccent.opacity(0.10), lineWidth: 1)
                 }
             }
     }
@@ -65,11 +66,19 @@ struct BodyFlowCard<Content: View>: View {
 
     private var backgroundColor: Color {
         switch surface {
-        case .legacy: BodyFlowColor.surface
+        case .legacy: Color(uiColor: .secondarySystemBackground)
         case .card: BodyFlowColor.color(.backgroundSecondary)
         case .hero: BodyFlowColor.color(.heroBackground)
         case .elevated: BodyFlowColor.color(.surfaceElevated)
         }
+    }
+
+    private var legacyAccent: Color {
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(BodyFlowColor.softGold)
+                : UIColor(BodyFlowColor.tealGreen)
+        })
     }
 }
 

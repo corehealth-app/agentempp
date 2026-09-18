@@ -4,6 +4,7 @@ import SwiftUI
 struct RegistrationSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
 
     let sheet: AppSheet
     let dependencies: AppDependencies
@@ -189,7 +190,7 @@ struct RegistrationSheet: View {
                     }
                 }
             }
-            .navigationTitle("Demonstração")
+            .navigationTitle(copy("registration.sheet.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -203,7 +204,7 @@ struct RegistrationSheet: View {
                                 height: BodyFlowSpacing.minimumTapTarget
                             )
                     }
-                    .accessibilityLabel("Fechar")
+                    .accessibilityLabel(copy("registration.sheet.close"))
                     .accessibilityIdentifier("sheet.fechar")
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
@@ -246,6 +247,13 @@ struct RegistrationSheet: View {
     ) -> Set<PresentationDetent> {
         dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium]
     }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
+    }
 }
 
 @MainActor
@@ -254,6 +262,7 @@ private struct HydrationRegistrationContent: View {
     let submit: @MainActor (Int?, String, Date) -> Void
     let retry: @MainActor () -> Void
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ScrollView {
@@ -266,8 +275,8 @@ private struct HydrationRegistrationContent: View {
                 OperationResultSummary(
                     state: model.mutationState,
                     captureError: model.captureError,
-                    validationMessage: "Informe um valor inteiro entre 1 e 5.000 ml.",
-                    successMessage: "Hidratação registrada.",
+                    validationMessage: copy("registration.hydration.validation"),
+                    successMessage: copy("registration.hydration.success"),
                     retry: retry
                 )
                 .accessibilityFocused($operationFocus, equals: .operationSummary)
@@ -280,6 +289,13 @@ private struct HydrationRegistrationContent: View {
             model.consumeAccessibilityFocus()
         }
     }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
+    }
 }
 
 @MainActor
@@ -288,6 +304,7 @@ private struct WeightRegistrationContent: View {
     let submit: @MainActor (String, Date) -> Void
     let retry: @MainActor () -> Void
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ScrollView {
@@ -300,7 +317,7 @@ private struct WeightRegistrationContent: View {
                 OperationResultSummary(
                     state: model.mutationState,
                     captureError: model.captureError,
-                    validationMessage: "Informe um valor entre 30 e 300 kg.",
+                    validationMessage: copy("registration.weight.validation"),
                     successMessage: nil,
                     demoReceipt: model.receipt,
                     retry: retry
@@ -315,6 +332,13 @@ private struct WeightRegistrationContent: View {
             model.consumeAccessibilityFocus()
         }
     }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
+    }
 }
 
 private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Equatable & Sendable>: View {
@@ -324,6 +348,7 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
     let successMessage: String?
     var demoReceipt: WeightDemoReceipt? = nil
     let retry: @MainActor () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Group {
@@ -332,7 +357,7 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
                     Text(message)
                     if retryIsAvailable {
                         Button(action: retry) {
-                            Text("Tentar novamente")
+                            Text(copy("state.retry"))
                                 .frame(
                                     minHeight: BodyFlowSpacing.minimumTapTarget
                                 )
@@ -354,15 +379,22 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
         if let demoReceipt { return demoReceipt.label }
         if captureError == .invalidInput { return validationMessage }
         switch state {
-        case .unavailable: return "Indisponível nesta versão"
+        case .unavailable: return copy("state.unavailable.title")
         case .succeeded: return successMessage
-        case .failed: return "Não foi possível concluir. Tente novamente."
+        case .failed: return copy("registration.operation.failed")
         case .idle, .submitting: return nil
         }
     }
 
     private var retryIsAvailable: Bool {
         if case .failed = state { true } else { false }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
     }
 }
 
@@ -467,6 +499,7 @@ private struct WorkoutRegistrationContent: View {
     let cancel: @MainActor () -> Void
     @State private var showingEditor = false
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ScrollView {
@@ -492,7 +525,7 @@ private struct WorkoutRegistrationContent: View {
                     showingEditor = false
                     saveEdit(edit)
                 }
-                .navigationTitle("Editar proposta")
+                .navigationTitle(copy("registration.editor.title"))
             }
         }
         .onChange(of: model.accessibilityFocusTarget) { _, target in
@@ -500,6 +533,13 @@ private struct WorkoutRegistrationContent: View {
             operationFocus = target
             model.consumeAccessibilityFocus()
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
     }
 
     @ViewBuilder
@@ -512,8 +552,8 @@ private struct WorkoutRegistrationContent: View {
             )
         } else if model.phase == .confirmed {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text("Treino confirmado").font(BodyFlowTypography.title).fontWeight(.semibold)
-                Text("O registro confirmado não pode ser editado nesta tela.")
+                Text(copy("registration.confirmed.workout-title")).font(BodyFlowTypography.title).fontWeight(.semibold)
+                Text(copy("registration.confirmed.read-only"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
             .accessibilityIdentifier("registration.proposal.confirmed")
@@ -595,10 +635,10 @@ private struct MealRegistrationContent: View {
             )
         } else if model.phase == .confirmed {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text("Refeição confirmada")
+                Text(copy("registration.confirmed.meal-title"))
                     .font(BodyFlowTypography.title)
                     .fontWeight(.semibold)
-                Text("O registro confirmado não pode ser editado nesta tela.")
+                Text(copy("registration.confirmed.read-only"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
             .accessibilityIdentifier("registration.proposal.confirmed")
@@ -642,5 +682,14 @@ private struct MealRegistrationContent: View {
                 choice = selected
             }
         }
+    }
+
+    @Environment(\.locale) private var locale
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
     }
 }

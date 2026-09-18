@@ -881,3 +881,120 @@ The exact local integration subject is `refactor(ui): refine Today experience`.
 Its resulting SHA and post-commit clean worktree/index are reported after commit;
 this evidence is intentionally not self-amended. Slice 4 has not started at this
 checkpoint.
+
+## Batch 3 — Slice 4 Register and global local gates
+
+Slice 4 started only after the Slice 3 local commit
+`3b59c6efa3c1ac384ee19e7e284f1551c1bfdc2d`; worktree and index were clean.
+The same local host, branch, simulator and private artifact root documented in
+Slice 3 were reused serially. No provider, remote environment, paid resource,
+real user, media permission, media upload or real completion was used.
+
+### Capability truthfulness and preserved contracts
+
+- Register keeps the existing server-authoritative proposal, receipt, captured
+  key, retry, cancellation and idempotency ownership. No nutrition total,
+  correction, hydration percentage, workout protocol or official energy value is
+  calculated on iOS. Optional nil values remain absent rather than becoming zero.
+- Photo and Audio are explicitly labeled as local samples; the sheet states that
+  the demonstration has no media permission or upload. Text keeps the existing
+  draft, focus, analyze guard, operation callback and error retention. No camera,
+  microphone, picker, upload, offline queue or fake analysis phase was added.
+- Meal proposal hierarchy is received items/quantities, optional official totals,
+  received warnings/provenance/expiry, then Confirm primary, Edit first item
+  secondary and Cancel tertiary. The editor remains first-item-only and displays
+  that limit. The original proposal and receipt state machines are unchanged.
+- Explicit `RegistrationMetricUnit` presentation prevents kcal from being shown
+  as grams; raw server decimal values are only locale-formatted. Meal type and
+  workout intensity get bilingual presentation labels while their enum/raw payload
+  values remain unchanged. Workout energy is explicitly labeled as an estimate.
+- Hydration remains ml and weight remains kg. Existing parsing, Decimal/date/
+  patient-timezone semantics, callbacks and coordinator ownership are unchanged.
+  UIKit fields, pickers, segmented controls and buttons now use native fitting
+  with the prior 48-point minimum as a floor, multiline labels and Dynamic Type;
+  no fixed visual height is used as a ceiling.
+- The mandatory Slice 4 Accessibility XXXL regression found that `today.history`
+  could not be reached within the controlled gesture budget because secondary
+  block/mascot content preceded it. The only cross-slice source adjustment moves
+  that existing link before those secondary sections; its route, label, ID and
+  data are unchanged. The global Today suites pass on the final ordering.
+- The only cross-slice test adjustment aligns the existing `--ui-testing`
+  dependency expectation with Slice 3's intentionally completed server-shaped
+  receipt. Fresh-auth remains a separate incomplete launch path; no Release,
+  auth/session or onboarding production behavior changed.
+
+### TDD, regression and native visual evidence
+
+- `s4-1-red.xcresult`: expected source compile RED for the new bilingual
+  capability-copy API; `s4-copy-green.xcresult`: focused GREEN after the minimal
+  implementation.
+- `s4-review-b-red.xcresult`: review RED for missing explicit metric units and
+  localized meal-type/intensity presentation. `s4-review-b-green-v3.xcresult`:
+  **PASS**, 8/8 tests after the fixes.
+- `s4-focused-unit-final-v2.xcresult`: **PASS**, 78 logical tests / 81
+  parameterized executions, zero failures/skips/expected failures. It includes
+  registration presentation/sheet/task coordinator, meal/demo/workout/hydration/
+  weight models, dependencies and preserved callback/idempotency contracts.
+- Early native runs exposed three concrete defects: a 42.5688-point Detect target,
+  unreachable Today history at Accessibility XXXL and the changed legacy hydration
+  unavailable wording. The product/test repairs were respectively a >=44-point
+  label frame, the ordering adjustment above and restoration of `Indisponível`.
+  Isolated bundles `s4-hit-target-green-v2.xcresult`,
+  `s4-today-history-green-v3.xcresult`, `s4-hydration-copy-green.xcresult` and
+  `s4-premium-ui-review-b-green.xcresult` all pass.
+- `s4-focused-ui-final-v4.xcresult`: **PASS**, 29/29 tests, zero failures/skips/
+  runtime warnings. It covers proposal/edit/confirm/cancel/receipt/error/retry/
+  unavailable/expired, meal capture/text, workout/hydration/weight, keyboard,
+  pt-BR/en-US, light/dark, regular/Accessibility XXXL, native targets and Reduce
+  Motion. Existing Prompt 13 assertions were not removed or weakened.
+- Final attachments were exported to
+  `<artifact-root>/s4-ui-attachments-final`. Root inspected the en-US light capture
+  choice sheet, en-US dark Accessibility XXXL proposal and en-US light
+  Accessibility XXXL workout form. Labels wrap, the local-sample boundary is
+  explicit, official values/units remain legible and the oversized forms remain
+  scrollable. This inspection is native raster evidence, not manual VoiceOver.
+
+### Release, reviews, global regression and closeout
+
+- `s4-release-final-v3.xcresult`: normal signed Release Simulator build **PASS**,
+  exit 0, zero errors and one inherited `SessionLifecycleCoordinator` unnecessary
+  `await` warning outside the diff. New UIKit bridge concurrency warnings were
+  removed. `codesign --verify --deep --strict` on the Release app: **PASS**.
+- Review B initially reported Critical 0 / Important 2: kcal depended on a label
+  comparison and the editor exposed Portuguese raw display values under English.
+  Both were fixed without changing payloads. Final Register review: **PASS**,
+  Critical 0 / Important 0.
+- Review C independently checked Slice 0/2/8, auth/session, Flow, Design System,
+  Release/DEBUG boundaries and the two documented cross-slice regressions. Final
+  regression review: **PASS**, Critical 0 / Important 0. Slice 3 Review A remains
+  **PASS**, Critical 0 / Important 0 after its localization repair.
+- The first parallel full-unit attempt surfaced the stale dependency expectation
+  above plus an existing scheduling-sensitive cancellation assertion under load.
+  The final required serial gate was not hidden or retried in parallel:
+  `batch3-full-unit-final-v2.xcresult` **PASS**, 1,188 logical tests / 1,402
+  parameterized executions, zero failures/skips/expected failures/runtime warnings.
+- `batch3-global-ui-final.xcresult`: **PASS**, 26/26 executions over
+  Prompt13Today, Prompt14TodayMascot, PremiumCoreSurfaces and
+  PremiumRegistration on final source. Combined with the final Slice 4 matrix,
+  Batch 3 records 55 passing UI executions / 52 distinct tests; the three
+  PremiumRegistration tests were intentionally repeated in the global gate.
+  Global screenshots were exported to `<artifact-root>/global-ui-attachments-final`;
+  root also inspected the final Today Accessibility XXXL hierarchy.
+- `batch3-analyze-final.xcresult`: native analyze **PASS**, zero errors, compiler
+  warnings or analyzer warnings. Swift compilation/typecheck is covered by the
+  tests, analyze and signed Release builds. No separate SwiftLint is configured.
+- `git diff --check`, catalog JSON parsing, strict allowlist and scoped security
+  scan pass. Zero provider key, JWT/private key, credential/password assignment,
+  signed URL, real email/PII or real user data finding. No asset/AppIcon/logo/
+  wordmark/splash/historical BodyFlow asset, backend, dependency or project-file
+  change. BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS**.
+- Manual VoiceOver narration was not executed: **VOICEOVER MANUAL STATUS: NOT
+  FULLY VERIFIED**. Native accessibility hierarchy/order/labels/selected states,
+  >=44-point targets, units, Dynamic Type XXXL and Reduce Motion are locally
+  covered; this is not whole-app accessibility certification.
+- Exact local Slice 4 subject: `refactor(ui): refine registration experience`.
+  Its resulting SHA and final clean worktree/index are reported after commit; no
+  self-amend is used. There is no push, PR, merge, deployment or remote access.
+  Real completions: 0. Remote resources altered: NONE. Private xcresults and
+  captures are retained. Simulator/process shutdown is verified after commit.
+  COST / ENVIRONMENT CLOSEOUT: NOT APPLICABLE.

@@ -402,10 +402,6 @@ struct TodayRootView: View {
                     meals: presentation.meals,
                     workouts: presentation.workouts
                 )
-                TodayBlockCard(descriptor: presentation.block)
-                if let mascot {
-                    MascotCardView(model: mascot)
-                }
 
                 NavigationLink(value: AppRoute.mainHistory) {
                     BodyFlowCard {
@@ -418,6 +414,11 @@ struct TodayRootView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("today.history")
+
+                TodayBlockCard(descriptor: presentation.block)
+                if let mascot {
+                    MascotCardView(model: mascot)
+                }
 
                 NavigationLink(
                     value: AppRoute.detail(tab: .today, id: "daily-summary")

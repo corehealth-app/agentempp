@@ -1552,7 +1552,7 @@
     "common.not-available" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Not available" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não disponível" } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível" } }
       }
     },
     "metric.consumed" : {
@@ -1867,6 +1867,326 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
       }
     },
+    "registration.capture.audio-sample" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Audio — local sample" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Áudio — amostra local" } }
+    } },
+    "registration.capture.demo-notice" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Local demonstration; no media permission or upload." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração local; sem permissão de mídia ou upload." } }
+    } },
+    "registration.capture.detect" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Detect meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detectar refeição" } }
+    } },
+    "registration.capture.photo-sample" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo — local sample" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto — amostra local" } }
+    } },
+    "registration.capture.text" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Text" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } }
+    } },
+    "registration.capture.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "How would you like to add the meal?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Como deseja adicionar a refeição?" } }
+    } },
+    "registration.confirmed.meal-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal confirmed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição confirmada" } }
+    } },
+    "registration.confirmed.read-only" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The confirmed record cannot be edited on this screen." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O registro confirmado não pode ser editado nesta tela." } }
+    } },
+    "registration.confirmed.workout-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout confirmed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino confirmado" } }
+    } },
+    "registration.demo.audio-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Local audio sample" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Amostra de áudio local" } }
+    } },
+    "registration.demo.photo-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Local photo sample" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Amostra fotográfica local" } }
+    } },
+    "registration.editor.first-item" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "First item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Primeiro item" } }
+    } },
+    "registration.editor.food" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Food" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimento" } }
+    } },
+    "registration.editor.meal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
+    } },
+    "registration.editor.quantity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade (g)" } }
+    } },
+    "registration.editor.save" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvar" } }
+    } },
+    "registration.editor.time" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Time" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário" } }
+    } },
+    "registration.editor.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar proposta" } }
+    } },
+    "registration.editor.user-kcal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported calories" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias informadas" } }
+    } },
+    "registration.field.date-time" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Date and time" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Data e hora" } }
+    } },
+    "registration.hydration.custom" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Custom amount (ml)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade personalizada (ml)" } }
+    } },
+    "registration.hydration.placeholder" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Amount in ml" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade em ml" } }
+    } },
+    "registration.hydration.quick" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quick amount (ml)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade rápida (ml)" } }
+    } },
+    "registration.hydration.submit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record hydration" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar hidratação" } }
+    } },
+    "registration.hydration.success" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Hydration recorded." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hidratação registrada." } }
+    } },
+    "registration.hydration.validation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a whole number from 1 to 5,000 ml." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe um valor inteiro entre 1 e 5.000 ml." } }
+    } },
+    "registration.kind.hydration" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Hydration" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hidratação" } }
+    } },
+    "registration.kind.meal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
+    } },
+    "registration.kind.weight" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso" } }
+    } },
+    "registration.kind.workout" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino" } }
+    } },
+    "registration.meal-type.almoco" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Lunch" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Almoço" } }
+    } },
+    "registration.meal-type.cafe" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Breakfast" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Café da manhã" } }
+    } },
+    "registration.meal-type.ceia" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Supper" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ceia" } }
+    } },
+    "registration.meal-type.jantar" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Dinner" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Jantar" } }
+    } },
+    "registration.meal-type.lanche" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Snack" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lanche" } }
+    } },
+    "registration.meal-type.outro" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Other" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Outro" } }
+    } },
+    "registration.metric.carbs" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Carbohydrates" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carboidratos" } }
+    } },
+    "registration.metric.energy" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Energy" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia" } }
+    } },
+    "registration.metric.fat" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fat" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gorduras" } }
+    } },
+    "registration.metric.protein" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína" } }
+    } },
+    "registration.operation.cancelled" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal cancelled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta cancelada." } }
+    } },
+    "registration.operation.confirmed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record confirmed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registro confirmado." } }
+    } },
+    "registration.operation.edited" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal updated. Review it before confirming." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta atualizada. Revise antes de confirmar." } }
+    } },
+    "registration.operation.failed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not complete. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir. Tente novamente." } }
+    } },
+    "registration.operation.new-proposal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Create new proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Criar nova proposta" } }
+    } },
+    "registration.operation.proposed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal created. Review it before confirming." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta criada. Revise antes de confirmar." } }
+    } },
+    "registration.proposal.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar proposta" } }
+    } },
+    "registration.proposal.confirm" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar" } }
+    } },
+    "registration.proposal.edit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar" } }
+    } },
+    "registration.proposal.edit-first-item" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit first item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar primeiro item" } }
+    } },
+    "registration.proposal.expires" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Expires %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Expira em %@" } }
+    } },
+    "registration.proposal.first-item-notice" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Only the first item can be corrected in this version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Somente o primeiro item pode ser corrigido nesta versão." } }
+    } },
+    "registration.proposal.meal-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de refeição" } }
+    } },
+    "registration.proposal.service-values" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Values supplied by the service" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Valores fornecidos pelo serviço" } }
+    } },
+    "registration.proposal.totals" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Totals" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Totais" } }
+    } },
+    "registration.proposal.workout-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de treino" } }
+    } },
+    "registration.root.demo-notice" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Local demonstration. Availability does not imply Release synchronization." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração local. Disponibilidade não implica sincronização em Release." } }
+    } },
+    "registration.root.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an option to open the local demonstration." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha uma opção para abrir a demonstração local." } }
+    } },
+    "registration.root.eyebrow" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "QUICK RECORD" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "REGISTRO RÁPIDO" } }
+    } },
+    "registration.root.navigation-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "registration.root.open-demo" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open demonstration" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir demonstração" } }
+    } },
+    "registration.root.other-actions" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Other records" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Outros registros" } }
+    } },
+    "registration.root.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "What would you like to record?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O que você quer registrar?" } }
+    } },
+    "registration.sheet.close" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar" } }
+    } },
+    "registration.sheet.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Demonstration" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração" } }
+    } },
+    "registration.text.placeholder" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "E.g. rice, beans and chicken" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ex.: arroz, feijão e frango" } }
+    } },
+    "registration.text.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Describe the meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descreva a refeição" } }
+    } },
+    "registration.weight.placeholder" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight in kg" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso em kg" } }
+    } },
+    "registration.weight.submit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record weight" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar peso" } }
+    } },
+    "registration.weight.value" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight (kg)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso (kg)" } }
+    } },
+    "registration.weight.validation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a value from 30 to 300 kg." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe um valor entre 30 e 300 kg." } }
+    } },
+    "registration.workout.duration" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration (min)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Duração (min)" } }
+    } },
+    "registration.workout.estimated-energy" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated energy" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia estimada" } }
+    } },
+    "registration.workout.intensity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Intensity" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Intensidade" } }
+    } },
+    "registration.workout-intensity.alta" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "High" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alta" } }
+    } },
+    "registration.workout-intensity.leve" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Light" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Leve" } }
+    } },
+    "registration.workout-intensity.moderada" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Moderate" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Moderada" } }
+    } },
+    "registration.workout.performed-at" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Date and time performed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Data e hora realizada" } }
+    } },
+    "registration.workout.propose" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Propose workout" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Propor treino" } }
+    } },
+    "registration.workout.type" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo" } }
+    } },
     "tab.plan" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },

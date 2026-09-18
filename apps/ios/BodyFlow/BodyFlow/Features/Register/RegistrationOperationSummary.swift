@@ -11,21 +11,22 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
 
     init(
         state: RegistrationMutationState,
-        captureError: BodyFlowCapabilityError?
+        captureError: BodyFlowCapabilityError?,
+        language: SupportedAppLanguage = .portugueseBrazil
     ) {
         switch state {
         case .unavailable:
-            message = "Indisponível nesta versão"
+            message = Self.copy("state.unavailable.title", language: language)
             action = nil
         case let .failed(_, error):
-            message = Self.message(for: error)
+            message = Self.message(for: error, language: language)
             action = Self.action(for: error)
         case let .succeeded(receipt):
-            message = Self.successMessage(for: receipt)
+            message = Self.successMessage(for: receipt, language: language)
             action = nil
         case .idle, .submitting:
             if let captureError {
-                message = Self.message(for: captureError)
+                message = Self.message(for: captureError, language: language)
                 action = Self.action(for: captureError)
             } else {
                 message = nil
@@ -47,21 +48,32 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         }
     }
 
-    private static func message(for error: BodyFlowCapabilityError) -> String {
+    private static func message(
+        for error: BodyFlowCapabilityError,
+        language: SupportedAppLanguage
+    ) -> String {
         error == .operationUnavailable
-            ? "Indisponível nesta versão"
-            : "Não foi possível concluir. Tente novamente."
+            ? copy("state.unavailable.title", language: language)
+            : copy("registration.operation.failed", language: language)
     }
 
     private static func successMessage(
-        for receipt: RegistrationMutationReceipt
+        for receipt: RegistrationMutationReceipt,
+        language: SupportedAppLanguage
     ) -> String {
         switch receipt {
-        case .propose: "Proposta criada. Revise antes de confirmar."
-        case .edit: "Proposta atualizada. Revise antes de confirmar."
-        case .confirm: "Registro confirmado."
-        case .cancel: "Proposta cancelada."
+        case .propose: copy("registration.operation.proposed", language: language)
+        case .edit: copy("registration.operation.edited", language: language)
+        case .confirm: copy("registration.operation.confirmed", language: language)
+        case .cancel: copy("registration.operation.cancelled", language: language)
         }
+    }
+
+    private static func copy(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        RegistrationCopy.string(key, language: language)
     }
 }
 
@@ -69,11 +81,13 @@ struct RegistrationOperationSummary: View {
     let state: RegistrationMutationState
     let captureError: BodyFlowCapabilityError?
     let perform: @MainActor (RegistrationOperationAction) -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         let descriptor = RegistrationOperationSummaryDescriptor(
             state: state,
-            captureError: captureError
+            captureError: captureError,
+            language: language
         )
         Group {
             if let message = descriptor.message {
@@ -85,8 +99,8 @@ struct RegistrationOperationSummary: View {
                         } label: {
                             Text(
                                 action == .newProposal
-                                    ? "Criar nova proposta"
-                                    : "Tentar novamente"
+                                    ? copy("registration.operation.new-proposal")
+                                    : copy("state.retry")
                             )
                             .frame(
                                 minHeight: BodyFlowSpacing.minimumTapTarget
@@ -107,6 +121,14 @@ struct RegistrationOperationSummary: View {
         .foregroundStyle(BodyFlowColor.secondaryText)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("registration.operation.summary")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(key, language: language)
     }
 
 }

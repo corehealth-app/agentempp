@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct RegisterRootView: View {
     @Environment(AppRouter.self) private var router
+    @Environment(\.locale) private var locale
 
     let fixture: RegistrationFixture
     let state: ScreenContentState
@@ -30,37 +31,48 @@ struct RegisterRootView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.register.rootAccessibilityIdentifier)
-        .navigationTitle("Registrar")
+        .navigationTitle(copy("registration.root.navigation-title"))
     }
 
     private var loadedContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("REGISTRO RÁPIDO")
+                    Text(copy("registration.root.eyebrow"))
                         .font(BodyFlowTypography.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(BodyFlowColor.accent)
 
-                    Text("O que você quer registrar?")
+                    Text(copy("registration.root.title"))
                         .font(BodyFlowTypography.title)
                         .fontWeight(.bold)
                         .foregroundStyle(BodyFlowColor.primaryText)
 
-                    Text("Escolha uma opção para abrir uma demonstração local.")
+                    Text(copy("registration.root.detail"))
                         .font(BodyFlowTypography.body)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                 }
 
-                VStack(spacing: BodyFlowSpacing.sm) {
-                    ForEach(fixture.commands) { command in
+                if let mealCommand = fixture.commands.first(where: {
+                    RegistrationKind(rawValue: $0.kindID) == .meal
+                }) {
+                    commandButton(mealCommand, role: .primary)
+                }
+
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    Text(copy("registration.root.other-actions"))
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                    ForEach(fixture.commands.filter {
+                        RegistrationKind(rawValue: $0.kindID) != .meal
+                    }) { command in
                         Button {
                             present(command)
                         } label: {
                             BodyFlowCard {
                                 FeatureActionLabel(
-                                    title: command.title,
-                                    detail: "Abrir demonstração",
+                                    title: commandTitle(for: command),
+                                    detail: copy("registration.root.open-demo"),
                                     systemImage: command.systemImage
                                 )
                             }
@@ -71,13 +83,25 @@ struct RegisterRootView: View {
                     }
                 }
 
-                Label(fixture.disclaimer, systemImage: "info.circle")
+                Label(copy("registration.root.demo-notice"), systemImage: "info.circle")
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                     .padding(.horizontal, BodyFlowSpacing.xs)
             }
             .padding(BodyFlowSpacing.md)
         }
+    }
+
+    private func commandButton(
+        _ command: RegistrationCommandFixture,
+        role: BodyFlowButtonRole
+    ) -> some View {
+        Button { present(command) } label: {
+            Label(commandTitle(for: command), systemImage: command.systemImage)
+        }
+        .buttonStyle(BodyFlowButtonStyle(role: role))
+        .disabled(RegistrationKind(rawValue: command.kindID) == nil)
+        .accessibilityIdentifier(identifier(for: command))
     }
 
     private func present(_ command: RegistrationCommandFixture) {
@@ -92,6 +116,27 @@ struct RegisterRootView: View {
             return "register.indisponivel"
         }
         return kind.commandAccessibilityIdentifier
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func commandTitle(for command: RegistrationCommandFixture) -> String {
+        guard let kind = RegistrationKind(rawValue: command.kindID) else {
+            return command.title
+        }
+        let key: String.LocalizationValue = switch kind {
+        case .meal: "registration.kind.meal"
+        case .training: "registration.kind.workout"
+        case .weight: "registration.kind.weight"
+        case .hydration: "registration.kind.hydration"
+        }
+        return copy(key)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(key, language: language)
     }
 }
 

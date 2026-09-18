@@ -83,16 +83,39 @@ struct MealProposalPresentation: Equatable, Sendable {
     }
 }
 
+enum RegistrationMetricUnit: Sendable {
+    case kilocalories
+    case grams
+}
+
+enum RegistrationMetricPresentation {
+    static func text(
+        label: String,
+        value: Decimal,
+        unit: RegistrationMetricUnit,
+        language: SupportedAppLanguage
+    ) -> String {
+        let number = value.formatted(.number.locale(language.formattingLocale))
+        switch unit {
+        case .kilocalories:
+            return "\(number) kcal"
+        case .grams:
+            return "\(label): \(number) g"
+        }
+    }
+}
+
 struct MealProposalView: View {
     let proposal: MealProposalPresentation
     let isSubmitting: Bool
     let edit: @MainActor () -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Proposta de refeição")
+            Text(copy("registration.proposal.meal-title"))
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
 
@@ -102,60 +125,99 @@ struct MealProposalView: View {
                         .font(BodyFlowTypography.headline)
                     Text("\(decimalText(item.quantityG)) g")
                         .foregroundStyle(BodyFlowColor.secondaryText)
-                    nutrientText("kcal", value: item.kcal)
-                    nutrientText("Proteína", value: item.proteinG)
-                    nutrientText("Carboidratos", value: item.carbsG)
-                    nutrientText("Gorduras", value: item.fatG)
+                    nutrientText(
+                        copy("registration.metric.energy"),
+                        value: item.kcal,
+                        unit: .kilocalories
+                    )
+                    nutrientText(
+                        copy("registration.metric.protein"),
+                        value: item.proteinG,
+                        unit: .grams
+                    )
+                    nutrientText(
+                        copy("registration.metric.carbs"),
+                        value: item.carbsG,
+                        unit: .grams
+                    )
+                    nutrientText(
+                        copy("registration.metric.fat"),
+                        value: item.fatG,
+                        unit: .grams
+                    )
                 }
+                .padding(.vertical, BodyFlowSpacing.xs)
             }
 
             if let totals = proposal.totals {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("Totais")
+                BodyFlowCard(surface: .card) {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                    Text(copy("registration.proposal.totals"))
                         .font(BodyFlowTypography.headline)
-                    nutrientText("kcal", value: totals.kcal)
-                    nutrientText("Proteína", value: totals.proteinG)
-                    nutrientText("Carboidratos", value: totals.carbsG)
-                    nutrientText("Gorduras", value: totals.fatG)
+                    nutrientText(
+                        copy("registration.metric.energy"),
+                        value: totals.kcal,
+                        unit: .kilocalories
+                    )
+                    nutrientText(
+                        copy("registration.metric.protein"),
+                        value: totals.proteinG,
+                        unit: .grams
+                    )
+                    nutrientText(
+                        copy("registration.metric.carbs"),
+                        value: totals.carbsG,
+                        unit: .grams
+                    )
+                    nutrientText(
+                        copy("registration.metric.fat"),
+                        value: totals.fatG,
+                        unit: .grams
+                    )
+                    }
                 }
             }
+
+            Label(copy("registration.proposal.service-values"), systemImage: "checkmark.seal")
+                .font(BodyFlowTypography.callout)
+                .foregroundStyle(BodyFlowColor.secondaryText)
 
             ForEach(proposal.warnings, id: \.self) { warning in
                 Text(warning)
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
-            Text("Expira em \(proposal.expiresAt.value.formatted(date: .abbreviated, time: .shortened))")
+            Text(expiryText)
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
 
-            if proposal.allowsEdit {
-                Button(action: edit) {
-                    Text("Editar")
-                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
-                        .contentShape(Rectangle())
-                }
-                    .buttonStyle(.bordered)
-                    .disabled(isSubmitting)
-                    .accessibilityIdentifier("registration.proposal.edit")
-            }
             if proposal.allowsConfirm {
                 Button(action: confirm) {
-                    Text("Confirmar")
+                    Text(copy("registration.proposal.confirm"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
                         .contentShape(Rectangle())
                 }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.confirm")
             }
-            if proposal.allowsCancel {
-                Button(action: cancel) {
-                    Text("Cancelar proposta")
+            if proposal.allowsEdit {
+                Button(action: edit) {
+                    Text(copy("registration.proposal.edit-first-item"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
                         .contentShape(Rectangle())
                 }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                    .disabled(isSubmitting)
+                    .accessibilityIdentifier("registration.proposal.edit")
+            }
+            if proposal.allowsCancel {
+                Button(action: cancel) {
+                    Text(copy("registration.proposal.cancel"))
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                        .contentShape(Rectangle())
+                }
+                    .buttonStyle(BodyFlowButtonStyle(role: .tertiary))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.cancel")
             }
@@ -165,13 +227,40 @@ struct MealProposalView: View {
     }
 
     @ViewBuilder
-    private func nutrientText(_ name: String, value: Decimal?) -> some View {
+    private func nutrientText(
+        _ name: String,
+        value: Decimal?,
+        unit: RegistrationMetricUnit
+    ) -> some View {
         if let value {
-            Text("\(decimalText(value)) \(name == "kcal" ? "kcal" : "g de \(name)")")
+            Text(RegistrationMetricPresentation.text(
+                label: name,
+                value: value,
+                unit: unit,
+                language: language
+            ))
         }
     }
 
     private func decimalText(_ value: Decimal) -> String {
-        NSDecimalNumber(decimal: value).stringValue
+        value.formatted(.number.locale(language.formattingLocale))
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private var expiryText: String {
+        let format = copy("registration.proposal.expires")
+        let value = proposal.expiresAt.value.formatted(Date.FormatStyle(
+            date: .abbreviated,
+            time: .shortened,
+            locale: language.formattingLocale
+        ))
+        return String(format: format, locale: language.formattingLocale, value)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(key, language: language)
     }
 }

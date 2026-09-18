@@ -9,6 +9,7 @@ struct WorkoutRegistrationView: View {
     @State private var duration: String
     @State private var intensity: WorkoutIntensity
     @State private var performedAt: Date
+    @Environment(\.locale) private var locale
 
     init(
         initialPerformedAt: Date,
@@ -28,33 +29,55 @@ struct WorkoutRegistrationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Treino")
+            Text(copy("registration.kind.workout"))
                 .font(BodyFlowTypography.headline)
-            WorkoutFieldLabel("Tipo")
+            WorkoutFieldLabel(copy("registration.workout.type"))
             WorkoutTextField(
-                placeholder: "Tipo", text: $workoutType,
+                placeholder: copy("registration.workout.type"), text: $workoutType,
                 keyboardType: .default,
                 identifier: "registration.workout.type",
-                accessibilityLabel: "Tipo"
+                accessibilityLabel: copy("registration.workout.type")
             )
-            WorkoutFieldLabel("Duração (min)")
+            WorkoutFieldLabel(copy("registration.workout.duration"))
             WorkoutTextField(
-                placeholder: "Duração (min)", text: $duration,
+                placeholder: copy("registration.workout.duration"), text: $duration,
                 keyboardType: .numberPad,
                 identifier: "registration.workout.duration",
-                accessibilityLabel: "Duração (min)"
+                accessibilityLabel: copy("registration.workout.duration")
             )
-            WorkoutFieldLabel("Intensidade")
-            WorkoutIntensityPicker(intensity: $intensity)
-            WorkoutFieldLabel("Data e hora realizada")
-            WorkoutDatePicker(performedAt: $performedAt)
+            WorkoutFieldLabel(copy("registration.workout.intensity"))
+            WorkoutIntensityPicker(
+                intensity: $intensity,
+                titles: WorkoutIntensity.allCases.map {
+                    RegistrationCopy.workoutIntensityTitle($0, language: language)
+                },
+                accessibilityLabel: copy("registration.workout.intensity")
+            )
+            WorkoutFieldLabel(copy("registration.workout.performed-at"))
+            WorkoutDatePicker(
+                performedAt: $performedAt,
+                accessibilityLabel: copy("registration.workout.performed-at")
+            )
             WorkoutActionButton(
-                title: actionTitle,
+                title: actionTitle == "Propor treino"
+                    ? copy("registration.workout.propose")
+                    : copy("registration.editor.save"),
                 isEnabled: !isSubmitting && isValid,
                 identifier: "registration.workout.propose",
                 action: submitProposal
             )
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: language
+        )
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
     }
 
     private var isValid: Bool { !workoutType.isEmpty && Int(duration) != nil }
@@ -91,6 +114,9 @@ private struct WorkoutActionButton: UIViewRepresentable {
         configuration.cornerStyle = .medium
         configuration.title = title
         let button = UIButton(configuration: configuration)
+        button.titleLabel?.numberOfLines = 0
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.accessibilityIdentifier = identifier
         button.addTarget(
             context.coordinator,
@@ -115,9 +141,10 @@ private struct WorkoutActionButton: UIViewRepresentable {
         uiView: UIButton,
         context: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? uiView.intrinsicContentSize.width,
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        RegistrationControlSizing.fittedSize(
+            uiView,
+            proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
     }
 
@@ -133,11 +160,13 @@ private struct WorkoutActionButton: UIViewRepresentable {
 
 private struct WorkoutIntensityPicker: UIViewRepresentable {
     @Binding var intensity: WorkoutIntensity
+    let titles: [String]
+    let accessibilityLabel: String
 
     func makeUIView(context: Context) -> UISegmentedControl {
-        let control = UISegmentedControl(items: WorkoutIntensity.allCases.map(\.rawValue))
+        let control = UISegmentedControl(items: titles)
         control.accessibilityIdentifier = "registration.workout.intensity"
-        control.accessibilityLabel = "Intensidade"
+        control.accessibilityLabel = accessibilityLabel
         control.addTarget(
             context.coordinator,
             action: #selector(Coordinator.valueChanged),
@@ -150,7 +179,15 @@ private struct WorkoutIntensityPicker: UIViewRepresentable {
     }
 
     func updateUIView(_ control: UISegmentedControl, context: Context) {
+        for (index, title) in titles.enumerated() {
+            control.setTitle(title, forSegmentAt: index)
+        }
         control.selectedSegmentIndex = WorkoutIntensity.allCases.firstIndex(of: intensity) ?? 0
+        control.accessibilityLabel = accessibilityLabel
+        control.setTitleTextAttributes(
+            [.font: UIFont.preferredFont(forTextStyle: .body)],
+            for: .normal
+        )
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(intensity: $intensity) }
@@ -160,12 +197,14 @@ private struct WorkoutIntensityPicker: UIViewRepresentable {
         uiView: UISegmentedControl,
         context: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? uiView.intrinsicContentSize.width,
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        RegistrationControlSizing.fittedSize(
+            uiView,
+            proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         private var intensity: Binding<WorkoutIntensity>
 
@@ -182,13 +221,14 @@ private struct WorkoutIntensityPicker: UIViewRepresentable {
 
 private struct WorkoutDatePicker: UIViewRepresentable {
     @Binding var performedAt: Date
+    let accessibilityLabel: String
 
     func makeUIView(context: Context) -> UIDatePicker {
         let picker = UIDatePicker()
         picker.datePickerMode = .dateAndTime
         picker.preferredDatePickerStyle = .compact
         picker.accessibilityIdentifier = "registration.workout.performed-at"
-        picker.accessibilityLabel = "Data e hora realizada"
+        picker.accessibilityLabel = accessibilityLabel
         picker.addTarget(
             context.coordinator,
             action: #selector(Coordinator.valueChanged),
@@ -202,6 +242,7 @@ private struct WorkoutDatePicker: UIViewRepresentable {
 
     func updateUIView(_ picker: UIDatePicker, context: Context) {
         if picker.date != performedAt { picker.date = performedAt }
+        picker.accessibilityLabel = accessibilityLabel
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(performedAt: $performedAt) }
@@ -211,12 +252,14 @@ private struct WorkoutDatePicker: UIViewRepresentable {
         uiView: UIDatePicker,
         context: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? uiView.intrinsicContentSize.width,
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        RegistrationControlSizing.fittedSize(
+            uiView,
+            proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         private var performedAt: Binding<Date>
 
@@ -266,12 +309,14 @@ private struct WorkoutTextField: UIViewRepresentable {
         uiView: UITextField,
         context: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? uiView.intrinsicContentSize.width,
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        RegistrationControlSizing.fittedSize(
+            uiView,
+            proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         private var text: Binding<String>
 

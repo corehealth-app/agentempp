@@ -5,6 +5,66 @@ import Testing
 
 @Suite("Registration Presentation")
 struct RegistrationPresentationTests {
+    @Test("registration client copy is bilingual and capability truthful")
+    func bilingualClientCopy() {
+        #expect(RegistrationCopy.string(
+            "registration.capture.photo-sample",
+            language: .portugueseBrazil
+        ) == "Foto — amostra local")
+        #expect(RegistrationCopy.string(
+            "registration.capture.photo-sample",
+            language: .englishUnitedStates
+        ) == "Photo — local sample")
+        #expect(RegistrationCopy.string(
+            "registration.capture.audio-sample",
+            language: .englishUnitedStates
+        ) == "Audio — local sample")
+        #expect(RegistrationCopy.string(
+            "registration.capture.demo-notice",
+            language: .englishUnitedStates
+        ) == "Local demonstration; no media permission or upload.")
+        #expect(RegistrationCopy.string(
+            "registration.proposal.edit-first-item",
+            language: .englishUnitedStates
+        ) == "Edit first item")
+        #expect(RegistrationCopy.string(
+            "registration.workout.estimated-energy",
+            language: .englishUnitedStates
+        ) == "Estimated energy")
+        #expect(RegistrationCopy.mealTypeTitle(
+            .lunch,
+            language: .englishUnitedStates
+        ) == "Lunch")
+        #expect(RegistrationCopy.mealTypeTitle(
+            .lunch,
+            language: .portugueseBrazil
+        ) == "Almoço")
+        #expect(RegistrationCopy.workoutIntensityTitle(
+            .moderate,
+            language: .englishUnitedStates
+        ) == "Moderate")
+        #expect(RegistrationCopy.workoutIntensityTitle(
+            .moderate,
+            language: .portugueseBrazil
+        ) == "Moderada")
+    }
+
+    @Test("proposal metrics keep the server value's explicit unit")
+    func proposalMetricUnitsAreExplicit() {
+        #expect(RegistrationMetricPresentation.text(
+            label: "Energy",
+            value: 417,
+            unit: .kilocalories,
+            language: .englishUnitedStates
+        ) == "417 kcal")
+        #expect(RegistrationMetricPresentation.text(
+            label: "Protein",
+            value: 29,
+            unit: .grams,
+            language: .englishUnitedStates
+        ) == "Protein: 29 g")
+    }
+
     @Test("meal proposal preserves every provider item and total literally")
     func proposalValuesRemainLiteral() {
         let presentation = MealProposalPresentation(

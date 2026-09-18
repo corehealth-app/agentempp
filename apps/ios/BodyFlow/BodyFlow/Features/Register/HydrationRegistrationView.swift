@@ -1,6 +1,27 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+enum RegistrationControlSizing {
+    static func fittedSize(
+        _ view: UIView,
+        proposal: ProposedViewSize,
+        minimumHeight: CGFloat
+    ) -> CGSize {
+        let width = proposal.width ?? view.intrinsicContentSize.width
+        let fitting = view.sizeThatFits(CGSize(
+            width: width,
+            height: .greatestFiniteMagnitude
+        ))
+        let scaledMinimum = max(
+            minimumHeight,
+            UIFont.preferredFont(forTextStyle: .body).lineHeight
+                + BodyFlowSpacing.md
+        )
+        return CGSize(width: width, height: max(scaledMinimum, fitting.height))
+    }
+}
+
 struct HydrationRegistrationView: View {
     let initialOccurredAt: Date
     let isSubmitting: Bool
@@ -9,6 +30,7 @@ struct HydrationRegistrationView: View {
     @State private var selectedQuickAmount: Int?
     @State private var customAmount = ""
     @State private var occurredAt: Date
+    @Environment(\.locale) private var locale
 
     init(
         initialOccurredAt: Date,
@@ -23,12 +45,47 @@ struct HydrationRegistrationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Hidratação")
+            Text(copy("registration.kind.hydration"))
                 .font(BodyFlowTypography.headline)
-            Text("Quantidade rápida (ml)")
+            Text(copy("registration.hydration.quick"))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.primaryText)
-            HStack(spacing: BodyFlowSpacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: BodyFlowSpacing.sm) { quickButtons }
+                VStack(spacing: BodyFlowSpacing.sm) { quickButtons }
+            }
+            Text(copy("registration.hydration.custom"))
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.primaryText)
+            RegistrationBoundedTextField(
+                placeholder: copy("registration.hydration.placeholder"),
+                text: $customAmount,
+                keyboardType: .numberPad,
+                identifier: "registration.hydration.custom",
+                accessibilityLabel: copy("registration.hydration.custom")
+            )
+                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget + 4)
+                .onChange(of: customAmount) { _, _ in selectedQuickAmount = nil }
+            Text(copy("registration.field.date-time"))
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.primaryText)
+            RegistrationBoundedDatePicker(
+                value: $occurredAt,
+                identifier: "registration.hydration.occurred-at",
+                accessibilityLabel: copy("registration.field.date-time")
+            )
+                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget + 4)
+            RegistrationBoundedButton(
+                title: copy("registration.hydration.submit"),
+                isEnabled: !isSubmitting,
+                identifier: "registration.hydration.submit"
+            ) { submit(selectedQuickAmount, customAmount, occurredAt) }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var quickButtons: some View {
                 ForEach([250, 500, 750], id: \.self) { amount in
                     RegistrationBoundedButton(
                         title: "\(amount) ml",
@@ -37,41 +94,13 @@ struct HydrationRegistrationView: View {
                         minimumWidth: BodyFlowSpacing.minimumTapTarget + 4
                     ) { selectedQuickAmount = amount }
                 }
-            }
-            Text("Quantidade personalizada (ml)")
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.primaryText)
-            RegistrationBoundedTextField(
-                placeholder: "Quantidade em ml",
-                text: $customAmount,
-                keyboardType: .numberPad,
-                identifier: "registration.hydration.custom",
-                accessibilityLabel: "Quantidade personalizada (ml)"
-            )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: BodyFlowSpacing.minimumTapTarget + 4
-                )
-                .onChange(of: customAmount) { _, _ in selectedQuickAmount = nil }
-            Text("Data e hora")
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.primaryText)
-            RegistrationBoundedDatePicker(
-                value: $occurredAt,
-                identifier: "registration.hydration.occurred-at",
-                accessibilityLabel: "Data e hora"
-            )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: BodyFlowSpacing.minimumTapTarget + 4
-                )
-            RegistrationBoundedButton(
-                title: "Registrar hidratação",
-                isEnabled: !isSubmitting,
-                identifier: "registration.hydration.submit"
-            ) { submit(selectedQuickAmount, customAmount, occurredAt) }
-            .frame(maxWidth: .infinity)
-        }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
     }
 }
 
@@ -105,9 +134,13 @@ struct RegistrationBoundedTextField: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextField, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: BodyFlowSpacing.minimumTapTarget + 4)
+        RegistrationControlSizing.fittedSize(
+            uiView, proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
+        )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         private var text: Binding<String>
         init(text: Binding<String>) { self.text = text }
@@ -140,9 +173,13 @@ struct RegistrationBoundedDatePicker: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(value: $value) }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIDatePicker, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: BodyFlowSpacing.minimumTapTarget + 4)
+        RegistrationControlSizing.fittedSize(
+            uiView, proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
+        )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         private var value: Binding<Date>
         init(value: Binding<Date>) { self.value = value }
@@ -162,6 +199,9 @@ struct RegistrationBoundedButton: UIViewRepresentable {
         configuration.cornerStyle = .medium
         configuration.title = title
         let button = UIButton(configuration: configuration)
+        button.titleLabel?.numberOfLines = 0
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.accessibilityIdentifier = identifier
         button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
         button.heightAnchor.constraint(
@@ -178,10 +218,12 @@ struct RegistrationBoundedButton: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        CGSize(
-            width: max(proposal.width ?? uiView.intrinsicContentSize.width, minimumWidth),
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        var size = RegistrationControlSizing.fittedSize(
+            uiView, proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
+        size.width = max(size.width, minimumWidth)
+        return size
     }
 
     @MainActor

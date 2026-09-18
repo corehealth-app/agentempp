@@ -7,6 +7,7 @@ struct WeightRegistrationView: View {
 
     @State private var value = ""
     @State private var recordedAt: Date
+    @Environment(\.locale) private var locale
 
     init(
         initialRecordedAt: Date,
@@ -21,40 +22,47 @@ struct WeightRegistrationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Peso")
+            Text(copy("registration.kind.weight"))
                 .font(BodyFlowTypography.headline)
-            Text("Peso (kg)")
+            Text(copy("registration.weight.value"))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.primaryText)
             RegistrationBoundedTextField(
-                placeholder: "Peso em kg",
+                placeholder: copy("registration.weight.placeholder"),
                 text: $value,
                 keyboardType: .decimalPad,
                 identifier: "registration.weight.value",
-                accessibilityLabel: "Peso (kg)"
+                accessibilityLabel: copy("registration.weight.value")
             )
                 .frame(
                     maxWidth: .infinity,
                     minHeight: BodyFlowSpacing.minimumTapTarget + 4
                 )
-            Text("Data e hora")
+            Text(copy("registration.field.date-time"))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.primaryText)
             RegistrationBoundedDatePicker(
                 value: $recordedAt,
                 identifier: "registration.weight.recorded-at",
-                accessibilityLabel: "Data e hora"
+                accessibilityLabel: copy("registration.field.date-time")
             )
                 .frame(
                     maxWidth: .infinity,
                     minHeight: BodyFlowSpacing.minimumTapTarget + 4
                 )
             RegistrationBoundedButton(
-                title: "Registrar peso",
+                title: copy("registration.weight.submit"),
                 isEnabled: !isSubmitting,
                 identifier: "registration.weight.submit"
             ) { submit(value, recordedAt) }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
     }
 }

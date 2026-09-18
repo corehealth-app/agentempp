@@ -38,36 +38,47 @@ struct WorkoutProposalView: View {
     let edit: @MainActor () -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Proposta de treino")
+            Text(copy("registration.proposal.workout-title"))
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
             if let workoutType = proposal.workoutType { Text(workoutType) }
             if let durationMin = proposal.durationMin { Text("\(decimalText(durationMin)) min") }
             if let intensity = proposal.intensity { Text(intensity) }
-            if let estimatedKcal = proposal.estimatedKcal { Text("\(decimalText(estimatedKcal)) kcal") }
-            Text("Expira em \(proposal.expiresAt.value.formatted(date: .abbreviated, time: .shortened))")
+            if let estimatedKcal = proposal.estimatedKcal {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    Text(copy("registration.workout.estimated-energy"))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                    Text("\(decimalText(estimatedKcal)) kcal")
+                }
+            }
+            Text(expiryText)
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
             if proposal.allowsPendingActions {
                 WorkoutProposalActionButton(
-                    title: "Editar",
-                    isEnabled: !isSubmitting,
-                    identifier: "registration.proposal.edit",
-                    action: edit
-                )
-                WorkoutProposalActionButton(
-                    title: "Confirmar",
+                    title: copy("registration.proposal.confirm"),
                     isEnabled: !isSubmitting,
                     identifier: "registration.proposal.confirm",
+                    role: .primary,
                     action: confirm
                 )
                 WorkoutProposalActionButton(
-                    title: "Cancelar proposta",
+                    title: copy("registration.proposal.edit"),
+                    isEnabled: !isSubmitting,
+                    identifier: "registration.proposal.edit",
+                    role: .secondary,
+                    action: edit
+                )
+                WorkoutProposalActionButton(
+                    title: copy("registration.proposal.cancel"),
                     isEnabled: !isSubmitting,
                     identifier: "registration.proposal.cancel",
+                    role: .tertiary,
                     action: cancel
                 )
             }
@@ -77,7 +88,28 @@ struct WorkoutProposalView: View {
     }
 
     private func decimalText(_ value: Decimal) -> String {
-        NSDecimalNumber(decimal: value).stringValue
+        value.formatted(.number.locale(language.formattingLocale))
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private var expiryText: String {
+        let value = proposal.expiresAt.value.formatted(Date.FormatStyle(
+            date: .abbreviated,
+            time: .shortened,
+            locale: language.formattingLocale
+        ))
+        return String(
+            format: copy("registration.proposal.expires"),
+            locale: language.formattingLocale,
+            value
+        )
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(key, language: language)
     }
 }
 
@@ -85,13 +117,17 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
     let title: String
     let isEnabled: Bool
     let identifier: String
+    let role: BodyFlowButtonRole
     let action: @MainActor () -> Void
 
     func makeUIView(context: Context) -> UIButton {
-        var configuration = UIButton.Configuration.filled()
+        var configuration = configuration(for: role)
         configuration.cornerStyle = .medium
         configuration.title = title
         let button = UIButton(configuration: configuration)
+        button.titleLabel?.numberOfLines = 0
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.accessibilityIdentifier = identifier
         button.addTarget(
             context.coordinator,
@@ -116,10 +152,22 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
         uiView: UIButton,
         context: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? uiView.intrinsicContentSize.width,
-            height: BodyFlowSpacing.minimumTapTarget + 4
+        RegistrationControlSizing.fittedSize(
+            uiView,
+            proposal: proposal,
+            minimumHeight: BodyFlowSpacing.minimumTapTarget + 4
         )
+    }
+
+    private func configuration(
+        for role: BodyFlowButtonRole
+    ) -> UIButton.Configuration {
+        switch role {
+        case .primary: .filled()
+        case .secondary: .bordered()
+        case .tertiary: .plain()
+        case .destructive: .bordered()
+        }
     }
 
     @MainActor

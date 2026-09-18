@@ -36,6 +36,7 @@ struct MealProposalEditorView: View {
     @State private var quantityG: String
     @State private var userKcal: String
     @State private var consumedAt: Date
+    @Environment(\.locale) private var locale
 
     init(
         registration: RegistrationSnapshot,
@@ -58,36 +59,41 @@ struct MealProposalEditorView: View {
 
     var body: some View {
         Form {
-            Section("Itens") {
-                TextField("Alimento", text: $foodName)
+            Section {
+                Text(copy("registration.proposal.first-item-notice"))
+                    .font(BodyFlowTypography.callout)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                TextField(copy("registration.editor.food"), text: $foodName)
                     .accessibilityIdentifier("registration.proposal.edit.food-name")
-                TextField("Quantidade (g)", text: $quantityG)
+                TextField(copy("registration.editor.quantity"), text: $quantityG)
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("registration.proposal.edit.quantity")
-                TextField("Calorias informadas", text: $userKcal)
+                TextField(copy("registration.editor.user-kcal"), text: $userKcal)
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("registration.proposal.edit.user-kcal")
+            } header: {
+                Text(copy("registration.editor.first-item"))
             }
-            Section("Refeição") {
+            Section(copy("registration.editor.meal")) {
                 Menu {
                     ForEach(MealType.allCases, id: \.self) { type in
-                        Button(type.rawValue) { mealType = type }
+                        Button(mealTypeTitle(type)) { mealType = type }
                     }
                 } label: {
-                    Text(mealType.rawValue)
+                    Text(mealTypeTitle(mealType))
                 }
                 .accessibilityIdentifier("registration.proposal.edit.meal-type")
 
-                DatePicker("Horário", selection: $consumedAt)
+                DatePicker(copy("registration.editor.time"), selection: $consumedAt)
                     .accessibilityIdentifier("registration.proposal.edit.consumed-at")
             }
         }
         .accessibilityIdentifier("registration.proposal.editor")
-        .navigationTitle("Editar proposta")
+        .navigationTitle(copy("registration.editor.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Salvar", action: saveProposal)
+                Button(copy("registration.editor.save"), action: saveProposal)
                     .accessibilityIdentifier("registration.proposal.edit.save")
             }
         }
@@ -109,5 +115,20 @@ struct MealProposalEditorView: View {
 
     static func decimalText(_ value: Decimal) -> String {
         NSDecimalNumber(decimal: value).stringValue
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RegistrationCopy.string(
+            key,
+            language: language
+        )
+    }
+
+    private func mealTypeTitle(_ mealType: MealType) -> String {
+        RegistrationCopy.mealTypeTitle(mealType, language: language)
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
     }
 }

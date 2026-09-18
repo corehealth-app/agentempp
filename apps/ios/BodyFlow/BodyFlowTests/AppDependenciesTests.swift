@@ -16,8 +16,8 @@ struct AppDependenciesTests {
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
         #expect(state.requirements.available)
-        #expect(!state.completion.completed)
-        #expect(state.acceptedActions.isEmpty)
+        #expect(state.completion.completed)
+        #expect(!state.acceptedActions.isEmpty)
     }
 
     @Test("Valid origin and session seam install the real mobile transport")

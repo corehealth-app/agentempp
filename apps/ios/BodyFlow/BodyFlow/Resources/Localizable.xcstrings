@@ -2187,6 +2187,66 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo" } }
     } },
+    "plan.detail.action.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reload the current plan data" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Recarregar os dados atuais do plano" } }
+    } },
+    "plan.detail.action.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "View plan details" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver detalhes do plano" } }
+    } },
+    "plan.detail.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan details" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detalhes do plano" } }
+    } },
+    "plan.generated" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Generated on" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gerado em" } }
+    } },
+    "plan.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano" } }
+    } },
+    "plan.metadata.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan details" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detalhes do plano" } }
+    } },
+    "plan.notes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Notes" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Observações" } }
+    } },
+    "plan.nutrition.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nutrition prescription" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Prescrição nutricional" } }
+    } },
+    "plan.nutrition.type" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Prescription type" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de prescrição" } }
+    } },
+    "plan.training.days" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Days per week" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dias por semana" } }
+    } },
+    "plan.training.equipment" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Equipment" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Equipamentos" } }
+    } },
+    "plan.training.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Training plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano de treino" } }
+    } },
+    "plan.training.type" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Training type" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de treino" } }
+    } },
+    "plan.valid-until" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Valid until" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Válido até" } }
+    } },
+    "plan.version" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão" } }
+    } },
     "tab.plan" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },

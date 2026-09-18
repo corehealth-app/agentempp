@@ -4,6 +4,7 @@ import SwiftUI
 struct PlanRootView: View {
     let model: PlanViewModel
     @Binding var selectedTab: AppTab
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ZStack {
@@ -12,11 +13,19 @@ struct PlanRootView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.plan.rootAccessibilityIdentifier)
-        .navigationTitle("Plano")
+        .navigationTitle(copy("plan.navigation.title"))
         .task(id: selectedTab) {
             guard selectedTab == .plan else { return }
             await model.load()
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        PlanCopy.string(key, language: language)
     }
 }
 
@@ -24,6 +33,7 @@ struct PlanRootView: View {
 struct PlanReadContent: View {
     let model: PlanViewModel
     var showsDetailLink = false
+    @Environment(\.locale) private var locale
 
     var body: some View {
         let presentation = model.state.presentation
@@ -39,14 +49,17 @@ struct PlanReadContent: View {
                         }
                     }
 
-                    PlanContentView(presentation: PlanPresentation(snapshot: snapshot))
+                    PlanContentView(presentation: PlanPresentation(
+                        snapshot: snapshot,
+                        language: language
+                    ))
 
                     if showsDetailLink {
                         NavigationLink(value: AppRoute.plan(.detail)) {
                             BodyFlowCard {
                                 FeatureActionLabel(
-                                    title: "Ver detalhes do plano",
-                                    detail: "Recarregar os dados atuais do plano",
+                                    title: copy("plan.detail.action.title"),
+                                    detail: copy("plan.detail.action.detail"),
                                     systemImage: "list.clipboard"
                                 )
                             }
@@ -62,7 +75,7 @@ struct PlanReadContent: View {
     }
 
     private var retryButton: some View {
-        Button("Tentar novamente", action: retry)
+        Button(copy("state.retry"), action: retry)
             .font(BodyFlowTypography.headline)
             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
             .accessibilityIdentifier("state.retry")
@@ -70,5 +83,13 @@ struct PlanReadContent: View {
 
     private func retry() {
         Task { await model.retry() }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        PlanCopy.string(key, language: language)
     }
 }

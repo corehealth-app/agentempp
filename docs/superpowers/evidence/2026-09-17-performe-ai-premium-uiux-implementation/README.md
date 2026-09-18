@@ -998,3 +998,80 @@ real user, media permission, media upload or real completion was used.
   Real completions: 0. Remote resources altered: NONE. Private xcresults and
   captures are retained. Simulator/process shutdown is verified after commit.
   COST / ENVIRONMENT CLOSEOUT: NOT APPLICABLE.
+
+## Batch 4 — Slice 5 Plan local gate
+
+Slice 5 started from clean HEAD
+`aa6489f16bb4e3b35450871f242acc7ca196164f`, parent
+`3b59c6efa3c1ac384ee19e7e284f1551c1bfdc2d`, tree
+`e1f73ce3fb820a320a6cc772526f9e713d20fa3d`, on the existing
+`codex/performe-ai-client-beta-flow-v1` worktree. Host
+`MacBook-Air-de-Eduardo.local` is local development. Xcode 27.0 and the existing
+iPhone 17 Pro / iOS 26.5 simulator
+`27291590-659D-4A29-8F45-CA5CA2D154F9` were reused serially. Private artifacts,
+locked package-cache clone, logs, result bundles and captures are retained under
+`/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/batch4.JIqMw6`.
+No provider, remote environment, paid resource or real completion was used.
+
+### TDD, contract preservation and presentation
+
+- S5 RED compiled against the requested `PlanPresentation(snapshot:language:)`
+  interface and failed because that language-aware initializer did not exist.
+  The failure was task-specific, not a destination/package/setup failure.
+- The additive initializer defaults to pt-BR and localizes only client-owned
+  labels and date presentation. Server-owned plan type, equipment, prescription
+  type, notes and IDs remain byte-for-byte presentation values from the snapshot.
+- UTC date meaning is preserved while formatting as `dd/MM/yyyy` in pt-BR and
+  `MM/dd/yyyy` in en-US. Optional fields remain absent; literal zero days/version
+  remain visible. No local active/expired inference, exercise, menu, goal,
+  recommendation or weekly-progress calculation was added.
+- Training and each received nutrition prescription use one semantic
+  `BodyFlowCard(surface: .card)`. Type/days/equipment/notes precede a secondary
+  plan-details group containing generated date, validity and version. The
+  existing detail route and reload behavior remain intact; provider task,
+  invalidation and cancellation ownership are unchanged.
+- `s5-final-green-rerun.log` and
+  `S5FinalDerivedData/Logs/Test/Test-BodyFlow-2026.09.18_09-25-03--0300.xcresult`:
+  **PASS**, 39 distinct tests, zero failures/skips/expected failures/runtime
+  warnings. Selectors cover PlanPresentation, PlanViewModel,
+  PlanProgressContract, Prompt13 Plan/Progress/History and
+  PremiumCoreSurfaces. The first consolidated attempt ended without a terminal
+  test result when its high-volume console stream was interrupted; no assertion
+  failure was recorded. The exact gate was rerun with output redirected and
+  completed successfully.
+
+### Native visual, Release and review evidence
+
+The final UI bundle exports four regular-size locale/theme Plan captures plus an
+en-US dark AccessibilityXXXL detail capture under
+`<artifact-root>/S5FinalAttachments2`. Root inspected pt-BR light, en-US dark and
+en-US dark AccessibilityXXXL captures. Group hierarchy, secondary metadata,
+semantic contrast and locale-specific dates are visible; long authoritative
+Portuguese fixture values remain untranslated under English as required. The
+oversized detail remains scrollable and retains readable content. XCTest also
+asserts the loaded groups, absence of invented `Active`, detail navigation and
+reload. This is native screenshot/accessibility-tree evidence, not complete
+manual VoiceOver narration: **VOICEOVER MANUAL STATUS: NOT FULLY VERIFIED**.
+
+`s5-release-final.xcresult`: normal signed Release Simulator build **PASS**, exit
+0, identifier `com.bodyflow.app`; `codesign --verify --deep --strict`: **PASS**.
+The only compiler warning is the inherited unnecessary `await` in
+`SessionLifecycleCoordinator`, outside this slice; the AppIntents metadata skip
+is a tool diagnostic. Swift compilation/typecheck is covered by the focused
+tests and Release build. No separate SwiftLint is configured.
+
+Primary-agent structured review of hierarchy, localization, UTC date contract,
+nil/zero semantics, server-owned values, reload ownership, allowlist and prior
+slice compatibility: **PASS**, Critical 0 / Important 0. This is explicitly not
+an independent reviewer claim. Catalog JSON parsing, `git diff --check`, exact
+allowlist and scoped secret/PII scans are required immediately before the local
+commit. Exact local subject: `refactor(ui): refine Plan experience`, with parent
+`aa6489f16bb4e3b35450871f242acc7ca196164f`; resulting SHA/tree and clean state
+are reported after commit without amending this evidence.
+
+No logo/AppIcon/wordmark/splash/historical asset, backend, DTO, API, dependency,
+project file, signing configuration or remote resource changed. Real
+completions: 0. BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS**.
+No push, PR, merge, deployment, staging, Production, Supabase, Vercel,
+OpenRouter or CI-3 access occurred. Slice 6 starts only after the verified local
+Slice 5 commit and a clean worktree/index.

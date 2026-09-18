@@ -22,6 +22,52 @@ struct PlanPresentationTests {
         ])
     }
 
+    @Test("English presentation localizes labels and formatting without changing values")
+    func englishLabelsAndDates() {
+        let presentation = PlanPresentation(
+            snapshot: snapshot(),
+            language: .englishUnitedStates
+        )
+
+        #expect(presentation.trainingFields.map(\.title) == [
+            "Training type", "Days per week", "Equipment",
+            "Generated on", "Valid until", "Version", "Notes",
+        ])
+        #expect(presentation.trainingFields.map(\.value) == [
+            "strength", "4", "Halteres e banco", "07/20/2026",
+            "08/19/2026", "3", "Progressão semanal",
+        ])
+        #expect(presentation.nutritionSections[0].title == "Nutrition prescription")
+        #expect(presentation.nutritionSections[0].fields.map(\.title) == [
+            "Prescription type", "Generated on", "Valid until", "Version", "Notes",
+        ])
+    }
+
+    @Test("optional metadata stays omitted while literal zero remains visible")
+    func optionalMetadataAndZeroRemainDistinct() {
+        let generated = APITimestamp(value: Date(timeIntervalSince1970: 1_784_589_300))
+        let presentation = PlanPresentation(snapshot: PlanSnapshot(
+            training: TrainingPlanSnapshot(
+                id: "training-zero",
+                planType: "mobility",
+                daysPerWeek: 0,
+                equipmentSummary: nil,
+                generatedAt: generated,
+                validUntil: nil,
+                version: 0,
+                notes: nil
+            ),
+            nutrition: []
+        ))
+
+        #expect(presentation.trainingFields.map(\.id) == [
+            "plan.training.type", "plan.training.days",
+            "plan.training.generated", "plan.training.version",
+        ])
+        #expect(presentation.trainingFields.first { $0.id == "plan.training.days" }?.value == "0")
+        #expect(presentation.trainingFields.first { $0.id == "plan.training.version" }?.value == "0")
+    }
+
     @Test("opaque nutrition payload never becomes a presentation row")
     func opaquePayloadIsNotRendered() {
         let presentation = PlanPresentation(snapshot: snapshot())

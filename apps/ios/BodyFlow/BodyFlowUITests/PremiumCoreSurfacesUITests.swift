@@ -83,6 +83,71 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
     }
 
     @MainActor
+    func testPlanGroupsReceivedFieldsAndReloadsDetail() {
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = support.launch(
+            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+            language: "en-US",
+            dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        let planTab = app.buttons["tab.plano"]
+        XCTAssertTrue(planTab.waitForExistence(timeout: 8))
+        planTab.tap()
+
+        XCTAssertTrue(element("plan.training", app: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Training plan"].exists)
+        XCTAssertFalse(app.staticTexts["Active"].exists)
+
+        let type = app.staticTexts["Training type"]
+        for _ in 0..<4 where !type.exists { app.swipeUp() }
+        XCTAssertTrue(type.exists)
+
+        let nutrition = app.staticTexts["Nutrition prescription"]
+        for _ in 0..<6 where !nutrition.exists { app.swipeUp() }
+        XCTAssertTrue(nutrition.exists)
+
+        let detail = element("plan.detail", app: app)
+        for _ in 0..<6 where !detail.isHittable { app.swipeUp() }
+        XCTAssertTrue(detail.exists)
+        support.assertTarget(detail)
+        detail.tap()
+        XCTAssertTrue(element("screen.plan.detail", app: app).waitForExistence(timeout: 5))
+        let generated = app.staticTexts["Generated on"]
+        for _ in 0..<5 where !generated.exists { app.swipeUp() }
+        XCTAssertTrue(generated.exists)
+        support.capture("s5-plan-en-dark-axxxl", app: app)
+    }
+
+    @MainActor
+    func testPlanThemeAndLocaleMatrix() {
+        let cases = [
+            (language: "pt-BR", dark: false, heading: "Plano de treino", name: "pt-light"),
+            (language: "pt-BR", dark: true, heading: "Plano de treino", name: "pt-dark"),
+            (language: "en-US", dark: false, heading: "Training plan", name: "en-light"),
+            (language: "en-US", dark: true, heading: "Training plan", name: "en-dark"),
+        ]
+        defer { XCUIDevice.shared.appearance = .light }
+
+        for testCase in cases {
+            XCUIDevice.shared.appearance = testCase.dark ? .dark : .light
+            let app = support.launch(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                language: testCase.language,
+                dark: testCase.dark
+            )
+            let tab = app.buttons["tab.plano"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 8))
+            tab.tap()
+            XCTAssertTrue(app.staticTexts[testCase.heading].waitForExistence(timeout: 5))
+            support.capture("s5-plan-\(testCase.name)", app: app)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     private var support: PremiumUIUXUITestSupport {
         PremiumUIUXUITestSupport(testCase: self)
     }

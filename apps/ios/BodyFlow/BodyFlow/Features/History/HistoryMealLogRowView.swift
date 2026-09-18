@@ -4,11 +4,19 @@ struct HistoryMealLogRowView: View {
     let row: HistoryMealLogRow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text(row.foodName).font(BodyFlowTypography.headline)
-            if let mealType = row.mealType { Text(mealType) }
+        BodyFlowCard {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                Text(row.foodName)
+                    .font(BodyFlowTypography.headline)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                if let mealType = row.mealType {
+                    Text(mealType)
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(BodyFlowSpacing.md)
+        .accessibilityElement(children: .combine)
     }
 }

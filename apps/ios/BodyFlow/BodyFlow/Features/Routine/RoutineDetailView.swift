@@ -40,6 +40,7 @@ struct RoutineDetailRouteView: View {
 
 @MainActor
 struct RoutineDetailView: View {
+    @Environment(\.locale) private var locale
     let dependencies: AppDependencies
     let invalidationCenter: FeatureInvalidationCenter
     let model: RoutineDetailViewModel
@@ -63,7 +64,7 @@ struct RoutineDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle("Detalhes")
+        .navigationTitle(copy("routine.detail.title"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedAction, onDismiss: {
             configureActionModel()
@@ -105,7 +106,10 @@ struct RoutineDetailView: View {
                                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                                     Text(schedule.localTime)
                                     if let occurrence = schedule.occurrence {
-                                        Text(occurrence.status)
+                                        Text(RoutineCopy.status(
+                                            occurrence.status,
+                                            language: language
+                                        ))
                                             .foregroundStyle(BodyFlowColor.secondaryText)
                                     }
                                 }
@@ -123,7 +127,10 @@ struct RoutineDetailView: View {
                         itemID: model.itemID,
                         destination: .history
                     ))) {
-                        Label("Histórico", systemImage: "clock.arrow.circlepath")
+                        Label(
+                            copy("routine.history.title"),
+                            systemImage: "clock.arrow.circlepath"
+                        )
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
@@ -148,12 +155,12 @@ struct RoutineDetailView: View {
 
     private var actionButtons: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text("Ações")
+            Text(copy("routine.actions.title"))
                 .font(BodyFlowTypography.headline)
             VStack(alignment: .leading) {
-                actionButton(.taken, title: "Tomado")
-                actionButton(.snoozed, title: "Adiar")
-                actionButton(.skipped, title: "Pular")
+                actionButton(.taken, title: copy("routine.action.taken"))
+                actionButton(.snoozed, title: copy("routine.action.snooze"))
+                actionButton(.skipped, title: copy("routine.action.skip"))
             }
         }
     }
@@ -204,5 +211,13 @@ struct RoutineDetailView: View {
             itemID: model.itemID,
             schedules: model.item?.schedules ?? []
         )
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RoutineCopy.string(key, language: language)
     }
 }

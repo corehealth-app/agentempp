@@ -2,8 +2,18 @@ import Observation
 import SwiftUI
 
 enum LibraryCopy {
-    static let description =
-        "Explore conteúdos educativos publicados para apoiar sua jornada."
+    static let description = description(for: .portugueseBrazil)
+
+    static func description(for language: SupportedAppLanguage) -> String {
+        string("library.description", language: language)
+    }
+
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
+    }
 }
 
 struct LibraryVisibilityRequest: Equatable, Hashable, Sendable {
@@ -590,6 +600,7 @@ final class LibraryCoverFeedComposition {
 @MainActor
 struct LibraryRootView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
     @State private var selection: LibrarySelection
     @State private var category: ContentCategory?
     @State private var composition: LibraryCoverFeedComposition
@@ -643,7 +654,7 @@ struct LibraryRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
-        .navigationTitle("Biblioteca")
+        .navigationTitle(copy("library.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BodyFlowColor.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -705,17 +716,29 @@ struct LibraryRootView: View {
 
     private var filters: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(LibraryCopy.description)
+            Text(LibraryCopy.description(for: language))
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 0) {
-                selectionButton(.all)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 0) {
+                        selectionButton(.all)
 
-                Divider()
+                        Divider()
 
-                selectionButton(.saved)
+                        selectionButton(.saved)
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        selectionButton(.all)
+
+                        Divider()
+
+                        selectionButton(.saved)
+                    }
+                }
             }
             .background(BodyFlowColor.surface)
             .clipShape(
@@ -734,7 +757,8 @@ struct LibraryRootView: View {
                 isCategorySelectorPresented = true
             } label: {
                 Label(
-                    category?.libraryDisplayName ?? "Todas as categorias",
+                    category?.libraryDisplayName(for: language)
+                        ?? copy("library.category.all"),
                     systemImage: "line.3.horizontal.decrease.circle"
                 )
                 .font(BodyFlowTypography.headline)
@@ -749,27 +773,28 @@ struct LibraryRootView: View {
             .buttonStyle(.plain)
             .foregroundStyle(BodyFlowColor.accent)
             .accessibilityLabel(
-                category?.libraryDisplayName ?? "Todas as categorias"
+                category?.libraryDisplayName(for: language)
+                    ?? copy("library.category.all")
             )
             .accessibilityIdentifier("library.category")
             .confirmationDialog(
-                "Selecionar categoria",
+                copy("library.category.select"),
                 isPresented: $isCategorySelectorPresented,
                 titleVisibility: .visible
             ) {
                 categoryDialogButton(
-                    title: "Todas as categorias",
+                    title: copy("library.category.all"),
                     option: nil
                 )
 
                 ForEach(ContentCategory.allCases, id: \.self) { option in
                     categoryDialogButton(
-                        title: option.libraryDisplayName,
+                        title: option.libraryDisplayName(for: language),
                         option: option
                     )
                 }
 
-                Button("Cancelar", role: .cancel) {}
+                Button(copy("library.action.cancel"), role: .cancel) {}
             }
         }
         .padding(.horizontal, BodyFlowSpacing.md)
@@ -793,12 +818,13 @@ struct LibraryRootView: View {
     }
 
     private func fullScreenContent(_ state: ScreenState) -> some View {
-        let descriptor = state.descriptor
+        let descriptor = state.descriptor(for: language)
         let heading = state == .empty ? resultsHeading : descriptor.title
         let message = state == .empty
             ? LibraryEmptyMessage.message(
                 selection: selection,
-                category: category
+                category: category,
+                language: language
             )
             : descriptor.message
         let recoveryAction = LibraryRecoveryPolicy.action(
@@ -890,7 +916,7 @@ struct LibraryRootView: View {
         _ feed: PublishedContentFeed,
         showsStaleBanner: Bool
     ) -> some View {
-        let presentation = LibraryPresentation(feed: feed)
+        let presentation = LibraryPresentation(feed: feed, language: language)
 
         return ScrollViewReader { proxy in
             ScrollView {
@@ -915,7 +941,7 @@ struct LibraryRootView: View {
                                 Button {
                                     requestAction(.retryFirstPage)
                                 } label: {
-                                    Text("Tentar novamente")
+                                    Text(copy("state.retry"))
                                         .font(BodyFlowTypography.headline)
                                         .frame(
                                             minHeight:
@@ -994,7 +1020,8 @@ struct LibraryRootView: View {
                 summary: summary,
                 model: model,
                 coverAuthorizationRelay: coverAuthorizationRelay,
-                requestedKey: taskKey
+                requestedKey: taskKey,
+                language: language
             )
         }
     }
@@ -1007,7 +1034,7 @@ struct LibraryRootView: View {
         )
 
         if paging.showsProgress {
-            ProgressView("Carregando mais conteúdos")
+            ProgressView(copy("library.paging.loading"))
                 .frame(
                     maxWidth: .infinity,
                     minHeight: BodyFlowSpacing.minimumTapTarget
@@ -1020,7 +1047,7 @@ struct LibraryRootView: View {
                 Button {
                     requestAction(.loadNextPage)
                 } label: {
-                    Text("Carregar mais")
+                    Text(copy("library.paging.load-more"))
                         .font(BodyFlowTypography.headline)
                         .frame(
                             maxWidth: .infinity,
@@ -1032,7 +1059,7 @@ struct LibraryRootView: View {
             case .retryNextPage:
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Label(
-                        "Não foi possível carregar mais conteúdos.",
+                        copy("library.paging.error"),
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(BodyFlowTypography.callout)
@@ -1041,7 +1068,7 @@ struct LibraryRootView: View {
                     Button {
                         requestAction(.retryNextPage)
                     } label: {
-                        Text("Tentar novamente")
+                        Text(copy("state.retry"))
                             .font(BodyFlowTypography.headline)
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .contentShape(Rectangle())
@@ -1054,14 +1081,14 @@ struct LibraryRootView: View {
                 }
             case .reloadFirstPage:
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text("A continuação da lista não está mais disponível.")
+                    Text(copy("library.paging.expired"))
                         .font(BodyFlowTypography.callout)
                         .foregroundStyle(BodyFlowColor.primaryText)
 
                     Button {
                         requestAction(.reloadFirstPage)
                     } label: {
-                        Text("Recarregar desde o início")
+                        Text(copy("library.paging.reload"))
                             .font(BodyFlowTypography.headline)
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .contentShape(Rectangle())
@@ -1083,7 +1110,7 @@ struct LibraryRootView: View {
             Button {
                 requestAction(.retryFirstPage)
             } label: {
-                Text("Tentar novamente")
+                Text(copy("state.retry"))
                     .font(BodyFlowTypography.headline)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .contentShape(Rectangle())
@@ -1093,7 +1120,7 @@ struct LibraryRootView: View {
             Button {
                 requestAction(.reloadFirstPage)
             } label: {
-                Text("Recarregar desde o início")
+                Text(copy("library.paging.reload"))
                     .font(BodyFlowTypography.headline)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .contentShape(Rectangle())
@@ -1146,7 +1173,7 @@ struct LibraryRootView: View {
             selection = option
         } label: {
             Label(
-                option.title,
+                option.title(for: language),
                 systemImage: selection == option
                     ? "checkmark.circle.fill"
                     : "circle"
@@ -1188,13 +1215,13 @@ struct LibraryRootView: View {
 
     private var resultsHeading: String {
         if let category {
-            return category.libraryDisplayName
+            return category.libraryDisplayName(for: language)
         }
         switch selection {
         case .all:
-            return "Conteúdos publicados"
+            return copy("library.results.published")
         case .saved:
-            return "Conteúdos salvos"
+            return copy("library.results.saved")
         }
     }
 
@@ -1211,15 +1238,35 @@ struct LibraryRootView: View {
     ) -> some View {
         let isSelected = category == option
 
-        return Button(isSelected ? "\(title), selecionada" : title) {
+        let label = isSelected
+            ? String(
+                format: copy("library.category.selected-format"),
+                locale: language.formattingLocale,
+                title
+            )
+            : title
+        return Button(label) {
             select(category: option)
         }
     }
 
     private func resultSummary(for count: Int) -> String {
-        count == 1
-            ? "1 conteúdo disponível"
-            : "\(count) conteúdos disponíveis"
+        let key: String.LocalizationValue = count == 1
+            ? "library.results.count-one"
+            : "library.results.count-many"
+        return String(
+            format: copy(key),
+            locale: language.formattingLocale,
+            count
+        )
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        LibraryCopy.string(key, language: language)
     }
 
     private func refreshFirstPage() async {
@@ -1371,6 +1418,7 @@ private struct LibraryContentRow: View {
     let model: PublishedContentFeedViewModel
     let coverAuthorizationRelay: LibraryCoverAuthorizationRelay
     let requestedKey: FeedLoadKey?
+    let language: SupportedAppLanguage
 
     @State private var isVisible = false
 
@@ -1388,7 +1436,10 @@ private struct LibraryContentRow: View {
             requestedKey: requestedKey
         )
         PublishedContentCard(
-            presentation: LibraryCardPresentation(summary: summary),
+            presentation: LibraryCardPresentation(
+                summary: summary,
+                language: language
+            ),
             coverInput: LibraryCardCoverInput(
                 summary: summary,
                 authorizedCover: coverAuthorization?.cover

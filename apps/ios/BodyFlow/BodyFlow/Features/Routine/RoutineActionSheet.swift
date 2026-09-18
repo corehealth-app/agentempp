@@ -11,6 +11,7 @@ struct RoutineActionSheetItem: Identifiable {
 @MainActor
 struct RoutineActionSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
     @Binding var selection: RoutineActionSheetItem?
     let model: RoutineActionModel
     let allowsRetry: Bool
@@ -26,11 +27,11 @@ struct RoutineActionSheet: View {
                 }
                 .padding(BodyFlowSpacing.lg)
             }
-            .navigationTitle("Confirmar ação")
+            .navigationTitle(copy("routine.confirmation.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Fechar") { dismiss() }
+                    Button(copy("routine.action.close")) { dismiss() }
                 }
             }
         }
@@ -46,13 +47,15 @@ struct RoutineActionSheet: View {
             }
         case .taken, .skipped:
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Text(selection.status == .taken ? "Marcar como tomado" : "Marcar como pulado")
+                Text(selection.status == .taken
+                    ? copy("routine.confirmation.taken")
+                    : copy("routine.confirmation.skipped"))
                     .font(BodyFlowTypography.title)
                     .fontWeight(.semibold)
                 Button {
                     Task { await model.submit(status: selection.status) }
                 } label: {
-                    Text("Confirmar")
+                    Text(copy("routine.action.confirm"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                         .contentShape(Rectangle())
                 }
@@ -65,10 +68,19 @@ struct RoutineActionSheet: View {
             EmptyView()
         }
     }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RoutineCopy.string(key, language: language)
+    }
 }
 
 @MainActor
 struct RoutineActionSummary: View {
+    @Environment(\.locale) private var locale
     let model: RoutineActionModel
     let allowsRetry: Bool
     let retry: @MainActor () -> Void
@@ -80,7 +92,7 @@ struct RoutineActionSummary: View {
                     Text(message)
                     if case .failed = model.mutationState, allowsRetry {
                         Button(action: retry) {
-                            Text("Tentar novamente")
+                            Text(copy("app.retry"))
                                 .frame(
                                     minHeight: BodyFlowSpacing.minimumTapTarget
                                 )
@@ -100,9 +112,17 @@ struct RoutineActionSummary: View {
     private var message: String? {
         switch model.mutationState {
         case let .succeeded(receipt): receipt.data.status
-        case .unavailable: "Indisponível nesta versão"
-        case .failed: "Não foi possível concluir. Tente novamente."
+        case .unavailable: copy("routine.action.unavailable")
+        case .failed: copy("routine.action.failed")
         case .idle, .submitting: nil
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RoutineCopy.string(key, language: language)
     }
 }

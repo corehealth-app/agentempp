@@ -2,6 +2,7 @@ import SwiftUI
 
 @MainActor
 struct RoutineHistoryView: View {
+    @Environment(\.locale) private var locale
     let kind: RoutineItemKind
     let itemID: String
     let dependencies: AppDependencies
@@ -30,7 +31,7 @@ struct RoutineHistoryView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle("Histórico")
+        .navigationTitle(copy("routine.history.title"))
         .task(id: invalidationCenter.revision(
             for: .routineHistory(kind: kind, itemID: itemID)
         )) {
@@ -52,17 +53,26 @@ struct RoutineHistoryView: View {
         } else if !model.items.isEmpty {
             List {
                 ForEach(model.items, id: \.id) { row in
+                    let presentation = RoutineHistoryRowPresentation(
+                        row: row,
+                        patientTimeZone: dependencies.patientTimeZone,
+                        language: language
+                    )
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                        Text(row.status)
+                        Text(presentation.statusLabel)
                             .font(BodyFlowTypography.headline)
-                        Text(row.scheduledFor.value.formatted(date: .abbreviated, time: .shortened))
+                        Text(
+                            presentation.scheduledForLabel
+                                ?? copy("routine.history.time-unavailable")
+                        )
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }
                     .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("routine.history.row.\(row.id)")
                 }
                 if model.nextCursor != nil {
-                    Button("Carregar mais") {
+                    Button(copy("routine.history.load-more")) {
                         Task { await model.loadMore() }
                     }
                     .accessibilityIdentifier("routine.history.load-more")
@@ -72,5 +82,13 @@ struct RoutineHistoryView: View {
             .listStyle(.insetGrouped)
             .accessibilityIdentifier("routine.history")
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RoutineCopy.string(key, language: language)
     }
 }

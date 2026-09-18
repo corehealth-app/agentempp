@@ -29,21 +29,36 @@ struct MascotViewCompositionDescriptor: Equatable, Sendable {
         presentation: MascotExperiencePresentation,
         surface: MascotViewSurface,
         reduceMotion: Bool,
-        temporaryArtworkAvailable: Bool = Self.defaultArtworkAvailability
+        temporaryArtworkAvailable: Bool = Self.defaultArtworkAvailability,
+        language: SupportedAppLanguage = .portugueseBrazil
     ) {
         let personaName = Self.personaName(from: presentation)
         self.surface = surface
-        title = "Mascote do Performe AI"
+        title = MascotCopy.string("mascot.title", language: language)
         self.personaName = personaName
-        personaText = "Personalidade: \(personaName)"
-        stateText = presentation.mascotState.title
+        personaText = String(
+            format: MascotCopy.string("mascot.personality-format", language: language),
+            locale: language.formattingLocale,
+            personaName
+        )
+        stateText = Self.stateText(
+            presentation.mascotState.semanticState,
+            language: language
+        )
         changedAtText = presentation.changedAtText
-        accessibilityAnnouncement =
-            "Mascote do Performe AI, personalidade \(personaName), estado \(presentation.mascotState.title)"
+        accessibilityAnnouncement = String(
+            format: MascotCopy.string("mascot.accessibility-format", language: language),
+            locale: language.formattingLocale,
+            personaName,
+            stateText
+        )
         artworkAccessibilityHidden = true
         showsTemporaryArtwork = temporaryArtworkAvailable
         usesRepeatingMotion = temporaryArtworkAvailable && !reduceMotion
-        primaryActionTitle = surface == .card ? "Ver mascote" : "Atualizar"
+        primaryActionTitle = MascotCopy.string(
+            surface == .card ? "mascot.action.view" : "mascot.action.refresh",
+            language: language
+        )
         artwork = MascotArtworkPresentationDescriptor(
             geometry: presentation.personality.geometry,
             tone: presentation.personality.tone,
@@ -76,12 +91,27 @@ struct MascotViewCompositionDescriptor: Equatable, Sendable {
             "Equilibrada"
         }
     }
+
+    private static func stateText(
+        _ state: MascotSemanticState,
+        language: SupportedAppLanguage
+    ) -> String {
+        let key: String.LocalizationValue = switch state {
+        case .inactive: "mascot.state.inactive"
+        case .reactivating: "mascot.state.reactivating"
+        case .active: "mascot.state.active"
+        case .neglected: "mascot.state.neglected"
+        case .unsupported: "mascot.state.updating"
+        }
+        return MascotCopy.string(key, language: language)
+    }
 }
 
 @MainActor
 struct MascotCardView: View {
     let model: MascotExperienceViewModel
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     var body: some View {
         let presentation = model.state.presentation
@@ -104,14 +134,15 @@ struct MascotCardView: View {
         let descriptor = MascotViewCompositionDescriptor(
             presentation: presentation,
             surface: .card,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            language: language
         )
 
         return NavigationLink(value: AppRoute.mascot(.detail)) {
             BodyFlowCard {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                     if showsStaleBanner {
-                        Text("Dados salvos desta sessão")
+                        Text(copy("mascot.stale"))
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }
@@ -138,12 +169,12 @@ struct MascotCardView: View {
     private func compactState(_ state: ScreenState) -> some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text("Mascote do Performe AI")
+                Text(copy("mascot.title"))
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
                 if state == .loading {
-                    ProgressView("Carregando mascote…")
+                    ProgressView(copy("mascot.loading"))
                         .tint(BodyFlowColor.accent)
                 } else {
                     Text(state.descriptor.title)
@@ -161,6 +192,14 @@ struct MascotCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("today.mascot.state")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        MascotCopy.string(key, language: language)
     }
 }
 
@@ -188,7 +227,7 @@ struct MascotSemanticContent: View {
                 Text(descriptor.personaText)
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.secondaryText)
-                    .accessibilityLabel("personalidade \(descriptor.personaName)")
+                    .accessibilityLabel(descriptor.personaText)
                 Text(descriptor.stateText)
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)

@@ -5,6 +5,39 @@ import Testing
 
 @Suite("Library presentation")
 struct LibraryPresentationTests {
+    @Test("library client copy supports pt-BR and en-US without translating server content")
+    func bilingualClientCopy() {
+        #expect(LibraryCopy.description(for: .portugueseBrazil) ==
+            "Explore conteúdos educativos publicados para apoiar sua jornada.")
+        #expect(LibraryCopy.description(for: .englishUnitedStates) ==
+            "Explore published educational content to support your journey.")
+        #expect(ContentCategory.nutrition.libraryDisplayName(
+            for: .englishUnitedStates
+        ) == "Nutrition")
+        #expect(LibrarySelection.saved.title(
+            for: .englishUnitedStates
+        ) == "Saved")
+        #expect(LibraryEmptyMessage.message(
+            selection: .all,
+            category: .sleep,
+            language: .englishUnitedStates
+        ) == "No content is available in this category.")
+    }
+
+    @Test("card localization changes only client metadata")
+    func localizedCardMetadataPreservesServerCopy() {
+        let summary = Self.summary(11, category: .nutrition)
+        let card = LibraryCardPresentation(
+            summary: summary,
+            language: .englishUnitedStates
+        )
+
+        #expect(card.title == summary.title)
+        #expect(card.excerpt == summary.excerpt)
+        #expect(card.categoryLabel == "Nutrition")
+        #expect(card.readingTimeLabel == "7 min read")
+    }
+
     @Test("library description is concise and pinned in pt-BR")
     func libraryDescription() {
         #expect(LibraryCopy.description ==

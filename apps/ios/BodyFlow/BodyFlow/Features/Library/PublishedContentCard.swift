@@ -2,40 +2,39 @@ import SwiftUI
 
 extension ContentCategory {
     var libraryDisplayName: String {
-        switch self {
-        case .weightLoss:
-            "Emagrecimento"
-        case .hypertrophy:
-            "Hipertrofia"
-        case .nutrition:
-            "Nutrição"
-        case .training:
-            "Treino"
-        case .neuroscience:
-            "Neurociência"
-        case .habitFormation:
-            "Formação de hábitos"
-        case .cardiovascularHealth:
-            "Saúde cardiovascular"
-        case .hydration:
-            "Hidratação"
-        case .supplementation:
-            "Suplementação"
-        case .sleep:
-            "Sono"
-        case .usingBodyFlow:
-            "Uso do Performe AI"
-        }
+        libraryDisplayName(for: .portugueseBrazil)
     }
+
+    func libraryDisplayName(for language: SupportedAppLanguage) -> String {
+        let key: String.LocalizationValue = switch self {
+        case .weightLoss: "library.category.weight-loss"
+        case .hypertrophy: "library.category.hypertrophy"
+        case .nutrition: "library.category.nutrition"
+        case .training: "library.category.training"
+        case .neuroscience: "library.category.neuroscience"
+        case .habitFormation: "library.category.habit-formation"
+        case .cardiovascularHealth: "library.category.cardiovascular-health"
+        case .hydration: "library.category.hydration"
+        case .supplementation: "library.category.supplementation"
+        case .sleep: "library.category.sleep"
+        case .usingBodyFlow: "library.category.using-performe-ai"
+        }
+        return LibraryCopy.string(key, language: language)
+    }
+
 }
 
 extension LibrarySelection {
     var title: String {
+        title(for: .portugueseBrazil)
+    }
+
+    func title(for language: SupportedAppLanguage) -> String {
         switch self {
         case .all:
-            "Todos"
+            LibraryCopy.string("library.filter.all", language: language)
         case .saved:
-            "Salvos"
+            LibraryCopy.string("library.filter.saved", language: language)
         }
     }
 
@@ -52,17 +51,21 @@ extension LibrarySelection {
 enum LibraryEmptyMessage {
     static func message(
         selection: LibrarySelection,
-        category: ContentCategory?
+        category: ContentCategory?,
+        language: SupportedAppLanguage = .portugueseBrazil
     ) -> String {
         if category != nil {
-            return "Nenhum conteúdo disponível nesta categoria."
+            return LibraryCopy.string(
+                "library.empty.category",
+                language: language
+            )
         }
 
         return switch selection {
         case .all:
-            "Nenhum conteúdo publicado está disponível para você agora."
+            LibraryCopy.string("library.empty.all", language: language)
         case .saved:
-            "Você ainda não tem conteúdos salvos disponíveis."
+            LibraryCopy.string("library.empty.saved", language: language)
         }
     }
 }
@@ -77,13 +80,23 @@ struct LibraryCardPresentation: Equatable, Sendable, Identifiable {
     let saved: Bool
     let completed: Bool
 
-    init(summary: PublishedContentSummary) {
+    init(
+        summary: PublishedContentSummary,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
         publicationID = summary.publicationID
         cover = summary.cover
         title = summary.title
         excerpt = summary.excerpt
-        categoryLabel = summary.category.libraryDisplayName
-        readingTimeLabel = "\(summary.readingTimeMinutes) min de leitura"
+        categoryLabel = summary.category.libraryDisplayName(for: language)
+        readingTimeLabel = String(
+            format: LibraryCopy.string(
+                "library.reading-time-format",
+                language: language
+            ),
+            locale: language.formattingLocale,
+            summary.readingTimeMinutes
+        )
         saved = summary.saved
         completed = summary.completed
     }
@@ -103,8 +116,13 @@ struct LibraryPresentation: Equatable, Sendable {
     let cards: [LibraryCardPresentation]
     let nextCursor: String?
 
-    init(feed: PublishedContentFeed) {
-        cards = feed.items.map(LibraryCardPresentation.init)
+    init(
+        feed: PublishedContentFeed,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
+        cards = feed.items.map {
+            LibraryCardPresentation(summary: $0, language: language)
+        }
         nextCursor = feed.nextCursor
     }
 }
@@ -172,6 +190,7 @@ struct PublishedContentCard: View {
     let coverInput: LibraryCardCoverInput
     let requestedCoverRevision: Int
     let authorizedCoverRevision: Int?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Group {
@@ -185,7 +204,7 @@ struct PublishedContentCard: View {
 
     private var standardCard: some View {
         NavigationLink(value: AppRoute.content(presentation.route)) {
-            BodyFlowCard {
+            BodyFlowCard(surface: .card) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                     cardContent
                 }
@@ -200,11 +219,11 @@ struct PublishedContentCard: View {
     }
 
     private var accessibilityCard: some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 NavigationLink(value: AppRoute.content(presentation.route)) {
                     HStack(spacing: BodyFlowSpacing.xs) {
-                        Text("Abrir conteúdo")
+                        Text(copy("library.card.open"))
                             .font(BodyFlowTypography.headline)
                         Spacer(minLength: BodyFlowSpacing.sm)
                         Image(systemName: "chevron.right")
@@ -219,7 +238,11 @@ struct PublishedContentCard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Abrir \(presentation.title)")
+                .accessibilityLabel(String(
+                    format: copy("library.card.open-format"),
+                    locale: language.formattingLocale,
+                    presentation.title
+                ))
                 .accessibilityIdentifier(presentation.accessibilityIdentifier)
 
                 cardContent
@@ -306,10 +329,18 @@ struct PublishedContentCard: View {
     @ViewBuilder
     private var statusLabels: some View {
         if presentation.saved {
-            Label("Salvo", systemImage: "bookmark.fill")
+            Label(copy("library.status.saved"), systemImage: "bookmark.fill")
         }
         if presentation.completed {
-            Label("Concluído", systemImage: "checkmark.circle.fill")
+            Label(copy("library.status.completed"), systemImage: "checkmark.circle.fill")
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        LibraryCopy.string(key, language: language)
     }
 }

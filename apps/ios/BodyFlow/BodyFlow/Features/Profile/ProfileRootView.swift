@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct ProfileRootView: View {
     @Environment(\.appDependencies) private var dependencies
+    @Environment(\.locale) private var locale
 
     let userID: String
     let fixture: ProfileFixture
@@ -47,7 +48,7 @@ struct ProfileRootView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.profile.rootAccessibilityIdentifier)
-        .navigationTitle("Perfil")
+        .navigationTitle(copy("profile.navigation.title"))
         .task(id: ProfilePersonaLoadKey(
             userID: userID,
             coachRevision: invalidationCenter.revision(for: .coachExperience)
@@ -64,14 +65,27 @@ struct ProfileRootView: View {
 
     private var loadedContent: some View {
         List {
-            Section("Perfil") {
-                Label(fixture.title, systemImage: "person.crop.circle")
-                    .font(BodyFlowTypography.body)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            Section {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    Label(fixture.title, systemImage: "person.crop.circle")
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+
+                    Text(copy("profile.fixture.disclosure"))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: BodyFlowSpacing.minimumTapTarget,
+                    alignment: .leading
+                )
+            } header: {
+                Text(copy("profile.identity.section"))
             }
 
-            Section("Preferências") {
+            Section {
                 Button {
                     personaEditor = CoachPersonaEditorModel(
                         userID: userID,
@@ -87,7 +101,7 @@ struct ProfileRootView: View {
                     )
                 } label: {
                     FeatureActionLabel(
-                        title: "Personalidade do coach",
+                        title: copy("profile.persona.title"),
                         detail: personaDisplayName,
                         systemImage: "bubble.left.and.bubble.right"
                     )
@@ -97,7 +111,7 @@ struct ProfileRootView: View {
                 .accessibilityIdentifier("profile.coach-persona")
 
                 FixtureMetricRow(
-                    title: "Notificações",
+                    title: copy("profile.fixture.notifications"),
                     value: fixture.notifications
                 )
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
@@ -109,32 +123,44 @@ struct ProfileRootView: View {
                     )
                 ) {
                     FeatureActionLabel(
-                        title: "Ver preferências",
-                        detail: "Abrir destino local de demonstração",
+                        title: copy("profile.preferences.action"),
+                        detail: copy("profile.preferences.demo-detail"),
                         systemImage: "slider.horizontal.3",
                         showsDisclosureIndicator: false
                     )
                 }
                 .accessibilityIdentifier("profile.detail")
+            } header: {
+                Text(copy("profile.preferences.section"))
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(BodyFlowColor.background)
-        .listRowBackground(BodyFlowColor.surface)
+        .listRowBackground(BodyFlowColor.color(.backgroundSecondary))
     }
 
     private var personaDisplayName: String {
-        guard hasLoadedPersona else { return "Carregando…" }
-        guard let selectedPersona else { return "Não selecionada" }
+        guard hasLoadedPersona else { return copy("profile.persona.loading") }
+        guard let selectedPersona else {
+            return copy("profile.persona.not-selected")
+        }
         guard let options = serverOptions,
               let pickerOptions = CoachPersonaEditorModel
                 .validatedPickerOptions(options)
         else {
-            return "Indisponível nesta versão"
+            return copy("profile.persona.unavailable")
         }
         return pickerOptions.first(where: { $0.persona == selectedPersona })?.name
-            ?? "Indisponível nesta versão"
+            ?? copy("profile.persona.unavailable")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        ProfileCopy.string(key, language: language)
     }
 
     private func loadPersona() async {
@@ -152,6 +178,15 @@ struct ProfileRootView: View {
             personaEditor?.updateServerOptions(publication.serverOptions ?? [])
             hasLoadedPersona = true
         }
+    }
+}
+
+enum ProfileCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
     }
 }
 

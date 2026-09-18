@@ -4,10 +4,15 @@ import Observation
 struct HistoryPresentation: Equatable, Sendable {
     let meals: [HistoryMealLogRow]
     let workouts: [HistoryWorkoutLogRow]
+    let language: SupportedAppLanguage
 
-    init(snapshot: HistorySnapshot) {
+    init(
+        snapshot: HistorySnapshot,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
         meals = snapshot.meals
         workouts = snapshot.workouts
+        self.language = language
     }
 
     var isGloballyEmpty: Bool {
@@ -15,7 +20,63 @@ struct HistoryPresentation: Equatable, Sendable {
     }
 
     var sectionTitles: [String] {
-        ["Registros de alimentos", "Treinos"]
+        [
+            HistoryCopy.string("history.meals.title", language: language),
+            HistoryCopy.string("history.workouts.title", language: language),
+        ]
+    }
+}
+
+struct HistoryValuePresentation: Equatable, Sendable {
+    let language: SupportedAppLanguage
+
+    func quantity(_ value: Decimal?) -> String? {
+        decimal(value, key: "history.meal.quantity-format")
+    }
+
+    func energy(_ value: Decimal?) -> String? {
+        decimal(value, key: "history.meal.energy-format")
+    }
+
+    func duration(_ value: Int?) -> String? {
+        integer(value, key: "history.workout.duration-format")
+    }
+
+    func estimatedEnergy(_ value: Int?) -> String? {
+        integer(value, key: "history.workout.energy-format")
+    }
+
+    private func decimal(
+        _ value: Decimal?,
+        key: String.LocalizationValue
+    ) -> String? {
+        guard let value else { return nil }
+        return String(
+            format: HistoryCopy.string(key, language: language),
+            locale: language.formattingLocale,
+            NSDecimalNumber(decimal: value).stringValue
+        )
+    }
+
+    private func integer(
+        _ value: Int?,
+        key: String.LocalizationValue
+    ) -> String? {
+        guard let value else { return nil }
+        return String(
+            format: HistoryCopy.string(key, language: language),
+            locale: language.formattingLocale,
+            value
+        )
+    }
+}
+
+enum HistoryCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
     }
 }
 

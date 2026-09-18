@@ -5,6 +5,7 @@ struct MascotDetailView: View {
     @State private var model: MascotExperienceViewModel
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     init(
         provider: any CoachExperienceProviding,
@@ -21,7 +22,7 @@ struct MascotDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             stateContent
         }
-        .navigationTitle("Mascote do Performe AI")
+        .navigationTitle(copy("mascot.title"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("screen.mascot.detail")
         .task(id: invalidationCenter.revision(for: .coachExperience)) {
@@ -51,7 +52,8 @@ struct MascotDetailView: View {
         let descriptor = MascotViewCompositionDescriptor(
             presentation: presentation,
             surface: .detail,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            language: language
         )
 
         return ScrollView {
@@ -61,7 +63,7 @@ struct MascotDetailView: View {
                 }
 
                 Button(action: retry) {
-                    Label("Atualizar", systemImage: "arrow.clockwise")
+                    Label(copy("mascot.action.refresh"), systemImage: "arrow.clockwise")
                         .font(BodyFlowTypography.headline)
                         .foregroundStyle(BodyFlowColor.accent)
                         .frame(
@@ -79,17 +81,21 @@ struct MascotDetailView: View {
 
                 BodyFlowCard {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                        Text("Sobre este estado")
+                        Text(copy("mascot.about.title"))
                             .font(BodyFlowTypography.headline)
                             .foregroundStyle(BodyFlowColor.primaryText)
                             .accessibilityAddTraits(.isHeader)
                         Text(descriptor.stateText)
                             .font(BodyFlowTypography.body)
                             .foregroundStyle(BodyFlowColor.primaryText)
-                        Text("Atualizado em \(descriptor.changedAtText)")
+                        Text(String(
+                            format: copy("mascot.updated-format"),
+                            locale: language.formattingLocale,
+                            descriptor.changedAtText
+                        ))
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
-                        Text("O estado e a personalidade vêm do Flow.")
+                        Text(copy("mascot.provenance"))
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }
@@ -104,5 +110,13 @@ struct MascotDetailView: View {
 
     private func retry() {
         Task { await model.retry() }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        MascotCopy.string(key, language: language)
     }
 }

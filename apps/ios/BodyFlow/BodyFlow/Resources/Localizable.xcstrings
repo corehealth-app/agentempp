@@ -2393,6 +2393,446 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
       }
     },
+    "content.action.complete" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Complete" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Concluir" } }
+    } },
+    "content.action.save" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvar" } }
+    } },
+    "content.action.unsave" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove from saved" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover dos salvos" } }
+    } },
+    "content.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Content" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conteúdo" } }
+    } },
+    "content.opened.error" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível atualizar. Tente novamente." } }
+    } },
+    "library.action.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar" } }
+    } },
+    "library.card.open" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open article" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir artigo" } }
+    } },
+    "library.card.open-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open article: %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir artigo: %@" } }
+    } },
+    "library.category.all" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "All categories" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todas as categorias" } }
+    } },
+    "library.category.cardiovascular-health" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cardiovascular health" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Saúde cardiovascular" } }
+    } },
+    "library.category.habit-formation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Habit formation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Formação de hábitos" } }
+    } },
+    "library.category.hydration" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Hydration" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hidratação" } }
+    } },
+    "library.category.hypertrophy" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Hypertrophy" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hipertrofia" } }
+    } },
+    "library.category.neuroscience" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Neuroscience" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Neurociência" } }
+    } },
+    "library.category.nutrition" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nutrition" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nutrição" } }
+    } },
+    "library.category.selected-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%@, selected" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@, selecionada" } }
+    } },
+    "library.category.select" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Select category" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Selecionar categoria" } }
+    } },
+    "library.category.sleep" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sleep" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sono" } }
+    } },
+    "library.category.supplementation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Supplementation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Suplementação" } }
+    } },
+    "library.category.training" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Training" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino" } }
+    } },
+    "library.category.using-performe-ai" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Using Performe AI" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso do Performe AI" } }
+    } },
+    "library.category.weight-loss" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight loss" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Emagrecimento" } }
+    } },
+    "library.description" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Explore published educational content to support your journey." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Explore conteúdos educativos publicados para apoiar sua jornada." } }
+    } },
+    "library.empty.all" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No published content is available for you right now." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum conteúdo publicado está disponível para você agora." } }
+    } },
+    "library.empty.category" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No content is available in this category." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum conteúdo disponível nesta categoria." } }
+    } },
+    "library.empty.saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You do not have any saved content available yet." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você ainda não tem conteúdos salvos disponíveis." } }
+    } },
+    "library.filter.all" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todos" } }
+    } },
+    "library.filter.saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvos" } }
+    } },
+    "library.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca" } }
+    } },
+    "library.paging.error" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load more content." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível carregar mais conteúdos." } }
+    } },
+    "library.paging.expired" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This list continuation is no longer available." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A continuação da lista não está mais disponível." } }
+    } },
+    "library.paging.load-more" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Load more" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregar mais" } }
+    } },
+    "library.paging.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading more content" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando mais conteúdos" } }
+    } },
+    "library.paging.reload" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reload from the beginning" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Recarregar desde o início" } }
+    } },
+    "library.reading-time-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%d min read" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%d min de leitura" } }
+    } },
+    "library.results.count-many" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%d content items available" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%d conteúdos disponíveis" } }
+    } },
+    "library.results.count-one" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%d content item available" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%d conteúdo disponível" } }
+    } },
+    "library.results.published" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Published content" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conteúdos publicados" } }
+    } },
+    "library.results.saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved content" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conteúdos salvos" } }
+    } },
+    "library.status.completed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Concluído" } }
+    } },
+    "library.status.saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvo" } }
+    } },
+    "mascot.about.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "About this state" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sobre este estado" } }
+    } },
+    "mascot.accessibility-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Performe AI mascot, personality %@, state %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mascote do Performe AI, personalidade %@, estado %@" } }
+    } },
+    "mascot.action.refresh" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar" } }
+    } },
+    "mascot.action.view" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "View mascot" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver mascote" } }
+    } },
+    "mascot.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading mascot…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando mascote…" } }
+    } },
+    "mascot.personality-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Personality: %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Personalidade: %@" } }
+    } },
+    "mascot.provenance" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "State and personality come from Flow." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estado e a personalidade vêm do Flow." } }
+    } },
+    "mascot.stale" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved data from this session" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados salvos desta sessão" } }
+    } },
+    "mascot.state.active" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Active" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ativo" } }
+    } },
+    "mascot.state.inactive" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "At rest" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em repouso" } }
+    } },
+    "mascot.state.neglected" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Paused" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em pausa" } }
+    } },
+    "mascot.state.reactivating" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Resuming with you" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Retomando com você" } }
+    } },
+    "mascot.state.updating" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Mascot state is updating" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estado do mascote em atualização" } }
+    } },
+    "mascot.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Performe AI mascot" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mascote do Performe AI" } }
+    } },
+    "mascot.updated-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizado em %@" } }
+    } },
+    "profile.fixture.disclosure" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados de demonstração" } }
+    } },
+    "profile.fixture.notifications" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo notifications" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações da demonstração" } }
+    } },
+    "profile.identity.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Identity" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Identidade" } }
+    } },
+    "profile.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
+    } },
+    "profile.persona.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar" } }
+    } },
+    "profile.persona.explanation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This setting changes Flow's conversation style without changing calculations or guidance." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta preferência muda o estilo da conversa do Flow, sem alterar cálculos ou orientações." } }
+    } },
+    "profile.persona.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading Flow's style…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando estilo do Flow…" } }
+    } },
+    "profile.persona.not-selected" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not selected" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não selecionado" } }
+    } },
+    "profile.persona.options.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an option" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha uma opção" } }
+    } },
+    "profile.persona.save" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvar" } }
+    } },
+    "profile.persona.saving" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saving…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvando…" } }
+    } },
+    "profile.persona.selected" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Selecionado" } }
+    } },
+    "profile.persona.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estilo do Flow" } }
+    } },
+    "profile.persona.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable in this version" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível nesta versão" } }
+    } },
+    "profile.preferences.action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "View preferences" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver preferências" } }
+    } },
+    "profile.preferences.demo-detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open local demo destination" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir destino local de demonstração" } }
+    } },
+    "profile.preferences.demo-message" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Local demo content. No operation was performed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conteúdo local de demonstração. Nenhuma operação foi executada." } }
+    } },
+    "profile.preferences.detail-title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Details" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detalhes" } }
+    } },
+    "profile.preferences.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Preferences" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preferências" } }
+    } },
+    "history.meal.energy-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Energy: %@ kcal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia: %@ kcal" } }
+    } },
+    "history.meal.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Food record" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registro de alimento" } }
+    } },
+    "history.meal.quantity-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity: %@ g" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade: %@ g" } }
+    } },
+    "history.meals.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Food records" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registros de alimentos" } }
+    } },
+    "history.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Histórico" } }
+    } },
+    "history.workout.duration-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration: %lld min" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Duração: %lld min" } }
+    } },
+    "history.workout.energy-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated energy: %lld kcal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia estimada: %lld kcal" } }
+    } },
+    "history.workout.fallback" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino" } }
+    } },
+    "history.workout.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout record" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registro de treino" } }
+    } },
+    "history.workouts.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workouts" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treinos" } }
+    } },
+    "routine.action.close" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar" } }
+    } },
+    "routine.action.confirm" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar" } }
+    } },
+    "routine.action.failed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not complete. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir. Tente novamente." } }
+    } },
+    "routine.action.skip" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Skip" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pular" } }
+    } },
+    "routine.action.snooze" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Snooze" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Adiar" } }
+    } },
+    "routine.action.taken" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Taken" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tomado" } }
+    } },
+    "routine.action.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable in this version" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível nesta versão" } }
+    } },
+    "routine.actions.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Actions" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ações" } }
+    } },
+    "routine.confirmation.skipped" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Mark as skipped" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Marcar como pulado" } }
+    } },
+    "routine.confirmation.taken" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Mark as taken" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Marcar como tomado" } }
+    } },
+    "routine.confirmation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm action" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar ação" } }
+    } },
+    "routine.detail.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Details" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detalhes" } }
+    } },
+    "routine.history.load-more" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Load more" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregar mais" } }
+    } },
+    "routine.history.time-unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Time unavailable" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário indisponível" } }
+    } },
+    "routine.history.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Histórico" } }
+    } },
+    "routine.medications.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Medications" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Medicamentos" } }
+    } },
+    "routine.snooze.custom-time" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Custom time" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário personalizado" } }
+    } },
+    "routine.snooze.minutes-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld minutes" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%lld minutos" } }
+    } },
+    "routine.snooze.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Snooze occurrence" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Adiar ocorrência" } }
+    } },
+    "routine.snooze.use-custom" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use custom time" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar horário personalizado" } }
+    } },
+    "routine.status.pending" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pendente" } }
+    } },
+    "routine.status.skipped" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pulado" } }
+    } },
+    "routine.status.snoozed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Snoozed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Adiado" } }
+    } },
+    "routine.status.taken" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Taken" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tomado" } }
+    } },
+    "routine.supplements.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Supplements" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Suplementos" } }
+    } },
     "flow.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },

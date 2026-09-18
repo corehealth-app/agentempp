@@ -1158,3 +1158,122 @@ or remote resource changed. Real completions: 0. Remote resources altered: NONE.
 BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS**. No push, PR, merge,
 deployment, staging, Production, Supabase, Vercel, OpenRouter, CI-3, TestFlight or
 App Store operation occurred.
+
+## Batch 5 — Slice 7 Profile, content, history, routine and mascot local gate
+
+Slice 7 started from commit `15d4428a1ec2175356eedf911c6765f7392520ee`,
+whose parent is the verified Slice 6 commit
+`a82bc63ffb435c8223181678aab2f05cde0d24e1`; the worktree and index were clean.
+Execution remained on the local Apple Silicon Mac and iPhone 17 Pro iOS 26.5
+Simulator `27291590-659D-4A29-8F45-CA5CA2D154F9`. Private evidence is retained
+under `/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/batch5.ntQhh3`.
+No new branch, worktree, dependency, provider, remote resource, paid environment
+or real completion was used.
+
+### S7.1 — Profile and server-owned persona
+
+- `s7-1-red.log` records the expected TDD RED before the localized Profile
+  presentation contract existed. `s7-1-final-green.log` records the final
+  focused GREEN in `S71FinalDerivedData`; `s7-1-release.xcresult` records the
+  signed Release Simulator gate.
+- Profile now presents a premium identity/persona hierarchy with localized
+  pt-BR/en-US copy, server-provided persona options and selection, explicit save
+  and cancel affordances, minimum tap targets and accessibility identifiers.
+  Accessibility text sizes use xmark/checkmark toolbar symbols with localized
+  labels so actions remain fully visible; regular sizes retain localized text.
+- Existing user/session ownership, load/save/cancel semantics, unavailable
+  states and server option validation remain unchanged. The preferences entry is
+  explicitly disclosed as a local demonstration; no account, notification or
+  unsupported server capability was invented.
+
+### S7.2 — Library and published content
+
+- `s7-2-red.log` records the expected RED. `s7-2-focused-unit.log`,
+  `s7-2-focused-ui-final3.log` and `s7-2-gate.log` record the focused GREEN and
+  native UI gate.
+- Library and article surfaces now use localized filters, category/status copy,
+  semantic cards, reading metadata, saved/completed state and clearer empty,
+  pagination and recovery presentation. At accessibility text sizes the All and
+  Saved filters stack vertically rather than compressing.
+- Feed/request ownership, cursor behavior, impressions/opened events, authorized
+  cover relay/cache, expiration recovery, Markdown parsing and external-link
+  policy remain in their existing owners. `ContentCoverView.swift`,
+  `ContentDetailViewModel.swift` and the Markdown implementation were not
+  modified. Authoritative article/category values not covered by a known UI
+  localization remain literal rather than being rewritten.
+
+### S7.3 — Read-only history, routine and mascot
+
+- `s7-3-red.xcresult` records the expected TDD RED.
+  `s7-3-focused-unit-final.xcresult`, `s7-3-focused-final.xcresult` and
+  `s7-3-gate.xcresult` record the focused GREEN; the consolidated gate completed
+  127 distinct tests / 130 executions with zero failures or skips.
+- History now presents localized meal/workout hierarchy and optional metrics in
+  semantic cards. Nil metrics remain absent and literal zero remains data; no
+  edit, delete, create or other mutation was added.
+- Routine labels and status presentation are localized while raw server status,
+  action submission, idempotency/conflict handling, retry, occurrence identity
+  and receipts remain unchanged. History dates require
+  `PatientTimeZoneContext.requireTimeZone()`; missing patient timezone produces
+  an explicit unavailable value and never falls back to `TimeZone.current`.
+- Mascot remains a secondary, server-owned persona surface. Its literal server
+  identity and personality are not rewritten, and the mascot is not presented
+  as Flow, a doctor or the public agent.
+
+### Visual accessibility correction and final evidence
+
+The first AccessibilityXXXL review found two real presentation regressions:
+Profile toolbar copy clipped at the screen edges and the Library All/Saved
+filters compressed horizontally. Geometry assertions were added first;
+`visual-fix-red.xcresult` records the expected failing filter-stack test. The
+two narrow adaptive-layout fixes above then passed in
+`visual-fix-green2.xcresult` (2/2, zero failures/skips). Final Profile, Library,
+article, routine confirmation and routine history screenshots/accessibility
+trees are retained in `<artifact-root>/visual-fix-final` and
+`<artifact-root>/visual-routine`; root inspected them for truncation, hierarchy,
+contrast, scrolling and preserved literal server data. This is native
+screenshot/tree evidence, not a full narrated VoiceOver session:
+**VOICEOVER MANUAL STATUS: NOT FULLY VERIFIED**.
+
+### Final regression, build and structured reviews
+
+- `full-bodyflowtests-final.xcresult`: **PASS**, 1,201 distinct tests / 1,415
+  executions, including 71 parameterized tests / 285 dynamic executions; zero
+  failures, skips, expected failures or runtime warnings.
+- `relevant-ui-final.xcresult`: **PASS**, 39/39 selected Profile, Library,
+  article, History, Routine and prior contract UI tests; zero failures, skips,
+  expected failures or runtime warnings.
+- Combined final gates: **PASS**, 1,240 distinct tests / 1,454 executions.
+- `batch5-release-final.xcresult`: normal signed Release Simulator build
+  **PASS**; `codesign --verify --deep --strict`: **PASS**.
+- `batch5-analyze-final.xcresult`: native analyze **PASS**. The only compiler
+  warning is the inherited unnecessary `await` in
+  `SessionLifecycleCoordinator.swift`, outside this diff; the AppIntents
+  metadata skip is a tool diagnostic. Swift compilation/typecheck is covered by
+  tests, Release and analyze; no separate SwiftLint is configured.
+- 110 new catalog keys parse as JSON and each has both pt-BR and en-US values.
+  The final pre-commit gate separately checks whitespace, exact allowlist,
+  assets, secrets/PII, public legacy identity additions and forbidden timezone
+  fallback.
+
+Primary-agent structured reviews — explicitly not independent reviewer claims:
+
+- **Review A / Profile:** server option and session ownership preserved; no fake
+  account capability — **PASS**, Critical 0 / Important 0.
+- **Review B / Library:** request/tracking, cover authorization/cache, Markdown
+  and link policy preserved — **PASS**, Critical 0 / Important 0.
+- **Review C / History and Routine:** History stays read-only; Routine preserves
+  raw status, occurrence, idempotency, conflict/retry, receipts and patient
+  timezone — **PASS**, Critical 0 / Important 0.
+- **Review D / regression and brand:** prior surface tests remain green; no new
+  public Dr. Roberto/Dr. Robert or BodyFlow identity copy was introduced —
+  **PASS**, Critical 0 / Important 0.
+
+Exact local commit subject: `refactor(ui): refine Profile experience`, with
+parent `15d4428a1ec2175356eedf911c6765f7392520ee`. The resulting SHA/tree and clean
+state are reported after commit without amending this evidence. No logo,
+AppIcon, wordmark, splash or historical asset changed;
+BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS** and overall rebrand
+status remains partial. Real completions: 0. Remote resources altered: NONE. No
+push, PR, merge, deployment, staging, Production, Supabase, Vercel, OpenRouter,
+CI-3, TestFlight or App Store operation occurred. Slice 9 is not started.

@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct FeatureDetailView: View {
     let route: AppRoute
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ZStack {
@@ -21,7 +22,10 @@ struct FeatureDetailView: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(BodyFlowColor.primaryText)
 
-                        Text("Conteúdo local de demonstração. Nenhuma operação foi executada.")
+                        Text(ProfileCopy.string(
+                            "profile.preferences.demo-message",
+                            language: language
+                        ))
                             .font(BodyFlowTypography.body)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }
@@ -31,8 +35,15 @@ struct FeatureDetailView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(route.accessibilityIdentifier)
-        .navigationTitle("Detalhes")
+        .navigationTitle(ProfileCopy.string(
+            "profile.preferences.detail-title",
+            language: language
+        ))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
     }
 }
 

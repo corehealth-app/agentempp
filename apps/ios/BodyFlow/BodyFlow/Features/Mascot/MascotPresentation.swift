@@ -49,13 +49,19 @@ struct MascotExperiencePresentation: Equatable, Sendable {
     let mascotState: MascotStateDescriptor
     let changedAtText: String
 
-    init(snapshot: CoachExperienceSnapshot) {
+    init(
+        snapshot: CoachExperienceSnapshot,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
         selected = snapshot.selected
         effective = snapshot.effective
         options = MascotPresentation.options(snapshot.options)
         optionsByCode = MascotPresentation.optionsByCode(snapshot.options)
         personality = MascotPresentation.personality(snapshot.effective)
-        mascotState = MascotPresentation.state(snapshot.mascot.state)
+        mascotState = MascotPresentation.state(
+            snapshot.mascot.state,
+            language: language
+        )
         changedAtText = MascotPresentation.changedAt(snapshot.mascot.changedAt)
     }
 }
@@ -88,32 +94,35 @@ enum MascotPresentation {
         }
     }
 
-    static func state(_ state: MascotWireState) -> MascotStateDescriptor {
+    static func state(
+        _ state: MascotWireState,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) -> MascotStateDescriptor {
         switch state {
         case .inactive:
             MascotStateDescriptor(
                 semanticState: .inactive,
-                title: "Em repouso"
+                title: MascotCopy.string("mascot.state.inactive", language: language)
             )
         case .reactivating:
             MascotStateDescriptor(
                 semanticState: .reactivating,
-                title: "Retomando com você"
+                title: MascotCopy.string("mascot.state.reactivating", language: language)
             )
         case .active:
             MascotStateDescriptor(
                 semanticState: .active,
-                title: "Ativo"
+                title: MascotCopy.string("mascot.state.active", language: language)
             )
         case .neglected:
             MascotStateDescriptor(
                 semanticState: .neglected,
-                title: "Em pausa"
+                title: MascotCopy.string("mascot.state.neglected", language: language)
             )
         case .evolving, .unknown:
             MascotStateDescriptor(
                 semanticState: .unsupported,
-                title: "Estado do mascote em atualização"
+                title: MascotCopy.string("mascot.state.updating", language: language)
             )
         }
     }
@@ -151,5 +160,14 @@ enum MascotPresentation {
                 timeZone: .gmt
             )
         )
+    }
+}
+
+enum MascotCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
     }
 }

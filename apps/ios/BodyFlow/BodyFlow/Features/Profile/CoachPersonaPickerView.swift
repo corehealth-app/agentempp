@@ -3,6 +3,8 @@ import SwiftUI
 @MainActor
 struct CoachPersonaPickerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
 
     let model: CoachPersonaEditorModel
 
@@ -25,21 +27,45 @@ struct CoachPersonaPickerView: View {
                     content
                 }
             }
-            .navigationTitle("Personalidade do coach")
+            .navigationTitle(copy("profile.persona.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") {
+                    Button {
                         dismiss()
+                    } label: {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Image(systemName: "xmark")
+                        } else {
+                            Text(copy("profile.persona.cancel"))
+                        }
                     }
+                    .frame(
+                        minWidth: BodyFlowSpacing.minimumTapTarget,
+                        minHeight: BodyFlowSpacing.minimumTapTarget
+                    )
+                    .contentShape(Rectangle())
                     .disabled(isSaving)
+                    .accessibilityLabel(copy("profile.persona.cancel"))
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salvar") {
+                    Button {
                         saveSelection()
+                    } label: {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Image(systemName: "checkmark")
+                        } else {
+                            Text(copy("profile.persona.save"))
+                        }
                     }
+                    .frame(
+                        minWidth: BodyFlowSpacing.minimumTapTarget,
+                        minHeight: BodyFlowSpacing.minimumTapTarget
+                    )
+                    .contentShape(Rectangle())
                     .disabled(!canSave)
+                    .accessibilityLabel(copy("profile.persona.save"))
                     .accessibilityIdentifier("persona.save")
                 }
             }
@@ -62,7 +88,7 @@ struct CoachPersonaPickerView: View {
     private var content: some View {
         switch model.operationState {
         case .loading:
-            ProgressView("Carregando personalidade…")
+            ProgressView(copy("profile.persona.loading"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .idle, .saving:
             personaList
@@ -78,7 +104,7 @@ struct CoachPersonaPickerView: View {
     private func personaList(error: AppPresentationError?) -> some View {
         List {
             Section {
-                Text("A personalidade muda o estilo da conversa, sem alterar cálculos ou orientações.")
+                Text(copy("profile.persona.explanation"))
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
@@ -88,21 +114,21 @@ struct CoachPersonaPickerView: View {
                     AuthFieldMessage(error: error)
 
                     if model.persisted == nil {
-                        Button("Tentar novamente") {
+                        Button(copy("state.retry")) {
                             Task { await model.load() }
                         }
                     }
                 }
             }
 
-            Section("Escolha uma opção") {
+            Section(copy("profile.persona.options.section")) {
                 if let options = model.pickerOptions {
                     ForEach(options) { option in
                         personaRow(option)
                     }
                 } else {
                     ContentUnavailableView(
-                        "Indisponível nesta versão",
+                        copy("profile.persona.unavailable"),
                         systemImage: "nosign"
                     )
                     .accessibilityIdentifier("persona.options.unavailable")
@@ -112,11 +138,18 @@ struct CoachPersonaPickerView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(BodyFlowColor.background)
+        .listRowBackground(BodyFlowColor.color(.backgroundSecondary))
         .overlay {
             if isSaving {
-                ProgressView("Salvando…")
+                ProgressView(copy("profile.persona.saving"))
                     .padding(BodyFlowSpacing.md)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(
+                        .regularMaterial,
+                        in: RoundedRectangle(
+                            cornerRadius: BodyFlowRadius.field,
+                            style: .continuous
+                        )
+                    )
             }
         }
     }
@@ -144,8 +177,8 @@ struct CoachPersonaPickerView: View {
 
                     Text(
                         model.selected == persona
-                            ? "Selecionado"
-                            : "Não selecionado"
+                            ? copy("profile.persona.selected")
+                            : copy("profile.persona.not-selected")
                     )
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
@@ -194,6 +227,14 @@ struct CoachPersonaPickerView: View {
                 dismiss()
             }
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        ProfileCopy.string(key, language: language)
     }
 }
 

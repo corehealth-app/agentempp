@@ -2,6 +2,7 @@ import SwiftUI
 
 @MainActor
 struct RoutineSnoozeView: View {
+    @Environment(\.locale) private var locale
     let model: RoutineActionModel
     let submit: @MainActor (RoutineSnoozeSelection) -> Void
     @State private var customTime: Date
@@ -17,7 +18,7 @@ struct RoutineSnoozeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text("Adiar ocorrência")
+            Text(copy("routine.snooze.title"))
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
 
@@ -26,7 +27,7 @@ struct RoutineSnoozeView: View {
             presetButton(60)
 
             DatePicker(
-                "Horário personalizado",
+                copy("routine.snooze.custom-time"),
                 selection: $customTime,
                 displayedComponents: .hourAndMinute
             )
@@ -38,7 +39,7 @@ struct RoutineSnoozeView: View {
             Button {
                 submit(.custom(customTime))
             } label: {
-                Text("Usar horário personalizado")
+                Text(copy("routine.snooze.use-custom"))
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
                     .contentShape(Rectangle())
             }
@@ -52,11 +53,23 @@ struct RoutineSnoozeView: View {
         Button {
             submit(.minutes(minutes))
         } label: {
-            Text("\(minutes) minutos")
+            Text(String(
+                format: copy("routine.snooze.minutes-format"),
+                locale: language.formattingLocale,
+                minutes
+            ))
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
                 .contentShape(Rectangle())
         }
         .disabled(model.isSubmitting || model.snoozeDate(for: .minutes(minutes)) == nil)
         .accessibilityIdentifier("routine.snooze.\(minutes)")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        RoutineCopy.string(key, language: language)
     }
 }

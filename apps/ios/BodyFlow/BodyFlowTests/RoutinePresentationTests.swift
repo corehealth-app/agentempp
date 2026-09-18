@@ -34,6 +34,51 @@ struct RoutinePresentationTests {
         #expect(RoutineListPresentation.state(for: .unavailable) == .unavailable)
     }
 
+    @Test("routine copy localizes known statuses while preserving the raw status")
+    func knownStatusesAreLocalizedWithoutChangingRawStatus() {
+        let row = Self.history(id: "known", status: "snoozed")
+        let context = PatientTimeZoneContext(
+            documentedIANAIdentifier: "America/Sao_Paulo"
+        )
+        let portuguese = RoutineHistoryRowPresentation(
+            row: row,
+            patientTimeZone: context,
+            language: .portugueseBrazil
+        )
+        let english = RoutineHistoryRowPresentation(
+            row: row,
+            patientTimeZone: context,
+            language: .englishUnitedStates
+        )
+
+        #expect(portuguese.rawStatus == "snoozed")
+        #expect(portuguese.statusLabel == "Adiado")
+        #expect(english.rawStatus == "snoozed")
+        #expect(english.statusLabel == "Snoozed")
+    }
+
+    @Test("routine history formats only with the documented patient timezone")
+    func patientTimeZoneIsRequiredForHistoryFormatting() {
+        let row = Self.history(id: "timezone", status: "taken")
+        let documented = RoutineHistoryRowPresentation(
+            row: row,
+            patientTimeZone: PatientTimeZoneContext(
+                documentedIANAIdentifier: "America/Sao_Paulo"
+            ),
+            language: .portugueseBrazil
+        )
+        let unavailable = RoutineHistoryRowPresentation(
+            row: row,
+            patientTimeZone: PatientTimeZoneContext(
+                documentedIANAIdentifier: nil
+            ),
+            language: .portugueseBrazil
+        )
+
+        #expect(documented.scheduledForLabel?.contains("20:01") == true)
+        #expect(unavailable.scheduledForLabel == nil)
+    }
+
     private static func history(id: String, status: String) -> RoutineHistoryItem {
         RoutineHistoryItem(id: id, routineItemID: "supplement-1", kind: .supplement, status: status, reminderRuleID: "rule-1", scheduledFor: timestamp, occurredAt: timestamp, snoozedUntil: nil, source: "patient", supersedesLogID: nil, createdAt: timestamp)
     }

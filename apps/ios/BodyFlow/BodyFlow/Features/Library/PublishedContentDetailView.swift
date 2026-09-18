@@ -597,6 +597,7 @@ struct ContentDetailAccessibilityFocusCoordinator: Equatable, Sendable {
 struct PublishedContentDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppRouter.self) private var router
+    @Environment(\.locale) private var locale
     @State private var composition: ContentDetailCoverComposition
     @State private var retryRequest: ContentDetailRetryRequest?
     @State private var retrySequence = 0
@@ -654,7 +655,7 @@ struct PublishedContentDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
-        .navigationTitle("Conteúdo")
+        .navigationTitle(copy("content.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: detailLoadIdentity) {
             let revision = detailRevision
@@ -767,28 +768,32 @@ struct PublishedContentDetailView: View {
                     onCapabilityInvalidated: { retry() }
                 )
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline) {
-                        categoryMetadata(detail)
-                        Spacer(minLength: BodyFlowSpacing.sm)
-                        readingTimeMetadata(detail)
-                    }
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                        categoryMetadata(detail)
-                        readingTimeMetadata(detail)
+                BodyFlowCard(surface: .card) {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline) {
+                                categoryMetadata(detail)
+                                Spacer(minLength: BodyFlowSpacing.sm)
+                                readingTimeMetadata(detail)
+                            }
+                            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                                categoryMetadata(detail)
+                                readingTimeMetadata(detail)
+                            }
+                        }
+
+                        contentActions(detail)
+
+                        if detail.saved || detail.completed {
+                            status(detail)
+                        }
                     }
                 }
-
-                if detail.saved || detail.completed {
-                    status(detail)
-                }
-
-                contentActions(detail)
 
                 if case let .failed(error) = model.openedEventState,
                    error != .contentVersionChanged {
                     Label(
-                        "Não foi possível atualizar. Tente novamente.",
+                        copy("content.opened.error"),
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(BodyFlowTypography.callout)
@@ -836,7 +841,9 @@ struct PublishedContentDetailView: View {
             Task { await model.toggleSaved() }
         } label: {
             Label(
-                detail.saved ? "Remover dos salvos" : "Salvar",
+                detail.saved
+                    ? copy("content.action.unsave")
+                    : copy("content.action.save"),
                 systemImage: detail.saved ? "bookmark.slash" : "bookmark"
             )
             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
@@ -851,7 +858,7 @@ struct PublishedContentDetailView: View {
         Button {
             Task { await model.complete() }
         } label: {
-            Label("Concluir", systemImage: "checkmark.circle")
+            Label(copy("content.action.complete"), systemImage: "checkmark.circle")
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .contentShape(Rectangle())
         }
@@ -869,7 +876,7 @@ struct PublishedContentDetailView: View {
                 Button {
                     Task { await model.retryContentMutation() }
                 } label: {
-                    Text("Tentar novamente")
+                    Text(copy("state.retry"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                         .contentShape(Rectangle())
                 }
@@ -889,17 +896,19 @@ struct PublishedContentDetailView: View {
     private func categoryMetadata(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
-        Label(detail.categoryLabel, systemImage: "books.vertical")
+        Label(localizedCategoryLabel(detail.categoryLabel), systemImage: "books.vertical")
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
+            .accessibilityIdentifier("content-detail.category")
     }
 
     private func readingTimeMetadata(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
-        Label(detail.readingTimeLabel, systemImage: "clock")
+        Label(localizedReadingTimeLabel(detail.readingTimeLabel), systemImage: "clock")
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
+            .accessibilityIdentifier("content-detail.reading-time")
     }
 
     private func status(
@@ -922,11 +931,35 @@ struct PublishedContentDetailView: View {
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
         if detail.saved {
-            Label("Salvo", systemImage: "bookmark.fill")
+            Label(copy("library.status.saved"), systemImage: "bookmark.fill")
         }
         if detail.completed {
-            Label("Concluído", systemImage: "checkmark.circle.fill")
+            Label(copy("library.status.completed"), systemImage: "checkmark.circle.fill")
         }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        LibraryCopy.string(key, language: language)
+    }
+
+    private func localizedCategoryLabel(_ legacyLabel: String) -> String {
+        ContentCategory.allCases.first {
+            $0.libraryDisplayName == legacyLabel
+        }?.libraryDisplayName(for: language) ?? legacyLabel
+    }
+
+    private func localizedReadingTimeLabel(_ legacyLabel: String) -> String {
+        guard let minutes = legacyLabel.split(separator: " ").first
+            .flatMap({ Int($0) }) else { return legacyLabel }
+        return String(
+            format: copy("library.reading-time-format"),
+            locale: language.formattingLocale,
+            minutes
+        )
     }
 
     private func boundedState(

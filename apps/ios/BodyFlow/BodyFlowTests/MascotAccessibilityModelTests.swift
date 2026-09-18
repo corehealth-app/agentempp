@@ -106,6 +106,26 @@ struct MascotAccessibilityModelTests {
         }
     }
 
+    @Test("public mascot copy is bilingual while server persona names stay literal")
+    func bilingualPublicCopyPreservesServerPersona() {
+        let presentation = MascotExperiencePresentation(
+            snapshot: Self.snapshot(effective: .focus, state: .active),
+            language: .englishUnitedStates
+        )
+        let descriptor = MascotViewCompositionDescriptor(
+            presentation: presentation,
+            surface: .card,
+            reduceMotion: true,
+            language: .englishUnitedStates
+        )
+
+        #expect(descriptor.title == "Performe AI mascot")
+        #expect(descriptor.personaName == "Nome remoto Focus")
+        #expect(descriptor.personaText == "Personality: Nome remoto Focus")
+        #expect(descriptor.stateText == "Active")
+        #expect(descriptor.primaryActionTitle == "View mascot")
+    }
+
     @Test("a fresh detail model reloads once for each coach revision")
     func detailReloadsCoachSnapshotByRevision() async throws {
         let provider = AccessibilityMascotProvider(responses: [

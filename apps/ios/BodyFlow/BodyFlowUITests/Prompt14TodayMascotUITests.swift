@@ -195,10 +195,21 @@ final class Prompt14TodayMascotUITests: XCTestCase {
             support.element("screen.mascot.detail", in: app)
                 .waitForExistence(timeout: 5)
         )
+        let semanticAnnouncement = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "personalidade Foco",
+                "estado Ativo"
+            )
+        )
+        XCTAssertTrue(semanticAnnouncement.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            semanticAnnouncement.count,
+            1,
+            "A personalidade e o estado devem ser anunciados uma única vez"
+        )
         XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "personalidade Foco")
-            ).firstMatch.waitForExistence(timeout: 5)
+            semanticAnnouncement.firstMatch.label.contains("Mascote do Performe AI")
         )
     }
 

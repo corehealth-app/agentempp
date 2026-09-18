@@ -148,6 +148,88 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
     }
 
     @MainActor
+    func testProgressMissingValuesAreNotZeroAndNoRangeSelector() {
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = support.launch(
+            arguments: ["--ui-testing", "--ui-testing-prompt14-progress-minimum"],
+            language: "en-US",
+            dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        let progressTab = app.buttons["tab.progresso"]
+        XCTAssertTrue(progressTab.waitForExistence(timeout: 8))
+        progressTab.tap()
+
+        let measurements = element("progress.measurements", app: app)
+        XCTAssertTrue(measurements.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.staticTexts.matching(
+            NSPredicate(format: "label == %@", "Not available")
+        ).count, 2)
+        XCTAssertFalse(app.staticTexts["0 kg"].exists)
+        XCTAssertFalse(app.staticTexts["0%"].exists)
+        for unsupported in ["7D", "4W", "3M", "6M", "YTD", "1Y"] {
+            XCTAssertFalse(app.buttons[unsupported].exists)
+            XCTAssertFalse(app.staticTexts[unsupported].exists)
+        }
+        support.capture("s6-progress-missing-en-dark-axxxl", app: app)
+    }
+
+    @MainActor
+    func testProgressUsesOfficialValuesAndBlockPercentage() {
+        let app = support.launch(
+            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+            language: "en-US",
+            dark: false
+        )
+        let progressTab = app.buttons["tab.progresso"]
+        XCTAssertTrue(progressTab.waitForExistence(timeout: 8))
+        progressTab.tap()
+
+        XCTAssertTrue(app.staticTexts["Current weight"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["78.4 kg"].exists)
+        XCTAssertTrue(app.staticTexts["12 days"].exists)
+        let detail = element("progress.block.detail", app: app)
+        for _ in 0..<8 where !detail.isHittable { app.swipeUp() }
+        XCTAssertTrue(detail.exists)
+        support.assertTarget(detail)
+        detail.tap()
+
+        XCTAssertTrue(element("screen.block7700.detail", app: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Reported percentage"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["32%"].exists)
+        XCTAssertFalse(app.staticTexts["Performance Score"].exists)
+        support.capture("s6-block-official-percentage-en-light", app: app)
+    }
+
+    @MainActor
+    func testProgressThemeAndLocaleMatrix() {
+        let cases = [
+            (language: "pt-BR", dark: false, heading: "Seu progresso", name: "pt-light"),
+            (language: "pt-BR", dark: true, heading: "Seu progresso", name: "pt-dark"),
+            (language: "en-US", dark: false, heading: "Your progress", name: "en-light"),
+            (language: "en-US", dark: true, heading: "Your progress", name: "en-dark"),
+        ]
+        defer { XCUIDevice.shared.appearance = .light }
+
+        for testCase in cases {
+            XCUIDevice.shared.appearance = testCase.dark ? .dark : .light
+            let app = support.launch(
+                arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+                language: testCase.language,
+                dark: testCase.dark
+            )
+            let tab = app.buttons["tab.progresso"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 8))
+            tab.tap()
+            XCTAssertTrue(app.staticTexts[testCase.heading].waitForExistence(timeout: 5))
+            support.capture("s6-progress-\(testCase.name)", app: app)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     private var support: PremiumUIUXUITestSupport {
         PremiumUIUXUITestSupport(testCase: self)
     }

@@ -2247,6 +2247,134 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão" } }
     } },
+    "progress.block.action.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "View the block stored in today's summary" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver o bloco persistido no resumo de hoje" } }
+    } },
+    "progress.block.availability" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Availability" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Disponibilidade" } }
+    } },
+    "progress.block.completed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Blocks completed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Blocos concluídos" } }
+    } },
+    "progress.block.credited" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Total credited" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Total creditado" } }
+    } },
+    "progress.block.current" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Current" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atual" } }
+    } },
+    "progress.block.percentage" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported percentage" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual informado" } }
+    } },
+    "progress.block.source" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Source" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Origem" } }
+    } },
+    "progress.block.target" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Target" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Meta" } }
+    } },
+    "progress.block.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 kcal Block" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloco 7.700 kcal" } }
+    } },
+    "progress.day.plural" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "days" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "dias" } }
+    } },
+    "progress.day.singular" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "day" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "dia" } }
+    } },
+    "progress.eyebrow" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "CONSISTENCY" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "CONSISTÊNCIA" } }
+    } },
+    "progress.level" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Level" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nível" } }
+    } },
+    "progress.medals.empty" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No medals earned." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhuma medalha conquistada." } }
+    } },
+    "progress.medals.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Medals earned" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Medalhas conquistadas" } }
+    } },
+    "progress.metric.body-fat" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Body fat" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gordura corporal" } }
+    } },
+    "progress.metric.completed-blocks" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Blocks completed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Blocos concluídos" } }
+    } },
+    "progress.metric.current-streak" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Current streak" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sequência atual" } }
+    } },
+    "progress.metric.current-weight" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Current weight" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso atual" } }
+    } },
+    "progress.metric.last-activity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Last activity" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Última atividade" } }
+    } },
+    "progress.metric.longest-streak" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Longest streak" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Maior sequência" } }
+    } },
+    "progress.metric.next-reevaluation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Next reevaluation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Próxima reavaliação" } }
+    } },
+    "progress.metric.reported-deficit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported deficit" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit informado" } }
+    } },
+    "progress.metric.updated-at" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated on" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizado em" } }
+    } },
+    "progress.metric.xp-total" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Total XP" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "XP total" } }
+    } },
+    "progress.missions.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily missions — Unavailable in this version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Missões diárias — Indisponível nesta versão." } }
+    } },
+    "progress.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+    } },
+    "progress.not-available" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not available" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não disponível" } }
+    } },
+    "progress.streak.restart-action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Resume in Today" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Retomar em Hoje" } }
+    } },
+    "progress.streak.restart-message" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your streak can restart today. What you have built still counts." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sua sequência pode recomeçar hoje. O que você já construiu continua contando." } }
+    } },
+    "progress.summary.accessibility" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress summary" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resumo do progresso" } }
+    } },
+    "progress.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seu progresso" } }
+    } },
     "tab.plan" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },

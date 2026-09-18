@@ -1075,3 +1075,86 @@ completions: 0. BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS**.
 No push, PR, merge, deployment, staging, Production, Supabase, Vercel,
 OpenRouter or CI-3 access occurred. Slice 6 starts only after the verified local
 Slice 5 commit and a clean worktree/index.
+
+## Batch 4 — Slice 6 Progress local gate
+
+Slice 6 started only after the verified Slice 5 commit
+`a82bc63ffb435c8223181678aab2f05cde0d24e1`, tree
+`fcfe7440f8245b2d8ba77bc119430c3f5becefb7`, with clean worktree and index.
+The same local host, simulator, private artifact root and locked packages above
+were reused serially. No new branch/worktree, provider, remote resource, paid
+environment or real completion was used.
+
+### TDD, hierarchy and preserved official data
+
+- `s6-red.log`: task-specific RED on the missing additive
+  `ProgressPresentation(snapshot:language:)` interface. The destination and
+  locked packages resolved; compilation failed exactly on the new language
+  argument rather than an environment error.
+- `s6-unit-green.log`: **PASS**, 16/16 ProgressPresentation tests. pt-BR/en-US
+  integer, decimal and UTC date formatting pass; singular/plural day copy,
+  nil-versus-zero, calm zero-streak action and positional duplicate-medal IDs
+  remain covered. Badge text/IDs and every numeric source value remain unchanged.
+- The loaded hierarchy is current weight/body composition, official consistency,
+  XP/level/completed blocks/reported deficit, earned medals/missions boundary,
+  dates, then the existing Block 7,700 route. Nil uses `Não disponível` /
+  `Not available`; literal zero remains visible. The Today restart still writes
+  only `.today` and now uses the primary action semantic pair rather than
+  achievement gold. Achievement color is limited to earned-medal presentation.
+- No historical series, 7D/4W/3M selector, chart, local delta, Performance Score,
+  XP formula, forecast, goal, protocol or new query was added. The inspected
+  models contain no historical dataset. Block percentage remains `Int?`; the UI
+  emits exactly the supplied integer plus `%`, omits the row when nil, and does
+  not clamp, normalize or recompute it from calories.
+- `s6-focused-final.log` and
+  `S6FinalDerivedData/Logs/Test/Test-BodyFlow-2026.09.18_09-47-31--0300.xcresult`:
+  **PASS**, 52 distinct tests, zero failures/skips/expected failures/runtime
+  warnings. Selectors cover ProgressPresentation, ProgressViewModel,
+  Block7700Presentation, PlanProgressContract, Prompt14Progress and all
+  PremiumCoreSurfaces.
+
+The first three-test native run passed the missing-values and locale/theme
+matrix cases but failed a test-only identifier query for the combined
+`FixtureMetricRow`; the visible official value was not the failure. An explicit
+outer identifier remained absent on a second isolated reproduction because of
+SwiftUI combined accessibility semantics. It was removed instead of shipping a
+test-only product API. The final isolated and 52-test gates assert the real
+`Reported percentage` plus `32%` content and pass. The operation-owned
+xcodebuild processes that remained after those failed test sessions were stopped
+by exact PID only; no unrelated process or artifact was removed.
+
+### Native visual, Release, analyze and review evidence
+
+Final attachments are under `<artifact-root>/S6FinalAttachments`: four regular
+pt-BR/en-US × light/dark Progress captures, one en-US dark AccessibilityXXXL
+missing-measurements capture, one en-US light official-percentage detail, plus
+their accessibility trees. Root inspected the pt-BR light, en-US dark,
+AccessibilityXXXL nil and Block detail captures. Cards reflow, values remain
+legible, missing data is not rendered as zero, and the oversized viewport stays
+scrollable. `32%`, `2,500 kcal`, `7,700 kcal`, `10,200 kcal`, `available` and
+`user_progress` are received fixture values; server strings stay untranslated.
+This is native screenshot/tree evidence, not complete manual VoiceOver:
+**VOICEOVER MANUAL STATUS: NOT FULLY VERIFIED**.
+
+`s6-release-final.xcresult`: normal signed Release Simulator build **PASS**, exit
+0; identifier `com.bodyflow.app`; `codesign --verify --deep --strict`: **PASS**.
+`s6-analyze.xcresult`: native analyze **PASS**, exit 0. Both report the inherited
+unnecessary `await` warning in `SessionLifecycleCoordinator`, outside this diff;
+the AppIntents metadata skip is a tool diagnostic. Swift typecheck is covered by
+tests, Release and analyze; no separate SwiftLint is configured.
+
+Primary-agent structured review of official value flow, optional/zero behavior,
+percentage source, absence of invented history/formulas, localization,
+accessibility hierarchy, allowlist and compatibility with prior slices:
+**PASS**, Critical 0 / Important 0. This is explicitly not an independent
+reviewer claim. Catalog JSON parsing, whitespace, exact allowlist and scoped
+secret/PII scans are required immediately before commit. Exact local subject:
+`refactor(ui): refine Progress experience`, parent
+`a82bc63ffb435c8223181678aab2f05cde0d24e1`; resulting SHA/tree and final Batch 4
+regressions are reported after commit without amending this evidence.
+
+No asset, backend, DTO/API/model, dependency, project file, signing configuration
+or remote resource changed. Real completions: 0. Remote resources altered: NONE.
+BRAND_ASSET_APPROVAL_GATE remains **PENDING_EXTERNAL_ASSETS**. No push, PR, merge,
+deployment, staging, Production, Supabase, Vercel, OpenRouter, CI-3, TestFlight or
+App Store operation occurred.

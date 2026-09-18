@@ -18,6 +18,7 @@ struct Block7700DetailPresentation: Equatable, Sendable {
 @MainActor
 struct Block7700DetailView: View {
     @State private var model: Block7700ViewModel
+    @Environment(\.locale) private var locale
 
     init(today: any TodayProviding) {
         _model = State(initialValue: Block7700ViewModel(today: today))
@@ -28,7 +29,7 @@ struct Block7700DetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle("Bloco 7.700 kcal")
+        .navigationTitle(copy("progress.block.title"))
         .accessibilityIdentifier("screen.block7700.detail")
         .task { await model.load() }
     }
@@ -49,29 +50,57 @@ struct Block7700DetailView: View {
             ) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                     if presentation.showsRetry {
-                        Button("Tentar novamente", action: retry)
+                        Button(copy("state.retry"), action: retry)
                             .font(BodyFlowTypography.headline)
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .accessibilityIdentifier("state.retry")
                     }
 
                     ScrollView {
-                        BodyFlowCard {
+                        BodyFlowCard(surface: .card) {
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                                Text("Bloco 7.700 kcal")
+                                Text(copy("progress.block.title"))
                                     .font(BodyFlowTypography.title)
                                     .fontWeight(.semibold)
-                                FixtureMetricRow(title: "Meta", value: descriptor.targetText)
-                                Divider()
-                                FixtureMetricRow(title: "Atual", value: descriptor.currentText)
-                                optionalRow("Percentual informado", descriptor.percentage.map { "\($0)%" })
-                                optionalRow("Blocos concluídos", descriptor.completedBlocks.map(String.init))
-                                optionalRow(
-                                    "Total creditado",
-                                    descriptor.creditedText
+                                FixtureMetricRow(
+                                    title: copy("progress.block.target"),
+                                    value: TodayValueFormatter.optionalKcal(
+                                        descriptor.targetKcal,
+                                        language: language
+                                    )
                                 )
-                                FixtureMetricRow(title: "Disponibilidade", value: descriptor.availability)
-                                FixtureMetricRow(title: "Origem", value: descriptor.source)
+                                Divider()
+                                FixtureMetricRow(
+                                    title: copy("progress.block.current"),
+                                    value: TodayValueFormatter.optionalKcal(
+                                        descriptor.currentKcal,
+                                        language: language
+                                    )
+                                )
+                                optionalRow(
+                                    copy("progress.block.percentage"),
+                                    descriptor.percentage.map { "\($0)%" }
+                                )
+                                optionalRow(
+                                    copy("progress.block.completed"),
+                                    descriptor.completedBlocks.map {
+                                        TodayValueFormatter.integer($0, language: language)
+                                    }
+                                )
+                                optionalRow(
+                                    copy("progress.block.credited"),
+                                    descriptor.totalCreditedKcal.map {
+                                        TodayValueFormatter.kcal($0, language: language)
+                                    }
+                                )
+                                FixtureMetricRow(
+                                    title: copy("progress.block.availability"),
+                                    value: descriptor.availability
+                                )
+                                FixtureMetricRow(
+                                    title: copy("progress.block.source"),
+                                    value: descriptor.source
+                                )
                             }
                         }
                         .accessibilityIdentifier("block7700.summary")
@@ -84,7 +113,10 @@ struct Block7700DetailView: View {
     }
 
     @ViewBuilder
-    private func optionalRow(_ title: String, _ value: String?) -> some View {
+    private func optionalRow(
+        _ title: String,
+        _ value: String?
+    ) -> some View {
         if let value {
             Divider()
             FixtureMetricRow(title: title, value: value)
@@ -93,5 +125,13 @@ struct Block7700DetailView: View {
 
     private func retry() {
         Task { await model.retry() }
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        ProgressCopy.string(key, language: language)
     }
 }

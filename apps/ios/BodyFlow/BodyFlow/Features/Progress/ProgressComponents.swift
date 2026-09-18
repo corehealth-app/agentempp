@@ -26,11 +26,15 @@ struct ProgressTabSelectionAction: Equatable, Sendable {
 }
 
 enum ProgressActionColorToken: Equatable, Sendable {
+    case brandPrimary
+    case onPrimary
     case achievement
     case onAchievement
 
     var color: Color {
         switch self {
+        case .brandPrimary: BodyFlowColor.color(.brandPrimary)
+        case .onPrimary: BodyFlowColor.color(.onPrimary)
         case .achievement: BodyFlowColor.achievement
         case .onAchievement: BodyFlowColor.onAchievement
         }
@@ -42,8 +46,8 @@ struct ProgressActionAppearance: Equatable, Sendable {
     let foreground: ProgressActionColorToken
 
     static let streakRestart = ProgressActionAppearance(
-        background: .achievement,
-        foreground: .onAchievement
+        background: .brandPrimary,
+        foreground: .onPrimary
     )
 }
 
@@ -97,31 +101,36 @@ struct ProgressPresentation: Equatable, Sendable {
     let nextReevaluationText: String
     let updatedAtText: String
 
-    init(snapshot: ProgressSnapshot) {
-        xpText = "\(Self.integer(snapshot.xpTotal)) XP"
-        levelText = "Nível \(Self.integer(snapshot.level))"
-        currentStreakText = "\(Self.integer(snapshot.currentStreak)) dias"
-        longestStreakText = "\(Self.integer(snapshot.longestStreak)) dias"
-        completedBlocksText = Self.integer(snapshot.blocksCompleted)
-        deficitBlockText = "\(Self.integer(snapshot.deficitBlock)) kcal"
-        weightText = snapshot.currentWeight.map { "\(Self.decimal($0)) kg" }
-            ?? "Indisponível"
-        bodyFatText = snapshot.currentBodyFatPercent.map { "\(Self.decimal($0))%" }
-            ?? "Indisponível"
+    init(
+        snapshot: ProgressSnapshot,
+        language: SupportedAppLanguage = .portugueseBrazil
+    ) {
+        xpText = "\(Self.integer(snapshot.xpTotal, language: language)) XP"
+        levelText = "\(Self.copy("progress.level", language)) \(Self.integer(snapshot.level, language: language))"
+        currentStreakText = Self.days(snapshot.currentStreak, language: language)
+        longestStreakText = Self.days(snapshot.longestStreak, language: language)
+        completedBlocksText = Self.integer(snapshot.blocksCompleted, language: language)
+        deficitBlockText = "\(Self.integer(snapshot.deficitBlock, language: language)) kcal"
+        weightText = snapshot.currentWeight.map {
+            "\(Self.decimal($0, language: language)) kg"
+        } ?? Self.copy("progress.not-available", language)
+        bodyFatText = snapshot.currentBodyFatPercent.map {
+            "\(Self.decimal($0, language: language))%"
+        } ?? Self.copy("progress.not-available", language)
         badges = snapshot.badgesEarned
         medalRows = snapshot.badgesEarned.enumerated().map { offset, text in
             ProgressMedalRow(offset: offset, text: text)
         }
         if snapshot.currentStreak == 0 {
-            streakRestartMessage = "Sua sequência pode recomeçar hoje. O que você já construiu continua contando."
-            streakRestartActionTitle = "Retomar em Hoje"
+            streakRestartMessage = Self.copy("progress.streak.restart-message", language)
+            streakRestartActionTitle = Self.copy("progress.streak.restart-action", language)
             streakRestartDestination = .today
         } else {
             streakRestartMessage = nil
             streakRestartActionTitle = nil
             streakRestartDestination = nil
         }
-        missionsUnavailableText = "Missões diárias — Indisponível nesta versão."
+        missionsUnavailableText = Self.copy("progress.missions.unavailable", language)
         var sections: [ProgressGamificationSection] = [.officialSummary]
         if
             let message = streakRestartMessage,
@@ -140,52 +149,100 @@ struct ProgressPresentation: Equatable, Sendable {
         sections.append(
             .earnedMedals(
                 rows: medalRows,
-                emptyMessage: medalRows.isEmpty ? "Nenhuma medalha conquistada." : nil
+                emptyMessage: medalRows.isEmpty
+                    ? Self.copy("progress.medals.empty", language) : nil
             )
         )
         sections.append(.missionsUnavailable(missionsUnavailableText))
         gamificationSections = sections
-        lastActiveDateText = snapshot.lastActiveDate.map(Self.date) ?? "Indisponível"
-        nextReevaluationText = snapshot.nextReevaluation.map(Self.date) ?? "Indisponível"
-        updatedAtText = Self.timestamp(snapshot.updatedAt)
+        lastActiveDateText = snapshot.lastActiveDate.map {
+            Self.date($0, language: language)
+        } ?? Self.copy("progress.not-available", language)
+        nextReevaluationText = snapshot.nextReevaluation.map {
+            Self.date($0, language: language)
+        } ?? Self.copy("progress.not-available", language)
+        updatedAtText = Self.timestamp(snapshot.updatedAt, language: language)
     }
 
-    private static func integer(_ value: Int) -> String {
+    private static func integer(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = language.formattingLocale
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
-    private static func decimal(_ value: Decimal) -> String {
+    private static func decimal(
+        _ value: Decimal,
+        language: SupportedAppLanguage
+    ) -> String {
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = language.formattingLocale
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 2
         return formatter.string(from: value as NSDecimalNumber) ?? "\(value)"
     }
 
-    private static func date(_ value: String) -> String {
+    private static func date(
+        _ value: String,
+        language: SupportedAppLanguage
+    ) -> String {
         let source = DateFormatter()
         source.locale = Locale(identifier: "en_US_POSIX")
         source.timeZone = TimeZone(secondsFromGMT: 0)
         source.dateFormat = "yyyy-MM-dd"
         guard let date = source.date(from: value) else { return value }
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = language.formattingLocale
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "dd/MM/yyyy"
+        formatter.dateFormat = language == .englishUnitedStates
+            ? "MM/dd/yyyy" : "dd/MM/yyyy"
         return formatter.string(from: date)
     }
 
-    private static func timestamp(_ value: APITimestamp) -> String {
+    private static func timestamp(
+        _ value: APITimestamp,
+        language: SupportedAppLanguage
+    ) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = language.formattingLocale
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "dd/MM/yyyy"
+        formatter.dateFormat = language == .englishUnitedStates
+            ? "MM/dd/yyyy" : "dd/MM/yyyy"
         return formatter.string(from: value.value)
+    }
+
+    private static func days(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
+        let key: String.LocalizationValue
+        if value == 1 {
+            key = "progress.day.singular"
+        } else {
+            key = "progress.day.plural"
+        }
+        return "\(integer(value, language: language)) \(copy(key, language))"
+    }
+
+    private static func copy(
+        _ key: String.LocalizationValue,
+        _ language: SupportedAppLanguage
+    ) -> String {
+        ProgressCopy.string(key, language: language)
+    }
+}
+
+enum ProgressCopy {
+    static func string(
+        _ key: String.LocalizationValue,
+        language: SupportedAppLanguage
+    ) -> String {
+        (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
     }
 }
 
@@ -193,24 +250,26 @@ struct ProgressPresentation: Equatable, Sendable {
 struct ProgressContentView: View {
     let presentation: ProgressPresentation
     @Binding var selectedTab: AppTab
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text("CONSISTÊNCIA")
+                Text(copy("progress.eyebrow"))
                     .font(BodyFlowTypography.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(BodyFlowColor.accent)
-                Text("Seu progresso")
+                Text(copy("progress.title"))
                     .font(BodyFlowTypography.largeTitle)
                     .fontWeight(.bold)
                     .foregroundStyle(BodyFlowColor.primaryText)
             }
 
+            measurementsCard
+            consistencyCard
             ForEach(presentation.gamificationSections) { section in
                 gamificationSection(section)
             }
-            measurementsCard
             datesCard
         }
         .accessibilityElement(children: .contain)
@@ -218,9 +277,9 @@ struct ProgressContentView: View {
     }
 
     private var progressCard: some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: "XP total", value: presentation.xpText, systemImage: "sparkles")
+                FixtureMetricRow(title: copy("progress.metric.xp-total"), value: presentation.xpText, systemImage: "sparkles")
                 Divider()
                 Label {
                     Text(presentation.levelText)
@@ -234,17 +293,13 @@ struct ProgressContentView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(presentation.levelText)
                 Divider()
-                FixtureMetricRow(title: "Sequência atual", value: presentation.currentStreakText, systemImage: "flame")
+                FixtureMetricRow(title: copy("progress.metric.completed-blocks"), value: presentation.completedBlocksText, systemImage: "checkmark.seal")
                 Divider()
-                FixtureMetricRow(title: "Maior sequência", value: presentation.longestStreakText, systemImage: "trophy")
-                Divider()
-                FixtureMetricRow(title: "Blocos concluídos", value: presentation.completedBlocksText, systemImage: "checkmark.seal")
-                Divider()
-                FixtureMetricRow(title: "Déficit informado", value: presentation.deficitBlockText, systemImage: "arrow.down.circle")
+                FixtureMetricRow(title: copy("progress.metric.reported-deficit"), value: presentation.deficitBlockText, systemImage: "arrow.down.circle")
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Resumo do progresso")
+        .accessibilityLabel(copy("progress.summary.accessibility"))
         .accessibilityIdentifier("progress.summary")
     }
 
@@ -273,7 +328,7 @@ struct ProgressContentView: View {
         action: ProgressTabSelectionAction,
         appearance: ProgressActionAppearance
     ) -> some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 Text(message)
                     .font(BodyFlowTypography.body)
@@ -296,9 +351,9 @@ struct ProgressContentView: View {
     }
 
     private func medalsCard(rows: [ProgressMedalRow], emptyMessage: String?) -> some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text("Medalhas conquistadas")
+                Text(copy("progress.medals.title"))
                     .font(BodyFlowTypography.headline)
                     .accessibilityAddTraits(.isHeader)
                 if let emptyMessage {
@@ -310,7 +365,7 @@ struct ProgressContentView: View {
                 ForEach(rows) { medal in
                     HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
                         Image(systemName: "medal")
-                            .foregroundStyle(BodyFlowColor.accent)
+                            .foregroundStyle(BodyFlowColor.achievement)
                             .accessibilityHidden(true)
                         Text(medal.text)
                             .font(BodyFlowTypography.body)
@@ -327,7 +382,7 @@ struct ProgressContentView: View {
     }
 
     private func missionsUnavailableCard(text: String) -> some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             Text(text)
                 .font(BodyFlowTypography.body)
                 .foregroundStyle(BodyFlowColor.primaryText)
@@ -337,26 +392,45 @@ struct ProgressContentView: View {
     }
 
     private var measurementsCard: some View {
-        BodyFlowCard {
+        BodyFlowCard(surface: .card) {
             VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: "Peso atual", value: presentation.weightText, systemImage: "scalemass")
+                FixtureMetricRow(title: copy("progress.metric.current-weight"), value: presentation.weightText, systemImage: "scalemass")
                 Divider()
-                FixtureMetricRow(title: "Gordura corporal", value: presentation.bodyFatText, systemImage: "figure")
+                FixtureMetricRow(title: copy("progress.metric.body-fat"), value: presentation.bodyFatText, systemImage: "figure")
             }
         }
         .accessibilityIdentifier("progress.measurements")
     }
 
-    private var datesCard: some View {
-        BodyFlowCard {
+    private var consistencyCard: some View {
+        BodyFlowCard(surface: .card) {
             VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: "Última atividade", value: presentation.lastActiveDateText)
+                FixtureMetricRow(title: copy("progress.metric.current-streak"), value: presentation.currentStreakText, systemImage: "flame")
                 Divider()
-                FixtureMetricRow(title: "Próxima reavaliação", value: presentation.nextReevaluationText)
+                FixtureMetricRow(title: copy("progress.metric.longest-streak"), value: presentation.longestStreakText, systemImage: "trophy")
+            }
+        }
+        .accessibilityIdentifier("progress.consistency")
+    }
+
+    private var datesCard: some View {
+        BodyFlowCard(surface: .card) {
+            VStack(spacing: BodyFlowSpacing.sm) {
+                FixtureMetricRow(title: copy("progress.metric.last-activity"), value: presentation.lastActiveDateText)
                 Divider()
-                FixtureMetricRow(title: "Atualizado em", value: presentation.updatedAtText)
+                FixtureMetricRow(title: copy("progress.metric.next-reevaluation"), value: presentation.nextReevaluationText)
+                Divider()
+                FixtureMetricRow(title: copy("progress.metric.updated-at"), value: presentation.updatedAtText)
             }
         }
         .accessibilityIdentifier("progress.dates")
+    }
+
+    private var language: SupportedAppLanguage {
+        BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        ProgressCopy.string(key, language: language)
     }
 }

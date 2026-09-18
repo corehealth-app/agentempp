@@ -38,10 +38,77 @@ struct ProgressPresentationTests {
         )
 
         let presentation = ProgressPresentation(snapshot: snapshot)
-        #expect(presentation.weightText == "Indisponível")
-        #expect(presentation.bodyFatText == "Indisponível")
+        #expect(presentation.weightText == "Não disponível")
+        #expect(presentation.bodyFatText == "Não disponível")
         #expect(presentation.weightText != "0 kg")
         #expect(presentation.bodyFatText != "0%")
+    }
+
+    @Test("English presentation localizes official values without changing badges")
+    func englishPresentation() {
+        let presentation = ProgressPresentation(
+            snapshot: BodyFlowTestFixtures.progressSnapshot,
+            language: .englishUnitedStates
+        )
+
+        #expect(presentation.xpText == "12,345 XP")
+        #expect(presentation.levelText == "Level 13")
+        #expect(presentation.currentStreakText == "4 days")
+        #expect(presentation.longestStreakText == "29 days")
+        #expect(presentation.completedBlocksText == "7")
+        #expect(presentation.deficitBlockText == "611 kcal")
+        #expect(presentation.weightText == "83.75 kg")
+        #expect(presentation.bodyFatText == "18.25%")
+        #expect(presentation.badges == ["badge-z", "badge-a"])
+        #expect(presentation.medalRows.map(\.text) == ["badge-z", "badge-a"])
+        #expect(presentation.lastActiveDateText == "07/28/2026")
+        #expect(presentation.nextReevaluationText == "08/19/2026")
+        #expect(presentation.updatedAtText == "07/29/2026")
+    }
+
+    @Test("English nil measurements stay distinct from literal zero")
+    func englishOptionalMeasurementsRemainUnavailable() {
+        let fixture = BodyFlowTestFixtures.progressSnapshot
+        let presentation = ProgressPresentation(
+            snapshot: ProgressSnapshot(
+                xpTotal: fixture.xpTotal,
+                level: fixture.level,
+                currentStreak: fixture.currentStreak,
+                longestStreak: fixture.longestStreak,
+                blocksCompleted: fixture.blocksCompleted,
+                deficitBlock: fixture.deficitBlock,
+                currentWeight: nil,
+                currentBodyFatPercent: nil,
+                badgesEarned: fixture.badgesEarned,
+                lastActiveDate: nil,
+                nextReevaluation: nil,
+                updatedAt: fixture.updatedAt
+            ),
+            language: .englishUnitedStates
+        )
+
+        #expect(presentation.weightText == "Not available")
+        #expect(presentation.bodyFatText == "Not available")
+        #expect(presentation.lastActiveDateText == "Not available")
+        #expect(presentation.nextReevaluationText == "Not available")
+        #expect(presentation.weightText != "0 kg")
+        #expect(presentation.bodyFatText != "0%")
+    }
+
+    @Test("day units use the selected language and literal official count")
+    func localizedSingularDay() {
+        let official = snapshot(currentStreak: 1, longestStreak: 1)
+
+        let portuguese = ProgressPresentation(snapshot: official)
+        let english = ProgressPresentation(
+            snapshot: official,
+            language: .englishUnitedStates
+        )
+
+        #expect(portuguese.currentStreakText == "1 dia")
+        #expect(portuguese.longestStreakText == "1 dia")
+        #expect(english.currentStreakText == "1 day")
+        #expect(english.longestStreakText == "1 day")
     }
 
     @Test("zero deficit block is displayed as literal official data")
@@ -117,6 +184,21 @@ struct ProgressPresentationTests {
         #expect(presentation.streakRestartDestination == .today)
     }
 
+    @Test("English zero streak stays supportive and routes only to Today")
+    func englishZeroStreakOffersSupportiveTodayRestart() {
+        let presentation = ProgressPresentation(
+            snapshot: snapshot(currentStreak: 0),
+            language: .englishUnitedStates
+        )
+
+        #expect(
+            presentation.streakRestartMessage
+                == "Your streak can restart today. What you have built still counts."
+        )
+        #expect(presentation.streakRestartActionTitle == "Resume in Today")
+        #expect(presentation.streakRestartDestination == .today)
+    }
+
     @Test("nonzero streak omits restart presentation")
     func nonzeroStreakOmitsRestartPresentation() {
         let presentation = ProgressPresentation(
@@ -180,8 +262,8 @@ struct ProgressPresentationTests {
         #expect(writes == [.today])
     }
 
-    @Test("Today restart uses semantic achievement colors with readable contrast")
-    func todayRestartUsesReadableSemanticColors() throws {
+    @Test("Today restart uses primary action colors rather than achievement gold")
+    func todayRestartUsesReadablePrimaryActionColors() throws {
         let presentation = ProgressPresentation(snapshot: snapshot(currentStreak: 0))
         let section = try #require(
             presentation.gamificationSections.first { $0.kind == .streakRestart }
@@ -191,8 +273,8 @@ struct ProgressPresentationTests {
             return
         }
 
-        #expect(appearance.background == .achievement)
-        #expect(appearance.foreground == .onAchievement)
+        #expect(appearance.background == .brandPrimary)
+        #expect(appearance.foreground == .onPrimary)
 
         for style in [UIUserInterfaceStyle.light, .dark] {
             let traits = UITraitCollection(userInterfaceStyle: style)

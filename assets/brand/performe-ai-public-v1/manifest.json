@@ -1,6 +1,46 @@
 {
+  "schemaVersion": 1,
   "family": "performe-ai-public-v1",
+  "direction": "B2 — Warm Performance",
   "approvalStatus": "pending",
   "approvedFiles": [],
-  "publicCallsites": []
+  "publicCallsites": [],
+  "requiredDeliverables": [
+    "masters/symbol-light.svg",
+    "masters/symbol-dark.svg",
+    "masters/symbol-mono.svg",
+    "masters/symbol-negative.svg",
+    "masters/wordmark-light.svg",
+    "masters/wordmark-dark.svg",
+    "masters/wordmark-mono.svg",
+    "masters/lockup-light.svg",
+    "masters/lockup-dark.svg",
+    "masters/lockup-mono.svg",
+    "masters/lockup-negative.svg",
+    "exports/symbol-light.pdf",
+    "exports/symbol-dark.pdf",
+    "exports/symbol-mono.pdf",
+    "exports/symbol-negative.pdf",
+    "exports/wordmark-light.pdf",
+    "exports/wordmark-dark.pdf",
+    "exports/splash-review-compact.png",
+    "exports/splash-review-standard.png",
+    "exports/splash-review-large.png",
+    "exports/appicon-default-1024.png",
+    "exports/appicon-dark-1024.png"
+  ],
+  "conditionalDeliverables": [
+    {
+      "path": "exports/appicon-tinted-1024.png",
+      "condition": "Verified pipeline support and separate explicit approval"
+    }
+  ],
+  "approvalRequirements": [
+    "Document author, source, version, creation tool, export settings, ownership and licenses",
+    "Verify distinct P trajectory against the historical B at 16, 24, 32 and 48 pt",
+    "Verify intrinsic bounds, clear space, theme contrast and AppIcon Home Screen rendering",
+    "Obtain explicit user approval for each exact filename and variant",
+    "Record SHA-256 only after approval and invalidate approval after any byte change",
+    "Allowlist exact public callsites only after file approval"
+  ]
 }

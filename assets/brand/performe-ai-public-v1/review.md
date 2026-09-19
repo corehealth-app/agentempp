@@ -1,37 +1,117 @@
-# Performe AI public v1 — external asset approval checklist
+# Performe AI public v1 — final asset approval package
 
-Status: **PENDING_EXTERNAL_ASSETS**. Direction approved; no final bytes supplied or approved. This package contains infrastructure and documentation only. It does not complete Slice 1, authorize S1.3, select an icon, or replace historical artwork.
+Date: 2026-09-19. Visual direction: **B2 — Warm Performance**.
 
-Authority: approved UI/UX implementation plan §5, S1.1 and S1.2. Final files must be delivered by an external designer or a separately authorized creative operation. Do not render the historical family or generate placeholder artwork.
+Status: **PENDING_EXTERNAL_ASSETS**. The direction is approved, but no final
+asset byte, hash, public callsite or AppIcon is approved. This directory remains
+a documentary approval package; it does not authorize asset integration.
+
+The final mark must be a distinct abstract **P / trajectory / movement** symbol.
+It must not reuse or redraw the historical BodyFlow “B”, and it must avoid
+generic dumbbells, arrows, chat faces, medical symbols and procedural placeholder
+artwork.
 
 ## Exact pending deliverables
 
-All paths below are relative to this directory and are **pending**, not existing files.
+All paths are relative to this directory. They are required unless explicitly
+marked conditional, and none is an approved file merely because it is delivered.
 
-| Family | Named masters/review exports | Requirements |
-| --- | --- | --- |
-| Symbol | `masters/symbol-light.svg`, `masters/symbol-dark.svg`, `masters/symbol-mono.svg`, `masters/symbol-negative.svg`; corresponding vector PDFs under `exports/`; `exports/symbol-light-1024.png`, `exports/symbol-dark-1024.png`, `exports/symbol-mono-1024.png`, `exports/symbol-negative-1024.png` | Near-square abstract P/rising trajectory, distinct from the historical B. Review PNGs 1024×1024; optical sheets at 16/24/32/48 pt. |
-| Wordmark | `masters/wordmark-light.svg`, `masters/wordmark-dark.svg`, `masters/wordmark-mono.svg`; corresponding vector PDFs and review sheets | Exact “Performe AI”; intrinsic horizontal bounds, never stretched. Review widths 140/240 pt. |
-| Lockup | `masters/lockup-light.svg`, `masters/lockup-dark.svg`, `masters/lockup-mono.svg`, `masters/lockup-negative.svg`; corresponding vector PDFs and review PNGs | Review canvas 1600×400, clear space ≥¼-symbol; canvas is not a forced artwork ratio. |
-| Splash review | `exports/splash-review-standard.png`, `exports/splash-review-compact.png`, `exports/splash-review-large.png` | Standard 1179×2556 px; compact 375×667 and large 430×932 logical at 2×. Native integration would use separate approved negative symbol/wordmark PDFs at 96 pt/≤240 pt intrinsic width, never a screen-sized image. |
-| AppIcon | `exports/appicon-default-1024.png`, `exports/appicon-dark-1024.png`, `exports/appicon-tinted-1024.png` | Opaque 1024×1024 squares; no baked corner mask or text. Proposed central 70% optical zone; Home Screen review. Tinted only if the existing pipeline supports it and separately approved. |
+### SVG masters
 
-## Review gates — not yet satisfied
+- `masters/symbol-light.svg`
+- `masters/symbol-dark.svg`
+- `masters/symbol-mono.svg`
+- `masters/symbol-negative.svg`
+- `masters/wordmark-light.svg`
+- `masters/wordmark-dark.svg`
+- `masters/wordmark-mono.svg`
+- `masters/lockup-light.svg`
+- `masters/lockup-dark.svg`
+- `masters/lockup-mono.svg`
+- `masters/lockup-negative.svg`
 
-- [ ] Designer/source author, version, source ownership and export settings documented for each file.
-- [ ] Artwork and font licenses verified; no assumed rights. Optional photography defaults to none without rights.
-- [ ] Distinct P/trajectory reviewed beside the old B; no recycled swooshes or medical/arrow/dumbbell/chat-face substitution.
-- [ ] Light/dark/mono/negative geometry and meaning consistent; mono silhouette, counters and gaps readable at small sizes.
-- [ ] Native optical sizes 16/24/32/48 pt reviewed, plus wordmark widths 140/240 pt and lockup clear space ≥¼-symbol.
-- [ ] Actual role/theme contrast, transparency, clear space and intrinsic vector/PDF bounds verified.
-- [ ] Each named PNG dimension checked with `sips` only after delivery; native catalog import settings verified only after approval.
-- [ ] User explicitly approves named exact files/variants and the review sheets. AppIcon selection requires separate explicit approval.
-- [ ] Actual approval time/reference and SHA-256 of **each approved master/export** recorded in the manifest after approval. A hash is byte identity, not approval; any changed byte invalidates its approval.
-- [ ] Exact public callsite allowlist recorded after approval; currently empty.
-- [ ] Before/after S1.3, historical tracked brand/catalog files compared with planning baseline `7ab3e657` and old-family hashes remain identical. Only new approved files are eligible.
+### Native vector exports
 
-## Infrastructure mapping
+- `exports/symbol-light.pdf`
+- `exports/symbol-dark.pdf`
+- `exports/symbol-mono.pdf`
+- `exports/symbol-negative.pdf`
+- `exports/wordmark-light.pdf`
+- `exports/wordmark-dark.pdf`
 
-Optional enum resources: `PerformeAISymbolLightV1`, `PerformeAISymbolDarkV1`, `PerformeAISymbolMonoV1`, `PerformeAISymbolNegativeV1`, `PerformeAIWordmarkLightV1`, `PerformeAIWordmarkDarkV1`, `PerformeAILockupV1`.
+### Splash review exports
 
-No resource currently exists or is selected. Public fallback remains the existing textual “Performe AI”. Manifest remains `pending`, with empty `approvedFiles` and `publicCallsites`; no invented authors, licenses, hashes, dates or approval records. Missing final assets do not block the separately authorized Flow/Auth work. S1.3 remains outside Batch 2.
+- `exports/splash-review-compact.png`
+- `exports/splash-review-standard.png`
+- `exports/splash-review-large.png`
+
+Review the compact 375×667 pt, standard 393×852 pt and large 430×932 pt
+compositions at @2x or @3x with the scale recorded. Native integration must use
+separate approved vector symbol/wordmark assets, never a screen-sized raster.
+
+### AppIcon candidates
+
+- `exports/appicon-default-1024.png`
+- `exports/appicon-dark-1024.png`
+- `exports/appicon-tinted-1024.png` — conditional on verified pipeline support
+  and separate explicit approval.
+
+Each AppIcon candidate must be an opaque 1024×1024 square with no baked corner
+mask, text or UI chrome. Keep the central optical zone deliberate and review the
+actual Home Screen result; delivery does not select the icon.
+
+## File-level review requirements
+
+- [ ] Author/source, version and creation tool recorded for every delivered file.
+- [ ] Ownership, artwork rights and font licenses verified; no assumed license.
+- [ ] Export settings, color space, pixel scale and transparency recorded.
+- [ ] Symbol compared beside the historical B and confirmed visually distinct.
+- [ ] Light/dark/mono/negative variants preserve geometry and meaning.
+- [ ] Symbol silhouette, counters and gaps remain readable at 16/24/32/48 pt.
+- [ ] Wordmark is exactly “Performe AI”, with intrinsic bounds and no stretching.
+- [ ] Lockup clear space is at least one quarter of the symbol; canvas bounds do
+  not force the artwork into an artificial ratio.
+- [ ] PDF/SVG intrinsic bounds, transparency and theme contrast are verified.
+- [ ] PNG dimensions are checked after delivery; AppIcon candidates are reviewed
+  without a baked mask or text.
+- [ ] Compact, standard and large Splash compositions are reviewed with no
+  artificial launch delay and no screen-sized raster integration.
+- [ ] The user explicitly approves each accepted filename and variant. AppIcon
+  approval is separate from symbol/wordmark approval.
+- [ ] SHA-256 is recorded only after explicit approval. A changed byte invalidates
+  that file's previous approval.
+- [ ] Exact public callsites are allowlisted only after file approval.
+- [ ] Historical tracked brand/catalog bytes remain unchanged unless a later,
+  separately authorized migration names the exact file.
+
+## Current optional infrastructure mapping
+
+The app can currently resolve these optional resource names:
+
+- `PerformeAISymbolLightV1`
+- `PerformeAISymbolDarkV1`
+- `PerformeAISymbolMonoV1`
+- `PerformeAISymbolNegativeV1`
+- `PerformeAIWordmarkLightV1`
+- `PerformeAIWordmarkDarkV1`
+- `PerformeAILockupV1`
+
+This is an existing compatibility surface, not approval and not a complete
+mapping for every pending master. Any additional catalog mapping must be proposed
+and reviewed during P1; it must not be invented in this documentation phase.
+Until then, the public fallback remains textual “Performe AI”.
+
+## Approval record policy
+
+`manifest.json` is the machine-readable checklist. While approval is pending:
+
+- `approvalStatus` stays `pending`;
+- `approvedFiles` stays empty;
+- `publicCallsites` stays empty;
+- no author, license, date, hash or approval reference is fabricated.
+
+Final branded Splash, Welcome, shell/Profile identity and the authoritative
+eight-screen showcase remain blocked by this gate. Product polish that does not
+consume brand bytes may be prepared separately, but the Roberto evaluation
+candidate cannot pass final readiness until the applicable files are approved,
+integrated and reverified.

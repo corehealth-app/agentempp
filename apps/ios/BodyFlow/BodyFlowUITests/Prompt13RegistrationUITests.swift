@@ -373,6 +373,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
     @MainActor
     func testHydrationSuccessRefreshesTodayBeforeRoutineDetail() {
         let support = BodyFlowUITestSupport(testCase: self)
+        let viewportSupport = Prompt14UITestSupport(testCase: self)
         let app = launchAndOpenHydration(scenario: .loaded)
 
         let quick = app.buttons["registration.hydration.quick.250"]
@@ -399,9 +400,19 @@ final class Prompt13RegistrationUITests: XCTestCase {
 
         let routine = app.buttons["routine.supplement-1"]
         XCTAssertTrue(routine.waitForExistence(timeout: 5))
-        reveal(routine, in: app)
+        let flow = app.buttons["today.flow-chat"]
+        XCTAssertTrue(flow.exists)
+        _ = viewportSupport.revealFully(
+            routine,
+            in: app.scrollViews.firstMatch,
+            within: app.windows.firstMatch,
+            below: [app.navigationBars.firstMatch, flow].filter(\.exists),
+            above: app.tabBars.firstMatch
+        )
         XCTAssertTrue(routine.isHittable)
+        XCTAssertGreaterThanOrEqual(routine.frame.minY, flow.frame.maxY)
         routine.tap()
+        XCTAssertFalse(element("screen.flow-chat", in: app).exists)
         XCTAssertTrue(
             app.buttons["routine.action.snoozed"]
                 .waitForExistence(timeout: 5)
@@ -586,14 +597,4 @@ final class Prompt13RegistrationUITests: XCTestCase {
         app.descendants(matching: .any)[identifier]
     }
 
-    @MainActor
-    private func reveal(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        attempts: Int = 6
-    ) {
-        for _ in 0..<attempts where !element.isHittable {
-            app.swipeUp()
-        }
-    }
 }

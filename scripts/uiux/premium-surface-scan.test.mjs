@@ -1,0 +1,246 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+import { scanSurface } from "./premium-surface-scan.mjs";
+
+const catalogPath = path.join(
+  "apps", "ios", "BodyFlow", "BodyFlow", "Resources", "Localizable.xcstrings",
+);
+const assetsPath = path.join(
+  "apps", "ios", "BodyFlow", "BodyFlow", "Resources", "Assets.xcassets",
+);
+
+function plist(entries) {
+  const body = Object.entries(entries)
+    .map(([key, value]) => `  <key>${key}</key>\n  <string>${value}</string>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>\n${body}\n</dict></plist>\n`;
+}
+
+function catalog(overrides = {}) {
+  const values = {
+    "product.name": { pt: "Performe AI", en: "Performe AI" },
+    "assistant.name": { pt: "Flow", en: "Flow" },
+    "welcome.message": { pt: "Bem-vindo", en: "Welcome" },
+    ...overrides,
+  };
+  return {
+    sourceLanguage: "pt-BR",
+    strings: Object.fromEntries(Object.entries(values).map(([key, value]) => [
+      key,
+      {
+        localizations: {
+          "pt-BR": { stringUnit: { state: "translated", value: value.pt } },
+          en: { stringUnit: { state: "translated", value: value.en } },
+        },
+      },
+    ])),
+    version: "1.0",
+  };
+}
+
+function writeCompiledStrings(appPath, sourceCatalog) {
+  for (const language of ["pt-BR", "en"]) {
+    const values = Object.fromEntries(
+      Object.entries(sourceCatalog.strings).map(([key, entry]) => [
+        key,
+        entry.localizations[language].stringUnit.value,
+      ]),
+    );
+    const directory = path.join(appPath, `${language}.lproj`);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, "Localizable.strings"), plist(values));
+  }
+}
+
+function createFixture(t) {
+  const root = mkdtempSync(path.join(tmpdir(), "premium-surface-scan-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const sourceCatalog = catalog();
+  const absoluteCatalog = path.join(root, catalogPath);
+  mkdirSync(path.dirname(absoluteCatalog), { recursive: true });
+  writeFileSync(absoluteCatalog, JSON.stringify(sourceCatalog));
+
+  const historicalAsset = path.join(root, assetsPath, "Historical.imageset", "historical.svg");
+  mkdirSync(path.dirname(historicalAsset), { recursive: true });
+  writeFileSync(historicalAsset, "historical-brand-bytes");
+  writeFileSync(
+    path.join(path.dirname(historicalAsset), "Contents.json"),
+    JSON.stringify({ images: [{ filename: "historical.svg", idiom: "universal" }], info: { version: 1, author: "xcode" } }),
+  );
+
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  execFileSync("git", ["config", "user.name", "QA"], { cwd: root });
+  execFileSync("git", ["config", "user.email", "qa@example.invalid"], { cwd: root });
+  execFileSync("git", ["add", "."], { cwd: root });
+  execFileSync("git", ["commit", "-qm", "fixture baseline"], { cwd: root });
+  const baseline = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+
+  const appPath = path.join(root, "Build", "Performe AI.app");
+  mkdirSync(appPath, { recursive: true });
+  writeFileSync(path.join(appPath, "Info.plist"), plist({
+    CFBundleIdentifier: "com.bodyflow.app",
+    CFBundleDisplayName: "Performe AI",
+    CFBundleName: "Performe AI",
+    CFBundleExecutable: "PerformeAI",
+  }));
+  writeCompiledStrings(appPath, sourceCatalog);
+  writeFileSync(path.join(appPath, "Assets.car"), "compiled-historical-assets");
+  writeFileSync(path.join(appPath, "PerformeAI"), "com.bodyflow.app\0BodyFlow\0Performe AI\0Flow\0");
+
+  return {
+    root,
+    appPath,
+    baseline,
+    historicalAsset,
+    sourceCatalog,
+    compiledAssetNames: ["Historical"],
+  };
+}
+
+function run(fixture, overrides = {}) {
+  return scanSurface({
+    appPath: fixture.appPath,
+    repoRoot: fixture.root,
+    baseline: fixture.baseline,
+    compiledAssetNames: fixture.compiledAssetNames,
+    ...overrides,
+  });
+}
+
+test("accepts approved public identity and explicitly allowlisted technical BodyFlow", (t) => {
+  const fixture = createFixture(t);
+  const result = run(fixture);
+  assert.equal(result.status, "PASS");
+  assert.equal(result.classifications.PUBLIC_LEAK, 0);
+  assert.ok(result.classifications.ALLOWED_TECHNICAL > 0);
+  assert.equal(result.brandAssetApprovalGate, "PENDING_EXTERNAL_ASSETS");
+});
+
+for (const legacy of [
+  "Uso do BodyFlow",
+  "BodyFlow",
+  "Dr. Roberto",
+  "Dr Robert",
+  "MPP",
+]) {
+  test(`rejects public legacy copy: ${legacy}`, (t) => {
+    const fixture = createFixture(t);
+    const badCatalog = catalog({ legacy: { pt: legacy, en: legacy } });
+    writeFileSync(path.join(fixture.root, catalogPath), JSON.stringify(badCatalog));
+    writeCompiledStrings(fixture.appPath, badCatalog);
+    const result = run(fixture);
+    assert.equal(result.status, "FAIL");
+    assert.ok(result.failures.some((failure) => failure.code === "PUBLIC_LEGACY_COPY"));
+  });
+}
+
+test("rejects a new unapproved asset", (t) => {
+  const fixture = createFixture(t);
+  const added = path.join(fixture.root, assetsPath, "PerformeFinal.imageset");
+  mkdirSync(added, { recursive: true });
+  writeFileSync(path.join(added, "Contents.json"), "{}");
+  writeFileSync(path.join(added, "performe-final.svg"), "unapproved-new-bytes");
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "UNAPPROVED_NEW_ASSET"));
+});
+
+test("rejects modified historical asset bytes", (t) => {
+  const fixture = createFixture(t);
+  writeFileSync(fixture.historicalAsset, "modified-historical-brand-bytes");
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "HISTORICAL_ASSET_CHANGED"));
+});
+
+test("rejects a nonempty Assets.car without the named historical resource", (t) => {
+  const fixture = createFixture(t);
+  const result = run(fixture, { compiledAssetNames: [] });
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "MISSING_COMPILED_NAMED_ASSET"));
+});
+
+test("rejects a public BodyFlow literal outside the localization catalog", (t) => {
+  const fixture = createFixture(t);
+  const source = path.join(
+    fixture.root,
+    "apps", "ios", "BodyFlow", "BodyFlow", "Features", "PublicLeak.swift",
+  );
+  mkdirSync(path.dirname(source), { recursive: true });
+  writeFileSync(source, 'import SwiftUI\nstruct PublicLeak: View { var body: some View { Text("BodyFlow secret-canary") } }\n');
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  const failure = result.failures.find((candidate) => candidate.code === "PUBLIC_LEGACY_SOURCE_COPY");
+  assert.ok(failure);
+  assert.deepEqual(Object.keys(failure).sort(), ["code", "path"]);
+  assert.doesNotMatch(JSON.stringify(result), /secret-canary/);
+});
+
+test("rejects a missing catalog language", (t) => {
+  const fixture = createFixture(t);
+  const invalid = catalog();
+  delete invalid.strings["welcome.message"].localizations.en;
+  writeFileSync(path.join(fixture.root, catalogPath), JSON.stringify(invalid));
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "MISSING_LOCALIZATION"));
+});
+
+test("rejects a Debug Flow fixture marker in the Release bundle", (t) => {
+  const fixture = createFixture(t);
+  writeFileSync(path.join(fixture.appPath, "PerformeAI"), "--ui-testing-flow-longHistory\0QA_REPLY_VISIBLE\0");
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "DEBUG_FIXTURE_IN_RELEASE"));
+});
+
+test("fails closed for a missing app path", (t) => {
+  const fixture = createFixture(t);
+  fixture.appPath = path.join(fixture.root, "missing.app");
+  assert.throws(() => run(fixture), /app path/i);
+});
+
+test("CLI returns sanitized JSON and a nonzero status for invalid input", (t) => {
+  const fixture = createFixture(t);
+  const script = fileURLToPath(new URL("./premium-surface-scan.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [
+    script,
+    "--app", path.join(fixture.root, "missing.app"),
+    "--baseline", fixture.baseline,
+  ], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, "");
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.status, "FAIL");
+  assert.deepEqual(Object.keys(output).sort(), ["failures", "schemaVersion", "status"]);
+  assert.equal(output.failures[0].code, "INPUT_OR_SCAN_ERROR");
+  assert.match(output.failures[0].detail, /app path/i);
+});
+
+test("fails closed for an invalid catalog", (t) => {
+  const fixture = createFixture(t);
+  writeFileSync(path.join(fixture.root, catalogPath), "not-json");
+  assert.throws(() => run(fixture), /catalog/i);
+});
+
+test("an empty compiled scan cannot succeed", (t) => {
+  const fixture = createFixture(t);
+  rmSync(fixture.appPath, { recursive: true, force: true });
+  mkdirSync(fixture.appPath, { recursive: true });
+  writeFileSync(path.join(fixture.appPath, "Info.plist"), plist({
+    CFBundleIdentifier: "com.bodyflow.app",
+    CFBundleDisplayName: "Performe AI",
+    CFBundleExecutable: "PerformeAI",
+  }));
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "EMPTY_COMPILED_SCAN"));
+});

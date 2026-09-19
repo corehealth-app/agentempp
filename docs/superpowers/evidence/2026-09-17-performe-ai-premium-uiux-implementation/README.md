@@ -1368,3 +1368,150 @@ The authorized local commit subject is
 tree are reported after commit without rewriting this evidence. No push, PR,
 merge, deployment, staging, Production, Supabase, Vercel, OpenRouter, CI-3,
 TestFlight or App Store operation occurred. Slice 10 was not started.
+
+## Slice 10 — final local QA and visual regression gates
+
+Executed locally on 2026-09-19 from `ab9ebd05b20c2041453f43a411543a7f83b0d8f4`
+(parent `95de376396821d4581f9780fc4d3ee7de73e30b0`, tree
+`b57074908a1e7836495d411f8556bc5a264a802a`) on the existing
+`codex/performe-ai-client-beta-flow-v1` worktree. Evidence artifacts are retained
+under `/Users/eduardohenrique/.local/share/performe-ai/premium-uiux/slice10.bqfdGN`.
+The iPhone 17 Pro / iOS 26.5 Simulator
+`27291590-659D-4A29-8F45-CA5CA2D154F9` was reused serially. No provider,
+remote environment, paid resource, real user or real completion was used.
+
+### Preserved attempt chronology
+
+- **S10 attempt 1 — three owner regressions:** the first full QA exposed Profile
+  heading contrast, mascot accessibility coverage and a stale registration QA
+  contract. The exact remediations are preserved in commits `6619c7b`,
+  `95de376` and `25a8d5b`; original RED bundles and exports remain under the
+  Slice 10 artifact root.
+- **S10 attempt 2 — routine navigation:** a deterministic routine-detail
+  navigation failure after refresh was reproduced, fixed and independently
+  gated in `ab9ebd0`; the diagnostic RED, three isolated GREEN runs, owner
+  suites, Release and analyze bundles remain preserved.
+- **S10 attempt 3 — full-regression Flow/Auth blockers:** the complete UI run
+  recorded a roughly 902-second XCTest animation-idle stall before Flow's
+  `flow.composer` tap and the same stall between the successful Auth password
+  tap and predicate evaluation. The hierarchy already showed a real, enabled,
+  hittable input with expected geometry; Flow additionally showed focus and the
+  keyboard after the timeout. The identical WebKit diagnostic also appears in
+  passing runs and is not the cause.
+- **S10 attempt 4 — final post-diagnostic QA:** both failures were reproduced
+  without source edits, instrumented at the semantic pre-tap boundary and then
+  passed repeatedly and in the complete suite. Temporary diagnostic
+  instrumentation was removed before all final gates.
+
+### Flow/Auth root cause and no-change remediation
+
+- `FLOW_ROOT_CAUSE = XCTEST_ANIMATION_IDLE_STALL`.
+- `AUTH_ROOT_CAUSE = XCTEST_ANIMATION_IDLE_STALL`.
+- The pre-edit isolated tests passed on the unchanged product and test source.
+  The focused Flow context check first captured the suite-level stall condition;
+  pre-tap diagnostics then proved the actual controls, frames, hit state and
+  keyboard/focus transition. No product/test defect remained reproducible.
+- No timeout was increased; no sleep, retry loop, fixed coordinate tap,
+  launch-argument bypass, artificial overlay suppression or Debug-only focus
+  hook was added. No Flow/Auth fix commit or empty commit was created.
+- `flow-isolated-3x.xcresult`: **FLOW 3/3 PASS**, zero failures/skips.
+- `auth-isolated-3x.xcresult`: **AUTH 3/3 PASS**, zero failures/skips.
+- `flow-auth-owner-units.xcresult`: **114 distinct tests / 124 executions
+  PASS**, zero failures/skips.
+- `flow-auth-owner-ui.xcresult`: **22/22 PASS**, zero failures/skips. The
+  downstream fresh-user onboarding journey completed normally.
+- Diagnostic full regression: `full-units.xcresult` **1,206 distinct / 1,421
+  executions PASS** and `full-ui.xcresult` **151/151 PASS**, both zero
+  failures/skips/runtime warnings.
+
+### Final Slice 10 gates A–L
+
+- **A — scanner tests:** `node --test scripts/uiux/premium-surface-scan.test.mjs`
+  **16/16 PASS**. Negative fixtures cover every forbidden public identity,
+  unapproved/new or modified historical assets, missing localization, a Release
+  Debug fixture marker, a nonempty catalog missing a named compiled asset,
+  a public source literal outside the catalog, invalid CLI input and an empty
+  compiled scan. The CLI failure contract returns sanitized JSON and nonzero.
+- **B — full units:** `s10-full-units.xcresult` **1,206 distinct tests / 1,421
+  executions PASS**, zero failures/skips/expected failures/runtime warnings.
+- **C — full UI:** `s10-full-ui.xcresult` **151/151 PASS**, zero failures/skips/
+  expected failures/runtime warnings. This includes the formerly failing Flow
+  and Auth journeys and the fresh-user onboarding journey.
+- **D/E/F — signed Release:** `s10-release.xcresult` succeeded with zero errors
+  and one inherited unnecessary-`await` warning in
+  `SessionLifecycleCoordinator.swift:209`, outside this scope.
+  `codesign --verify --deep --strict` passed; identifier is
+  `com.bodyflow.app`, display/bundle name is `Performe AI`, signing is normal
+  local ad hoc for Simulator and no additional entitlement key is present.
+- **G — compiled/public surface scanner:** **PASS** against historical baseline
+  `7ab3e65771d172ad10ee42a7ab1d4e6edba2c775`: 538 catalog keys, 1,076
+  localized values, 29 inspected public source literals, 1,076 compiled
+  localization keys, four compiled localization resources, 26,768 binary
+  candidates and zero failures. Classifications: `ALLOWED_TECHNICAL=213`,
+  `PUBLIC_LEAK=0`, `DEBUG_ONLY=0`; all 18 historical asset files remain
+  byte-identical. `assetutil` metadata confirms all eight expected named resources
+  in the compiled asset catalog, rather than accepting a merely nonempty car.
+- **H — analyze:** `s10-analyze.xcresult` succeeded with zero errors, compiler
+  warnings and analyzer warnings.
+- **I — Release smoke:** the first install attempt stopped before mutation with
+  Simulator `SimError 405` because the authorized device was shutdown. The same
+  device was booted and the single environment-only retry installed and launched
+  the signed Release (`pid 1493`). `release-smoke.png` shows public `Performe AI`
+  and `Entrar`; the unavailable operation fails closed. No credentials, account,
+  network or provider were used.
+- **J — performance:** `s10-performance-final.xcresult` **4/4 PASS**, five
+  measurements each. Observed means: launch 0.749 s; Library scroll 1.494 s;
+  Flow 50-message history 6.532 s; long plain response 5.492 s. Mean peak memory
+  was approximately 43.49 MB for Flow 50, 46.24 MB for the long response and
+  46.33 MB for Library. These figures are **BASELINE ONLY**; no retroactive SLA,
+  threshold or performance optimization was introduced.
+- **K — visual matrix:** final attachments are exported under
+  `<artifact-root>/s10-visual-attachments`. Representative native captures were
+  inspected for all five tabs, Flow light/dark at Accessibility XXXL, Auth/
+  onboarding English at Accessibility XXXL, content detail, Progress and mascot,
+  plus the signed Release smoke. No blocking overlap, clipped interactive
+  control, public legacy identity or hierarchy loss was observed; oversized
+  layouts remained scrollable.
+- **L — reviews:** structured self-review of Flow focus, Auth focus/keyboard,
+  complete regression, compiled/public surfaces and visual/performance scope is
+  **PASS**, Critical 0 / Important 0. The first independent review correctly
+  blocked the commit on an overbroad binary technical allowlist and missing
+  named-resource inspection of `Assets.car`. Two new Node REDs failed exactly on
+  those gaps; the scanner now checks explicit technical contexts, public SwiftUI
+  literal constructors and real `assetutil` mappings. The 16-test GREEN and
+  compiled Release scan above are the post-fix results. Final independent
+  re-review: **PASS**, Critical 0 / Important 0. It verified the narrowed
+  allowlist, 8/8 compiled named resources, sanitized source-scan/CLI failures,
+  current README numbers and exact four-file scope. Residual nonblocking limits:
+  the selected public-constructor scan is not a complete Swift parser; Flow 50
+  is composed from the unit-covered 40-message seed plus five local exchanges;
+  and interactive VoiceOver remains separately not fully verified below.
+
+### Scope, accessibility and closeout boundaries
+
+The only new Slice 10 source artifacts are
+`BodyFlowUITests/PremiumPerformanceUITests.swift`,
+`scripts/uiux/premium-surface-scan.mjs` and
+`scripts/uiux/premium-surface-scan.test.mjs`, plus this evidence appendix. The
+performance suite exercises local deterministic fixtures and records metrics
+without thresholds. The scanner uses argument-array process execution, fails
+closed, emits no secret material and separates permitted technical `BodyFlow`
+identifiers from forbidden public copy. No production Swift, asset, target,
+project file, dependency, backend, API, signing configuration or entitlement
+changed.
+
+Native accessibility semantics, labels, hierarchy, targets, keyboard/focus,
+Dynamic Type and adaptive-state automation are covered by the complete passing
+suite and inspected captures. Interactive VoiceOver focus/rotor narration is
+**NOT FULLY VERIFIED** because the available simulator automation does not expose
+that driver; this is not represented as a manual VoiceOver certification.
+
+The authorized final local subject is
+`test(ui): complete Performe AI visual regression gates`, with parent
+`ab9ebd05b20c2041453f43a411543a7f83b0d8f4`. The resulting SHA and final clean
+worktree/index are reported after commit without amending this evidence. No push,
+PR, merge, deploy, staging, Production, Supabase, Vercel, OpenRouter, CI-3,
+TestFlight or App Store operation occurred. Real completions: 0. Remote resources
+altered: NONE. `BRAND_ASSET_APPROVAL_GATE` remains
+**PENDING_EXTERNAL_ASSETS**; logo direction is approved while final logo/AppIcon
+bytes remain pending and were not integrated.

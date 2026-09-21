@@ -2,9 +2,299 @@
   "schemaVersion": 1,
   "family": "performe-ai-public-v1",
   "direction": "B2 — Warm Performance",
-  "approvalStatus": "pending",
-  "approvedFiles": [],
-  "publicCallsites": [],
+  "approvalStatus": "approved",
+  "approvedFiles": [
+    {
+      "path": "exports/appicon-dark-1024.png",
+      "sha256": "0c67f65d5b65d63ae68ed83a27b0ec1d5238bc87c09467856a6623f35a312b1a",
+      "sizeBytes": 110733,
+      "role": "separately_approved_native_appicon",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/appicon-default-1024.png",
+      "sha256": "be9548b4cd8a528415456c879e6d0bf5c81dbe2fb9210a63c4888f32c9c20b6d",
+      "sizeBytes": 116754,
+      "role": "separately_approved_native_appicon",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/lockup-dark-1600x400.png",
+      "sha256": "e30eb4d48a0c5b5f0a9244afba5fd5fd927d38f78c6c2b32f82308369ae52742",
+      "sizeBytes": 33718,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-dark.pdf",
+      "sha256": "49b127deef417c47b02fe9f3e76986dbcbd528a12004035f38dcc623a3e7eac4",
+      "sizeBytes": 7015,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-light-1600x400.png",
+      "sha256": "23d65e5efc285c6c7173391b95eb283408bedbd9b927d7dbe2d255d0e1a89ae0",
+      "sizeBytes": 31523,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-light.pdf",
+      "sha256": "095a1c9e1befb2c257c12da911312b363bf15fe6ff7775144a743d3bb97eab92",
+      "sizeBytes": 6979,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-mono-1600x400.png",
+      "sha256": "5382cafd0e4d7fb7aed2c2e2e066d7d66d0574ca75763327a69ec86171a9af17",
+      "sizeBytes": 19341,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-mono.pdf",
+      "sha256": "38bf8e0c2843b8f4fdd2ecadcd020f91528a59bceba9738f1371482cf750b8a7",
+      "sizeBytes": 2820,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-negative-1600x400.png",
+      "sha256": "fc6d7e985e3b7bca2f9f0bca6d1680311b4d3bc7e94bc4edeb0eb567fc8533a5",
+      "sizeBytes": 16119,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/lockup-negative.pdf",
+      "sha256": "ebb62bd07b36a4b141aabfc920bcaa2b81f5dfd9e69ac206eb85713d77addec0",
+      "sizeBytes": 2817,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/splash-review-compact.png",
+      "sha256": "47e4dbeb90ecbacf7d6532f9d4063920692350662cfbac8f49c5efdf7521f2ec",
+      "sizeBytes": 28622,
+      "role": "approved_composition_reference_only_not_runtime_ui",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/splash-review-large.png",
+      "sha256": "fb7bb60b9042b3fc4ebbc0f263ac22318afb5b13ce0f8ff1395c58194346b2c3",
+      "sizeBytes": 31412,
+      "role": "approved_composition_reference_only_not_runtime_ui",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/splash-review-standard.png",
+      "sha256": "42e977ffe991a882a237a9adc3e766f60a4644ec0d12bc9376e67f005ca1d84c",
+      "sizeBytes": 48157,
+      "role": "approved_composition_reference_only_not_runtime_ui",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/symbol-dark-1024.png",
+      "sha256": "57e36fe3d634c4ab6e8916e79d7189f0e6d1f88a4f41b27fcc88b8abe657ee1f",
+      "sizeBytes": 115179,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/symbol-dark.pdf",
+      "sha256": "0196684f54d73c1ccbf7a7a2b3c74149274c63f99892e27daa6913cedf20ae0d",
+      "sizeBytes": 5648,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/symbol-light-1024.png",
+      "sha256": "4ec768555edb0ef2ea059377fc294769eb13d14ed2a00bc5ba102b0723487ca9",
+      "sizeBytes": 105963,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/symbol-light.pdf",
+      "sha256": "c663ef760371f536403009391acd43daac156df178f189dd40cf2ef30ebaa4ba",
+      "sizeBytes": 5620,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/symbol-mono-1024.png",
+      "sha256": "d954e718ad22a488e22ef9ffdbbb0178a1af82a1cb613e8211e5b195cb2ea636",
+      "sizeBytes": 34025,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/symbol-mono.pdf",
+      "sha256": "a3dadf015280374d345bc0abedb787408e41fc60fcef2a2ee096450c9e779f95",
+      "sizeBytes": 1496,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/symbol-negative-1024.png",
+      "sha256": "454a831b6a096acafae57233ac6517b45e5513d955c0d2873575d6f4cc9dcfc3",
+      "sizeBytes": 29767,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/symbol-negative.pdf",
+      "sha256": "3ce3d2cc3bba580f18ac7309da8a9738ae04fb7c69d272cf7c099a7d2cc17294",
+      "sizeBytes": 1491,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/wordmark-dark-1600.png",
+      "sha256": "94306bc6aff007884dba6c9474919ece37410c523fdf0696153d459957dc25c3",
+      "sizeBytes": 32490,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/wordmark-dark.pdf",
+      "sha256": "762832a8ad07054b275f42e7253a8da0a7eaa786c409ba978a275a8335b8934d",
+      "sizeBytes": 2386,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/wordmark-light-1600.png",
+      "sha256": "86ab5374dc4ba2d34bbd95c1695fefd6c4e7a468f5974e5a920f6eb2c417dd07",
+      "sizeBytes": 29113,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/wordmark-light.pdf",
+      "sha256": "d53f394ea009e7350cd4bc3c625412ccff09b535c7baba6c48be444d91b79d34",
+      "sizeBytes": 2373,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "exports/wordmark-mono-1600.png",
+      "sha256": "dbc3b95bed415c1287ac8111d2a1d5cbf4839a8f886d55d0860e4442e992868c",
+      "sizeBytes": 28755,
+      "role": "approved_support_export_archive_or_review",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "exports/wordmark-mono.pdf",
+      "sha256": "41d4a31696b8a2dedca64c992d2ba0123a7d4e2e82cb0764005270154e358f9c",
+      "sizeBytes": 2359,
+      "role": "approved_vector_export_native_integration_when_mapped",
+      "mandatoryDeliverable": false
+    },
+    {
+      "path": "masters/lockup-dark.svg",
+      "sha256": "ce6d694098181c979ac11766ce07ec26b0956737106df54ba088f07eb661ea54",
+      "sizeBytes": 9943,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/lockup-light.svg",
+      "sha256": "8e41f69ab0297f771def71a31f0acaebefc6be7f16e11bd5832832647ec74063",
+      "sizeBytes": 9954,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/lockup-mono.svg",
+      "sha256": "5c6167ac6132572e36ca2154fc5e01d1634a470615e649dede4dab7837c148af",
+      "sizeBytes": 8084,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/lockup-negative.svg",
+      "sha256": "34be4fb158f0970f928abe50323dd6aa340fc6b57f62adcd0c672388679ca4ea",
+      "sizeBytes": 8088,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/symbol-dark.svg",
+      "sha256": "5d0162fba13c500e804b9c6b0510971892cb4e21e337a41a24a2aac76f115d0e",
+      "sizeBytes": 2834,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/symbol-light.svg",
+      "sha256": "53e359787682213487fdf8c9f116bf62b317f9d776f171e66524642fd61e9bd0",
+      "sizeBytes": 2845,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/symbol-mono.svg",
+      "sha256": "a63bedb1b700cdb2f7aef617d1c0490ed075e0cf2cd4620a268ddd8a0bfd5d55",
+      "sizeBytes": 975,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/symbol-negative.svg",
+      "sha256": "7ca4202173006a7dccbe6c3c3f74ef36f7edbc4b738b2d2cca6375fcb9da1ffc",
+      "sizeBytes": 979,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/wordmark-dark.svg",
+      "sha256": "2b9917d57ecb523549379be5e0d012997bbbb79f3c542f9ce29654fb3732744b",
+      "sizeBytes": 7338,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/wordmark-light.svg",
+      "sha256": "808f8c7e1182b622c1a4719bed67dcc2f59fe534a0939de8035a08c275875c72",
+      "sizeBytes": 7339,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    },
+    {
+      "path": "masters/wordmark-mono.svg",
+      "sha256": "d3f3fde9eea829889fecee9d7d3c7ea64cedbfffb84f6a6c80d8c2492adf9622",
+      "sizeBytes": 7338,
+      "role": "approved_vector_master_archive",
+      "mandatoryDeliverable": true
+    }
+  ],
+  "publicCallsites": [
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/DesignSystem/Components/ScreenStateView.swift",
+      "resourceNames": [
+        "PerformeAISymbolLightV1",
+        "PerformeAISymbolDarkV1"
+      ],
+      "role": "shared public brand identity"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow/Features/Auth/SplashView.swift",
+      "resourceNames": [
+        "PerformeAISymbolNegativeV1"
+      ],
+      "role": "native splash composition"
+    },
+    {
+      "path": "apps/ios/BodyFlow/BodyFlow.xcodeproj/project.pbxproj",
+      "resourceNames": [
+        "PerformeAIAppIconV1"
+      ],
+      "role": "application icon selection"
+    }
+  ],
   "requiredDeliverables": [
     "masters/symbol-light.svg",
     "masters/symbol-dark.svg",
@@ -42,5 +332,133 @@
     "Obtain explicit user approval for each exact filename and variant",
     "Record SHA-256 only after approval and invalidate approval after any byte change",
     "Allowlist exact public callsites only after file approval"
+  ],
+  "source": {
+    "concept": "Concept 3 — Signal Spark",
+    "packageFilename": "Performe_AI_Signal_Spark_Assets_RC1.zip",
+    "packageSha256": "272f633bb7e58a2ae9afce20031e012d750117135919aebc910e8cd897d803dc",
+    "deliveryManifestSha256": "8035cff91dca56a3b7d1fa574b1014cbbb645395475900e05d98095f00d9fdeb",
+    "originalDeliveryPreservedAt": "delivery/rc1/"
+  },
+  "approval": {
+    "recordType": "PERFORME_AI_SIGNAL_SPARK_RC1_CONVERSATION_APPROVAL_V1",
+    "status": "APPROVED_FOR_LISTED_FILES_AND_INTENDED_ROLES",
+    "reference": "approvals/rc1-user-approval.json",
+    "nature": "Operational transcript-based approval record; not a digital signature or legal opinion.",
+    "preciseApprovalTimestamp": null,
+    "recordedDate": "2026-09-19"
+  },
+  "catalogAssets": [
+    {
+      "resourceName": "PerformeAISymbolLightV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAISymbolLightV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/symbol-light.pdf",
+          "catalogFilename": "symbol-light.pdf",
+          "sha256": "c663ef760371f536403009391acd43daac156df178f189dd40cf2ef30ebaa4ba"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAISymbolDarkV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAISymbolDarkV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/symbol-dark.pdf",
+          "catalogFilename": "symbol-dark.pdf",
+          "sha256": "0196684f54d73c1ccbf7a7a2b3c74149274c63f99892e27daa6913cedf20ae0d"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAISymbolMonoV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAISymbolMonoV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/symbol-mono.pdf",
+          "catalogFilename": "symbol-mono.pdf",
+          "sha256": "a3dadf015280374d345bc0abedb787408e41fc60fcef2a2ee096450c9e779f95"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAISymbolNegativeV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAISymbolNegativeV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/symbol-negative.pdf",
+          "catalogFilename": "symbol-negative.pdf",
+          "sha256": "3ce3d2cc3bba580f18ac7309da8a9738ae04fb7c69d272cf7c099a7d2cc17294"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAIWordmarkLightV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAIWordmarkLightV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/wordmark-light.pdf",
+          "catalogFilename": "wordmark-light.pdf",
+          "sha256": "d53f394ea009e7350cd4bc3c625412ccff09b535c7baba6c48be444d91b79d34"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAIWordmarkDarkV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAIWordmarkDarkV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/wordmark-dark.pdf",
+          "catalogFilename": "wordmark-dark.pdf",
+          "sha256": "762832a8ad07054b275f42e7253a8da0a7eaa786c409ba978a275a8335b8934d"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAILockupV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAILockupV1.imageset",
+      "files": [
+        {
+          "sourcePath": "exports/lockup-light.pdf",
+          "catalogFilename": "lockup-light.pdf",
+          "sha256": "095a1c9e1befb2c257c12da911312b363bf15fe6ff7775144a743d3bb97eab92",
+          "appearance": "default"
+        },
+        {
+          "sourcePath": "exports/lockup-dark.pdf",
+          "catalogFilename": "lockup-dark.pdf",
+          "sha256": "49b127deef417c47b02fe9f3e76986dbcbd528a12004035f38dcc623a3e7eac4",
+          "appearance": "dark"
+        }
+      ]
+    },
+    {
+      "resourceName": "PerformeAIAppIconV1",
+      "catalogPath": "apps/ios/BodyFlow/BodyFlow/Resources/Assets.xcassets/PerformeAIAppIconV1.appiconset",
+      "files": [
+        {
+          "sourcePath": "exports/appicon-default-1024.png",
+          "catalogFilename": "appicon-default-1024.png",
+          "sha256": "be9548b4cd8a528415456c879e6d0bf5c81dbe2fb9210a63c4888f32c9c20b6d",
+          "appearance": "default"
+        },
+        {
+          "sourcePath": "exports/appicon-dark-1024.png",
+          "catalogFilename": "appicon-dark-1024.png",
+          "sha256": "0c67f65d5b65d63ae68ed83a27b0ec1d5238bc87c09467856a6623f35a312b1a",
+          "appearance": "dark"
+        }
+      ]
+    }
+  ],
+  "pendingFiles": [
+    {
+      "path": "exports/appicon-tinted-1024.png",
+      "sha256": "02ea881ba51655d4c7404b01d29ce36c0f9b5567136d87dee5e0eeec72360e45",
+      "approvalStatus": "PENDING_SUPPORT_AND_SEPARATE_APPROVAL",
+      "imported": false,
+      "selected": false
+    }
   ]
 }

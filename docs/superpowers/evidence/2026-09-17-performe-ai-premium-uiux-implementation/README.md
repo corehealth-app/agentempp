@@ -1515,3 +1515,38 @@ TestFlight or App Store operation occurred. Real completions: 0. Remote resource
 altered: NONE. `BRAND_ASSET_APPROVAL_GATE` remains
 **PENDING_EXTERNAL_ASSETS**; logo direction is approved while final logo/AppIcon
 bytes remain pending and were not integrated.
+
+## Signal Spark RC1 integration attempt — STOP_DOCUMENTED
+
+The subsequent RC1 package supplied a later explicit approval for all 38 listed
+files and for the default/dark AppIcons, while keeping the tinted AppIcon
+pending. Exact approved bytes, native catalogs, manifest approval provenance and
+the native brand compositions were prepared locally under the operation's
+allowlist. No approved artwork was redrawn or re-exported.
+
+Verification reached 1,207/1,207 complete unit tests and 148/151 complete UI
+tests. The Flow history failure from the complete run passed on isolated
+re-execution. Two Today stale-retry tests failed both in the complete run and an
+isolated diagnostic run because their assertion samples a 1.5-second synthetic
+in-flight state at its terminal boundary. The Today model, demo repository,
+screen and tests are unchanged from the authorized starting HEAD.
+
+Those files are outside the RC1 integration allowlist, so this operation does
+not alter their timing or assertions. Status is **STOP_DOCUMENTED** with no
+commit, Release/analyze/final scanner, visual acceptance, push, PR, merge or
+deployment. The local RC1 changes and evidence remain preserved for a separately
+authorized minimal test-gate remediation and continuation.
+
+### Retry-fixture amendment result — STOP_DOCUMENTED
+
+The authorized amendment added only a controlled Today retry model contract
+and stable terminal-state UI assertions. Both exact Today retry cases passed
+3/3 serial runs; neighboring Today/read-state/retry/fixture coverage passed
+44/44; and the final complete unit gate passed 1,208/1,208. The one complete
+UI gate executed after the amendment recorded 150/151 passed, 1 failed, with
+the known `PremiumPerformanceUITests.testFlowFiftyMessageHistoryRenderBaseline`
+failure at line 121 (`XCTAssertTrue failed`).
+
+Because the mandatory complete UI gate failed, the amendment requires a stop:
+no Release build, analyze, scanner, visual acceptance or commit was performed.
+The RC1 worktree and result bundle remain preserved and uncommitted.

@@ -19,6 +19,8 @@ const catalogRelativePath = path.join(
 const assetsRelativePath = path.join(
   "apps", "ios", "BodyFlow", "BodyFlow", "Resources", "Assets.xcassets",
 );
+const brandFamilyRelativePath = path.join("assets", "brand", "performe-ai-public-v1");
+const brandManifestRelativePath = path.join(brandFamilyRelativePath, "manifest.json");
 const requiredLanguages = ["pt-BR", "en"];
 const debugFixtureMarkers = [
   "--ui-testing-flow-",
@@ -111,6 +113,87 @@ function listBaselineAssets(repoRoot, baseline) {
   }
 }
 
+function inspectApprovedBrandCatalog({ repoRoot, failures }) {
+  const manifestPath = path.join(repoRoot, brandManifestRelativePath);
+  if (!existsSync(manifestPath)) {
+    return { gate: "PENDING_EXTERNAL_ASSETS", allowedFiles: new Map() };
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    failures.push({ code: "INVALID_BRAND_ASSET_MANIFEST", path: brandManifestRelativePath });
+    return { gate: "INVALID_BRAND_ASSET_MANIFEST", allowedFiles: new Map() };
+  }
+
+  if (manifest.approvalStatus !== "approved") {
+    return { gate: "PENDING_EXTERNAL_ASSETS", allowedFiles: new Map() };
+  }
+  if (
+    typeof manifest.approval?.reference !== "string"
+    || !manifest.approval.reference.startsWith("approvals/")
+    || !Array.isArray(manifest.approvedFiles)
+    || !Array.isArray(manifest.catalogAssets)
+    || manifest.catalogAssets.length === 0
+  ) {
+    failures.push({ code: "INVALID_BRAND_ASSET_MANIFEST", path: brandManifestRelativePath });
+    return { gate: "INVALID_BRAND_ASSET_MANIFEST", allowedFiles: new Map() };
+  }
+
+  const approvedHashes = new Map();
+  for (const file of manifest.approvedFiles) {
+    if (
+      typeof file?.path !== "string"
+      || !/^[a-f0-9]{64}$/.test(file?.sha256 ?? "")
+      || file.path.toLowerCase().includes("tinted")
+    ) {
+      failures.push({ code: "INVALID_BRAND_ASSET_MANIFEST", path: brandManifestRelativePath });
+      continue;
+    }
+    approvedHashes.set(file.path, file.sha256);
+    const approvedSource = path.join(repoRoot, brandFamilyRelativePath, file.path);
+    if (!existsSync(approvedSource)) {
+      failures.push({ code: "APPROVED_ASSET_SOURCE_MISSING", path: file.path });
+    } else if (sha256(readFileSync(approvedSource)) !== file.sha256) {
+      failures.push({ code: "APPROVED_ASSET_SOURCE_HASH_MISMATCH", path: file.path });
+    }
+  }
+
+  const allowedFiles = new Map();
+  for (const asset of manifest.catalogAssets) {
+    const catalogPath = asset?.catalogPath;
+    if (
+      typeof asset?.resourceName !== "string"
+      || typeof catalogPath !== "string"
+      || !catalogPath.startsWith(`${assetsRelativePath}/`)
+      || catalogPath.toLowerCase().includes("tinted")
+      || !Array.isArray(asset.files)
+      || asset.files.length === 0
+    ) {
+      failures.push({ code: "INVALID_BRAND_ASSET_MANIFEST", path: brandManifestRelativePath });
+      continue;
+    }
+
+    allowedFiles.set(`${catalogPath}/Contents.json`, null);
+    for (const file of asset.files) {
+      const approvedHash = approvedHashes.get(file?.sourcePath);
+      if (
+        typeof file?.catalogFilename !== "string"
+        || file.catalogFilename.includes("/")
+        || file.catalogFilename.toLowerCase().includes("tinted")
+        || file?.sha256 !== approvedHash
+      ) {
+        failures.push({ code: "INVALID_BRAND_ASSET_MANIFEST", path: brandManifestRelativePath });
+        continue;
+      }
+      allowedFiles.set(`${catalogPath}/${file.catalogFilename}`, file.sha256);
+    }
+  }
+
+  return { gate: "APPROVED_FOR_LISTED_RC1_FILES", allowedFiles };
+}
+
 function inspectAssets({ repoRoot, baseline, failures, classifications }) {
   const assetRoot = path.join(repoRoot, assetsRelativePath);
   if (!existsSync(assetRoot)) throw new Error("asset catalog path is missing");
@@ -122,6 +205,8 @@ function inspectAssets({ repoRoot, baseline, failures, classifications }) {
   const baselineSet = new Set(baselineFiles);
   const currentSet = new Set(currentFiles);
   const assets = [];
+  const approvedCatalog = inspectApprovedBrandCatalog({ repoRoot, failures });
+  let approvedNewAssetFiles = 0;
 
   for (const file of baselineFiles) {
     const baselineBytes = run("git", ["show", `${baseline}:${file}`], {
@@ -144,11 +229,25 @@ function inspectAssets({ repoRoot, baseline, failures, classifications }) {
 
   for (const file of currentFiles) {
     if (!baselineSet.has(file)) {
-      failures.push({ code: "UNAPPROVED_NEW_ASSET", path: file });
+      if (!approvedCatalog.allowedFiles.has(file)) {
+        failures.push({ code: "UNAPPROVED_NEW_ASSET", path: file });
+        continue;
+      }
+      approvedNewAssetFiles += 1;
+      const expectedHash = approvedCatalog.allowedFiles.get(file);
+      if (expectedHash && sha256(readFileSync(path.join(repoRoot, file))) !== expectedHash) {
+        failures.push({ code: "APPROVED_ASSET_HASH_MISMATCH", path: file });
+      }
     }
   }
 
-  return assets;
+  for (const file of approvedCatalog.allowedFiles.keys()) {
+    if (!currentSet.has(file)) {
+      failures.push({ code: "APPROVED_ASSET_MISSING", path: file });
+    }
+  }
+
+  return { historical: assets, approvedNewAssetFiles, approvalGate: approvedCatalog.gate };
 }
 
 function inspectCatalog({ repoRoot, failures, classifications }) {
@@ -227,6 +326,39 @@ function sourceAssetNames(repoRoot) {
   return names.sort();
 }
 
+// App icon sets present in the source catalog. Only the one selected by
+// ASSETCATALOG_COMPILER_APPICON_NAME is emitted into the compiled catalog;
+// any other appiconset is intentionally dropped by actool.
+function sourceAppIconNames(repoRoot) {
+  const assetRoot = path.join(repoRoot, assetsRelativePath);
+  const nonIconLeaf = /\.(?:colorset|dataset|imageset|symbolset)$/;
+  const names = [];
+
+  function visit(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (/\.appiconset$/.test(entry.name)) {
+        names.push(entry.name.replace(/\.appiconset$/, ""));
+      } else if (!nonIconLeaf.test(entry.name)) {
+        visit(path.join(directory, entry.name));
+      }
+    }
+  }
+
+  visit(assetRoot);
+  return names.sort();
+}
+
+// The designated primary app icon recorded in the compiled Info.plist. This is
+// the single appiconset actool compiles into the catalog; null when the bundle
+// declares no primary icon name.
+function designatedAppIconName(appPath) {
+  const infoPath = path.join(appPath, "Info.plist");
+  if (!existsSync(infoPath)) return null;
+  const name = readPlist(infoPath)?.CFBundleIcons?.CFBundlePrimaryIcon?.CFBundleIconName;
+  return typeof name === "string" && name.length > 0 ? name : null;
+}
+
 function readCompiledAssetNames(assetsCarPath) {
   try {
     const metadata = JSON.parse(run("xcrun", ["assetutil", "--info", assetsCarPath]));
@@ -255,10 +387,28 @@ function inspectCompiledAssets({
   const expectedNames = sourceAssetNames(repoRoot);
   const compiledNames = compiledAssetNames ?? readCompiledAssetNames(assetsCarPath);
   const compiledSet = new Set(compiledNames);
+  const appIconNames = new Set(sourceAppIconNames(repoRoot));
+  const designatedAppIcon = designatedAppIconName(appPath);
   for (const name of expectedNames) {
-    if (!compiledSet.has(name)) {
-      failures.push({ code: "MISSING_COMPILED_NAMED_ASSET", path: "Assets.car", name });
+    if (compiledSet.has(name)) continue;
+    // A source appiconset that is not the designated primary icon is
+    // deliberately excluded from the compiled catalog by actool, so its
+    // absence is expected — not a missing-asset failure. When the bundle
+    // declares no primary icon we keep the strict expectation.
+    if (appIconNames.has(name) && designatedAppIcon !== null && name !== designatedAppIcon) {
+      continue;
     }
+    failures.push({ code: "MISSING_COMPILED_NAMED_ASSET", path: "Assets.car", name });
+  }
+  // The designated primary app icon must always be compiled. When it is also a
+  // source asset the loop above already covers it; this guards the case where
+  // the bundle names a primary icon absent from the source catalog.
+  if (
+    designatedAppIcon !== null
+    && !compiledSet.has(designatedAppIcon)
+    && !expectedNames.includes(designatedAppIcon)
+  ) {
+    failures.push({ code: "MISSING_COMPILED_NAMED_ASSET", path: "Assets.car", name: designatedAppIcon });
   }
   return { present, expectedNames, compiledNames };
 }
@@ -396,7 +546,7 @@ export function scanSurface({
   return {
     schemaVersion: 1,
     status: failures.length === 0 ? "PASS" : "FAIL",
-    brandAssetApprovalGate: "PENDING_EXTERNAL_ASSETS",
+    brandAssetApprovalGate: assets.approvalGate,
     counts: {
       catalogKeys: source.keyCount,
       localizedValues: source.localizedValueCount,
@@ -405,7 +555,8 @@ export function scanSurface({
       compiledResourceFiles: compiled.files.length,
       expectedNamedAssets: compiledAssets.expectedNames.length,
       compiledNamedAssets: compiledAssets.compiledNames.length,
-      historicalAssetFiles: assets.length,
+      historicalAssetFiles: assets.historical.length,
+      approvedNewAssetFiles: assets.approvedNewAssetFiles,
       binaryCandidates: binary.binaryCandidateCount,
       failures: failures.length,
     },
@@ -418,7 +569,7 @@ export function scanSurface({
       expectedAssetNames: compiledAssets.expectedNames,
       assetNames: compiledAssets.compiledNames,
     },
-    historicalAssets: assets,
+    historicalAssets: assets.historical,
     failures,
   };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +60,7 @@ function writeCompiledStrings(appPath, sourceCatalog) {
   }
 }
 
-function createFixture(t) {
+function createFixture(t, beforeCommit) {
   const root = mkdtempSync(path.join(tmpdir(), "premium-surface-scan-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sourceCatalog = catalog();
@@ -75,6 +75,10 @@ function createFixture(t) {
     path.join(path.dirname(historicalAsset), "Contents.json"),
     JSON.stringify({ images: [{ filename: "historical.svg", idiom: "universal" }], info: { version: 1, author: "xcode" } }),
   );
+
+  // Optionally seed extra baseline (historical) content before the commit so a
+  // test can model catalog state without tripping the unapproved-new-asset gate.
+  if (typeof beforeCommit === "function") beforeCommit(root);
 
   execFileSync("git", ["init", "-q"], { cwd: root });
   execFileSync("git", ["config", "user.name", "QA"], { cwd: root });
@@ -151,6 +155,150 @@ test("rejects a new unapproved asset", (t) => {
   const result = run(fixture);
   assert.equal(result.status, "FAIL");
   assert.ok(result.failures.some((failure) => failure.code === "UNAPPROVED_NEW_ASSET"));
+});
+
+test("accepts a checksum-exact catalog resource listed by the approved brand manifest", (t) => {
+  const fixture = createFixture(t);
+  const catalogDirectory = path.join(fixture.root, assetsPath, "PerformeAISymbolLightV1.imageset");
+  const approvedBytes = "approved-signal-spark-vector";
+  mkdirSync(catalogDirectory, { recursive: true });
+  writeFileSync(path.join(catalogDirectory, "performe-ai-symbol-light.pdf"), approvedBytes);
+  writeFileSync(
+    path.join(catalogDirectory, "Contents.json"),
+    JSON.stringify({
+      images: [{ filename: "performe-ai-symbol-light.pdf", idiom: "universal" }],
+      info: { version: 1, author: "xcode" },
+      properties: { "preserves-vector-representation": true, "template-rendering-intent": "original" },
+    }),
+  );
+
+  const familyRoot = path.join(fixture.root, "assets", "brand", "performe-ai-public-v1");
+  const sourcePath = "exports/symbol-light.pdf";
+  mkdirSync(path.join(familyRoot, "exports"), { recursive: true });
+  writeFileSync(path.join(familyRoot, sourcePath), approvedBytes);
+  writeFileSync(path.join(familyRoot, "manifest.json"), JSON.stringify({
+    schemaVersion: 1,
+    family: "performe-ai-public-v1",
+    approvalStatus: "approved",
+    approval: { reference: "approvals/rc1-user-approval.json" },
+    approvedFiles: [{ path: sourcePath, sha256: "a0f57f068c59c24c13984de49b482595a737b663e2b33c9c13b4b0e8b5cc6e6f" }],
+    catalogAssets: [{
+      resourceName: "PerformeAISymbolLightV1",
+      catalogPath: `${assetsPath}/PerformeAISymbolLightV1.imageset`,
+      files: [{
+        sourcePath,
+        catalogFilename: "performe-ai-symbol-light.pdf",
+        sha256: "a0f57f068c59c24c13984de49b482595a737b663e2b33c9c13b4b0e8b5cc6e6f",
+      }],
+    }],
+  }));
+  fixture.compiledAssetNames.push("PerformeAISymbolLightV1");
+
+  const result = run(fixture);
+  assert.equal(result.status, "PASS");
+  assert.equal(result.brandAssetApprovalGate, "APPROVED_FOR_LISTED_RC1_FILES");
+  assert.equal(result.counts.approvedNewAssetFiles, 2);
+});
+
+test("rejects a manifest-listed catalog resource when its bytes drift", (t) => {
+  const fixture = createFixture(t);
+  const catalogDirectory = path.join(fixture.root, assetsPath, "PerformeAISymbolLightV1.imageset");
+  mkdirSync(catalogDirectory, { recursive: true });
+  writeFileSync(path.join(catalogDirectory, "performe-ai-symbol-light.pdf"), "drifted-bytes");
+  writeFileSync(path.join(catalogDirectory, "Contents.json"), "{}");
+  const familyRoot = path.join(fixture.root, "assets", "brand", "performe-ai-public-v1");
+  mkdirSync(path.join(familyRoot, "exports"), { recursive: true });
+  writeFileSync(path.join(familyRoot, "exports", "symbol-light.pdf"), "approved-signal-spark-vector");
+  writeFileSync(path.join(familyRoot, "manifest.json"), JSON.stringify({
+    schemaVersion: 1,
+    family: "performe-ai-public-v1",
+    approvalStatus: "approved",
+    approval: { reference: "approvals/rc1-user-approval.json" },
+    approvedFiles: [{
+      path: "exports/symbol-light.pdf",
+      sha256: "a0f57f068c59c24c13984de49b482595a737b663e2b33c9c13b4b0e8b5cc6e6f",
+    }],
+    catalogAssets: [{
+      resourceName: "PerformeAISymbolLightV1",
+      catalogPath: `${assetsPath}/PerformeAISymbolLightV1.imageset`,
+      files: [{
+        sourcePath: "exports/symbol-light.pdf",
+        catalogFilename: "performe-ai-symbol-light.pdf",
+        sha256: "a0f57f068c59c24c13984de49b482595a737b663e2b33c9c13b4b0e8b5cc6e6f",
+      }],
+    }],
+  }));
+
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "APPROVED_ASSET_HASH_MISMATCH"));
+});
+
+test("project selects only the approved default and dark AppIcon catalog", () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  const project = readFileSync(
+    path.join(repoRoot, "apps", "ios", "BodyFlow", "BodyFlow.xcodeproj", "project.pbxproj"),
+    "utf8",
+  );
+  const selections = [...project.matchAll(/ASSETCATALOG_COMPILER_APPICON_NAME = ([^;]+);/g)]
+    .map((match) => match[1]);
+  assert.ok(selections.length > 0);
+  assert.deepEqual([...new Set(selections)], ["PerformeAIAppIconV1"]);
+});
+
+function seedAppIconSets(root, names) {
+  for (const name of names) {
+    const dir = path.join(root, assetsPath, `${name}.appiconset`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "Contents.json"),
+      JSON.stringify({ images: [], info: { version: 1, author: "xcode" } }),
+    );
+  }
+}
+
+function writeInfoPlistWithPrimaryIcon(appPath, primaryIconName) {
+  writeFileSync(path.join(appPath, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.bodyflow.app</string>
+  <key>CFBundleDisplayName</key><string>Performe AI</string>
+  <key>CFBundleName</key><string>Performe AI</string>
+  <key>CFBundleExecutable</key><string>PerformeAI</string>
+  <key>CFBundleIcons</key><dict>
+    <key>CFBundlePrimaryIcon</key><dict>
+      <key>CFBundleIconName</key><string>${primaryIconName}</string>
+    </dict>
+  </dict>
+</dict></plist>
+`);
+}
+
+test("tolerates a non-designated appiconset omitted from the compiled catalog", (t) => {
+  const fixture = createFixture(t, (root) => {
+    seedAppIconSets(root, ["LegacyAppIcon", "PerformeAIAppIconV1"]);
+  });
+  // The designated primary icon compiles; the legacy appiconset is dropped by
+  // actool and must not be reported as a missing compiled asset.
+  writeInfoPlistWithPrimaryIcon(fixture.appPath, "PerformeAIAppIconV1");
+  fixture.compiledAssetNames = ["Historical", "PerformeAIAppIconV1"];
+  const result = run(fixture);
+  assert.equal(result.status, "PASS");
+  assert.ok(!result.failures.some((failure) => failure.code === "MISSING_COMPILED_NAMED_ASSET"));
+});
+
+test("still requires the designated primary appicon to compile", (t) => {
+  const fixture = createFixture(t, (root) => {
+    seedAppIconSets(root, ["LegacyAppIcon", "PerformeAIAppIconV1"]);
+  });
+  writeInfoPlistWithPrimaryIcon(fixture.appPath, "PerformeAIAppIconV1");
+  // Designated icon absent from the compiled catalog must still fail.
+  fixture.compiledAssetNames = ["Historical"];
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some(
+    (failure) => failure.code === "MISSING_COMPILED_NAMED_ASSET" && failure.name === "PerformeAIAppIconV1",
+  ));
 });
 
 test("rejects modified historical asset bytes", (t) => {

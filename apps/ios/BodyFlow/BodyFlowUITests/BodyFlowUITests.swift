@@ -759,6 +759,15 @@ final class BodyFlowUITests: XCTestCase {
             line: line
         )
         XCTAssertEqual(brand.label, "Performe AI", file: file, line: line)
+        XCTAssertEqual(
+            app.images.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "PerformeAISymbol")
+            ).count,
+            0,
+            "O símbolo da marca deve permanecer decorativo no hierarchy acessível",
+            file: file,
+            line: line
+        )
 
         let visibleFrame = brand.frame.intersection(app.windows.firstMatch.frame)
         XCTAssertFalse(

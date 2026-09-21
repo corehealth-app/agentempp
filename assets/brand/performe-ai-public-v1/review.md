@@ -2,19 +2,27 @@
 
 Date: 2026-09-19. Visual direction: **B2 — Warm Performance**.
 
-Status: **PENDING_EXTERNAL_ASSETS**. The direction is approved, but no final
-asset byte, hash, public callsite or AppIcon is approved. This directory remains
-a documentary approval package; it does not authorize asset integration.
+Repository status: **APPROVED_FOR_LISTED_RC1_FILES_AND_INTENDED_ROLES**.
+The subsequent operational approval is recorded at
+`approvals/rc1-user-approval.json`; it covers the 38 exact SHA-256 entries in
+`manifest.json`, including separate approval of the default and dark AppIcons.
+It is not a digital signature, legal opinion, trademark clearance or release
+approval. The original delivery's earlier `pending` documents remain unchanged
+under `delivery/rc1/` as historical evidence.
+
+`exports/appicon-tinted-1024.png` remains
+**PENDING_SUPPORT_AND_SEPARATE_APPROVAL** and is neither imported nor selected.
 
 The final mark must be a distinct abstract **P / trajectory / movement** symbol.
 It must not reuse or redraw the historical BodyFlow “B”, and it must avoid
 generic dumbbells, arrows, chat faces, medical symbols and procedural placeholder
 artwork.
 
-## Exact pending deliverables
+## Exact RC1 deliverables
 
-All paths are relative to this directory. They are required unless explicitly
-marked conditional, and none is an approved file merely because it is delivered.
+All paths are relative to this directory. Approval applies only to the exact
+hashes and intended roles registered in `manifest.json`; changing any byte
+invalidates that file's recorded approval.
 
 ### SVG masters
 
@@ -84,7 +92,7 @@ actual Home Screen result; delivery does not select the icon.
 - [ ] Historical tracked brand/catalog bytes remain unchanged unless a later,
   separately authorized migration names the exact file.
 
-## Current optional infrastructure mapping
+## Approved native infrastructure mapping
 
 The app can currently resolve these optional resource names:
 
@@ -96,22 +104,14 @@ The app can currently resolve these optional resource names:
 - `PerformeAIWordmarkDarkV1`
 - `PerformeAILockupV1`
 
-This is an existing compatibility surface, not approval and not a complete
-mapping for every pending master. Any additional catalog mapping must be proposed
-and reviewed during P1; it must not be invented in this documentation phase.
-Until then, the public fallback remains textual “Performe AI”.
+These names now map the approved RC1 vectors. The text fallback “Performe AI”
+remains required for accessibility and for bundles that do not contain the
+approved resources. Historical BodyFlow resource names remain unchanged.
 
 ## Approval record policy
 
-`manifest.json` is the machine-readable checklist. While approval is pending:
-
-- `approvalStatus` stays `pending`;
-- `approvedFiles` stays empty;
-- `publicCallsites` stays empty;
-- no author, license, date, hash or approval reference is fabricated.
-
-Final branded Splash, Welcome, shell/Profile identity and the authoritative
-eight-screen showcase remain blocked by this gate. Product polish that does not
-consume brand bytes may be prepared separately, but the Roberto evaluation
-candidate cannot pass final readiness until the applicable files are approved,
-integrated and reverified.
+`manifest.json` is the machine-readable authority for approved hashes, catalog
+mappings and exact public callsites. `approvals/rc1-user-approval.json` preserves
+the later user decision without retroactively changing the timestamps or state
+inside the original RC1 delivery. Tinted, legal ownership/trademark review and
+remote release remain separate gates.

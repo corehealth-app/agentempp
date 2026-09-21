@@ -1,15 +1,32 @@
 import SwiftUI
 
 struct BodyFlowBrandIdentityView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let symbolSize: CGFloat = 28
+
     var body: some View {
-        Text(BrandIdentity.productName)
-            .font(BodyFlowTypography.headline)
-            .fontWeight(.bold)
-            .foregroundStyle(BodyFlowColor.accent)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier("brand.product-name")
+        HStack(spacing: BodyFlowSpacing.sm) {
+            Image(decorative: symbolAsset.resourceName)
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: symbolSize, height: symbolSize)
+
+            Text(BrandIdentity.productName)
+                .font(BodyFlowTypography.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(BodyFlowColor.accent)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("brand.product-name")
+        }
+    }
+
+    private var symbolAsset: PerformeAIBrandAsset {
+        colorScheme == .dark ? .symbolDark : .symbolLight
     }
 }
 

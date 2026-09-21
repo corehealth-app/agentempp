@@ -1,0 +1,42 @@
+OPERATION=VALIDATE_PERFORME_AI_SIGNAL_SPARK_RC1_FILES_FOR_APPROVAL
+
+Receber o ZIP Performe_AI_Signal_Spark_Assets_RC1.zip como pacote candidato de assets,
+não como aprovação automática de P1/S1.3. O usuário deve aprovar os arquivos exatos.
+Não criar outro plano, não redesenhar a logo e não gerar novamente nenhuma variante.
+
+Último baseline reportado, a revalidar:
+worktree /Users/eduardohenrique/Developer/performe-ai-client-beta-flow-v1
+branch codex/performe-ai-client-beta-flow-v1
+HEAD 0e797edd881cf8931e1b37bddd39ea454c0a9f20
+parent 0e6f530f6bff5c2be5388523d020390a44d17e8d
+tree db626bf9976931cee0f43ab3f71e8a0885386a20
+worktree limpa / index vazio.
+Se o estado divergir, preservar evidência e parar antes de mutação.
+
+Ler a autoridade vigente e o gate de assets. Confirmar que as especificações de formatos
+correspondem à lista esperada. O manifesto de entrega é externo, não substitui o do repo.
+
+Extrair o ZIP recebido em um diretório novo de revisão fora do repo, com no-clobber.
+Conferir SHA256SUMS e os 22 arquivos obrigatórios. Tinted é condicional.
+Não procurar os caminhos sandbox do ChatGPT no Mac: usar o anexo local efetivo.
+
+Abrir review/Performe_AI_Signal_Spark_Revisao_RC1.pdf e comparar com references/.
+Confirmar curvas nos 11 SVGs, ausência de raster incorporado nos SVGs/PDFs,
+transparência dos PNGs auxiliares, AppIcons RGB opacos 1024x1024 e dimensões de splash.
+Os wordmarks estão em contornos; não há fonte para instalar.
+Os PNGs de splash não são telas a inserir no app.
+
+Registrar somente uma avaliação sanitizada externa, com conformidades e divergências.
+Sem aprovação humana dos bytes, deixar:
+BRAND_ASSET_APPROVAL_GATE = PENDING_EXPLICIT_APPROVAL
+Sem aprovação separada do AppIcon, não mudar a seleção de catálogo.
+
+Não alterar Swift, assets históricos, catálogo, manifesto do repo, signing, bundle,
+AGENTS, specs ou contratos. Não instalar dependência. Sem commit/push/PR/merge/deploy.
+Sem Supabase/Vercel/OpenRouter/CI-3/TestFlight/App Store e sem chamadas LLM.
+Não apagar a referência nem arquivos de evidência.
+
+Resultado esperado:
+PERFORME_AI_SIGNAL_SPARK_RC1_FILES_VALIDATED_FOR_REVIEW
+informar conformidade técnica, qualquer limitação e a aprovação visual pendente.
+Não chamar RC1 de identidade final aprovada. Não integrar automaticamente.

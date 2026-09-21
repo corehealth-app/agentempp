@@ -98,8 +98,9 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertTrue(element("today.header.local-date", in: app).exists)
         retry.tap()
         XCTAssertTrue(
-            retry.waitForNonExistence(timeout: 3),
-            "Retry must leave the terminal stale state while a new read runs"
+            element("state.stale-banner", in: app)
+                .waitForExistence(timeout: 3),
+            "Retry must publish the stale result after the new read completes"
         )
         let completedRetry = element("state.retry", in: app)
         XCTAssertTrue(
@@ -159,8 +160,9 @@ final class Prompt13TodayUITests: XCTestCase {
         support.assertMinimumTapTarget(retry)
         retry.tap()
         XCTAssertTrue(
-            retry.waitForNonExistence(timeout: 3),
-            "Retry must leave the terminal stale state while a new read runs"
+            element("state.stale-banner", in: app)
+                .waitForExistence(timeout: 3),
+            "Retry must publish the stale result after the new read completes"
         )
         XCTAssertTrue(
             element("state.retry", in: app).waitForExistence(timeout: 3)

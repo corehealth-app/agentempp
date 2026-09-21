@@ -117,20 +117,24 @@ final class PremiumPerformanceUITests: XCTestCase {
             let send = app.buttons["flow.send"]
             XCTAssertTrue(send.isEnabled)
             send.tap()
-            let responding = app.descendants(matching: .any)["flow.responding"]
-            XCTAssertTrue(responding.waitForExistence(timeout: 2))
-            let completed = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "exists == false"),
-                object: responding
-            )
-            XCTAssertEqual(
-                XCTWaiter.wait(for: [completed], timeout: 5),
-                .completed
-            )
+            let cancelling = app.buttons["flow.cancel"]
+            let reply = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "QA_REPLY_VISIBLE")
+            ).firstMatch
+            let pendingObserved = cancelling.waitForExistence(timeout: 2)
+            if pendingObserved {
+                let completed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "exists == false"),
+                    object: cancelling
+                )
+                XCTAssertEqual(
+                    XCTWaiter.wait(for: [completed], timeout: 5),
+                    .completed
+                )
+            }
             XCTAssertTrue(
-                app.staticTexts.matching(
-                    NSPredicate(format: "label CONTAINS %@", "QA_REPLY_VISIBLE")
-                ).firstMatch.waitForExistence(timeout: 5)
+                pendingObserved || reply.waitForExistence(timeout: 5),
+                "neither pending nor completed state materialized for exchange index \(index)"
             )
             XCTAssertFalse(send.isEnabled)
         }

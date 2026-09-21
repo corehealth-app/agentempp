@@ -96,3 +96,122 @@ approval reference or checksum.
 The execution sequence is P1–P8. It stops at specification readiness: there is
 no staging E2E, external send, TestFlight, push, PR, merge or deployment in this
 operation.
+
+## RC1 local integration checkpoint — STOP_DOCUMENTED
+
+The later RC1 approval record authorizes the 38 listed files and the default/
+dark AppIcon roles; the tinted AppIcon remains unapproved and absent from the
+runtime catalog. The approved source and catalog bytes were imported without
+reconstruction, and the repository manifest records their exact SHA-256 values,
+origin, approval and real callsites. Historical `pending` delivery documents
+remain preserved under `delivery/rc1/` as pre-approval evidence.
+
+Local gates completed before the stop:
+
+- manifest/catalog checksum verification: 38 approved source files and 8
+  runtime mappings passed; tinted runtime mappings: 0;
+- focused brand resources and accessibility: PASS, including 4/4 final
+  decorative-symbol checks;
+- complete `BodyFlowTests`: 1,207/1,207 passed, 0 failed, 0 skipped;
+- complete `BodyFlowUITests`: 148/151 passed, 3 failed, 0 skipped;
+- isolated follow-up: Flow 50-message history passed; the two Today stale-retry
+  tests failed again on their transient-state assertion.
+
+The two persistent failures are
+`Prompt13TodayUITests.testStaleErrorPreservesSnapshotAndReachableRetry` and
+`Prompt13TodayUITests.testTodayOfflineContentShowsStaleBannerAndRetry`. Both
+expect the retry control to disappear while the synthetic repeated read is in
+flight. The unchanged fixture delays that read for 1.5 seconds, while current
+XCUITest synchronization returns from the tap close to the terminal-state
+publication; the first nonexistence poll therefore observes the retry control
+already restored. The relevant Today production, fixture and test sources are
+byte-identical to the authorized starting HEAD.
+
+Correcting or stabilizing that gate requires a narrowly authorized change to
+`DemoBodyFlowRepository.swift` or `Prompt13TodayUITests.swift`, neither of which
+is in this operation's allowlist. Per the integration authority, execution stops
+without a commit, signed Release, analyze, compiled scanner or final visual
+acceptance. The imported work and result bundles are preserved for continuation;
+no push, PR, merge, deploy, remote service or paid environment was used.
+
+Checkpoint status: **STOP_DOCUMENTED**. RC1 integration is implemented but not
+promoted to `VERIFIED LOCAL`; regression status is **NOT VERIFIED** until the
+out-of-allowlist test gate is resolved and the remaining mandatory gates pass.
+
+## RC1 retry-fixture amendment — STOP_DOCUMENTED
+
+The later amendment authorized only deterministic retry-fixture/model coverage
+and stable post-action UI assertions. The implementation stayed within that
+scope: `TodayViewModelTests.swift` now proves that a controlled retry exposes
+the prior snapshot while the read is pending, and
+`Prompt13TodayUITests.swift` now asserts the stable stale result after the
+retry completes. `TodayViewModel.swift`, `DemoBodyFlowRepository.swift` and
+all production/backend behavior remain unchanged.
+
+The two exact Today retry cases passed serially three times each, and the
+neighbor suite passed 44/44. The complete unit gate passed 1,208/1,208. The
+single complete UI gate still failed 1/151: the pre-existing
+`PremiumPerformanceUITests.testFlowFiftyMessageHistoryRenderBaseline` at line
+121 (`XCTAssertTrue failed`). This is the same transient Flow history gate that
+passed on isolated execution; no retry or timing relaxation was applied to the
+full-suite result.
+
+Per the amendment authority, any failed mandatory gate means no commit and no
+continuation into Release, analyze, scanner or visual acceptance. Result bundle
+`final-source-full-ui-post-fix.xcresult` is preserved. Checkpoint remains
+**STOP_DOCUMENTED**; RC1 is not `VERIFIED LOCAL`.
+
+## RC1 resumption 2026-09-21 — gates resolved, VERIFIED LOCAL
+
+Execution resumed on the authorized host (`MacBook-Air-de-Eduardo.local`) from
+the same baseline (HEAD `0e797ed`, parent `0e6f530`, tree `db626bf`, empty
+index, intentionally dirty worktree). The RC1 checksum gate re-passed (38/38
+approved source files, default/dark AppIcon runtime bytes byte-identical to the
+approval record; tinted absent).
+
+Root cause of the residual full-suite failure was empirically confirmed and
+resolved within the test allowlist:
+
+- `PremiumPerformanceUITests.appendFiveLocalExchanges` asserted the transient
+  `flow.responding` indicator, which is rendered at the tail of the eager Flow
+  history `ScrollView` behind the raised keyboard after `send.tap()`. Under
+  full-suite XCUITest synchronization that element is not vended to the
+  accessibility tree in time, so the hard assertion failed only in the complete
+  suite. The correction observes the always-visible composer `flow.cancel`
+  control (same `isSending` gate) and asserts `pendingObserved || reply`,
+  preserving the functional guarantee (a cancellable pending state or a visible
+  reply, plus composer reset) without relaxing dataset, iterations or timeouts.
+
+Verified gates this session (all executions counted):
+
+- `PremiumPerformanceUITests` class, 3× serial: 4/4 each;
+- complete `BodyFlowUITests`: 151/151 passed, 0 failed (the previously failing
+  history-render baseline passes inside the full suite);
+- complete `BodyFlowTests`: 1,208/1,208 passed, 0 failed;
+- signed Release (simulator, normal signing, never `CODE_SIGNING_ALLOWED=NO`):
+  **BUILD SUCCEEDED**, identifier `com.bodyflow.app`;
+- `codesign --verify --deep --strict`: valid, satisfies Designated Requirement;
+- native `analyze`: **ANALYZE SUCCEEDED**, 0 analyzer findings;
+- compiled-app scanner against baseline `7ab3e657`: **PASS**, PUBLIC_LEAK 0,
+  DEBUG_ONLY 0, brand gate `APPROVED_FOR_LISTED_RC1_FILES`;
+- scanner unit suite: 21/21;
+- visual review: login/welcome and brand symbol/wordmark render as Performe AI;
+  the AppIcon renders in both light (default) and dark appearance.
+
+Scanner allowlist amendment: the compiled scanner initially failed
+`MISSING_COMPILED_NAMED_ASSET: AppIcon` because the approved integration made
+`PerformeAIAppIconV1` the designated app icon while the legacy `AppIcon`
+appiconset remains a historical catalog asset that actool no longer emits. With
+explicit user authorization, `scripts/uiux/premium-surface-scan.mjs` (and its
+test) were adjusted to tolerate a non-designated source appiconset absent from
+the compiled catalog while still requiring the designated primary icon to
+compile. No historical asset bytes were deleted; no product code changed.
+
+Not verified / out of scope this session: manual VoiceOver focus/rotor
+narration (NOT EXECUTED — no PASS asserted); tinted AppIcon (`PENDING — NOT
+INTEGRATED`); remote/staging integration (`NOT REVALIDATED`); Production (`NOT
+DEPLOYED`).
+
+Checkpoint status: **VERIFIED LOCAL** for the listed RC1 files and the default/
+dark AppIcon roles. The single authorized integration commit is created on
+parent `0e797ed`.

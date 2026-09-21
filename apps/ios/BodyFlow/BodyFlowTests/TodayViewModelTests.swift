@@ -92,6 +92,28 @@ struct TodayViewModelTests {
         ))
     }
 
+    @Test("retry exposes the prior snapshot while a controlled stale read is pending")
+    func retryPublishesPriorSnapshotWhilePending() async throws {
+        let response = try Self.snapshot(localDate: "2026-07-20")
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+
+        let initialLoad = Task { await model.load(revision: 0) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: response)
+        await initialLoad.value
+
+        let retry = Task { await model.retry() }
+        await provider.waitUntilStarted(2)
+        #expect(model.state == .loaded(response.data))
+        #expect(await provider.callCount == 2)
+
+        await provider.fail(call: 2, with: .offline)
+        await retry.value
+        #expect(model.state == .offline(previousValue: response.data))
+        #expect(await provider.callCount == 2)
+    }
+
     @Test("cancelled retry restores offline with the exact previous snapshot")
     func cancelledRetryRestoresStaleOffline() async throws {
         let response = try Self.snapshot(localDate: "2026-07-20")

@@ -1,0 +1,929 @@
+{
+  "status": "LOCAL_FILE_VALIDATION_PASS",
+  "check_count": 88,
+  "checks": [
+    {
+      "check": "requested_mandatory_files",
+      "result": "PASS",
+      "detail": {
+        "expected": 22,
+        "present": 22
+      }
+    },
+    {
+      "check": "conditional_icon_present",
+      "result": "PASS",
+      "detail": "Arquivo opcional; suporte nativo e aprovação ainda pendentes."
+    },
+    {
+      "check": "svg_vector_only:lockup-dark.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:lockup-dark.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:lockup-light.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:lockup-light.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:lockup-mono.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:lockup-mono.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:lockup-negative.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:lockup-negative.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:symbol-dark.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:symbol-dark.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:symbol-light.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:symbol-light.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:symbol-mono.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:symbol-mono.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:symbol-negative.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:symbol-negative.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:wordmark-dark.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:wordmark-dark.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:wordmark-light.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:wordmark-light.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_vector_only:wordmark-mono.svg",
+      "result": "PASS",
+      "detail": "Curvas/gradientes; sem imagens incorporadas, texto dependente de fonte ou script."
+    },
+    {
+      "check": "svg_no_external_dependencies:wordmark-mono.svg",
+      "result": "PASS",
+      "detail": {
+        "external_references": 0
+      }
+    },
+    {
+      "check": "svg_master_count",
+      "result": "PASS",
+      "detail": 11
+    },
+    {
+      "check": "pdf_vector_only:lockup-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:lockup-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:lockup-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 6237
+      }
+    },
+    {
+      "check": "pdf_vector_only:lockup-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:lockup-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:lockup-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 6223
+      }
+    },
+    {
+      "check": "pdf_vector_only:lockup-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:lockup-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:lockup-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 4993
+      }
+    },
+    {
+      "check": "pdf_vector_only:lockup-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:lockup-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:lockup-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 4979
+      }
+    },
+    {
+      "check": "pdf_vector_only:symbol-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:symbol-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:symbol-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 2256
+      }
+    },
+    {
+      "check": "pdf_vector_only:symbol-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:symbol-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:symbol-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 2256
+      }
+    },
+    {
+      "check": "pdf_vector_only:symbol-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:symbol-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:symbol-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 1090
+      }
+    },
+    {
+      "check": "pdf_vector_only:symbol-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:symbol-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:symbol-negative.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 1076
+      }
+    },
+    {
+      "check": "pdf_vector_only:wordmark-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:wordmark-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:wordmark-dark.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 3772
+      }
+    },
+    {
+      "check": "pdf_vector_only:wordmark-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:wordmark-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:wordmark-light.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 3758
+      }
+    },
+    {
+      "check": "pdf_vector_only:wordmark-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "pages": 1,
+        "raster_images": 0,
+        "image_objects": false
+      }
+    },
+    {
+      "check": "pdf_outlined_wordmark:wordmark-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "font_resources": 0
+      }
+    },
+    {
+      "check": "pdf_content:wordmark-mono.pdf",
+      "result": "PASS",
+      "detail": {
+        "content_bytes": 3735
+      }
+    },
+    {
+      "check": "transparent_symbol:symbol-dark-1024.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha_min": 0,
+        "alpha_max": 255,
+        "visible_bounds": [
+          112,
+          72,
+          912,
+          952
+        ]
+      }
+    },
+    {
+      "check": "symbol_canvas:symbol-dark-1024.png",
+      "result": "PASS",
+      "detail": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "check": "transparent_symbol:symbol-light-1024.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha_min": 0,
+        "alpha_max": 255,
+        "visible_bounds": [
+          112,
+          72,
+          912,
+          952
+        ]
+      }
+    },
+    {
+      "check": "symbol_canvas:symbol-light-1024.png",
+      "result": "PASS",
+      "detail": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "check": "transparent_symbol:symbol-mono-1024.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha_min": 0,
+        "alpha_max": 255,
+        "visible_bounds": [
+          112,
+          72,
+          912,
+          952
+        ]
+      }
+    },
+    {
+      "check": "symbol_canvas:symbol-mono-1024.png",
+      "result": "PASS",
+      "detail": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "check": "transparent_symbol:symbol-negative-1024.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha_min": 0,
+        "alpha_max": 255,
+        "visible_bounds": [
+          112,
+          72,
+          912,
+          952
+        ]
+      }
+    },
+    {
+      "check": "symbol_canvas:symbol-negative-1024.png",
+      "result": "PASS",
+      "detail": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "check": "transparent_wordmark_lockup:wordmark-dark-1600.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          283
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:wordmark-mono-1600.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          283
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:wordmark-light-1600.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          283
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:lockup-negative-1600x400.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          400
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:lockup-dark-1600x400.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          400
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:lockup-mono-1600x400.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          400
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "transparent_wordmark_lockup:lockup-light-1600x400.png",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1600,
+          400
+        ],
+        "alpha": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "check": "appicon_format:default",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "mode": "RGB",
+        "opaque": true,
+        "baked_corner_mask": false
+      }
+    },
+    {
+      "check": "appicon_format:dark",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "mode": "RGB",
+        "opaque": true,
+        "baked_corner_mask": false
+      }
+    },
+    {
+      "check": "appicon_format:tinted",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1024,
+          1024
+        ],
+        "mode": "RGB",
+        "opaque": true,
+        "baked_corner_mask": false
+      }
+    },
+    {
+      "check": "tinted_grayscale",
+      "result": "PASS",
+      "detail": "Candidato em escala de cinza; não afirma suporte do pipeline iOS."
+    },
+    {
+      "check": "splash_dimensions:compact",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          750,
+          1334
+        ],
+        "role": "REVIEW_ONLY_NOT_SCREEN_BITMAP"
+      }
+    },
+    {
+      "check": "splash_dimensions:standard",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          1179,
+          2556
+        ],
+        "role": "REVIEW_ONLY_NOT_SCREEN_BITMAP"
+      }
+    },
+    {
+      "check": "splash_dimensions:large",
+      "result": "PASS",
+      "detail": {
+        "size": [
+          860,
+          1864
+        ],
+        "role": "REVIEW_ONLY_NOT_SCREEN_BITMAP"
+      }
+    },
+    {
+      "check": "reference_preserved:concept-3-signal-spark-original.png",
+      "result": "PASS",
+      "detail": "d8ddac980272dcbddfa9c45c79e2c2c50778b294d340c40fa1bb28af11f70a3a"
+    },
+    {
+      "check": "reference_preserved:signal-spark-symbol-reference-crop.png",
+      "result": "PASS",
+      "detail": "ea4abb7379d97877ef4479698aa09a371ed767bcd602b651231dc751b2468bc3"
+    },
+    {
+      "check": "review_pdf_pages",
+      "result": "PASS",
+      "detail": 5
+    },
+    {
+      "check": "review_text_inside_page:1",
+      "result": "PASS",
+      "detail": []
+    },
+    {
+      "check": "review_text_inside_page:2",
+      "result": "PASS",
+      "detail": []
+    },
+    {
+      "check": "review_text_inside_page:3",
+      "result": "PASS",
+      "detail": []
+    },
+    {
+      "check": "review_text_inside_page:4",
+      "result": "PASS",
+      "detail": []
+    },
+    {
+      "check": "review_text_inside_page:5",
+      "result": "PASS",
+      "detail": []
+    }
+  ],
+  "svg_masters": [
+    {
+      "path": "masters/lockup-dark.svg",
+      "viewBox": "0 0 989.95 360",
+      "paths": 15,
+      "sha256": "ce6d694098181c979ac11766ce07ec26b0956737106df54ba088f07eb661ea54"
+    },
+    {
+      "path": "masters/lockup-light.svg",
+      "viewBox": "0 0 989.95 360",
+      "paths": 15,
+      "sha256": "8e41f69ab0297f771def71a31f0acaebefc6be7f16e11bd5832832647ec74063"
+    },
+    {
+      "path": "masters/lockup-mono.svg",
+      "viewBox": "0 0 989.95 360",
+      "paths": 13,
+      "sha256": "5c6167ac6132572e36ca2154fc5e01d1634a470615e649dede4dab7837c148af"
+    },
+    {
+      "path": "masters/lockup-negative.svg",
+      "viewBox": "0 0 989.95 360",
+      "paths": 13,
+      "sha256": "34be4fb158f0970f928abe50323dd6aa340fc6b57f62adcd0c672388679ca4ea"
+    },
+    {
+      "path": "masters/symbol-dark.svg",
+      "viewBox": "0 0 1024 1024",
+      "paths": 5,
+      "sha256": "5d0162fba13c500e804b9c6b0510971892cb4e21e337a41a24a2aac76f115d0e"
+    },
+    {
+      "path": "masters/symbol-light.svg",
+      "viewBox": "0 0 1024 1024",
+      "paths": 5,
+      "sha256": "53e359787682213487fdf8c9f116bf62b317f9d776f171e66524642fd61e9bd0"
+    },
+    {
+      "path": "masters/symbol-mono.svg",
+      "viewBox": "0 0 1024 1024",
+      "paths": 3,
+      "sha256": "a63bedb1b700cdb2f7aef617d1c0490ed075e0cf2cd4620a268ddd8a0bfd5d55"
+    },
+    {
+      "path": "masters/symbol-negative.svg",
+      "viewBox": "0 0 1024 1024",
+      "paths": 3,
+      "sha256": "7ca4202173006a7dccbe6c3c3f74ef36f7edbc4b738b2d2cca6375fcb9da1ffc"
+    },
+    {
+      "path": "masters/wordmark-dark.svg",
+      "viewBox": "0 0 1153.96 204",
+      "paths": 10,
+      "sha256": "2b9917d57ecb523549379be5e0d012997bbbb79f3c542f9ce29654fb3732744b"
+    },
+    {
+      "path": "masters/wordmark-light.svg",
+      "viewBox": "0 0 1153.96 204",
+      "paths": 10,
+      "sha256": "808f8c7e1182b622c1a4719bed67dcc2f59fe534a0939de8035a08c275875c72"
+    },
+    {
+      "path": "masters/wordmark-mono.svg",
+      "viewBox": "0 0 1153.96 204",
+      "paths": 10,
+      "sha256": "d3f3fde9eea829889fecee9d7d3c7ea64cedbfffb84f6a6c80d8c2492adf9622"
+    }
+  ],
+  "vector_pdfs": [
+    {
+      "path": "exports/lockup-dark.pdf",
+      "pages": 1,
+      "page_points": [
+        742.4625244140625,
+        270.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "49b127deef417c47b02fe9f3e76986dbcbd528a12004035f38dcc623a3e7eac4"
+    },
+    {
+      "path": "exports/lockup-light.pdf",
+      "pages": 1,
+      "page_points": [
+        742.4625244140625,
+        270.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "095a1c9e1befb2c257c12da911312b363bf15fe6ff7775144a743d3bb97eab92"
+    },
+    {
+      "path": "exports/lockup-mono.pdf",
+      "pages": 1,
+      "page_points": [
+        742.4625244140625,
+        270.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "38bf8e0c2843b8f4fdd2ecadcd020f91528a59bceba9738f1371482cf750b8a7"
+    },
+    {
+      "path": "exports/lockup-negative.pdf",
+      "pages": 1,
+      "page_points": [
+        742.4625244140625,
+        270.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "ebb62bd07b36a4b141aabfc920bcaa2b81f5dfd9e69ac206eb85713d77addec0"
+    },
+    {
+      "path": "exports/symbol-dark.pdf",
+      "pages": 1,
+      "page_points": [
+        768.0,
+        768.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "0196684f54d73c1ccbf7a7a2b3c74149274c63f99892e27daa6913cedf20ae0d"
+    },
+    {
+      "path": "exports/symbol-light.pdf",
+      "pages": 1,
+      "page_points": [
+        768.0,
+        768.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "c663ef760371f536403009391acd43daac156df178f189dd40cf2ef30ebaa4ba"
+    },
+    {
+      "path": "exports/symbol-mono.pdf",
+      "pages": 1,
+      "page_points": [
+        768.0,
+        768.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "a3dadf015280374d345bc0abedb787408e41fc60fcef2a2ee096450c9e779f95"
+    },
+    {
+      "path": "exports/symbol-negative.pdf",
+      "pages": 1,
+      "page_points": [
+        768.0,
+        768.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "3ce3d2cc3bba580f18ac7309da8a9738ae04fb7c69d272cf7c099a7d2cc17294"
+    },
+    {
+      "path": "exports/wordmark-dark.pdf",
+      "pages": 1,
+      "page_points": [
+        865.469970703125,
+        153.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "762832a8ad07054b275f42e7253a8da0a7eaa786c409ba978a275a8335b8934d"
+    },
+    {
+      "path": "exports/wordmark-light.pdf",
+      "pages": 1,
+      "page_points": [
+        865.469970703125,
+        153.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "d53f394ea009e7350cd4bc3c625412ccff09b535c7baba6c48be444d91b79d34"
+    },
+    {
+      "path": "exports/wordmark-mono.pdf",
+      "pages": 1,
+      "page_points": [
+        865.469970703125,
+        153.0
+      ],
+      "raster_images": 0,
+      "fonts": 0,
+      "sha256": "41d4a31696b8a2dedca64c992d2ba0123a7d4e2e82cb0764005270154e358f9c"
+    }
+  ],
+  "not_run": [
+    "Xcode build",
+    "iOS asset catalog import",
+    "Simulator or Home Screen test",
+    "TestFlight",
+    "Production",
+    "Trademark or domain validation"
+  ],
+  "approval_status": "PENDING_EXPLICIT_USER_APPROVAL",
+  "visual_exactness": "Reconstructed curves and gradients, not pixel-identical to the source raster."
+}

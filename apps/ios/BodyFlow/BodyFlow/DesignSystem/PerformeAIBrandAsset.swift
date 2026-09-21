@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// Optional future resources. Absence never selects or replaces historical artwork.
+/// Approved Performe AI Signal Spark resources. Historical BodyFlow artwork remains separate.
 enum PerformeAIBrandAsset: String, CaseIterable {
     case symbolLight, symbolDark, symbolMono, symbolNegative
     case wordmarkLight, wordmarkDark, lockup

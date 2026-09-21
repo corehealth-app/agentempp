@@ -20,10 +20,18 @@ struct PerformeAIBrandAssetTests {
     }
 
     @Test(arguments: PerformeAIBrandAsset.allCases)
-    func missingFinalAssetsAreUnavailableWithoutReplacingThePublicFallback(
+    func approvedFinalAssetsResolveFromTheMainBundle(
         _ asset: PerformeAIBrandAsset
     ) {
-        #expect(asset.isAvailable() == false)
+        #expect(asset.isAvailable())
+        #expect(BrandIdentity.productName == "Performe AI")
+    }
+
+    @Test(arguments: PerformeAIBrandAsset.allCases)
+    func bundleWithoutApprovedResourcesKeepsTheTextFallback(
+        _ asset: PerformeAIBrandAsset
+    ) {
+        #expect(asset.isAvailable(in: Bundle(for: MissingPerformeAIBrandAssetBundleToken.self)) == false)
         #expect(BrandIdentity.productName == "Performe AI")
     }
 
@@ -37,3 +45,5 @@ struct PerformeAIBrandAssetTests {
         ])
     }
 }
+
+private final class MissingPerformeAIBrandAssetBundleToken {}

@@ -84,6 +84,7 @@ struct TodayEnergySection: View {
     let descriptor: TodayEnergyDescriptor
     let completionMessage: String?
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -107,55 +108,75 @@ struct TodayEnergySection: View {
 
             BodyFlowCard {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: BodyFlowSpacing.lg) {
-                            remainingFoodMetric
-                            Divider()
-                            netBalanceMetric
-                        }
+                    // Side by side at regular text sizes (labels wrap inside
+                    // each half); stacked at accessibility sizes. The previous
+                    // ViewThatFits compared unwrapped ideal widths, so the
+                    // Portuguese labels always forced the stacked fallback.
+                    if dynamicTypeSize.isAccessibilitySize {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                             remainingFoodMetric
                             Divider()
                             netBalanceMetric
                         }
+                    } else {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
+                            remainingFoodMetric
+                            Divider()
+                            netBalanceMetric
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Divider()
-                    FixtureMetricRow(
-                        title: copy("metric.target"),
-                        value: TodayValueFormatter.optionalKcal(
-                            descriptor.targetKcal,
-                            language: language
-                        )
-                    )
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("metric.consumed"),
-                        value: TodayValueFormatter.kcal(
-                            descriptor.consumedKcal,
-                            language: language
-                        )
-                    )
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("today.energy.food-excess"),
-                        value: TodayValueFormatter.kcal(
-                            descriptor.foodExcessKcal,
-                            language: language
-                        )
-                    )
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("today.energy.exercise"),
-                        value: TodayValueFormatter.kcal(
-                            descriptor.exerciseKcal,
-                            language: language
-                        )
-                    )
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("today.energy.balance-status"),
-                        value: descriptor.dailyBalanceStatus
-                    )
+                    // The two protected values above (remaining-food,
+                    // net-balance) always stay visible. The remaining five
+                    // rows are the same official values, unabridged, moved
+                    // behind a native disclosure so the card reads as a
+                    // compact summary first.
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                            FixtureMetricRow(
+                                title: copy("metric.target"),
+                                value: TodayValueFormatter.optionalKcal(
+                                    descriptor.targetKcal,
+                                    language: language
+                                )
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("metric.consumed"),
+                                value: TodayValueFormatter.kcal(
+                                    descriptor.consumedKcal,
+                                    language: language
+                                )
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("today.energy.food-excess"),
+                                value: TodayValueFormatter.kcal(
+                                    descriptor.foodExcessKcal,
+                                    language: language
+                                )
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("today.energy.exercise"),
+                                value: TodayValueFormatter.kcal(
+                                    descriptor.exerciseKcal,
+                                    language: language
+                                )
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("today.energy.balance-status"),
+                                value: descriptor.dailyBalanceStatus
+                            )
+                        }
+                        .padding(.top, BodyFlowSpacing.sm)
+                    } label: {
+                        TodayDisclosureLabel(title: copy("today.energy.details.title"))
+                    }
+                    .font(BodyFlowTypography.headline)
+                    .accessibilityIdentifier("today.energy.details")
                 }
             }
         }

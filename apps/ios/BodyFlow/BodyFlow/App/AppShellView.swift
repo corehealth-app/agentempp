@@ -77,7 +77,7 @@ struct AppShellView: View {
     var body: some View {
         VStack(spacing: 0) {
             if router.path(for: selectedTab).isEmpty {
-                BodyFlowBrandIdentityView()
+                BodyFlowBrandIdentityView(presentation: .compact)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, BodyFlowSpacing.md)
                     .padding(.vertical, BodyFlowSpacing.xs)

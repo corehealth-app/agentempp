@@ -117,40 +117,84 @@ enum TodayCopy {
 struct TodayHeaderSection: View {
     let descriptor: TodayHeaderDescriptor
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    // Secondary day context only. The shell brand and the inline "Hoje"
+    // navigation title already identify the screen, so this block no longer
+    // repeats an eyebrow or a decorative headline; it keeps the received
+    // date/protocol/freshness readable without outranking the summary. The
+    // rows share one line when the width allows and wrap otherwise.
     var body: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Text(copy("today.eyebrow"))
-                .font(BodyFlowTypography.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(BodyFlowColor.accent)
-
-            Text(copy("today.title"))
-                .font(BodyFlowTypography.largeTitle)
-                .fontWeight(.bold)
-                .foregroundStyle(BodyFlowColor.primaryText)
-
-            Label(
-                "\(copy("today.header.local-date")): \(descriptor.localDate)",
-                systemImage: "calendar"
-            )
-                .accessibilityIdentifier("today.header.local-date")
-
-            Label(
-                "\(copy("today.header.protocol")): \(descriptor.protocolName ?? unavailable)",
-                systemImage: "doc.text"
-            )
-            .accessibilityIdentifier("today.header.protocol")
-
-            Label(
-                "\(copy("today.header.updated")): \(TodayValueFormatter.timestamp(descriptor.updatedAt, language: language))",
-                systemImage: "clock"
-            )
-            .accessibilityIdentifier("today.header.updated-at")
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // At accessibility sizes the three rows alone would fill the
+                // first screen ahead of Energy. The date stays visible; the
+                // protocol and freshness rows (same received values) move
+                // behind a native disclosure.
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                        protocolLabel
+                        updatedLabel
+                    }
+                    .padding(.top, BodyFlowSpacing.xs)
+                } label: {
+                    localDateLabel
+                }
+                .accessibilityIdentifier("today.header.details")
+            } else {
+                regularLayout
+            }
         }
-        .font(BodyFlowTypography.callout)
+        .font(BodyFlowTypography.caption)
         .foregroundStyle(BodyFlowColor.secondaryText)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+    }
+
+    private var regularLayout: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: BodyFlowSpacing.md) {
+                localDateLabel
+                protocolLabel
+                updatedLabel
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: BodyFlowSpacing.md) {
+                    localDateLabel
+                    protocolLabel
+                }
+                updatedLabel
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                localDateLabel
+                protocolLabel
+                updatedLabel
+            }
+        }
+    }
+
+    private var localDateLabel: some View {
+        Label(
+            "\(copy("today.header.local-date")): \(descriptor.localDate)",
+            systemImage: "calendar"
+        )
+        .accessibilityIdentifier("today.header.local-date")
+    }
+
+    private var protocolLabel: some View {
+        Label(
+            "\(copy("today.header.protocol")): \(descriptor.protocolName ?? unavailable)",
+            systemImage: "doc.text"
+        )
+        .accessibilityIdentifier("today.header.protocol")
+    }
+
+    private var updatedLabel: some View {
+        Label(
+            "\(copy("today.header.updated")): \(TodayValueFormatter.timestamp(descriptor.updatedAt, language: language))",
+            systemImage: "clock"
+        )
+        .accessibilityIdentifier("today.header.updated-at")
     }
 
     private var language: SupportedAppLanguage {

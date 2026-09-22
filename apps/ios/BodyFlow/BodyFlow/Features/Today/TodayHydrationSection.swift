@@ -23,46 +23,64 @@ struct TodayHydrationSection: View {
 
     var body: some View {
         BodyFlowCard {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 Label(copy("today.hydration.title"), systemImage: "drop")
                     .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
 
-                FixtureMetricRow(
-                    title: copy("metric.consumed"),
+                // Received consumed value as the tile's summary figure; the
+                // caption keeps its official meaning. Unchanged formatting.
+                TodaySummaryFigure(
                     value: TodayValueFormatter.milliliters(
                         descriptor.consumedML,
                         language: language
-                    )
+                    ),
+                    caption: copy("metric.consumed")
                 )
-                Divider()
-                FixtureMetricRow(
-                    title: copy("metric.target"),
-                    value: TodayValueFormatter.optionalMilliliters(
-                        descriptor.targetML,
-                        language: language
-                    )
-                )
-                Divider()
-                FixtureMetricRow(
-                    title: copy("metric.remaining"),
-                    value: TodayValueFormatter.optionalMilliliters(
-                        descriptor.remainingML,
-                        language: language
-                    )
-                )
-                if let percentage = descriptor.percentage {
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("metric.reported-progress"),
-                        value: "\(percentage)%"
-                    )
+
+                // Consumed stays the always-visible official value; the
+                // remaining fields are the same unabridged data, moved
+                // behind a native disclosure (mirrors Energy/Protein) so
+                // this reads as a compact summary, not a long table. The
+                // combined accessibilityValue below is unaffected — it is
+                // computed independently of which rows are shown.
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                        FixtureMetricRow(
+                            title: copy("metric.target"),
+                            value: TodayValueFormatter.optionalMilliliters(
+                                descriptor.targetML,
+                                language: language
+                            )
+                        )
+                        Divider()
+                        FixtureMetricRow(
+                            title: copy("metric.remaining"),
+                            value: TodayValueFormatter.optionalMilliliters(
+                                descriptor.remainingML,
+                                language: language
+                            )
+                        )
+                        if let percentage = descriptor.percentage {
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("metric.reported-progress"),
+                                value: "\(percentage)%"
+                            )
+                        }
+                        Divider()
+                        Label(descriptor.status, systemImage: "info.circle")
+                            .font(BodyFlowTypography.callout)
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    }
+                    .padding(.top, BodyFlowSpacing.sm)
+                } label: {
+                    TodayDisclosureLabel(title: copy("today.energy.details.title"))
                 }
-                Divider()
-                Label(descriptor.status, systemImage: "info.circle")
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
+                .font(BodyFlowTypography.headline)
+                .accessibilityIdentifier("today.hydration.details")
             }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityValue(

@@ -777,15 +777,22 @@ struct Prompt14UITestSupport {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        // XCUIElement.frame is reported after coordinate-space conversion
+        // through the accessibility tree, which can leave a sub-picopoint
+        // (~1e-13 pt) floating-point remainder against a control whose
+        // production frame(minHeight:/width:) is an exact hard 44pt floor.
+        // The tolerance absorbs only that unmeasurable rounding noise; any
+        // real shortfall still fails. Mirrors BodyFlowUITestSupport's helper.
+        let tolerance: CGFloat = 0.01
         XCTAssertGreaterThanOrEqual(
             target.frame.width,
-            44,
+            44 - tolerance,
             file: file,
             line: line
         )
         XCTAssertGreaterThanOrEqual(
             target.frame.height,
-            44,
+            44 - tolerance,
             file: file,
             line: line
         )

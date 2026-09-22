@@ -406,7 +406,9 @@ final class Prompt13RegistrationUITests: XCTestCase {
             routine,
             in: app.scrollViews.firstMatch,
             within: app.windows.firstMatch,
-            below: [app.navigationBars.firstMatch, flow].filter(\.exists),
+            // The Flow shortcut scrolls with Today's content (it is no
+            // longer a pinned band), so only the navigation bar obstructs.
+            below: [app.navigationBars.firstMatch],
             above: app.tabBars.firstMatch
         )
         XCTAssertTrue(routine.isHittable)

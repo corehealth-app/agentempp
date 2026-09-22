@@ -33,6 +33,38 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         }
     }
 
+    /// The compact shell wordmark must keep scaling with Dynamic Type at every
+    /// step. XCTest's accessibility audit flags any element whose text stops
+    /// growing between categories ("Dynamic Type font sizes are partially
+    /// unsupported"), so both brand presentations must yield a strictly
+    /// increasing rendered height across all twelve sizes.
+    func testBrandIdentityGrowsStrictlyAcrossDynamicTypeSizes() {
+        for presentation in [BodyFlowBrandIdentityView.Presentation.standard, .compact] {
+            for dark in [false, true] {
+                let heights = sizes.map { size in
+                    PremiumRenderingTestSupport.fittingSize(
+                        BodyFlowBrandIdentityView(presentation: presentation),
+                        width: 375,
+                        dark: dark,
+                        size: size,
+                        locale: SupportedAppLanguage.portugueseBrazil.formattingLocale
+                    ).height
+                }
+                let rendered = zip(sizes, heights)
+                    .map { "\($0): \(String(format: "%.1f", $1))" }
+                    .joined(separator: ", ")
+                for index in 1..<heights.count {
+                    XCTAssertGreaterThan(
+                        heights[index],
+                        heights[index - 1],
+                        "\(presentation) brand must grow at \(sizes[index - 1]) → "
+                            + "\(sizes[index]) (dark: \(dark)); rendered: \(rendered)"
+                    )
+                }
+            }
+        }
+    }
+
     func testAllTabsAndStateFamiliesAXXXL() throws {
         let states: [ScreenState] = [
             .loading, .empty, .recoverableError, .offline, .unavailable,

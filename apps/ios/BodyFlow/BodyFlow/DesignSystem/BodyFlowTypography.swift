@@ -14,4 +14,8 @@ enum BodyFlowTypography {
     static let body: Font = .body
     static let callout: Font = .callout
     static let caption: Font = .caption
+    /// Compact shell wordmark: one scalable role used at every Dynamic Type
+    /// size (never switching roles per category, which reads as unsupported
+    /// Dynamic Type to the accessibility audit).
+    static let brandCompact: Font = .subheadline.weight(.bold)
 }

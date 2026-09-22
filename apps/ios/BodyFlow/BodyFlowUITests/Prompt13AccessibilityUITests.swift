@@ -150,19 +150,33 @@ final class Prompt13AccessibilityUITests: XCTestCase {
             remaining,
             in: scrollView,
             within: window,
-            below: [navigationBar, library],
+            below: [navigationBar],
             above: tabBar
         )
         XCTAssertTrue(remaining.isHittable)
         XCTAssertFalse(remaining.label.isEmpty)
         XCTAssertTrue(remainingViewport.contains(remaining.frame))
 
+        // The Library shortcut is part of the scrolling content after the
+        // summary (not a pinned top bar), so it is not a viewport obstruction;
+        // it must itself be revealable, hittable and a full-size target.
+        let libraryViewport = revealFully(
+            library,
+            in: scrollView,
+            within: window,
+            below: [navigationBar],
+            above: tabBar
+        )
+        XCTAssertTrue(library.isHittable)
+        XCTAssertTrue(libraryViewport.contains(library.frame))
+        support.assertMinimumTapTarget(library)
+
         let history = element("today.history", in: app)
         let historyViewport = revealFully(
             history,
             in: scrollView,
             within: window,
-            below: [navigationBar, library],
+            below: [navigationBar],
             above: tabBar
         )
         XCTAssertTrue(history.isHittable)
@@ -174,7 +188,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
             nextAction,
             in: scrollView,
             within: window,
-            below: [navigationBar, library],
+            below: [navigationBar],
             above: tabBar
         )
         XCTAssertTrue(nextAction.isHittable)

@@ -399,3 +399,358 @@ Checkpoint status: **PERFORME_AI_FINAL_VISUAL_POLISH_READY_FOR_USER_REVIEW**.
 RC1 (assets, checksums, AppIcon default/dark) preserved unregenerated. Tinted
 AppIcon: `PENDING — NOT INTEGRATED`. Remote/staging integration: `NOT
 REVALIDATED`. Production: `NOT DEPLOYED`.
+
+## Responsive Today + native tab bar appearance — 2026-09-22 (uncommitted pilot)
+
+Operation `FINISH_RESPONSIVE_TODAY_AND_NATIVE_TAB_APPEARANCE_V1`, continuing the
+Today/Library fidelity pilots V1/V2 (not visually approved) in the same
+worktree. HEAD unchanged at `f1e7200`; nothing staged or committed.
+
+### Changes (presentation only — no model, repository, DTO, API, rule, auth,
+session, asset or global token change; no accessibility identifier renamed)
+
+- **Today header** (`TodayHeaderSection`): no eyebrow/tagline; date,
+  protocol and freshness on one or two compact lines at regular sizes. At
+  accessibility sizes the date stays visible and protocol + freshness move
+  behind a native `DisclosureGroup` (`today.header.details`).
+- **Summary block**: Energy keeps both official values side by side at
+  regular sizes (`731 kcal · Exercício excluído` / `-83 kcal · Exercício
+  incluído`), stacked at accessibility sizes; Protein and Hydration are
+  paired tiles showing the received consumed value, with the unabridged
+  fields behind "Mais detalhes". Disclosure titles use an explicit
+  leading-aligned label (`TodayDisclosureLabel`) because the plain string
+  title was centred when wrapping at AXXXL.
+- **Shortcuts**: Flow + Library moved from a pinned band into the content
+  right after the summary (one row at regular sizes; full-width stacked
+  rows at accessibility sizes). They remain pinned at the top only when
+  Today has no loaded presentation, so both stay reachable when Today fails.
+- **Tab bar** (`AppShellView`, appearance only): per-stack
+  `scrollEdgeEffectStyle(.hard, for: .bottom)` on iOS 26+ (no-op earlier).
+  Routes, selection, stacks and ownership unchanged.
+
+### Tab bar diagnosis (evidence, iOS 26.5 simulator)
+
+1. `toolbarBackground(surface, for: .tabBar)` +
+   `toolbarBackgroundVisibility(.visible, for: .tabBar)` on each tab's
+   `NavigationStack` → no visible effect; red Library cover still tinted the
+   Liquid Glass bar.
+2. Same modifiers also on every pushed destination (scope experiment) →
+   identical result. Conclusion: not a scope error; the iOS 26 glass tab bar
+   ignores that API. Both modifiers were removed.
+3. Public `scrollEdgeEffectStyle(.hard, for: .bottom)` → bar clean in light
+   and dark at the position where it was red; the fixture cover is unchanged.
+4. Control build without the modifier + live theme switch → bar red/dark
+   (baseline).
+5. **Residual:** after a *live* theme switch while on a pushed Library
+   screen, the bar keeps the previous scheme's glass tint (brownish in
+   light / light in dark) until the next navigation; after Back it renders
+   correctly. Not fixed — no public API found to force a refresh without
+   resetting view state.
+
+### Captures (scratchpad `v3/`, iPhone 17 Pro iOS 26.5, 402×874 pt @3x, pt-BR)
+
+`today-light-regular`, `today-dark-regular` (Large, `--ui-testing-prompt13-loaded`,
+top of scroll, details collapsed); `today-axxxl-start`, `-scroll1`, `-scroll2`
+(AccessibilityXXXL, light, 0 / ~450 / ~900 pt); `library-light-final`,
+`library-dark-final` (`--ui-testing-prompt14-loaded`, Today → `today.library`,
+initial scroll); `library-dark-live-switch`, `library-light-final-live-theme-switch`,
+`today-dark-after-live-switch-back`; `tab-plano-dark`, `tab-progresso-dark`;
+experiment captures `library-dark-scope-experiment`, `library-light-hard-edge`,
+`control-no-modifier-live-switch`.
+
+### Tests (Debug, same simulator)
+
+- Unit (`AppTabTests`, `LibraryPresentationTests`, `TodayContractTests`,
+  `TodayPresentationTests`, `TodayRecommendationsTests`, `TodayViewModelTests`):
+  90 passed, 0 failed. A first combined run stalled after the unit cases
+  (log stopped mid-line for >9 min) and was terminated; the isolated re-run
+  completed normally. Cause not identified.
+- UI: `PremiumCoreSurfaces` 8/8, `Prompt13Today` 11/11, `Prompt14Accessibility`
+  11/11, `Prompt14Library` 11/11, `Prompt14TodayMascot` 9/9, `BodyFlowUITests`
+  18/18, `FlowChat` 12/12, `PremiumContentProfile` 3/3, `PremiumPerformance` 4/4,
+  `Prompt13Accessibility` 5/5, `Prompt13Registration` 21/21 (after update).
+- Two tests updated because they encoded the old pinned band as a top
+  viewport obstruction (the shortcut now scrolls with content, so its frame
+  produced an invalid viewport): `Prompt13AccessibilityUITests`
+  AXXXL test (obstruction list → navigation bar only, plus a new assertion
+  that `today.library` is revealable, hittable and ≥ minimum target) and
+  `Prompt13RegistrationUITests.testHydrationSuccessRefreshesTodayBeforeRoutineDetail`
+  (obstruction list → navigation bar only; the order assertion is kept).
+  No tolerance widened.
+- Release build (signed ad hoc, `codesign --verify --deep --strict` valid),
+  `xcodebuild analyze` succeeded; only a pre-existing warning in
+  `SessionLifecycleCoordinator.swift:210`.
+
+### Visual criteria
+
+- Normal size: Energy + Protein + Hydration legible above the bar, no text
+  truncation, no global font reduction — ATENDIDO (light and dark).
+- AXXXL: header compacted, shortcuts reflow full width, no Dynamic Type cap
+  or `minimumScaleFactor`, content scrolls and actions reachable (test) —
+  ATENDIDO. Brand wordmark still large at AXXXL (not capped: an existing test
+  requires brand height to grow with content size) — NÃO ATENDIDO as "brand
+  not dominant"; left for review.
+- Tab bar over saturated content on launch/navigation, light and dark, five
+  tabs — ATENDIDO. Live theme switch on a pushed screen — NÃO ATENDIDO
+  (residual above).
+
+**USER VISUAL ACCEPTANCE: PENDING.** Status:
+`PERFORME_AI_RESPONSIVE_VISUAL_PILOT_READY_FOR_REVIEW`; regression partially
+verified (suites above); production `NOT DEPLOYED`.
+
+## Brand at AXXXL + live theme switch — 2026-09-22 (uncommitted pilot, continued)
+
+Operation `CLOSE_TODAY_BRAND_AX_AND_LIVE_THEME_GAPS_V1`. Baseline verified
+before editing: HEAD `f1e7200`, index empty, the 12 dirty paths and full
+SHA-256 hashes of the previous closeout unchanged; no writer active in this
+worktree. Captures in scratchpad `v4/` (settings in `v4/settings.log`); `v3/`
+kept untouched.
+
+### Brand — compact shell presentation (resolved)
+
+- `BodyFlowBrandIdentityView` gains an opt-in `presentation:` parameter
+  (`.standard` default, `.compact`). Compact is identical at regular sizes;
+  at accessibility sizes the product name uses the `.footnote` text role
+  (still scaling) instead of `.headline`. Symbol asset, bytes and aspect
+  unchanged; name exposed once as `brand.product-name` with header trait.
+- Only `AppShellView`'s repeated tab-root header opts in. Launch
+  (`AppRootView`), auth, welcome/onboarding and coach persona keep
+  `.standard`. The shell header is one strip shared by the five tab roots,
+  so the compact variant applies to all of them, not only Today.
+- RED → GREEN: new `Prompt14AccessibilityUITests.testCompactShellBrandStaysSecondaryAtAccessibilityXXXL`
+  (pt-BR and en): single hittable "Performe AI", inside the window, not
+  overlapping and above the navigation bar, height ≤ 6.5% of the window
+  (one standard body line at AXXXL ≈ 63pt = 7.2%), first Energy value
+  starts in the initial viewport and is taller than the brand. RED on the
+  previous code: 63.3pt > 56.8pt. GREEN after the change.
+- The existing `testAuthenticatedBrandLayoutAcrossContentSizes`
+  (Large → AXL → AXXL must grow) was **not** changed and still passes: the
+  compact brand keeps scaling monotonically.
+
+### Live theme switch with Library pushed — UNRESOLVED
+
+Theme changed with `xcrun simctl ui <device> appearance light|dark` while
+the app stayed on the same screen (no navigation, scroll or filter change).
+
+| Exp. | Build | Screen | Result after live switch |
+|---|---|---|---|
+| A | final (stack-level `scrollEdgeEffectStyle(.hard, .bottom)`) | Today root | bar keeps previous-scheme glass; "Hoje" low contrast |
+| B | control (modifier commented out) | Today root | bar updates correctly |
+| C | edge effect only on Library feed ScrollView (stack-level off) | Library pushed | same stale bar as A |
+| final C/D | final | Library pushed, light→dark and dark→light | stale bar both directions; content, filter "Todos", scroll and navigation preserved; selected-tab label loses contrast |
+
+Hypotheses: (1) appearance applied in competing scopes — rejected by code
+(no `preferredColorScheme`/`overrideUserInterfaceStyle`/Info.plist
+override; tokens are trait-resolved dynamic `UIColor`s); (2) interaction
+with the hard scroll-edge effect — confirmed by A vs B, and not specific to
+pushed screens; (3) scope of the edge-effect modifier — rejected by C.
+Result recorded for the tested runtime only (iOS 26.5 simulator, Xcode 27
+SDK). No public, state-preserving fix was found within three hypotheses;
+the forbidden workarounds (view identity reset, tab toggling, pop/push,
+relaunch, forced scheme) were not used. The stack-level modifier is kept
+because it fixes the saturated-content tint on every cold launch and
+navigation; the live-switch residual is the trade-off, pending review.
+
+Minimal reproduction: launch `--ui-testing-prompt14-loaded` in either
+theme, tap `today.library`, run `simctl ui … appearance <other>`, wait 4s.
+
+### Gates (final state)
+
+- RED run: 1 test, 1 failure (expected). GREEN focused run: 3/3.
+- Regression, single run: 77 tests, 0 failures (`BodyFlowUITests` 18,
+  `PremiumAuthOnboarding` 3, `PremiumCoreSurfaces` 8, `Prompt13Accessibility` 5,
+  `Prompt13Today` 11, `Prompt14Accessibility` 12, `Prompt14Library` 11,
+  `Prompt14TodayMascot` 9). Unit: 90 passed, 0 failed.
+- Release signed (ad hoc), `codesign --verify --deep --strict` valid,
+  `analyze` succeeded; only the pre-existing warning in
+  `SessionLifecycleCoordinator.swift:210`.
+- Earlier >9-minute stall: cause still not identified. Pending composer and
+  deep-navigation items from earlier rounds were not re-run and stay open.
+
+**THEME_SWITCH_STATUS: UNRESOLVED.** Status:
+`PERFORME_AI_PILOT_FINAL_GAPS_READY_FOR_REVIEW`. USER VISUAL ACCEPTANCE:
+PENDING. Production: NOT DEPLOYED.
+
+## Native theme adaptation restored — 2026-09-22 (uncommitted pilot, continued)
+
+Operation `RESTORE_NATIVE_THEME_ADAPTATION_AND_CLOSE_VISUAL_PILOT_V1`.
+Baseline verified before editing (HEAD `f1e7200`, index empty, 14 paths with
+the full SHA-256 hashes of the previous closeout, no later writer). Captures
+in scratchpad `v5/` (settings in `v5/settings.log`); `v3/` and `v4/`
+(including the `.hard` experiment) kept.
+
+### Change
+
+Surgical edit in `App/AppShellView.swift`: removed the pilot-introduced
+`.modifier(TabBarScrollEdgeEffect())` and its private helper (the only
+`scrollEdgeEffectStyle` in the app; absent from HEAD). The `.compact` brand
+callsite is untouched. The tab bar is back to the native appearance of HEAD.
+
+### Theme switch (iOS 26.5 simulator, iPhone 17 Pro, Xcode 27 SDK)
+
+Theme changed with `simctl ui … appearance` while the screen stayed put.
+
+- Today root, light → dark → light: bar, labels and selected tab adapt — PASS.
+- Library pushed (filter "Todos", scrolled 150pt so the red cover is under
+  the bar), light → dark → light: bar and content adapt; before/after light
+  captures identical; scroll, filter, stack and selected tab preserved — PASS.
+- Cold launch dark on the same position renders the same values as the live
+  switch.
+- Native saturated-content tint: PRESENT (the glass samples the red/black
+  cover; expected native behaviour, not "fixed").
+
+### Legibility over the saturated cover
+
+Measured on the rendered captures (luminance of the text extreme vs. the
+local median background):
+
+| State | Unselected labels | Selected "Hoje" label |
+|---|---|---|
+| Today root, light / dark | ~16.9:1 / ~13.2:1 | ~6.0:1 / ~7.0:1 |
+| Library cover under bar, dark | ~14.6:1 | ~7.8:1 |
+| Library cover under bar, light | ~15.9:1 | **~2.7:1** |
+
+The selection stays understandable without colour (native highlight
+capsule), but the selected label falls below 4.5:1 in light over saturated
+content. This is native behaviour with HEAD's configuration (`.tint(accent)`
+unchanged), not introduced by the pilot; recorded as an **open issue**. A
+temporary XCTest contrast audit on that state (method removed after the run)
+reported no tab-bar findings — only content text occluded by the bars — so
+the automated audit does not catch this case.
+
+### Accessibility audit regression found — compact brand (BLOCKING)
+
+`PremiumConvergenceUITests.testRepresentativeLoadedTabsPassAutomatedAccessibilityAudit`
+and `…StateFamiliesPassAutomatedAccessibilityAudit` fail with "Dynamic Type
+font sizes are partially unsupported" on `brand.product-name`. Control: with
+the callsite temporarily set to `.standard` both pass; restored to
+`.compact` afterwards. Cause: the compact variant switches from `.headline`
+to `.footnote` at accessibility sizes, so the name stops growing across that
+step. Not fixed here — the operation forbids redoing `.compact` and does not
+accept an accessibility regression; decision pending.
+
+### Gates (final state, new this round)
+
+- New test `Prompt14AccessibilityUITests.testLiveThemeSwitchPreservesShellStackAndLibraryState`
+  (live switch reaches the app; Library, "Salvos" filter, selected tab and
+  five actionable tabs preserved in both directions): pass.
+- Focused run: 5/5. Regression, single run: 62 tests, 2 failures (the two
+  audit tests above); `BodyFlowUITests` 18, `PremiumAuthOnboarding` 3,
+  `PremiumCoreSurfaces` 8, `Prompt13Accessibility` 5, `Prompt14Accessibility`
+  13, `Prompt14Library` 11 all green. Audit control run (`.standard`): 2/2.
+- Unit: 90 passed. Release signed (ad hoc), `codesign --verify --deep
+  --strict` valid, `analyze` succeeded (pre-existing warning only).
+- Composer/deep-navigation items and the earlier >9-min stall remain open.
+
+Status: `PERFORME_AI_VISUAL_PILOT_NATIVE_THEME_READY_FOR_REVIEW` with the
+compact-brand audit regression blocking closure. USER VISUAL ACCEPTANCE:
+PENDING. Production: NOT DEPLOYED.
+
+## I1 — Pilot closeout and clean baseline — 2026-09-22 (Performe AI UI/UX plan V2)
+
+Performe AI = public product; Flow = public agent; BodyFlow = preserved internal
+technical identity (paths, targets, types, IDs) — not a public brand.
+
+Operation: Plan V2 increment I1 (`stateful-knitting-ripple` plan, authority
+amendment VERIFIED against `b4c09e8:docs/handoffs/2026-08-20-…`, specs
+2026-08-11 / 2026-09-14 / 2026-09-17 / 2026-09-19, Signal Spark RC1 manifest).
+Entry state verified before editing: HEAD `f1e72009…`, index empty, the 14
+pilot files with the SHA-256 hashes of the previous closeout; `scrollEdgeEffect`
+occurrences in the tree = 0 (the pilot's `.hard` edge effect had already been
+removed surgically; `AppShellView.swift` diff = the single `.compact` callsite).
+
+### Changes (presentation only; 3 files newly touched, 2 pilot files amended)
+
+- `DesignSystem/BodyFlowTypography.swift`: `+brandCompact = .subheadline.weight(.bold)`
+  (additive token; locked identities untouched).
+- `DesignSystem/Components/ScreenStateView.swift` (approved public callsite,
+  edited in place): compact presentation uses `brandCompact` at every size
+  (no role switch per category); symbol `@ScaledMetric(relativeTo: .largeTitle)
+  = 28`; removed the unused `View.bodyFlowBrandIdentity()`; `brand.product-name`,
+  `Image(decorative:)` and `.isHeader` unchanged.
+- `BodyFlowTests/BodyFlowPremiumRenderingTests.swift`: new
+  `testBrandIdentityGrowsStrictlyAcrossDynamicTypeSizes` (both presentations,
+  light/dark, 12 sizes, strictly increasing height).
+- `BodyFlowTests/BodyFlowComponentPolicyTests.swift`: `brandCompact` identity.
+- `BodyFlowUITests/Prompt14AccessibilityUITests.swift`: compact-brand threshold
+  changed from `window.height × 0.065` to "< one body line at AXXXL" measured
+  in the runner via `UIFont.preferredFont(forTextStyle: .body, compatibleWith:)`.
+
+Decision attribution: `.subheadline.weight(.bold)` was the option the user
+selected in this session (AskUserQuestion "Marca AXXXL"); it is a technical
+design proposal confirmed by the gates below, not a visual acceptance.
+
+### RED → GREEN
+
+- RED (`v6-i1-red.xcresult`): compact brand rendered height was flat at
+  **28.0 pt from xSmall through accessibility1** (light and dark), then
+  32.3 / 39.7 / 45.7 / 52.7 — the same defect the XCTest audit reports as
+  "Dynamic Type font sizes are partially unsupported".
+- GREEN unit (`v6-i1-green-unit`): render test + 6 policy tests pass.
+- GREEN UI focused (`v6-i1-green-ui`, single run): `PremiumConvergenceUITests`
+  4/4 (both accessibility audits, **no allowlist change**),
+  `Prompt14AccessibilityUITests` 13/13 (incl. brand growth Large→AXL→AXXL,
+  compact-brand secondary at AXXXL pt/en, live theme switch),
+  `PremiumCoreSurfacesUITests` 8/8, `PremiumAuthOnboardingUITests` 3/3 — 28/28.
+
+### Native theme adaptation (I1 build, captures `v6/i1/`, iOS 26.5 simulator)
+
+`simctl ui appearance` switched without navigation, scroll, relaunch or filter
+change. Today root light→dark→light (`A0/A1/A2`) and Library pushed with the
+saturated cover under the bar (`B0/B1/B2`): bar, labels and selection adapt in
+both directions; stack, "Todos" filter, scroll position and content preserved;
+`B0` and `B2` measure identically. Measured contrast (text vs local median):
+Today root dark 7.0:1 / light 6.0:1 (selected "Hoje"), unselected 13–17:1;
+Library over the cover: dark 7.8:1, light **2.7:1** (selected label; native
+glass sampling — recorded open item, not introduced by the pilot). Native
+tint: PRESENT and accepted per the V2 requirement (readability + state, not
+"zero tint").
+
+### Full gate (baseline)
+
+- Unit, full `BodyFlowTests`, single invocation: **1,431 passed, 0 failed,
+  0 skipped** (136 s). `v6-i1-unit-full.xcresult`.
+- UI, all 17 classes, single invocation (`-parallel-testing-enabled NO`):
+  **153 passed, 0 failed** in 58.6 min, no watchdog trip.
+  BodyFlowUITests 18, FlowChat 12 (incl. the 4,001-character composer test),
+  PremiumAuthOnboarding 3, PremiumContentProfile 3, PremiumConvergence 4,
+  PremiumCoreSurfaces 8, PremiumPerformance 4, PremiumRegistration 3,
+  Prompt13Accessibility 5, Prompt13PlanProgressHistory 12,
+  Prompt13Registration 21, Prompt13Routine 12, Prompt13Today 11,
+  Prompt14Accessibility 13, Prompt14Library 11, Prompt14Progress 4,
+  Prompt14TodayMascot 9. FULL SUITE RESULT: PASS. ISOLATED CHARACTERIZATION:
+  none needed. FINAL VERIFIED STATE: VERIFIED. `v6-i1-ui-full.xcresult`.
+- Release signed (ad hoc), `codesign --verify --deep --strict` valid;
+  `xcodebuild analyze` succeeded with no findings; only the pre-existing
+  Release warning at `SessionLifecycleCoordinator.swift:210`.
+- Scanner `premium-surface-scan.mjs --baseline 7ab3e657` on the Release app:
+  **PASS** — `PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18` identical,
+  `ALLOWED_TECHNICAL 213`; scanner unit tests 21/21.
+- Performance baseline (`PremiumPerformanceUITests`, averages): launch 1.851 s;
+  Library feed scroll 5.451 s / 81.0 MB peak; Flow 50-message history 6.000 s /
+  79.2 MB; Flow long response 5.791 s / 81.3 MB.
+- Identifier inventory HEAD→tree: 162 → 166 (only additions:
+  `today.energy.details`, `today.header.details`, `today.hydration.details`,
+  `today.protein.details`). Policy greps: `.shadow` 0, `.blur` 0, material 1,
+  `glassEffect` 0, `minimumScaleFactor` 0, `scrollEdgeEffect` 0,
+  `dynamicTypeSize(` only in `#Preview` blocks; assets diff empty.
+
+### Captures (`v6/i1/settings.log`; iPhone 17 Pro, iOS 26.5, 402×874 pt @3x)
+
+Today pt light/dark × Large/AXXXL + en Large; tab roots Registrar/Plano/
+Progresso/Perfil at light AXXXL and dark Large (compact brand strip: 15 pt
+bold at regular sizes, one line below a body line at AXXXL); Library light/dark
+initial position; theme sequences A0–A2, B0–B2.
+
+### Open items (unchanged, explicit)
+
+Selected tab label ~2.7:1 over a saturated cover in light (native; accent is a
+locked token); VoiceOver manual narration NOT EXECUTED; staging NOT
+REVALIDATED; AppIcon tinted PENDING — NOT INTEGRATED.
+
+Status: I1 gates satisfied. REGRESSION STATUS: VERIFIED (full unit + full UI,
+single runs, 0 failures). PUBLIC BRAND STATUS: VERIFIED for this build
+(scanner PASS, brand tests green, internals preserved). USER VISUAL
+ACCEPTANCE: PENDING. Production: NOT DEPLOYED. **Baseline commit: AUTHORIZED
+by the user on 2026-09-22 after all I1 gates** (17 files staged by explicit
+path; this section is part of that commit; no push).

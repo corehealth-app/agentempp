@@ -740,6 +740,15 @@ struct LibraryRootView: View {
                     }
                 }
             }
+            // The vertical Divider() between the two buttons has no bounded
+            // ideal height of its own, so it (and transitively this Group)
+            // happily accepts whatever height an ambient flexible ancestor
+            // proposes — competing with the feed's ScrollView for leftover
+            // vertical space instead of staying compact. Pinning the whole
+            // toggle to its own content-driven ideal height fixes that while
+            // still growing naturally for larger Dynamic Type sizes (each
+            // button's minHeight-44 floor is preserved).
+            .fixedSize(horizontal: false, vertical: true)
             .background(BodyFlowColor.surface)
             .clipShape(
                 RoundedRectangle(cornerRadius: BodyFlowSpacing.xs)
@@ -1183,6 +1192,13 @@ struct LibraryRootView: View {
                 maxWidth: .infinity,
                 minHeight: BodyFlowSpacing.minimumTapTarget
             )
+            // A frame with only minHeight (no maxHeight) accepts whatever
+            // height an ambient flexible ancestor proposes, which let this
+            // control balloon to consume leftover vertical space alongside
+            // the feed's ScrollView. Pin it to its content-driven ideal
+            // height (still never below the 44pt floor above) so it stays
+            // compact instead of competing for layout space.
+            .fixedSize(horizontal: false, vertical: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

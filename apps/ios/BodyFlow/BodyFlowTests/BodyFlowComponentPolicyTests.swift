@@ -47,6 +47,7 @@ struct BodyFlowComponentPolicyTests {
         #expect(BodyFlowTypography.title == Font.title2)
         #expect(BodyFlowTypography.headline == Font.headline)
         #expect(BodyFlowTypography.callout == Font.callout)
+        #expect(BodyFlowTypography.brandCompact == Font.subheadline.weight(.bold))
     }
 
     @Test func actionRolesPreserveHierarchyAndReadableDisabledPair() {

@@ -2119,6 +2119,12 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Status do balanço" } }
       }
     },
+    "today.energy.details.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "More details" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mais detalhes" } }
+      }
+    },
     "today.energy.exercise" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise" } },

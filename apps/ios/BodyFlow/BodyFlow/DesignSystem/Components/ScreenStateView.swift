@@ -1,9 +1,27 @@
 import SwiftUI
 
 struct BodyFlowBrandIdentityView: View {
+    /// `standard` is the wordmark used by launch, auth, welcome and
+    /// onboarding. `compact` is opt-in for the repeated shell header above
+    /// the tab roots: one smaller, still scalable text role at every size,
+    /// so the header stays secondary to the day's content without ever
+    /// switching roles between categories.
+    enum Presentation: Sendable {
+        case standard
+        case compact
+    }
+
     @Environment(\.colorScheme) private var colorScheme
 
-    private let symbolSize: CGFloat = 28
+    private let presentation: Presentation
+    // Scales with the wordmark so the band grows monotonically with Dynamic
+    // Type; largeTitle has the gentlest curve, keeping the symbol below the
+    // text line height at every category.
+    @ScaledMetric(relativeTo: .largeTitle) private var symbolSize: CGFloat = 28
+
+    init(presentation: Presentation = .standard) {
+        self.presentation = presentation
+    }
 
     var body: some View {
         HStack(spacing: BodyFlowSpacing.sm) {
@@ -14,7 +32,7 @@ struct BodyFlowBrandIdentityView: View {
                 .frame(width: symbolSize, height: symbolSize)
 
             Text(BrandIdentity.productName)
-                .font(BodyFlowTypography.headline)
+                .font(productNameFont)
                 .fontWeight(.bold)
                 .foregroundStyle(BodyFlowColor.accent)
                 .multilineTextAlignment(.center)
@@ -25,27 +43,14 @@ struct BodyFlowBrandIdentityView: View {
         }
     }
 
+    private var productNameFont: Font {
+        presentation == .compact
+            ? BodyFlowTypography.brandCompact
+            : BodyFlowTypography.headline
+    }
+
     private var symbolAsset: PerformeAIBrandAsset {
         colorScheme == .dark ? .symbolDark : .symbolLight
-    }
-}
-
-extension View {
-    func bodyFlowBrandIdentity() -> some View {
-        VStack(spacing: 0) {
-            BodyFlowBrandIdentityView()
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, BodyFlowSpacing.lg)
-                .padding(.vertical, BodyFlowSpacing.xs)
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                .background(BodyFlowColor.background)
-                .overlay(alignment: .bottom) {
-                    Divider()
-                }
-
-            self
-                .clipped()
-        }
     }
 }
 

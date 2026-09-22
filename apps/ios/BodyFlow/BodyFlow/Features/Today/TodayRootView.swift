@@ -217,6 +217,7 @@ struct TodayRootView: View {
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         model: TodayViewModel,
@@ -236,28 +237,17 @@ struct TodayRootView: View {
             stateContent
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            let navigation = TodayRootNavigationPresentation(state: model.state)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: BodyFlowSpacing.sm) {
-                    flowNavigationLink
-                    Spacer(minLength: 0)
-                    libraryNavigationLink(
-                        route: navigation.toolbarRoutes[0],
-                        showsTitle: true
-                    )
-                }
-                HStack(spacing: BodyFlowSpacing.sm) {
-                    flowNavigationLink
-                    Spacer(minLength: 0)
-                    libraryNavigationLink(
-                        route: navigation.toolbarRoutes[0],
-                        showsTitle: false
-                    )
-                }
+            // When Today has no snapshot (loading, error, offline,
+            // unavailable) the shortcuts stay pinned here so Flow and the
+            // Library remain reachable independently of Today's state. Once
+            // the snapshot is shown they move into the scrolling content,
+            // after the day summary, instead of occupying a fixed band.
+            if model.state.presentation.value == nil {
+                todayShortcuts
+                    .padding(.horizontal, BodyFlowSpacing.md)
+                    .padding(.vertical, BodyFlowSpacing.xs)
+                    .background(BodyFlowColor.background)
             }
-            .padding(.horizontal, BodyFlowSpacing.md)
-            .padding(.vertical, BodyFlowSpacing.xs)
-            .background(BodyFlowColor.background)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.today.rootAccessibilityIdentifier)
@@ -307,45 +297,73 @@ struct TodayRootView: View {
         }
     }
 
-    private var flowNavigationLink: some View {
+    /// Flow and Library entries. Side by side while both labels fit on one
+    /// line; otherwise (large and accessibility text sizes) each entry takes
+    /// the full row width so its label reflows across the width instead of
+    /// wrapping word by word inside a narrow column.
+    private var todayShortcuts: some View {
+        let navigation = TodayRootNavigationPresentation(state: model.state)
+        let libraryRoute = navigation.toolbarRoutes[0]
+        return ViewThatFits(in: .horizontal) {
+            // Flow takes the remaining width; Library keeps its natural
+            // width, so neither label wraps when the row fits.
+            HStack(spacing: BodyFlowSpacing.sm) {
+                flowNavigationLink(expands: true)
+                libraryNavigationLink(route: libraryRoute, expands: false)
+            }
+            VStack(spacing: BodyFlowSpacing.sm) {
+                flowNavigationLink(expands: true)
+                libraryNavigationLink(route: libraryRoute, expands: true)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func flowNavigationLink(expands: Bool) -> some View {
         NavigationLink(value: AppRoute.flowChat) {
-            Label(copy("flow.open"), systemImage: "bubble.left.and.text.bubble.right")
-                .font(BodyFlowTypography.headline)
-                .foregroundStyle(BodyFlowColor.accent)
-                .padding(.horizontal, BodyFlowSpacing.sm)
-                .padding(.vertical, BodyFlowSpacing.sm)
-                .background(
-                    BodyFlowColor.surface,
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .accessibilityRepresentation { EmptyView() }
+            shortcutLabel(
+                copy("flow.open"),
+                systemImage: "bubble.left.and.text.bubble.right",
+                expands: expands
+            )
         }
         .accessibilityLabel(copy("flow.open"))
         .accessibilityIdentifier("today.flow-chat")
     }
 
-    private func libraryNavigationLink(
-        route: AppRoute,
-        showsTitle: Bool
-    ) -> some View {
+    private func libraryNavigationLink(route: AppRoute, expands: Bool) -> some View {
         NavigationLink(value: route) {
-            HStack(spacing: BodyFlowSpacing.xs) {
-                Image(systemName: "books.vertical")
-                if showsTitle { Text(copy("today.library")) }
-            }
+            shortcutLabel(
+                copy("today.library"),
+                systemImage: "books.vertical",
+                expands: expands
+            )
+        }
+        .accessibilityLabel(copy("today.library"))
+        .accessibilityIdentifier("today.library")
+    }
+
+    private func shortcutLabel(
+        _ title: String,
+        systemImage: String,
+        expands: Bool
+    ) -> some View {
+        Label(title, systemImage: systemImage)
             .font(BodyFlowTypography.headline)
             .foregroundStyle(BodyFlowColor.accent)
-            .frame(minWidth: BodyFlowSpacing.minimumTapTarget)
-            .padding(.horizontal, showsTitle ? BodyFlowSpacing.sm : 0)
-            .padding(.vertical, BodyFlowSpacing.sm)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(
+                maxWidth: expands ? .infinity : nil,
+                minHeight: BodyFlowSpacing.minimumTapTarget,
+                alignment: .leading
+            )
+            .padding(.horizontal, BodyFlowSpacing.sm)
+            .padding(.vertical, BodyFlowSpacing.xs)
             .background(
                 BodyFlowColor.surface,
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
             .accessibilityRepresentation { EmptyView() }
-        }
-        .accessibilityLabel(copy("today.library"))
-        .accessibilityIdentifier("today.library")
     }
 
     @ViewBuilder
@@ -385,13 +403,17 @@ struct TodayRootView: View {
                     }
                 }
 
+                // Day summary first: compact day context, Energy (both
+                // official meanings), then Protein and Hydration paired.
                 TodayHeaderSection(descriptor: presentation.header)
                 TodayEnergySection(
                     descriptor: presentation.energy,
                     completionMessage: presentation.completionMessage(for: language)
                 )
-                TodayProteinSection(descriptor: presentation.protein)
-                TodayHydrationSection(descriptor: presentation.hydration)
+                nutritionSummaryPair(presentation)
+
+                // Next actions: Flow/Library entries, then pending items.
+                todayShortcuts
                 TodayAttentionSection(descriptor: presentation.attention)
 
                 if let recommendations {
@@ -447,6 +469,26 @@ struct TodayRootView: View {
                 await mascot.retry()
             }
         }
+    }
+
+    /// Protein and Hydration as two equal-height tiles at regular text sizes;
+    /// stacked at accessibility sizes so neither is squeezed into a column.
+    @ViewBuilder
+    private func nutritionSummaryPair(_ presentation: TodayPresentation) -> some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                    TodayProteinSection(descriptor: presentation.protein)
+                    TodayHydrationSection(descriptor: presentation.hydration)
+                }
+            } else {
+                HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                    TodayProteinSection(descriptor: presentation.protein)
+                    TodayHydrationSection(descriptor: presentation.hydration)
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func retry() {

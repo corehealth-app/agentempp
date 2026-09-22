@@ -296,6 +296,144 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
     }
 
+    /// A live system appearance change (no relaunch, navigation or scroll)
+    /// must reach the running app and must not disturb shell state: the
+    /// selected tab, the pushed Library destination and its filter survive
+    /// both directions, and every tab stays actionable.
+    @MainActor
+    func testLiveThemeSwitchPreservesShellStackAndLibraryState() {
+        let support = Prompt14UITestSupport(testCase: self)
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .light }
+        let app = support.launch(scenario: .loaded)
+
+        let today = support.element("screen.hoje", in: app)
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        XCTAssertEqual(today.value as? String, "light")
+        XCUIDevice.shared.appearance = .dark
+        assertEventually(today, "value == 'dark'")
+        XCUIDevice.shared.appearance = .light
+        assertEventually(today, "value == 'light'")
+
+        support.openLibrary(in: app)
+        let library = support.element("screen.library", in: app)
+        let saved = support.element("library.selection.saved", in: app)
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
+        saved.tap()
+        assertEventually(saved, "selected == true")
+
+        let tabIdentifiers = [
+            "tab.hoje",
+            "tab.registrar",
+            "tab.plano",
+            "tab.progresso",
+            "tab.perfil",
+        ]
+        for appearance in [XCUIDevice.Appearance.dark, .light] {
+            XCUIDevice.shared.appearance = appearance
+            XCTAssertTrue(library.waitForExistence(timeout: 5))
+            XCTAssertTrue(saved.isSelected)
+            XCTAssertTrue(app.tabBars.buttons["tab.hoje"].isSelected)
+            assertBrandHiddenOnPushedDestination(in: app)
+            for identifier in tabIdentifiers {
+                let tab = app.tabBars.buttons[identifier]
+                XCTAssertTrue(tab.isHittable, "\(identifier) after \(appearance)")
+                support.assertMinimumTapTarget(tab)
+            }
+        }
+    }
+
+    @MainActor
+    private func assertEventually(
+        _ element: XCUIElement,
+        _ format: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: format),
+            object: element
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 5),
+            .completed,
+            "\(element.identifier) did not satisfy \(format)",
+            file: file,
+            line: line
+        )
+    }
+
+    /// The repeated shell wordmark above Today uses the compact brand
+    /// presentation: at the largest accessibility size it stays a single,
+    /// readable, hittable "Performe AI" header, but it must not outrank the
+    /// day's content — the first Energy value starts in the initial viewport
+    /// and is taller than the wordmark.
+    @MainActor
+    func testCompactShellBrandStaysSecondaryAtAccessibilityXXXL() {
+        let support = Prompt14UITestSupport(testCase: self)
+
+        for language in ["pt-BR", "en"] {
+            let app = support.launch(
+                scenario: .loaded,
+                additionalArguments: [
+                    "-UIPreferredContentSizeCategoryName",
+                    "UICTContentSizeCategoryAccessibilityXXXL",
+                    "-AppleLanguages", "(\(language))",
+                ]
+            )
+            let window = app.windows.element(boundBy: 0)
+            let brand = app.staticTexts["brand.product-name"]
+            let navigationBar = app.navigationBars.firstMatch
+            let tabBar = app.tabBars.element(boundBy: 0)
+            let remaining = support.element(
+                "today.energy.remaining-food",
+                in: app
+            )
+            for element in [window, brand, navigationBar, tabBar, remaining] {
+                XCTAssertTrue(
+                    element.waitForExistence(timeout: 5),
+                    "Missing compact-brand layout element (\(language))"
+                )
+            }
+
+            assertSingleActiveBrand(in: app)
+            XCTAssertEqual(brand.label, "Performe AI")
+            XCTAssertTrue(window.frame.contains(brand.frame))
+            XCTAssertTrue(brand.frame.intersection(navigationBar.frame).isNull)
+            XCTAssertGreaterThanOrEqual(
+                navigationBar.frame.minY,
+                brand.frame.maxY
+            )
+            // The compact wordmark must be strictly smaller than one body
+            // line at AccessibilityXXXL (measured in the runner, so the
+            // threshold does not depend on the device's window height).
+            let bodyLineAtAXXXL = UIFont.preferredFont(
+                forTextStyle: .body,
+                compatibleWith: UITraitCollection(
+                    preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge
+                )
+            ).lineHeight
+            XCTAssertLessThan(
+                brand.frame.height,
+                bodyLineAtAXXXL,
+                "Compact shell brand must not dominate the AXXXL viewport "
+                    + "(\(language)): \(brand.frame) vs body line \(bodyLineAtAXXXL)"
+            )
+            XCTAssertLessThan(
+                remaining.frame.minY,
+                tabBar.frame.minY,
+                "The first Energy value must start in the initial viewport "
+                    + "(\(language))"
+            )
+            XCTAssertGreaterThan(
+                remaining.frame.height,
+                brand.frame.height,
+                "Day content must outrank the compact brand (\(language))"
+            )
+            app.terminate()
+        }
+    }
+
     @MainActor
     func testAuthenticatedBrandLayoutAcrossContentSizes() {
         let support = Prompt14UITestSupport(testCase: self)

@@ -49,6 +49,7 @@ struct ProfileRootView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.profile.rootAccessibilityIdentifier)
         .navigationTitle(copy("profile.navigation.title"))
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: ProfilePersonaLoadKey(
             userID: userID,
             coachRevision: invalidationCenter.revision(for: .coachExperience)

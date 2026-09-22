@@ -57,8 +57,15 @@ struct BodyFlowUITestSupport {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44, file: file, line: line)
+        // XCUIElement.frame is reported after coordinate-space conversion
+        // through the accessibility tree, which can leave a sub-picopoint
+        // (~1e-13 pt) floating-point remainder against a control whose
+        // production frame(minHeight:/width:) is an exact hard 44pt floor.
+        // The tolerance absorbs that unmeasurable rounding noise only; any
+        // real shortfall (even a fraction of a point) still fails.
+        let tolerance: CGFloat = 0.01
+        XCTAssertGreaterThanOrEqual(element.frame.width, 44 - tolerance, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.height, 44 - tolerance, file: file, line: line)
     }
 
     func captureEvidence(

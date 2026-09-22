@@ -32,6 +32,7 @@ struct RegisterRootView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.register.rootAccessibilityIdentifier)
         .navigationTitle(copy("registration.root.navigation-title"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var loadedContent: some View {

@@ -10,6 +10,29 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5,
     ]
 
+    /// Local documentary render only — the launch is never delayed for a real
+    /// screenshot, so this attaches the native `SplashView` render for visual
+    /// review. It is not a captured app-launch frame.
+    func testSplashNativeRenderForDocumentaryReview() throws {
+        for language in SupportedAppLanguage.allCases {
+            let locale = language.formattingLocale
+            let image = PremiumRenderingTestSupport.nativeImage(
+                SplashView(),
+                width: 393,
+                dark: false,
+                size: .large,
+                locale: locale
+            )
+            let attachment = XCTAttachment(
+                data: try XCTUnwrap(image.pngData()),
+                uniformTypeIdentifier: "public.png"
+            )
+            attachment.name = "splash-native-render-\(language.rawValue)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testAllTabsAndStateFamiliesAXXXL() throws {
         let states: [ScreenState] = [
             .loading, .empty, .recoverableError, .offline, .unavailable,

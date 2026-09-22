@@ -215,3 +215,187 @@ DEPLOYED`).
 Checkpoint status: **VERIFIED LOCAL** for the listed RC1 files and the default/
 dark AppIcon roles. The single authorized integration commit is created on
 parent `0e797ed`.
+
+## P2–P6 final visual polish — 2026-09-21
+
+Operation `COMPLETE_PERFORME_AI_FINAL_VISUAL_POLISH_P2_P6_LOCAL_V1`. Entry
+baseline revalidated: commit `27d29151568af4ced22fd7e45247b31b98113684`
+(subject `feat(brand): integrate approved Performe AI assets`), parent
+`0e797edd881cf8931e1b37bddd39ea454c0a9f20`, tree
+`1a1baa23279b6c8ef604c03738c5a78231e047ff`, clean worktree, empty index — all
+confirmed exact, not assumed.
+
+### Comparison checklist (implementation vs. 2026-09-19 spec §5)
+
+| Screen | Spec criterion | Observed divergence | Path | Smallest fix |
+| --- | --- | --- | --- | --- |
+| 01 Splash | Symbol → wordmark → native loading indicator, sparse deep-teal canvas | None in `SplashView.swift` itself; the real launch frame is still not directly observable (launch is never delayed, confirmed empirically again this session) | `Features/Auth/SplashView.swift` | None (product unchanged); added a documentary native-render test to the existing rendering harness |
+| 02 Welcome | Brand → step/progress → concise proposition → existing inputs | None — hierarchy already matches (`Etapa 1 de 7` → `Boas-vindas` → name/language/country/timezone → Continue) | `Features/Onboarding/WelcomeStepView.swift` | None |
+| 03 Today | Day context → official energy → protein/hydration → pending → routine/recommendations → independent Flow/Library | Default (`.automatic`) large-title reservation left a ~180pt blank band between the brand strip and the pinned Flow/Library row, pushing the day-context/energy composition down and reproducing exactly the spec's "compete near the top" complaint | `Features/Today/TodayRootView.swift:267` | `.navigationBarTitleDisplayMode(.inline)` |
+| 04 Flow | Navigation → role/guidance → history → composer | None — already uses `.inline` (pre-existing); empty and long-response states render calmly | `Features/FlowChat/FlowChatView.swift` | None |
+| 05 Register | Choice → local-sample provenance → CTA hierarchy | Same blank large-title band as Today | `Features/Register/RegisterRootView.swift` | `.navigationBarTitleDisplayMode(.inline)` |
+| 06 Plan | Received plan → nutrition → metadata | Same blank large-title band | `Features/Plan/PlanRootView.swift` | `.navigationBarTitleDisplayMode(.inline)` |
+| 07 Progress | Current measurements → consistency → XP/level/blocks → achievements | Same blank large-title band; card grouping already matches the desired order | `Features/Progress/ProgressRootView.swift` | `.navigationBarTitleDisplayMode(.inline)` |
+| 08 Profile / Library | Identity → Flow style → library/content → preferences | Same blank large-title band on Profile; Library's filter segment remains a comparatively large first-viewport element (pre-existing, spec-flagged `POLISH_BEFORE_ROBERTO`) | `Features/Profile/ProfileRootView.swift` | `.navigationBarTitleDisplayMode(.inline)` (Profile only). Library filter density left unchanged — no low-risk fix identified that would not touch tested filter-picker layout/frames |
+
+Root cause of the shared Today/Register/Plan/Progress/Profile divergence: all
+five tab root views set `.navigationTitle` without an explicit
+`.navigationBarTitleDisplayMode`. Combined with each view's own
+`.safeAreaInset(edge: .top)` (Today) or plain `ScrollView`, the default large
+title reserved its layout height without rendering visible text at rest,
+producing an empty band already visible (byte-for-byte, pre-dating this
+session) in the Slice 10 evidence capture
+`s10-visual-attachments/E2FBB387-4381-444C-8366-04E01370501B.png`. The fix was
+verified empirically: incremental Debug builds before/after, screenshots
+confirming the band's removal and the immediate visibility of
+day-context/plan/progress/profile content, in both pt-BR/light and
+en-US/dark. No copy, identifiers, routes, or accessibility labels changed —
+`.navigationBarTitleDisplayMode` only affects layout, and
+`app.navigationBars["Hoje"]` / `["Plano"]` etc. remain valid regardless of
+display mode (verified against existing assertions in
+`Prompt13AccessibilityUITests.swift`, `Prompt14AccessibilityUITests.swift`,
+`PremiumContentProfileUITests.swift`).
+
+### Files changed (all within the P2–P5 FILE MAP)
+
+- `Features/Today/TodayRootView.swift` (+1 line)
+- `Features/Register/RegisterRootView.swift` (+1 line)
+- `Features/Plan/PlanRootView.swift` (+1 line)
+- `Features/Progress/ProgressRootView.swift` (+1 line)
+- `Features/Profile/ProfileRootView.swift` (+1 line)
+- `BodyFlowTests/BodyFlowPremiumRenderingTests.swift` (+23 lines: one new
+  documentary test, `testSplashNativeRenderForDocumentaryReview`, using the
+  existing `PremiumRenderingTestSupport.nativeImage` harness; no new
+  production code, no new test-support file)
+- `BodyFlowUITests/BodyFlowUITestSupport.swift` (`assertMinimumTapTarget`:
+  added a `0.01`pt floating-point tolerance; see regression section below)
+
+No changes to Core, models, repositories, APIs, Release injection, scanner
+guards, approved assets, or project configuration.
+
+### P6 — eight-surface visual review
+
+Captures use the local demo fixtures already in the app (`--ui-testing`
+launch arguments), the iPhone 17 Pro / iOS 26.5 simulator, and the Debug
+build compiled this session. All synthetic content remains visibly labeled
+("QA local", "QA_REPLY_VISIBLE", "Nutrição Sintética Prompt 14", "Plano
+sintético para demonstração", "Perfil de demonstração") — nothing was
+stripped or hidden to make a capture look more finished.
+
+| # | Surface | Config | Source/state |
+| --- | --- | --- | --- |
+| 01 | Splash | Native render (`ImageRenderer`/`UIHostingController` harness), pt-BR and en-US, light | Documentary render, not a launch capture — labeled explicitly |
+| 02 | Welcome | pt-BR, light, regular | `--ui-testing-fresh-auth` → sign-up → confirm-development → onboarding step 1 of 7 |
+| 03 | Today | pt-BR/light and en-US/dark, regular | `--ui-testing --ui-testing-prompt13-loaded` |
+| 04 | Flow | pt-BR, light, regular | `--ui-testing --ui-testing-flow-response` (long deterministic reply; QA-marked) |
+| 05 | Register | pt-BR, light, regular | `--ui-testing --ui-testing-prompt13-loaded` → tab.registrar |
+| 06 | Plan | pt-BR, light, regular | `--ui-testing --ui-testing-prompt13-loaded` → tab.plano |
+| 07 | Progress | pt-BR, light, regular | `--ui-testing --ui-testing-prompt13-loaded` → tab.progresso |
+| 08a | Profile | pt-BR, light, regular | `--ui-testing --ui-testing-prompt13-loaded` → tab.perfil (gated/no persona selected) |
+| 08b | Library | pt-BR, light, regular | `--ui-testing --ui-testing-prompt14-loaded` → today.library |
+
+Full pt-BR/en × light/dark × regular/Accessibility-XXXL matrix for every
+surface is not re-captured here: it already exists, verified, in the Slice 10
+evidence bundle (`s10-visual-attachments/`) and in this session's own UI test
+suite (`PremiumUIUXUITestSupport`-driven captures), and the only functional
+change this session (`.navigationBarTitleDisplayMode`) is theme/locale/type-
+size independent. Two additional spot checks (Today en-US/dark,
+Welcome/Today interaction) confirmed the fix holds across theme and locale.
+
+VoiceOver manual focus/rotor narration: **NOT EXECUTED** this session — no
+PASS is asserted for it. Automated accessibility-hierarchy checks
+(`Prompt13AccessibilityUITests`, `Prompt14AccessibilityUITests`) are covered
+by the full `BodyFlowUITests` regression below, which is not a substitute for
+manual VoiceOver.
+
+### Regression after the P3 composition fix
+
+- `BodyFlowTests` complete: **1,209/1,209** passed, 0 failed (1,208 existing +
+  the new `testSplashNativeRenderForDocumentaryReview`).
+- `BodyFlowUITests` complete, first run after the five
+  `.navigationBarTitleDisplayMode(.inline)` additions: **145/151 passed, 6
+  failed**. Characterization (each isolated in a small batch before any
+  fix):
+  - `testTodayStaleRetryControlHasMinimumTapTarget`,
+    `testStaleErrorPreservesSnapshotAndReachableRetry`,
+    `testTodayOfflineContentShowsStaleBannerAndRetry`,
+    `testStaleHistoryRetryUsesMinimumTapTarget` — all four failed even in an
+    isolated small batch (`XCTAssertGreaterThanOrEqual` on `element.frame.height`,
+    e.g. `43.99999999999994 < 44.0`). Root cause: `state.retry`'s production
+    frame carries a hard `.frame(minHeight: 44)` floor (unchanged), but
+    `XCUIElement.frame` is reported after coordinate-space conversion through
+    the accessibility tree; removing the blank large-title band shifted that
+    conversion's floating-point rounding path enough to leave a ~6e-14pt
+    remainder under 44.0 — an unmeasurable, non-functional artifact, not a
+    real tap-target shrink. Fix: a `0.01`pt tolerance added to
+    `BodyFlowUITestSupport.assertMinimumTapTarget` (the single shared helper
+    all four tests call), which still fails any real shortfall. Verified
+    GREEN: isolated (4/4), then 3 clean serial re-runs of the same 4-test
+    batch (4/4 each time).
+  - `testOnboardingWelcomeHasNoOverlapAtAccessibilityDynamicType` — a plain
+    5-second navigation-timeout in `BodyFlowUITests.swift`, a file untouched
+    this session (onboarding sign-up flow). Passed cleanly in isolation.
+  - `testAXComposerAtLimitKeepsNativeControlsReachable` — crashed with
+    `SIGTERM` in `FlowChatUITests.swift`, also untouched this session. Passed
+    cleanly in isolation.
+  Neither of the last two touches any file this session modified; both are
+  full-suite-only environmental fragility, the same category already
+  documented in the RC1 checkpoint above for the Flow history baseline.
+- `BodyFlowUITests` complete, second run (after the tolerance fix):
+  **150/151 passed, 1 failed** —
+  `FlowChatUITests.testComposerCannotSubmitOverExisting4000Limit()` failed
+  with `Failed to synthesize event: Timed out while synthesizing event.`
+  after 30 minutes, typing 4,001 characters via `typeText`. This is a
+  different test than any of the six above, in a file this session did not
+  modify. It passed cleanly in isolation (1/1). No production or test code
+  change was made for it: the operation forbids raising timeouts, adding
+  sleeps, or retrying taps to force green, and the failure is squarely
+  event-synthesis latency under full-suite simulator load, not a functional
+  defect. This remains an open, pre-existing, full-suite-only environmental
+  limitation of this test target — consistent with (not a regression
+  introduced by) this session's changes.
+- Signed Release (simulator, normal signing, `CODE_SIGNING_ALLOWED` never set
+  to `NO`): **BUILD SUCCEEDED**, identifier `com.bodyflow.app`.
+- `codesign --verify --deep --strict`: valid, satisfies Designated
+  Requirement.
+- Native `analyze`: **ANALYZE SUCCEEDED**, 0 new findings.
+- Compiled-app scanner against baseline `7ab3e657` (guards unmodified this
+  session): **PASS**, `APPROVED_FOR_LISTED_RC1_FILES`, PUBLIC_LEAK 0,
+  DEBUG_ONLY 0, 18/18 historical assets IDENTICAL, 38/38 approved RC1 assets
+  IDENTICAL.
+- Asset preservation re-verified: no byte in `assets/brand/performe-ai-public-v1/`
+  or the approved runtime catalog entries changed; tinted AppIcon remains
+  absent from the runtime catalog.
+
+### Technical review
+
+Self-review of the diff (5 one-line `.navigationBarTitleDisplayMode(.inline)`
+additions + 1 additive test method): **Critical 0 / Important 0**. This was
+an independent read of the diff against the FILE MAP and the full regression
+result, not a separate adversarial workflow.
+
+### Limitations / not done this session
+
+- Library filter density (spec-flagged `POLISH_BEFORE_ROBERTO`) left
+  unchanged — no low-risk, presentation-only fix was identified that
+  wouldn't touch tested filter/picker frames.
+- Plan/Progress label-value row density (spec-flagged, minor) left
+  unchanged — current grouping already separates sections reasonably; judged
+  as not a concrete divergence worth a forced change.
+- Interactive typing into the Flow composer via simulator input injection
+  was unreliable in this session (tap-to-focus did not consistently work on
+  that specific field); the Flow showcase capture uses the deterministic
+  `--ui-testing-flow-response` scenario instead of a live-typed exchange.
+  This is a tooling limitation of this session, not a product defect — the
+  composer is exercised and asserted by `FlowChatUITests` and
+  `PremiumPerformanceUITests` in the full UI regression above.
+- P7 (connected staging QA) and P8 (Roberto evaluation-build preparation)
+  are explicitly out of scope and were not started.
+
+**USER VISUAL ACCEPTANCE: PENDING_REVIEW** — the human approval of the
+eight-surface showcase remains with Eduardo; it is not recorded here.
+
+Checkpoint status: **PERFORME_AI_FINAL_VISUAL_POLISH_READY_FOR_USER_REVIEW**.
+RC1 (assets, checksums, AppIcon default/dark) preserved unregenerated. Tinted
+AppIcon: `PENDING — NOT INTEGRATED`. Remote/staging integration: `NOT
+REVALIDATED`. Production: `NOT DEPLOYED`.

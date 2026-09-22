@@ -40,6 +40,7 @@ struct ProgressRootView: View {
             }
         }
         .navigationTitle(copy("progress.navigation.title"))
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTab) {
             guard selectedTab == .progress else { return }
             await model.load()

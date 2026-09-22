@@ -14,6 +14,7 @@ struct PlanRootView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.plan.rootAccessibilityIdentifier)
         .navigationTitle(copy("plan.navigation.title"))
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTab) {
             guard selectedTab == .plan else { return }
             await model.load()

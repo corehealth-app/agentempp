@@ -265,6 +265,7 @@ struct TodayRootView: View {
         .accessibilityValue(colorScheme == .dark ? "dark" : "light")
 #endif
         .navigationTitle(copy("tab.today"))
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: invalidationCenter.revision(for: .today)) {
             let revision = invalidationCenter.revision(for: .today)
             await model.load(revision: revision)

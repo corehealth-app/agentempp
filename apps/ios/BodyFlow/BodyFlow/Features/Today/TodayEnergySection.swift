@@ -99,10 +99,7 @@ struct TodayEnergySection: View {
                     .foregroundStyle(BodyFlowColor.secondaryText)
                     .padding(BodyFlowSpacing.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        BodyFlowColor.accent.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
+                    .bodyFlowWash(.brandPrimary)
                     .accessibilityIdentifier("today.completion.insufficient-data")
             }
 

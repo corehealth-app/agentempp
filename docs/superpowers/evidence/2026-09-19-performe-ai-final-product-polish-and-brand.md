@@ -754,3 +754,116 @@ single runs, 0 failures). PUBLIC BRAND STATUS: VERIFIED for this build
 ACCEPTANCE: PENDING. Production: NOT DEPLOYED. **Baseline commit: AUTHORIZED
 by the user on 2026-09-22 after all I1 gates** (17 files staged by explicit
 path; this section is part of that commit; no push).
+
+## I2A — Minimal primitives (motion, loading button, root tint, wash) — 2026-09-22
+
+Performe AI = public product; Flow = public agent; BodyFlow = preserved internal
+technical identity. Plan V2 increment I2A on baseline `2b7992b` (index empty at
+entry; 27 dirty paths at exit, all listed in the commit).
+
+### Changes (presentation only; no token value changed; no new token roles)
+
+- `DesignSystem/BodyFlowMotion.swift`: locked `duration(reduceMotion:disclosure:)`
+  kept byte-identical; added `Kind {content, disclosure, press}`,
+  `animation(_:reduceMotion:) -> Animation?` (nil under Reduce Motion),
+  `pressedScale = 0.98`, `stateTransition(reduceMotion:)`. Consumers:
+  `FlowChatView.followEnd` (replaces the hard-coded `reduceMotion: false`
+  easeOut; `FlowChatScrollPolicy` stays the decider) and `FeatureReadStateView`
+  (state ↔ content cross-fade for Progress and content detail).
+- `DesignSystem/BodyFlowOpacity.swift` (new): `tintWash = 0.10`,
+  `pressed = 0.85`, `.bodyFlowWash(role)` (opaque `backgroundSecondary` under
+  Increase Contrast; `borderSubtle` outline under Differentiate Without Color —
+  first real consumer of `\.bodyFlowDifferentiateWithoutColor`). Consumers:
+  Today completion message, recovery confirmation, auth error, onboarding
+  error; cover placeholder uses the token; Library toggle outline →
+  `borderSubtle`; legacy card stroke → token (same value).
+- `Components/BodyFlowButtonStyle.swift`: `isLoading` (spinner tinted with the
+  role foreground, `accessibilityHidden`; role colors kept while `.disabled`);
+  `presentedBackgroundRole/presentedForegroundRole(isEnabled:isLoading:)`.
+  Consumers: the six auth/onboarding submit buttons (hand-rolled
+  `HStack{Spacer; ProgressView().tint(.white); Text; Spacer}` removed).
+- `App/AppRootView.swift`: `.tint(BodyFlowColor.color(.brandPrimary))` at the
+  root (the catalog `AccentColor` is a scanner-protected historical asset whose
+  dark value is the achievement gold); explicit `tintColor` on the UIKit
+  bridged registration controls (`HydrationRegistrationView`,
+  `WorkoutRegistrationView` incl. `selectedSegmentTintColor` + `onPrimary`
+  selected title, `WorkoutProposalView` per role).
+- Literal hygiene: radius `12`/`16`/`BodyFlowSpacing.xs` → `BodyFlowRadius`
+  tokens (Today, Library toggle, cover); `spacing: 2` → `xxs`; `minHeight: 44`
+  → `minimumTapTarget`; dead `BodyFlowColor.dynamicColor` removed.
+- Not done, by design: `BodyFlowElevation` untouched (no shadow); env keys not
+  moved; `BodyFlowSymbol`/`BodyFlowHaptics`/icon-only button variant deferred
+  to their first consumers.
+
+### RED → GREEN
+
+- RED (`v6-i2a-red.xcresult`): `testReviewedSubmitSpinnersNeverHardCodeAWhiteTint`
+  → 6 files with `.tint(.white)`; `testReviewedTintWashesUseTheSharedOpacityToken`
+  → 7 literal alphas (0.08 / 0.10 ×4 / 0.12 / 0.25).
+- GREEN unit: policy tests `motionAndOpacityTokensCollapseUnderReduceMotion`,
+  `loadingButtonsKeepRoleColorsWhileDisabled`; render matrix gains the
+  `isLoading` variant for every role/size/theme/width (≥44 and
+  `height + 1 >= textHeight + 24`), accessibility probe (one disabled button
+  element), fixture panel 2 documents the dark spinner.
+
+### Unit suite (full `BodyFlowTests`)
+
+- Run #1, parallel clones (default): **INTERRUPTED** — 1 failure
+  (`DemoBodyFlowReadTests/loadingReadCancellationStopsBeforeSnapshot`, 10 ms
+  cancel race on a saturated clone) and a hang: the seven remaining
+  `BodyFlowPremiumRenderingTests` cases never reported for 10 min (watchdog).
+  ISOLATED CHARACTERIZATION: `DemoBodyFlowReadTests` 13/13 ×2; render class
+  12/12 (matrix 18 s). The hang under parallel clones is the same family as
+  the earlier unexplained >9 min stall.
+- Run #2, `-parallel-testing-enabled NO` (contingency pre-authorized in the
+  plan; no timeout/retry/skip/assertion change): **1,214 tests, 1,214 passed,
+  0 failed, 0 skipped** (I1 baseline: 1,210; +4 new tests). FINAL VERIFIED
+  STATE (unit): VERIFIED.
+
+### UI focused subset (8 classes: BodyFlowUITests, PremiumCoreSurfaces,
+PremiumConvergence, PremiumAuthOnboarding, PremiumRegistration, FlowChat,
+Prompt14Progress, PremiumContentProfile), each a single invocation
+
+- Run #1: 55 tests, **1 failure** — `testFiveTabsAreReachableAndCaptured`
+  (`tab.registrar` not `isSelected` within 3 s after the tap; 7 other classes
+  green). Isolated: 2/2 (44 s, same as I1).
+- Run #2: runner **"Restarting after unexpected exit"** during
+  `testTodayNavigationPersistsAcrossTabSwitch`; simulator log shows
+  `launchd_sim` "during system shutdown" at 16:52:27 — the simulator OS was
+  shut down mid-run (no BodyFlow crash report; no concurrent xcodebuild;
+  trigger not identified). Class not counted (37/37 for the other classes).
+  Isolated: 2/2 (16 s).
+- Run #3: runner restart while the default interruption handler dismissed the
+  system pasteboard alert "“Performe AI” quer colar de “BodyFlowUITests-Runner”"
+  (pre-existing behaviour of the sign-up test; handled fine in I1). Stopped by
+  me after the restart.
+- Host at that time: load avg 17.9, 15 GB / 16 GB used, 177 MB free, 6 GB
+  compressed, heavy swap (other sessions' processes; no stray clones).
+- Run #4 after a device shutdown/boot: **55 tests, 0 failures, 0 restarts**
+  (28.7 min). FULL SUBSET RESULT: PASS (run #4). ISOLATED CHARACTERIZATION:
+  runs #1–#3 above. FINAL VERIFIED STATE (I2A gate): VERIFIED on run #4;
+  the three prior runs are recorded, not summed.
+
+### Other gates
+
+- Release signed (ad hoc), `codesign --verify --deep --strict` valid; `analyze`
+  succeeded, no findings; only the pre-existing `SessionLifecycleCoordinator.swift:210`
+  warning. Scanner PASS: `PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18/18`,
+  `ALLOWED_TECHNICAL 218`.
+- Identifier inventory 166 → 166 (no change). Policy greps: `.shadow` 0,
+  `.blur` 0, material 1, `glassEffect` 0, `minimumScaleFactor` 0,
+  `scrollEdgeEffect` 0, `.tint(.white)` 0. Assets diff: none.
+
+### Captures (`v6/i2a/settings.log`)
+
+Sign-in light/dark (`--ui-testing-fresh-auth`, primary button on brand teal /
+mint); Today "Dados insuficientes" light/dark (wash); Registrar root dark;
+treino sheet dark (segmented control brand-tinted, `onPrimary` selected title);
+hidratação sheet dark (quick amounts + submit in brand mint); Library dark
+(toggle outline `borderSubtle`, radius 8). The loading spinner state is
+documented by the render-matrix attachments (`s0-components-dark-…-panel2`).
+
+Status: I2A gates satisfied. REGRESSION STATUS: VERIFIED for the I2A gate
+(full unit serial 0 fail; subset run #4 0 fail); full 17-class UI not re-run
+in this increment (planned for I7). USER VISUAL ACCEPTANCE: PENDING.
+Production: NOT DEPLOYED. Commit: AWAITING EXPLICIT AUTHORIZATION.

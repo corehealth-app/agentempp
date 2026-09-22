@@ -75,12 +75,4 @@ enum BodyFlowColor {
 
         return Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
     }
-
-    private static func dynamicColor(light: Color, dark: Color) -> Color {
-        Color(
-            uiColor: UIColor { traits in
-                traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
-            }
-        )
-    }
 }

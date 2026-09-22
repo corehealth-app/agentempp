@@ -22,23 +22,13 @@ struct EmailConfirmationView: View {
 
                 if allowsDevelopmentConfirmation {
                     Button(action: confirmForDevelopment) {
-                        HStack {
-                            Spacer()
-                            if isSubmitting {
-                                ProgressView()
-                                    .tint(.white)
-                                    .accessibilityHidden(true)
-                            }
-                            Text(
-                                isSubmitting
-                                    ? copy("auth.confirmation.submitting", fallback: "Confirmando")
-                                    : copy("auth.confirmation.development", fallback: "Continuar no ambiente de teste")
-                            )
-                            Spacer()
-                        }
-                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        Text(
+                            isSubmitting
+                                ? copy("auth.confirmation.submitting", fallback: "Confirmando")
+                                : copy("auth.confirmation.development", fallback: "Continuar no ambiente de teste")
+                        )
                     }
-                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: isSubmitting))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("auth.confirm-development")
                 }

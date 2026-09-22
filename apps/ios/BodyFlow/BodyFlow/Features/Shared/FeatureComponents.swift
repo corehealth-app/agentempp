@@ -51,7 +51,7 @@ struct BodyFlowCard<Content: View>: View {
             .overlay {
                 if surface == .legacy {
                     RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
-                        .stroke(legacyAccent.opacity(0.10), lineWidth: 1)
+                        .stroke(legacyAccent.opacity(BodyFlowOpacity.tintWash), lineWidth: 1)
                 }
             }
     }

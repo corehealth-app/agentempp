@@ -151,22 +151,12 @@ struct SignUpView: View {
                 }
 
                 Button(action: submit) {
-                    HStack {
-                        Spacer()
-                        if isSubmitting {
-                            ProgressView()
-                                .tint(.white)
-                                .accessibilityHidden(true)
-                        }
-                        Text(copy(
-                            isSubmitting ? "auth.sign-up.submitting" : "auth.sign-up.submit",
-                            fallback: isSubmitting ? "Criando conta" : "Criar conta"
-                        ))
-                        Spacer()
-                    }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    Text(copy(
+                        isSubmitting ? "auth.sign-up.submitting" : "auth.sign-up.submit",
+                        fallback: isSubmitting ? "Criando conta" : "Criar conta"
+                    ))
                 }
-                .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: isSubmitting))
                 .disabled(isSubmitting)
                 .accessibilityIdentifier("auth.sign-up.submit")
 

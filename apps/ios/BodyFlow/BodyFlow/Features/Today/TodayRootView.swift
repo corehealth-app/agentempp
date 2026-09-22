@@ -361,7 +361,7 @@ struct TodayRootView: View {
             .padding(.vertical, BodyFlowSpacing.xs)
             .background(
                 BodyFlowColor.surface,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
             )
             .accessibilityRepresentation { EmptyView() }
     }

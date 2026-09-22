@@ -751,12 +751,12 @@ struct LibraryRootView: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(BodyFlowColor.surface)
             .clipShape(
-                RoundedRectangle(cornerRadius: BodyFlowSpacing.xs)
+                RoundedRectangle(cornerRadius: BodyFlowRadius.small)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: BodyFlowSpacing.xs)
+                RoundedRectangle(cornerRadius: BodyFlowRadius.small)
                     .stroke(
-                        BodyFlowColor.secondaryText.opacity(0.25),
+                        BodyFlowColor.color(.borderSubtle),
                         lineWidth: 1
                     )
             }

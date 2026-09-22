@@ -91,7 +91,7 @@ struct TodaySummaryFigure: View {
     let caption: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
             Text(value)
                 .font(BodyFlowTypography.metricSmall)
                 .foregroundStyle(BodyFlowColor.primaryText)

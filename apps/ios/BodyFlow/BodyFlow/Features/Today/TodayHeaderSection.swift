@@ -158,14 +158,14 @@ struct TodayHeaderSection: View {
                 protocolLabel
                 updatedLabel
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                 HStack(spacing: BodyFlowSpacing.md) {
                     localDateLabel
                     protocolLabel
                 }
                 updatedLabel
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                 localDateLabel
                 protocolLabel
                 updatedLabel

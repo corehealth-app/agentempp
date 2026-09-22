@@ -453,7 +453,7 @@ struct ContentCoverView: View {
                 }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous))
         .accessibilityHidden(
             ContentCoverViewDescriptor(
                 request: nil,
@@ -524,7 +524,7 @@ private struct ContentCoverPlaceholder: View {
         switch descriptor {
         case .neutral:
             ZStack {
-                BodyFlowColor.accent.opacity(0.12)
+                BodyFlowColor.accent.opacity(BodyFlowOpacity.tintWash)
                 Image(systemName: "book.closed")
                     .font(BodyFlowTypography.largeTitle)
                     .foregroundStyle(BodyFlowColor.accent)

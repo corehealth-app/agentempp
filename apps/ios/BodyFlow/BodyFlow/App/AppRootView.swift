@@ -33,6 +33,11 @@ struct AppRootView: View {
             rootContent
         }
         .installAppDependencies(dependencies)
+        // Appearance only: the catalog AccentColor is a historical asset (its
+        // dark value is the achievement gold), so every SwiftUI control that
+        // is not explicitly tinted — sheets, dialogs, auth and onboarding —
+        // takes the semantic brand primary from here instead.
+        .tint(BodyFlowColor.color(.brandPrimary))
         .environment(
             \.bodyFlowReduceMotion,
             BodyFlowReduceMotionPolicy.effectiveValue(

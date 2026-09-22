@@ -338,7 +338,7 @@ struct ProgressContentView: View {
                     action.perform(on: $selectedTab)
                 } label: {
                     Text(actionTitle)
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
                         .foregroundStyle(appearance.foreground.color)
                 }
                 .buttonStyle(.borderedProminent)

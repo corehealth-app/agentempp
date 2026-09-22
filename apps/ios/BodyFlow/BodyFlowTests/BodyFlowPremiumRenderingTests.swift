@@ -160,6 +160,16 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
                             XCTAssertGreaterThanOrEqual(frame.height, 44)
                             XCTAssertGreaterThanOrEqual(frame.height + 1, textHeight + 24,
                                 "Full label must fit: \(language) \(dark) \(width) \(size) \(role)")
+                            let loading = Button(label, action: {})
+                                .buttonStyle(BodyFlowButtonStyle(role: role, isLoading: true))
+                                .disabled(true)
+                            let loadingFrame = PremiumRenderingTestSupport.fittingSize(
+                                loading, width: innerWidth, dark: dark, size: size, locale: locale
+                            )
+                            XCTAssertGreaterThanOrEqual(loadingFrame.width, 44)
+                            XCTAssertGreaterThanOrEqual(loadingFrame.height, 44)
+                            XCTAssertGreaterThanOrEqual(loadingFrame.height + 1, textHeight + 24,
+                                "Loading label must fit: \(language) \(dark) \(width) \(size) \(role)")
                         }
                         let bodyHeight = PremiumRenderingTestSupport.fittingSize(
                             Text(body).font(BodyFlowTypography.body), width: innerWidth - 32,
@@ -225,6 +235,16 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             width: 375
         )
         XCTAssertTrue(disabled.contains { $0.label == label && $0.isButton && !$0.isEnabled })
+        // A submitting button keeps one readable, disabled button element;
+        // the progress indicator is decorative.
+        let loading = PremiumRenderingTestSupport.accessibilityProbe(
+            Button(label, action: {})
+                .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: true))
+                .disabled(true),
+            width: 375
+        )
+        XCTAssertEqual(loading.filter { $0.label == label && $0.isButton }.count, 1)
+        XCTAssertTrue(loading.contains { $0.label == label && $0.isButton && !$0.isEnabled })
     }
 
     func testNativeFieldPreservesBaselineAccessibilityRepresentation() {
@@ -294,6 +314,60 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
                 XCTAssertEqual(color.cgColor.alpha, 1)
             }
         }
+    }
+
+    /// In-button progress indicators must take the button role's foreground
+    /// (white on teal in light, near-black on mint in dark). A literal white
+    /// tint is invisible on the dark primary button.
+    func testReviewedSubmitSpinnersNeverHardCodeAWhiteTint() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let reviewedSources = [
+            "BodyFlow/Features/Auth/SignInView.swift",
+            "BodyFlow/Features/Auth/SignUpView.swift",
+            "BodyFlow/Features/Auth/PasswordRecoveryView.swift",
+            "BodyFlow/Features/Auth/EmailConfirmationView.swift",
+            "BodyFlow/Features/Onboarding/OnboardingCompletionView.swift",
+            "BodyFlow/Features/Onboarding/OnboardingContainerView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try String(
+                contentsOf: projectRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            let count = source.components(separatedBy: ".tint(.white)").count - 1
+            if count > 0 { offenders.append("\(path): \(count)") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Hard-coded white spinner tints: \(offenders)")
+    }
+
+    /// Decorative tint washes share one opacity token; ad-hoc alphas drift
+    /// between 0.08 / 0.10 / 0.12 / 0.25 for the same intent.
+    func testReviewedTintWashesUseTheSharedOpacityToken() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let reviewedSources = [
+            "BodyFlow/Features/Today/TodayEnergySection.swift",
+            "BodyFlow/Features/Auth/PasswordRecoveryView.swift",
+            "BodyFlow/Features/Auth/AuthFieldMessage.swift",
+            "BodyFlow/Features/Onboarding/OnboardingContainerView.swift",
+            "BodyFlow/Features/Library/ContentCoverView.swift",
+            "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Shared/FeatureComponents.swift",
+        ]
+        let literalAlphas = [".opacity(0.08)", ".opacity(0.10)", ".opacity(0.12)", ".opacity(0.25)"]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try String(
+                contentsOf: projectRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            for literal in literalAlphas where source.contains(literal) {
+                offenders.append("\(path) \(literal)")
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Literal wash alphas outside the token: \(offenders)")
     }
 
     func testReviewedPublicCallsitesDoNotKeepHardCodedLanguageDebt() throws {
@@ -381,6 +455,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             } else {
                 Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .destructive))
                 Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .primary)).disabled(true)
+                Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: true)).disabled(true)
                 StaleDataBanner()
             }
         }

@@ -128,6 +128,9 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
         button.titleLabel?.numberOfLines = 0
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        button.tintColor = UIColor(BodyFlowColor.color(
+            role == .destructive ? .feedbackDestructive : .brandPrimary
+        ))
         button.accessibilityIdentifier = identifier
         button.addTarget(
             context.coordinator,

@@ -30,10 +30,7 @@ struct PasswordRecoveryView: View {
                     .foregroundStyle(BodyFlowColor.primaryText)
                     .padding(BodyFlowSpacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        BodyFlowColor.accent.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
-                    )
+                    .bodyFlowWash(.brandPrimary)
                     .accessibilityIdentifier("auth.recovery.confirmation")
                 } else {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -57,22 +54,12 @@ struct PasswordRecoveryView: View {
                     }
 
                     Button(action: submit) {
-                        HStack {
-                            Spacer()
-                            if isSubmitting {
-                                ProgressView()
-                                    .tint(.white)
-                                    .accessibilityHidden(true)
-                            }
-                            Text(copy(
-                                isSubmitting ? "auth.recovery.submitting" : "auth.recovery.submit",
-                                fallback: isSubmitting ? "Enviando" : "Enviar instruções"
-                            ))
-                            Spacer()
-                        }
-                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        Text(copy(
+                            isSubmitting ? "auth.recovery.submitting" : "auth.recovery.submit",
+                            fallback: isSubmitting ? "Enviando" : "Enviar instruções"
+                        ))
                     }
-                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: isSubmitting))
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("auth.recovery.submit")
                 }

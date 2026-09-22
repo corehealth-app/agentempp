@@ -77,17 +77,12 @@ struct OnboardingContainerView: View {
             if model.step != .completion {
                 if model.stepPresentation != .developmentConsentUnavailable {
                     Button(action: submit) {
-                        HStack {
-                            Spacer()
-                            if model.operationState == .saving {
-                                ProgressView().tint(.white).accessibilityHidden(true)
-                            }
-                            Text(continueTitle)
-                            Spacer()
-                        }
-                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        Text(continueTitle)
                     }
-                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                    .buttonStyle(BodyFlowButtonStyle(
+                        role: .primary,
+                        isLoading: model.operationState == .saving
+                    ))
                     .disabled(
                         model.operationState == .saving
                             || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
@@ -263,10 +258,7 @@ private struct OnboardingOperationMessage: View {
                 .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
                 .padding(BodyFlowSpacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    BodyFlowColor.color(.feedbackDestructive).opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: BodyFlowRadius.field)
-                )
+                .bodyFlowWash(.feedbackDestructive)
                 .accessibilityIdentifier("onboarding.error")
         }
     }

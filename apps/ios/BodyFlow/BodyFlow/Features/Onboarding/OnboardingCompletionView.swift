@@ -100,21 +100,14 @@ struct OnboardingCompletionView: View {
             .fixedSize(horizontal: false, vertical: true)
 
             Button(action: onComplete) {
-                HStack {
-                    Spacer()
-                    if model.operationState == .saving {
-                        ProgressView()
-                            .tint(.white)
-                            .accessibilityHidden(true)
-                    }
-                    Text(model.operationState.isFailure
-                         ? copy("onboarding.retry", fallback: "Tentar novamente")
-                         : copy("onboarding.completion.finish", fallback: "Ir para Hoje"))
-                    Spacer()
-                }
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                Text(model.operationState.isFailure
+                     ? copy("onboarding.retry", fallback: "Tentar novamente")
+                     : copy("onboarding.completion.finish", fallback: "Ir para Hoje"))
             }
-            .buttonStyle(BodyFlowButtonStyle(role: .primary))
+            .buttonStyle(BodyFlowButtonStyle(
+                role: .primary,
+                isLoading: model.operationState == .saving
+            ))
             .disabled(model.operationState == .saving)
             .accessibilityIdentifier("onboarding.go-to-today")
         }

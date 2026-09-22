@@ -117,6 +117,7 @@ private struct WorkoutActionButton: UIViewRepresentable {
         button.titleLabel?.numberOfLines = 0
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        button.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         button.accessibilityIdentifier = identifier
         button.addTarget(
             context.coordinator,
@@ -165,6 +166,7 @@ private struct WorkoutIntensityPicker: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UISegmentedControl {
         let control = UISegmentedControl(items: titles)
+        control.selectedSegmentTintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         control.accessibilityIdentifier = "registration.workout.intensity"
         control.accessibilityLabel = accessibilityLabel
         control.addTarget(
@@ -187,6 +189,13 @@ private struct WorkoutIntensityPicker: UIViewRepresentable {
         control.setTitleTextAttributes(
             [.font: UIFont.preferredFont(forTextStyle: .body)],
             for: .normal
+        )
+        control.setTitleTextAttributes(
+            [
+                .font: UIFont.preferredFont(forTextStyle: .body),
+                .foregroundColor: UIColor(BodyFlowColor.color(.onPrimary)),
+            ],
+            for: .selected
         )
     }
 
@@ -227,6 +236,7 @@ private struct WorkoutDatePicker: UIViewRepresentable {
         let picker = UIDatePicker()
         picker.datePickerMode = .dateAndTime
         picker.preferredDatePickerStyle = .compact
+        picker.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         picker.accessibilityIdentifier = "registration.workout.performed-at"
         picker.accessibilityLabel = accessibilityLabel
         picker.addTarget(
@@ -285,6 +295,7 @@ private struct WorkoutTextField: UIViewRepresentable {
         field.keyboardType = keyboardType
         field.adjustsFontForContentSizeCategory = true
         field.font = .preferredFont(forTextStyle: .body)
+        field.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         field.accessibilityIdentifier = identifier
         field.accessibilityLabel = accessibilityLabel
         field.addTarget(

@@ -249,10 +249,7 @@ struct AuthOperationMessage: View {
         if case .failed(let error) = state {
             AuthFieldMessage(error: error)
                 .padding(BodyFlowSpacing.md)
-                .background(
-                    BodyFlowColor.color(.feedbackDestructive).opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
-                )
+                .bodyFlowWash(.feedbackDestructive)
                 .accessibilityIdentifier("auth.error")
         }
     }

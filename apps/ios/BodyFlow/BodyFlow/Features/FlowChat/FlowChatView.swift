@@ -230,11 +230,15 @@ struct FlowChatView: View {
 
     private func followEnd(_ proxy: ScrollViewProxy) {
         atEnd = true
-        if FlowChatScrollPolicy.shouldAnimate(reduceMotion: reduceMotion) {
-            withAnimation(.easeOut(duration: BodyFlowMotion.duration(reduceMotion: false, disclosure: false))) {
-                proxy.scrollTo("flow.history-end", anchor: .bottom)
-            }
-        } else { proxy.scrollTo("flow.history-end", anchor: .bottom) }
+        // The scroll policy stays the single decider; a nil animation is an
+        // immediate scroll.
+        withAnimation(
+            FlowChatScrollPolicy.shouldAnimate(reduceMotion: reduceMotion)
+                ? BodyFlowMotion.animation(.content, reduceMotion: false)
+                : nil
+        ) {
+            proxy.scrollTo("flow.history-end", anchor: .bottom)
+        }
     }
 
     private func announceNewReplyIfFollowing() {

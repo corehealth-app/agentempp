@@ -118,6 +118,7 @@ struct RegistrationBoundedTextField: UIViewRepresentable {
         field.keyboardType = keyboardType
         field.adjustsFontForContentSizeCategory = true
         field.font = .preferredFont(forTextStyle: .body)
+        field.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         field.accessibilityIdentifier = identifier
         field.accessibilityLabel = accessibilityLabel
         field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
@@ -157,6 +158,7 @@ struct RegistrationBoundedDatePicker: UIViewRepresentable {
         let picker = UIDatePicker()
         picker.datePickerMode = .dateAndTime
         picker.preferredDatePickerStyle = .compact
+        picker.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         picker.accessibilityIdentifier = identifier
         picker.accessibilityLabel = accessibilityLabel
         picker.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
@@ -202,6 +204,7 @@ struct RegistrationBoundedButton: UIViewRepresentable {
         button.titleLabel?.numberOfLines = 0
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        button.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         button.accessibilityIdentifier = identifier
         button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
         button.heightAnchor.constraint(

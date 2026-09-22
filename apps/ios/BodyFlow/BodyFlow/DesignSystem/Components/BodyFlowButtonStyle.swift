@@ -20,14 +20,43 @@ enum BodyFlowButtonRole: CaseIterable, Sendable {
         case .tertiary: return nil
         }
     }
+
+    /// A submitting button is disabled to block duplicate submits but keeps
+    /// its role colors so the progress indicator reads as "in progress",
+    /// not as an unavailable control.
+    func presentedBackgroundRole(isEnabled: Bool, isLoading: Bool) -> BodyFlowColor.Role? {
+        backgroundRole(isEnabled: isEnabled || isLoading)
+    }
+
+    func presentedForegroundRole(isEnabled: Bool, isLoading: Bool) -> BodyFlowColor.Role {
+        foregroundRole(isEnabled: isEnabled || isLoading)
+    }
 }
 
 struct BodyFlowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let role: BodyFlowButtonRole
+    var isLoading: Bool = false
+
+    init(role: BodyFlowButtonRole, isLoading: Bool = false) {
+        self.role = role
+        self.isLoading = isLoading
+    }
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let foreground = BodyFlowColor.color(
+            role.presentedForegroundRole(isEnabled: isEnabled, isLoading: isLoading)
+        )
+        HStack(spacing: BodyFlowSpacing.xs) {
+            if isLoading {
+                // Takes the role's foreground (white on teal, near-black on
+                // mint) so it stays visible in both color schemes.
+                ProgressView()
+                    .tint(foreground)
+                    .accessibilityHidden(true)
+            }
+            configuration.label
+        }
             .font(BodyFlowTypography.button)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -36,14 +65,14 @@ struct BodyFlowButtonStyle: ButtonStyle {
             .frame(minWidth: BodyFlowSpacing.minimumTapTarget,
                    maxWidth: .infinity,
                    minHeight: BodyFlowSpacing.minimumTapTarget)
-            .foregroundStyle(BodyFlowColor.color(role.foregroundRole(isEnabled: isEnabled)))
+            .foregroundStyle(foreground)
             .background {
-                if let background = role.backgroundRole(isEnabled: isEnabled) {
+                if let background = role.presentedBackgroundRole(isEnabled: isEnabled, isLoading: isLoading) {
                     shape.fill(BodyFlowColor.color(background))
                 }
             }
             .overlay {
-                if isEnabled && (role == .secondary || role == .destructive || configuration.isPressed) {
+                if (isEnabled || isLoading) && (role == .secondary || role == .destructive || configuration.isPressed) {
                     shape.strokeBorder(
                         BodyFlowColor.color(borderRole),
                         lineWidth: configuration.isPressed ? 2 : 1

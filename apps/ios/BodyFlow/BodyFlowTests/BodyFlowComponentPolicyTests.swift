@@ -35,6 +35,31 @@ struct BodyFlowComponentPolicyTests {
         }
     }
 
+    @Test func motionAndOpacityTokensCollapseUnderReduceMotion() {
+        for kind in [BodyFlowMotion.Kind.content, .disclosure, .press] {
+            #expect(BodyFlowMotion.animation(kind, reduceMotion: true) == nil)
+            #expect(BodyFlowMotion.animation(kind, reduceMotion: false) != nil)
+        }
+        #expect(BodyFlowMotion.pressedScale >= 0.98)
+        #expect(BodyFlowOpacity.tintWash == 0.10)
+        #expect(BodyFlowOpacity.pressed == 0.85)
+    }
+
+    @Test func loadingButtonsKeepRoleColorsWhileDisabled() {
+        for role in BodyFlowButtonRole.allCases {
+            #expect(
+                role.presentedBackgroundRole(isEnabled: false, isLoading: true)
+                    == role.backgroundRole(isEnabled: true)
+            )
+            #expect(
+                role.presentedForegroundRole(isEnabled: false, isLoading: true)
+                    == role.foregroundRole(isEnabled: true)
+            )
+            #expect(role.presentedBackgroundRole(isEnabled: false, isLoading: false) == .disabledFill)
+            #expect(role.presentedForegroundRole(isEnabled: false, isLoading: false) == .disabledText)
+        }
+    }
+
     @Test func premiumTypographyUsesScalableNativeStyles() {
         #expect(BodyFlowTypography.largeTitle == Font.largeTitle.bold())
         #expect(BodyFlowTypography.screenTitle == Font.title2.weight(.semibold))

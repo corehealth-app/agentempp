@@ -118,6 +118,8 @@ struct TodayHeaderSection: View {
     let descriptor: TodayHeaderDescriptor
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @State private var showsDetails = false
 
     // Secondary day context only. The shell brand and the inline "Hoje"
     // navigation title already identify the screen, so this block no longer
@@ -131,7 +133,11 @@ struct TodayHeaderSection: View {
                 // first screen ahead of Energy. The date stays visible; the
                 // protocol and freshness rows (same received values) move
                 // behind a native disclosure.
-                DisclosureGroup {
+                DisclosureGroup(
+                    isExpanded: $showsDetails.animation(
+                        BodyFlowMotion.animation(.disclosure, reduceMotion: reduceMotion)
+                    )
+                ) {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                         protocolLabel
                         updatedLabel
@@ -175,24 +181,24 @@ struct TodayHeaderSection: View {
 
     private var localDateLabel: some View {
         Label(
-            "\(copy("today.header.local-date")): \(descriptor.localDate)",
-            systemImage: "calendar"
+            verbatim: "\(copy("today.header.local-date")): \(descriptor.localDate)",
+            symbol: .calendar
         )
         .accessibilityIdentifier("today.header.local-date")
     }
 
     private var protocolLabel: some View {
         Label(
-            "\(copy("today.header.protocol")): \(descriptor.protocolName ?? unavailable)",
-            systemImage: "doc.text"
+            verbatim: "\(copy("today.header.protocol")): \(descriptor.protocolName ?? unavailable)",
+            symbol: .protocolDocument
         )
         .accessibilityIdentifier("today.header.protocol")
     }
 
     private var updatedLabel: some View {
         Label(
-            "\(copy("today.header.updated")): \(TodayValueFormatter.timestamp(descriptor.updatedAt, language: language))",
-            systemImage: "clock"
+            verbatim: "\(copy("today.header.updated")): \(TodayValueFormatter.timestamp(descriptor.updatedAt, language: language))",
+            symbol: .clock
         )
         .accessibilityIdentifier("today.header.updated-at")
     }

@@ -98,19 +98,26 @@ struct TodayRecommendationsSection: View {
             language: language
         )
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Text(TodayRecommendationsPresentation.heading(for: language))
-                .font(BodyFlowTypography.title)
-                .foregroundStyle(BodyFlowColor.primaryText)
+            BodyFlowSectionHeader(
+                TodayRecommendationsPresentation.heading(for: language),
+                symbol: .library
+            )
 
             sectionContent(presentation)
 
             NavigationLink(value: AppRoute.content(presentation.libraryAction.route)) {
-                Label(presentation.libraryAction.title, systemImage: "books.vertical")
-                    .font(BodyFlowTypography.headline)
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                    .contentShape(Rectangle())
+                HStack(spacing: BodyFlowSpacing.xs) {
+                    Label(verbatim: presentation.libraryAction.title, symbol: .library)
+                        .font(BodyFlowTypography.headline)
+                    Image(symbol: .chevron)
+                        .font(BodyFlowTypography.caption)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(BodyFlowColor.accent)
+                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bodyFlowRow)
             .accessibilityIdentifier("today.recommendations.library")
         }
         .accessibilityElement(children: .contain)
@@ -121,11 +128,20 @@ struct TodayRecommendationsSection: View {
     private func sectionContent(_ presentation: TodayRecommendationsPresentation) -> some View {
         switch presentation.sectionState {
         case .loading:
-            ProgressView()
-                .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
-                .accessibilityIdentifier("today.recommendations.loading")
+            // A card-shaped placeholder (no values, hidden from VoiceOver)
+            // holds the space the first recommendation will take, so the
+            // section does not jump when it arrives.
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                loadingPlaceholder
+                    .accessibilityHidden(true)
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityIdentifier("today.recommendations.loading")
+            }
         case .empty:
             Text(TodayRecommendationsPresentation.emptyCopy(for: language))
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.secondaryText)
         case .cards:
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 if presentation.showsStaleDisclosure { StaleDataBanner() }
@@ -133,14 +149,33 @@ struct TodayRecommendationsSection: View {
                 if presentation.showsRetry { retryButton }
             }
         case .offline:
-            recoverableState(copy("today.recommendations.offline"))
+            recoverableState(copy("today.recommendations.offline"), kind: .warning)
         case .failed:
-            recoverableState(copy("today.recommendations.error"))
+            recoverableState(copy("today.recommendations.error"), kind: .error)
         case .unavailable:
-            Text(TodayRecommendationsPresentation.unavailableCopy(for: language))
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.secondaryText)
-                .accessibilityIdentifier("today.recommendations.unavailable")
+            BodyFlowStatusLine(
+                TodayRecommendationsPresentation.unavailableCopy(for: language),
+                kind: .unavailable,
+                font: BodyFlowTypography.body
+            )
+            .accessibilityIdentifier("today.recommendations.unavailable")
+        }
+    }
+
+    private var loadingPlaceholder: some View {
+        BodyFlowCard {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
+                    .fill(BodyFlowColor.color(.surfaceElevated))
+                    .frame(height: BodyFlowSpacing.xl * 3)
+                RoundedRectangle(cornerRadius: BodyFlowRadius.small, style: .continuous)
+                    .fill(BodyFlowColor.color(.surfaceElevated))
+                    .frame(width: BodyFlowSpacing.xl * 5, height: BodyFlowSpacing.md)
+                RoundedRectangle(cornerRadius: BodyFlowRadius.small, style: .continuous)
+                    .fill(BodyFlowColor.color(.surfaceElevated))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: BodyFlowSpacing.sm)
+            }
         }
     }
 
@@ -158,11 +193,12 @@ struct TodayRecommendationsSection: View {
         }
     }
 
-    private func recoverableState(_ message: String) -> some View {
+    private func recoverableState(
+        _ message: String,
+        kind: BodyFlowStatusLine.Kind
+    ) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(message)
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.secondaryText)
+            BodyFlowStatusLine(message, kind: kind, font: BodyFlowTypography.body)
             retryButton
         }
     }
@@ -172,10 +208,8 @@ struct TodayRecommendationsSection: View {
             Task { await model.retry() }
         } label: {
             Text(copy("state.retry"))
-                .font(BodyFlowTypography.headline)
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                .contentShape(Rectangle())
         }
+        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
         .accessibilityIdentifier("today.recommendations.retry")
     }
 
@@ -228,8 +262,8 @@ private struct TodayRecommendationCard: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     Label(
-                        readingTime(presentation.summary),
-                        systemImage: "clock"
+                        verbatim: readingTime(presentation.summary),
+                        symbol: .clock
                     )
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
@@ -237,7 +271,7 @@ private struct TodayRecommendationCard: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)

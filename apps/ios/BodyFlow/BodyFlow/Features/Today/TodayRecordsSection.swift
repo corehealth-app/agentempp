@@ -63,10 +63,7 @@ struct TodayRecordsSection: View {
 
     private var mealsSection: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label(copy("today.records.meals"), systemImage: "fork.knife")
-                .font(BodyFlowTypography.title)
-                .fontWeight(.semibold)
-                .foregroundStyle(BodyFlowColor.primaryText)
+            BodyFlowSectionHeader(copy("today.records.meals"), symbol: .meals)
 
             if meals.isEmpty {
                 Text(copy("today.records.meals.empty"))
@@ -79,14 +76,17 @@ struct TodayRecordsSection: View {
                             Text(meal.foodName)
                                 .font(BodyFlowTypography.headline)
                                 .foregroundStyle(BodyFlowColor.primaryText)
-                            Text(meal.mealType)
-                                .font(BodyFlowTypography.callout)
-                                .foregroundStyle(BodyFlowColor.secondaryText)
-                            Text(TodayValueFormatter.kcal(meal.kcal, language: language))
-                                .font(BodyFlowTypography.body)
-                            Label(meal.provenance, systemImage: "info.circle")
-                                .font(BodyFlowTypography.caption)
-                                .foregroundStyle(BodyFlowColor.secondaryText)
+                            // Received type and energy on one line while
+                            // they fit; stacked at accessibility sizes.
+                            recordLine(
+                                detail: meal.mealType,
+                                value: TodayValueFormatter.kcal(meal.kcal, language: language)
+                            )
+                            BodyFlowStatusLine(
+                                meal.provenance,
+                                kind: .info,
+                                font: BodyFlowTypography.caption
+                            )
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -100,10 +100,7 @@ struct TodayRecordsSection: View {
 
     private var workoutsSection: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label(copy("today.records.workouts"), systemImage: "figure.run")
-                .font(BodyFlowTypography.title)
-                .fontWeight(.semibold)
-                .foregroundStyle(BodyFlowColor.primaryText)
+            BodyFlowSectionHeader(copy("today.records.workouts"), symbol: .workouts)
 
             if workouts.isEmpty {
                 Text(copy("today.records.workouts.empty"))
@@ -116,11 +113,10 @@ struct TodayRecordsSection: View {
                             Text(workout.workoutType)
                                 .font(BodyFlowTypography.headline)
                                 .foregroundStyle(BodyFlowColor.primaryText)
-                            Text("\(workout.durationMin) min · \(workout.intensity)")
-                                .font(BodyFlowTypography.callout)
-                                .foregroundStyle(BodyFlowColor.secondaryText)
-                            Text(TodayValueFormatter.kcal(workout.estimatedKcal, language: language))
-                                .font(BodyFlowTypography.body)
+                            recordLine(
+                                detail: "\(workout.durationMin) min · \(workout.intensity)",
+                                value: TodayValueFormatter.kcal(workout.estimatedKcal, language: language)
+                            )
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -130,6 +126,34 @@ struct TodayRecordsSection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("today.workouts")
+    }
+
+    private func recordLine(detail: String, value: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                detailText(detail)
+                Spacer(minLength: BodyFlowSpacing.sm)
+                valueText(value)
+            }
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                detailText(detail)
+                valueText(value)
+            }
+        }
+    }
+
+    private func detailText(_ detail: String) -> some View {
+        Text(detail)
+            .font(BodyFlowTypography.callout)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .font(BodyFlowTypography.body)
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var language: SupportedAppLanguage {

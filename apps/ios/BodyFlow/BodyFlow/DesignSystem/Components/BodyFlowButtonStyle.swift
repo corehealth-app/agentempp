@@ -37,10 +37,15 @@ struct BodyFlowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let role: BodyFlowButtonRole
     var isLoading: Bool = false
+    /// Compact buttons (icon-only actions such as the chat composer) keep the
+    /// 44 pt floor and the same vertical padding, but hug their content
+    /// instead of stretching to the full width.
+    var isCompact: Bool = false
 
-    init(role: BodyFlowButtonRole, isLoading: Bool = false) {
+    init(role: BodyFlowButtonRole, isLoading: Bool = false, isCompact: Bool = false) {
         self.role = role
         self.isLoading = isLoading
+        self.isCompact = isCompact
     }
 
     func makeBody(configuration: Configuration) -> some View {
@@ -60,10 +65,10 @@ struct BodyFlowButtonStyle: ButtonStyle {
             .font(BodyFlowTypography.button)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, BodyFlowSpacing.md)
+            .padding(.horizontal, isCompact ? BodyFlowSpacing.sm : BodyFlowSpacing.md)
             .padding(.vertical, BodyFlowSpacing.sm)
             .frame(minWidth: BodyFlowSpacing.minimumTapTarget,
-                   maxWidth: .infinity,
+                   maxWidth: isCompact ? nil : .infinity,
                    minHeight: BodyFlowSpacing.minimumTapTarget)
             .foregroundStyle(foreground)
             .background {

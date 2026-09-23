@@ -218,6 +218,7 @@ struct TodayRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
 
     init(
         model: TodayViewModel,
@@ -276,7 +277,7 @@ struct TodayRootView: View {
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
-                        Label(copy("today.refresh"), systemImage: "arrow.clockwise")
+                        Label(verbatim: copy("today.refresh"), symbol: .refresh)
                             .frame(
                                 width: BodyFlowSpacing.minimumTapTarget + 1,
                                 height: BodyFlowSpacing.minimumTapTarget + 1
@@ -289,7 +290,7 @@ struct TodayRootView: View {
             } else if navigation.toolbarRoutes.contains(.mainHistory) {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: AppRoute.mainHistory) {
-                        Label(copy("today.history.title"), systemImage: "clock.arrow.circlepath")
+                        Label(verbatim: copy("today.history.title"), symbol: .history)
                     }
                     .accessibilityIdentifier("today.history")
                 }
@@ -297,10 +298,11 @@ struct TodayRootView: View {
         }
     }
 
-    /// Flow and Library entries. Side by side while both labels fit on one
-    /// line; otherwise (large and accessibility text sizes) each entry takes
-    /// the full row width so its label reflows across the width instead of
-    /// wrapping word by word inside a narrow column.
+    /// Flow (primary, brand fill) and Library (secondary, surface) entries.
+    /// Side by side while both labels fit on one line; otherwise (large and
+    /// accessibility text sizes) each entry takes the full row width so its
+    /// label reflows across the width instead of wrapping word by word
+    /// inside a narrow column.
     private var todayShortcuts: some View {
         let navigation = TodayRootNavigationPresentation(state: model.state)
         let libraryRoute = navigation.toolbarRoutes[0]
@@ -323,10 +325,12 @@ struct TodayRootView: View {
         NavigationLink(value: AppRoute.flowChat) {
             shortcutLabel(
                 copy("flow.open"),
-                systemImage: "bubble.left.and.text.bubble.right",
-                expands: expands
+                symbol: .flow,
+                expands: expands,
+                isPrimary: true
             )
         }
+        .buttonStyle(.bodyFlowRow)
         .accessibilityLabel(copy("flow.open"))
         .accessibilityIdentifier("today.flow-chat")
     }
@@ -335,22 +339,25 @@ struct TodayRootView: View {
         NavigationLink(value: route) {
             shortcutLabel(
                 copy("today.library"),
-                systemImage: "books.vertical",
-                expands: expands
+                symbol: .library,
+                expands: expands,
+                isPrimary: false
             )
         }
+        .buttonStyle(.bodyFlowRow)
         .accessibilityLabel(copy("today.library"))
         .accessibilityIdentifier("today.library")
     }
 
     private func shortcutLabel(
         _ title: String,
-        systemImage: String,
-        expands: Bool
+        symbol: BodyFlowSymbol,
+        expands: Bool,
+        isPrimary: Bool
     ) -> some View {
-        Label(title, systemImage: systemImage)
+        Label(verbatim: title, symbol: symbol)
             .font(BodyFlowTypography.headline)
-            .foregroundStyle(BodyFlowColor.accent)
+            .foregroundStyle(BodyFlowColor.color(isPrimary ? .onPrimary : .brandPrimary))
             .fixedSize(horizontal: false, vertical: true)
             .frame(
                 maxWidth: expands ? .infinity : nil,
@@ -360,7 +367,7 @@ struct TodayRootView: View {
             .padding(.horizontal, BodyFlowSpacing.sm)
             .padding(.vertical, BodyFlowSpacing.xs)
             .background(
-                BodyFlowColor.surface,
+                BodyFlowColor.color(isPrimary ? .brandPrimary : .backgroundSecondary),
                 in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
             )
             .accessibilityRepresentation { EmptyView() }
@@ -369,17 +376,28 @@ struct TodayRootView: View {
     @ViewBuilder
     private var stateContent: some View {
         let presentation = model.state.presentation
-        if let fullScreenState = presentation.fullScreenState {
-            ScreenStateView(
-                state: fullScreenState,
-                retryAction: retry
-            )
-        } else if let snapshot = presentation.value {
-            loadedContent(
-                TodayPresentation(snapshot: snapshot, language: language),
-                showsStaleBanner: presentation.showsStaleBanner
-            )
+        let transition = BodyFlowMotion.stateTransition(reduceMotion: reduceMotion)
+        // Full-screen state ↔ loaded day cross-fades (≤200 ms); immediate
+        // under Reduce Motion.
+        Group {
+            if let fullScreenState = presentation.fullScreenState {
+                ScreenStateView(
+                    state: fullScreenState,
+                    retryAction: retry
+                )
+                .transition(transition)
+            } else if let snapshot = presentation.value {
+                loadedContent(
+                    TodayPresentation(snapshot: snapshot, language: language),
+                    showsStaleBanner: presentation.showsStaleBanner
+                )
+                .transition(transition)
+            }
         }
+        .animation(
+            BodyFlowMotion.animation(.content, reduceMotion: reduceMotion),
+            value: presentation.fullScreenState == nil
+        )
     }
 
     private func loadedContent(
@@ -394,12 +412,7 @@ struct TodayRootView: View {
 
                 // Day summary first: compact day context, Energy (both
                 // official meanings), then Protein and Hydration paired.
-                TodayHeaderSection(descriptor: presentation.header)
-                TodayEnergySection(
-                    descriptor: presentation.energy,
-                    completionMessage: presentation.completionMessage(for: language)
-                )
-                nutritionSummaryPair(presentation)
+                standardSummary(presentation)
 
                 // Next actions: Flow/Library entries, then pending items.
                 todayShortcuts
@@ -424,7 +437,7 @@ struct TodayRootView: View {
                         FeatureActionLabel(
                             title: copy("today.history.title"),
                             detail: copy("today.history.detail"),
-                            systemImage: "clock.arrow.circlepath"
+                            systemImage: BodyFlowSymbol.history.systemName
                         )
                     }
                 }
@@ -443,7 +456,7 @@ struct TodayRootView: View {
                         FeatureActionLabel(
                             title: copy("today.summary.title"),
                             detail: copy("today.summary.detail"),
-                            systemImage: "doc.text.magnifyingglass"
+                            systemImage: BodyFlowSymbol.summary.systemName
                         )
                     }
                 }
@@ -460,24 +473,15 @@ struct TodayRootView: View {
         }
     }
 
-    /// Protein and Hydration as two equal-height tiles at regular text sizes;
-    /// stacked at accessibility sizes so neither is squeezed into a column.
     @ViewBuilder
-    private func nutritionSummaryPair(_ presentation: TodayPresentation) -> some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    TodayProteinSection(descriptor: presentation.protein)
-                    TodayHydrationSection(descriptor: presentation.hydration)
-                }
-            } else {
-                HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                    TodayProteinSection(descriptor: presentation.protein)
-                    TodayHydrationSection(descriptor: presentation.hydration)
-                }
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
+    private func standardSummary(_ presentation: TodayPresentation) -> some View {
+        TodayHeaderSection(descriptor: presentation.header)
+        TodaySummaryPanel(
+            energy: presentation.energy,
+            protein: presentation.protein,
+            hydration: presentation.hydration,
+            completionMessage: presentation.completionMessage(for: language)
+        )
     }
 
     private func retry() {

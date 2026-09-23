@@ -63,6 +63,33 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
         support.capture("s3-today-unavailable-flow-dark", app: app)
     }
 
+    /// The routine "Ver lista" links belong to their collection heading row at
+    /// regular sizes (title left, link right), above the first routine row,
+    /// and keep a full 44 pt target.
+    @MainActor
+    func testTodayRoutineListLinksShareTheCollectionHeaderRow() {
+        let app = support.launch(
+            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+            language: "pt-BR",
+            dark: false
+        )
+        XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 8))
+        let link = app.buttons["routine.list.supplement"]
+        let scrollView = app.scrollViews.firstMatch
+        for _ in 0..<12 where !link.isHittable { scrollView.swipeUp() }
+        XCTAssertTrue(link.isHittable)
+        support.assertTarget(link)
+        let header = element("today.routine.header.supplement", app: app)
+        XCTAssertTrue(header.exists, "The collection heading must be a distinct header element")
+        XCTAssertEqual(header.frame.midY, link.frame.midY, accuracy: 1,
+                       "The list link shares the heading row at regular sizes")
+        XCTAssertLessThan(header.frame.maxX, link.frame.minX)
+        let firstRow = app.buttons["routine.supplement-1"]
+        XCTAssertTrue(firstRow.exists)
+        XCTAssertLessThan(link.frame.maxY, firstRow.frame.minY)
+        support.capture("s3-today-routine-header-row-pt-light", app: app)
+    }
+
     @MainActor
     func testTodayCoreMetricsPrecedePendingInformationAXXXL() {
         let app = support.launch(

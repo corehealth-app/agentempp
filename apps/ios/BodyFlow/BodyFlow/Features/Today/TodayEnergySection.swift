@@ -79,136 +79,279 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 }
 
+/// The day at a glance: one panel with the four official figures — both
+/// energy balances first, then protein and hydration — on a single elevated
+/// surface instead of four competing cards. Every remaining official value
+/// stays one tap away in the panel's disclosure, grouped by domain and
+/// keeping its identifier; nothing is abridged, only ranked.
 @MainActor
-struct TodayEnergySection: View {
-    let descriptor: TodayEnergyDescriptor
+struct TodaySummaryPanel: View {
+    let energy: TodayEnergyDescriptor
+    let protein: TodayProteinDescriptor
+    let hydration: TodayHydrationDescriptor
     let completionMessage: String?
+
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @State private var showsDetails = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            Label(copy("today.energy.title"), systemImage: "bolt.heart")
-                .font(BodyFlowTypography.title)
-                .fontWeight(.semibold)
-                .foregroundStyle(BodyFlowColor.primaryText)
-
             if let completionMessage {
-                Label(completionMessage, systemImage: "info.circle")
-                    .font(BodyFlowTypography.body)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
-                    .padding(BodyFlowSpacing.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .bodyFlowWash(.brandPrimary)
-                    .accessibilityIdentifier("today.completion.insufficient-data")
+                BodyFlowStatusLine(
+                    completionMessage,
+                    kind: .info,
+                    font: BodyFlowTypography.body
+                )
+                .padding(BodyFlowSpacing.sm)
+                .bodyFlowWash(.brandPrimary)
+                .accessibilityIdentifier("today.completion.insufficient-data")
             }
 
-            BodyFlowCard {
+            BodyFlowCard(surface: .elevated) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    // Side by side at regular text sizes (labels wrap inside
-                    // each half); stacked at accessibility sizes. The previous
-                    // ViewThatFits compared unwrapped ideal widths, so the
-                    // Portuguese labels always forced the stacked fallback.
-                    if dynamicTypeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                            remainingFoodMetric
-                            Divider()
-                            netBalanceMetric
-                        }
-                    } else {
-                        HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
-                            remainingFoodMetric
-                            Divider()
-                            netBalanceMetric
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
+                    summaryRow {
+                        remainingFoodCell
+                    } trailing: {
+                        netBalanceCell
                     }
+
                     Divider()
-                    // The two protected values above (remaining-food,
-                    // net-balance) always stay visible. The remaining five
-                    // rows are the same official values, unabridged, moved
-                    // behind a native disclosure so the card reads as a
-                    // compact summary first.
-                    DisclosureGroup {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                            FixtureMetricRow(
-                                title: copy("metric.target"),
-                                value: TodayValueFormatter.optionalKcal(
-                                    descriptor.targetKcal,
-                                    language: language
-                                )
-                            )
-                            Divider()
-                            FixtureMetricRow(
-                                title: copy("metric.consumed"),
-                                value: TodayValueFormatter.kcal(
-                                    descriptor.consumedKcal,
-                                    language: language
-                                )
-                            )
-                            Divider()
-                            FixtureMetricRow(
-                                title: copy("today.energy.food-excess"),
-                                value: TodayValueFormatter.kcal(
-                                    descriptor.foodExcessKcal,
-                                    language: language
-                                )
-                            )
-                            Divider()
-                            FixtureMetricRow(
-                                title: copy("today.energy.exercise"),
-                                value: TodayValueFormatter.kcal(
-                                    descriptor.exerciseKcal,
-                                    language: language
-                                )
-                            )
-                            Divider()
-                            FixtureMetricRow(
-                                title: copy("today.energy.balance-status"),
-                                value: descriptor.dailyBalanceStatus
-                            )
-                        }
-                        .padding(.top, BodyFlowSpacing.sm)
-                    } label: {
-                        TodayDisclosureLabel(title: copy("today.energy.details.title"))
+
+                    summaryRow {
+                        proteinCell
+                    } trailing: {
+                        hydrationCell
                     }
-                    .font(BodyFlowTypography.headline)
-                    .accessibilityIdentifier("today.energy.details")
+
+                    Divider()
+
+                    detailsDisclosure
                 }
             }
         }
     }
 
-    private var remainingFoodMetric: some View {
-        TodayEnergyMetric(
+    /// Two figures side by side while the width allows; stacked at
+    /// accessibility sizes so neither is squeezed into a column.
+    @ViewBuilder
+    private func summaryRow<Leading: View, Trailing: View>(
+        @ViewBuilder leading: () -> Leading,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                leading()
+                Divider()
+                trailing()
+            }
+        } else {
+            HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
+                leading()
+                Divider()
+                trailing()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var remainingFoodCell: some View {
+        TodaySummaryCell(
             title: copy("today.energy.food-remaining"),
             value: TodayValueFormatter.kcal(
-                descriptor.remainingFoodKcal,
+                energy.remainingFoodKcal,
                 language: language
             ),
-            explanation: copy("today.energy.food-remaining.detail"),
-            systemImage: "fork.knife",
-            accessibilityValue: descriptor.remainingFoodAccessibilityValue(
-                for: language
-            )
+            caption: copy("today.energy.food-remaining.detail"),
+            prominence: .headline
         )
+        .accessibilityValue(energy.remainingFoodAccessibilityValue(for: language))
         .accessibilityIdentifier("today.energy.remaining-food")
     }
 
-    private var netBalanceMetric: some View {
-        TodayEnergyMetric(
+    private var netBalanceCell: some View {
+        TodaySummaryCell(
             title: copy("today.energy.net-balance"),
             value: TodayValueFormatter.kcal(
-                descriptor.dailyBalanceKcal,
+                energy.dailyBalanceKcal,
                 language: language
             ),
-            explanation: copy("today.energy.net-balance.detail"),
-            systemImage: "plusminus",
-            accessibilityValue: descriptor.netBalanceAccessibilityValue(
-                for: language
-            )
+            caption: copy("today.energy.net-balance.detail"),
+            prominence: .headline
         )
+        .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
         .accessibilityIdentifier("today.energy.net-balance")
+    }
+
+    private var proteinCell: some View {
+        TodaySummaryCell(
+            title: copy("today.protein.title"),
+            value: TodayValueFormatter.grams(protein.consumedG),
+            caption: copy("metric.consumed"),
+            prominence: .supporting
+        )
+        .accessibilityIdentifier("today.protein")
+    }
+
+    private var hydrationCell: some View {
+        TodaySummaryCell(
+            title: copy("today.hydration.title"),
+            value: TodayValueFormatter.milliliters(
+                hydration.consumedML,
+                language: language
+            ),
+            caption: copy("metric.consumed"),
+            prominence: .supporting
+        )
+        .accessibilityValue(
+            "\(TodayValueFormatter.milliliters(hydration.consumedML, language: language)); \(copy("metric.target").lowercased()) \(TodayValueFormatter.optionalMilliliters(hydration.targetML, language: language))"
+        )
+        .accessibilityIdentifier("today.hydration")
+    }
+
+    /// One disclosure for the whole panel. Inside, the remaining official
+    /// rows keep their domain grouping and their identifiers.
+    private var detailsDisclosure: some View {
+        DisclosureGroup(
+            isExpanded: $showsDetails.animation(
+                BodyFlowMotion.animation(.disclosure, reduceMotion: reduceMotion)
+            )
+        ) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                energyDetails
+                proteinDetails
+                hydrationDetails
+            }
+            .padding(.top, BodyFlowSpacing.sm)
+        } label: {
+            TodayDisclosureLabel(title: copy("today.energy.details.title"))
+        }
+        .font(BodyFlowTypography.headline)
+        .accessibilityIdentifier("today.energy.details")
+    }
+
+    private var energyDetails: some View {
+        detailGroup(copy("today.energy.title")) {
+            FixtureMetricRow(
+                title: copy("metric.target"),
+                value: TodayValueFormatter.optionalKcal(
+                    energy.targetKcal,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("metric.consumed"),
+                value: TodayValueFormatter.kcal(
+                    energy.consumedKcal,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("today.energy.food-excess"),
+                value: TodayValueFormatter.kcal(
+                    energy.foodExcessKcal,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("today.energy.exercise"),
+                value: TodayValueFormatter.kcal(
+                    energy.exerciseKcal,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("today.energy.balance-status"),
+                value: energy.dailyBalanceStatus
+            )
+        }
+    }
+
+    private var proteinDetails: some View {
+        detailGroup(copy("today.protein.title")) {
+            FixtureMetricRow(
+                title: copy("metric.target"),
+                value: TodayValueFormatter.optionalGrams(
+                    protein.targetG,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("metric.remaining"),
+                value: TodayValueFormatter.optionalGrams(
+                    protein.remainingG,
+                    language: language
+                )
+            )
+            if let percentage = protein.percentage {
+                Divider()
+                FixtureMetricRow(
+                    title: copy("metric.reported-progress"),
+                    value: "\(percentage)%"
+                )
+            }
+            Divider()
+            FixtureMetricRow(
+                title: copy("metric.status"),
+                value: protein.status
+            )
+        }
+        .accessibilityIdentifier("today.protein.details")
+    }
+
+    private var hydrationDetails: some View {
+        detailGroup(copy("today.hydration.title")) {
+            FixtureMetricRow(
+                title: copy("metric.target"),
+                value: TodayValueFormatter.optionalMilliliters(
+                    hydration.targetML,
+                    language: language
+                )
+            )
+            Divider()
+            FixtureMetricRow(
+                title: copy("metric.remaining"),
+                value: TodayValueFormatter.optionalMilliliters(
+                    hydration.remainingML,
+                    language: language
+                )
+            )
+            if let percentage = hydration.percentage {
+                Divider()
+                FixtureMetricRow(
+                    title: copy("metric.reported-progress"),
+                    value: "\(percentage)%"
+                )
+            }
+            Divider()
+            BodyFlowStatusLine(
+                hydration.status,
+                kind: .info,
+                font: BodyFlowTypography.callout
+            )
+        }
+        .accessibilityIdentifier("today.hydration.details")
+    }
+
+    @ViewBuilder
+    private func detailGroup<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(verbatim: title)
+                .font(BodyFlowTypography.cardTitle)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var language: SupportedAppLanguage {
@@ -220,28 +363,42 @@ struct TodayEnergySection: View {
     }
 }
 
+/// One figure in the day panel: label with its domain glyph, the received
+/// value, and the caption that carries its official meaning. Read as a single
+/// element so VoiceOver announces meaning and number together.
 @MainActor
-private struct TodayEnergyMetric: View {
+private struct TodaySummaryCell: View {
+    enum Prominence { case headline, supporting }
+
     let title: String
     let value: String
-    let explanation: String
-    let systemImage: String
-    let accessibilityValue: String
+    let caption: String
+    let prominence: Prominence
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Label(title, systemImage: systemImage)
-                .font(BodyFlowTypography.supporting)
-                .foregroundStyle(BodyFlowColor.secondaryText)
-            Text(value)
-                .font(BodyFlowTypography.metricSmall)
-                .foregroundStyle(BodyFlowColor.primaryText)
-            Text(explanation)
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+            // The label stays on one line at regular sizes so the two columns
+            // keep their figures on the same baseline.
+            Text(verbatim: title)
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(verbatim: value)
+                .font(
+                    prominence == .headline
+                        ? BodyFlowTypography.metricLarge
+                        : BodyFlowTypography.metricSmall
+                )
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(verbatim: caption)
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(accessibilityValue)
     }
 }

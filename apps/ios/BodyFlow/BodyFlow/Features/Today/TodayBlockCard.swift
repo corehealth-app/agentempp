@@ -27,9 +27,10 @@ struct TodayBlockCard: View {
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label(copy("today.block.title"), systemImage: "circle.hexagongrid")
-                    .font(BodyFlowTypography.headline)
+                Label(verbatim: copy("today.block.title"), symbol: .block)
+                    .font(BodyFlowTypography.cardTitle)
                     .foregroundStyle(BodyFlowColor.primaryText)
+                    .accessibilityAddTraits(.isHeader)
 
                 FixtureMetricRow(
                     title: copy("metric.target"),
@@ -73,15 +74,11 @@ struct TodayBlockCard: View {
                         )
                     )
                 }
-                Label(
-                    descriptor.availability
-                        ?? copy("common.not-available"),
-                    systemImage: descriptor.enabled == true
-                        ? "checkmark.circle"
-                        : "info.circle"
+                BodyFlowStatusLine(
+                    descriptor.availability ?? copy("common.not-available"),
+                    kind: descriptor.enabled == true ? .success : .info,
+                    font: BodyFlowTypography.callout
                 )
-                .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.secondaryText)
             }
         }
         .accessibilityElement(children: .contain)

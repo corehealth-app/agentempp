@@ -46,13 +46,28 @@ struct FlowChatView: View {
 
     @ViewBuilder
     private func conversation(gutter: CGFloat) -> some View {
-        if model.isLoading && model.messages.isEmpty {
-            ProgressView("flow.loading")
-                .font(BodyFlowTypography.body)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("flow.loading")
-        } else {
-            ScrollViewReader { proxy in
+        let isLoadingHistory = model.isLoading && model.messages.isEmpty
+        let transition = BodyFlowMotion.stateTransition(reduceMotion: reduceMotion)
+        // Loading ↔ conversation cross-fades (≤200 ms); immediate under
+        // Reduce Motion. The scroll policy below is untouched.
+        Group {
+            if isLoadingHistory {
+                ProgressView("flow.loading")
+                    .font(BodyFlowTypography.body)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("flow.loading")
+                    .transition(transition)
+            } else {
+                history(gutter: gutter)
+                    .transition(transition)
+            }
+        }
+        .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: isLoadingHistory)
+    }
+
+    @ViewBuilder
+    private func history(gutter: CGFloat) -> some View {
+        ScrollViewReader { proxy in
                 VStack(spacing: BodyFlowSpacing.xs) {
                     ScrollView {
                         VStack(spacing: 0) {
@@ -60,17 +75,9 @@ struct FlowChatView: View {
                             // bubble can exceed the viewport by many pages;
                             // lazy culling at its tail otherwise hides the text.
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                                Text("flow.role-line")
-                                    .font(BodyFlowTypography.supporting)
-                                    .foregroundStyle(BodyFlowColor.color(.textSecondary))
-                                    .accessibilityIdentifier("flow.role-line")
-                                guidance
+                                preamble
                                 if model.messages.isEmpty {
-                                    ContentUnavailableView(
-                                        "flow.empty.title", systemImage: "bubble.left.and.text.bubble.right",
-                                        description: Text("flow.empty.detail")
-                                    )
-                                    .accessibilityIdentifier("flow.empty")
+                                    emptyConversation
                                 }
                                 ForEach(model.messages) { message in
                                     FlowMessageBubble(message: message).id(message.id)
@@ -131,26 +138,58 @@ struct FlowChatView: View {
                     }
                 }
             }
+    }
+
+    /// Compact preamble: who is answering and the guidance note, one tight
+    /// block above the conversation instead of two spaced paragraphs.
+    private var preamble: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+            Text("flow.role-line")
+                .font(BodyFlowTypography.supporting)
+                .fontWeight(.semibold)
+                .foregroundStyle(BodyFlowColor.color(.textSecondary))
+                .accessibilityIdentifier("flow.role-line")
+            guidance
+            Divider().overlay(BodyFlowColor.color(.borderSubtle))
+                .padding(.top, BodyFlowSpacing.xs)
         }
     }
 
     private var guidance: some View {
-        Label("flow.guidance", systemImage: "info.circle")
-            .font(BodyFlowTypography.supporting)
+        Label("flow.guidance", symbol: .info)
+            .font(BodyFlowTypography.caption)
             .foregroundStyle(BodyFlowColor.color(.textSecondary))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier("flow.guidance")
     }
 
+    /// The conversation's own empty state: the Flow glyph in the brand color,
+    /// the invitation as a screen title and the received guidance.
+    private var emptyConversation: some View {
+        VStack(spacing: BodyFlowSpacing.sm) {
+            Image(symbol: .flow)
+                .font(BodyFlowTypography.largeTitle)
+                .foregroundStyle(BodyFlowColor.color(.brandPrimary))
+                .accessibilityHidden(true)
+            Text("flow.empty.title")
+                .font(BodyFlowTypography.screenTitle)
+                .foregroundStyle(BodyFlowColor.color(.textPrimary))
+            Text("flow.empty.detail")
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.color(.textSecondary))
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, BodyFlowSpacing.xl)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("flow.empty")
+    }
+
     private func errorCard(message: String) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label {
-                Text(message).fixedSize(horizontal: false, vertical: true)
-            } icon: { Image(systemName: "exclamationmark.circle") }
-            .font(BodyFlowTypography.body)
-            .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
-            .accessibilityIdentifier("flow.error")
+            BodyFlowStatusLine(message, kind: .error, font: BodyFlowTypography.body)
+                .accessibilityIdentifier("flow.error")
             Button("flow.retry") { Task { await model.retry() } }
                 .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityIdentifier("flow.retry")
@@ -169,14 +208,11 @@ struct FlowChatView: View {
             } else {
                 HStack(alignment: .bottom, spacing: BodyFlowSpacing.sm) {
                     composerField(text: text)
-                    composerAction(showLabel: false).frame(width: BodyFlowSpacing.minimumTapTarget)
+                    composerAction(showLabel: false)
                 }
             }
             if FlowChatPresentation.isOverLimit(model.composer) {
-                Label("flow.limit.detail", systemImage: "exclamationmark.circle")
-                    .font(BodyFlowTypography.supporting)
-                    .foregroundStyle(BodyFlowColor.color(.feedbackWarning))
-                    .fixedSize(horizontal: false, vertical: true)
+                BodyFlowStatusLine(flowCopy("flow.limit.detail"), kind: .warning)
                     .accessibilityIdentifier("flow.limit.detail")
             }
         }
@@ -204,17 +240,17 @@ struct FlowChatView: View {
                 model.cancel()
             } label: {
                 if showLabel { Text("flow.cancel") }
-                else { Image(systemName: "stop.fill") }
+                else { Image(symbol: .stop) }
             }
-            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+            .buttonStyle(BodyFlowButtonStyle(role: .secondary, isCompact: !showLabel))
             .accessibilityLabel("flow.cancel")
             .accessibilityIdentifier("flow.cancel")
         } else {
             Button(action: send) {
                 if showLabel { Text("flow.send") }
-                else { Image(systemName: "arrow.up") }
+                else { Image(symbol: .send) }
             }
-            .buttonStyle(BodyFlowButtonStyle(role: .primary))
+            .buttonStyle(BodyFlowButtonStyle(role: .primary, isCompact: !showLabel))
             .disabled(!FlowChatPresentation.canSubmit(model.composer, isSending: model.isSending))
             .accessibilityLabel("flow.send")
             .accessibilityIdentifier("flow.send")
@@ -239,6 +275,13 @@ struct FlowChatView: View {
         ) {
             proxy.scrollTo("flow.history-end", anchor: .bottom)
         }
+    }
+
+    private func flowCopy(_ key: String.LocalizationValue) -> String {
+        String(localized: LocalizedStringResource(
+            key,
+            locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale
+        ))
     }
 
     private func announceNewReplyIfFollowing() {
@@ -271,22 +314,25 @@ private struct FlowMessageBubble: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if message.role == .user { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.lg) }
+            if message.role == .user { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg) }
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                 Text(LocalizedStringResource(FlowChatPresentation.roleLabelKey(message.role),
                     locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale))
-                    .font(BodyFlowTypography.cardTitle)
+                    .font(BodyFlowTypography.caption)
+                    .fontWeight(.semibold)
                     .accessibilityIdentifier("flow.role.\(message.id)")
                 Text(message.content)
                     .font(BodyFlowTypography.body)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                // Bubble states keep the bubble's own foreground (white on the
+                // brand bubble) and only take the vocabulary glyph.
                 if message.state == .processing {
-                    Label("flow.message.processing", systemImage: "clock")
+                    Label("flow.message.processing", symbol: .clock)
                         .font(BodyFlowTypography.supporting)
                         .accessibilityIdentifier("flow.message.processing")
                 } else if message.state == .failed {
-                    Label("flow.message.failed", systemImage: "exclamationmark.circle")
+                    Label("flow.message.failed", symbol: .error)
                         .font(BodyFlowTypography.supporting)
                         .accessibilityIdentifier("flow.message.failed")
                 }
@@ -297,7 +343,7 @@ private struct FlowMessageBubble: View {
                         in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous))
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("flow.message.\(message.id)")
-            if message.role == .assistant { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.lg) }
+            if message.role == .assistant { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg) }
         }
         .frame(maxWidth: .infinity)
     }

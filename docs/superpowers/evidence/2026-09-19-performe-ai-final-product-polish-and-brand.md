@@ -1010,3 +1010,197 @@ Status: I2B gates satisfied. REGRESSION STATUS: VERIFIED for the I2B gate
 runs #1–#3 preserved and characterized as environmental). USER VISUAL
 ACCEPTANCE: PENDING. Production: NOT DEPLOYED. Commit: AWAITING EXPLICIT
 AUTHORIZATION.
+
+## I3 — Shell / Today / Flow — 2026-09-23 (STOP for visual acceptance)
+
+Performe AI = public product; Flow = public agent; BodyFlow = preserved internal
+technical identity. Plan V2 increment I3 on `add9588` (index empty at entry).
+19 dirty paths at exit (15 modified + 4 new); hashes in `v6/i3/hashes.txt`.
+No copy, asset, API, identifier-removal or capability change.
+
+### Components born here (each with its consumers)
+
+- `DesignSystem/BodyFlowSymbol.swift`: the glyph vocabulary (34 meanings →
+  34 distinct SF Symbols) plus `Image(symbol:)`, `Label(_:symbol:)` (localized
+  key) and `Label(verbatim:symbol:)` (resolved text). Consumers: all ten Today
+  sources and `FlowChatView` — 0 raw symbol literals remain there (was 32).
+  Error glyphs collapse to one (`exclamationmark.circle`), waiting to one
+  (`clock`), chat to one (`bubble.left.and.text.bubble.right`).
+- `Components/BodyFlowSectionHeader.swift`: section heading + optional
+  trailing accessory (`ViewThatFits`: shares the row, stacks at accessibility
+  sizes), `.isHeader`. Consumers: Energia, Rotina, Refeições confirmadas,
+  Treinos confirmados, Conteúdos para hoje.
+- `Components/BodyFlowStatusLine.swift`: one status message = vocabulary glyph
+  + role color (info/success/warning/error/pending/empty/unavailable), read as
+  one element. Consumers: Today completion message, routine collection
+  empty/unavailable, block availability, meal provenance, recommendations
+  offline/error/unavailable, Flow error and composer limit.
+- `BodyFlowButtonStyle(isCompact:)`: hugs its content, same 44 pt floor and
+  vertical padding. Consumer: the Flow composer send/cancel action (replaces
+  the hand-rolled `.frame(width: 44)`).
+
+### Today
+
+Flow is now the primary shortcut (brand fill + `onPrimary`) and Library the
+secondary (surface + brand text); both keep their identifiers, labels,
+`ViewThatFits` and `accessibilityRepresentation`. Section headings carry the
+domain glyph; card titles use `cardTitle`. Each routine collection is its own
+card whose heading row carries "Ver lista" (link + chevron, 44 pt, new
+`today.routine.header.<kind>` heading element); routine rows gained chevrons
+and press feedback. Meal/workout rows put type and energy on one line via
+`ViewThatFits`. Recommendations: card-shaped loading placeholder
+(`accessibilityHidden`), `.secondary` retry, chevron on the library row, press
+feedback on the cards. Disclosures (header/energy/protein/hydration) animate
+through `BodyFlowMotion.animation(.disclosure,…)`; the state ↔ day swap
+cross-fades.
+
+### Flow
+
+Compact preamble (role line semibold + guidance in `caption` + rule) instead of
+two spaced paragraphs; the conversation gets its own empty state (brand glyph,
+`screenTitle`, received detail) replacing the generic `ContentUnavailableView`;
+role labels drop to `caption` semibold and bubbles gain breathing room
+(`xl + lg` gutter at regular sizes); the composer action is the compact
+icon-only button; loading ↔ history cross-fades. Scroll policy, limits,
+idempotency, cancel/retry and the historical-reading behaviour untouched.
+
+### RED → GREEN
+
+- RED (`v6-i3-red-unit.xcresult`, `v6-i3-red-ui.xcresult`): symbol vocabulary
+  32 raw literals across 11 files; shared headings/status/row links 12
+  offences; UI `testTodayRoutineListLinksShareTheCollectionHeaderRow` failed on
+  the 33.3 pt link target (`.bordered` label) before the heading row existed.
+- GREEN: the same tests pass; full `BodyFlowTests` serial, single invocation:
+  **1,229 tests, 1,229 passed, 0 failed, 0 skipped** (I2B: 1,220; +9).
+- UI, 9 focused classes, one invocation each on the final build
+  (`v6-i3-ui-run3-*`): Prompt13Today 11/11, Prompt13Accessibility 5/5,
+  Prompt14TodayMascot 9/9, PremiumCoreSurfaces 9/9, Prompt14Accessibility
+  13/13, FlowChat 12/12, PremiumConvergence 4/4, Prompt13Routine 12/12,
+  Prompt13Registration 21/21 — **96 cases, 0 failures, 0 restarts**. (Runs #1
+  and #2 on the pre-fix build were also green; run #1 was stopped by the user
+  after 4 classes and resumed as run #2 — both preserved.)
+
+### Two defects found by looking at the captures, not by the tests
+
+- **PROBLEMA (regression I introduced, fixed):** `Label(_ title: String,
+  symbol:)` swallowed string literals that were localization keys, so the Flow
+  guidance line rendered the raw key `flow.guidance` (and would have hit
+  `flow.message.processing` / `flow.message.failed`). The overload pair is now
+  `Label(_ titleKey: LocalizedStringKey, symbol:)` (literals localize, like
+  SwiftUI's own `Label`) and `Label(verbatim:symbol:)` (resolved text), with
+  `testReviewedSourcesNeverPassALocalizationKeyAsVerbatimText` failing if a
+  dotted key ever reaches the verbatim overload. Every UI test passed with the
+  bug present — they assert by identifier, not by rendered text.
+- **PROBLEMA (design, fixed):** `sectionTitle` and `cardTitle` resolve to the
+  same font, so section headings tied with the card titles under them and the
+  page read flat. `BodyFlowSectionHeader` now takes `screenTitle` (the same
+  size Today's headings had before I3), locked by
+  `sectionHeadingsOutrankCardTitles`.
+
+### Other gates
+
+- Release ad hoc signed, `codesign --verify --deep --strict` valid; analyze
+  succeeded, no findings. Scanner PASS: `PUBLIC_LEAK 0`, `HISTORICAL_ASSET
+  18/18`, `ALLOWED_TECHNICAL 234`; scanner tests 21/21.
+- Identifier inventory 166 → 167: none removed (the only "delete" is a
+  variable rename inside `routine.list.\(…)`, same runtime values), added
+  `today.routine.header.supplement` / `.medication`.
+- Policy greps: `.shadow` 0, `.blur` 0, material 1, `glassEffect` 0,
+  `minimumScaleFactor` 0, `scrollEdgeEffect` 0, `.tint(.white)` 0,
+  `.buttonStyle(.plain)` 19 → 16 (Today keeps only `today.refresh`).
+  Assets diff: none. `Localizable.xcstrings` diff: none (the Flow empty-state
+  keys already existed).
+
+### Captures (`v6/i3/settings.log`, 13 files)
+
+Today loaded pt light/dark, en light, pt light/dark AXXXL; Today scrolled
+(routine cards with the "Ver lista" heading row, records) and the
+attention/shortcuts block; Today unavailable (pinned shortcuts, Flow primary)
+and incomplete (completion status line on the wash). Flow: empty pt light/dark
+(preamble + own empty state), long response light (compact send), reader state
+with "Última mensagem".
+
+### Visual comparison against B2 — Warm Performance / Signal Spark
+
+VISUAL FIDELITY (composition only): hierarchy — the day summary now descends
+cleanly screen title → section heading → card title → metric → caption, and the
+day's primary action (Flow) is the only filled element above the fold;
+composition — routine collections read as cards with a heading row instead of a
+wall of bordered buttons; density — type/energy pairs and the "Ver lista" links
+fold onto single rows at regular sizes and stack at accessibility sizes; colour
+— one brand fill per screen region, status colour only through the shared
+status line, glyph always alongside; dark mode — same structure, mint primary
+with near-black label; motion — disclosures and state swaps animate within the
+locked 200/250 ms budget and collapse under Reduce Motion.
+FEATURE FIDELITY (unchanged): section order, both official energy meanings and
+their accessibility values, received values and provenance strings, routine
+policies, Flow's contract (4,000 chars, idempotency, cancel/retry, historical
+reading), every existing identifier.
+
+Open items carried into the acceptance: the routine attention rows still show
+the server's raw status values (`snoozed`, `pending`) — server-owned, not
+translated here; the brand band dominates the first screen at AXXXL (locked by
+the I1 threshold test, unchanged by I3).
+
+Status: I3 gates satisfied. REGRESSION STATUS: VERIFIED for the I3 gate (unit
+1,229/0; 9 focused UI classes 96/0 on the final build). PUBLIC BRAND STATUS:
+scanner PASS, no new public copy. Production: NOT DEPLOYED.
+USER VISUAL ACCEPTANCE: PENDING — I4 does not start and nothing is committed
+until the user accepts these captures.
+
+### I3 addendum — visual direction chosen by the user (2026-09-23)
+
+The first I3 captures were refinement-level: the user looked at them and said
+the app still read as the same UI, which was accurate — I1–I3 had been scoped
+as "polish the pilot, do not redesign". PROBLEMA: the plan's conservatism was
+not delivering a visible product change, and I had been reporting progress
+without saying so plainly.
+
+DESCOBERTA: the design system already carried unused visual range — the `hero`
+surface (`heroBackground` / `onHero` / `heroSupporting`) and the `metricLarge`
+type role had **zero consumers** anywhere in the app, while every screen was a
+sequence of equal-weight `card` surfaces at `metricSmall`.
+
+Three directions for the Today summary were built behind a DEBUG launch
+argument (`--ui-testing-uiux-variant-N`, prototype file deleted afterwards),
+captured light and dark on the simulator, and shown to the user:
+1. **Hero** — the day's headline number on the hero surface at `metricLarge`;
+2. **Panel** — one elevated card, four official numbers in a 2×2 grid;
+3. **Editorial** — no card at all, large type on the page with hairlines.
+
+DECISÃO (user, 2026-09-23): first **Direction 1 — Hero**, implemented and
+captured; on seeing it in place the user switched to **Direction 2 — Panel**,
+which is what ships.
+
+Implemented for real as `TodaySummaryPanel` (in `TodayEnergySection.swift`):
+one `elevated` card holds the four official figures — both energy balances at
+`metricLarge`, protein and hydration at `metricSmall` — in a 2×2 grid that
+stacks at accessibility sizes, with one "Mais detalhes" disclosure at the foot
+of the panel. Inside it the remaining official rows keep their domain grouping
+and their identifiers: `today.energy.details` on the disclosure,
+`today.protein.details` and `today.hydration.details` on their groups. The
+four cells keep `today.energy.remaining-food`, `today.energy.net-balance`,
+`today.protein`, `today.hydration` with their spoken values
+("731 quilocalorias; exercício excluído", "menos 83 quilocalorias; exercício
+incluído", "2.111 ml; meta Indisponível"). `TodayProteinSection` and
+`TodayHydrationSection` lose their card views (the panel owns that
+presentation) and keep their descriptors; the orphaned `TodaySummaryFigure`
+was removed. No new token, colour, shadow, asset or copy key.
+
+The heading contract was updated with the composition: the day panel is the
+summary and carries no section heading, so `BodyFlowSectionHeader` is now
+required on Records, Recommendations and Routine only.
+
+Gates after the change: full `BodyFlowTests` serial **1,229/1,229, 0 failed**;
+UI classes touching Today, one invocation each — Prompt13Today 11/11,
+Prompt13Accessibility 5/5, PremiumCoreSurfaces 9/9, Prompt14Accessibility
+13/13, Prompt14TodayMascot 9/9, PremiumConvergence 4/4 (automated
+accessibility audit), Prompt13Registration 21/21 (hydration value after a
+registration) — **72 cases, 0 failures**. Identifier inventory 166 → 167,
+none removed. Captures: `v6/i3/today-panel-{light,dark,axxxl,en-light,
+incomplete}.png`, directions in `v6/variants/`, before/after in
+`v6/compare/painel-antes-depois.png`.
+
+Next, once accepted: carry the same principle (one hero figure per screen,
+support values ranked below it) into Progress and Plan in I5, and re-run the
+full focused set.

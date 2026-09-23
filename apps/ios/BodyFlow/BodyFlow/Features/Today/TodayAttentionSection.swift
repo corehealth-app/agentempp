@@ -80,34 +80,25 @@ struct TodayAttentionSection: View {
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label(copy("today.attention.title"), systemImage: "bell.badge")
-                    .font(BodyFlowTypography.headline)
+                Label(verbatim: copy("today.attention.title"), symbol: .attention)
+                    .font(BodyFlowTypography.cardTitle)
                     .foregroundStyle(BodyFlowColor.primaryText)
+                    .accessibilityAddTraits(.isHeader)
 
                 pendingContent
                     .accessibilityIdentifier("today.pending")
 
                 ForEach(descriptor.routineActions) { action in
-                    Label {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                            Text(action.title)
-                                .font(BodyFlowTypography.body)
-                            Text(action.status)
-                                .font(BodyFlowTypography.callout)
-                                .foregroundStyle(BodyFlowColor.secondaryText)
-                        }
-                    } icon: {
-                        Image(systemName: "clock.badge.exclamationmark")
-                            .foregroundStyle(BodyFlowColor.warning)
-                    }
-                    .accessibilityElement(children: .combine)
+                    attentionRow(title: action.title, detail: action.status)
                 }
 
                 if descriptor.pending.isEmpty,
                    descriptor.routineActions.isEmpty {
-                    Label(copy("today.attention.empty"), systemImage: "checkmark.circle")
-                        .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
+                    BodyFlowStatusLine(
+                        copy("today.attention.empty"),
+                        kind: .success,
+                        font: BodyFlowTypography.body
+                    )
                 }
             }
         }
@@ -126,19 +117,28 @@ struct TodayAttentionSection: View {
     @ViewBuilder
     private var pendingContent: some View {
         ForEach(descriptor.pending) { pending in
-            Label {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                    Text(pending.title(for: language))
-                        .font(BodyFlowTypography.body)
-                    Text(pending.detail(for: language))
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                }
-            } icon: {
-                Image(systemName: "hourglass")
-                    .foregroundStyle(BodyFlowColor.warning)
-            }
-            .accessibilityElement(children: .combine)
+            attentionRow(
+                title: pending.title(for: language),
+                detail: pending.detail(for: language)
+            )
         }
+    }
+
+    /// A waiting item: the vocabulary "waiting" glyph in the warning color,
+    /// title and received detail, read as one element.
+    private func attentionRow(title: String, detail: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                Text(title)
+                    .font(BodyFlowTypography.body)
+                Text(detail)
+                    .font(BodyFlowTypography.callout)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            }
+        } icon: {
+            Image(symbol: .clock)
+                .foregroundStyle(BodyFlowColor.warning)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

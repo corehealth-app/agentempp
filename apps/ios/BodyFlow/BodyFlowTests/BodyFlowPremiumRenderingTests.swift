@@ -180,6 +180,37 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
                             card, width: innerWidth, dark: dark, size: size, locale: locale
                         )
                         XCTAssertGreaterThanOrEqual(cardFrame.height + 1, bodyHeight + 32)
+                        let compact = Button(action: {}) { Image(symbol: .send) }
+                            .buttonStyle(BodyFlowButtonStyle(role: .primary, isCompact: true))
+                        let compactFrame = PremiumRenderingTestSupport.fittingSize(
+                            compact, width: innerWidth, dark: dark, size: size, locale: locale
+                        )
+                        XCTAssertGreaterThanOrEqual(compactFrame.width, 44)
+                        XCTAssertGreaterThanOrEqual(compactFrame.height, 44)
+                        XCTAssertLessThan(compactFrame.width, innerWidth / 2,
+                            "Compact buttons hug their glyph: \(language) \(dark) \(width) \(size)")
+                        let header = BodyFlowSectionHeader(label, symbol: .energy) {
+                            Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .tertiary, isCompact: true))
+                        }
+                        let headerFrame = PremiumRenderingTestSupport.fittingSize(
+                            header, width: innerWidth, dark: dark, size: size, locale: locale
+                        )
+                        XCTAssertLessThanOrEqual(headerFrame.width, innerWidth + 1)
+                        XCTAssertGreaterThan(headerFrame.height, 0)
+                        let status = BodyFlowStatusLine(body, kind: .warning)
+                        let statusFrame = PremiumRenderingTestSupport.fittingSize(
+                            status, width: innerWidth, dark: dark, size: size, locale: locale
+                        )
+                        // The message wraps inside the glyph column, so its exact height
+                        // depends on the glyph width; the contract is that the line fits
+                        // the width and never collapses below one line of its own font.
+                        let supportingLine = PremiumRenderingTestSupport.fittingSize(
+                            Text("Ag").font(BodyFlowTypography.supporting),
+                            width: innerWidth, dark: dark, size: size, locale: locale
+                        ).height
+                        XCTAssertLessThanOrEqual(statusFrame.width, innerWidth + 1)
+                        XCTAssertGreaterThanOrEqual(statusFrame.height + 1, supportingLine,
+                            "Status lines never clip their message: \(language) \(dark) \(width) \(size)")
                         let rowLink = Button(action: {}) {
                             BodyFlowCard(surface: .card) { Text(body).font(BodyFlowTypography.body) }
                         }
@@ -255,6 +286,24 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         )
         XCTAssertEqual(loading.filter { $0.label == label && $0.isButton }.count, 1)
         XCTAssertTrue(loading.contains { $0.label == label && $0.isButton && !$0.isEnabled })
+        // A compact icon-only action keeps its spoken label and 44 pt target.
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let compact = PremiumRenderingTestSupport.accessibilityProbe(
+                Button(action: {}) { Image(symbol: .send) }
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary, isCompact: true))
+                    .accessibilityLabel(label)
+                    .accessibilityIdentifier("fixture.compact"),
+                width: 375, size: size
+            )
+            XCTAssertEqual(compact.filter { $0.label == label && $0.isButton }.count, 1, "Compact: \(compact)")
+            XCTAssertTrue(compact.contains { $0.label == label && $0.isButton && $0.frame.width >= 44 && $0.frame.height >= 44 })
+            // A status line reads as one element carrying the message.
+            let status = PremiumRenderingTestSupport.accessibilityProbe(
+                BodyFlowStatusLine(label, kind: .error).accessibilityIdentifier("fixture.status"),
+                width: 375, size: size
+            )
+            XCTAssertEqual(status.filter { $0.label.contains(label) }.count, 1, "Status: \(status)")
+        }
         // A card link with press feedback stays one readable button target.
         for size in [DynamicTypeSize.large, .accessibility5] {
             let row = PremiumRenderingTestSupport.accessibilityProbe(
@@ -478,6 +527,106 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             if !source.contains("BodyFlowBrandHeader(") { offenders.append("\(path): no BodyFlowBrandHeader") }
         }
         XCTAssertTrue(offenders.isEmpty, "Brand bands outside the shared header: \(offenders)")
+    }
+
+    /// `Label(verbatim:symbol:)` takes resolved text. A localization key
+    /// passed there renders as its own raw key — the Flow guidance line did,
+    /// before this contract existed.
+    func testReviewedSourcesNeverPassALocalizationKeyAsVerbatimText() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Today/TodayRootView.swift",
+            "BodyFlow/Features/Today/TodayHeaderSection.swift",
+            "BodyFlow/Features/Today/TodayEnergySection.swift",
+            "BodyFlow/Features/Today/TodayProteinSection.swift",
+            "BodyFlow/Features/Today/TodayHydrationSection.swift",
+            "BodyFlow/Features/Today/TodayAttentionSection.swift",
+            "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+            "BodyFlow/Features/Today/TodayRoutineSection.swift",
+            "BodyFlow/Features/Today/TodayRecordsSection.swift",
+            "BodyFlow/Features/Today/TodayBlockCard.swift",
+            "BodyFlow/Features/FlowChat/FlowChatView.swift",
+            "BodyFlow/DesignSystem/Components/BodyFlowSectionHeader.swift",
+        ]
+        // `verbatim: "today.something"`: a dotted, space-free literal is a key.
+        let pattern = try NSRegularExpression(
+            pattern: #"verbatim:\s*"[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9-]+)+""#
+        )
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let matches = pattern.numberOfMatches(
+                in: source,
+                range: NSRange(source.startIndex..., in: source)
+            )
+            if matches > 0 { offenders.append("\(path): \(matches)") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Localization keys passed as verbatim text: \(offenders)")
+    }
+
+    /// Today and Flow name their glyphs through the shared vocabulary; raw
+    /// SF Symbol literals belong to `BodyFlowSymbol` only.
+    func testReviewedTodayAndFlowSourcesUseTheSymbolVocabulary() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Today/TodayRootView.swift",
+            "BodyFlow/Features/Today/TodayHeaderSection.swift",
+            "BodyFlow/Features/Today/TodayEnergySection.swift",
+            "BodyFlow/Features/Today/TodayProteinSection.swift",
+            "BodyFlow/Features/Today/TodayHydrationSection.swift",
+            "BodyFlow/Features/Today/TodayAttentionSection.swift",
+            "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+            "BodyFlow/Features/Today/TodayRoutineSection.swift",
+            "BodyFlow/Features/Today/TodayRecordsSection.swift",
+            "BodyFlow/Features/Today/TodayBlockCard.swift",
+            "BodyFlow/Features/FlowChat/FlowChatView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let literals = occurrences(of: "systemName: \"", in: source)
+                + occurrences(of: "systemImage: \"", in: source)
+            if literals > 0 { offenders.append("\(path): \(literals) raw symbol literals") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Raw SF Symbol names outside the vocabulary: \(offenders)")
+    }
+
+    /// Today's section headings and card links, and Flow's status messages,
+    /// go through the shared components (one heading style with the header
+    /// trait; one status line; press feedback on every card link).
+    func testReviewedTodayAndFlowSourcesUseTheSharedHeadingsStatusAndRowLinks() throws {
+        // The day panel is the summary itself and carries no heading; the
+        // sections below it do.
+        let headingSources = [
+            "BodyFlow/Features/Today/TodayRecordsSection.swift",
+            "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+            "BodyFlow/Features/Today/TodayRoutineSection.swift",
+        ]
+        let statusSources = [
+            "BodyFlow/Features/FlowChat/FlowChatView.swift",
+            "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+            "BodyFlow/Features/Today/TodayRoutineSection.swift",
+            "BodyFlow/Features/Today/TodayAttentionSection.swift",
+        ]
+        let plainFreeSources = [
+            "BodyFlow/Features/Today/TodayRecommendationsSection.swift",
+            "BodyFlow/Features/Today/TodayRoutineSection.swift",
+        ]
+        var offenders: [String] = []
+        for path in headingSources where try !reviewedSource(path).contains("BodyFlowSectionHeader(") {
+            offenders.append("\(path): no BodyFlowSectionHeader")
+        }
+        for path in statusSources where try !reviewedSource(path).contains("BodyFlowStatusLine(") {
+            offenders.append("\(path): no BodyFlowStatusLine")
+        }
+        for path in plainFreeSources {
+            let plain = occurrences(of: ".buttonStyle(.plain)", in: try reviewedSource(path))
+            if plain > 0 { offenders.append("\(path): \(plain) .plain") }
+        }
+        let flow = try reviewedSource("BodyFlow/Features/FlowChat/FlowChatView.swift")
+        if !flow.contains("isCompact:") { offenders.append("FlowChatView: composer action not compact") }
+        if flow.contains(".frame(width: BodyFlowSpacing.minimumTapTarget)") {
+            offenders.append("FlowChatView: composer action still forced to a 44 pt frame")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Shared components missing: \(offenders)")
     }
 
     /// Decorative tint washes share one opacity token; ad-hoc alphas drift

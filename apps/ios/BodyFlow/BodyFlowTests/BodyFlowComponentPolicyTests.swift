@@ -52,6 +52,22 @@ struct BodyFlowComponentPolicyTests {
         #expect(BodyFlowRowButtonStyle.pressedOpacity(isPressed: false) == 1)
     }
 
+    /// Section headings must outrank the card titles beneath them. The token
+    /// set resolves `sectionTitle` and `cardTitle` to the same font, so the
+    /// shared header takes the larger in-content role instead.
+    @Test func sectionHeadingsOutrankCardTitles() {
+        #expect(BodyFlowTypography.sectionTitle == BodyFlowTypography.cardTitle)
+        #expect(BodyFlowTypography.screenTitle != BodyFlowTypography.cardTitle)
+    }
+
+    @Test func compactButtonsShareTheRoleContractOfFullWidthButtons() {
+        let compact = BodyFlowButtonStyle(role: .secondary, isCompact: true)
+        #expect(compact.role == .secondary)
+        #expect(compact.isCompact)
+        #expect(!compact.isLoading)
+        #expect(!BodyFlowButtonStyle(role: .primary).isCompact)
+    }
+
     @Test func loadingButtonsKeepRoleColorsWhileDisabled() {
         for role in BodyFlowButtonRole.allCases {
             #expect(

@@ -14,8 +14,8 @@ struct PlanDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             PlanReadContent(model: model)
         }
-        .navigationTitle(
-            PlanCopy.string(
+        .bodyFlowScreenChrome(
+            title: PlanCopy.string(
                 "plan.detail.navigation.title",
                 language: BodyFlowPresentationLanguage.resolve(locale)
             )

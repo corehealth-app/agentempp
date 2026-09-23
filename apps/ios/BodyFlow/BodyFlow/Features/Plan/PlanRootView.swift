@@ -44,10 +44,7 @@ struct PlanReadContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                     if presentation.showsStaleBanner {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                            StaleDataBanner()
-                            retryButton
-                        }
+                        FeatureStaleRecovery(retry: retry)
                     }
 
                     PlanContentView(presentation: PlanPresentation(
@@ -65,7 +62,7 @@ struct PlanReadContent: View {
                                 )
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bodyFlowRow)
                         .accessibilityIdentifier("plan.detail")
                     }
 
@@ -73,13 +70,6 @@ struct PlanReadContent: View {
                 .padding(BodyFlowSpacing.md)
             }
         }
-    }
-
-    private var retryButton: some View {
-        Button(copy("state.retry"), action: retry)
-            .font(BodyFlowTypography.headline)
-            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-            .accessibilityIdentifier("state.retry")
     }
 
     private func retry() {

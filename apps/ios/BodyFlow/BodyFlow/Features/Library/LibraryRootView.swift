@@ -937,28 +937,12 @@ struct LibraryRootView: View {
 
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                         if showsStaleBanner {
-                            StaleDataBanner()
-                                .accessibilityFocused(
-                                    $accessibilityFocus,
-                                    equals: .firstPageResultSummary
-                                )
-
-                            if LibraryRecoveryPolicy.action(
-                                allowsFirstPageRetry: true,
-                                nextPageState: model.nextPageState
-                            ) == .retryFirstPage {
-                                Button {
-                                    requestAction(.retryFirstPage)
-                                } label: {
-                                    Text(copy("state.retry"))
-                                        .font(BodyFlowTypography.headline)
-                                        .frame(
-                                            minHeight:
-                                                BodyFlowSpacing.minimumTapTarget
-                                        )
-                                        .contentShape(Rectangle())
-                                }
-                                .accessibilityIdentifier("state.retry")
+                            FeatureStaleRecovery(retry: firstPageStaleRetry) {
+                                StaleDataBanner()
+                                    .accessibilityFocused(
+                                        $accessibilityFocus,
+                                        equals: .firstPageResultSummary
+                                    )
                             }
                         }
 
@@ -1112,19 +1096,25 @@ struct LibraryRootView: View {
         }
     }
 
+    /// Retry for a stale first page, only while the recovery policy allows
+    /// it; otherwise the stale banner stands alone.
+    private var firstPageStaleRetry: (@MainActor () -> Void)? {
+        guard LibraryRecoveryPolicy.action(
+            allowsFirstPageRetry: true,
+            nextPageState: model.nextPageState
+        ) == .retryFirstPage else {
+            return nil
+        }
+        return { requestAction(.retryFirstPage) }
+    }
+
     @ViewBuilder
     private func recoveryControl(for action: LibraryActionKind?) -> some View {
         switch action {
         case .retryFirstPage:
-            Button {
+            FeatureRetryButton {
                 requestAction(.retryFirstPage)
-            } label: {
-                Text(copy("state.retry"))
-                    .font(BodyFlowTypography.headline)
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                    .contentShape(Rectangle())
             }
-            .accessibilityIdentifier("state.retry")
         case .reloadFirstPage:
             Button {
                 requestAction(.reloadFirstPage)

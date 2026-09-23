@@ -29,7 +29,7 @@ struct Block7700DetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle(copy("progress.block.title"))
+        .bodyFlowScreenChrome(title: copy("progress.block.title"))
         .accessibilityIdentifier("screen.block7700.detail")
         .task { await model.load() }
     }
@@ -46,16 +46,10 @@ struct Block7700DetailView: View {
                 )
         } else if let descriptor = presentation.descriptor {
             FeatureStateContentStack(
-                showsStaleBanner: presentation.showsStaleBanner
+                showsStaleBanner: presentation.showsStaleBanner,
+                retryAction: presentation.showsRetry ? retry : nil
             ) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    if presentation.showsRetry {
-                        Button(copy("state.retry"), action: retry)
-                            .font(BodyFlowTypography.headline)
-                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .accessibilityIdentifier("state.retry")
-                    }
-
                     ScrollView {
                         BodyFlowCard(surface: .card) {
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {

@@ -180,6 +180,16 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
                             card, width: innerWidth, dark: dark, size: size, locale: locale
                         )
                         XCTAssertGreaterThanOrEqual(cardFrame.height + 1, bodyHeight + 32)
+                        let rowLink = Button(action: {}) {
+                            BodyFlowCard(surface: .card) { Text(body).font(BodyFlowTypography.body) }
+                        }
+                        .buttonStyle(.bodyFlowRow)
+                        let rowFrame = PremiumRenderingTestSupport.fittingSize(
+                            rowLink, width: innerWidth, dark: dark, size: size, locale: locale
+                        )
+                        XCTAssertGreaterThanOrEqual(rowFrame.height, 44)
+                        XCTAssertGreaterThanOrEqual(rowFrame.height + 1, cardFrame.height,
+                            "Row press feedback must not shrink the card: \(language) \(dark) \(width) \(size)")
                         let field = TextField("QA", text: .constant("QA")).font(BodyFlowTypography.body).bodyFlowField()
                         let fieldFrame = PremiumRenderingTestSupport.fittingSize(
                             field, width: innerWidth, dark: dark, size: size, locale: locale
@@ -245,6 +255,19 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         )
         XCTAssertEqual(loading.filter { $0.label == label && $0.isButton }.count, 1)
         XCTAssertTrue(loading.contains { $0.label == label && $0.isButton && !$0.isEnabled })
+        // A card link with press feedback stays one readable button target.
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let row = PremiumRenderingTestSupport.accessibilityProbe(
+                Button(action: {}) {
+                    BodyFlowCard(surface: .card) { Text(label).font(BodyFlowTypography.headline) }
+                }
+                .buttonStyle(.bodyFlowRow)
+                .accessibilityIdentifier("fixture.row"),
+                width: 375, size: size
+            )
+            XCTAssertEqual(row.filter { $0.label == label && $0.isButton }.count, 1, "Row link: \(row)")
+            XCTAssertTrue(row.contains { $0.label == label && $0.isButton && $0.frame.width >= 44 && $0.frame.height >= 44 })
+        }
     }
 
     func testNativeFieldPreservesBaselineAccessibilityRepresentation() {
@@ -340,6 +363,121 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             if count > 0 { offenders.append("\(path): \(count)") }
         }
         XCTAssertTrue(offenders.isEmpty, "Hard-coded white spinner tints: \(offenders)")
+    }
+
+    private func reviewedSource(_ path: String) throws -> String {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent(path),
+            encoding: .utf8
+        )
+    }
+
+    private func occurrences(of needle: String, in source: String) -> Int {
+        source.components(separatedBy: needle).count - 1
+    }
+
+    /// Stale data recovery is one shared block (banner + secondary retry with
+    /// the `state.retry` identifier), not a hand-rolled headline button per
+    /// screen. The Library pagination controls keep their own identifiers.
+    func testReviewedStaleRecoverySitesUseTheSharedComponent() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Today/TodayRootView.swift",
+            "BodyFlow/Features/Plan/PlanRootView.swift",
+            "BodyFlow/Features/History/MainHistoryView.swift",
+            "BodyFlow/Features/Progress/Block7700DetailView.swift",
+            "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Shared/FeatureComponents.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let handRolled = occurrences(of: ".accessibilityIdentifier(\"state.retry\")", in: source)
+            if handRolled > 0 { offenders.append("\(path): \(handRolled) hand-rolled state.retry") }
+            // Either the block itself or the shared stack that owns it.
+            let usesShared = source.contains("FeatureStaleRecovery(")
+                || (source.contains("FeatureStateContentStack(") && source.contains("retryAction:"))
+            if !usesShared { offenders.append("\(path): no FeatureStaleRecovery") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Stale recovery outside the shared component: \(offenders)")
+    }
+
+    /// Grouped lists and forms share one brand-backed style; the system
+    /// grouped gray never shows through reviewed screens.
+    func testReviewedListsUseTheSharedListStyle() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Routine/RoutineListView.swift",
+            "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+            "BodyFlow/Features/Onboarding/WelcomeStepView.swift",
+            "BodyFlow/Features/Register/MealProposalEditorView.swift",
+            "BodyFlow/Features/Profile/ProfileRootView.swift",
+            "BodyFlow/Features/Profile/CoachPersonaPickerView.swift",
+        ]
+        let inlined = [".listStyle(", ".scrollContentBackground(", ".listRowBackground("]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            for literal in inlined where source.contains(literal) {
+                offenders.append("\(path) \(literal)")
+            }
+            if !source.contains(".bodyFlowList()") { offenders.append("\(path): no .bodyFlowList()") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "List styling outside the shared modifier: \(offenders)")
+    }
+
+    /// Pushed screens use the inline native bar through one modifier, so no
+    /// destination falls back to a large-title band.
+    func testReviewedPushedScreensUseTheSharedChrome() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Progress/Block7700DetailView.swift",
+            "BodyFlow/Features/Plan/PlanDetailView.swift",
+            "BodyFlow/Features/Routine/RoutineListView.swift",
+            "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+            "BodyFlow/Features/History/MainHistoryView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            if source.contains(".navigationTitle(") { offenders.append("\(path): inline navigationTitle") }
+            if !source.contains(".bodyFlowScreenChrome(") { offenders.append("\(path): no .bodyFlowScreenChrome") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Chrome outside the shared modifier: \(offenders)")
+    }
+
+    /// Card links give press feedback; `.plain` stays only on the icon-only
+    /// refresh control the accessibility audit allowlists.
+    func testReviewedCardLinksUseTheRowButtonStyle() throws {
+        let reviewedSources: [(path: String, allowedPlain: Int)] = [
+            ("BodyFlow/Features/Plan/PlanRootView.swift", 0),
+            ("BodyFlow/Features/Progress/ProgressRootView.swift", 0),
+            ("BodyFlow/Features/History/MainHistoryView.swift", 0),
+            ("BodyFlow/Features/Today/TodayRootView.swift", 1),
+        ]
+        var offenders: [String] = []
+        for review in reviewedSources {
+            let source = try reviewedSource(review.path)
+            let plain = occurrences(of: ".buttonStyle(.plain)", in: source)
+            if plain != review.allowedPlain { offenders.append("\(review.path): \(plain) .plain") }
+            if !source.contains(".buttonStyle(.bodyFlowRow)") { offenders.append("\(review.path): no .bodyFlowRow") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Card links without press feedback: \(offenders)")
+    }
+
+    /// The brand band above the tab roots and the persona sheet is one
+    /// shared header, not two inline copies of the same padding/background.
+    func testReviewedBrandBandsUseTheSharedHeader() throws {
+        let reviewedSources = [
+            "BodyFlow/App/AppShellView.swift",
+            "BodyFlow/Features/Profile/CoachPersonaPickerView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            if source.contains("BodyFlowBrandIdentityView(") { offenders.append("\(path): inline BodyFlowBrandIdentityView") }
+            if !source.contains("BodyFlowBrandHeader(") { offenders.append("\(path): no BodyFlowBrandHeader") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Brand bands outside the shared header: \(offenders)")
     }
 
     /// Decorative tint washes share one opacity token; ad-hoc alphas drift
@@ -456,7 +594,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
                 Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .destructive))
                 Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .primary)).disabled(true)
                 Button(label, action: {}).buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: true)).disabled(true)
-                StaleDataBanner()
+                FeatureStaleRecovery(retry: {})
             }
         }
         .padding(BodyFlowSpacing.screenGutter(usableWidth: width))

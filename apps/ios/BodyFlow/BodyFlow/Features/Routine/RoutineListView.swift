@@ -27,7 +27,7 @@ struct RoutineListView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle(title)
+        .bodyFlowScreenChrome(title: title)
         .task(id: invalidationCenter.revision(for: .routineList(kind: kind))) {
             await model.load(
                 revision: invalidationCenter.revision(
@@ -66,8 +66,9 @@ struct RoutineListView: View {
                     RoutineItemRow(item: item, language: language)
                 }
                 .accessibilityIdentifier("routine.\(item.id)")
+                .bodyFlowListRow()
             }
-            .listStyle(.insetGrouped)
+            .bodyFlowList()
         }
     }
 

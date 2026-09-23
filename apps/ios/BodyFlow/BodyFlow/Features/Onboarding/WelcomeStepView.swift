@@ -149,7 +149,9 @@ private struct CountrySelectionView: View {
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
+            .bodyFlowListRow()
         }
+        .bodyFlowList()
         .navigationTitle(copy("onboarding.welcome.country-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(
@@ -201,7 +203,9 @@ private struct TimeZoneSelectionView: View {
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
+            .bodyFlowListRow()
         }
+        .bodyFlowList()
         .navigationTitle(copy("onboarding.welcome.time-zone-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(

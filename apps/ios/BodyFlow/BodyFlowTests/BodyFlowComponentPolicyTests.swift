@@ -45,6 +45,13 @@ struct BodyFlowComponentPolicyTests {
         #expect(BodyFlowOpacity.pressed == 0.85)
     }
 
+    @Test func rowPressFeedbackDropsScaleUnderReduceMotion() {
+        #expect(BodyFlowRowButtonStyle.pressedScale(reduceMotion: true) == 1)
+        #expect(BodyFlowRowButtonStyle.pressedScale(reduceMotion: false) == BodyFlowMotion.pressedScale)
+        #expect(BodyFlowRowButtonStyle.pressedOpacity(isPressed: true) == BodyFlowOpacity.pressed)
+        #expect(BodyFlowRowButtonStyle.pressedOpacity(isPressed: false) == 1)
+    }
+
     @Test func loadingButtonsKeepRoleColorsWhileDisabled() {
         for role in BodyFlowButtonRole.allCases {
             #expect(

@@ -12,7 +12,7 @@ struct MainHistoryView: View {
             content
         }
         .accessibilityElement(children: .contain)
-        .navigationTitle(copy("history.navigation.title"))
+        .bodyFlowScreenChrome(title: copy("history.navigation.title"))
         .accessibilityIdentifier("screen.history")
         .task(id: invalidationCenter.revision(for: .history)) {
             let revision = invalidationCenter.revision(for: .history)
@@ -43,14 +43,7 @@ struct MainHistoryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                         if presentation.showsStaleBanner {
-                            StaleDataBanner()
-                            Button(action: retry) {
-                                Text(copy("app.retry"))
-                                    .font(BodyFlowTypography.headline)
-                                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                                    .contentShape(Rectangle())
-                            }
-                            .accessibilityIdentifier("state.retry")
+                            FeatureStaleRecovery(retry: retry)
                         }
                         if !history.meals.isEmpty { mealSection(history.meals) }
                         if !history.workouts.isEmpty { workoutSection(history.workouts) }
@@ -72,7 +65,7 @@ struct MainHistoryView: View {
                 NavigationLink(value: AppRoute.historyMealLog(rowID: row.id)) {
                     HistoryMealLogRowView(row: row)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("history.meal.\(row.id)")
             }
         }
@@ -101,7 +94,7 @@ struct MainHistoryView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("history.workout.\(row.id)")
             }
         }

@@ -32,7 +32,7 @@ struct ProgressRootView: View {
                                 )
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bodyFlowRow)
                         .accessibilityIdentifier("progress.block.detail")
                     }
                     .padding(BodyFlowSpacing.md)

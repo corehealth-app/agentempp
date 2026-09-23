@@ -4,20 +4,26 @@ import UIKit
 @MainActor
 struct FeatureStateContentStack<Content: View>: View {
     let showsStaleBanner: Bool
+    private let retryAction: (@MainActor () -> Void)?
     private let content: Content
 
     init(
         showsStaleBanner: Bool,
+        retryAction: (@MainActor () -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.showsStaleBanner = showsStaleBanner
+        self.retryAction = retryAction
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             if showsStaleBanner {
-                StaleDataBanner()
+                // Inset like the scrolled content below it, so the banner
+                // never runs edge to edge under the navigation bar.
+                FeatureStaleRecovery(retry: retryAction)
+                    .padding([.horizontal, .top], BodyFlowSpacing.md)
             }
 
             content

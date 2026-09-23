@@ -31,7 +31,7 @@ struct RoutineHistoryView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle(copy("routine.history.title"))
+        .bodyFlowScreenChrome(title: copy("routine.history.title"))
         .task(id: invalidationCenter.revision(
             for: .routineHistory(kind: kind, itemID: itemID)
         )) {
@@ -70,6 +70,7 @@ struct RoutineHistoryView: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("routine.history.row.\(row.id)")
+                    .bodyFlowListRow()
                 }
                 if model.nextCursor != nil {
                     Button(copy("routine.history.load-more")) {
@@ -77,9 +78,10 @@ struct RoutineHistoryView: View {
                     }
                     .accessibilityIdentifier("routine.history.load-more")
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .bodyFlowListRow()
                 }
             }
-            .listStyle(.insetGrouped)
+            .bodyFlowList()
             .accessibilityIdentifier("routine.history")
         }
     }

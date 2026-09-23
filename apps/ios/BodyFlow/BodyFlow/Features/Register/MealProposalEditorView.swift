@@ -74,6 +74,7 @@ struct MealProposalEditorView: View {
             } header: {
                 Text(copy("registration.editor.first-item"))
             }
+            .bodyFlowListRow()
             Section(copy("registration.editor.meal")) {
                 Menu {
                     ForEach(MealType.allCases, id: \.self) { type in
@@ -87,7 +88,9 @@ struct MealProposalEditorView: View {
                 DatePicker(copy("registration.editor.time"), selection: $consumedAt)
                     .accessibilityIdentifier("registration.proposal.edit.consumed-at")
             }
+            .bodyFlowListRow()
         }
+        .bodyFlowList()
         .accessibilityIdentifier("registration.proposal.editor")
         .navigationTitle(copy("registration.editor.title"))
         .navigationBarTitleDisplayMode(.inline)

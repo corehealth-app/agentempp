@@ -15,14 +15,7 @@ struct CoachPersonaPickerView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                BodyFlowBrandIdentityView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, BodyFlowSpacing.lg)
-                    .padding(.vertical, BodyFlowSpacing.xs)
-                    .background(BodyFlowColor.background)
-                    .overlay(alignment: .bottom) {
-                        Divider()
-                    }
+                BodyFlowBrandHeader()
 
                 ZStack {
                     BodyFlowColor.background.ignoresSafeArea()
@@ -110,6 +103,7 @@ struct CoachPersonaPickerView: View {
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
+            .bodyFlowListRow()
 
             if let error {
                 Section {
@@ -121,6 +115,7 @@ struct CoachPersonaPickerView: View {
                         }
                     }
                 }
+                .bodyFlowListRow()
             }
 
             Section(copy("profile.persona.options.section")) {
@@ -136,11 +131,9 @@ struct CoachPersonaPickerView: View {
                     .accessibilityIdentifier("persona.options.unavailable")
                 }
             }
+            .bodyFlowListRow()
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(BodyFlowColor.background)
-        .listRowBackground(BodyFlowColor.color(.backgroundSecondary))
+        .bodyFlowList()
         .overlay {
             if isSaving {
                 ProgressView(copy("profile.persona.saving"))

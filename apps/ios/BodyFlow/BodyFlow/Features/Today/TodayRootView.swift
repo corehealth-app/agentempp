@@ -389,18 +389,7 @@ struct TodayRootView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                 if showsStaleBanner {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                        StaleDataBanner()
-                        Button(action: retry) {
-                            Text(copy("state.retry"))
-                                .font(BodyFlowTypography.headline)
-                                .frame(
-                                    minHeight: BodyFlowSpacing.minimumTapTarget
-                                )
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityIdentifier("state.retry")
-                    }
+                    FeatureStaleRecovery(retry: retry)
                 }
 
                 // Day summary first: compact day context, Energy (both
@@ -439,7 +428,7 @@ struct TodayRootView: View {
                         )
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("today.history")
 
                 TodayBlockCard(descriptor: presentation.block)
@@ -458,7 +447,7 @@ struct TodayRootView: View {
                         )
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("today.next-action")
             }
             .padding(BodyFlowSpacing.md)

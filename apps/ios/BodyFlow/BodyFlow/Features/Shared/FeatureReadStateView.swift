@@ -35,7 +35,8 @@ struct FeatureReadStateView<
                 .transition(transition)
             } else if let value = presentation.value {
                 FeatureStateContentStack(
-                    showsStaleBanner: presentation.showsStaleBanner
+                    showsStaleBanner: presentation.showsStaleBanner,
+                    retryAction: retryAction
                 ) {
                     content(value)
                 }

@@ -86,6 +86,7 @@ struct ProfileRootView: View {
                 Text(copy("profile.identity.section"))
                     .foregroundStyle(BodyFlowColor.primaryText)
             }
+            .bodyFlowListRow()
 
             Section {
                 Button {
@@ -136,11 +137,9 @@ struct ProfileRootView: View {
                 Text(copy("profile.preferences.section"))
                     .foregroundStyle(BodyFlowColor.primaryText)
             }
+            .bodyFlowListRow()
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(BodyFlowColor.background)
-        .listRowBackground(BodyFlowColor.color(.backgroundSecondary))
+        .bodyFlowList()
     }
 
     private var personaDisplayName: String {

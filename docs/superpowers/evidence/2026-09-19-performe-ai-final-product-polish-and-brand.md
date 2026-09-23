@@ -867,3 +867,146 @@ Status: I2A gates satisfied. REGRESSION STATUS: VERIFIED for the I2A gate
 (full unit serial 0 fail; subset run #4 0 fail); full 17-class UI not re-run
 in this increment (planned for I7). USER VISUAL ACCEPTANCE: PENDING.
 Production: NOT DEPLOYED. Commit: AWAITING EXPLICIT AUTHORIZATION.
+
+## I2B — Shared components with consumers in the lot — 2026-09-22/23
+
+Performe AI = public product; Flow = public agent; BodyFlow = preserved internal
+technical identity. Plan V2 increment I2B on `daddcd52` (I2A commit; index empty
+at entry). 23 dirty paths at exit (18 modified + 5 new); hashes in
+`v6/i2b/hashes.txt`.
+
+### Components (each with its consumers in this increment)
+
+- `DesignSystem/Components/BodyFlowListStyle.swift`: `.bodyFlowList()`
+  (insetGrouped + hidden system background + `backgroundPrimary`) and
+  `.bodyFlowListRow()` (`backgroundSecondary`). Consumers: `RoutineListView`,
+  `RoutineHistoryView`, the two `WelcomeStepView` pickers,
+  `MealProposalEditorView` (Form), `ProfileRootView`, `CoachPersonaPickerView`.
+  Finding confirmed: the previous `.listRowBackground` on the `List` itself was
+  a no-op (rows rendered on the system white/dark cells); it now applies per
+  section/row, so Profile and persona rows sit on the brand surface.
+- `BodyFlowScreenChrome.swift`: `.bodyFlowScreenChrome(title:)` = inline
+  native bar, no `toolbarBackground`. Consumers: `Block7700DetailView`,
+  `PlanDetailView`, `RoutineListView`, `RoutineHistoryView`, `MainHistoryView`
+  (the five pushed screens that still fell back to a large-title band).
+- `BodyFlowBrandHeader.swift`: shared brand band (compact/leading for the
+  shell, standard/centred for the persona sheet). Consumers: `AppShellView`,
+  `CoachPersonaPickerView`. `BodyFlowBrandIdentityView` stays in
+  `ScreenStateView.swift` (approved public callsite).
+- `BodyFlowRowButtonStyle.swift`: `.bodyFlowRow` press feedback (opacity
+  `BodyFlowOpacity.pressed`, scale `BodyFlowMotion.pressedScale`, press
+  animation; Reduce Motion keeps the dim and drops the scale). Consumers:
+  `PlanRootView` (`plan.detail`), `ProgressRootView` (`progress.block.detail`),
+  `MainHistoryView` (meal/workout rows), `TodayRootView` (`today.history`,
+  `today.next-action`). `.plain` stays only on `today.refresh` (audit allowlist).
+- `Features/Shared/FeatureStaleRecovery.swift`: `FeatureStaleRecovery(retry:)`
+  (banner + `FeatureRetryButton`, secondary role, shared `state.retry`
+  identifier, 44 pt) with a banner override for the Library focus target.
+  Consumers: `TodayRootView`, `PlanRootView`, `MainHistoryView`,
+  `LibraryRootView` (stale block + empty-feed `retryFirstPage`),
+  `FeatureStateContentStack(retryAction:)` → `Block7700DetailView`,
+  `FeatureReadStateView` (Progress and content detail now expose the stale
+  retry; the stale block inside the stack is inset like the content instead of
+  running edge to edge). History's retry label moves from `app.retry` to
+  `state.retry` (identical pt-BR/en strings).
+- Not done, by design: `BodyFlowDivider`, `BodyFlowStatusLine`,
+  `BodyFlowSectionHeader` (first consumers in I3/I4); `BodyFlowElevation`
+  untouched; no copy or asset change.
+
+### RED → GREEN
+
+- RED (`v6-i2b-red.xcresult`, contracts only, components already compiled):
+  brand bands 4 offences (2 files); card links `.plain` Plan 1 / Progress 1 /
+  History 2 / Today 3 and no `.bodyFlowRow`; lists 14 offences (6 files);
+  chrome 10 offences (5 files); stale recovery 6 hand-rolled `state.retry`
+  (Library 2) and 6 files without the shared block.
+- GREEN focused (`v6-i2b-green.xcresult`): 17 XCTest + 67 Swift Testing,
+  0 failures (render matrix with the `.bodyFlowRow` card variant; accessibility
+  probe: one button element per row link at Large and AX5; policy test
+  `rowPressFeedbackDropsScaleUnderReduceMotion`).
+- Full `BodyFlowTests`, `-parallel-testing-enabled NO`, single invocation
+  (`v6-i2b-unit-full-serial.xcresult`): **1,220 tests, 1,220 passed, 0 failed,
+  0 skipped** (I2A: 1,214; +6). FINAL VERIFIED STATE (unit): VERIFIED.
+
+### UI suite — FULL SUITE RESULT / ISOLATED CHARACTERIZATION / FINAL STATE
+
+- Run #1, all 17 classes in one invocation (`v6-i2b-ui-full-run1.log`):
+  **INTERRUPTED by the 100-min wall cap**. 14 classes passed, **133 test
+  cases passed, 0 failed, 0 runner restarts**; not executed:
+  `Prompt14LibraryUITests` (in progress, 4/11 passed), `Prompt14ProgressUITests`,
+  `Prompt14TodayMascotUITests`. The first 13 classes ran at I1 speed; from
+  ~19:25 the Library-heavy tests slowed by 10–50× (`testLiveThemeSwitch…`
+  878 s, `testIncompleteDetail…` 719 s, `testInvalidCursor…` 1,247 s) and the
+  last one hung on "App event loop idle notification not received". Host at
+  20:32: 19 MB free, heavy swap (an 8 GB `com.apple.Virtualization` VM and
+  Chrome helpers outside this session).
+- Run #2, the three classes in one invocation (`v6-i2b-ui-run2.log`):
+  INTERRUPTED by the 60-min cap; `testConflictReload…` **failed** ("Failed to
+  tap library.card…: Timed out while synthesizing event", 666 s — the same
+  test passed in 18 s in run #1), `testCoverFailures…` 3,202 s (85 s in run
+  #1), `testIncompleteDetail…` 29 s.
+- Run #3, after a simulator reboot, each class as its own invocation with a
+  host monitor (`v6-i2b-ui-run3-*.log`, `…-monitor.log`): load averages
+  49 → 111 → 20 during the run; the runner failed to initialise
+  ("Timed out while loading Accessibility") for Progress, and Mascot/Library
+  tests took 15–30 min each before the cap.
+- Characterization: the same tests alternate between normal and pathological
+  durations on the same build, the app idles at 0.0 % CPU on Today and 1.7 %
+  on the loaded Library (no render loop), and every stall coincides with host
+  load ≥ 20 / low free memory from processes outside this session. Recorded
+  as ENVIRONMENTAL; no test, timeout, retry, sleep, skip or assertion was
+  changed. The run #2 failure is not converted into a pass.
+- Run #4 (2026-09-23, 09:16–09:27): a background waiter
+  (`wait-calm-run-i2b.sh`) started the three classes only once the host had
+  been calm for 3 consecutive minutes (1-min load 2.7–3.5, 31–35 % free),
+  each class as its own single invocation after a simulator reboot
+  (`v6-i2b-ui-run4-*.xcresult`): `Prompt14ProgressUITests` **4/4** (53 s),
+  `Prompt14TodayMascotUITests` **9/9** (180 s), `Prompt14LibraryUITests`
+  **11/11** (314 s) — I1-level durations, 0 failures, 0 restarts, no idle
+  waits. The user chose this path (wait for a calm host) over accepting
+  PARTIALLY VERIFIED.
+- FINAL VERIFIED STATE (UI): all 17 classes green — 14 in run #1 (one
+  invocation, 133 cases, 0 fail) and 3 in run #4 (three invocations, 24
+  cases, 0 fail). Recorded as two clean result sets, not summed into one
+  suite; the full 17-class single invocation remains the I7 closeout gate.
+
+### Other gates
+
+- Release ad hoc signed, `codesign --verify --deep --strict` valid; `analyze`
+  succeeded (incremental: changed sources recompiled, 0 findings; the
+  pre-existing `SessionLifecycleCoordinator.swift:210` warning did not re-emit
+  because that file was not recompiled). Scanner PASS: `PUBLIC_LEAK 0`,
+  `HISTORICAL_ASSET 18/18`, `ALLOWED_TECHNICAL 226` (+8 new `BodyFlow*` type
+  names); scanner tests 21/21.
+- Identifier inventory 166 → 166 (0 removed / 0 added). Policy greps:
+  `.shadow` 0, `.blur` 0, material 1, `glassEffect` 0, `minimumScaleFactor` 0,
+  `scrollEdgeEffect` 0, `.tint(.white)` 0, `.buttonStyle(.plain)` 25 → 19,
+  `.listStyle(` 1 (the modifier), `BodyFlowBrandIdentityView(` 4. Assets
+  diff: none.
+
+### Captures (`v6/i2b/settings.log`)
+
+Today stale light/dark (+ after `today.refresh`: shared banner + secondary
+retry); History dark stale (inline chrome, shared block, row cards); Progress
+dark; Block 7700 dark offline / dark loaded / light loaded (live switch);
+Profile light (rows on the brand surface); persona sheet light (shared brand
+header); Plan detail light (inline chrome); routine list light/dark and routine
+history light/dark (brand-backed lists). Not captured this increment: History
+light, Plan detail AXXXL (same components as the dark/light variants above).
+
+### Discoveries (recorded, not fixed here)
+
+- DESCOBERTA: routine list → detail (view-based `NavigationLink` in
+  `RoutineListView`) → "Histórico" (`NavigationLink(value:)`) does not
+  navigate (three taps, no push); the Today row path (`RoutineDetailRouteView`,
+  value route — the path the UI tests cover) works. Pre-existing; I5 routine
+  lot should push the list rows as `AppRoute.routine(... .detail)` values.
+- DESCOBERTA: the persona sheet's "Cancelar" toolbar button is clipped inside
+  the native glass capsule at Large ("ancela"); pre-existing, I5 profile lot.
+- Progress root's stale state now shows a retry (was banner only).
+
+Status: I2B gates satisfied. REGRESSION STATUS: VERIFIED for the I2B gate
+(unit 1,220/0; UI 17/17 classes across run #1 + run #4, 0 fail; interrupted
+runs #1–#3 preserved and characterized as environmental). USER VISUAL
+ACCEPTANCE: PENDING. Production: NOT DEPLOYED. Commit: AWAITING EXPLICIT
+AUTHORIZATION.
